@@ -27446,6 +27446,26 @@ mod reduce_sparse_real_roots {
     );
   }
 
+  /// A polynomial of high degree in `x^g` is solved for `x^g` first and
+  /// takes the real `g`-th roots, instead of finding all its complex
+  /// roots: an odd `g` keeps the sign of a negative root, an even one has
+  /// none for it.
+  #[test]
+  fn polynomials_in_a_high_power_take_real_roots() {
+    assert_eq!(
+      interpret("Reduce[x^1002 + 3 x^501 + 2 == 0, x, Reals]").unwrap(),
+      "x == -1 || x == -2^(1/501)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^1000 + 3 x^500 + 2 == 0, x, Reals]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Reduce[x^1000 - 5 x^500 + 6 == 0, x, Reals]").unwrap(),
+      "x == -2^(1/500) || x == 2^(1/500) || x == -3^(1/500) || x == 3^(1/500)"
+    );
+  }
+
   #[test]
   fn root_objects_of_low_degree_are_filtered_by_counting() {
     assert_eq!(
