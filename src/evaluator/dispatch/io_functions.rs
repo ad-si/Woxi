@@ -9548,9 +9548,13 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
-/// the opening tag.
+/// the opening tag. A family naming only the generic `sans-serif` (a
+/// `"Label"`-styled caption, a tick label) gets the same preferred face in
+/// front of it: a renderer without host CSS (iced's svg widget) would
+/// otherwise draw it in whatever system face stands in for `sans-serif`.
 pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  let svg = &svg.replace(" font-family=\"sans-serif\"", ATTR);
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
   let mut stack: Vec<bool> = Vec::new();
@@ -9677,15 +9681,12 @@ fn embed_used_fonts(svg: &str) -> String {
   // retained so the mono `[font-family*="Mono"]` CSS selectors below still
   // match. Exact-quoted matches make this idempotent (an already-rewritten
   // value no longer equals the generic form).
-  let body = svg
-    .replace(
-      "font-family=\"sans-serif\"",
-      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
-    )
-    .replace(
-      "font-family=\"monospace\"",
-      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
-    );
+  // The sans-serif half of that rewrite happens in
+  // `with_default_text_family`, shared with Woxi Studio.
+  let body = svg.replace(
+    "font-family=\"monospace\"",
+    "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+  );
   // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
   // the stylesheet's inherited default, which viewers that ignore
   // `<style>` replace with their own (serif) face. Bake the default sans

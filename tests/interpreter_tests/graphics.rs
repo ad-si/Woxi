@@ -37414,6 +37414,27 @@ mod graphics_grid {
     );
   }
 
+  /// A family naming only the generic `sans-serif` (a `"Label"` caption)
+  /// gets the preferred sans face in front of it, so Woxi Studio's svg
+  /// widget, which has no host CSS mapping the generic family, still draws
+  /// it in that face. A group's generic family is upgraded the same way,
+  /// and other families stay untouched.
+  #[test]
+  fn default_text_family_upgrades_generic_sans_serif() {
+    let svg = "<svg><text font-family=\"sans-serif\">A</text>\
+      <g font-family=\"sans-serif\"><text>B</text></g>\
+      <text font-family=\"monospace\">C</text></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\">A\
+       </text><g font-family=\"Atkinson Hyperlegible Next, sans-serif\">\
+       <text>B</text></g><text font-family=\"monospace\">C</text></svg>"
+    );
+    // Idempotent: an upgraded family is not rewritten again.
+    assert_eq!(woxi::with_default_text_family(&out), out);
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked
@@ -45281,6 +45302,38 @@ mod manipulate {
       assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
     }
     for i in [1, 3, 4] {
+      assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
+    }
+  }
+
+  // A choice quotient with a special-function factor
+  // (`(-1)^k BesselJ[1, k Pi]/k`, `Sin[k]/k`) is typeset as a stacked
+  // fraction like any other arithmetic choice; it used to fall back to its
+  // flat InputForm because the function call was not an accepted operand.
+  // A call to a non-numeric head inside a quotient stays text.
+  #[test]
+  fn setter_choices_with_special_function_factors_are_typeset() {
+    let expr = interpret_to_expr(
+      r#"Manipulate[c, {c, {(-1)^k BesselJ[1, k Pi]/k, Sin[k]/k,
+        Gamma[k + 1]/k^2, g[k]/k, StringLength[k]/k}}]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let ManipulateControl::Discrete {
+      value_label_svgs, ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control, got {:?}", spec.controls[0]);
+    };
+    for i in [0, 1, 2] {
+      let svg = value_label_svgs[i].as_deref().unwrap_or_default();
+      assert!(svg.starts_with("<svg"), "choice {i}: {svg:?}");
+      assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
+    }
+    // Labels are typeset in TraditionalForm: `BesselJ[1, k Pi]` is `J₁(π k)`.
+    let bessel = value_label_svgs[0].as_deref().unwrap();
+    assert!(bessel.contains(">J</text>"), "{bessel}");
+    for i in [3, 4] {
       assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
     }
   }
