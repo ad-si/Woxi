@@ -20695,7 +20695,11 @@ fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
     match item {
       Expr::String(s) if s.contains('\n') => {
         let quoted = s.len() >= 2 && s.starts_with('"') && s.ends_with('"');
-        let text = if quoted { &s[1..s.len() - 1] } else { s.as_str() };
+        let text = if quoted {
+          &s[1..s.len() - 1]
+        } else {
+          s.as_str()
+        };
         for (i, piece) in text.split('\n').enumerate() {
           if i > 0 {
             lines.push(Vec::new());
@@ -20706,7 +20710,10 @@ fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
             } else {
               piece.to_string()
             };
-            lines.last_mut().expect("never empty").push(Expr::String(piece));
+            lines
+              .last_mut()
+              .expect("never empty")
+              .push(Expr::String(piece));
           }
         }
       }
@@ -26124,9 +26131,8 @@ fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let boxes = crate::strip_number_precision_markers(&boxes);
   // The words are set in the graphic's own (sans-serif) text face.
-  let layout = with_box_font_family(Some("sans-serif"), || {
-    layout_box(&boxes, TITLE_FONT)
-  });
+  let layout =
+    with_box_font_family(Some("sans-serif"), || layout_box(&boxes, TITLE_FONT));
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
