@@ -18902,23 +18902,29 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // automatic range spanning from the pinned value to the curve's far
   // extreme (not just the curve's own extent): `{300, All}` over a curve
   // from 347 to 361 tops out at 361 + 61/18.
-  let half_open_span = if plot_range_y.is_none() {
-    let scaled = |v: f64| match scaling.1.as_ref() {
-      Some(s) => s.forward(v),
-      None => Some(v),
-    };
-    match plot_range_y_half_open {
-      Some((Some(lo), None)) => scaled(lo)
-        .map(|lo| y_data_max - lo)
-        .filter(|s| s.is_finite() && *s > 0.0),
-      Some((None, Some(hi))) => scaled(hi)
-        .map(|hi| hi - y_data_min)
-        .filter(|s| s.is_finite() && *s > 0.0),
-      _ => None,
+  // (The pinned end arrives either as `plot_range_y` with the open end NaN
+  // or, scaled later, through `plot_range_y_half_open`.)
+  let pinned_y = match plot_range_y {
+    Some((lo, hi)) if lo.is_nan() != hi.is_nan() => {
+      Some(((!lo.is_nan()).then_some(lo), (!hi.is_nan()).then_some(hi)))
     }
-  } else {
-    None
+    Some(_) => None,
+    None => plot_range_y_half_open.map(|(lo, hi)| {
+      let scaled = |v: Option<f64>| {
+        v.and_then(|v| match scaling.1.as_ref() {
+          Some(s) => s.forward(v),
+          None => Some(v),
+        })
+      };
+      (scaled(lo), scaled(hi))
+    }),
   };
+  let half_open_span = match pinned_y {
+    Some((Some(lo), None)) => Some(y_data_max - lo),
+    Some((None, Some(hi))) => Some(hi - y_data_min),
+    _ => None,
+  }
+  .filter(|s| s.is_finite() && *s > 0.0);
   let y_span = half_open_span.unwrap_or(y_data_max - y_data_min);
   let y_degenerate = half_open_span.is_none()
     && y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());

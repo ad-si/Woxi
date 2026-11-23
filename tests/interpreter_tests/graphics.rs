@@ -63367,6 +63367,37 @@ mod stacked_text_and_scientific_form_labels {
     assert!(svg.contains("<svg x="), "boxes were not embedded: {svg}");
   }
 
+  /// An `Overscript` in a frame label (`A ⟶ B` with a `k` over the arrow)
+  /// is stacked above its base, centered on it, rather than set as a
+  /// superscript beside it: the script is raised and shifted right by half
+  /// the room the wider base has over it, and the base steps back under it.
+  #[test]
+  fn frame_label_overscript_is_stacked_over_its_base() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {None, None, \
+       Row[{\"A \", Overscript[\"\\[LongRightArrow]\", Style[\"k\", Italic]], \
+       \" B\"}]}]",
+    );
+    let start = svg.find("data-stack=\"over\"").expect("stacked script");
+    let open = svg[..start].rfind("<tspan").unwrap();
+    let tag = &svg[open..start];
+    let attr = |tag: &str, key: &str| -> f64 {
+      let i = tag.find(key).unwrap() + key.len();
+      let j = i + tag[i..].find("em\"").unwrap();
+      tag[i..j].parse().unwrap()
+    };
+    // The 0.35 em script sits over the 1.34 em arrow: 0.495 em in, i.e.
+    // 0.707 em at its own 70% size, and raised by 1 em of its own size.
+    assert!((attr(tag, "dx=\"") - 0.707).abs() < 1e-3, "{tag}");
+    assert!((attr(tag, "dy=\"") + 1.0).abs() < 1e-3, "{tag}");
+    let after = &svg[start..];
+    let base = &after[after.find("<tspan dx=").unwrap()..];
+    // The arrow steps back to where the script's lead began.
+    assert!((attr(base, "dx=\"") + 0.845).abs() < 1e-3, "{base}");
+    assert!(base.contains("\u{27F6}"), "{base}");
+    assert!(!svg.contains("baseline-shift=\"super\""), "{svg}");
+  }
+
   /// `ToString[StandardForm[ScientificForm[x]]]` typesets `m × 10^e` in a
   /// plot label instead of the literal `ScientificForm[…]` call.
   #[test]

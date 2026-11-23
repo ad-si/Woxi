@@ -19214,6 +19214,10 @@ fn stacked_fraction_svg(
   format!("{num}/{den}")
 }
 
+/// How far a stacked overscript's baseline sits above its base's, in ems
+/// of the base.
+pub(crate) const STACKED_OVERSCRIPT_RAISE_EM: f64 = 0.7;
+
 /// An overscript set *above* its base, centered on it, as the FrontEnd
 /// typesets `Overscript[base, over]` (`A ⟶ B` with a `k` over the arrow),
 /// in inline SVG markup: the script (at 70%) is shifted right by half the
@@ -19223,8 +19227,7 @@ fn stacked_fraction_svg(
 /// `tspan`'s own font size, hence the script's shifts are divided by 0.7.
 fn stacked_overscript_svg(base: &str, over: &str) -> String {
   const SCALE: f64 = 0.7;
-  // How far the script's baseline sits above the base's, in base ems.
-  const RAISE: f64 = 0.7;
+  const RAISE: f64 = STACKED_OVERSCRIPT_RAISE_EM;
   let base_w = crate::functions::plot_padding::text_width(base, 1.0);
   let over_w = crate::functions::plot_padding::text_width(over, 1.0) * SCALE;
   let lead = ((base_w - over_w) / 2.0).max(0.0);
@@ -19232,7 +19235,8 @@ fn stacked_overscript_svg(base: &str, over: &str) -> String {
   // A script wider than its base overhangs it equally on both sides.
   let base_lead = ((over_w - base_w) / 2.0).max(0.0);
   format!(
-    "<tspan dx=\"{:.3}em\" dy=\"{:.3}em\" font-size=\"70%\">{over}</tspan>\
+    "<tspan dx=\"{:.3}em\" dy=\"{:.3}em\" font-size=\"70%\" \
+     data-stack=\"over\">{over}</tspan>\
      <tspan dx=\"{:.3}em\" dy=\"{RAISE:.3}em\">{base}</tspan>",
     lead / SCALE,
     -RAISE / SCALE,
