@@ -7027,6 +7027,16 @@ internal hash order. Woxi keeps input order.
   WL's head graphics; `"CurvedArc"` is WL's quadratic Bézier. A curved
   edge is cut where it leaves the vertex along the line to its control
   point; WL cuts it where the curve crosses the vertex's disk.
+- **`MultiedgeStyle -> d`**: Woxi bends each of two parallel edges out by
+  about `d / 2` of their length (a quadratic Bézier with control points
+  `2 d` lengths apart), read off a Demonstration snapshot of
+  `MultiedgeStyle -> 0.3`; WL's exact curve has not been measured, nor how
+  it fans out three or more parallel edges. `Automatic` keeps Woxi's own
+  smaller spread.
+- **Vertex labels at the edge of a `GraphPlot`**: WL pads the plot so a
+  vertex label right of the rightmost vertex stays inside the image; Woxi
+  sizes the plot range from the vertices alone, so a long label there is
+  cut off at the image border.
 
 
 ## Knot data
