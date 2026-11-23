@@ -13859,6 +13859,20 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
     {
       [EdgeTicks::Labels, EdgeTicks::Labels, d[2], d[3]]
     }
+    // `{xspec, yspec}` with a symbol for each axis (`{None, Automatic}`):
+    // the first covers the bottom and top edges, the second the left and
+    // right ones.
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().all(|e| !matches!(e, Expr::List(_))) =>
+    {
+      [
+        one(&items[0], d[0]),
+        one(&items[1], d[1]),
+        one(&items[0], d[2]),
+        one(&items[1], d[3]),
+      ]
+    }
     Expr::List(items) if items.len() == 2 => {
       let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
         Expr::List(p) if p.len() == 2 => (one(&p[0], d0), one(&p[1], d1)),
@@ -26049,12 +26063,20 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
 /// typeset like any other title text and measured with proportional glyph
 /// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
 /// placed by the grid's horizontal `Alignment` (`Center` by default). A
-/// single-column `Grid` stays a block of title lines unless it is framed.
+/// single-column `Grid` stays a block of title lines unless it is framed,
+/// ruled or shaded.
 ///
 /// A `Text[grid]` wrapper is the grid itself. `Frame -> All` rules every
-/// cell and `Frame -> True` draws the outer box; a framed grid gains half
-/// a column gap of padding at its left and right edges so the lines clear
-/// the text, and its rules are drawn in the title's color.
+/// cell and `Frame -> True` draws the outer box; `Dividers` rules the
+/// column and row boundaries it names. A ruled grid gains half a column gap
+/// of padding at its left and right edges so the lines clear the text, and
+/// its rules are drawn in the title's color. `SpanFromLeft` (and
+/// `SpanFromAbove`) cells merge with their neighbor, so the neighbor is
+/// centered across the span and no rule crosses it. `Background` shades
+/// the whole grid, or columns and rows (`{colspec, rowspec}`, each a color,
+/// a list of colors for the first columns or rows, or `{{c1, c2, …}}`
+/// cycled), and `ItemSize -> {{w1, w2, …}, …}` makes each column at least
+/// `w` ems wide.
 fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   use crate::functions::plot_padding::{ascent, line_pitch, text_width};
   let expr = match expr {
@@ -26080,35 +26102,109 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
     })
     .collect::<Option<_>>()?;
   let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-  #[derive(PartialEq)]
-  enum GridFrame {
-    None,
-    Outer,
-    All,
+  let num_rows = rows.len();
+  if num_cols == 0 {
+    return None;
   }
-  let frame = args[1..]
-    .iter()
-    .find_map(|opt| match opt {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(&**pattern, Expr::Identifier(n) if n == "Frame") => {
-        Some(match &**replacement {
-          Expr::Identifier(n) if n == "All" => GridFrame::All,
-          Expr::Identifier(n) if n == "True" => GridFrame::Outer,
-          _ => GridFrame::None,
-        })
-      }
+  let opt = |key: &str| {
+    args[1..].iter().find_map(|o| match option_kv(o) {
+      Some((k, v)) if k == key => Some(v),
       _ => None,
     })
-    .unwrap_or(GridFrame::None);
-  let min_cols = if frame == GridFrame::None { 2 } else { 1 };
+  };
+  // Which of the `n + 1` boundaries of `n` columns (or rows) are ruled.
+  let all_rules = |n: usize| vec![true; n + 1];
+  let outer_rules = |n: usize| {
+    let mut v = vec![false; n + 1];
+    v[0] = true;
+    v[n] = true;
+    v
+  };
+  let no_rules = |n: usize| vec![false; n + 1];
+  let (mut v_rules, mut h_rules) = match opt("Frame") {
+    Some(Expr::Identifier(n)) if n == "All" => {
+      (all_rules(num_cols), all_rules(num_rows))
+    }
+    Some(Expr::Identifier(n)) if n == "True" => {
+      (outer_rules(num_cols), outer_rules(num_rows))
+    }
+    _ => (no_rules(num_cols), no_rules(num_rows)),
+  };
+  let divider_rules = |spec: &Expr, n: usize| -> Vec<bool> {
+    match spec {
+      Expr::Identifier(s) if s == "All" || s == "True" => all_rules(n),
+      Expr::Identifier(s) if s == "Center" => {
+        let mut v = all_rules(n);
+        v[0] = false;
+        v[n] = false;
+        v
+      }
+      _ => no_rules(n),
+    }
+  };
+  if let Some(spec) = opt("Dividers") {
+    let (x, y) = match spec {
+      Expr::List(items) if items.len() == 2 => (
+        divider_rules(&items[0], num_cols),
+        divider_rules(&items[1], num_rows),
+      ),
+      other => (
+        divider_rules(other, num_cols),
+        divider_rules(other, num_rows),
+      ),
+    };
+    v_rules.iter_mut().zip(x).for_each(|(r, d)| *r |= d);
+    h_rules.iter_mut().zip(y).for_each(|(r, d)| *r |= d);
+  }
+  let ruled = v_rules.iter().chain(&h_rules).any(|r| *r);
+  // `Background`: one color for the whole grid, or `{colspec, rowspec}`.
+  let to_color = |e: &Expr| {
+    parse_color(e)
+      .or_else(|| evaluate_expr_to_expr(e).ok().and_then(|v| parse_color(&v)))
+  };
+  let band_colors = |spec: &Expr, n: usize| -> Vec<Option<Color>> {
+    match spec {
+      // `{{c1, c2, …}}` cycles its colors.
+      Expr::List(items)
+        if items.len() == 1 && matches!(&items[0], Expr::List(_)) =>
+      {
+        let Expr::List(cycle) = &items[0] else {
+          unreachable!()
+        };
+        let colors: Vec<Option<Color>> = cycle.iter().map(to_color).collect();
+        if colors.is_empty() {
+          vec![None; n]
+        } else {
+          (0..n).map(|i| colors[i % colors.len()]).collect()
+        }
+      }
+      // `{c1, c2, …}` colors the first bands in turn.
+      Expr::List(items) => {
+        (0..n).map(|i| items.get(i).and_then(to_color)).collect()
+      }
+      other => vec![to_color(other); n],
+    }
+  };
+  let (col_bg, row_bg) = match opt("Background") {
+    Some(Expr::List(items)) if items.len() == 2 => (
+      band_colors(&items[0], num_cols),
+      band_colors(&items[1], num_rows),
+    ),
+    Some(other) => (vec![None; num_cols], vec![to_color(other); num_rows]),
+    None => (vec![None; num_cols], vec![None; num_rows]),
+  };
+  let shaded = col_bg.iter().chain(&row_bg).any(Option::is_some);
+  let min_cols = if ruled || shaded { 1 } else { 2 };
+  let is_left_span = |c: &Expr| matches!(c, Expr::Identifier(s) if s == "SpanFromLeft" || s == "SpanFromBoth");
+  let is_above_span = |c: &Expr| matches!(c, Expr::Identifier(s) if s == "SpanFromAbove" || s == "SpanFromBoth");
+  let is_placeholder = |c: &Expr| is_left_span(c) || is_above_span(c);
   // A cell that stacks its own lines (a nested `Column`) has no single
   // line to align, so such a grid keeps the line-based layout.
   if num_cols < min_cols
     || rows
       .iter()
       .flat_map(|r| r.iter())
+      .filter(|c| !is_placeholder(c))
       .any(|c| expr_to_svg_markup_lines(c).len() > 1)
   {
     return None;
@@ -26116,100 +26212,226 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   // The horizontal alignment of each column: one symbol for all of them,
   // or a list cycled over the columns, possibly inside `{h, v}`.
   let mut aligns = vec!["Center"];
-  for opt in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(&**pattern, Expr::Identifier(n) if n == "Alignment")
-    {
-      let h = match &**replacement {
-        Expr::List(items) if items.len() == 2 => &items[0],
-        other => other,
-      };
-      let names: Vec<&str> = match h {
-        Expr::Identifier(n) => vec![n.as_str()],
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|i| match i {
-            Expr::Identifier(n) => Some(n.as_str()),
-            _ => None,
-          })
-          .collect(),
-        _ => Vec::new(),
-      };
-      if !names.is_empty() {
-        aligns = names;
-      }
+  if let Some(a) = opt("Alignment") {
+    let h = match a {
+      Expr::List(items) if items.len() == 2 => &items[0],
+      other => other,
+    };
+    let names: Vec<&str> = match h {
+      Expr::Identifier(n) => vec![n.as_str()],
+      Expr::List(items) => items
+        .iter()
+        .filter_map(|i| match i {
+          Expr::Identifier(n) => Some(n.as_str()),
+          _ => None,
+        })
+        .collect(),
+      _ => Vec::new(),
+    };
+    if !names.is_empty() {
+      aligns = names;
     }
   }
   let size = TITLE_FONT;
+  // Each cell's markup and the number of columns it covers; a span
+  // placeholder holds no markup of its own.
+  let cell_at = |i: usize, j: usize| rows[i].get(j);
+  let span_of = |i: usize, j: usize| {
+    1 + (j + 1..num_cols)
+      .take_while(|&k| cell_at(i, k).is_some_and(is_left_span))
+      .count()
+  };
   let markup: Vec<Vec<String>> = rows
     .iter()
-    .map(|r| r.iter().map(expr_to_svg_markup).collect())
+    .map(|r| {
+      r.iter()
+        .map(|c| {
+          if is_placeholder(c) {
+            String::new()
+          } else {
+            expr_to_svg_markup(c)
+          }
+        })
+        .collect()
+    })
     .collect();
-  let mut col_w = vec![0.0_f64; num_cols];
-  for row in &markup {
+  let gap = 0.8 * size;
+  // `ItemSize` widths (in ems) include the gap between columns.
+  let mut col_w: Vec<f64> = match opt("ItemSize") {
+    Some(Expr::List(dims)) if !dims.is_empty() => {
+      let widths: Vec<f64> = match &dims[0] {
+        Expr::List(ws) => {
+          ws.iter().map(|w| expr_to_f64(w).unwrap_or(0.0)).collect()
+        }
+        w => expr_to_f64(w).into_iter().collect(),
+      };
+      (0..num_cols)
+        .map(|j| {
+          let w = widths.get(j).or(widths.last()).copied().unwrap_or(0.0);
+          (w * size - gap).max(0.0)
+        })
+        .collect()
+    }
+    Some(w) => {
+      let w = expr_to_f64(w).unwrap_or(0.0);
+      vec![(w * size - gap).max(0.0); num_cols]
+    }
+    None => vec![0.0; num_cols],
+  };
+  for (i, row) in markup.iter().enumerate() {
     for (j, cell) in row.iter().enumerate() {
-      col_w[j] = col_w[j].max(text_width(cell, size));
+      if span_of(i, j) == 1 {
+        col_w[j] = col_w[j].max(text_width(cell, size));
+      }
     }
   }
-  let gap = 0.8 * size;
-  let pad = if frame == GridFrame::None {
-    0.0
-  } else {
-    gap / 2.0
-  };
+  // A cell spanning several columns widens the last of them if it needs to.
+  for (i, row) in markup.iter().enumerate() {
+    for (j, cell) in row.iter().enumerate() {
+      let span = span_of(i, j);
+      if span > 1 && !cell.is_empty() {
+        let have =
+          col_w[j..j + span].iter().sum::<f64>() + gap * (span - 1) as f64;
+        let need = text_width(cell, size);
+        if need > have {
+          col_w[j + span - 1] += need - have;
+        }
+      }
+    }
+  }
+  let pad = if ruled { gap / 2.0 } else { 0.0 };
   let width =
     col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64 + 2.0 * pad;
   let pitch = line_pitch(size);
-  let height = pitch * markup.len() as f64;
+  let height = pitch * num_rows as f64;
+  // The left edge of each column, and the boundaries between columns
+  // (halfway through the gap), with the outer edges at either end.
+  let col_x: Vec<f64> = col_w
+    .iter()
+    .scan(pad, |x, w| {
+      let left = *x;
+      *x += w + gap;
+      Some(left)
+    })
+    .collect();
+  let mut bounds = vec![0.0];
+  bounds.extend((1..num_cols).map(|j| col_x[j] - gap / 2.0));
+  bounds.push(width);
   let mut body = String::new();
-  for (i, row) in markup.iter().enumerate() {
-    let y = i as f64 * pitch + ascent(size);
-    let mut x0 = pad;
-    for (j, w) in col_w.iter().enumerate() {
-      if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
-        let (x, anchor) = match aligns[j % aligns.len()] {
-          "Left" => (x0, "start"),
-          "Right" => (x0 + w, "end"),
-          _ => (x0 + w / 2.0, "middle"),
-        };
-        body.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
-           xml:space=\"preserve\">{cell}</text>\n"
-        ));
-      }
-      x0 += w + gap;
+  // Column shading first, row shading over it.
+  for (j, c) in col_bg.iter().enumerate() {
+    if let Some(c) = c {
+      body.push_str(&format!(
+        "<rect x=\"{:.2}\" y=\"0\" width=\"{:.2}\" height=\"{height:.2}\" \
+         fill=\"{}\"{}/>\n",
+        bounds[j],
+        bounds[j + 1] - bounds[j],
+        c.to_svg_rgb(),
+        c.opacity_attr()
+      ));
     }
   }
-  if frame != GridFrame::None {
-    // Rules sit half a stroke inside the outer edge so none is clipped.
-    let (l, t, r, b) = (0.5, 0.5, width - 0.5, height - 0.5);
-    let mut xs = vec![l];
-    let mut ys = vec![t];
-    if frame == GridFrame::All {
-      let mut x = pad;
-      for w in &col_w[..num_cols - 1] {
-        x += w + gap / 2.0;
-        xs.push(x);
-        x += gap / 2.0;
+  for (i, c) in row_bg.iter().enumerate() {
+    if let Some(c) = c {
+      body.push_str(&format!(
+        "<rect x=\"0\" y=\"{:.2}\" width=\"{width:.2}\" height=\"{pitch:.2}\" \
+         fill=\"{}\"{}/>\n",
+        i as f64 * pitch,
+        c.to_svg_rgb(),
+        c.opacity_attr()
+      ));
+    }
+  }
+  for (i, row) in markup.iter().enumerate() {
+    let y = i as f64 * pitch + ascent(size);
+    for (j, cell) in row.iter().enumerate() {
+      if cell.is_empty() {
+        continue;
       }
-      ys.extend((1..markup.len()).map(|i| i as f64 * pitch));
-    }
-    xs.push(r);
-    ys.push(b);
-    for x in &xs {
+      let span = span_of(i, j);
+      let x0 = col_x[j];
+      let w = col_w[j..j + span].iter().sum::<f64>() + gap * (span - 1) as f64;
+      let (x, anchor) = match aligns[j % aligns.len()] {
+        "Left" => (x0, "start"),
+        "Right" => (x0 + w, "end"),
+        _ => (x0 + w / 2.0, "middle"),
+      };
+      // resvg leaves `dx` shifts out of the `text-anchor` placement, so a
+      // centered or right-aligned number sets its digit-group gaps as thin
+      // spaces instead of `<tspan dx>` gaps.
+      let cell = if anchor == "start" {
+        cell.clone()
+      } else {
+        digit_group_gaps_as_thin_spaces(cell)
+      };
       body.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{t:.2}\" x2=\"{x:.2}\" y2=\"{b:.2}\" \
-         stroke=\"currentColor\" stroke-width=\"1\"/>\n"
+        "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
+         xml:space=\"preserve\">{cell}</text>\n"
       ));
     }
-    for y in &ys {
-      body.push_str(&format!(
-        "<line x1=\"{l:.2}\" y1=\"{y:.2}\" x2=\"{r:.2}\" y2=\"{y:.2}\" \
+  }
+  if ruled {
+    // Rules sit half a stroke inside the outer edge so none is clipped.
+    let edge = |k: usize, n: usize, full: f64, at: f64| {
+      if k == 0 {
+        0.5
+      } else if k == n {
+        full - 0.5
+      } else {
+        at
+      }
+    };
+    let line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+      format!(
+        "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" \
          stroke=\"currentColor\" stroke-width=\"1\"/>\n"
-      ));
+      )
+    };
+    // Each rule runs along the cells it separates, broken where it would
+    // cross a merged cell.
+    let runs = |n: usize, crossed: &dyn Fn(usize) -> bool| {
+      let mut out: Vec<(usize, usize)> = Vec::new();
+      let mut start = None;
+      for c in 0..=n {
+        let drawn = c < n && !crossed(c);
+        match (drawn, start) {
+          (true, None) => start = Some(c),
+          (false, Some(s)) => {
+            out.push((s, c));
+            start = None;
+          }
+          _ => {}
+        }
+      }
+      out
+    };
+    // The start and end of a run of cells `a..b` along an axis whose
+    // boundaries are `at`, kept half a stroke inside the outer edges.
+    let span_ends =
+      |a: usize, b: usize, n: usize, full: f64, at: &dyn Fn(usize) -> f64| {
+        (edge(a, n, full, at(a)), edge(b, n, full, at(b)))
+      };
+    let row_y = |i: usize| i as f64 * pitch;
+    let col_b = |j: usize| bounds[j];
+    for (k, _) in v_rules.iter().enumerate().filter(|(_, r)| **r) {
+      let x = edge(k, num_cols, width, bounds[k]);
+      let crossed = |i: usize| {
+        k > 0 && k < num_cols && cell_at(i, k).is_some_and(is_left_span)
+      };
+      for (a, b) in runs(num_rows, &crossed) {
+        let (y1, y2) = span_ends(a, b, num_rows, height, &row_y);
+        body.push_str(&line(x, y1, x, y2));
+      }
+    }
+    for (k, _) in h_rules.iter().enumerate().filter(|(_, r)| **r) {
+      let y = edge(k, num_rows, height, row_y(k));
+      let crossed = |j: usize| {
+        k > 0 && k < num_rows && cell_at(k, j).is_some_and(is_above_span)
+      };
+      for (a, b) in runs(num_cols, &crossed) {
+        let (x1, x2) = span_ends(a, b, num_cols, width, &col_b);
+        body.push_str(&line(x1, y, x2, y));
+      }
     }
   }
   let svg = format!(
