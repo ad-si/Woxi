@@ -8414,7 +8414,7 @@ fn check_notebook(path: &std::path::Path) -> i32 {
         if let Some(svg) = &result.graphics {
           // `WOXI_CHECK_SVG=FILE` saves the rendered graphic for a look.
           if let Some(out) = std::env::var_os("WOXI_CHECK_SVG") {
-            // What the editor draws: text with no family set in the sans face.
+            // What the editor draws: text in the preferred Atkinson faces.
             let _ = std::fs::write(out, woxi::with_default_text_family(svg));
           }
           println!("widget {i}: graphics");

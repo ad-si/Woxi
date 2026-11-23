@@ -41277,11 +41277,21 @@ fn column_layout_svg(
     "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
+  // A column that also stacks laid-out pictures (a plot, a graphic) sets
+  // its text lines, and the text-like layouts (a `Row`, a `TableForm`),
+  // flush with their edge, as Wolfram aligns every item of a column to the
+  // same left (or right) edge; a column of text and text-like layouts
+  // alone keeps them all inset from the edge by the same amount.
+  let has_picture = cells
+    .iter()
+    .enumerate()
+    .any(|(i, c)| matches!(c, Cell::Svg { .. }) && !text_layout(i));
+  let text_edge = if has_picture { frame_padding } else { edge_pad };
   // Compute text x-coordinate based on alignment
   let text_x: f64 = match alignment {
     "middle" => total_width / 2.0,
-    "end" => total_width - edge_pad,
-    _ => edge_pad, // "start"
+    "end" => total_width - text_edge,
+    _ => text_edge, // "start"
   };
 
   let text_fill = theme().text_primary;
@@ -41368,7 +41378,11 @@ fn column_layout_svg(
         // `total_width` already holds the frame padding on both sides, so
         // a centered item sits in the middle of it and a right-aligned one
         // against the padding on the right.
-        let margin = if text_layout(i) { edge_pad } else { 0.0 };
+        let margin = if text_layout(i) && !has_picture {
+          edge_pad
+        } else {
+          0.0
+        };
         let x_off: f64 = match alignment {
           "middle" => (total_width - cw) / 2.0,
           "end" => total_width - frame_padding - cw - margin,

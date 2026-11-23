@@ -9836,10 +9836,9 @@ fn embed_used_fonts(svg: &str) -> String {
   // (a `Graphics` `Text` without `FontFamily`) relies on the stylesheet's
   // inherited default, which viewers that ignore `<style>` replace with
   // their own (serif) face, so it gets the default sans family too.
-  let body = with_default_text_family(svg);
+  let mut body = with_default_text_family(svg);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.
-  let mut body = body;
   for (family, fallback) in [
     ("Times", "serif"),
     ("Times New Roman", "serif"),
