@@ -37724,8 +37724,27 @@ mod graphics_grid {
     );
   }
 
-  /// Text that names only the generic `sans-serif` family gets the bundled
-  /// sans face spelled out, with the generic family kept as its fallback.
+  /// Text (or a group) that names only the generic `sans-serif` family gets
+  /// the default sans face put in front of it, so a host whose own generic
+  /// sans face differs still draws Wolfram's graphics face.
+  #[test]
+  fn default_text_family_names_face_before_generic_sans() {
+    let svg = "<svg><text font-family=\"sans-serif\" x=\"1\">A</text>\
+      <g font-family=\"sans-serif\"><text>B</text></g>\
+      <text font-family=\"serif\">C</text></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+       x=\"1\">A</text><g font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\"><text>B</text></g><text font-family=\"serif\">C</text>\
+       </svg>"
+    );
+  }
+
+  /// Text that names only a generic `sans-serif` / `monospace` family gets
+  /// the bundled Atkinson face spelled out, with the generic family kept as
+  /// its fallback; applying the rewrite twice changes nothing more.
   #[test]
   fn default_text_family_spells_out_generic_sans_serif() {
     let svg = "<svg><text font-family=\"sans-serif\" x=\"2\">A</text>\
@@ -37734,8 +37753,10 @@ mod graphics_grid {
     assert_eq!(
       out,
       "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
-       x=\"2\">A</text><text font-family=\"monospace\">B</text></svg>"
+       x=\"2\">A</text><text font-family=\"Atkinson Hyperlegible Mono, \
+       monospace\">B</text></svg>"
     );
+    assert_eq!(woxi::with_default_text_family(&out), out);
   }
 
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in

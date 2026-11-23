@@ -1446,18 +1446,11 @@ impl ManipulateState {
       .collect();
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
     // (a static text row has no variable, so it is filed under its label).
-    let control_visible: Vec<Option<String>> = spec
-      .controls
-      .iter()
-      .map(|raw| {
-        let key = raw.visibility_key();
-        spec
-          .control_visible
-          .iter()
-          .find(|(n, _)| *n == key)
-          .map(|(_, cond)| cond.clone())
-      })
-      .collect();
+    let control_visible: Vec<Option<String>> =
+      woxi::functions::graphics::control_visibility_conditions(
+        &spec.controls,
+        &spec.control_visible,
+      );
     let control_is_visible = vec![true; controls.len()];
     // The studio installs control values as globals (see
     // `with_scoped_globals`), not lexically like Wolfram, so a rule in the
@@ -6609,6 +6602,55 @@ mod tests {
         state.control_is_visible[i], shown,
         "`h` visibility in mode {mode}"
       );
+    }
+  }
+
+  /// A setter switching between two `PaneSelector` panes of placed sliders,
+  /// each pane headed by the same bold captions ("size", "speed"): only the
+  /// selected pane's captions are on screen. Regression: a caption repeated
+  /// across panes was filed under one key whose condition covered every
+  /// pane, so the hidden pane's captions stayed visible.
+  #[test]
+  fn repeated_captions_of_hidden_pane_are_hidden() {
+    for (side, shown) in [
+      (1, [true, true, false, false]),
+      (2, [false, false, true, true]),
+    ] {
+      let code = format!(
+        r#"Manipulate[
+          Text[{{a, b, c, d}}],
+          {{{{side, {side}, ""}}, {{1 -> "first", 2 -> "second"}}}},
+          PaneSelector[{{
+            1 -> Column[{{Style["size", Bold], Manipulate`Place[1], Style["speed", Bold], Manipulate`Place[2]}}],
+            2 -> Column[{{Style["size", Bold], Manipulate`Place[3], Style["speed", Bold], Manipulate`Place[4]}}]
+          }}, Dynamic[side]],
+          {{{{a, 1}}, 0, 5, ControlPlacement -> 1}},
+          {{{{b, 2}}, 0, 5, ControlPlacement -> 2}},
+          {{{{c, 3}}, 0, 5, ControlPlacement -> 3}},
+          {{{{d, 4}}, 0, 5, ControlPlacement -> 4}}
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let state = ManipulateState::from_expr(&expr)
+        .expect("the paned controls should build a ManipulateState");
+      assert_eq!(state.error, None, "body must evaluate cleanly");
+      let headings: Vec<bool> = state
+        .controls
+        .iter()
+        .zip(&state.control_is_visible)
+        .filter(|(c, _)| matches!(c, ControlState::Heading { .. }))
+        .map(|(_, v)| *v)
+        .collect();
+      assert_eq!(headings, shown, "caption visibility with side = {side}");
+      for (name, pane) in [("a", 1), ("b", 1), ("c", 2), ("d", 2)] {
+        let i = state
+          .controls
+          .iter()
+          .position(|c| c.name() == name)
+          .unwrap_or_else(|| panic!("`{name}` must be a control"));
+        assert_eq!(state.control_is_visible[i], pane == side, "`{name}`");
+      }
     }
   }
 
