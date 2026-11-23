@@ -58719,11 +58719,11 @@ mod cases_on_a_plot {
       let svg = export_svg(&format!(
         "Grid[{{{{{head}[RowBox[{{\"2\", SqrtBox[RowBox[{{\"p\", \"×\", \"q\"}}]]}}]], 1}}}}]"
       ));
-      assert!(
-        svg
-          .contains("2\u{221A}<tspan text-decoration=\"overline\">p×q</tspan>"),
-        "{head}: {svg}"
-      );
+      // The radical is drawn by the box layout: a stroke over its content.
+      assert!(svg.contains("<path d=\"M "), "{head}: {svg}");
+      for glyph in [">2</text>", ">p</text>", ">×</text>", ">q</text>"] {
+        assert!(svg.contains(glyph), "{head}: {glyph} missing in {svg}");
+      }
       assert!(!svg.contains("RowBox"), "{head}: {svg}");
     }
   }
