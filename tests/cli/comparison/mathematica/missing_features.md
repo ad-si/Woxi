@@ -272,7 +272,7 @@ Woxi does **not** support.
 - Machine learning: `LearnDistribution`, `FindAnomalies`, `AttentionLayer`
 - Recognition: `ImageCases`, `ImageContents`, `AudioIdentify`,
     `PitchRecognize`
-- Chemistry: `MoleculePlot3D`, `FindMoleculeSubstructure`
+- Chemistry: `FindMoleculeSubstructure`
 - NLP: `TextContents`, `Synonyms`, `Antonyms`, and most `TextCases`
     content types (basic classes like `"Word"` work)
 - `Iconize`

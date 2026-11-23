@@ -1932,30 +1932,24 @@ pub fn dispatch_predicate_functions(
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
-        let Expr::Identifier(opt_name) = &opt_arg else {
+        let Some(opt_names) = requested_option_names(&opt_arg) else {
           return Some(Ok(Expr::List(vec![].into())));
         };
-        let named = |rules: Vec<Expr>| -> Vec<Expr> {
-          rules
-            .into_iter()
-            .filter(|rule| match rule {
-              Expr::Rule { pattern, .. }
-              | Expr::RuleDelayed { pattern, .. } => {
-                matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt_name)
-              }
-              _ => false,
-            })
-            .collect()
-        };
-        let mut matching = named(opts);
-        // A graphic only carries the options it was drawn with, so an
-        // option it says nothing about reads as its head's default —
-        // `Options[Graphics[…], ImageSize]` is `{ImageSize -> Automatic}`.
-        if matching.is_empty()
-          && let Some(head) =
-            crate::functions::graphics::graphics_options_head(&func_arg)
-        {
-          matching = named(builtin_default_options(head));
+        let defaults =
+          crate::functions::graphics::graphics_options_head(&func_arg)
+            .map(builtin_default_options);
+        let mut matching = Vec::new();
+        for opt_name in &opt_names {
+          let mut found = rules_named(&opts, opt_name);
+          // A graphic only carries the options it was drawn with, so an
+          // option it says nothing about reads as its head's default —
+          // `Options[Graphics[…], ImageSize]` is `{ImageSize -> Automatic}`.
+          if found.is_empty()
+            && let Some(defaults) = &defaults
+          {
+            found = rules_named(defaults, opt_name);
+          }
+          matching.extend(found);
         }
         return Some(Ok(Expr::List(matching.into())));
       }
@@ -1976,20 +1970,12 @@ pub fn dispatch_predicate_functions(
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
-      let opt_name = match &opt_arg {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Some(Ok(Expr::List(vec![].into())));
-        }
+      let Some(opt_names) = requested_option_names(&opt_arg) else {
+        return Some(Ok(Expr::List(vec![].into())));
       };
-      let matching: Vec<Expr> = opts
-        .into_iter()
-        .filter(|rule| match rule {
-          Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-            matches!(pattern.as_ref(), Expr::Identifier(n) if *n == opt_name)
-          }
-          _ => false,
-        })
+      let matching: Vec<Expr> = opt_names
+        .iter()
+        .flat_map(|opt_name| rules_named(&opts, opt_name))
         .collect();
       return Some(Ok(Expr::List(matching.into())));
     }
@@ -2842,3 +2828,33 @@ pub(crate) const DEFINITION_SECTIONS: &[&str] = &[
   "Messages",
   "Attributes",
 ];
+
+/// The option names `Options[obj, spec]` asks for: one symbol, or a list
+/// of them (`Options[obj, {a, b}]`), answered in the order requested.
+fn requested_option_names(spec: &Expr) -> Option<Vec<String>> {
+  match spec {
+    Expr::Identifier(name) => Some(vec![name.clone()]),
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::Identifier(name) => Some(name.clone()),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  }
+}
+
+/// The rules among `rules` whose left-hand side is the symbol `name`.
+fn rules_named(rules: &[Expr], name: &str) -> Vec<Expr> {
+  rules
+    .iter()
+    .filter(|rule| match rule {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        matches!(pattern.as_ref(), Expr::Identifier(n) if n == name)
+      }
+      _ => false,
+    })
+    .cloned()
+    .collect()
+}

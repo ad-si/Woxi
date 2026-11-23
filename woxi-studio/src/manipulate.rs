@@ -9695,7 +9695,9 @@ pub fn flow_to_content_width(
     render.expr.as_ref()?,
     width,
   )?;
-  woxi::interpret_with_stdout(&woxi::syntax::expr_to_input_form(&flowed))
+  // Read back as source, so a `TraditionalForm` layout stays one rather
+  // than turning into the box text InputForm shows it as.
+  woxi::interpret_with_stdout(&woxi::syntax::expr_to_source_form(&flowed))
     .ok()
     .filter(|r| r.graphics.is_some())
 }
@@ -9853,6 +9855,74 @@ mod repeated_option_tests {
     assert!(svg.contains(", 79, 80}}<"), "{svg}");
     let lines = svg.matches("<text").count();
     assert!(lines > 2, "the nested list spans {lines} lines: {svg}");
+  }
+
+  /// Evaluate the body of the Manipulate `code` at its initial values and
+  /// re-flow it to its `ContentSize` width, checking that it was too wide
+  /// before. Returns the re-flowed SVG and the content width.
+  fn flowed_content_svg(code: &str) -> (String, f64) {
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let width = state.content_width.expect("a ContentSize width");
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the output is a picture"),
+    )
+    .0;
+    assert!(wide > width, "the unbroken output is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, width).expect("the output is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed output is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= width + 0.5, "the re-flowed output is {w} wide: {svg}");
+    (svg, width)
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (ideals of a matrix
+  /// and their Gröbner bases). Its output is a `Column` in
+  /// `TraditionalForm` whose last line is `Row[{list, "."}]` holding a
+  /// long list of polynomials. The FrontEnd breaks that row at the
+  /// `ContentSize` width; it used to run off in one very long line,
+  /// because neither the `TraditionalForm` wrapper nor a `Row` around the
+  /// list was looked through.
+  #[test]
+  fn content_size_width_breaks_a_traditional_form_row_holding_a_list() {
+    let (svg, _) = flowed_content_svg(
+      "Manipulate[\
+         Text[TraditionalForm[Column[{\"Basis\", \
+           Style[Row[{Table[x^k + y^k, {k, 1, n}], \".\"}], 10]}]]], \
+         {{n, 30}, 1, 40, 1}, ContentSize -> {300, 200}]",
+    );
+    // The heading is kept, the list spans several lines, and the period
+    // after the list still ends the last one.
+    assert!(svg.contains(">Basis<"), "{svg}");
+    let lines = svg.matches("<svg").count();
+    assert!(lines > 3, "the row spans too few lines: {svg}");
+    let last_brace = svg.rfind('}').expect("the list closes");
+    assert!(svg[last_brace..].contains('.'), "{svg}");
+    // Typeset in TraditionalForm: the highest power comes first.
+    assert!(svg.contains(">30<"), "{svg}");
+  }
+
+  /// A single polynomial too long for the content area breaks between its
+  /// terms (after a `+` or `-`), as the FrontEnd breaks a long sum,
+  /// rather than overflowing the area when there is no comma to break at.
+  #[test]
+  fn content_size_width_breaks_a_long_sum_between_terms() {
+    let (svg, width) = flowed_content_svg(
+      "Manipulate[\
+         Text[Column[{Style[{Sum[k x^k, {k, 1, n}]}, 10]}]], \
+         {{n, 40}, 1, 50, 1}, ContentSize -> {250, 200}]",
+    );
+    assert_eq!(width, 250.0);
+    // Each broken line ends in the operator before the next term.
+    assert!(svg.contains("+<") || svg.contains("+ <"), "{svg}");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
