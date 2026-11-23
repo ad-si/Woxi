@@ -6511,7 +6511,8 @@ fn locator_marker_units(
 /// `LocatorPane` marker's default size is scaled against, for a body that
 /// only exists as a rendered picture (so there is no `PlotRange` option
 /// lying around in a primitive list to read, as `locator_pane_graphic`
-/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
+/// reads for the symbolic-`Graphics` case): a plot's stored ranges, or a
+/// combination's symbolic form. Falls back to `1.0` — matching
 /// that case's own fallback — when the picture carries no source range (a
 /// plain `Graphics[…]` with no plot data, or a picture kind that keeps
 /// none).
@@ -6527,6 +6528,39 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
       .aspect_ratio
       .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
     return locator_marker_units(x_extent, y_extent, aspect);
+  }
+  // A combination (`Show[plot, Graphics[…]]`) keeps no plot source, only
+  // its symbolic `Graphics[prims, opts]`: it is measured by that, as
+  // `PlotRange[g]` is, with an explicit numeric `AspectRatio` (its options
+  // given one by one or as one list) or else `Automatic`.
+  if let Expr::Graphics {
+    structure: Some(structure),
+    is_3d: false,
+    ..
+  } = body
+    && let Some(((x0, x1), (y0, y1))) =
+      crate::functions::graphics::absolute_plot_range(structure)
+  {
+    let aspect = match structure.as_ref() {
+      Expr::FunctionCall { args, .. } => args
+        .iter()
+        .skip(1)
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .find_map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "AspectRatio") => {
+            crate::functions::math_ast::try_eval_to_f64(&replacement)
+          }
+          _ => None,
+        }),
+      _ => None,
+    };
+    return locator_marker_units((x1 - x0).abs(), (y1 - y0).abs(), aspect);
   }
   (1.0, 1.0)
 }

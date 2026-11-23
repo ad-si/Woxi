@@ -34153,6 +34153,39 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // A plot combined with a drawing (`Show[plot, Graphics[…]]`) keeps no
+    // plot data of its own, only its symbolic form; the default marker is
+    // still sized against that form's plot range, so it is as large a part
+    // of the picture as on the plot alone, not a tenth of it.
+    #[test]
+    fn locator_pane_default_marker_sized_by_a_shown_combination() {
+      let plot = "Plot[Sin[x], {x, 0.1, 2}, PlotRange -> {{0, 2 Pi}, {-5, 5}}, \
+         ImageSize -> {Automatic, 270}, AspectRatio -> Automatic]";
+      // The marker's radius as a fraction of the picture's view box width.
+      let share = |body: &str| {
+        clear_state();
+        let svg = export_svg(&format!("LocatorPane[{{1, 0}}, {body}]"));
+        let vb = &svg[svg.find("viewBox=\"").unwrap() + 9..];
+        let width: f64 = vb[..vb.find('"').unwrap()]
+          .split(' ')
+          .nth(2)
+          .unwrap()
+          .parse()
+          .unwrap();
+        first_ellipse_radii(&svg).0 / width
+      };
+      let alone = share(plot);
+      assert!(alone > 0.01, "plot alone: {alone}");
+      let shown = share(&format!(
+        "Show[{plot}, Graphics[{{Line[{{{{0, 0}}, {{1, 0}}}}]}}], \
+         AspectRatio -> Automatic]"
+      ));
+      assert!(
+        (shown - alone).abs() / alone < 0.2,
+        "shown {shown} vs alone {alone}"
+      );
+    }
+
     // In a plot's `Epilog`, `Translate` moves a circle's center but not its
     // `{rx, ry}` radius (a length that would otherwise pass for a point),
     // and `Scale` stretches the radius along with the center.
