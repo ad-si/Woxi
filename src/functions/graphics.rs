@@ -38053,10 +38053,12 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
     current = call1("TraditionalForm", current);
   } else if traditional
     && matches!(&current, Expr::String(s)
-      if inline_box_string_to_box_expr(s).is_some())
+      if inline_box_string_to_box_expr(s).is_some()
+        && !has_stacked_inline_box(s))
   {
-    // Its box code is still set traditionally — the single-letter symbols
-    // in italics — so the form stays on for the renderer.
+    // Its one-line box code is still set traditionally — the single-letter
+    // symbols in italics — so the form stays on for the renderer. (Stacked
+    // box code, a fraction or root, is laid out by the box renderer.)
     current = call1("TraditionalForm", current);
   } else if traditional {
     current = traditionalize_layout_items(&current);
