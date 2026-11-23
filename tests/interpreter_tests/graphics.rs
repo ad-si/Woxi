@@ -5565,6 +5565,66 @@ mod graphics {
       assert!(off(p, edges[2]) > 1.0, "{edges:?}");
     }
 
+    /// A boxed `Graphics3D` honors `AxesOrigin` too: the axes cross at the
+    /// point inside the box, while an all-`Automatic` origin keeps them on
+    /// the box edges.
+    #[test]
+    fn boxed_graphics3d_axes_origin_crosses_axes_inside_the_box() {
+      // The axis lines (box edges are drawn thinner), as screen segments.
+      let axes = |svg: &str| -> Vec<[f64; 4]> {
+        svg
+          .lines()
+          .filter(|l| {
+            l.starts_with("<line ") && l.contains("stroke-width=\"1\"")
+          })
+          .map(|l| {
+            let attr = |name: &str| -> f64 {
+              let key = format!("{name}=\"");
+              let rest = &l[l.find(&key).unwrap() + key.len()..];
+              rest[..rest.find('"').unwrap()].parse().unwrap()
+            };
+            [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+          })
+          .collect()
+      };
+      // Where the lines through two segments meet.
+      let meet = |a: [f64; 4], b: [f64; 4]| -> (f64, f64) {
+        let (d1x, d1y) = (a[2] - a[0], a[3] - a[1]);
+        let (d2x, d2y) = (b[2] - b[0], b[3] - b[1]);
+        let den = d1x * d2y - d1y * d2x;
+        let t = ((b[0] - a[0]) * d2y - (b[1] - a[1]) * d2x) / den;
+        (a[0] + t * d1x, a[1] + t * d1y)
+      };
+      // How far a point is from the line through a segment.
+      let off = |p: (f64, f64), s: [f64; 4]| -> f64 {
+        let (dx, dy) = (s[2] - s[0], s[3] - s[1]);
+        ((p.0 - s[0]) * dy - (p.1 - s[1]) * dx).abs() / dx.hypot(dy)
+      };
+      // Whether a point lies strictly between a segment's ends.
+      let inside = |p: (f64, f64), s: [f64; 4]| -> bool {
+        let (dx, dy) = (s[2] - s[0], s[3] - s[1]);
+        let t = ((p.0 - s[0]) * dx + (p.1 - s[1]) * dy) / (dx * dx + dy * dy);
+        t > 0.1 && t < 0.9
+      };
+      let scene = "Graphics3D[Point[{{-2, -3, -4}, {2, 3, 4}}], Axes -> True";
+      let crossing =
+        axes(&export_svg(&format!("{scene}, AxesOrigin -> {{0, 0, 0}}]")));
+      assert_eq!(crossing.len(), 3, "{crossing:?}");
+      let p = meet(crossing[0], crossing[1]);
+      assert!(off(p, crossing[2]) < 0.3, "{crossing:?}");
+      assert!(crossing.iter().all(|s| inside(p, *s)), "{crossing:?}");
+      for origin in [
+        "",
+        ", AxesOrigin -> Automatic",
+        ", AxesOrigin -> {Automatic, Automatic, Automatic}",
+      ] {
+        let edges = axes(&export_svg(&format!("{scene}{origin}]")));
+        assert_eq!(edges.len(), 3, "{origin}: {edges:?}");
+        let p = meet(edges[0], edges[1]);
+        assert!(!edges.iter().all(|s| inside(p, *s)), "{origin}: {edges:?}");
+      }
+    }
+
     /// Automatic 3D box ticks step by the smallest of 1, 2 and 5 × 10^k
     /// that leaves fewer than five intervals: a 10-wide axis by 5 (whole
     /// labels, no 2.5 steps), a 2-wide axis by 0.5.
