@@ -1088,6 +1088,40 @@ mod layout_display {
     let i = svg.find(">i=1<").expect("lower limit");
     assert!(n < s && s < i, "{svg}");
   }
+
+  /// A styled `Underoverscript` (as `Style`/`Text` around a row push onto
+  /// its items) still stacks its limits, the base at the style's size and
+  /// the limits at script size.
+  #[test]
+  fn styled_underoverscript_stacks_its_limits() {
+    for expr in [
+      "Style[Underoverscript[\"S\", \"i=1\", \"n\"], 20]",
+      "Style[Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}], 20]",
+      "Text[Style[Column[{Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}]}], 20]]",
+    ] {
+      let svg = svg_of(expr);
+      assert!(!svg.contains("Underoverscript"), "{expr}: {svg}");
+      let n = svg.find(">n<").expect("upper limit");
+      let s = svg.find(">S<").expect("base");
+      let i = svg.find(">i=1<").expect("lower limit");
+      assert!(n < s && s < i, "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"20"), "{expr}: {svg}");
+      assert!(!svg.contains("font-size=\"10\""), "{expr}: {svg}");
+    }
+  }
+
+  #[test]
+  fn underoverscript_to_boxes() {
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z]]").unwrap(),
+      "UnderoverscriptBox[x, y, z]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z], TraditionalForm]").unwrap(),
+      "FormBox[UnderoverscriptBox[x, y, z], TraditionalForm]"
+    );
+  }
+
   #[test]
   fn held_standard_roots_and_matrix_baselines_typeset() {
     let svg = svg_of("StandardForm[HoldForm[Sqrt[x/(1+x)]]]");
