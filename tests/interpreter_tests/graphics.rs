@@ -37724,6 +37724,20 @@ mod graphics_grid {
     );
   }
 
+  /// Text that names only the generic `sans-serif` family gets the bundled
+  /// sans face spelled out, with the generic family kept as its fallback.
+  #[test]
+  fn default_text_family_spells_out_generic_sans_serif() {
+    let svg = "<svg><text font-family=\"sans-serif\" x=\"2\">A</text>\
+      <text font-family=\"monospace\">B</text></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+       x=\"2\">A</text><text font-family=\"monospace\">B</text></svg>"
+    );
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked

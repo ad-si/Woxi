@@ -11382,7 +11382,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
   /// `TraditionalForm` at a large size. The widget shows it typeset
-  /// (subscripts, operator, font size), like an output cell, instead of the
+  /// (subscripts, operator, font size) in the `Pane`'s picture, instead of the
   /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
   /// copied from any specific Demonstration.
   #[test]
@@ -11411,6 +11411,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       (None, Some(svg)) => svg.clone(),
       (None, None) => panic!("the textual result is typeset"),
     };
+    // The `Pane` lays the typeset text out at its stated size.
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
