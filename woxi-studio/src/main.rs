@@ -24165,10 +24165,16 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
       assert!(published.contains(text), "expected {text} in the frame");
     }
     // A trajectory is a long polyline of colored segments, not a handful.
+    // Segments are drawn as `<line>`s or joined into `<polyline>`s.
+    let segments = published.matches("<line").count()
+      + published
+        .split("<polyline points=\"")
+        .skip(1)
+        .map(|p| p.split('"').next().unwrap_or("").split(' ').count() - 1)
+        .sum::<usize>();
     assert!(
-      published.matches("<line").count() > 500,
-      "expected a resolved trajectory, got {} segments",
-      published.matches("<line").count()
+      segments > 500,
+      "expected a resolved trajectory, got {segments} segments"
     );
     // Integrating over a shorter interval draws a different trajectory.
     assert_ne!(render(5.0), published, "the time control must matter");
