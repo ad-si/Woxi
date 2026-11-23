@@ -6169,6 +6169,14 @@ fn scripted_line_height_em(has_super: bool, has_sub: bool) -> f64 {
   (2.0 * above.max(below)).max(1.0)
 }
 
+/// The text of a `Grid` item without the line break it ends in: the front
+/// end starts no further line after it, so `"\n"` (a Demonstration's spacer
+/// row between two lines of a readout) is one empty line high, and
+/// `"a\n"` one line holding `a`.
+fn without_trailing_line_break(markup: &str) -> &str {
+  markup.strip_suffix('\n').unwrap_or(markup)
+}
+
 fn markup_line_height(markup: &str, base: f64) -> f64 {
   let mut largest = base;
   for part in markup.split("font-size=\"").skip(1) {
@@ -15515,9 +15523,10 @@ fn svg_escape_with_styles(
       continue;
     }
     out.push_str(&svg_escape(&chars[pos..start].iter().collect::<String>()));
-    out.push_str(&format!("<tspan{attrs}>"));
-    out.push_str(&svg_escape(&chars[start..end].iter().collect::<String>()));
-    out.push_str("</tspan>");
+    out.push_str(&distribute_style_over_runs(
+      &attrs,
+      &svg_escape(&chars[start..end].iter().collect::<String>()),
+    ));
     pos = end;
   }
   out.push_str(&svg_escape(&chars[pos..].iter().collect::<String>()));
@@ -23184,25 +23193,119 @@ fn wrap_style_tspan(attrs: &str, content: &str) -> String {
   let Some((inner_attrs, body)) = sole_inner else {
     return format!("<tspan{attrs}>{content}</tspan>");
   };
-  // Attributes are ` name="value"` pairs; keep the outer ones the inner run
-  // does not set itself.
-  let names = |a: &str| -> Vec<String> {
-    a.split('"')
-      .step_by(2)
-      .filter_map(|chunk| chunk.trim().strip_suffix('='))
-      .map(str::to_string)
+  format!(
+    "<tspan{}>{body}</tspan>",
+    merge_tspan_attrs(attrs, inner_attrs)
+  )
+}
+
+/// The attributes of a `tspan` nested in one with `outer` attributes,
+/// merged into one list: the inner ones win, except that a relative inner
+/// `font-size` (a script's `70%`) is resolved against an absolute outer
+/// one.
+fn merge_tspan_attrs(outer: &str, inner: &str) -> String {
+  // Attributes are ` name="value"` pairs.
+  let pairs = |a: &str| -> Vec<(String, String)> {
+    a.split_inclusive('"')
+      .collect::<Vec<_>>()
+      .chunks(2)
+      .filter_map(|pair| {
+        let pair = pair.concat();
+        let (name, value) = pair.trim().split_once('=')?;
+        Some((name.to_string(), value.trim_matches('"').to_string()))
+      })
       .collect()
   };
-  let inner_names = names(inner_attrs);
-  let mut merged = String::new();
-  for pair in attrs.split_inclusive('"').collect::<Vec<_>>().chunks(2) {
-    let pair = pair.concat();
-    let name = pair.trim().split('=').next().unwrap_or("").to_string();
-    if !inner_names.contains(&name) {
-      merged.push_str(&pair);
+  let outer = pairs(outer);
+  let mut inner = pairs(inner);
+  let outer_size = outer
+    .iter()
+    .find(|(n, _)| n == "font-size")
+    .and_then(|(_, v)| v.parse::<f64>().ok());
+  for (name, value) in &mut inner {
+    if name == "font-size"
+      && let (Some(base), Some(percent)) = (
+        outer_size,
+        value.strip_suffix('%').and_then(|p| p.parse::<f64>().ok()),
+      )
+    {
+      *value =
+        format!("{}", (base * percent / 100.0 * 1000.0).round() / 1000.0);
     }
   }
-  format!("<tspan{merged}{inner_attrs}>{body}</tspan>")
+  let mut merged = String::new();
+  for (name, value) in outer
+    .iter()
+    .filter(|(n, _)| !inner.iter().any(|(i, _)| i == n))
+    .chain(inner.iter())
+  {
+    merged.push_str(&format!(" {name}=\"{value}\""));
+  }
+  merged
+}
+
+/// `content` set in a `Style` run with `attrs`, kept one `tspan` deep: the
+/// plain text is wrapped in a run of its own and the directives are merged
+/// into each run `content` already holds ([`merge_tspan_attrs`]) — an
+/// italic string holding a subscript in box notation, say. resvg (Woxi
+/// Studio's renderer) resets the baseline of a doubly nested `tspan`, which
+/// drew such a subscript unshifted on the line.
+fn distribute_style_over_runs(attrs: &str, content: &str) -> String {
+  let nested = || format!("<tspan{attrs}>{content}</tspan>");
+  if !content.contains("<tspan") {
+    return nested();
+  }
+  let mut out = String::with_capacity(content.len() + attrs.len() * 2);
+  let mut text = String::new();
+  let flush = |text: &mut String, out: &mut String| {
+    if !text.is_empty() {
+      out.push_str(&format!("<tspan{attrs}>{text}</tspan>"));
+      text.clear();
+    }
+  };
+  let mut depth = 0usize;
+  let mut rest = content;
+  while let Some(lt) = rest.find('<') {
+    let (before, tail) = rest.split_at(lt);
+    let Some(gt) = tail.find('>') else {
+      return nested();
+    };
+    let tag = &tail[..=gt];
+    if depth == 0 {
+      text.push_str(before);
+    } else {
+      out.push_str(before);
+    }
+    if let Some(open_attrs) = tag
+      .strip_prefix("<tspan")
+      .and_then(|t| t.strip_suffix('>'))
+      .filter(|t| !t.ends_with('/'))
+    {
+      if depth == 0 {
+        flush(&mut text, &mut out);
+        out.push_str(&format!(
+          "<tspan{}>",
+          merge_tspan_attrs(attrs, open_attrs)
+        ));
+      } else {
+        out.push_str(tag);
+      }
+      depth += 1;
+    } else if tag == "</tspan>" && depth > 0 {
+      depth -= 1;
+      out.push_str(tag);
+    } else {
+      // Some other element is not a run this knows how to restyle.
+      return nested();
+    }
+    rest = &tail[gt + 1..];
+  }
+  if depth != 0 {
+    return nested();
+  }
+  text.push_str(rest);
+  flush(&mut text, &mut out);
+  out
 }
 
 /// Give every `tspan` nested inside another one the text's
@@ -31921,7 +32024,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
         parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
       });
     }
-    Expr::Graphics { svg, .. } => svg.clone(),
+    // An automatically sized picture is drawn at the reduced size of the
+    // layout it sits in.
+    Expr::Graphics { svg, .. } => {
+      crate::functions::container_layout::resized_graphic_svg(cell)
+        .unwrap_or_else(|| svg.clone())
+    }
     // A raster image is drawn at its display size (its `ImageSize`, else
     // its pixel dimensions), like any other picture, so the row it sits in
     // — also one it spans with `SpanFromLeft` — is sized to hold it.
@@ -32263,7 +32371,10 @@ fn is_multiline_text_cell(cell: &Expr) -> bool {
   if grid_cell_graphic(cell).is_some() || has_fraction(cell) {
     return false;
   }
-  expr_to_svg_markup(extract_cell_style(cell).content).contains('\n')
+  without_trailing_line_break(&expr_to_svg_markup(
+    extract_cell_style(cell).content,
+  ))
+  .contains('\n')
 }
 
 /// The vertical part of an `Alignment` spec: `Top`, `Bottom`, `Baseline`,
@@ -33336,6 +33447,23 @@ fn grid_svg_styled_internal(
   }
   GRID_ITEM_DEPTH.with(|d| d.set(d.get() + 1));
   let _leave = LeaveGrid;
+  // A grid (also a styled one, a `TableForm` or a `MatrixForm`) draws its
+  // automatically sized pictures at the reduced size of a list.
+  crate::functions::container_layout::with_image_size_multiplier(
+    crate::functions::container_layout::LIST_MULTIPLIER,
+    || {
+      grid_svg_with_message_policy(args, group_gaps, parens, outer_style, loud)
+    },
+  )
+}
+
+fn grid_svg_with_message_policy(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+  outer_style: &GridStyle,
+  loud: bool,
+) -> Result<String, InterpreterError> {
   if parens || loud {
     let result =
       grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
@@ -33464,6 +33592,24 @@ fn grid_svg_styled_internal_reporting(
         }
       }
       *cell = resolve_display_item(cell);
+      eprintln!(
+        "BEFORE {}",
+        crate::syntax::expr_to_string(cell)
+          .chars()
+          .take(80)
+          .collect::<String>()
+      );
+      if let Expr::Graphics { svg, .. } = &*cell {
+        eprintln!("AFTER {}", &svg[..60.min(svg.len())]);
+      } else {
+        eprintln!(
+          "AFTER {}",
+          crate::syntax::expr_to_string(cell)
+            .chars()
+            .take(80)
+            .collect::<String>()
+        );
+      }
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
       *cell = nested_grid_cell_in_grid_style(cell, default_style);
@@ -34327,11 +34473,11 @@ fn grid_svg_styled_internal_reporting(
       if grid_cell_graphic(cell).is_none() && !has_fraction(cell) {
         let style = extract_cell_style(cell);
         let markup = expr_to_svg_markup(style.content);
+        let markup = without_trailing_line_break(&markup);
         let base = style.font_size.unwrap_or(font_size);
         if markup.contains('\n') {
           let lines = markup.split('\n').count() as f64;
-          cell_h =
-            cell_h.max(pad_y + lines * markup_line_height(&markup, base));
+          cell_h = cell_h.max(pad_y + lines * markup_line_height(markup, base));
         } else {
           // A raised (or lowered) script may reach past the line's own
           // glyphs; the row grows just enough to keep it inside.
@@ -34912,7 +35058,9 @@ fn grid_svg_styled_internal_reporting(
         } else {
           theme().text_primary.to_string()
         };
-        let markup = cell_decoration.markup(&expr_to_svg_markup(text_content));
+        let markup = cell_decoration.markup(without_trailing_line_break(
+          &expr_to_svg_markup(text_content),
+        ));
         // A centered or right-aligned number in the proportional default
         // face sets its digit-group gaps as thin spaces: resvg leaves `dx`
         // shifts out of the `text-anchor` placement, so a `<tspan dx>` gap
@@ -63250,10 +63398,36 @@ Italic], \" = \", 3}]]], \"SVG\"]",
     .unwrap();
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\">\
-<tspan baseline-shift=\"sub\" font-size=\"70%\">eq</tspan></tspan> = 3"
+        "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\" \
+baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
       ),
       "{svg}"
+    );
+  }
+
+  /// A styled string holding a subscript in box notation
+  /// (`Style["\!\(\*SubscriptBox[\(f\), \(s\)]\)", Italic]`) keeps its
+  /// script one `tspan` deep, the style merged into it. resvg (Woxi
+  /// Studio's renderer) resets the baseline of a doubly nested `tspan`, so
+  /// the nested form drew the script on the line, unshifted.
+  #[test]
+  fn styled_box_subscript_in_text_row_stays_one_tspan_deep() {
+    let svg = crate::interpret(
+      "ExportString[Graphics[Text[Row[{Style[\"\\!\\(\\*SubscriptBox[\\(g\\), \
+\\(k\\)]\\)\", Italic, Red], \" = \", 5}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\" fill=\"rgb(255,0,0)\">g</tspan>\
+<tspan font-style=\"italic\" fill=\"rgb(255,0,0)\" baseline-shift=\"sub\" \
+font-size=\"70%\">k</tspan> = 5"
+      ),
+      "{svg}"
+    );
+    assert!(
+      !svg
+        .contains("<tspan font-style=\"italic\" fill=\"rgb(255,0,0)\"><tspan")
     );
   }
 
