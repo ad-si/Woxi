@@ -33364,11 +33364,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         y,
         ..
       } => {
-        // No explicit corner bounds were given, so the range must fall back
-        // to a box padded by at least 1 unit around the initial point {2,2}
-        // (a degenerate single-point bounding box pads by a full unit).
+        // No explicit corner bounds were given, so the (invisible) Locator
+        // moves over the picture the body draws: the 7×7 lattice of
+        // squares reaching 0.4 past the outer points.
         assert_eq!((*x, *y), (2.0, 2.0));
-        assert_eq!((*x_min, *x_max, *y_min, *y_max), (1.0, 3.0, 1.0, 3.0));
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-0.4, 6.4, -0.4, 6.4));
       }
       other => panic!("expected `query` as a Slider2D stand-in, got {other:?}"),
     }
