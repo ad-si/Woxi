@@ -40644,9 +40644,31 @@ fn column_layout_svg(
   }
 
   // Compute column width from widest item
+  // A nested layout of text (a `Row` of typeset math, possibly drawn
+  // ahead as a picture by the caller) carries the same blank margin beside
+  // its lines as a text item, so a line of math starts where a line of
+  // prose does.
+  let text_layouts: Vec<bool> = cells
+    .iter()
+    .enumerate()
+    .map(|(i, c)| match c {
+      Cell::Svg { picture, .. } => text_items
+        .and_then(|t| t.get(i).copied())
+        .unwrap_or_else(|| {
+          !*picture
+            && !items
+              .get(i)
+              .is_some_and(crate::evaluator::lays_out_a_graphic)
+        }),
+      Cell::Text(..) => false,
+    })
+    .collect();
+  let text_layout = |i: usize| text_layouts[i];
   let col_width: f64 = cells
     .iter()
-    .map(|c| match c {
+    .enumerate()
+    .map(|(i, c)| match c {
+      Cell::Svg { width, .. } if text_layout(i) => *width + pad_x,
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
@@ -40877,11 +40899,12 @@ fn column_layout_svg(
         height: ch,
         ..
       } => {
+        let margin = if text_layout(i) { edge_pad } else { 0.0 };
         let x_off: f64 = frame_padding
           + match alignment {
             "middle" => (total_width - cw) / 2.0,
-            "end" => total_width - cw,
-            _ => 0.0,
+            "end" => total_width - cw - margin,
+            _ => margin,
           };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
@@ -54941,6 +54964,38 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       let mut runs = side(left);
       runs.push(LabelRun {
         text: text.to_string(),
+        italic: false,
+        ..Default::default()
+      });
+      runs.extend(side(right));
+      runs
+    }
+    // A held quotient of plain pieces (a caption's `FractionBox[1, x]`)
+    // reads `1/x` as written. Its OutputForm would print the evaluated
+    // reciprocal `x^(-1)` instead.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      // A compound side keeps its OutputForm operators (`(a*b*c)/2`).
+      let side = |e: &Expr| {
+        if label_is_compound(e) {
+          vec![LabelRun {
+            text: format!(
+              "({})",
+              crate::syntax::format_expr(e, crate::syntax::ExprForm::Output)
+            ),
+            italic,
+            ..Default::default()
+          }]
+        } else {
+          manipulate_label_runs(e, italic)
+        }
+      };
+      let mut runs = side(left);
+      runs.push(LabelRun {
+        text: "/".to_string(),
         italic: false,
         ..Default::default()
       });

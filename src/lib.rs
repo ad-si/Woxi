@@ -5670,6 +5670,20 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// `Column[{"hi", TableForm[{{1,2},{3,4}}]}]` embeds actual graphics rather
 /// than their textual echoes) and render the whole column as a vertical
 /// SVG. `None` when the arguments don't form a renderable column.
+/// The content a `Style[…]`/`Text[…]` wrapper shows (`expr` itself when it
+/// is neither): a styled sized pane is still a sized pane.
+fn styled_content(expr: &syntax::Expr) -> &syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Style" && !args.is_empty())
+        || (name == "Text" && args.len() == 1) =>
+    {
+      styled_content(&args[0])
+    }
+    _ => expr,
+  }
+}
+
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
@@ -5697,7 +5711,7 @@ pub(crate) fn column_svg_with_rendered_items(
             item,
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
-            && pane_fixed_size(item).is_none()
+            && pane_fixed_size(styled_content(item)).is_none()
             // A `Framed` box is drawn edge to edge — its frame is its
             // outline, with no blank line margin around it to take out
             // of an explicit spacing.

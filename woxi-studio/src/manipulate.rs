@@ -7907,6 +7907,23 @@ mod tests {
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
   }
 
+  /// A setter choice captioned with a plain typeset fraction
+  /// (`\!\(\*FractionBox[\(1\), \(x\)]\)`) reads `1/x` as written, not
+  /// the OutputForm of the reciprocal `x^(-1)`; a compound side is
+  /// parenthesized.
+  #[test]
+  fn setter_label_keeps_plain_reciprocal_fraction() {
+    let code = r#"Manipulate[r, {{r, p, "pick"}, {p -> "f(\!\(\*FractionBox[\(1\), \(x\)]\))", q -> "\!\(\*FractionBox[\(a + b\), \(c\)]\)", s -> "\!\(\*FractionBox[\(x\), \(y\)]\)"}, ControlType -> SetterBar}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(
+      dump.contains(r#"value_labels: ["f(1/x)", "(a + b)/c", "x/y"]"#),
+      "{dump}"
+    );
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
