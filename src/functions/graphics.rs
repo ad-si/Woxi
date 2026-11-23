@@ -27890,6 +27890,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   };
   let ps = log_scaled_plot_source(ps);
   let ps = ps.as_ref();
+  // The curves are cut at the plot's own range, not at the padded one it
+  // is drawn in: the `PlotRangePadding` margin stays blank, as in a plot
+  // drawn on its own (and in Wolfram).
+  let clip_y = ps
+    .plot_range
+    .map(|(_, y)| y)
+    .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
+    .unwrap_or(ps.y_range);
   // Every fill (and scatter stem) is gathered first and emitted before
   // any series' curve or points, as in the Wolfram Language's own plot
   // output: a `Filling -> {1 -> {2}}` area must not paint over the line
@@ -28164,7 +28172,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       if sd.dashing.is_some() && chain_end > si + 1 {
         skip_until = chain_end;
         series_prims
-          .extend(continued_run_lines(&ps.series[si..chain_end], ps.y_range));
+          .extend(continued_run_lines(&ps.series[si..chain_end], clip_y));
         continue;
       }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
@@ -28172,7 +28180,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         // The plot's own (outlier-trimmed) y range clips the curve, as it
         // does in Wolfram: a pole such as `1/(x - a)` must not stretch the
         // range of whatever `Show` layers the curve onto.
-        for piece in clip_segment_to_y_range(seg, ps.y_range) {
+        for piece in clip_segment_to_y_range(seg, clip_y) {
           let coords: Vec<Expr> = piece
             .iter()
             .map(|&(x, y)| {
