@@ -6519,6 +6519,33 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
       .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
     return locator_marker_units(x_extent, y_extent, aspect);
   }
+  // A drawing (`Show[Graphics[…]]`, a function returning one) keeps no plot
+  // source, only its symbolic `Graphics[prims, opts]`: its range is that of
+  // the primitives (or its explicit `PlotRange`), and its `AspectRatio` an
+  // explicit number or `Automatic`.
+  if let Expr::Graphics {
+    structure: Some(structure),
+    is_3d: false,
+    ..
+  } = body
+    && let Some(((x0, x1), (y0, y1))) =
+      crate::functions::graphics::absolute_plot_range(structure)
+  {
+    let aspect = match structure.as_ref() {
+      Expr::FunctionCall { args, .. } => args.iter().skip(1).find_map(|o| {
+        match o {
+          Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "AspectRatio") =>
+          {
+            crate::functions::math_ast::try_eval_to_f64(replacement)
+          }
+          _ => None,
+        }
+      }),
+      _ => None,
+    };
+    return locator_marker_units((x1 - x0).abs(), (y1 - y0).abs(), aspect);
+  }
   (1.0, 1.0)
 }
 
