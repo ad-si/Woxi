@@ -23637,14 +23637,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               "underline"
             };
             format!("<tspan text-decoration=\"{deco}\">{base_markup}</tspan>")
+          } else if name == "Overscript" {
+            stacked_overscript_svg(&base_markup, &accent_markup)
           } else {
-            let (raise, fall) = if name == "Overscript" {
-              ("-0.55em", "0.55em")
-            } else {
-              ("0.55em", "-0.55em")
-            };
             format!(
-              "<tspan dy=\"{raise}\" font-size=\"65%\">{accent_markup}</tspan><tspan dx=\"-0.6em\" dy=\"{fall}\">{base_markup}</tspan>"
+              "<tspan dy=\"0.55em\" font-size=\"65%\">{accent_markup}</tspan><tspan dx=\"-0.6em\" dy=\"-0.55em\">{base_markup}</tspan>"
             )
           }
         }
@@ -25445,6 +25442,13 @@ pub fn traditional_label(e: &Expr) -> String {
       ) && !args.is_empty() =>
     {
       traditional_label(&args[0])
+    }
+    // `Overscript[base, script]` stacks the script over its base, as the
+    // markup draws it, instead of printing as `Overscript(base, script)`.
+    Expr::FunctionCall { name, args }
+      if name == "Overscript" && args.len() == 2 =>
+    {
+      expr_to_svg_markup(e)
     }
     // An unstyled script (`Subscript[x, n + 1]`) keeps the shifted-tspan
     // shape a text label can hold, with its base and scripts each typeset

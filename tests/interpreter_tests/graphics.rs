@@ -61478,7 +61478,7 @@ mod grid_repeating_decimal_alignment {
     let frame_ticks = |range: &str| -> Vec<String> {
       let svg = export_svg(&format!(
         "Plot[x, {{x, 0, 1}}, PlotRange -> {{{{0, 1}}, {range}}}, \
-         Frame -> True]"
+         Frame -> True, Axes -> False]"
       ));
       svg
         .split("points=\"")
