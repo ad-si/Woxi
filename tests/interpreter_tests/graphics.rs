@@ -58439,6 +58439,39 @@ fn test_highlight_graph_draws_the_highlighted_parts_red() {
 mod options_of_a_graphic {
   use super::*;
 
+  // A plot keeps the options it shares with `Graphics`, so `Options` reads
+  // them back and `Show` can extend its `Epilog` rather than replace it.
+  #[test]
+  fn options_of_a_plot_include_its_epilog() {
+    assert_eq!(
+      interpret(
+        "Options[Plot[Sin[x], {x, 0, 3}, Epilog -> {Point[{1, 1}]}], Epilog]"
+      )
+      .unwrap(),
+      "{Epilog -> {Point[{1, 1}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[ListPlot[{1, 2, 3}, Epilog -> {Disk[]}, Frame -> True], \
+         Frame]"
+      )
+      .unwrap(),
+      "{Frame -> True}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Plot[x, {x, 0, 1}, Epilog -> {Point[{0, 0}]}]; \
+         Cases[Show[g, Epilog -> Join[Lookup[Options[g, Epilog], Epilog], \
+         {Point[{1, 1}]}]][[2]], _Rule]"
+      )
+      .unwrap(),
+      "{Epilog -> {Point[{0, 0}], Point[{1, 1}]}}"
+    );
+    // A plot given no such options still reports its drawn size.
+    let size = interpret("Options[Plot[x, {x, 0, 1}]]").unwrap();
+    assert!(size.starts_with("{ImageSize -> {360, "), "{size}");
+  }
+
   // `Options[g, opt]` reads the options a graphic was drawn with.
   #[test]
   fn options_of_a_graphics_expression() {

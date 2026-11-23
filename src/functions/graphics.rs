@@ -35134,7 +35134,29 @@ pub fn graphics_options(expr: &Expr) -> Option<Vec<Expr>> {
     let args: Vec<Expr> = args.iter().cloned().collect();
     return Some(option_rules(&args));
   }
-  let (w, h) = svg_natural_size(svg)?;
+  // A rendered 2D plot keeps the options it shares with `Graphics` (an
+  // `Epilog`, a `PlotRange`, …); they are part 2 of its symbolic form, so
+  // `Options[Plot[…, Epilog -> e], Epilog]` is `{Epilog -> e}` and a
+  // `Show[plot, Epilog -> Join[old, new]]` keeps the plot's own Epilog.
+  let mut kept: Vec<Expr> =
+    match &crate::evaluator::part_extraction::graphics_symbolic_form(expr) {
+      Some(Expr::FunctionCall { name, args })
+        if name == "Graphics" && args.len() >= 2 =>
+      {
+        let args: Vec<Expr> = args.iter().cloned().collect();
+        option_rules(&args)
+      }
+      _ => Vec::new(),
+    };
+  let has_size = kept.iter().any(|opt| {
+    option_name_value(opt).is_some_and(|(name, _)| name == "ImageSize")
+  });
+  if has_size {
+    return Some(kept);
+  }
+  let Some((w, h)) = svg_natural_size(svg) else {
+    return (!kept.is_empty()).then_some(kept);
+  };
   let size = |v: f64| {
     if v.fract() == 0.0 {
       Expr::Integer(v as i128)
@@ -35142,10 +35164,11 @@ pub fn graphics_options(expr: &Expr) -> Option<Vec<Expr>> {
       Expr::Real(v)
     }
   };
-  Some(vec![rule_expr(
+  kept.push(rule_expr(
     id_expr("ImageSize"),
     Expr::List(vec![size(w), size(h)].into()),
-  )])
+  ));
+  Some(kept)
 }
 
 /// The SVG of a rendered graphic.
