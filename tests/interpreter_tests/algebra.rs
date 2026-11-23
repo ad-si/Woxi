@@ -4201,6 +4201,66 @@ mod together {
 mod apart {
   use super::*;
 
+  // Without a variable, a multivariate expression whose denominator has a
+  // single variable decomposes in it, also when that is `y[x]`.
+  #[test]
+  fn apart_in_single_denominator_variable() {
+    assert_eq!(
+      interpret("Apart[(a + b x)/a^2]").unwrap(),
+      "a^(-1) + (b*x)/a^2"
+    );
+    assert_eq!(
+      interpret("Apart[(y[x] + x y'[x])/y[x]^2]").unwrap(),
+      "y[x]^(-1) + (x*Derivative[1][y][x])/y[x]^2"
+    );
+    assert_eq!(
+      interpret("Apart[(2 y[x] + y'[x])/y[x]^2]").unwrap(),
+      "2/y[x] + Derivative[1][y][x]/y[x]^2"
+    );
+  }
+
+  // Variables that only mention the decomposition variable, like `y[x]`
+  // in `x`, stay untouched constants.
+  #[test]
+  fn apart_keeps_dependent_variables_constant() {
+    assert_eq!(
+      interpret("Apart[((x y[x])/(x^2 - 1) + 2 y'[x]) y[x]]").unwrap(),
+      "y[x]^2/(2*(-1 + x)) + y[x]^2/(2*(1 + x)) + 2*y[x]*Derivative[1][y][x]"
+    );
+  }
+
+  // A product holding a fraction is brought over a common denominator.
+  #[test]
+  fn apart_nested_fraction_in_product() {
+    assert_eq!(
+      interpret("Apart[((x a)/(x^2 - 1) + 2 b) a]").unwrap(),
+      "2*a*b + a^2/(2*(-1 + x)) + a^2/(2*(1 + x))"
+    );
+  }
+
+  // The polynomial part of an improper fraction with symbolic coefficients
+  // is kept.
+  #[test]
+  fn apart_symbolic_improper_linear_factors() {
+    assert_eq!(
+      interpret("Apart[(x a^2 + 2 x^2 a b - 2 a b)/(x^2 - 1), x]").unwrap(),
+      "2*a*b + a^2/(2*(-1 + x)) + a^2/(2*(1 + x))"
+    );
+  }
+
+  // Rational powers of the variable decompose in its root.
+  #[test]
+  fn apart_rational_powers() {
+    assert_eq!(
+      interpret("Apart[(1 + x)/Sqrt[x]]").unwrap(),
+      "1/Sqrt[x] + Sqrt[x]"
+    );
+    assert_eq!(
+      interpret("Apart[(-4 y[x] + x y'[x])/Sqrt[y[x]]]").unwrap(),
+      "-4*Sqrt[y[x]] + (x*Derivative[1][y][x])/Sqrt[y[x]]"
+    );
+  }
+
   // Nonlinear and repeated factors with symbolic coefficients are split by
   // undetermined coefficients.
   #[test]
@@ -27315,6 +27375,151 @@ mod large_coefficient_polynomials {
       )
       .unwrap(),
       "True"
+    );
+  }
+}
+
+/// `Reduce` over the reals for sparse polynomials of high degree: the real
+/// roots are counted directly instead of factoring the dense polynomial
+/// or finding all of its complex roots.
+mod reduce_sparse_real_roots {
+  use super::*;
+
+  #[test]
+  fn degree_ten_thousand() {
+    // 1 - 3 x^7 + x^10000 vanishes near (1/3)^(1/7) and just above 1, and
+    // is positive for every negative x.
+    assert_eq!(
+      interpret("Reduce[x^10000 - 3 x^7 + 1 == 0, x, Reals]").unwrap(),
+      "x == Root[1 - 3*#1^7 + #1^10000 & , 1, 0] || \
+       x == Root[1 - 3*#1^7 + #1^10000 & , 2, 0]"
+    );
+  }
+
+  #[test]
+  fn negative_root() {
+    assert_eq!(
+      interpret("Reduce[x^1001 + 3 x^7 + 1 == 0, x, Reals]").unwrap(),
+      "x == Root[1 + 3*#1^7 + #1^1001 & , 1, 0]"
+    );
+  }
+
+  #[test]
+  fn zero_and_rational_roots_are_written_out() {
+    assert_eq!(
+      interpret("Reduce[x^1001 - 3 x^8 + 2 x == 0, x, Reals]").unwrap(),
+      "x == 0 || x == 1 || x == Root[2 - 3*#1^7 + #1^1000 & , 1, 0]"
+    );
+    // The rational root 1 is the second real root, so the `Root` objects
+    // are the first and the third.
+    assert_eq!(
+      interpret("Reduce[x^1002 - x^1001 - 3 x^9 + x^8 + 2 x^7 == 0, x, Reals]")
+        .unwrap(),
+      "x == 0 || x == 1 || \
+       x == Root[2 + #1 - 3*#1^2 - #1^994 + #1^995 & , 1, 0] || \
+       x == Root[2 + #1 - 3*#1^2 - #1^994 + #1^995 & , 3, 0]"
+    );
+  }
+
+  #[test]
+  fn polynomial_in_a_power_of_x() {
+    // A polynomial in x^40 of degree 250.
+    assert_eq!(
+      interpret(
+        "Length[{ToRules[Reduce[5 + 310 x^4440 - 795 x^5200 - 77 x^8200 \
+         + 878 x^10000 == 0, x, Reals]]}]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn binomials_keep_their_radicals() {
+    assert_eq!(
+      interpret("Reduce[x^600 == 2, x, Reals]").unwrap(),
+      "x == -2^(1/600) || x == 2^(1/600)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^1000 - 3 x^500 + 2 == 0, x, Reals]").unwrap(),
+      "x == -1 || x == 1 || x == -2^(1/500) || x == 2^(1/500)"
+    );
+  }
+
+  /// A polynomial of high degree in `x^g` is solved for `x^g` first and
+  /// takes the real `g`-th roots, instead of finding all its complex
+  /// roots: an odd `g` keeps the sign of a negative root, an even one has
+  /// none for it.
+  #[test]
+  fn polynomials_in_a_high_power_take_real_roots() {
+    assert_eq!(
+      interpret("Reduce[x^1002 + 3 x^501 + 2 == 0, x, Reals]").unwrap(),
+      "x == -1 || x == -2^(1/501)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^1000 + 3 x^500 + 2 == 0, x, Reals]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Reduce[x^1000 - 5 x^500 + 6 == 0, x, Reals]").unwrap(),
+      "x == -2^(1/500) || x == 2^(1/500) || x == -3^(1/500) || x == 3^(1/500)"
+    );
+  }
+
+  #[test]
+  fn root_objects_of_low_degree_are_filtered_by_counting() {
+    assert_eq!(
+      interpret("Reduce[x^5 - 3 x + 1 == 0, x, Reals]").unwrap(),
+      "x == Root[1 - 3*#1 + #1^5 & , 1, 0] || \
+       x == Root[1 - 3*#1 + #1^5 & , 2, 0] || \
+       x == Root[1 - 3*#1 + #1^5 & , 3, 0]"
+    );
+    assert_eq!(
+      interpret("Length[{ToRules[Reduce[x^100 - 3 x^7 + 1 == 0, x, Reals]]}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn repeated_root_falls_back_to_factoring() {
+    assert_eq!(
+      interpret("Reduce[(x - 1)^2 (x + 2) == 0, x, Reals]").unwrap(),
+      "x == -2 || x == 1"
+    );
+  }
+
+  #[test]
+  fn root_of_high_degree_stays_canonical() {
+    assert_eq!(
+      interpret("Root[#^10000 - 3 #^7 + 1 &, 2]").unwrap(),
+      "Root[1 - 3*#1^7 + #1^10000 & , 2, 0]"
+    );
+  }
+
+  #[test]
+  fn numeric_value_of_a_real_root_of_high_degree() {
+    // x^10000 is far below machine precision near (1/3)^(1/7).
+    assert_eq!(
+      interpret("N[Root[#^10000 - 3 #^7 + 1 &, 1]] == N[(1/3)^(1/7)]").unwrap(),
+      "True"
+    );
+    // Roots of very different sizes, where the dense root finder does not
+    // converge: the four real roots are real numbers in their brackets.
+    assert_eq!(
+      interpret(
+        "p = 150 - 129*#^14 + 510*#^17 - 298*#^36 - 17*#^84 - 24*#^94 \
+         + 588*#^96 + 650*#^98 - 841*#^99 - 6*#^100 &; \
+         r = Table[N[Root[p, k]], {k, 4}]; \
+         {Head /@ r, -141 < r[[1]] < -140, -99/100 < r[[2]] < -95/100, \
+         -95/100 < r[[3]] < -9/10, 11/10 < r[[4]] < 2}"
+      )
+      .unwrap(),
+      "{{Real, Real, Real, Real}, True, True, True, True}"
+    );
+    assert_eq!(
+      interpret("Round[10^6 (N[Root[#^10000 - 3 #^7 + 1 &, 2]] - 1)]").unwrap(),
+      "69"
     );
   }
 }

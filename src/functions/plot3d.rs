@@ -1249,7 +1249,6 @@ fn painter_order(
   }
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
-  let mut indegree = vec![0usize; n];
   for_each_overlapping_pair(projected, |i, j| {
     // Faces lying in one plane (two boxes sharing a face) have no depth
     // order; the one given later is drawn on top, as in Wolfram. Wolfram
@@ -1284,50 +1283,171 @@ fn painter_order(
         })
     };
     match i_behind {
-      Some(true) => {
-        after[i].push(j);
-        indegree[j] += 1;
-      }
-      Some(false) => {
-        after[j].push(i);
-        indegree[i] += 1;
-      }
+      Some(true) => after[i].push(j),
+      Some(false) => after[j].push(i),
       None => {}
     }
   });
-  let mut order = Vec::with_capacity(n);
-  let mut done = vec![false; n];
-  // Ready triangles, keyed by their far-to-near rank in `by_depth` so the
-  // farthest one is drawn first (`Reverse` turns the max-heap into a min-heap).
   let mut rank = vec![0usize; n];
   for (r, &k) in by_depth.iter().enumerate() {
     rank[k] = r;
   }
-  let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<usize>> = (0
-    ..n)
-    .filter(|&k| indegree[k] == 0)
-    .map(|k| std::cmp::Reverse(rank[k]))
-    .collect();
-  // First possibly-undrawn entry of `by_depth`, for breaking cycles.
-  let mut cursor = 0;
-  while order.len() < n {
-    let pick = if let Some(std::cmp::Reverse(r)) = ready.pop() {
-      by_depth[r]
-    } else {
-      while done[by_depth[cursor]] {
-        cursor += 1;
-      }
-      by_depth[cursor]
-    };
-    if done[pick] {
+  topological_order_breaking_cycles(&after, &rank)
+}
+
+/// Strongly connected components of the graph whose edges run from `k` to
+/// each of `after[k]` (Tarjan's algorithm, iterative). Returns each node's
+/// component id and the number of components.
+fn strongly_connected_components(after: &[Vec<usize>]) -> (Vec<usize>, usize) {
+  let n = after.len();
+  const UNSEEN: usize = usize::MAX;
+  let mut index = vec![UNSEEN; n];
+  let mut low = vec![0usize; n];
+  let mut on_stack = vec![false; n];
+  let mut stack = Vec::new();
+  let mut component = vec![UNSEEN; n];
+  let mut components = 0;
+  let mut next_index = 0;
+  // Depth-first frames: a node and how many of its edges were followed.
+  let mut frames: Vec<(usize, usize)> = Vec::new();
+  for root in 0..n {
+    if index[root] != UNSEEN {
       continue;
     }
-    done[pick] = true;
-    order.push(pick);
-    for &k in &after[pick] {
-      indegree[k] = indegree[k].saturating_sub(1);
-      if indegree[k] == 0 && !done[k] {
-        ready.push(std::cmp::Reverse(rank[k]));
+    frames.push((root, 0));
+    index[root] = next_index;
+    low[root] = next_index;
+    next_index += 1;
+    stack.push(root);
+    on_stack[root] = true;
+    while let Some(frame) = frames.last_mut() {
+      let (v, edge) = *frame;
+      if let Some(&w) = after[v].get(edge) {
+        frame.1 += 1;
+        if index[w] == UNSEEN {
+          index[w] = next_index;
+          low[w] = next_index;
+          next_index += 1;
+          stack.push(w);
+          on_stack[w] = true;
+          frames.push((w, 0));
+        } else if on_stack[w] {
+          low[v] = low[v].min(index[w]);
+        }
+        continue;
+      }
+      frames.pop();
+      if let Some(&(parent, _)) = frames.last() {
+        low[parent] = low[parent].min(low[v]);
+      }
+      if low[v] == index[v] {
+        while let Some(w) = stack.pop() {
+          on_stack[w] = false;
+          component[w] = components;
+          if w == v {
+            break;
+          }
+        }
+        components += 1;
+      }
+    }
+  }
+  (component, components)
+}
+
+/// Orders the nodes so every edge `k -> after[k]` runs forward, drawing the
+/// lowest `rank` first among the nodes free to go. Where the edges form
+/// cycles, only the nodes of a cycle are reordered among themselves (lowest
+/// rank first): a node merely waiting behind a cycle still keeps all its
+/// edges. Breaking a cycle by drawing the farthest waiting node anywhere
+/// in the scene drew the face of a solid before the hidden slabs behind it
+/// whose own faces happened to cross one another.
+fn topological_order_breaking_cycles(
+  after: &[Vec<usize>],
+  rank: &[usize],
+) -> Vec<usize> {
+  use std::cmp::Reverse;
+  use std::collections::BinaryHeap;
+  let n = after.len();
+  let (component, count) = strongly_connected_components(after);
+  let mut members: Vec<Vec<usize>> = vec![Vec::new(); count];
+  for k in 0..n {
+    members[component[k]].push(k);
+  }
+  // Edges between components, and within each component.
+  let mut comp_indegree = vec![0usize; count];
+  let mut indegree = vec![0usize; n];
+  for k in 0..n {
+    for &j in &after[k] {
+      if component[j] == component[k] {
+        indegree[j] += 1;
+      } else {
+        comp_indegree[component[j]] += 1;
+      }
+    }
+  }
+  // A component goes as early as its farthest member would.
+  let comp_rank: Vec<usize> = members
+    .iter()
+    .map(|m| m.iter().map(|&k| rank[k]).min().unwrap_or(usize::MAX))
+    .collect();
+  let mut ready: BinaryHeap<Reverse<(usize, usize)>> = (0..count)
+    .filter(|&c| comp_indegree[c] == 0)
+    .map(|c| Reverse((comp_rank[c], c)))
+    .collect();
+  let mut order = Vec::with_capacity(n);
+  let mut done = vec![false; n];
+  while let Some(Reverse((_, c))) = ready.pop() {
+    let group = &members[c];
+    if group.len() == 1 {
+      order.push(group[0]);
+      done[group[0]] = true;
+    } else {
+      // Within a cycle, follow its own edges as far as they go and, when
+      // they go round, draw the farthest member that is left.
+      let mut by_rank = group.clone();
+      by_rank.sort_unstable_by_key(|&k| rank[k]);
+      let mut local: BinaryHeap<Reverse<(usize, usize)>> = group
+        .iter()
+        .filter(|&&k| indegree[k] == 0)
+        .map(|&k| Reverse((rank[k], k)))
+        .collect();
+      let mut cursor = 0;
+      let mut left = group.len();
+      while left > 0 {
+        let pick = if let Some(Reverse((_, k))) = local.pop() {
+          k
+        } else {
+          while done[by_rank[cursor]] {
+            cursor += 1;
+          }
+          by_rank[cursor]
+        };
+        if done[pick] {
+          continue;
+        }
+        done[pick] = true;
+        left -= 1;
+        order.push(pick);
+        for &k in &after[pick] {
+          if component[k] == c && !done[k] {
+            indegree[k] = indegree[k].saturating_sub(1);
+            if indegree[k] == 0 {
+              local.push(Reverse((rank[k], k)));
+            }
+          }
+        }
+      }
+    }
+    for &k in group {
+      for &j in &after[k] {
+        let cj = component[j];
+        if cj != c {
+          comp_indegree[cj] -= 1;
+          if comp_indegree[cj] == 0 {
+            ready.push(Reverse((comp_rank[cj], cj)));
+          }
+        }
       }
     }
   }
@@ -1843,6 +1963,47 @@ pub(crate) fn triangle_normal(
   } else {
     [nx / len, ny / len, nz / len]
   }
+}
+
+/// The part of a sampled surface triangle `tri` that a `RegionFunction`
+/// keeps, given which corners are inside (`ins`, at least one of them).
+/// Each edge with one end inside and one outside crosses the region's
+/// edge where bisection along the surface (`surface_at`) finds it.
+/// Returns the clipped polygon and the cut points along the region's edge.
+fn clip_surface_triangle(
+  tri: [[f64; 3]; 3],
+  ins: [bool; 3],
+  surface_at: &dyn Fn(f64, f64) -> Option<[f64; 3]>,
+  inside: &dyn Fn(&[f64; 3]) -> bool,
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+  let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
+    let (mut lo, mut hi) = (a, b); // lo inside, hi outside
+    for _ in 0..12 {
+      let mx = f64::midpoint(lo[0], hi[0]);
+      let my = f64::midpoint(lo[1], hi[1]);
+      match surface_at(mx, my) {
+        Some(m) if inside(&m) => lo = m,
+        Some(m) => hi = m,
+        None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
+      }
+    }
+    lo
+  };
+  let mut poly: Vec<[f64; 3]> = Vec::new();
+  let mut cut: Vec<[f64; 3]> = Vec::new();
+  for e in 0..3 {
+    let (a, b) = (tri[e], tri[(e + 1) % 3]);
+    let (ia, ib) = (ins[e], ins[(e + 1) % 3]);
+    if ia {
+      poly.push(a);
+    }
+    if ia != ib {
+      let c = if ia { cross(a, b) } else { cross(b, a) };
+      poly.push(c);
+      cut.push(c);
+    }
+  }
+  (poly, cut)
 }
 
 /// Evaluates a `MeshFunctions`/`RegionFunction`-style function at a
@@ -2640,9 +2801,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut index_of: Vec<Vec<Option<usize>>> =
           vec![vec![None; grid_n + 1]; grid_n + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
+        // A `RegionFunction` drops the samples it rejects here too, so a
+        // `Show` of the plot draws only the part the standalone render does.
+        let mask = region_masks.as_ref().map(|masks| &masks[surface_idx]);
         for (i, row) in grid.iter().enumerate() {
           for (j, &z) in row.iter().enumerate() {
-            if !z.is_finite() {
+            if !z.is_finite() || mask.is_some_and(|m| !m[i][j]) {
               continue;
             }
             index_of[i][j] = Some(point_exprs.len());
@@ -2710,6 +2874,78 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               ),
             ));
             content.push(Expr::List(quad.into()));
+          }
+        }
+        // The cells a `RegionFunction` cuts: the parts of their two
+        // triangles inside the region, clipped as the standalone render
+        // clips them, with the cut points appended to the shared points.
+        if let (Some(mask), Some(rf)) = (mask, &region_function) {
+          let compiled = crate::functions::plot::PlotBody2::new(
+            bodies[surface_idx],
+            &xvar,
+            &yvar,
+          );
+          let surface_at = |x: f64, y: f64| -> Option<[f64; 3]> {
+            compiled
+              .at(x, y)
+              .filter(|z| z.is_finite())
+              .map(|z| [x, y, z])
+          };
+          let inside = |p: &[f64; 3]| {
+            crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+          };
+          let mut clipped: Vec<Expr> = Vec::new();
+          for i in 0..grid_n {
+            for j in 0..grid_n {
+              let cell = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)];
+              if cell.iter().all(|&(a, b)| mask[a][b])
+                || !cell.iter().any(|&(a, b)| mask[a][b])
+              {
+                continue;
+              }
+              for corners in [
+                [(i, j), (i + 1, j), (i, j + 1)],
+                [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+              ] {
+                if corners.iter().any(|&(a, b)| !grid[a][b].is_finite()) {
+                  continue;
+                }
+                let ins = corners.map(|(a, b)| mask[a][b]);
+                if !ins.iter().any(|b| *b) {
+                  continue;
+                }
+                let tri = corners.map(|(a, b)| {
+                  [
+                    x_min + a as f64 * x_step,
+                    y_min + b as f64 * y_step,
+                    grid[a][b],
+                  ]
+                });
+                let (poly, _) =
+                  clip_surface_triangle(tri, ins, &surface_at, &inside);
+                if poly.len() < 3 {
+                  continue;
+                }
+                let indices: Vec<Expr> = poly
+                  .iter()
+                  .map(|p| {
+                    point_exprs.push(Expr::List(
+                      vec![
+                        Expr::Real(p[0]),
+                        Expr::Real(p[1]),
+                        Expr::Real(p[2].clamp(z_lo, z_hi)),
+                      ]
+                      .into(),
+                    ));
+                    Expr::Integer(point_exprs.len() as i128)
+                  })
+                  .collect();
+                clipped.push(call1("Polygon", Expr::List(indices.into())));
+              }
+            }
+          }
+          if !clipped.is_empty() {
+            content.push(Expr::List(clipped.into()));
           }
         }
         // The mesh, at the spacing the standalone render rules it with.
@@ -3020,35 +3256,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if ins.iter().all(|b| *b) {
             push_triangle(tri, &mut all_triangles, &mut facets);
           } else if ins.iter().any(|b| *b) {
-            // Cut along the region's edge: each edge with one end inside
-            // and one outside crosses it where bisection finds it.
-            let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-              let (mut lo, mut hi) = (a, b); // lo inside, hi outside
-              for _ in 0..12 {
-                let mx = f64::midpoint(lo[0], hi[0]);
-                let my = f64::midpoint(lo[1], hi[1]);
-                match surface_at(mx, my) {
-                  Some(m) if inside(&m) => lo = m,
-                  Some(m) => hi = m,
-                  None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
-                }
-              }
-              lo
-            };
-            let mut poly: Vec<[f64; 3]> = Vec::new();
-            let mut cut: Vec<[f64; 3]> = Vec::new();
-            for e in 0..3 {
-              let (a, b) = (tri[e], tri[(e + 1) % 3]);
-              let (ia, ib) = (ins[e], ins[(e + 1) % 3]);
-              if ia {
-                poly.push(a);
-              }
-              if ia != ib {
-                let c = if ia { cross(a, b) } else { cross(b, a) };
-                poly.push(c);
-                cut.push(c);
-              }
-            }
+            // Cut along the region's edge.
+            let (poly, cut) =
+              clip_surface_triangle(tri, ins, &surface_at, &inside);
             for k in 1..poly.len().saturating_sub(1) {
               push_triangle(
                 [poly[0], poly[k], poly[k + 1]],
@@ -3642,11 +3852,26 @@ fn generate_svg(
     svg_width -= pad_w;
     svg_height = svg_height.saturating_sub(pad_h).max(1);
   }
-  let ((scale, _), mut cx, mut cy, w, h) = fit_3d_frame(
+  // An explicit `AspectRatio -> r` stretches the projected box to the
+  // picture's shape, as in `Graphics3D` (unless a `ViewAngle` fixes the
+  // scale instead).
+  let stretch = view_angle_option(options).is_none()
+    && options.iter().rev().find_map(|option| match option {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == "AspectRatio") => {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| (**replacement).clone());
+        Some(try_eval_to_f64(&value).is_some_and(|r| r > 0.0 && r.is_finite()))
+      }
+      _ => None,
+    }) == Some(true);
+  let ((scale, scale_y), mut cx, mut cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
-    false,
+    stretch,
     &axes_extent,
   );
   svg_width = w;
@@ -3665,7 +3890,7 @@ fn generate_svg(
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
   // box, where `d` is the eye's distance (already in the box's normalized
   // units), instead of being fitted to the box's outline.
-  let (scale, p_cx, p_cy) =
+  let (scale, scale_y, p_cx, p_cy) =
     match (view_angle_option(options), camera.perspective) {
       (Some(theta), Some(eye)) => {
         let span = 2.0 * eye.distance * (theta / 2.0).tan();
@@ -3678,12 +3903,12 @@ fn generate_svg(
             },
             camera,
           );
-          (inner_side / span, bcx, bcy)
+          (inner_side / span, inner_side / span, bcx, bcy)
         } else {
-          (scale, p_cx, p_cy)
+          (scale, scale_y, p_cx, p_cy)
         }
       }
-      _ => (scale, p_cx, p_cy),
+      _ => (scale, scale_y, p_cx, p_cy),
     };
   // The sphere spans the shorter side of the picture, centered on the box.
   let (scale, p_cx, p_cy) = match sphere_span {
@@ -3693,7 +3918,7 @@ fn generate_svg(
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
-    let sy = cy - (py - p_cy) * scale; // flip Y for SVG
+    let sy = cy - (py - p_cy) * scale_y; // flip Y for SVG
     (sx, sy)
   };
 
@@ -4179,7 +4404,8 @@ fn parse_axes_edge(value: &Expr) -> Option<AxesEdges> {
 
 fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
   let mut out: [Option<TickList3D>; 3] = [None, None, None];
-  if matches!(value, Expr::Identifier(s) if s == "None") {
+  // `Ticks -> False` draws no ticks, like `None`.
+  if matches!(value, Expr::Identifier(s) if s == "None" || s == "False") {
     return [Some(Vec::new()), Some(Vec::new()), Some(Vec::new())];
   }
   let Expr::List(axes) = value else {
@@ -4187,7 +4413,7 @@ fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
   };
   for (slot, axis) in out.iter_mut().zip(axes.iter()) {
     *slot = match axis {
-      Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+      Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
       Expr::List(items) => Some(
         items
           .iter()
@@ -4238,14 +4464,27 @@ fn automatic_axes_edges(
     c[d] = side_value(d, side);
     side * camera.toward_viewer(pt(c))[d] > 1e-9
   };
+  // Seen from above, the horizontal axis that runs along the front face
+  // (the x axis from the default `ViewPoint`) stays on that face's bottom
+  // edge even when the box is so tall that its top back edge comes nearer
+  // the eye, as Wolfram draws it. The other horizontal axis keeps the
+  // nearest edge (the upper-left one of a cube).
+  let toward = camera.toward_viewer(pt(center));
+  let from_above = toward[2] > 1e-9;
+  let front_axis = usize::from(toward[0].abs() > toward[1].abs());
   let mut out: AxesEdges = [None, None, None];
   for (k, slot) in out.iter_mut().enumerate() {
     let others: Vec<usize> = (0..3).filter(|&d| d != k).collect();
     let (i, j) = (others[0], others[1]);
+    let exposed = |a: f64, b: f64| face_visible(i, a) != face_visible(j, b);
+    // For an x or y axis, `j` is the z dimension.
+    let keep_bottom = k == front_axis
+      && from_above
+      && [-1.0, 1.0].iter().any(|&a| exposed(a, -1.0));
     let mut best: Option<([f64; 2], f64)> = None;
     for a in [-1.0, 1.0] {
       for b in [-1.0, 1.0] {
-        if face_visible(i, a) == face_visible(j, b) {
+        if !exposed(a, b) || (keep_bottom && b > 0.0) {
           continue;
         }
         let mut mid = center;
@@ -7773,6 +8012,19 @@ fn is_function_value(expr: &Expr) -> bool {
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Function")
 }
 
+/// A bare color head given as a `ColorFunction` (`ColorFunction -> Hue`)
+/// colors a surface by its scaled height, like a named gradient: it reads
+/// as `Hue[#3] &`, so the hue runs once around the color wheel from the
+/// lowest point to the highest.
+fn height_color_head(expr: &Expr) -> Option<Expr> {
+  let Expr::Identifier(head) = expr else {
+    return None;
+  };
+  matches!(head.as_str(), "Hue" | "GrayLevel").then(|| Expr::Function {
+    body: Box::new(call1(head, Expr::Slot(3))),
+  })
+}
+
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
 /// the style (color and, for `Directive[Opacity[o], color]`, opacity) it
 /// gives the facet at a point. A named gradient (`ColorFunction ->
@@ -7797,8 +8049,11 @@ impl FacetColorFunction {
       Expr::Identifier(name) if name == "ColorFunction" => {
         // `Function[{x, y, z}, …]`, `Function[x, …]` or a pure function
         // like `Directive[Green, Opacity[0.3]] &`.
-        self.function =
-          is_function_value(replacement).then(|| replacement.clone());
+        self.function = if is_function_value(replacement) {
+          Some(replacement.clone())
+        } else {
+          height_color_head(replacement)
+        };
         self.scheme = if self.function.is_some() {
           None
         } else {
@@ -13466,8 +13721,9 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
 }
 
 /// Parse a `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` value into
-/// `[sx0, sx1, sy0, sy1]`. Only a proper sub-region of the unit square is
-/// kept; `Automatic` and malformed specs give `None`.
+/// `[sx0, sx1, sy0, sy1]`. The region may reach past the unit square
+/// (`{{-0.3, 1.3}, …}`), which enlarges the scene beyond the picture so its
+/// edges are cropped; `Automatic` and malformed specs give `None`.
 fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
   let Expr::List(axes) = value else {
     return None;
@@ -13484,8 +13740,7 @@ fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
     };
     let lo = try_eval_to_f64(lo)?;
     let hi = try_eval_to_f64(hi)?;
-    (lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0)
-      .then_some((lo, hi))
+    (lo.is_finite() && hi.is_finite() && lo < hi).then_some((lo, hi))
   };
   let (sx0, sx1) = interval(x)?;
   let (sy0, sy1) = interval(y)?;
@@ -14049,7 +14304,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // outline-fitted one. An unboxed scene with neither (a tall 4 × 4 × 10
   // building at `ImageSize -> {300, 400}`) still fits its box outline to
   // the frame.
-  // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // `AspectRatio -> Full`, or an explicit `AspectRatio -> r`, instead
+  // stretches the scene to fill the picture (an unboxed `Show` of a
+  // `Plot3D` and polygons at `ViewPoint -> {2, 1, .5}`, `AspectRatio -> 1`
+  // and `ImageSize -> {300, 300}` fills the square in Wolfram's snapshot).
   // Inside a `Manipulate` frame the same explicitly aimed or pinned scenes
   // are sphere-framed whatever their box and size, so the picture keeps one
   // scale as controls turn the view: Wolfram's snapshots of boxed scenes in
@@ -14073,6 +14331,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && explicit_height
       && !full_width
       && !aspect_full
+      && aspect_ratio.is_none()
       && view_angle.is_none());
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
@@ -15043,9 +15302,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
   // A `PlotRegion` is a padding band too, sized as fractions of the
-  // picture. Its vertical part needs the picture's height, which is only
-  // known up front when the height is pinned; otherwise it is worked out
-  // from the fitted scene below.
+  // picture; a region reaching past the unit square gives a negative band,
+  // so the scene is fitted to a larger area and cropped by the picture.
+  // Its vertical part needs the picture's height, which is only known up
+  // front when the height is pinned; otherwise it is worked out from the
+  // fitted scene below. `ImagePadding -> None` (no band at all) leaves the
+  // region in charge.
+  if image_padding == Some([0.0; 4]) && plot_region.is_some() {
+    image_padding = None;
+  }
   let region_height_pending = plot_region.is_some()
     && image_padding.is_none()
     && !full_width
@@ -15063,15 +15328,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let [pad_left, pad_right, mut pad_bottom, mut pad_top] =
     image_padding.unwrap_or([0.0; 4]);
-  let pad_w = (pad_left + pad_right).round() as u32;
-  let pad_h = (pad_bottom + pad_top).round() as u32;
+  // Signed: a `PlotRegion` past the unit square pads by a negative amount.
+  let pad_w = (pad_left + pad_right).round() as i64;
+  let pad_h = (pad_bottom + pad_top).round() as i64;
   let padded = image_padding.is_some()
     && !full_width
-    && svg_width > pad_w
-    && (!explicit_height || svg_height > pad_h);
+    && i64::from(svg_width) > pad_w
+    && (!explicit_height || i64::from(svg_height) > pad_h);
   if padded {
-    svg_width -= pad_w;
-    svg_height = svg_height.saturating_sub(pad_h).max(1);
+    svg_width = (i64::from(svg_width) - pad_w) as u32;
+    svg_height = (i64::from(svg_height) - pad_h).max(1) as u32;
   }
   // An explicit `AspectRatio` stretches the projected box to the picture's
   // shape (unless the view volume fixes the scale instead).
@@ -15199,12 +15465,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let total = svg_height as f64 / (sy1 - sy0);
       pad_bottom = sy0 * total;
       pad_top = (1.0 - sy1) * total;
-      pad_h = (pad_bottom + pad_top).round() as u32;
+      pad_h = (pad_bottom + pad_top).round() as i64;
     }
     cx += pad_left;
     cy += pad_top;
-    svg_width += pad_w;
-    svg_height += pad_h;
+    svg_width = (i64::from(svg_width) + pad_w).max(1) as u32;
+    svg_height = (i64::from(svg_height) + pad_h).max(1) as u32;
   }
 
   let scale_y = if stretch { stretch_scale_y } else { scale };
@@ -15350,6 +15616,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    // Shortest on-screen length (in pixels) worth a piece of its own.
+    const LINE_PIECE_PX: f64 = 8.0;
     let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
@@ -15377,9 +15645,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (apx, apy) = to_svg(project(a, &camera).0, project(a, &camera).1);
           let (bpx, bpy) = to_svg(project(b, &camera).0, project(b, &camera).1);
           let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
-          for s in 0..LINE_SUBDIVISIONS {
-            let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+          // Pieces only need to be short enough on screen to be ordered
+          // against the faces around them: a finely sampled curve whose
+          // segments are a pixel long is not cut any further.
+          let pieces = ((total_px / LINE_PIECE_PX).ceil() as usize)
+            .clamp(1, LINE_SUBDIVISIONS);
+          for s in 0..pieces {
+            let t0 = s as f64 / pieces as f64;
+            let t1 = (s + 1) as f64 / pieces as f64;
             let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
@@ -15508,10 +15781,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
-    // Emit the line pieces of one draw slot. Translucent pieces cut from
-    // one polyline are joined into a single `<polyline>`: drawn as
-    // separate elements, every joint between two pieces shows as an
-    // anti-aliasing notch where the background bleeds through.
+    // Emit the line pieces of one draw slot. The pieces cut from one
+    // polyline are joined into a single `<polyline>`: drawn as separate
+    // elements, translucent pieces show an anti-aliasing notch at every
+    // joint where the background bleeds through, and the overlapping
+    // round caps of a finely sampled opaque curve pile up their
+    // anti-aliased edges until a thin line looks bold.
     let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
       let mut done = vec![false; run.len()];
       for i in 0..run.len() {
@@ -15519,16 +15794,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           continue;
         }
         let edge = run[i];
-        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
-        else {
+        let Some((line_id, _)) = edge.piece_of else {
           emit_edge(svg, edge);
           continue;
         };
         let mut pieces: Vec<usize> = (i..run.len())
           .filter(|&k| {
-            !done[k]
-              && run[k].opacity < 1.0
-              && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
+            !done[k] && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
           })
           .collect();
         pieces.sort_by_key(|&k| run[k].piece_of.map(|(_, n)| n));
@@ -15567,12 +15839,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             svg_width as f64,
             first.dash_offset,
           );
+          // Translucent lines keep the butt caps of their pieces (see
+          // `emit_edge`); opaque ones the round caps.
+          let (cap, opacity_attr) = if first.opacity < 1.0 {
+            ("butt", format!(" opacity=\"{}\"", first.opacity))
+          } else {
+            ("round", String::new())
+          };
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"butt\" stroke-linejoin=\"round\" opacity=\"{}\"{}/>\n",
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"round\"{opacity_attr}{}/>\n",
             points.join(" "),
             first.color,
             first.width,
-            first.opacity,
             dash_attr
           ));
         }
@@ -16322,6 +16600,12 @@ const PLOT_LABEL_STRIP: u32 = 26;
 fn plot_label_styled(
   opts: &[Expr],
 ) -> Option<crate::functions::chart::StyledLabel> {
+  crate::functions::chart::parse_styled_label(&plot_label_value(opts)?)
+}
+
+/// The evaluated `PlotLabel` value among `opts`; `None` when there is none
+/// or it is `None`/`Null`.
+fn plot_label_value(opts: &[Expr]) -> Option<Expr> {
   for opt in opts {
     let (pattern, replacement): (&Expr, &Expr) = match opt {
       Expr::Rule {
@@ -16343,9 +16627,7 @@ fn plot_label_styled(
     if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Null") {
       return None;
     }
-    if let Some(label) = crate::functions::chart::parse_styled_label(&value) {
-      return Some(label);
-    }
+    return Some(value);
   }
   None
 }
@@ -16451,9 +16733,23 @@ fn with_plot_label(
   // A framed title (or a stacked one with framed lines) sets each line in
   // its own box; otherwise the lines share one `<text>`.
   let framed_layout = framed_label_svg(&styled, cx, font_size);
-  let strip = match &framed_layout {
-    Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
-    None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
+  // A label drawn as a picture (a matrix, possibly stacked in a `Column`,
+  // or a graphic) is set the way a 2-D title sets it, shrunk to the
+  // picture's width if it is wider.
+  let picture = plot_label_value(opts)
+    .and_then(|v| crate::functions::graphics::plot_label_picture_svg(&v))
+    .map(|(svg, w, h)| {
+      let k = ((f64::from(width) - 8.0) / w).clamp(0.0, 1.0);
+      (svg, w * k, h * k)
+    });
+  let strip = match (&picture, &framed_layout) {
+    (Some((_, _, h)), _) => {
+      (h + 6.0).max(PLOT_LABEL_STRIP as f64).ceil() as u32
+    }
+    (None, Some((_, h))) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
+    (None, None) => {
+      PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32
+    }
   };
   // `ImageSize -> {w, h}` fixes the whole image, title included: the
   // picture shrinks (keeping its proportions, centered across the width)
@@ -16518,7 +16814,18 @@ fn with_plot_label(
   if styled.italic {
     style_attrs.push_str(" font-style=\"italic\"");
   }
-  let label = if let Some((lines, _)) = framed_layout {
+  let label = if let Some((picture, w, h)) = &picture {
+    format!(
+      "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
+      crate::functions::graphics::embed_svg_centered(
+        picture,
+        cx,
+        f64::from(strip) / 2.0,
+        *w,
+        *h
+      )
+    )
+  } else if let Some((lines, _)) = framed_layout {
     use std::fmt::Write as _;
     let mut out = String::new();
     for line in lines {
@@ -22926,6 +23233,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // `ColorFunction`: the color of every facet, from `f` at the facet's
   // centroid and its center in parameter space.
+  let color_scheme = color_fn
+    .as_ref()
+    .and_then(crate::functions::field_plot::color_function_scheme_name);
   let facet_colors: Vec<Vec<Option<(u8, u8, u8)>>> = surface_tris
     .iter()
     .enumerate()
@@ -22963,6 +23273,16 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             [c[0], c[1], c[2], theta, phi, r]
           };
+          // A named gradient (`"Rainbow"`, `ColorData["Rainbow"]`) colors
+          // the surface by height, like `ColorData[name][z]`.
+          if let Some(name) = &color_scheme {
+            return Some(
+              crate::functions::field_plot::apply_named_color_function(
+                name,
+                call_args[2],
+              ),
+            );
+          }
           let mut value = evaluate_expr_to_expr(&Expr::CurriedCall {
             func: Box::new(cf.clone()),
             args: call_args.iter().map(|a| Expr::Real(*a)).collect(),
@@ -26223,6 +26543,27 @@ mod painter_order_tests {
       split_interpenetrating(&mut verts, &mut tris, &camera);
       assert_eq!(verts.len() > 4, split, "half-size {s}");
     }
+  }
+
+  /// A triangle that merely waits behind a cycle (it must be drawn after a
+  /// member of it) keeps its own order: only the cycle's members are
+  /// reordered among themselves. Regression: breaking the cycle by drawing
+  /// the farthest waiting triangle drew a cube's face before the hidden
+  /// slabs behind it.
+  #[test]
+  fn triangle_behind_a_cycle_keeps_its_order() {
+    // 1 and 2 must each be drawn after the other; 0 after 2. 0 is the
+    // farthest, 3 (unconstrained) the nearest.
+    let after = vec![vec![], vec![2], vec![1, 0], vec![]];
+    let rank = vec![0, 1, 2, 3];
+    let order = topological_order_breaking_cycles(&after, &rank);
+    assert_eq!(order, vec![1, 2, 0, 3]);
+    // Without cycles every edge is kept, farthest first among the free.
+    let after = vec![vec![], vec![0], vec![1], vec![]];
+    assert_eq!(
+      topological_order_breaking_cycles(&after, &rank),
+      vec![2, 1, 0, 3]
+    );
   }
 
   /// Triangles that never cross are left untouched.

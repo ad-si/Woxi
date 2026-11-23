@@ -1039,6 +1039,19 @@ pub fn pop_quiet() {
   }
 }
 
+/// Run `probe` with every message it emits discarded, as if wrapped in
+/// `Quiet[…]`. For internal, speculative evaluations whose complaints are
+/// bookkeeping no front end should show (a solver probing a candidate, a
+/// held graphic drawn as an inline preview).
+pub(crate) fn quietly<T>(probe: impl FnOnce() -> T) -> T {
+  let snapshot = snapshot_warnings();
+  push_quiet();
+  let result = probe();
+  pop_quiet();
+  restore_warnings(snapshot);
+  result
+}
+
 /// A saved copy of every message buffer, taken before a speculative or quieted
 /// evaluation so it can be rolled back afterwards.
 #[derive(Clone, Default)]
@@ -4073,8 +4086,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // separate `Labeled`-composition pipeline in `expr_to_svg` already
     // handles for an actual graphic). Each label is itself rendered
     // through the one-cell `Grid` pipeline so its font matches the table
-    // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
-    // renders upright rather than rotated.
+    // it labels; `RotateLabel -> True` turns a `Left`/`Right` caption.
     // `Style[TraditionalForm[Labeled[…]], 20]`: the style and the form
     // apply to the text of the captioned picture.
     syntax::Expr::FunctionCall { name, .. }
@@ -4153,25 +4165,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           _ => bottom.push(label_svg.clone()),
         }
       }
-      // Stack same-side labels into one cell (rows of a mini grid), an
-      // empty side becoming an empty cell so the 3x3 layout below stays
-      // rectangular.
-      let side_cell = |svgs: &[String]| -> String {
-        match svgs.len() {
-          0 => String::new(),
-          1 => svgs[0].clone(),
-          _ => functions::graphics::combine_graphics_svgs(
-            &svgs.iter().map(|s| vec![s.clone()]).collect::<Vec<_>>(),
-          )
-          .unwrap_or_default(),
-        }
-      };
-      let rows = vec![
-        vec![String::new(), side_cell(&top), String::new()],
-        vec![side_cell(&left), content_svg, side_cell(&right)],
-        vec![String::new(), side_cell(&bottom), String::new()],
-      ];
-      match functions::graphics::combine_graphics_svgs(&rows) {
+      // `RotateLabel -> True` turns the left and right captions.
+      let rotate = args[2..].iter().any(|opt| {
+        matches!(opt, syntax::Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "RotateLabel")
+            && matches!(replacement.as_ref(), syntax::Expr::Identifier(v) if v == "True"))
+      });
+      match functions::graphics::labeled_sides_svg(
+        &content_svg,
+        &[top, left, right, bottom],
+        rotate,
+      ) {
         Some(svg) => graphics_result(svg),
         None => expr,
       }
@@ -5337,6 +5341,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // underneath (a Demonstration's fixed-size Pane rendered in Woxi
   // Studio).
   let pane_box = pane_fixed_size(expr);
+  // A `Pane[content, w]` that sets a width alone wraps its text at `w`
+  // (its height follows the lines the text takes).
+  let pane_width = pane_box.map(|(w, ..)| w).or_else(|| match expr {
+    syntax::Expr::FunctionCall { name, args } if name == "Pane" => {
+      evaluator::dispatch::io_functions::pane_width_only(args)
+    }
+    _ => None,
+  });
 
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
@@ -5356,15 +5368,18 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = unwrap_tooltips(expr);
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
-  let expr = pane_box
-    .and_then(|(w, _, align, _)| {
-      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
-        |lines| {
+  let expr = pane_width
+    .and_then(|w| {
+      let lines =
+        evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)?;
+      Some(match pane_box {
+        Some((_, _, align, _)) => {
           evaluator::dispatch::io_functions::align_pane_lines(
             &expr, lines, align,
           )
-        },
-      )
+        }
+        None => lines,
+      })
     })
     .unwrap_or(expr);
   // A list in a grid or column wider than the box breaks into lines that
@@ -5636,6 +5651,10 @@ pub(crate) fn column_svg_with_rendered_items(
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(item).is_none()
+            // A `Framed` box is drawn edge to edge — its frame is its
+            // outline, with no blank line margin around it to take out
+            // of an explicit spacing.
+            && !functions::graphics::is_framed_box(item)
         })
         .collect(),
     );

@@ -720,6 +720,58 @@ mod framing {
     assert!(hi - lo > 300.0, "{lo}..{hi}\n{s}");
   }
 
+  /// The y range of the drawn `<polygon>` vertices in an SVG.
+  fn polygon_y_extent(svg: &str) -> (f64, f64) {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|rest| rest.split('"').next())
+      .flat_map(|points| points.split_whitespace())
+      .filter_map(|pair| pair.split(',').nth(1)?.parse::<f64>().ok())
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), y| {
+        (lo.min(y), hi.max(y))
+      })
+  }
+
+  /// Regression: an unboxed scene seen from an explicit `ViewPoint` at a
+  /// fixed `ImageSize` was sphere-framed even with an explicit
+  /// `AspectRatio`, so the projected box was not stretched to the picture
+  /// and a squat box stayed a sliver.
+  #[test]
+  fn explicit_aspect_ratio_stretches_an_unboxed_aimed_scene() {
+    let scene = "Graphics3D[Polygon[{{4, 0, 0}, {0, 4, 0}, {0, 0, 4}}], \
+       Boxed -> False, ViewPoint -> {2, 1, .5}, BoxRatios -> {1, 1, 0.4}, \
+       ImageSize -> {300, 300}";
+    let (lo, hi) = polygon_y_extent(&svg(&format!("{scene}]")));
+    let plain = hi - lo;
+    let s = svg(&format!("{scene}, AspectRatio -> 1]"));
+    assert_eq!(size(&s), (300.0, 300.0));
+    let (lo, hi) = polygon_y_extent(&s);
+    assert!(hi - lo > 1.8 * plain, "{plain} -> {}\n{s}", hi - lo);
+  }
+
+  /// Regression: `Plot3D` ignored an explicit `AspectRatio`: the picture
+  /// took the requested shape, but the surface was not stretched to it.
+  #[test]
+  fn explicit_aspect_ratio_stretches_plot3d() {
+    let plot = "Plot3D[4 - x - y, {x, 0, 4}, {y, 0, 4}, Mesh -> None, \
+       Axes -> False, Boxed -> False, ImageSize -> 300";
+    let plain = svg(&format!("{plot}]"));
+    let (lo, hi) = polygon_y_extent(&plain);
+    let plain_span = hi - lo;
+    let plain_height = size(&plain).1;
+    let s = svg(&format!("{plot}, AspectRatio -> 1]"));
+    assert_eq!(size(&s), (300.0, 300.0));
+    let (lo, hi) = polygon_y_extent(&s);
+    // The surface grows with the picture's height.
+    let expected = plain_span * 300.0 / plain_height;
+    assert!(
+      (hi - lo - expected).abs() < 0.05 * expected,
+      "{} vs {expected}\n{s}",
+      hi - lo
+    );
+  }
+
   /// The x range of the drawn `<line>` endpoints in an SVG.
   fn line_x_extent(svg: &str) -> (f64, f64) {
     let mut xs = Vec::new();
@@ -1156,6 +1208,61 @@ mod outlines {
     assert_eq!(s.matches("<polyline ").count(), 2, "{s}");
   }
 
+  // An opaque line is joined back into one stroke as well: drawn as many
+  // pieces, the overlapping round caps of a finely sampled curve pile up
+  // their anti-aliased edges until a thin line looks bold.
+  #[test]
+  fn opaque_line_is_one_stroke() {
+    for line in [
+      "Line[{{0, 0, 0}, {1, 1, 1}}]",
+      "Line[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}}]",
+      "Line[Table[{Cos[t], Sin[t], t/10}, {t, 0, 2 Pi, Pi/100}]]",
+    ] {
+      for directives in ["", "Red, Thickness[0.01], "] {
+        let s = svg(&format!(
+          "Graphics3D[{{{directives}{line}}}, Boxed -> False]"
+        ));
+        assert_eq!(s.matches("<polyline ").count(), 1, "{line}: {s}");
+        assert_eq!(s.matches("<line ").count(), 0, "{line}: {s}");
+        assert!(s.contains("stroke-linecap=\"round\""), "{line}: {s}");
+        assert!(!s.contains(" opacity="), "{line}: {s}");
+      }
+    }
+  }
+
+  // Segments that are already short on screen are not cut into further
+  // depth-sorting pieces, so a densely sampled curve keeps about one
+  // vertex per sample instead of eight.
+  #[test]
+  fn dense_line_is_not_subdivided() {
+    let samples = 2001;
+    let s = svg(&format!(
+      "Graphics3D[Line[Table[{{Cos[t], Sin[t], t/10}}, \
+       {{t, 0, 2 Pi, 2 Pi/{}}}]], Boxed -> False]",
+      samples - 1
+    ));
+    let points = s
+      .split("points=\"")
+      .nth(1)
+      .and_then(|p| p.split('"').next())
+      .map_or(0, |p| p.split_whitespace().count());
+    assert!(
+      (samples..=samples + 64).contains(&points),
+      "{points} vertices for {samples} samples"
+    );
+    // A long segment is still cut, so faces can be ordered against it.
+    let s = svg(
+      "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}], \
+       Polygon[{{0, 1, 0}, {1, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    );
+    let points = s
+      .split("<polyline points=\"")
+      .skip(1)
+      .map(|p| p.split('"').next().unwrap_or("").split_whitespace().count())
+      .sum::<usize>();
+    assert!(points > 2, "{s}");
+  }
+
   // The triangles a translucent polygon is cut into are filled as one
   // path, so no light seam runs along the cut.
   #[test]
@@ -1189,6 +1296,22 @@ mod ticks {
     for label in [">-0.5</text>", ">0.0</text>", ">0.5</text>", ">1.0</text>"] {
       assert!(s.contains(label), "missing {label}");
     }
+  }
+
+  // Regression: `Ticks -> False` drew the automatic ticks; like `None`,
+  // it leaves every axis without tick labels.
+  #[test]
+  fn ticks_false_draws_no_tick_labels() {
+    for ticks in ["False", "None", "{False, False, False}"] {
+      let s = svg(&format!(
+        "Plot3D[x + y, {{x, 0, 1}}, {{y, 0, 1}}, Ticks -> {ticks}]"
+      ));
+      assert!(!s.contains("<text"), "Ticks -> {ticks}: {s}");
+    }
+    let s = svg(
+      "Plot3D[x + y, {x, 0, 1}, {y, 0, 1}, Ticks -> {False, Automatic, False}]",
+    );
+    assert!(s.contains(">0.5</text>"), "{s}");
   }
 
   // `{x, label}` pairs in `Ticks` label the tick with their label.
@@ -1284,7 +1407,10 @@ mod ticks {
   fn black_line_widths(svg: &str) -> Vec<f64> {
     svg
       .lines()
-      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter(|l| {
+        (l.starts_with("<line") || l.starts_with("<polyline"))
+          && l.contains("stroke=\"rgb(0,0,0)\"")
+      })
       .filter_map(|l| {
         l.split("stroke-width=\"")
           .nth(1)
@@ -1394,6 +1520,37 @@ mod plot3d_options {
     }
     let (lo, hi) = z_range("Plot3D[x y, {x, -1, 1}, {y, -1, 1}]");
     assert_eq!((lo, hi), (-1.0, 1.0));
+  }
+
+  // Regression: the `Graphics3D` a `Plot3D` returns kept the whole sampled
+  // surface though a `RegionFunction` had cut it, so `Show` of the plot drew
+  // the excluded part too. Its points now stay in the region, and the cells
+  // along the region's edge are clipped to it as in the standalone render.
+  #[test]
+  fn region_function_cuts_the_returned_surface() {
+    clear_state();
+    let plot = "p = Plot3D[4 - x - y, {x, 0, 4}, {y, 0, 4}, \
+       PlotRange -> {0, 4}, RegionFunction -> Function[{x, y, z}, z > 0], \
+       Mesh -> None]; pts = Flatten[Cases[p, GraphicsComplex[v_, ___] :> v, \
+       Infinity], 1];";
+    assert_eq!(
+      interpret(&format!(
+        "{plot} {{Max[pts[[All, 1]] + pts[[All, 2]]] <= 4 + 10^-9, \
+         Max[pts[[All, 1]] + pts[[All, 2]]] > 3.99, \
+         Min[pts[[All, 1]]] == 0., Min[pts[[All, 2]]] == 0.}}"
+      ))
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+    // Shown alone, the plot keeps the same cut.
+    assert_eq!(
+      interpret(
+        "pts2 = Flatten[Cases[Show[p], GraphicsComplex[v_, ___] :> v, \
+         Infinity], 1]; Max[pts2[[All, 1]] + pts2[[All, 2]]] <= 4 + 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 
   // `Mesh -> n` draws n lines per direction, in the `MeshStyle`.

@@ -1153,9 +1153,10 @@ fn text_items_of_bold_row_are_plain() {
     r#"ExportString[Style[Row[{Text[Style["name", Bold]], "x"}], 18], "SVG"]"#,
   )
   .unwrap();
+  // The weight sits on the `<text>` or on a `<tspan>` around the word.
   let line = svg
     .lines()
-    .find(|l| l.contains(">name</text>"))
+    .find(|l| l.contains(">name</text>") || l.contains(">name</tspan>"))
     .unwrap_or_else(|| panic!("no name text: {svg}"));
   assert!(
     line.contains("font-weight=\"bold\""),

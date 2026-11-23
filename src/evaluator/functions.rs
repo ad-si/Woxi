@@ -110,6 +110,31 @@ pub fn is_builtin_symbol(name: &str) -> bool {
   ALL_BUILTIN_NAMES.contains(name) || FORMAL_SYMBOLS.contains(name)
 }
 
+/// Built-ins whose `effect_level` in functions.csv says that evaluating
+/// them does more than compute a value: they print, change state or touch
+/// files and the network (`effectful`, `stateful`, `io`).
+static SIDE_EFFECTING_BUILTINS: LazyLock<HashSet<&'static str>> =
+  LazyLock::new(|| {
+    FUNCTIONS_CSV
+      .lines()
+      .skip(1)
+      .filter_map(|line| {
+        // Read the trailing columns from the right, as the description may
+        // contain (quoted) commas.
+        let fields: Vec<&str> = line.rsplitn(5, ',').collect();
+        let name = fields.last()?.split(',').next()?.trim();
+        let effect_level = fields.get(2)?.trim();
+        matches!(effect_level, "effectful" | "stateful" | "io").then_some(name)
+      })
+      .collect()
+  });
+
+/// True if evaluating the built-in `name` has side effects beyond
+/// returning a value (printing, assignment, file or network access).
+pub fn is_side_effecting_builtin(name: &str) -> bool {
+  SIDE_EFFECTING_BUILTINS.contains(name)
+}
+
 /// Information about a built-in Wolfram Language function.
 pub struct BuiltinFunctionInfo {
   pub description: &'static str,

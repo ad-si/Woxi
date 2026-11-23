@@ -2,6 +2,21 @@
 
 # Unreleased
 
+- `HorizontalGauge`/`VerticalGauge` draw `GaugeMarkers -> "BarMarker"` as
+    thin bars, fill a rounded face panel for `GaugeFaceStyle` (a named face
+    such as `"GlassRectangle"` or a color) and show a `GaugeLabels` title
+    (`Placed[label, Top | Bottom]`).
+- A Manipulate `Animator` control over an unbounded range
+    (`{t, 0, Infinity, dt, Animator}`) plays its variable on forever with
+    play/pause and reset buttons instead of looping a 0..2π slider.
+- 3D scenes whose hidden faces cross one another no longer draw the faces
+    of a solid before the hidden parts behind it: stacks of slabs poking
+    out of a cube are drawn emerging from its faces instead of wholly over
+    them.
+- A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
+    `Text@Row` or grid keeps its left padding, so the label stays the same
+    width as the value changes. `ToBoxes` of such a `NumberForm` around an
+    arbitrary-precision number (`N[1, 4]`) typesets its padded digits.
 - `Column` honors `ItemStyle`: a single style (`Directive[24, Bold, Red]`)
     styles every item, a list styles the items in turn. A fixed `ItemSize`
     width is the column's whole width, and stacked boxes (framed items,

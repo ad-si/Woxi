@@ -24,6 +24,16 @@ its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
 named list pattern is compiled into a `List` head plus an element condition,
 and the display rebuilds the pattern from the head alone.
 
+### Displaying held `Graphics[…]` evaluates its primitives
+
+A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset
+display (the Playground/Studio SVG of a result) turns the box back into a
+`Graphics[…]` expression and renders it with the ordinary `Graphics`
+renderer, which evaluates the content. So the display of
+`Hold[Graphics[{n++; Point[{0, 0}]}]]` increments `n`. Messages raised by
+that drawing (`Part::pkspec1` from a held `Graphics[Line[pts[[i]]]]` inside
+a `Table`) are discarded, but side effects are not undone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
@@ -5653,7 +5663,9 @@ reproduce wolframscript's primitive tree:
   last digits with the marker position in wolframscript, and the series
   colors from the third series on drift in the last digit. The colors
   are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
-  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
+  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. `ImageSize` and
+  `Background` are honored; `LabelStyle` and `TicksStyle` are ignored, so
+  the scale keeps its default gray 10-point labels. The renderer
   draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
   scale's tick marks have no length.
 
@@ -5953,7 +5965,10 @@ which for this box is the lower-right y edge and the right vertical z edge;
 it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
 label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
 …`), so Wolfram seems to thin the ticks of a short box side. One box shape
-doesn't pin down either rule, so both stay as they are.
+doesn't pin down either rule, so both stay as they are. (A Demonstration
+snapshot of a box 1.6 times as tall as it is deep does pin down one
+exception: the x axis, along the front face, stays on the bottom front edge
+although the top back one is nearer the viewer; Woxi follows that.)
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6007,6 +6022,9 @@ overlays clickable areas on them.)
 
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
+- A `TabView` in a `Manipulate` body (or any rendered layout) is drawn as
+  just its selected pane: the row of tab labels and the tab frame around the
+  pane are not drawn.
 - One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
@@ -7216,6 +7234,18 @@ for the *same* value depending on how many evaluation passes each side saw.
 `[13C]`-style isotope atoms get a WL `UnpairedElectronCount` property Woxi
 omits, and the no-carbon Hill ordering diverges — WL writes ammonium as `NH4`
 (N before H) where Woxi keeps strict alphabetical order.
+
+### `MoleculePlot` options and `MoleculePlot3D`
+
+`MoleculePlot` honors `ImageSize`, `PlotTheme -> "AllAtom"` (every hydrogen
+drawn), `PlotTheme -> "Monochrome"` (labels in the bond color) and
+`AtomLabels` rules whose value is `"AtomIndex"`; the index is drawn as a
+small number beside the atom, while WL's exact placement and styling are
+unverified. `AtomLabels -> None` keeps the heteroatom symbols, and other
+themes (`"Aromatic"`, …) and frame options such as `ImagePadding` are
+accepted but change nothing. `MoleculePlot3D` builds its own ball-and-stick
+`Graphics3D` (CPK colors, covalent-radius bond lengths, a deterministic
+force-field conformer) instead of WL's conformer and primitive tree.
 
 ### `SpherePoints` and `ShiftRegisterSequence`
 

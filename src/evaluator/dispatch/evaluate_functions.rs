@@ -855,9 +855,11 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "Legend",
       "LegendBackground",
       "LegendBorder",
+      "LegendLabelSpace",
       "LegendPosition",
       "LegendShadow",
       "LegendSize",
+      "LegendTextSpace",
       "ShowLegend",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
@@ -2532,6 +2534,9 @@ fn evaluate_function_call_ast_inner(
     }
     "MoleculePlot" => {
       return crate::functions::molecule_render::molecule_plot_ast(args);
+    }
+    "MoleculePlot3D" => {
+      return crate::functions::molecule_render::molecule_plot3d_ast(args);
     }
     "Exception" if args.len() <= 2 => {
       return crate::functions::confirm_ast::exception_ast(args);
