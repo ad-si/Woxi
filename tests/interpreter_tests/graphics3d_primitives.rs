@@ -22,6 +22,22 @@ fn fills(svg: &str) -> std::collections::BTreeSet<String> {
 mod solids {
   use super::*;
 
+  /// `Axes -> Automatic` draws the three labeled axes of a 3D scene, the
+  /// same as `Axes -> True` (Demonstrations often pass it to `Show`).
+  /// Regression: it was ignored, leaving the box without ticks or labels.
+  #[test]
+  fn axes_automatic_draws_the_axes() {
+    let with = |axes: &str| {
+      svg(&format!(
+        "Graphics3D[Sphere[], Axes -> {axes}, AxesLabel -> {{\"x\", \"y\", \"z\"}}]"
+      ))
+    };
+    let automatic = with("Automatic");
+    assert!(automatic.matches("<text").count() > 3);
+    assert_eq!(automatic, with("True"));
+    assert_eq!(with("False").matches("<text").count(), 0);
+  }
+
   #[test]
   fn scaled_polygon_coordinates_use_the_scene_bounds() {
     assert_eq!(
@@ -280,6 +296,43 @@ mod solids {
          Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
         b = 1.0 - d,
         r = 0.22 * d
+      ))
+    );
+  }
+
+  /// A `Tube` without a radius is as thick as a fixed fraction (0.0035) of
+  /// the diagonal of the scene's box, not of its own curve.
+  #[test]
+  fn tube_default_radius_is_sized_by_the_scene() {
+    let r = 0.0035 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}], {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}, {r}], {range}]"
+      ))
+    );
+  }
+
+  /// Every edge of a wireframe drawn as separate radius-less tubes (here
+  /// through a `GraphicsComplex`) is equally thick, however long it is.
+  /// Regression: each two-point tube took a hundredth of its own length,
+  /// so the edges of a tube icosahedron came out as hairlines.
+  #[test]
+  fn tube_default_radius_is_shared_by_tubes_of_any_length() {
+    let r = 0.0035 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    let pts = "{{0, 0, 0}, {1.5, 0, 0}, {0, 0.2, 0}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[GraphicsComplex[{pts}, Tube[{{{{1, 2}}, {{1, 3}}}}]], \
+         {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[GraphicsComplex[{pts}, \
+         {{Tube[{{1, 2}}, {r}], Tube[{{1, 3}}, {r}]}}], {range}]"
       ))
     );
   }
@@ -1031,6 +1084,92 @@ mod plot_range_clipping {
 mod outlines {
   use super::*;
 
+  // A point at the corner of a solid turned away from the viewer is
+  // hidden by the faces meeting there, which lie wholly in front of it
+  // (wolframscript draws no dot over them). A point on the corner nearest
+  // the viewer, or inside a face, is still drawn over the faces.
+  #[test]
+  fn a_point_on_a_far_corner_is_hidden_by_the_faces_in_front() {
+    for (corner, view) in [
+      ("{0, 0, 0}", ""),
+      ("{1, 0, 0}", ", ViewPoint -> {-2, -1.5, 1.2}"),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{Cuboid[{{0, 0, 0}}, {{1, 1, 1}}], PointSize[0.05], \
+         Red, Point[{corner}], Green, Point[{{0.5, 0, 0.5}}]}}, \
+         Boxed -> False{view}]"
+      ));
+      let lines: Vec<&str> = s.lines().collect();
+      let attr = |l: &str, name: &str| -> f64 {
+        let rest =
+          &l[l.find(&format!(" {name}=\"")).unwrap() + name.len() + 3..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      let dot = |color: &str| {
+        let n = lines
+          .iter()
+          .position(|l| l.starts_with("<circle") && l.contains(color))
+          .unwrap();
+        (n, attr(lines[n], "cx"), attr(lines[n], "cy"))
+      };
+      // The draw positions of the faces with a corner at, or containing,
+      // a point on screen.
+      let faces = |x: f64, y: f64, inside: bool| -> Vec<usize> {
+        lines
+          .iter()
+          .enumerate()
+          .filter(|(_, l)| l.starts_with("<polygon"))
+          .filter(|(_, l)| {
+            let pts: Vec<(f64, f64)> = l
+              .split("points=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .split(' ')
+              .map(|p| {
+                let (a, b) = p.split_once(',').unwrap();
+                (a.parse().unwrap(), b.parse().unwrap())
+              })
+              .collect();
+            if !inside {
+              return pts.iter().any(|p| (p.0 - x).hypot(p.1 - y) < 1.0);
+            }
+            let mut odd = false;
+            for i in 0..pts.len() {
+              let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+              if (a.1 > y) != (b.1 > y)
+                && x < a.0 + (y - a.1) * (b.0 - a.0) / (b.1 - a.1)
+              {
+                odd = !odd;
+              }
+            }
+            odd
+          })
+          .map(|(n, _)| n)
+          .collect()
+      };
+      let (red, rx, ry) = dot("rgb(255,0,0)");
+      assert!(
+        faces(rx, ry, false).iter().any(|&f| f > red),
+        "far corner dot drawn over all faces at it: {s}"
+      );
+      let (green, gx, gy) = dot("rgb(0,255,0)");
+      let under = faces(gx, gy, true);
+      assert_ne!(under, Vec::<usize>::new());
+      assert!(
+        under.iter().all(|&f| f < green),
+        "face center dot hidden: {s}"
+      );
+    }
+    let s = svg(
+      "Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 1}], PointSize[0.05], Red, \
+       Point[{1, 0, 1}]}, Boxed -> False]",
+    );
+    assert!(s.find("<circle").unwrap() > s.rfind("<polygon").unwrap());
+  }
+
   // Cylinder and cone rims are outlined by the default edge, like
   // wolframscript's; `EdgeForm[]` removes them.
   #[test]
@@ -1125,9 +1264,11 @@ mod outlines {
          ViewPoint -> {{-2.5, 2, 2}}]"
       )))
     };
+    // Rod and bar each span the whole scene (23 units) on their own, so a
+    // `Cylinder`'s scene-span ring cap cuts them the same in every scene.
     let slab = "Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
-    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5]";
-    let bar = "Cylinder[{{-7.5, -10, 8.5}, {-7.5, 10, 8.5}}, 0.5]";
+    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 10}}, 0.5]";
+    let bar = "Cylinder[{{-7.5, -11, 8.5}, {-7.5, 11, 8.5}}, 0.5]";
     let pierced = scene(&format!("{slab}, {rod}"));
     let alone = scene(bar);
     let all = scene(&format!("{slab}, {rod}, {bar}"));
@@ -1206,6 +1347,61 @@ mod outlines {
        Line[{{0, 1, 1}, {1, 1, 1}}]}, Boxed -> False]",
     );
     assert_eq!(s.matches("<polyline ").count(), 2, "{s}");
+  }
+
+  // An opaque line is joined back into one stroke as well: drawn as many
+  // pieces, the overlapping round caps of a finely sampled curve pile up
+  // their anti-aliased edges until a thin line looks bold.
+  #[test]
+  fn opaque_line_is_one_stroke() {
+    for line in [
+      "Line[{{0, 0, 0}, {1, 1, 1}}]",
+      "Line[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}}]",
+      "Line[Table[{Cos[t], Sin[t], t/10}, {t, 0, 2 Pi, Pi/100}]]",
+    ] {
+      for directives in ["", "Red, Thickness[0.01], "] {
+        let s = svg(&format!(
+          "Graphics3D[{{{directives}{line}}}, Boxed -> False]"
+        ));
+        assert_eq!(s.matches("<polyline ").count(), 1, "{line}: {s}");
+        assert_eq!(s.matches("<line ").count(), 0, "{line}: {s}");
+        assert!(s.contains("stroke-linecap=\"round\""), "{line}: {s}");
+        assert!(!s.contains(" opacity="), "{line}: {s}");
+      }
+    }
+  }
+
+  // Segments that are already short on screen are not cut into further
+  // depth-sorting pieces, so a densely sampled curve keeps about one
+  // vertex per sample instead of eight.
+  #[test]
+  fn dense_line_is_not_subdivided() {
+    let samples = 2001;
+    let s = svg(&format!(
+      "Graphics3D[Line[Table[{{Cos[t], Sin[t], t/10}}, \
+       {{t, 0, 2 Pi, 2 Pi/{}}}]], Boxed -> False]",
+      samples - 1
+    ));
+    let points = s
+      .split("points=\"")
+      .nth(1)
+      .and_then(|p| p.split('"').next())
+      .map_or(0, |p| p.split_whitespace().count());
+    assert!(
+      (samples..=samples + 64).contains(&points),
+      "{points} vertices for {samples} samples"
+    );
+    // A long segment is still cut, so faces can be ordered against it.
+    let s = svg(
+      "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}], \
+       Polygon[{{0, 1, 0}, {1, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    );
+    let points = s
+      .split("<polyline points=\"")
+      .skip(1)
+      .map(|p| p.split('"').next().unwrap_or("").split_whitespace().count())
+      .sum::<usize>();
+    assert!(points > 2, "{s}");
   }
 
   // The triangles a translucent polygon is cut into are filled as one
@@ -1348,11 +1544,87 @@ mod ticks {
     }
   }
 
+  /// Every corner of the `<polygon>` fills of an SVG.
+  fn polygon_points(svg: &str) -> Vec<Vec<(f64, f64)>> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<polygon points=\""))
+      .map(|l| {
+        l["<polygon points=\"".len()..]
+          .split('"')
+          .next()
+          .unwrap()
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect()
+      })
+      .collect()
+  }
+
+  // The facets of a smooth solid drawn without edges have only internal
+  // cuts. Their fills met edge to edge, so at a low resolution the
+  // anti-aliased cuts let what lies behind show through as a lattice of
+  // seams across the surface. Each fill now reaches a little into the
+  // neighbors it shares a cut with, but never past the silhouette.
+  #[test]
+  fn smooth_solid_facets_overlap_across_shared_cuts() {
+    for solid in ["Cylinder[]", "Cone[]", "Sphere[]"] {
+      let opaque = polygon_points(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {solid}}}, Boxed -> False]"
+      )));
+      // A widened edge adds two corners. Most facets share an edge with a
+      // neighbor; those on the silhouette keep that edge where it is.
+      let widened = opaque.iter().filter(|p| p.len() > 3).count();
+      let rim = opaque
+        .iter()
+        .filter(|p| p.len() == 5 || p.len() == 7)
+        .count();
+      assert!(
+        widened * 2 > opaque.len(),
+        "{solid}: {widened}/{}",
+        opaque.len()
+      );
+      assert!(rim > 0, "{solid}");
+      // An opaque sphere is tessellated about the line of sight, so only
+      // the other solids outline the same facets when nearly opaque.
+      if solid == "Sphere[]" {
+        continue;
+      }
+      // Nearly opaque facets are not widened, and outline the same solid.
+      let plain = polygon_points(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], Opacity[0.999], {solid}}}, Boxed -> False]"
+      )));
+      assert!(plain.iter().all(|p| p.len() == 3), "{solid}");
+      let extent = |polys: &[Vec<(f64, f64)>]| {
+        let pts = polys.iter().flatten();
+        let xs = pts.clone().map(|p| p.0);
+        let ys = pts.map(|p| p.1);
+        [
+          xs.clone().fold(f64::MAX, f64::min),
+          xs.fold(f64::MIN, f64::max),
+          ys.clone().fold(f64::MAX, f64::min),
+          ys.fold(f64::MIN, f64::max),
+        ]
+      };
+      // Each band reaches into the neighboring facet only.
+      let (a, b) = (extent(&opaque), extent(&plain));
+      for k in 0..4 {
+        assert!((a[k] - b[k]).abs() <= 0.11, "{solid}: {a:?} vs {b:?}");
+      }
+    }
+  }
+
   /// The `stroke-width` values of the black `<line>` pieces of an SVG.
   fn black_line_widths(svg: &str) -> Vec<f64> {
     svg
       .lines()
-      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter(|l| {
+        (l.starts_with("<line") || l.starts_with("<polyline"))
+          && l.contains("stroke=\"rgb(0,0,0)\"")
+      })
       .filter_map(|l| {
         l.split("stroke-width=\"")
           .nth(1)
@@ -1820,11 +2092,20 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
-  /// The area of the first filled arrowhead `<polygon>` (the outline after
-  /// a `<polyline>`), by the shoelace formula.
+  /// The arrowhead `<polygon>`s of a scene: the filled, unstroked ones
+  /// (faces are stroked with a hairline), each with its point list.
+  fn head_polygons(svg: &str) -> Vec<&str> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<polygon points=\"") && !l.contains("stroke"))
+      .map(|l| l["<polygon points=\"".len()..].split('"').next().unwrap())
+      .collect()
+  }
+
+  /// The area of the first filled arrowhead `<polygon>`, by the shoelace
+  /// formula.
   fn head_area(svg: &str) -> f64 {
-    let after = svg.split("<polyline").nth(1).unwrap();
-    let pts = after.split("<polygon points=\"").nth(1).unwrap();
+    let pts = head_polygons(svg)[0];
     let p: Vec<(f64, f64)> = pts
       .split('"')
       .next()
@@ -1859,13 +2140,11 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
-  /// The first point of every arrowhead `<polygon>` after the arrow's
-  /// `<polyline>` (each head's outline starts at its tip).
+  /// The first point of every arrowhead `<polygon>` (each head's outline
+  /// starts at its tip).
   fn head_tips(svg: &str) -> Vec<(f64, f64)> {
-    let after = svg.split("<polyline").nth(1).unwrap();
-    after
-      .split("<polygon points=\"")
-      .skip(1)
+    head_polygons(svg)
+      .into_iter()
       .map(|pts| {
         let first = pts.split(' ').next().unwrap();
         let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
@@ -1938,6 +2217,132 @@ mod arrows_and_box {
     let short = head_area(&scene("{0.01, 0, 0}"));
     let long = head_area(&scene("{0.9, 0, 0}"));
     assert!((short - long).abs() < 0.2 * long, "{short} vs {long}");
+  }
+
+  /// The screen midpoint of every `<line>` piece stroked in `color`, with
+  /// its position among the lines of `svg`.
+  /// The line pieces drawn in `color`: each `<line>`, and each segment
+  /// between consecutive points of a `<polyline>` (opaque pieces drawn one
+  /// after another are joined into one), with the index of the SVG line
+  /// that draws it and its midpoint.
+  fn line_pieces(svg: &str, color: &str) -> Vec<(usize, (f64, f64))> {
+    let attr = |l: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let rest = &l[l.find(&key).unwrap() + key.len()..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let stroke = format!("stroke=\"{color}\"");
+    let mut pieces = Vec::new();
+    for (i, l) in svg.lines().enumerate() {
+      if !l.contains(&stroke) {
+        continue;
+      }
+      if l.starts_with("<line ") {
+        let x = f64::midpoint(attr(l, "x1"), attr(l, "x2"));
+        let y = f64::midpoint(attr(l, "y1"), attr(l, "y2"));
+        pieces.push((i, (x, y)));
+      } else if l.starts_with("<polyline ") {
+        let pts = l["<polyline points=\"".len()..].split('"').next().unwrap();
+        let pts: Vec<(f64, f64)> = pts
+          .split(' ')
+          .map(|xy| {
+            let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+            (it.next().unwrap(), it.next().unwrap())
+          })
+          .collect();
+        for w in pts.windows(2) {
+          pieces.push((
+            i,
+            (f64::midpoint(w[0].0, w[1].0), f64::midpoint(w[0].1, w[1].1)),
+          ));
+        }
+      }
+    }
+    pieces
+  }
+
+  // An opaque solid hides the part of a 3D arrow inside or behind it: the
+  // shaft is cut into depth-sorted pieces like a `Line`, so the sphere's
+  // front faces are painted over the pieces they cover.
+  #[test]
+  fn opaque_sphere_hides_the_arrow_shaft_through_it() {
+    let s = svg(
+      "Graphics3D[{Red, Thickness[0.01], Arrow[{{-3, 0, 0}, {3, 0, 0}}], \
+       White, Sphere[{0, 0, 0}, 1]}, Boxed -> False, ViewPoint -> {2, 2, 2}]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let last_face = lines
+      .iter()
+      .rposition(|l| l.starts_with("<polygon") && l.contains("stroke"))
+      .expect("sphere faces");
+    // The sphere's outline on screen, from the extent of its faces.
+    let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
+    for l in lines
+      .iter()
+      .filter(|l| l.contains("stroke") && l.starts_with("<polygon"))
+    {
+      let pts = l["<polygon points=\"".len()..].split('"').next().unwrap();
+      for xy in pts.split(' ') {
+        let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+        let (x, y) = (it.next().unwrap(), it.next().unwrap());
+        lo = (lo.0.min(x), lo.1.min(y));
+        hi = (hi.0.max(x), hi.1.max(y));
+      }
+    }
+    let center = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
+    let radius = (hi.0 - lo.0) / 2.0;
+    let pieces = line_pieces(&s, "rgb(255,0,0)");
+    // The shaft is drawn on both sides of the sphere.
+    assert!(
+      pieces.iter().any(|&(_, (x, _))| x < center.0 - radius),
+      "{s}"
+    );
+    assert!(
+      pieces.iter().any(|&(_, (x, _))| x > center.0 + radius),
+      "{s}"
+    );
+    // No piece over the middle of the sphere is painted on top of it.
+    for &(i, (x, y)) in &pieces {
+      let d = ((x - center.0).powi(2) + (y - center.1).powi(2)).sqrt();
+      assert!(i < last_face || d > 0.8 * radius, "piece at {x},{y}: {s}");
+    }
+  }
+
+  // A 3D arrowhead inside an opaque solid is hidden by it as well.
+  #[test]
+  fn opaque_sphere_hides_an_arrowhead_inside_it() {
+    let s = svg(
+      "Graphics3D[{Red, Arrowheads[0.05], Arrow[{{-3, 0, 0}, {0, 0, 0}}], \
+       White, Sphere[{0, 0, 0}, 1]}, Boxed -> False]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let head = lines
+      .iter()
+      .position(|l| {
+        l.starts_with("<polygon") && l.contains("fill=\"rgb(255,0,0)\"")
+      })
+      .expect("arrowhead");
+    let last_face = lines
+      .iter()
+      .rposition(|l| l.starts_with("<polygon") && l.contains("stroke"))
+      .expect("sphere faces");
+    assert!(head < last_face, "{s}");
+  }
+
+  // A long straight segment is cut into pieces a few pixels long, so where
+  // it passes into a surface it disappears close to the crossing rather
+  // than up to an eighth of its length away.
+  #[test]
+  fn long_3d_line_is_cut_finely_for_depth_sorting() {
+    let s =
+      svg("Graphics3D[{Red, Line[{{-3, 0, 0}, {3, 0, 0}}]}, Boxed -> False]");
+    assert!(line_pieces(&s, "rgb(255,0,0)").len() > 32, "{s}");
+    // A short one is not cut at all.
+    let s = svg(
+      "Graphics3D[{Red, Line[{{0, 0, 0}, {0.01, 0, 0}}], \
+       Point[{{-3, -3, -3}, {3, 3, 3}}]}, Boxed -> False]",
+    );
+    assert_eq!(line_pieces(&s, "rgb(255,0,0)").len(), 1, "{s}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.
@@ -2354,6 +2759,38 @@ mod box_and_tick_styles {
     assert!(s.matches(orange).count() >= 6, "{s}");
   }
 
+  // A font size in `TicksStyle` sizes the tick labels of the axes it
+  // styles, overriding a `LabelStyle` size.
+  #[test]
+  fn ticks_style_font_size_sizes_tick_labels() {
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       TicksStyle -> Directive[17, Gray]]",
+    );
+    let gray17 = "font-size=\"17\" fill=\"rgb(128,128,128)\"";
+    assert!(s.matches(gray17).count() >= 6, "{s}");
+    assert!(!s.contains("font-size=\"10\""), "{s}");
+
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       LabelStyle -> 12, TicksStyle -> {Red, 19, Blue}]",
+    );
+    assert!(s.contains("font-size=\"12\" fill=\"rgb(255,0,0)\""), "{s}");
+    assert!(s.contains("font-size=\"19\""), "{s}");
+    assert!(s.contains("font-size=\"12\" fill=\"rgb(0,0,255)\""), "{s}");
+  }
+
+  // `Plot3D` styles its tick labels with `TicksStyle` too.
+  #[test]
+  fn plot3d_ticks_style_colors_and_sizes_tick_labels() {
+    let s = svg(
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, Mesh -> None, \
+       TicksStyle -> Directive[15, Red]]",
+    );
+    let red15 = "font-size=\"15\" fill=\"rgb(255,0,0)\"";
+    assert!(s.matches(red15).count() >= 6, "{s}");
+  }
+
   // Options of a parametric plot carry into `Show`, where a mixed
   // `PlotRange` then widens one axis.
   #[test]
@@ -2485,21 +2922,26 @@ mod internal_cut_seams {
     assert_eq!(polygon_point_counts(&s), vec![3], "{s}");
   }
 
-  /// Overlapping translucent halves would darken the diagonal, and without
-  /// a drawn outline the band could show past the face, so neither widens.
+  /// Overlapping translucent halves would darken the diagonal, so they
+  /// do not widen.
   #[test]
-  fn translucent_or_edgeless_faces_keep_three_corners() {
-    for style in ["Opacity[0.5]", "EdgeForm[]"] {
-      let s = svg(&format!(
-        "Graphics3D[{{{style}, {SQUARE}}}, Boxed -> False]"
-      ));
-      // A translucent face's pieces are filled as one `<path>` instead.
-      let counts = polygon_point_counts(&s);
-      assert!(counts.iter().all(|&n| n == 3), "{style}: {s}");
-      if style == "EdgeForm[]" {
-        assert_eq!(counts, vec![3, 3], "{style}: {s}");
-      }
-    }
+  fn translucent_faces_keep_three_corners() {
+    let s = svg(&format!(
+      "Graphics3D[{{Opacity[0.5], {SQUARE}}}, Boxed -> False]"
+    ));
+    // A translucent face's pieces are filled as one `<path>` instead.
+    let counts = polygon_point_counts(&s);
+    assert!(counts.iter().all(|&n| n == 3), "{s}");
+  }
+
+  /// Without a drawn outline nothing would cover a band leaving a flat
+  /// face, so its halves keep their exact corners.
+  #[test]
+  fn edgeless_flat_faces_keep_three_corners() {
+    let s = svg(&format!(
+      "Graphics3D[{{EdgeForm[], {SQUARE}}}, Boxed -> False]"
+    ));
+    assert_eq!(polygon_point_counts(&s), vec![3, 3], "{s}");
   }
 }
 
@@ -2588,43 +3030,92 @@ mod perforated_faces {
   }
 }
 
+mod plot_label {
+  use super::*;
+
+  /// The `font-size` of the first `<text>` element of an SVG.
+  fn first_text_font_size(svg: &str) -> f64 {
+    let text = &svg[svg.find("<text").expect("no <text>")..];
+    let start = text.find("font-size=\"").unwrap() + "font-size=\"".len();
+    let end = start + text[start..].find('"').unwrap();
+    text[start..end].parse().unwrap()
+  }
+
+  #[test]
+  fn short_title_keeps_the_default_size() {
+    let s = svg("Graphics3D[Cuboid[], PlotLabel -> \"title\"]");
+    assert_eq!(first_text_font_size(&s), 16.0, "{s}");
+  }
+
+  #[test]
+  fn wide_title_shrinks_to_fit_the_picture() {
+    // Regression: a title wider than the picture (a long readout `Row`)
+    // was set at 16pt and clipped at both edges.
+    let s = svg(
+      "Graphics3D[Cuboid[], ImageSize -> 300, PlotLabel -> Row[{\
+       \"energy = -2.0000, kinetic = 0.0000, potential = -2.0000 units\"}]]",
+    );
+    let size = first_text_font_size(&s);
+    assert!(size < 16.0 && size >= 9.0, "font-size {size}: {s}");
+  }
+
+  #[test]
+  fn explicit_font_size_is_kept() {
+    let long = "a long title that is far wider than the picture it labels";
+    let s = svg(&format!(
+      "Graphics3D[Cuboid[], ImageSize -> 200, \
+       PlotLabel -> Style[\"{long}\", 20]]"
+    ));
+    assert_eq!(first_text_font_size(&s), 20.0, "{s}");
+  }
+}
+
 mod coincident_lines {
   use super::*;
 
-  /// For every on-screen line position drawn in both colors, the color
-  /// of the stroke that ends up on top.
+  /// For every on-screen line segment drawn in both colors, the color of
+  /// the stroke that ends up on top. Segments come from `<line>` elements
+  /// and from consecutive points of `<polyline>` elements.
   fn top_colors(svg: &str) -> Vec<String> {
-    let mut last: std::collections::HashMap<String, (String, bool)> =
-      std::collections::HashMap::new();
-    for line in svg.split("<line ").skip(1) {
-      let line = line.split("/>").next().unwrap();
-      let Some(color) = line
-        .split("stroke=\"")
+    let attr = |el: &str, name: &str| -> Option<String> {
+      el.split(&format!(" {name}=\""))
         .nth(1)
         .and_then(|s| s.split('"').next())
-      else {
+        .map(str::to_string)
+    };
+    let mut last: std::collections::HashMap<String, (String, bool)> =
+      std::collections::HashMap::new();
+    for el in svg.split('<').skip(1) {
+      let el = el.split('>').next().unwrap();
+      let segments: Vec<String> = if el.starts_with("line ") {
+        let coords: Option<Vec<String>> = ["x1", "y1", "x2", "y2"]
+          .iter()
+          .map(|a| attr(el, a))
+          .collect();
+        coords.map(|c| vec![c.join(",")]).unwrap_or_default()
+      } else if el.starts_with("polyline ") {
+        let points = attr(el, "points").unwrap_or_default();
+        let points: Vec<&str> = points.split(' ').collect();
+        points
+          .windows(2)
+          .map(|w| format!("{},{}", w[0], w[1]))
+          .collect()
+      } else {
+        continue;
+      };
+      let Some(color) = attr(el, "stroke") else {
         continue;
       };
       if color != "rgb(0,0,255)" && color != "rgb(255,0,0)" {
         continue;
       }
-      let coords: String = ["x1", "y1", "x2", "y2"]
-        .iter()
-        .map(|a| {
-          line
-            .split(&format!(" {a}=\""))
-            .nth(1)
-            .and_then(|s| s.split('"').next())
-            .unwrap_or("")
-            .to_string()
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-      let entry = last.entry(coords).or_insert((color.to_string(), false));
-      if entry.0 != color {
-        entry.1 = true;
+      for coords in segments {
+        let entry = last.entry(coords).or_insert((color.clone(), false));
+        if entry.0 != color {
+          entry.1 = true;
+        }
+        entry.0 = color.clone();
       }
-      entry.0 = color.to_string();
     }
     last
       .into_values()

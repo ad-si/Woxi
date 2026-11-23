@@ -860,6 +860,7 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "LegendShadow",
       "LegendSize",
       "LegendTextSpace",
+      "PlotLegend",
       "ShowLegend",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
@@ -1021,6 +1022,9 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
   if crate::utils::is_standard_distribution_context(ctx)
     || crate::packages_list().iter().any(|pkg| pkg == ctx)
   {
+    if !package_loaded(ctx) {
+      crate::functions::plot_legends_package::announce_obsolete_package(ctx);
+    }
     register_standard_context_symbols(ctx);
     crate::register_package(ctx.to_string());
     return Ok(());
@@ -2535,6 +2539,9 @@ fn evaluate_function_call_ast_inner(
     "MoleculePlot" => {
       return crate::functions::molecule_render::molecule_plot_ast(args);
     }
+    "MoleculePlot3D" => {
+      return crate::functions::molecule_render::molecule_plot3d_ast(args);
+    }
     "Exception" if args.len() <= 2 => {
       return crate::functions::confirm_ast::exception_ast(args);
     }
@@ -2888,6 +2895,10 @@ fn evaluate_function_call_ast_inner(
       return Ok(unevaluated("Needs", args));
     }
     if crate::utils::is_standard_distribution_context(ctx) {
+      // `Needs` reads a package only the first time.
+      if !package_loaded(ctx) {
+        crate::functions::plot_legends_package::announce_obsolete_package(ctx);
+      }
       register_standard_context_symbols(ctx);
       return Ok(null_expr());
     }
