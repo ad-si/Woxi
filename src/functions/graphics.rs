@@ -32406,41 +32406,99 @@ fn text_display_cell_width(
   if !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
     return None;
   }
-  fn plain(e: &Expr) -> bool {
-    match e {
-      Expr::String(s) => !s.contains('\n') && !s.contains("\\!"),
-      Expr::Integer(_) | Expr::Real(_) => true,
-      Expr::FunctionCall { name, args }
-        if matches!(name.as_str(), "Style" | "NumberForm")
-          && !args.is_empty() =>
-      {
-        plain(&args[0])
+  let mut runs = Vec::new();
+  text_cell_runs(cell, default_style.font_weight == Some("bold"), &mut runs)?;
+  // Each run measures the larger of the front end's Arial layout and the
+  // extent of the face the SVG actually draws, so the column matches
+  // Wolfram's while the drawn text still fits inside it. Bold text is set
+  // wider (a bold 20 pt `"fraction"` heading takes about 85 pt).
+  Some(
+    runs
+      .iter()
+      .map(|(markup, bold)| {
+        let layout =
+          crate::functions::plot_padding::text_width(markup, font_size);
+        let (_, drawn) = crate::functions::plot_padding::exported_text_extent(
+          markup, font_size,
+        );
+        let weight = if *bold {
+          crate::functions::plot_padding::BOLD_WIDTH_SCALE
+        } else {
+          1.0
+        };
+        layout.max(drawn) * weight
+      })
+      .sum(),
+  )
+}
+
+/// The one-line runs of plain text (each run's markup and whether it is
+/// bold) a grid cell of a `Text[…]` display sets: a string or a number,
+/// possibly under `Style`/`NumberForm`, or a `Row` of such items (with an
+/// optional plain separator between them), e.g. `Row[{"  ", Style[1,
+/// Bold], ": 12-34"}]`. `None` when the cell holds anything else, such as
+/// a nested layout, several lines, or a `Row` item at its own font size.
+fn text_cell_runs(
+  cell: &Expr,
+  bold: bool,
+  runs: &mut Vec<(String, bool)>,
+) -> Option<()> {
+  match cell {
+    Expr::String(s) if s.contains('\n') || s.contains("\\!") => None,
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => {
+      let markup = expr_to_svg_markup(cell);
+      if markup.contains('<') || markup.contains('\n') {
+        return None;
       }
-      _ => false,
+      runs.push((markup, bold));
+      Some(())
     }
+    Expr::FunctionCall { name, args }
+      if name == "NumberForm" && !args.is_empty() =>
+    {
+      // The formatted value must itself be one line of plain text.
+      let mut inner = Vec::new();
+      if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Row")
+        || text_cell_runs(&args[0], bold, &mut inner).is_none()
+      {
+        return None;
+      }
+      let markup = expr_to_svg_markup(cell);
+      if markup.contains('<') || markup.contains('\n') {
+        return None;
+      }
+      runs.push((markup, bold));
+      Some(())
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let bold = bold || extract_cell_style(cell).font_weight == "bold";
+      text_cell_runs(&args[0], bold, runs)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.len(), 1 | 2) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      for (k, item) in items.iter().enumerate() {
+        if k > 0
+          && let Some(sep) = args.get(1)
+        {
+          text_cell_runs(sep, bold, runs)?;
+        }
+        // An item at its own size would need its own scale; the cell's
+        // scale only covers a size set around the whole cell.
+        if extract_cell_style(item).font_size.is_some() {
+          return None;
+        }
+        text_cell_runs(item, bold, runs)?;
+      }
+      Some(())
+    }
+    _ => None,
   }
-  if !plain(cell) {
-    return None;
-  }
-  let markup = expr_to_svg_markup(cell);
-  if markup.contains('<') || markup.contains('\n') {
-    return None;
-  }
-  // The larger of the front end's Arial layout and the extent of the face
-  // the SVG actually draws, so the column matches Wolfram's while the drawn
-  // text still fits inside it. Bold text is set wider (a bold 20 pt
-  // `"fraction"` heading takes about 85 pt).
-  let layout = crate::functions::plot_padding::text_width(&markup, font_size);
-  let (_, drawn) =
-    crate::functions::plot_padding::exported_text_extent(&markup, font_size);
-  let bold = extract_cell_style(cell).font_weight == "bold"
-    || default_style.font_weight == Some("bold");
-  let weight = if bold {
-    crate::functions::plot_padding::BOLD_WIDTH_SCALE
-  } else {
-    1.0
-  };
-  Some(layout.max(drawn) * weight)
 }
 
 thread_local! {
