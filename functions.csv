@@ -6471,3 +6471,4 @@ NDSolve`Iterate,"Integrates an NDSolve`StateData in place up to a given time (fo
 NDSolve`ProcessSolutions,"Gives the solution rules computed so far for an NDSolve`StateData",✅,contextual,5.0,
 NDSolve`StateData,"Represents the state of a step-wise NDSolve problem set up by NDSolve`ProcessEquations",✅,none,5.0,
 ChartElementData,"Lists the built-in ChartElementFunction names of a chart function",✅,pure,7.0,
+PolynomialForm,"Typesets a polynomial with its terms in standard (ascending) order, or in traditional (descending) order with TraditionalOrder -> True",🚧,pure,2.0,

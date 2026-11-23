@@ -32548,6 +32548,44 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // Linear syntax writes a superscript or subscript with the `\^` and `\_`
+    // operators (`x\^k`, `\(y(x)\)\^2`, `b\^\(n + 1\)`), and an explicit
+    // box may carry editing options (`MultilineFunction -> None`); the
+    // operators and the options used to be drawn as literal text.
+    #[test]
+    fn linear_syntax_script_operators_and_box_options() {
+      let text = |code: &str| -> String {
+        let svg = export_svg(&format!("Text[\"{code}\"]"));
+        let start = svg.find("dominant-baseline=\"central\">").unwrap();
+        let rest = &svg[start..];
+        rest[..rest.find("</text>").unwrap()].to_string()
+      };
+      let sup = |s: &str| {
+        format!("<tspan baseline-shift=\"super\" font-size=\"70%\">{s}</tspan>")
+      };
+      let sub = |s: &str| {
+        format!("<tspan baseline-shift=\"sub\" font-size=\"70%\">{s}</tspan>")
+      };
+      assert!(text("\\!\\(x\\^k\\)").ends_with(&format!("x{}", sup("k"))));
+      assert!(
+        text("\\!\\(TraditionalForm\\`\\(y(x)\\)\\^2\\)")
+          .ends_with(&format!("y(x){}", sup("2")))
+      );
+      assert!(text("\\!\\(a\\_1 + b\\^\\(n + 1\\)\\)").ends_with(&format!(
+        "a{} + b{}",
+        sub("1"),
+        sup("n + 1")
+      )));
+      for option in
+        ["MultilineFunction -> None", "Rule[MultilineFunction, None]"]
+      {
+        let shown = text(&format!(
+          "\\!\\(\\*SuperscriptBox[\\\"y\\\", \\\"\\[Prime]\\\", {option}]\\)"
+        ));
+        assert!(shown.ends_with(&format!("y{}", sup("\u{2032}"))), "{shown}");
+      }
+    }
+
     // Such a string is measured by what it displays, not by the markup it is
     // written with — otherwise the grid column holding it comes out several
     // times too wide.
