@@ -26123,7 +26123,10 @@ fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let boxes = crate::strip_number_precision_markers(&boxes);
-  let layout = layout_box(&boxes, TITLE_FONT);
+  // The words are set in the graphic's own (sans-serif) text face.
+  let layout = with_box_font_family(Some("sans-serif"), || {
+    layout_box(&boxes, TITLE_FONT)
+  });
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
