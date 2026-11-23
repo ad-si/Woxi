@@ -55648,6 +55648,25 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     Expr::String(s) => {
       inline_box_label_runs(s, italic).unwrap_or_else(|| output_run(italic))
     }
+    // A list typesets as `{a, b, …}` with each element set the way it
+    // would be on its own, so `{Style[x, Red], Style[y, Blue]}` keeps the
+    // color of each element instead of reading as one unstyled run.
+    Expr::List(items) => {
+      let plain = |text: &str| LabelRun {
+        text: text.to_string(),
+        italic: false,
+        ..Default::default()
+      };
+      let mut runs = vec![plain("{")];
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          runs.push(plain(", "));
+        }
+        runs.extend(manipulate_label_runs(item, italic));
+      }
+      runs.push(plain("}"));
+      runs
+    }
     // A label is typeset in StandardForm, which draws the named constants
     // of a number as their glyphs: an angle choice `15 Degree` reads
     // `15 °` and `Pi/2` reads `π/2`, not their OutputForm names. Only a
