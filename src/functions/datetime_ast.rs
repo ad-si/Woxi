@@ -2563,10 +2563,10 @@ fn unevaluated_date_difference(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
   )
 }
 
-/// DateString[date, format] — format a date as a string
 /// True if `s` is a recognized DateString format name — either a compound
 /// named format ("ISODate", "DateTime", …) or a single format element
-/// ("Year", "DayName", …). Used so `DateString[fmt]` formats the current date.
+/// ("Year", "DayName", "Hour12", …). Used so `DateString[fmt]` formats the
+/// current date.
 fn is_known_date_format(s: &str) -> bool {
   matches!(
     s,
@@ -2577,27 +2577,60 @@ fn is_known_date_format(s: &str) -> bool {
       | "Date"
       | "DateShort"
       | "Time"
-      | "Year"
+  ) || is_date_format_element(s)
+}
+
+/// True if `s` is a single format element that `DateString` replaces by a
+/// date component; any other string in a format list is a literal separator.
+fn is_date_format_element(s: &str) -> bool {
+  matches!(
+    s,
+    "Year"
       | "YearShort"
+      | "ISOYear"
       | "Month"
+      | "MonthShort"
       | "MonthName"
       | "MonthNameShort"
+      | "MonthNameInitial"
       | "Day"
+      | "DayShort"
       | "DayName"
       | "DayNameShort"
+      | "DayNameInitial"
       | "Hour"
+      | "Hour24"
+      | "HourShort"
+      | "Hour24Short"
+      | "Hour12"
+      | "Hour12Short"
+      | "AMPM"
+      | "AMPMLowerCase"
       | "Minute"
+      | "MinuteShort"
       | "Second"
+      | "SecondShort"
+      | "ISOWeekDay"
+      | "ISOWeekDate"
+      | "Week"
+      | "WeekShort"
+      | "Quarter"
+      | "QuarterName"
+      | "QuarterNameShort"
   )
 }
 
-/// True for a non-empty list made only of recognized format element names,
-/// e.g. `{"Hour", "Minute"}`; such a list formats the current date.
+/// True for a list of strings that is a format specification rather than a
+/// date: it holds at least one format element, and every other entry is a
+/// literal separator string, e.g. `{"Hour", ":", "Minute"}`. Such a list
+/// with no date formats the current date.
 fn is_format_list(e: &Expr) -> bool {
-  matches!(e, Expr::List(items) if !items.is_empty()
-    && items.iter().all(|i| matches!(i, Expr::String(s) if is_known_date_format(s))))
+  matches!(e, Expr::List(items)
+    if items.iter().all(|i| matches!(i, Expr::String(_)))
+      && items.iter().any(|i| matches!(i, Expr::String(s) if is_known_date_format(s))))
 }
 
+/// DateString[date, format] — format a date as a string
 pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // DateString[{elements...}] formats the current date.
   if let [list] = args

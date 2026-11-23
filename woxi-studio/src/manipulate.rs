@@ -2806,8 +2806,13 @@ impl ManipulateState {
     // Whether this pass actually ran a timed `Refresh` (one inside an
     // untaken `If` branch, e.g. a recorder that is switched off, does not
     // make the body re-run on its own).
-    let refresh_ran = woxi::take_timed_refresh();
-    self.timed_refresh = timed_refresh.filter(|_| refresh_ran);
+    let ran_interval = woxi::take_timed_refresh();
+    let refresh_ran = ran_interval.is_some();
+    // The body's own `Refresh` interval is resolved against the values it
+    // left behind; a `Refresh` reached only through a helper definition
+    // (`g[c] := Graphics[… Dynamic[Refresh[…, UpdateInterval -> 1]] …]`)
+    // is paced by the interval it ran with.
+    self.timed_refresh = timed_refresh.or(ran_interval).filter(|_| refresh_ran);
     self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
@@ -2881,9 +2886,6 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
-    // A `Refresh` whose interval is known is paced by `timed_refresh`
-    // instead, so a finite `UpdateInterval` waits its seconds.
-    self.self_refreshing |= refresh_ran && self.timed_refresh.is_none();
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -8497,6 +8499,29 @@ mod tests {
     let before = value(&state);
     state.tick();
     assert_eq!(value(&state), before, "an hour has not passed yet");
+  }
+
+  /// A timed `Refresh` reached only through a helper definition (a clock
+  /// label `Dynamic[Refresh[…, UpdateInterval -> t]]` inside a graphic the
+  /// body builds by calling the helper) is paced by the interval it ran
+  /// with, instead of re-running the body on every timer step.
+  #[test]
+  fn refresh_inside_helper_definition_waits_its_seconds() {
+    woxi::interpret(
+      "helperClockLabel[k_] := Graphics[Text[Dynamic[Refresh[\
+       ticksSeen++; k, UpdateInterval -> 3600]], {0, 0}]]; ticksSeen = 0;",
+    )
+    .expect("define the helper");
+    let code = r#"Manipulate[Show[helperClockLabel[k]], {k, {1, 2}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick(), "the clock label keeps refreshing");
+    let seen = || woxi::interpret("ticksSeen").expect("read the counter");
+    let before = seen();
+    state.tick();
+    state.tick();
+    assert_eq!(seen(), before, "an hour has not passed yet");
   }
 
   /// An `EventHandler[Dynamic[…], {"MouseDown" :> …, "MouseDragged" :> …}]`
