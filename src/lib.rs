@@ -1699,12 +1699,105 @@ pub(crate) fn tabview_selected_content(
   args: &[syntax::Expr],
 ) -> Option<syntax::Expr> {
   let items = args.first().and_then(functions::graphics::tabview_panes)?;
-  let selected = args
-    .get(1)
-    .and_then(|sel| selected_tabview_pane(&items, sel))
-    .or(items.first())?;
-  let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+  let index = tabview_selected_index(&items, args.get(1))?;
+  let (_, _, content) = functions::graphics::tabview_pane_parts(&items[index]);
   Some(content.clone())
+}
+
+/// The position of the pane a `TabView` shows: the one its selector names,
+/// or the first pane absent a usable selector. `None` for no panes.
+fn tabview_selected_index(
+  items: &[syntax::Expr],
+  sel: Option<&syntax::Expr>,
+) -> Option<usize> {
+  if items.is_empty() {
+    return None;
+  }
+  let selected = sel.and_then(|sel| selected_tabview_pane(items, sel));
+  Some(selected.map_or(0, |pane| {
+    items
+      .iter()
+      .position(|item| std::ptr::eq(item, pane))
+      .unwrap_or(0)
+  }))
+}
+
+/// A `TabView[{…}, sel]` nested in a layout, as the layout the front end
+/// draws for it: the row of tab labels (each in a rounded box, the selected
+/// one on white, the others on gray) centered above the selected pane,
+/// which sits in a light gray rounded panel.
+pub(crate) fn tabview_drawn_layout(
+  args: &[syntax::Expr],
+) -> Option<syntax::Expr> {
+  use syntax::Expr;
+  let items = args.first().and_then(functions::graphics::tabview_panes)?;
+  let index = tabview_selected_index(&items, args.get(1))?;
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let rule = |key: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(key.to_string())),
+    replacement: Box::new(value),
+  };
+  let gray = |level: f64| call("GrayLevel", vec![Expr::Real(level)]);
+  let pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let tabs: Vec<Expr> = items
+    .iter()
+    .enumerate()
+    .map(|(i, pane)| {
+      let (_, label, _) = functions::graphics::tabview_pane_parts(pane);
+      let selected = i == index;
+      call(
+        "Framed",
+        vec![
+          label.clone(),
+          rule("RoundingRadius", Expr::Integer(4)),
+          rule("FrameStyle", gray(if selected { 0.7 } else { 0.8 })),
+          rule(
+            "Background",
+            if selected {
+              Expr::Identifier("White".to_string())
+            } else {
+              gray(0.93)
+            },
+          ),
+          rule(
+            "FrameMargins",
+            Expr::List(vec![pair(5, 5), pair(1, 1)].into()),
+          ),
+        ],
+      )
+    })
+    .collect();
+  let (_, _, content) = functions::graphics::tabview_pane_parts(&items[index]);
+  let tab_row = call(
+    "Text",
+    vec![call(
+      "Row",
+      vec![Expr::List(tabs.into()), Expr::String(" ".to_string())],
+    )],
+  );
+  let panel = call(
+    "Framed",
+    vec![
+      content.clone(),
+      rule("Background", gray(0.96)),
+      rule("FrameStyle", gray(0.85)),
+      rule("RoundingRadius", Expr::Integer(5)),
+      rule("FrameMargins", Expr::Integer(8)),
+    ],
+  );
+  Some(call(
+    "Column",
+    vec![
+      Expr::List(vec![tab_row, panel].into()),
+      Expr::Identifier("Center".to_string()),
+      Expr::Integer(0),
+    ],
+  ))
 }
 
 /// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
@@ -3910,6 +4003,25 @@ fn keep_fixed_pane_box(
   ))
 }
 
+/// Whether `expr` is a `Column[…]` under one or more `Style[…, directives]`
+/// wrappers.
+fn is_styled_column(expr: &syntax::Expr) -> bool {
+  let mut current = expr;
+  let mut styled = false;
+  while let syntax::Expr::FunctionCall { name, args } = current
+    && name == "Style"
+    && args.len() >= 2
+  {
+    styled = true;
+    current = &args[0];
+  }
+  styled
+    && matches!(
+      current,
+      syntax::Expr::FunctionCall { name, .. } if name == "Column"
+    )
+}
+
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
@@ -3965,6 +4077,18 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
+          // A styled `Column` layout
+          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`) is drawn in the
+          // proportional text face, so the text of its items is not left in
+          // the monospace face of a bare `Column`'s `Row`s.
+          if is_styled_column(&content) {
+            let in_face = render_visual_display_pipeline(
+              &functions::graphics::in_text_face(&content),
+            );
+            if matches!(in_face, syntax::Expr::Graphics { .. }) {
+              return in_face;
+            }
+          }
           render_grid_if_needed(content)
         })
       }) {
@@ -5350,6 +5474,23 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     _ => None,
   });
 
+  // A table of pictures in a fixed-size pane (`Pane[Grid[{{graphic, …}}],
+  // {w, h}]`) is drawn the way the pane lays it out — fitted to and placed
+  // in the pane's whole box — rather than stripped to the bare table and
+  // drawn at its own size. A pane around a plain data table stays textual.
+  if pane_box.is_some()
+    && let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Pane"
+    && let Some(syntax::Expr::FunctionCall { name: inner, .. }) = args.first()
+    && matches!(inner.as_str(), "Grid" | "TextGrid")
+    && holds_layout_graphic(&args[0])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      clear_captured_graphics();
+      return graphics_result(svg);
+    }
+  }
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
@@ -5447,7 +5588,6 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_framed_if_needed(expr);
   let expr = render_rotate_if_needed(expr);
   let result = render_highlighted_if_needed(expr);
-
   match (pane_box, &result) {
     (Some((w, h, align, shrink)), syntax::Expr::Graphics { svg, .. }) => {
       let clipped = functions::graphics::clip_svg_to_pane_box(
@@ -5623,6 +5763,20 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// `Column[{"hi", TableForm[{{1,2},{3,4}}]}]` embeds actual graphics rather
 /// than their textual echoes) and render the whole column as a vertical
 /// SVG. `None` when the arguments don't form a renderable column.
+/// The content a `Style[…]`/`Text[…]` wrapper shows (`expr` itself when it
+/// is neither): a styled sized pane is still a sized pane.
+fn styled_content(expr: &syntax::Expr) -> &syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Style" && !args.is_empty())
+        || (name == "Text" && args.len() == 1) =>
+    {
+      styled_content(&args[0])
+    }
+    _ => expr,
+  }
+}
+
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
@@ -5650,7 +5804,10 @@ pub(crate) fn column_svg_with_rendered_items(
             item,
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
-            && pane_fixed_size(item).is_none()
+            && pane_fixed_size(styled_content(item)).is_none()
+            // A `Framed` box is drawn edge to edge — its frame is its
+            // outline, with no blank line margin around it to take out
+            // of an explicit spacing.
             && !functions::graphics::is_framed_box(item)
         })
         .collect(),

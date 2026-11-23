@@ -1089,6 +1089,20 @@ mod cases {
     assert_case(r#"Options[Sin]"#, r#"{}"#);
   }
 
+  // Options[obj, {name1, name2, …}] picks several options at once, in the
+  // order they are asked for, from a symbol's options or a graphic's.
+  #[test]
+  fn options_with_a_list_of_names() {
+    assert_case(
+      r#"Options[opf] = {a -> 1, b -> 2, c :> 3}; Options[opf, {c, a}]"#,
+      r#"{c :> 3, a -> 1}"#,
+    );
+    assert_case(
+      r#"Options[Graphics[{}, Frame -> True, AspectRatio -> 2], {AspectRatio, Frame, ImageSize}]"#,
+      r#"{AspectRatio -> 2, Frame -> True, ImageSize -> Automatic}"#,
+    );
+  }
+
   // SetOptions[f, name -> value] replaces that entry in Options[f], keeping the
   // original order, and returns the updated list.
   #[test]
