@@ -1697,6 +1697,9 @@ pub fn dispatch_io_functions(
       // like Combinatorica shadow bare names once `Get` has loaded it, the
       // same as `Needs` already does.
       if crate::utils::is_standard_distribution_context(&filename) {
+        crate::functions::plot_legends_package::announce_obsolete_package(
+          &filename,
+        );
         crate::evaluator::dispatch::evaluate_functions::register_standard_context_symbols(
           &filename,
         );
@@ -6200,12 +6203,18 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
 /// nothing, and with no `Appearance` at all the Wolfram default is a small
 /// circle with a crosshair through it, sized here as a fraction of the plot
 /// range so it keeps its proportions whatever the scale.
+///
+/// `units` are the x and y data extents that cover the same on-screen
+/// length (see [`locator_marker_units`]), so a marker stays round in a pane
+/// whose axes are scaled differently (`Plot[…, AspectRatio -> 1]` over an x
+/// range far wider than its y range).
 fn locator_marker(
   appearance: Option<&Expr>,
   index: usize,
   point: &Expr,
-  span: f64,
+  units: (f64, f64),
 ) -> Option<Expr> {
+  let (ux, uy) = units;
   let translate =
     |prims: &Expr| call("Translate", vec![prims.clone(), point.clone()]);
   // An `Appearance` picture with a numeric `ImageSize -> n` is `n` pixels
@@ -6231,10 +6240,15 @@ fn locator_marker(
         if extent <= 0.0 {
           return translate(&prims);
         }
-        let k = n * span / 360.0 / extent;
+        let (kx, ky) = (n * ux / 360.0 / extent, n * uy / 360.0 / extent);
         let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
         let center = Expr::List(vec![num(cx), num(cy)].into());
-        let scaled = call("Scale", vec![prims, num(k), center]);
+        let factor = if kx == ky {
+          num(kx)
+        } else {
+          Expr::List(vec![num(kx), num(ky)].into())
+        };
+        let scaled = call("Scale", vec![prims, factor, center]);
         // Move the (scaled-in-place) marker's center onto the locator.
         call(
           "Translate",
@@ -6278,16 +6292,20 @@ fn locator_marker(
     }
     Some(single) => Some(marker(single)),
     None => {
-      let r = span * 0.015;
-      let arm = span * 0.03;
       let offset = |dx: f64, dy: f64| Expr::List(vec![num(dx), num(dy)].into());
+      let radius = if ux == uy {
+        num(ux * 0.015)
+      } else {
+        offset(ux * 0.015, uy * 0.015)
+      };
+      let (arm_x, arm_y) = (ux * 0.03, uy * 0.03);
       let line =
         |a: Expr, b: Expr| call("Line", vec![Expr::List(vec![a, b].into())]);
       Some(translate(&Expr::List(
         vec![
-          call("Circle", vec![offset(0.0, 0.0), num(r)]),
-          line(offset(-arm, 0.0), offset(arm, 0.0)),
-          line(offset(0.0, -arm), offset(0.0, arm)),
+          call("Circle", vec![offset(0.0, 0.0), radius]),
+          line(offset(-arm_x, 0.0), offset(arm_x, 0.0)),
+          line(offset(0.0, -arm_y), offset(0.0, arm_y)),
         ]
         .into(),
       )))
@@ -6418,33 +6436,38 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
 
   // The default marker is sized against the plot range, so it stays a small
   // fraction of the picture whatever the coordinates are.
-  let span = body_opts
-    .iter()
-    .find_map(|o| match o {
-      Expr::Rule { pattern, replacement }
-        if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "PlotRange") =>
-      {
-        match replacement.as_ref() {
-          Expr::List(axes) if axes.len() == 2 => {
-            let extent = |e: &Expr| match e {
-              Expr::List(b) if b.len() == 2 => {
-                let f = crate::functions::math_ast::try_eval_to_f64;
-                Some((f(&b[1])? - f(&b[0])?).abs())
-              }
-              _ => None,
-            };
-            Some(extent(&axes[0])?.max(extent(&axes[1])?))
-          }
-          _ => None,
-        }
+  let option = |key: &str| {
+    body_opts.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == key) => {
+        Some(replacement.as_ref())
       }
       _ => None,
     })
-    .unwrap_or(1.0);
+  };
+  let extents = option("PlotRange").and_then(|range| match range {
+    Expr::List(axes) if axes.len() == 2 => {
+      let extent = |e: &Expr| match e {
+        Expr::List(b) if b.len() == 2 => {
+          let f = crate::functions::math_ast::try_eval_to_f64;
+          Some((f(&b[1])? - f(&b[0])?).abs())
+        }
+        _ => None,
+      };
+      Some((extent(&axes[0])?, extent(&axes[1])?))
+    }
+    _ => None,
+  });
+  let aspect =
+    option("AspectRatio").and_then(crate::functions::math_ast::try_eval_to_f64);
+  let units =
+    extents.map_or((1.0, 1.0), |(xs, ys)| locator_marker_units(xs, ys, aspect));
 
   let mut prims = vec![body_prims];
   for (i, point) in points.iter().enumerate() {
-    if let Some(marker) = locator_marker(appearance.as_ref(), i, point, span) {
+    if let Some(marker) = locator_marker(appearance.as_ref(), i, point, units) {
       prims.push(marker);
     }
   }
@@ -6453,26 +6476,50 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   Some(call("Graphics", graphics_args))
 }
 
-/// The data-space extent a `LocatorPane` marker's default size is scaled
-/// against, for a body that only exists as a rendered picture (so there is
-/// no `PlotRange` option lying around in a primitive list to read, as
-/// `locator_pane_graphic` reads for the symbolic-`Graphics` case). Falls
-/// back to `1.0` — matching that case's own fallback — when the picture
-/// carries no source range (a plain `Graphics[…]` with no plot data, or a
-/// picture kind that keeps none).
-fn rendered_graphic_span(body: &Expr) -> f64 {
+/// The x and y data extents a `LocatorPane` marker's default size is
+/// scaled against, given the pane's plot range extents and its
+/// height/width `aspect` ratio (`None` = `Automatic`, one unit the same
+/// length on both axes). Both cover the same on-screen length — the longer
+/// side of the pane — so a marker sized from them keeps its shape however
+/// differently the two axes are stretched.
+fn locator_marker_units(
+  x_extent: f64,
+  y_extent: f64,
+  aspect: Option<f64>,
+) -> (f64, f64) {
+  let span = x_extent.max(y_extent);
+  match aspect {
+    Some(a) if a > 0.0 && x_extent > 0.0 && y_extent > 0.0 => {
+      let longer = a.max(1.0);
+      (longer * x_extent, longer * y_extent / a)
+    }
+    _ if span > 0.0 => (span, span),
+    _ => (1.0, 1.0),
+  }
+}
+
+/// The per-axis data extents (see [`locator_marker_units`]) a
+/// `LocatorPane` marker's default size is scaled against, for a body that
+/// only exists as a rendered picture (so there is no `PlotRange` option
+/// lying around in a primitive list to read, as `locator_pane_graphic`
+/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
+/// that case's own fallback — when the picture carries no source range (a
+/// plain `Graphics[…]` with no plot data, or a picture kind that keeps
+/// none).
+fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
   if let Expr::Graphics {
     source: Some(src), ..
   } = body
   {
     let x_extent = (src.x_range.1 - src.x_range.0).abs();
     let y_extent = (src.y_range.1 - src.y_range.0).abs();
-    let span = x_extent.max(y_extent);
-    if span > 0.0 {
-      return span;
-    }
+    let (w, h) = src.image_size;
+    let aspect = src
+      .aspect_ratio
+      .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
+    return locator_marker_units(x_extent, y_extent, aspect);
   }
-  1.0
+  (1.0, 1.0)
 }
 
 /// The `Epilog` option a rendered picture was drawn with, if any: one its
@@ -6690,11 +6737,11 @@ fn locator_pane_graphic_via_epilog(
   if !lays_out_a_graphic(body) {
     return None;
   }
-  let span = rendered_graphic_span(body);
+  let units = rendered_graphic_units(body);
   let markers: Vec<Expr> = points
     .iter()
     .enumerate()
-    .filter_map(|(i, p)| locator_marker(appearance, i, p, span))
+    .filter_map(|(i, p)| locator_marker(appearance, i, p, units))
     .collect();
   if markers.is_empty() {
     return Some(body.clone());
@@ -7164,6 +7211,21 @@ fn wrap_pane_text_at(
   whole_words: bool,
   proportional: bool,
 ) -> Option<Expr> {
+  // A list of typeset matrices re-flows as the row of its items between
+  // braces.
+  if let Expr::List(_) = content
+    && let Some(row) =
+      crate::functions::graphics::list_with_grids_as_row(content)
+  {
+    return wrap_pane_text_at(
+      &row,
+      width,
+      font_size,
+      family,
+      whole_words,
+      proportional,
+    );
+  }
   // A bare string re-flows as the one-piece `Row` of it.
   if let Expr::String(_) = content {
     return wrap_pane_text_at(
@@ -7354,10 +7416,12 @@ fn wrap_pane_text_at(
         .collect();
       let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
       let mut atoms: Vec<Option<Expr>> = Vec::new();
+      let mut atom_px: Vec<Option<f64>> = Vec::new();
       let mut units: Vec<PaneTextUnit> = Vec::new();
       for item in &items {
         let idx = styles.len();
         if let Some((text, directives)) = pane_row_piece(item) {
+          atom_px.push(None);
           styles.push(directives);
           atoms.push(None);
           units.extend(pane_text_units(&text).into_iter().map(
@@ -7371,6 +7435,15 @@ fn wrap_pane_text_at(
         } else {
           let cols = crate::functions::graphics::estimate_display_width(item)
             .ceil() as usize;
+          // A typeset matrix or table is as wide as its drawn grid (at its
+          // own `Style` size), which its source text says nothing about.
+          atom_px.push(
+            crate::functions::graphics::is_typeset_grid_item(item)
+              .then(|| {
+                crate::functions::graphics::parse_svg_wh(&expr_to_svg(item)).0
+              })
+              .filter(|w| *w > 0.0),
+          );
           styles.push(None);
           atoms.push(Some(item.clone()));
           units.push(PaneTextUnit {
@@ -7408,6 +7481,10 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
+        if let Some(px) = atom_px[u.idx] {
+          u.width = px;
+          continue;
+        }
         if proportional
           && atoms[u.idx].is_none()
           && u.text.chars().count() == u.cols
@@ -7678,6 +7755,11 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
         fraction(&pair[0]).unwrap_or(0.0),
         fraction(&pair[1]).unwrap_or(0.0),
       ),
+      // `{h}` gives the horizontal alignment alone; the vertical one keeps
+      // its default (`Top`).
+      Expr::List(single) if single.len() == 1 => {
+        (fraction(&single[0]).unwrap_or(0.0), 0.0)
+      }
       // A lone `Center` centers on both axes; `Top`/`Bottom` place
       // vertically and `Left`/`Right` horizontally.
       Expr::Identifier(n) if n == "Center" => (0.5, 0.5),
@@ -7872,6 +7954,11 @@ fn pane_content_is_column(content: &Expr) -> bool {
 }
 
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
+  // A list of typeset matrices sets each in two dimensions between the
+  // braces, not as the source text of the list.
+  if let Some(row) = crate::functions::graphics::list_with_grids_as_row(expr) {
+    return expr_to_svg(&row);
+  }
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
   }
@@ -8333,6 +8420,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !is_traditional_matrix_form(&args[0])
         && distribute_format_over_tableform(&args[0]).is_none() =>
     {
+      // `Style[picture, Magnification -> m]` shows the picture `m` times
+      // its size, also as an item of a layout (a `Grid` or `Column` cell).
+      if let Some(Expr::Graphics { ref svg, .. }) =
+        crate::functions::graphics::magnified_picture(expr)
+      {
+        return svg.clone();
+      }
       // `Style[Framed[content, opts…], dirs…]`: the style is inherited by the
       // framed content, and the box keeps its frame. Typeset as styled text,
       // the frame was dropped and only the content's text was shown.
@@ -9545,12 +9639,27 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
   )
 }
 
-/// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
-/// `<text>` element that neither sets a family itself nor inherits one from
-/// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
-/// the opening tag.
+/// Set every `<text>` in the bundled Atkinson faces:
+///
+/// - a generic `font-family="sans-serif"` / `"monospace"` names the
+///   preferred Atkinson family first, keeping the generic one as a
+///   fallback (exact-quoted matches keep this idempotent: a rewritten value
+///   no longer equals the generic form);
+/// - a `<text>` element that neither sets a family itself nor inherits one
+///   from an enclosing `<g>`/`<svg>`/`<text>` gets
+///   `font-family="Atkinson Hyperlegible Next, sans-serif"` at the end of
+///   its opening tag, as WL's default graphics font is a sans-serif one.
 pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  let svg = &svg
+    .replace(
+      "font-family=\"sans-serif\"",
+      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+    )
+    .replace(
+      "font-family=\"monospace\"",
+      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+    );
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
   let mut stack: Vec<bool> = Vec::new();
@@ -9592,6 +9701,17 @@ pub fn with_default_text_family(svg: &str) -> String {
     }
     let has_family = tag.contains("font-family=");
     let inherited = stack.iter().any(|&f| f);
+    // A bare generic `sans-serif` names the default face only by its
+    // generic family, which a host maps onto Atkinson Hyperlegible Next;
+    // spell that mapping out so a renderer without the host's CSS uses it.
+    const GENERIC: &str = " font-family=\"sans-serif\"";
+    if name == "text"
+      && let Some(at) = tag.find(GENERIC)
+    {
+      out.push_str(&svg[copied..start + at]);
+      out.push_str(ATTR);
+      copied = start + at + GENERIC.len();
+    }
     if name == "text" && !has_family && !inherited {
       let close_at = if tag.ends_with("/>") { end - 1 } else { end };
       out.push_str(&svg[copied..close_at]);
@@ -9673,24 +9793,12 @@ fn embed_used_fonts(svg: &str) -> String {
   }
 
   // Bake the preferred Atkinson family onto each text element's `font-family`
-  // attribute, keeping the generic family as a fallback. The generic token is
-  // retained so the mono `[font-family*="Mono"]` CSS selectors below still
-  // match. Exact-quoted matches make this idempotent (an already-rewritten
-  // value no longer equals the generic form).
-  let body = svg
-    .replace(
-      "font-family=\"sans-serif\"",
-      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
-    )
-    .replace(
-      "font-family=\"monospace\"",
-      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
-    );
-  // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
-  // the stylesheet's inherited default, which viewers that ignore
-  // `<style>` replace with their own (serif) face. Bake the default sans
-  // family onto it too, as WL's default graphics font is a sans-serif one.
-  let body = with_default_text_family(&body);
+  // attribute, keeping the generic family as a fallback (the generic token is
+  // retained so the mono CSS selector above still matches). A bare `<text>`
+  // (a `Graphics` `Text` without `FontFamily`) relies on the stylesheet's
+  // inherited default, which viewers that ignore `<style>` replace with
+  // their own (serif) face, so it gets the default sans family too.
+  let body = with_default_text_family(svg);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.
   let mut body = body;

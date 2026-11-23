@@ -775,6 +775,47 @@ impl LinearScale<'_> {
   }
 }
 
+/// The shape of a linear gauge's value marker.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MarkerShape {
+  Triangle,
+  Bar,
+}
+
+/// The marker shape of each of `n` values: `GaugeMarkers -> "BarMarker"`
+/// (or a list of marker names, cycled) draws bars, anything else the
+/// default triangles.
+fn marker_shapes(args: &[Expr], n: usize) -> Vec<MarkerShape> {
+  let shape = |e: &Expr| match e {
+    Expr::String(s) if s == "BarMarker" => MarkerShape::Bar,
+    _ => MarkerShape::Triangle,
+  };
+  let shapes: Vec<MarkerShape> = match &option(args, "GaugeMarkers") {
+    Some(Expr::List(items)) => items.iter().map(shape).collect(),
+    Some(e) => vec![shape(e)],
+    None => Vec::new(),
+  };
+  (0..n)
+    .map(|i| {
+      shapes
+        .get(i % shapes.len().max(1))
+        .copied()
+        .unwrap_or(MarkerShape::Triangle)
+    })
+    .collect()
+}
+
+/// The fill of a linear gauge's face from `GaugeFaceStyle`: a named face
+/// (e.g. `"GlassRectangle"`) is a light gray panel, any other style fills
+/// the panel with it; unset, `Automatic` or `None` draws no face.
+fn linear_face(args: &[Expr]) -> Option<String> {
+  match &option(args, "GaugeFaceStyle")? {
+    Expr::Identifier(a) if a == "Automatic" || a == "None" => None,
+    Expr::String(_) => Some("GrayLevel[0.85]".to_string()),
+    e => Some(expr_to_source_form(e)),
+  }
+}
+
 /// `HorizontalGauge[value(s), {min, max}, opts]` / `VerticalGauge[…]`: a
 /// scale line with ticks and labels and a triangular pointer per value.
 pub fn linear_gauge_ast(
@@ -802,6 +843,13 @@ pub fn linear_gauge_ast(
     pt(p0.0, p0.1),
     pt(p1.0, p1.1)
   )];
+  if let Some(face) = linear_face(args) {
+    parts.push(format!(
+      "{{EdgeForm[None], {face}, Rectangle[{}, {}, RoundingRadius -> 0.05]}}",
+      pt(p0.0.min(p1.0), p0.1.min(p1.1)),
+      pt(p0.0.max(p1.0), p0.1.max(p1.1))
+    ));
+  }
   let scale_spec = LinearScale {
     place: &place,
     tick: if vertical { (-1.0, 0.0) } else { (0.0, 1.0) },
@@ -825,28 +873,21 @@ pub fn linear_gauge_ast(
   }
   let values = values_of(&args[0]);
   let colors = marker_colors(args, values.len());
-  let bars = matches!(
-    option(args, "GaugeMarkers").as_ref(),
-    Some(Expr::String(m)) if m == "BarMarker"
-  );
-  let n_values = values.len().max(1) as f64;
-  for (i, (v, color)) in values.iter().zip(&colors).enumerate() {
+  let shapes = marker_shapes(args, values.len());
+  for ((v, color), shape) in values.iter().zip(&colors).zip(&shapes) {
     let Some(v) = v else { continue };
     let t = ((v - lo_f) / (hi_f - lo_f)).clamp(0.0, 1.0);
-    if bars {
-      // A bar along the tick side of the scale from its start to the
-      // value; several values share the band in parallel strips.
-      let (band, gap) = (0.05, 0.005);
-      let width = band / n_values;
-      let (a, b) = (gap + width * i as f64, gap + width * (i as f64 + 1.0));
-      let corners = [place(0.0, a), place(t, a), place(t, b), place(0.0, b)];
+    if *shape == MarkerShape::Bar {
+      // A thin bar standing on the scale on the side the ticks are on.
+      let (a, b) = if vertical {
+        ((-0.08, t - 0.006), (0.0, t + 0.006))
+      } else {
+        ((t - 0.006, 0.0), (t + 0.006, 0.08))
+      };
       parts.push(format!(
-        "{{Directive[{color}], EdgeForm[None], Tooltip[Polygon[{{{}}}], {}]}}",
-        corners
-          .iter()
-          .map(|&(x, y)| pt(x, y))
-          .collect::<Vec<_>>()
-          .join(", "),
+        "{{Directive[{color}], Tooltip[Rectangle[{}, {}], {}]}}",
+        pt(a.0, a.1),
+        pt(b.0, b.1),
         num(*v)
       ));
       continue;

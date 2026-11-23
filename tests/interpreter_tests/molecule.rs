@@ -870,4 +870,144 @@ mod molecule_tests {
       interpret(r#"ExportString[MoleculePlot["ethanol"], "SVG"]"#).unwrap();
     assert!(svg.contains(">O</text>"));
   }
+
+  #[test]
+  fn molecule_plot_accepts_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"MoleculePlot["CCO", PlotTheme -> {None, "Aromatic", "Monochrome"}, AtomLabels -> None, ImageSize -> 0.7 {400, 400}, ImagePadding -> All]"#
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+    // A trailing argument that is not an option leaves the call unevaluated.
+    assert_eq!(
+      interpret(r#"Head[MoleculePlot["CCO", 5]]"#).unwrap(),
+      "MoleculePlot"
+    );
+  }
+
+  #[test]
+  fn molecule_plot_image_size() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[MoleculePlot["CCO", ImageSize -> {300, 200}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(r#"width="300" height="200""#), "{svg}");
+    let svg =
+      interpret(r#"ExportString[MoleculePlot["CCO", ImageSize -> 0.5 {400, 400}], "SVG"]"#)
+        .unwrap();
+    assert!(svg.contains(r#"width="200" height="200""#), "{svg}");
+  }
+
+  #[test]
+  fn molecule_plot_all_atom_theme_draws_every_hydrogen() {
+    clear_state();
+    // Ethane: six hydrogens drawn, while both carbons stay bare vertices.
+    let svg = interpret(
+      r#"ExportString[MoleculePlot["CC", PlotTheme -> "AllAtom"], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches(">H</text>").count(), 6);
+    assert_eq!(svg.matches(">C</text>").count(), 0);
+    // Without the theme the hydrogens on carbon are implicit.
+    let svg = interpret(r#"ExportString[MoleculePlot["CC"], "SVG"]"#).unwrap();
+    assert_eq!(svg.matches(">H</text>").count(), 0);
+  }
+
+  #[test]
+  fn molecule_plot_monochrome_theme() {
+    clear_state();
+    let colored =
+      interpret(r#"ExportString[MoleculePlot["CCO"], "SVG"]"#).unwrap();
+    assert!(colored.contains("#e00000"));
+    let mono = interpret(
+      r#"ExportString[MoleculePlot["CCO", PlotTheme -> {"Monochrome"}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!mono.contains("#e00000"));
+    assert!(mono.contains(">O</text>"));
+  }
+
+  #[test]
+  fn molecule_plot_atom_index_labels() {
+    clear_state();
+    // Only the oxygen (atom 3 of C-C-O) gets its index.
+    let svg = interpret(
+      r#"ExportString[MoleculePlot["CCO", AtomLabels -> {Atom["O"] -> "AtomIndex"}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">3</text>"));
+    assert!(!svg.contains(">1</text>"));
+    assert!(!svg.contains(">2</text>"));
+    // "AtomIndex" alone numbers every atom.
+    let svg = interpret(
+      r#"ExportString[MoleculePlot["CCO", AtomLabels -> "AtomIndex"], "SVG"]"#,
+    )
+    .unwrap();
+    for k in 1..=3 {
+      assert!(svg.contains(&format!(">{k}</text>")), "{k}");
+    }
+    // With every hydrogen drawn, the hydrogens follow the heavy atoms.
+    let svg = interpret(
+      r#"ExportString[MoleculePlot["CCO", PlotTheme -> "AllAtom", AtomLabels -> {Atom["H"] -> "AtomIndex"}], "SVG"]"#,
+    )
+    .unwrap();
+    for k in 4..=9 {
+      assert!(svg.contains(&format!(">{k}</text>")), "{k}");
+    }
+  }
+
+  // --- MoleculePlot3D ball-and-stick model ---------------------------------
+
+  #[test]
+  fn molecule_plot_3d_is_graphics3d() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Head[MoleculePlot3D[Molecule["CCO"]]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[MoleculePlot3D["CCO", ImageSize -> 200]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[MoleculePlot3D["CCO", 5]]"#).unwrap(),
+      "MoleculePlot3D"
+    );
+  }
+
+  #[test]
+  fn molecule_plot_3d_draws_every_atom_and_bond() {
+    clear_state();
+    // Ethanol has 9 atoms (with hydrogens) and 8 single bonds; each bond is
+    // two half-cylinders colored like their atoms.
+    assert_eq!(
+      interpret(
+        r#"g = MoleculePlot3D["CCO"]; {Count[g, _Sphere, Infinity], Count[g, _Cylinder, Infinity]}"#
+      )
+      .unwrap(),
+      "{9, 16}"
+    );
+    // A double bond is drawn as two parallel sticks.
+    assert_eq!(
+      interpret(r#"Count[MoleculePlot3D["C=C"], _Cylinder, Infinity]"#)
+        .unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn molecule_plot_3d_geometry() {
+    clear_state();
+    // The C-C bond of ethane is close to the sum of the covalent radii
+    // (1.52 Å), and its carbons are tetrahedral (H-C-H near 109.5°).
+    let out = interpret(
+      r#"g = MoleculePlot3D["CC"]; c = Cases[g, Sphere[p_, _] :> p, Infinity]; {Round[EuclideanDistance[c[[1]], c[[2]]], 0.05], Round[VectorAngle[c[[3]] - c[[1]], c[[4]] - c[[1]]]/Degree]}"#,
+    )
+    .unwrap();
+    assert_eq!(out, "{1.5, 109}");
+  }
 }
