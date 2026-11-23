@@ -2799,8 +2799,10 @@ impl WoxiStudio {
       .any(|e| e.manipulate_state.as_ref().is_some_and(|s| s.wants_tick()))
     {
       subs.push(
-        iced::time::every(std::time::Duration::from_millis(ANIM_INTERVAL_MS))
-          .map(Message::ManipulateAnimationTick),
+        iced::time::every(std::time::Duration::from_millis(
+          manipulate::ANIM_INTERVAL_MS,
+        ))
+        .map(Message::ManipulateAnimationTick),
       );
     }
     #[cfg(target_os = "macos")]
@@ -4374,12 +4376,6 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
 /// instead of flickering while dragging. The control value itself still updates
 /// immediately, so the thumb and value label track the cursor without lag.
 const MANIPULATE_THROTTLE_MS: u64 = 16;
-
-/// Auto-playing widgets (Animate / ListAnimate) advance their animation
-/// control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
-/// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate
-/// (and the Playground's pace).
-const ANIM_INTERVAL_MS: u64 = 60;
 
 /// Largest box a radio-bar choice icon is drawn in; a bigger picture is
 /// scaled down to fit, keeping its aspect ratio.
@@ -12973,6 +12969,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     state.advance_animation();
     assert_eq!(values(&state), vec![3.0, 3.0]);
     assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  #[test]
+  fn play_pause_slider_advances_at_its_animation_rate() {
+    // A slider asking for a play/pause button sits paused; once played, each
+    // tick moves it by `AnimationRate` × the tick length, not by its (tiny)
+    // step size.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[t, {t, 0., 1000., 0.001, AnimationRate -> 5, \
+       AppearanceElements -> \"PlayPauseButton\"}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated);
+    assert!(!state.playing, "the play/pause button starts paused");
+    assert!(!state.wants_tick());
+    state.toggle_play();
+    assert!(state.wants_tick());
+    state.tick();
+    state.tick();
+    let current = match &state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current,
+      other => panic!("expected a slider row, got {other:?}"),
+    };
+    let expected = 2.0 * 5.0 * manipulate::ANIM_INTERVAL_MS as f64 / 1000.0;
+    assert!(
+      (current - expected).abs() < 1e-9,
+      "expected {expected}, got {current}"
+    );
   }
 
   #[test]

@@ -1074,6 +1074,12 @@ fn dynamic_feedback_vars(body: &str) -> Vec<String> {
   out
 }
 
+/// Auto-playing widgets (Animate / ListAnimate) advance their animation
+/// control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
+/// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate
+/// (and the Playground's pace).
+pub const ANIM_INTERVAL_MS: u64 = 60;
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -1192,6 +1198,9 @@ pub struct ManipulateState {
   /// `advance_animation` targets this control instead of defaulting to the
   /// first continuous one.
   animation_var: Option<String>,
+  /// `AnimationRate -> r` of the animated control: units per second its
+  /// variable moves while playing. `None` advances it one step per tick.
+  animation_rate: Option<f64>,
   /// Per-control `TrackingFunction -> f` callback (InputForm code), as
   /// `(control name, function code)`. Run against the control's new value
   /// whenever the user moves it (see [`apply_tracking`]), so a Demonstration
@@ -1499,6 +1508,7 @@ impl ManipulateState {
       row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
+      animation_rate: spec.animation_rate,
       module_locals: spec.module_locals,
       self_refreshing: false,
       dynamic_feedback_vars,
@@ -2422,6 +2432,11 @@ impl ManipulateState {
       }),
     };
     let Some(idx) = idx else { return };
+    // An `AnimationRate` moves the variable that many units per second, so
+    // one tick covers `rate × tick length`; otherwise a tick is one step.
+    let rate_increment = self
+      .animation_rate
+      .map(|rate| rate * ANIM_INTERVAL_MS as f64 / 1000.0);
     // A Trigger's `AnimationRepetitions` may name another control.
     let limit = self.trigger_repetition_limit(idx);
     let mut finished = false;
@@ -2433,7 +2448,7 @@ impl ManipulateState {
         current,
         ..
       } => {
-        let mut v = *current + *step;
+        let mut v = *current + rate_increment.unwrap_or(*step);
         // Loop back to the start once we step past the end (small epsilon
         // so floating-point drift doesn't skip the final frame). An
         // infinite end (`{time, 0, Infinity, 1}`) never wraps.
@@ -2450,7 +2465,7 @@ impl ManipulateState {
         completed,
         ..
       } => {
-        let mut v = *current + *step;
+        let mut v = *current + rate_increment.unwrap_or(*step);
         if max.is_finite() && v > *max + *step * 1e-6 {
           *completed += 1;
           if limit.is_some_and(|n| *completed >= n) {

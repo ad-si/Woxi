@@ -53597,6 +53597,53 @@ mod manipulate {
   }
 
   #[test]
+  fn spec_slider_with_play_pause_button_is_animatable() {
+    // A plain slider whose `AppearanceElements` asks for a play/pause
+    // button stays a slider, but its variable becomes playable: paused
+    // until pressed, and moving at its `AnimationRate` units per second.
+    let expr = interpret_to_expr(
+      "Manipulate[{a, t}, {a, 0, 1}, {t, 0., 100., 0.001, \
+       Appearance -> \"Labeled\", AnimationRate -> 5, \
+       AppearanceElements -> \"PlayPauseButton\"}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 2);
+    assert!(
+      matches!(
+        &spec.controls[1],
+        ManipulateControl::Continuous { name, .. } if name == "t"
+      ),
+      "{:?}",
+      spec.controls[1]
+    );
+    assert!(spec.animated);
+    assert!(!spec.animation_running, "the play button starts paused");
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+    assert_eq!(spec.animation_rate, Some(5.0));
+
+    // A list of appearance elements and `AnimationRunning -> True`.
+    let expr = interpret_to_expr(
+      "Manipulate[u, {u, 0, 1, AnimationRunning -> True, \
+       AppearanceElements -> {\"PlayPauseButton\", \"ResetButton\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert!(spec.animated && spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("u"));
+    assert_eq!(spec.animation_rate, None);
+
+    // Without a play/pause button a slider does not animate its variable.
+    let expr = interpret_to_expr(
+      "Manipulate[u, {u, 0, 1, AppearanceElements -> \"InputField\"}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert!(!spec.animated);
+    assert_eq!(spec.animation_var, None);
+  }
+
+  #[test]
   fn spec_json_carries_dynamic_bounds_and_animation_var() {
     let expr = interpret_to_expr(
       "Manipulate[t, {{t, 0, \"time\"}, 0, P, .01}, \
