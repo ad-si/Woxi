@@ -2699,7 +2699,24 @@ fn render_text_element(s: &str) -> String {
             .is_some_and(|r| r.trim_start().starts_with("Cell["))
         })
         .map_or_default(|c| render_inline_math_content(c.trim())),
-      _ => String::new(),
+      // Any other style around plain prose — a string or a `TextData`
+      // run, e.g. the `Cell["March", "RevMonth"]` date fields of a
+      // template's "Modified by … on …" line — is real text in the
+      // sentence. Only box content (the opener-button chrome) is dropped.
+      _ => parts
+        .first()
+        .map(|c| c.trim())
+        .and_then(|c| {
+          if c.starts_with('"') && c.ends_with('"') && c.len() >= 2 {
+            Some(extract_string_content(c))
+          } else {
+            c.strip_prefix("TextData[")
+              .and_then(|r| find_matching_bracket(r).ok())
+              .filter(|(_, after)| after.trim().is_empty())
+              .map(|(inner, _)| extract_textdata(inner))
+          }
+        })
+        .unwrap_or_default(),
     };
   }
 
@@ -8475,6 +8492,33 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "Given a point F (the focus) and a line d (the directrix)."
     );
+  }
+
+  #[test]
+  fn test_extract_textdata_styled_inline_string_cells() {
+    // Inline cells of any other style that hold a plain string (or prose
+    // `TextData`) are part of the sentence, e.g. a template's revision
+    // date fields. Regression: they were dropped, leaving "on , , at ".
+    let s = r#"TextData[{
+ "Edited on ",
+ Cell["Monday", "RevDay",ExpressionUUID->
+  "00000000-0000-0000-0000-000000000001"],
+ ", ",
+ Cell["May", "RevMonth"],
+ " ",
+ Cell[TextData[{"7"}], "RevDate"],
+ ", at ",
+ Cell["09:15:00", "RevTime"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Edited on Monday, May 7, at 09:15:00."
+    );
+    // Box content in a styled inline cell is still dropped (opener chrome).
+    let s = r#"TextData[{"Label", Cell[BoxData[
+ PaneSelectorBox[{False->"x", True->"y"}, Dynamic[a]]], "Opener"]}]"#;
+    assert_eq!(extract_cell_content(s), "Label");
   }
 
   #[test]
