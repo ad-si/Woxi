@@ -815,7 +815,23 @@ fn adaptive_sample(
     ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     if ys.len() >= 2 {
       let at = |q: f64| ys[((ys.len() - 1) as f64 * q).round() as usize];
-      (at(0.95) - at(0.05)) * 1e-3
+      let spread = at(0.95) - at(0.05);
+      // A pole covering more than a twentieth of the domain still
+      // inflates that spread far past the window the automatic
+      // `PlotRange` shows, which clips outliers, so the dip of a
+      // potential well beside a pole would go unrefined. The visible
+      // height is never more than that clipped window.
+      let (lo, hi) = outlier_clipped_extent(
+        (sorted_quantile(&ys, 0.175), sorted_quantile(&ys, 0.825)),
+        (ys[0], ys[ys.len() - 1]),
+      );
+      let clipped = hi - lo;
+      let height = if clipped > 0.0 {
+        spread.min(clipped)
+      } else {
+        spread
+      };
+      height * 1e-3
     } else {
       0.0
     }

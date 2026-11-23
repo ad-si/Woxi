@@ -18849,6 +18849,23 @@ mod plot3d {
       ));
     }
 
+    /// A pole spanning a good part of the domain must not hide the well
+    /// beside it from the adaptive refinement: the automatic PlotRange clips
+    /// the pole away, so the dip fills the picture and has to be smooth
+    /// rather than drawn from the bare initial grid.
+    #[test]
+    fn plot_refines_well_next_to_wide_pole() {
+      let n: usize = interpret(
+        "Length[Select[First[Cases[Plot[-(1 - 9/r)/(5 r^2), {r, 0, 60}], \
+         Line[p_] :> p, Infinity]], 8 < #[[1]] < 16 &]]",
+      )
+      .unwrap()
+      .parse()
+      .unwrap();
+      // The 50-point grid alone puts 6 samples there.
+      assert!(n > 12, "expected refined samples around the well, got {n}");
+    }
+
     #[test]
     fn plot_points_default_50() {
       // WL's default is PlotPoints -> 50 (refined adaptively from there).
