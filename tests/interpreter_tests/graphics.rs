@@ -61778,6 +61778,51 @@ fn pane_shrinks_automatically_sized_picture_to_fit() {
 }
 
 #[test]
+fn pane_keeps_its_box_around_a_shrunk_plot() {
+  // Regression: a plot shrunk to fit a fixed-size `Pane` took the pane's
+  // place at the plot's own scaled size (a 350 x 150 pane holding a
+  // `ListPlot` came out about 238 wide); the pane keeps its declared box,
+  // with the shrunk plot placed in it by the alignment.
+  for (w, h) in [(350, 150), (120, 80)] {
+    let svg = export_svg(&format!(
+      "Pane[ListPlot[{{1, 2, 3}}], {{{w}, {h}}}, \
+       Alignment -> {{Center, Center}}]"
+    ));
+    assert!(
+      svg.starts_with(&format!("<svg width=\"{w}\" height=\"{h}\"")),
+      "{svg}"
+    );
+    assert!(!svg.contains("paneClip"), "{svg}");
+  }
+}
+
+#[test]
+fn framed_column_centers_items_inside_its_frame() {
+  // Regression: a `Column` with `Frame -> All` added its frame padding on
+  // top of the centered (or right-aligned) offset, pushing the widest item
+  // past the frame's right edge. The frame sits 0.28 em (3.9 pt) from the
+  // widest item, as in the FrontEnd's `GridBox`.
+  let center = export_svg(
+    "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
+     Frame -> All, Alignment -> Center]",
+  );
+  assert!(center.starts_with("<svg width=\"358\""), "{center}");
+  assert!(center.contains("<svg x=\"3.9\" y=\"0.0\" width=\"350.0\""));
+  assert!(center.contains("<svg x=\"128.9\" y=\"76.0\" width=\"100.0\""));
+  let right = export_svg(
+    "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
+     Frame -> All, Alignment -> Right]",
+  );
+  assert!(right.contains("<svg x=\"3.9\" y=\"0.0\" width=\"350.0\""));
+  assert!(right.contains("<svg x=\"253.9\" y=\"76.0\" width=\"100.0\""));
+  let left = export_svg(
+    "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
+     Frame -> All]",
+  );
+  assert!(left.contains("<svg x=\"3.9\" y=\"76.0\" width=\"100.0\""));
+}
+
+#[test]
 fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
   // Regression: `ImageSizeAction -> "ShrinkToFit"` on a fixed-size `Pane`
   // must scale wide content down to the box, not cut it off at the edge.

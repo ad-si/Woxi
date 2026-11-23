@@ -40956,7 +40956,11 @@ fn column_layout_svg(
     .collect();
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
-  let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
+  // A ruled column keeps the grid's edge offset of 0.28 em between its
+  // items and the frame, as the FrontEnd's `GridBox` does: a 350 pt pane
+  // in `Column[…, Frame -> All]` is framed about 358 pt wide, so it still
+  // fits a 360 pt `Pane` around it.
+  let frame_padding = if frame_all { 0.28 * font_size } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
   let svg_w = total_width.ceil() as u32;
@@ -41055,13 +41059,15 @@ fn column_layout_svg(
         height: ch,
         ..
       } => {
+        // `total_width` already holds the frame padding on both sides, so
+        // a centered item sits in the middle of it and a right-aligned one
+        // against the padding on the right.
         let margin = if text_layout(i) { edge_pad } else { 0.0 };
-        let x_off: f64 = frame_padding
-          + match alignment {
-            "middle" => (total_width - cw) / 2.0,
-            "end" => total_width - cw - margin,
-            _ => margin,
-          };
+        let x_off: f64 = match alignment {
+          "middle" => (total_width - cw) / 2.0,
+          "end" => total_width - frame_padding - cw - margin,
+          _ => frame_padding + margin,
+        };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
@@ -43631,11 +43637,16 @@ pub(crate) fn clip_svg_to_pane_box(
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
-  // cutting it off, keeping its aspect ratio.
+  // cutting it off, keeping its aspect ratio. The Pane still keeps its
+  // declared box, with the shrunk picture placed in it by the alignment:
+  // `Pane[ListPlot[…], {350, 150}]` is 350 wide, not as narrow as the plot.
   if let Some(scaled) =
     shrink_scalable_svg(svg, natural_w, natural_h, width, height, auto_sized)
   {
-    return scaled;
+    let (scaled_w, scaled_h) = parse_svg_wh(&scaled);
+    return place_in_pane_box(
+      &scaled, scaled_w, scaled_h, width, height, align,
+    );
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
   // the box (keeping its aspect ratio) instead of cutting it off. The
