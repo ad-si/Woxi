@@ -780,6 +780,10 @@ fn graph_render(
   // the caller's own coordinates (the ones `VertexCoordinates` uses).
   let mut prolog: Option<Expr> = None;
   let mut epilog: Option<Expr> = None;
+  // `MultiedgeStyle -> d` spreads the edges joining the same two vertices
+  // apart by `d` times their length (`None` draws them on top of each
+  // other); `Automatic` keeps a small default spread.
+  let mut multiedge_spread: Option<f64> = None;
 
   for opt in options {
     // A rule restored via `Uncompress` reconstructs as a plain
@@ -984,6 +988,13 @@ fn graph_render(
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
+        "MultiedgeStyle" => {
+          multiedge_spread = match replacement {
+            Expr::Identifier(s) if s == "None" => Some(0.0),
+            other => crate::functions::graphics::expr_to_f64(other)
+              .filter(|d| d.is_finite() && *d >= 0.0),
+          };
+        }
         // A single number `r` is the window `{{-r, r}, {-r, r}}`.
         "PlotRange"
           if let Some(r) =
@@ -1248,6 +1259,10 @@ fn graph_render(
     parallel_groups.entry(key).or_default().push(edge_ref.id());
   }
 
+  // How many edges joining a pair of vertices already took a label, so
+  // the next parallel edge takes the next `{u -> v, label}` given for it.
+  let mut edge_label_uses: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
   for edge_ref in graph.edge_references() {
     let si = edge_ref.source().index();
     let di = edge_ref.target().index();
@@ -1275,6 +1290,9 @@ fn graph_render(
     // only for the undirected straight edge, which has always been drawn
     // from center to center.
     let default_pts: Vec<(f64, f64)>;
+    // The control point of an edge drawn as a curve, which its label
+    // follows.
+    let mut curve_ctrl: Option<(f64, f64)> = None;
 
     if si == di {
       // Self-loop: a circular arc that starts and ends exactly on the
@@ -1363,8 +1381,10 @@ fn graph_render(
       // Offset index centered around 0. With total=2 we get [-0.5, +0.5];
       // with total=3 we get [-1, 0, +1]; etc.
       let offset_idx = k_in_group as f64 - (total as f64 - 1.0) / 2.0;
-      // Parallel edges fan out by a fraction of their length.
-      let spacing = clen * 0.15;
+      // Parallel edges fan out by a fraction of their length: under
+      // `MultiedgeStyle -> d` each curve bulges out by about `d` times the
+      // length from its neighbor, so the control points sit `2 d` apart.
+      let spacing = multiedge_spread.map_or(clen * 0.15, |d| 2.0 * d * clen);
       // A `LinearEmbedding` edge always arcs, with a height proportional to
       // how far apart its endpoints are (so a long-range pairing nests
       // visibly outside the shorter arcs it encloses) rather than the small
@@ -1402,6 +1422,7 @@ fn graph_render(
         // and render as two clearly distinct curves on opposite sides.
         let ctrl_x = f64::midpoint(x1, x2) + perp_x * offset_mag;
         let ctrl_y = f64::midpoint(y1, y2) + perp_y * offset_mag;
+        curve_ctrl = Some((ctrl_x, ctrl_y));
 
         // Shorten each endpoint toward the control point by vertex_radius
         // so the curve starts/ends on the vertex boundary with its tangent
@@ -1588,18 +1609,33 @@ fn graph_render(
         edge_head(edge_ref.weight().directed),
         vec![named(edge_ref.source()), named(edge_ref.target())],
       );
-      if let Some((_, label)) = edge_labels
+      let labels: Vec<&Expr> = edge_labels
         .iter()
-        .find(|(target, _)| same_edge(&edge_expr, target))
+        .filter(|(target, _)| same_edge(&edge_expr, target))
+        .map(|(_, label)| label)
+        .collect();
+      // Edges joining the same vertices take their labels in turn.
+      let uses = edge_label_uses
+        .entry(crate::syntax::expr_to_string(&edge_expr))
+        .or_insert(0);
+      let label = labels.get((*uses).min(labels.len().saturating_sub(1)));
+      *uses += 1;
+      if let Some(label) = label
         && edge_labeling
       {
         let (label, position) = placed_edge_label(label);
         let t = position.unwrap_or(0.5);
         let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
+        // A curved edge carries its label on the curve.
+        let (cx, cy) = curve_ctrl.unwrap_or((
+          f64::midpoint(x1, x2),
+          f64::midpoint(y1, y2),
+        ));
+        let omt = 1.0 - t;
         let point = Expr::List(
           vec![
-            Expr::Real(x1 + t * (x2 - x1)),
-            Expr::Real(y1 + t * (y2 - y1)),
+            Expr::Real(omt * omt * x1 + 2.0 * omt * t * cx + t * t * x2),
+            Expr::Real(omt * omt * y1 + 2.0 * omt * t * cy + t * t * y2),
           ]
           .into(),
         );
