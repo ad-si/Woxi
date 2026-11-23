@@ -1589,6 +1589,14 @@ fn reduce_equation(
     return Ok(result);
   }
 
+  // A polynomial in `x^g` of low degree in it: solve for `y = x^g` over
+  // the reals, then take the real `g`-th roots of each `y`.
+  if domain == Some("Reals")
+    && let Some(result) = reduce_power_substitution(&expanded, var)?
+  {
+    return Ok(result);
+  }
+
   // Use the Solve infrastructure to find roots
   let eq_expr = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
@@ -1677,6 +1685,79 @@ fn reduce_equation(
       vec![make_equality(lhs, rhs), id_expr(var)]
     },
   ))
+}
+
+/// `Reduce[f == 0, x, Reals]` for `f` a polynomial of high degree in `x^g`
+/// (see `sparse_roots::power_substitution`): each real root `r` of the
+/// polynomial in `y = x^g` gives `x == r^(1/g)`, with `x == -r^(1/g)` too
+/// for an even `g`, and none for a negative `r` and an even `g`. None when
+/// the polynomial has no such form or its real roots in `y` aren't found.
+fn reduce_power_substitution(
+  expanded: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((terms, g)) = super::sparse_roots::power_substitution(expanded, var)
+  else {
+    return Ok(None);
+  };
+  let x = id_expr(var);
+  let in_y = plus(
+    terms
+      .iter()
+      .map(|(e, c)| {
+        let c = crate::functions::math_ast::bigint_to_expr(c.clone());
+        times(vec![c, pow(x.clone(), Expr::Integer(*e as i128))])
+      })
+      .collect(),
+  );
+  let in_y = crate::evaluator::evaluate_expr_to_expr(&in_y)?;
+  let reduced = reduce_equation(&in_y, &Expr::Integer(0), var, Some("Reals"))?;
+  if matches!(&reduced, Expr::Identifier(s) if s == "False") {
+    return Ok(Some(reduced));
+  }
+  let exponent = call(
+    "Rational",
+    vec![Expr::Integer(1), Expr::Integer(i128::from(g))],
+  );
+  let mut equalities = Vec::new();
+  for term in collect_or_terms(&reduced) {
+    let Some((lhs, y, CompOp::Equal)) = extract_comparison(&term) else {
+      return Ok(None);
+    };
+    if !matches!(&lhs, Expr::Identifier(s) if s == var) {
+      return Ok(None);
+    }
+    let Some(value) = try_eval_to_f64(&y) else {
+      return Ok(None);
+    };
+    let root = |r: Expr| -> Result<Expr, InterpreterError> {
+      crate::evaluator::evaluate_expr_to_expr(&pow(r, exponent.clone()))
+    };
+    let negate = |r: Expr| -> Result<Expr, InterpreterError> {
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        Expr::Integer(-1),
+        r,
+      ]))
+    };
+    if value == 0.0 {
+      equalities.push(make_equality(&x, &Expr::Integer(0)));
+    } else if value > 0.0 {
+      let r = root(y)?;
+      if g % 2 == 0 {
+        equalities.push(make_equality(&x, &negate(r.clone())?));
+      }
+      equalities.push(make_equality(&x, &r));
+    } else if g % 2 == 1 {
+      let r = negate(root(negate(y)?)?)?;
+      equalities.push(make_equality(&x, &r));
+    }
+  }
+  if equalities.is_empty() {
+    return Ok(Some(bool_expr(false)));
+  }
+  equalities.sort_by(compare_root_equalities);
+  equalities.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
+  Ok(Some(build_or(equalities)))
 }
 
 /// Root equalities `x == r` in the order wolframscript lists them: by the

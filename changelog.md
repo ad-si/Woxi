@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- 3D scenes whose hidden faces cross one another no longer draw the faces
+    of a solid before the hidden parts behind it: stacks of slabs poking
+    out of a cube are drawn emerging from its faces instead of wholly over
+    them.
 - A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
     `Text@Row` or grid keeps its left padding, so the label stays the same
     width as the value changes. `ToBoxes` of such a `NumberForm` around an

@@ -3059,9 +3059,19 @@ mod tests {
         "Graphics3D[BSplineCurve[Table[{Sin[t], Cos[t], 0}, \
          {t, 0, 6.0, 0.5}], SplineClosed -> True]]",
       );
-      assert!(open.contains("<line"), "expected an open spline: {open}");
+      // Vertices drawn, whether as `<line>` pieces or one `<polyline>`.
+      let vertices = |svg: &str| {
+        svg.matches("<line").count() * 2
+          + svg
+            .split("<polyline points=\"")
+            .skip(1)
+            .filter_map(|p| p.split('"').next())
+            .map(|p| p.split_whitespace().count())
+            .sum::<usize>()
+      };
+      assert!(vertices(&open) > 0, "expected an open spline: {open}");
       assert!(
-        closed.matches("<line").count() > open.matches("<line").count(),
+        vertices(&closed) > vertices(&open),
         "a closed spline runs further than the open one"
       );
     }
@@ -5129,15 +5139,33 @@ mod tests {
         ))
         .expect("interpret should succeed")
       };
+      // The typeset runs (size, slant, text) in order. `Text` only picks
+      // the text face, which moves the runs but sets the same formula.
+      let runs = |svg: &str| -> Vec<(String, bool, String)> {
+        svg
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| {
+            let (attrs, rest) = t.split_once('>')?;
+            let size = attrs.split("font-size=\"").nth(1)?.split('"').next()?;
+            Some((
+              size.to_string(),
+              attrs.contains("font-style=\"italic\""),
+              rest.split('<').next()?.to_string(),
+            ))
+          })
+          .collect()
+      };
       let poly = "x^10 + x^9 - x^3 + x + 1";
       let through_text =
         render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
       let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
-      assert_eq!(through_text, direct);
+      assert_eq!(runs(&through_text), runs(&direct));
+      assert!(runs(&direct).len() > 5, "{direct}");
       assert!(!through_text.contains("baseline-shift"), "{through_text}");
       let nested =
         render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
-      assert_eq!(nested, direct);
+      assert_eq!(runs(&nested), runs(&direct));
     }
 
     /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
