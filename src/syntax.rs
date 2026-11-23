@@ -428,6 +428,8 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F51F}' => "\u{29F4}",              // RuleDelayed: ⧴
     '\u{F523}' => "\u{21D2}",              // Implies: ⇒
     '\u{F520}' => "\u{25A1}",              // Square: □
+    '\u{F527}' => "\u{25A0}",              // SelectionPlaceholder: ■
+    '\u{F528}' => "\u{25A1}",              // Placeholder: □
     '\u{F525}' => "\u{2192}",              // ShortRightArrow: →
     '\u{F526}' => "\u{2190}",              // ShortLeftArrow: ←
     '\u{F52A}' => "\u{2191}",              // ShortUpArrow: ↑

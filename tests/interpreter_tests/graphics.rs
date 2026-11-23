@@ -17726,6 +17726,30 @@ mod plot3d {
       );
     }
 
+    /// `\[SelectionPlaceholder]` (U+F527) and `\[Placeholder]` (U+F528)
+    /// draw as a filled and an empty square, while the strings keep the
+    /// private-use code points.
+    #[test]
+    fn placeholder_glyphs_are_drawn_as_squares() {
+      let svg = export_svg(
+        r#"Graphics[{Text["\[SelectionPlaceholder]", {0, 0}], Text["\[Placeholder]", {0, 1}]},
+           PlotRange -> {{-1, 1}, {-1, 2}}]"#,
+      );
+      assert!(svg.contains(">\u{25A0}</text>"), "filled square: {svg}");
+      assert!(svg.contains(">\u{25A1}</text>"), "empty square: {svg}");
+      assert!(
+        !svg.contains('\u{F527}') && !svg.contains('\u{F528}'),
+        "private-use code point drawn: {svg}"
+      );
+      assert_eq!(
+        woxi::interpret(
+          r#"ToCharacterCode["\[SelectionPlaceholder]\[Placeholder]"]"#
+        )
+        .unwrap(),
+        "{62759, 62760}"
+      );
+    }
+
     /// `\[Implies]` (U+F523) and its private-use neighbors were drawn as
     /// blank boxes; they now substitute the nearest standard character.
     #[test]
@@ -34153,6 +34177,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A line `Arrow` is hidden by the solids in front of it like a `Line`:
+    /// it used to be painted over the whole scene, so the axis arrows of a
+    /// puzzle of cubes showed through the cubes resting on them.
+    #[test]
+    fn graphics3d_arrow_is_hidden_by_solid_in_front() {
+      // Whether a face of the cube is drawn after every piece of the red
+      // arrow, i.e. over it.
+      let face_over_arrow = |svg: &str| {
+        let last_red = svg.rfind("rgb(255,0,0)").expect("arrow drawn");
+        svg[last_red..]
+          .lines()
+          .skip(1)
+          .any(|l| l.starts_with("<polygon") && !l.contains("rgb(255,0,0)"))
+      };
+      // An arrow inside an opaque cube: the cube's front faces cover it.
+      let inside = export_svg(
+        "Graphics3D[{Red, Arrow[{{0.2, 0.5, 0.5}, {0.8, 0.5, 0.5}}], \
+         White, Cuboid[{0, 0, 0}, {1, 1, 1}]}]",
+      );
+      assert!(face_over_arrow(&inside), "{inside}");
+      // An arrow along the rim of a face is drawn over the face's outline.
+      let on_rim = export_svg(
+        "Graphics3D[{Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}], \
+         Red, Arrow[{{0, 0, 0}, {1, 0, 0}}]}]",
+      );
+      let outline = on_rim.rfind("rgb(64,64,64)").expect("face outline");
+      let arrow = on_rim.find("rgb(255,0,0)").expect("arrow drawn");
+      assert!(outline < arrow, "{on_rim}");
+    }
+
     #[test]
     fn graphics3d_arrow_honors_thickness() {
       let thin = export_svg("Graphics3D[{Black, Arrow[{{0,0,0}, {1,1,1}}]}]");
@@ -47799,6 +47853,27 @@ mod manipulate {
         // sorts first (`"rest" + Row[…]` in wolframscript).
         assert_eq!(value_labels[0], "(a1)/(b2)");
         assert_eq!(value_labels[1], "rest + m\u{2081}+");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A setter whose choice labels pair a number with a colored
+  /// `\[SelectionPlaceholder]` swatch (U+F527) draws the filled square the
+  /// FrontEnd shows, not the blank box of the raw private-use code point.
+  #[test]
+  fn spec_selection_placeholder_labels_draw_filled_square() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1, \"\"}, {1 -> Style[\"1 \\[SelectionPlaceholder]\", \
+       Red], 2 -> Style[\"2 \\[Placeholder]\", Blue]}, ControlType -> \
+       SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "1 \u{25A0}");
+        assert_eq!(value_labels[1], "2 \u{25A1}");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
