@@ -9732,6 +9732,20 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   space before each comma, uses non-stretchy braces and tighter boxes.
 - `Inset` of a nested `Graphics` with `Text`: the inner text does not scale
   with the inset.
+- `GraphicsGrid[{{g, plot}}]` where `g = Graphics[{Inset[photo, c], …},
+  PlotRange -> {{1, 34}, {-32, 1}}, ImageSize -> 250]` and `photo` is a
+  250 x 250 `Graphics[Raster[…], ImageSize -> 250]`: the notebook front end
+  shrinks the grid to 472 x 250 pt and draws the inset photo about 1.13
+  times the width of `g`'s cell, overflowing the plot range and cropped
+  only by the cell edge. Woxi lays the cell out 273 wide and keeps the inset
+  at 250, so it sits inside the plot range with a margin. Same undecoded
+  grid layout rule as the items above.
+- A plot label written as a product of a string and a number wrapper,
+  `PlotLabel -> "opacity =" NumberForm[x, {3, 2}]`, is drawn by the
+  notebook front end with the number first (`3.03 opacity =`); Woxi keeps
+  the canonical `Times` order and draws the string first. Not checked
+  against wolframscript, so whether `Times` or the label's TraditionalForm
+  formatting reorders it is unknown.
 - `PointSize[0.004]` points come out at r 0.43 instead of 0.5 pt.
 
 ## TraditionalForm typesetting leftovers (graphics comparison sweep, 2026-11)

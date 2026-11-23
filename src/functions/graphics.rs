@@ -54284,11 +54284,20 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   // A machine real is shown the way a notebook displays it, to six
   // significant digits: a `Range[0.1, 2, 0.1]` popup reads `0.3`, not the
   // `0.30000000000000004` its exact binary value spells out in InputForm.
-  if matches!(expr, Expr::Real(_))
-    && let Some(text) = number_form_text(expr)
-  {
+  // Like any notebook number, a label of five or more integer digits is
+  // set in thin-space separated blocks of three: a `SetterBar` choice
+  // `{3471517836, 2, 2}` reads `{3 471 517 836, 2, 2}`.
+  let number_text = match expr {
+    Expr::Real(_) => number_form_text(expr),
+    Expr::Integer(_) | Expr::BigInteger(_) => Some(crate::syntax::format_expr(
+      expr,
+      crate::syntax::ExprForm::Output,
+    )),
+    _ => None,
+  };
+  if let Some(text) = number_text {
     return vec![LabelRun {
-      text,
+      text: group_digits_str(&text),
       italic,
       ..Default::default()
     }];
@@ -64641,6 +64650,43 @@ mod manipulate_traditional_form_choice_svg_tests {
         assert_eq!(value_labels, &["15 °", "45 °", "π/2", "2 π"]);
         assert_eq!(values[0], "15*Degree");
         assert_eq!(*initial_index, 1);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// Numbers of five or more integer digits in an unlabeled choice read in
+  /// thin-space separated blocks of three, as the notebook shows them, while
+  /// the bound values stay plain InputForm.
+  #[test]
+  fn choice_labels_group_long_number_digits() {
+    let control = discrete_control(
+      "Manipulate[r, {{r, 1234, \"rule\"}, \
+        {1234, 98765, -1234567, 123456789012345678901234, 12345.5, \
+        {3471517836, 2, 2}}, ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "1234",
+            "98\u{2009}765",
+            "-1\u{2009}234\u{2009}567",
+            "123\u{2009}456\u{2009}789\u{2009}012\u{2009}345\u{2009}678\
+             \u{2009}901\u{2009}234",
+            "12\u{2009}345.5",
+            "{3\u{2009}471\u{2009}517\u{2009}836, 2, 2}",
+          ]
+        );
+        assert_eq!(values[1], "98765");
+        assert_eq!(values[5], "{3471517836, 2, 2}");
+        assert_eq!(*initial_index, 0);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
