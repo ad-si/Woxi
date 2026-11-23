@@ -19236,6 +19236,10 @@ pub struct BoxLayout {
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
 
+/// The width of one `Grid` `ItemSize` unit as a fraction of the font size:
+/// the front end's item-size "em" is narrower than the full font size.
+const ITEM_SIZE_EM: f64 = 0.775;
+
 /// Whether a `FontFamily` name is a fixed-width face (`"Courier"`,
 /// `"Source Code Pro"`, `"Menlo"`, any `"… Mono"`, …).
 pub(crate) fn is_monospace_font_family(family: &str) -> bool {
@@ -33127,10 +33131,13 @@ fn grid_svg_styled_internal_reporting(
       col_widths[j] = (max_int + max_frac) * char_width + col_pad(j);
     }
   }
-  // `ItemSize` fixes a column's width at `w` ems.
+  // `ItemSize` fixes a column's width at `w` of the front end's item-size
+  // units. Measured against front-end snapshots (14 px text, divider to
+  // divider), `ItemSize` 4, 5 and 8 give 49.5, 60.5 and 93 px: a unit is
+  // about 0.775 of the font size, plus half the cell's usual padding.
   for (j, width) in col_widths.iter_mut().enumerate() {
     if let Some(w) = item_size_at(&item_size_w, j, num_cols) {
-      *width = w * font_size + col_pad(j);
+      *width = w * ITEM_SIZE_EM * font_size + col_pad(j) / 2.0;
     }
   }
 
