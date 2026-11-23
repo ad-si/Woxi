@@ -16822,8 +16822,15 @@ fn with_plot_label(
   // the size it wrote wins over the requested one.
   let (width, height) = svg_header_size(&svg).unwrap_or((width, height));
   // A `FontSize` directive on the label resizes it, same as a 2-D title;
-  // otherwise it keeps the default 16pt.
-  let font_size = styled.font_size.unwrap_or(16.0);
+  // otherwise it keeps the default 16pt, shrunk (like a 2-D title) when
+  // its widest line would not fit across the picture — a long readout
+  // `Row` of numbers would otherwise be clipped at both edges.
+  let font_size = styled.font_size.unwrap_or_else(|| {
+    let lines: Vec<String> = std::iter::once(styled.svg())
+      .chain(styled.extra_lines.iter().cloned())
+      .collect();
+    crate::functions::graphics::fit_title_font(&lines, 16.0, f64::from(width))
+  });
   // A stacked title (`Grid`/`Column`) needs one more line height per extra
   // row, on top of the strip a single-line title reserves.
   let line_height = font_size * 1.2;

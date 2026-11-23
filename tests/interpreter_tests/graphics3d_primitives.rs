@@ -2765,3 +2765,43 @@ mod perforated_faces {
     assert!(polygon_count(&holed) > polygon_count(&solid));
   }
 }
+
+mod plot_label {
+  use super::*;
+
+  /// The `font-size` of the first `<text>` element of an SVG.
+  fn first_text_font_size(svg: &str) -> f64 {
+    let text = &svg[svg.find("<text").expect("no <text>")..];
+    let start = text.find("font-size=\"").unwrap() + "font-size=\"".len();
+    let end = start + text[start..].find('"').unwrap();
+    text[start..end].parse().unwrap()
+  }
+
+  #[test]
+  fn short_title_keeps_the_default_size() {
+    let s = svg("Graphics3D[Cuboid[], PlotLabel -> \"title\"]");
+    assert_eq!(first_text_font_size(&s), 16.0, "{s}");
+  }
+
+  #[test]
+  fn wide_title_shrinks_to_fit_the_picture() {
+    // Regression: a title wider than the picture (a long readout `Row`)
+    // was set at 16pt and clipped at both edges.
+    let s = svg(
+      "Graphics3D[Cuboid[], ImageSize -> 300, PlotLabel -> Row[{\
+       \"energy = -2.0000, kinetic = 0.0000, potential = -2.0000 units\"}]]",
+    );
+    let size = first_text_font_size(&s);
+    assert!(size < 16.0 && size >= 9.0, "font-size {size}: {s}");
+  }
+
+  #[test]
+  fn explicit_font_size_is_kept() {
+    let long = "a long title that is far wider than the picture it labels";
+    let s = svg(&format!(
+      "Graphics3D[Cuboid[], ImageSize -> 200, \
+       PlotLabel -> Style[\"{long}\", 20]]"
+    ));
+    assert_eq!(first_text_font_size(&s), 20.0, "{s}");
+  }
+}
