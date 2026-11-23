@@ -1697,6 +1697,9 @@ pub fn dispatch_io_functions(
       // like Combinatorica shadow bare names once `Get` has loaded it, the
       // same as `Needs` already does.
       if crate::utils::is_standard_distribution_context(&filename) {
+        crate::functions::plot_legends_package::announce_obsolete_package(
+          &filename,
+        );
         crate::evaluator::dispatch::evaluate_functions::register_standard_context_symbols(
           &filename,
         );

@@ -5486,9 +5486,6 @@ the caller's options and appends only `AspectRatio -> Automatic` and
 notebooks take apart with `[[1, 3]]` — are identical; only
 `InputForm[plot]`'s option tail differs.
 
-Loading the package also prints `General::obspkg` in wolframscript; Woxi
-loads it silently.
-
 ### `Graphics` with `Axes` clips its edge tick labels
 
 `Graphics[…, Axes -> True, ImageSize -> {400, 400}]` lays its plotting area out
