@@ -2162,6 +2162,7 @@ fn fixed_pane_in_grid_sizes_its_plot_to_the_box() {
       "{code}: plot not 300 wide: {}",
       &plot[..plot.len().min(200)]
     );
+  }
 }
 
 /// A list holding typeset matrices or tables (`{MatrixForm[a],
