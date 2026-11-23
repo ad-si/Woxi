@@ -375,6 +375,25 @@ mod column_visual_mode {
     assert!(!svg.contains("Dynamic"), "{svg}");
   }
 
+  #[test]
+  fn grid_cell_text_styled_column_uses_text_face() {
+    // `Text[Style[Column[…], size]]` in a Grid cell is set in the
+    // proportional text face, as `Text[Column[…]]` and
+    // `Text[Style[Row[…], size]]` are, also when a line mixes strings and
+    // numbers; it used to fall back to the monospace face of typeset output.
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Text[Style[Column[{\"\", Row[{\"weight is \", 7, \".\"}]}], \
+       18]], SpanFromLeft}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("weight is"), "{svg}");
+    assert!(svg.contains("font-size=\"18\""), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains("sans-serif"), "{svg}");
+  }
+
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
   /// `Manipulate` body — is a large, colored column. It used to fall back
@@ -839,6 +858,40 @@ mod column_visual_mode {
     assert_eq!(r.result, "2");
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
+
+  /// The left edge a line of a left-aligned column starts at: the `x` of
+  /// a text item's `<text>`, or of a laid-out item's nested `<svg>`.
+  fn line_starts(svg: &str) -> Vec<f64> {
+    let body = svg.split_once('\n').map_or(svg, |(_, rest)| rest);
+    body
+      .lines()
+      .filter(|l| {
+        (l.starts_with("<text ") && l.contains("text-anchor=\"start\""))
+          || l.starts_with("<svg x=")
+      })
+      .filter_map(|l| {
+        let rest = l.split_once(" x=\"")?.1;
+        rest.split('"').next()?.parse().ok()
+      })
+      .collect()
+  }
+
+  /// A line of math (a `Row`) starts where a line of prose does, so the
+  /// lines of a left-aligned column share one edge.
+  #[test]
+  fn text_and_row_items_share_the_left_edge() {
+    for code in [
+      r#"Column[{"Since", Row[{x, " = ", y}]}]"#,
+      r#"Column[{Row[{a + b, " = ", c}], "follows", Row[{x}]}]"#,
+    ] {
+      clear_state();
+      let svg = interpret(&format!(r#"ExportString[{code}, "SVG"]"#)).unwrap();
+      let starts = line_starts(&svg);
+      assert!(starts.len() >= 2, "{code}: {svg}");
+      assert!(starts.iter().all(|&x| x == starts[0]), "{code}: {starts:?}");
+      assert!(starts[0] > 0.0, "{code}: {starts:?}");
+    }
+  }
 }
 
 mod frameless_button_cells {
@@ -1226,6 +1279,39 @@ mod text_display_face {
     assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
     // The value column starts right after the widest label (its drawn extent).
     assert!(text.contains("<text x=\"90.3\""), "{text}");
+  }
+
+  /// A `Text@Grid` cell that is a `Row` of plain items (a bold number
+  /// between strings) or a bold `Style` string is measured in the text face
+  /// too, glyph by glyph, as its plain-string neighbors are — not at the
+  /// monospace advance, which spread such a grid far too wide.
+  #[test]
+  fn text_grid_row_and_style_cells_use_proportional_widths() {
+    clear_state();
+    let width_of = |code: &str| {
+      svg_width(&interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap())
+    };
+    for cell in [
+      "Row[{\"  \", Style[1, Bold], \": 12-34-65\"}]",
+      "Row[{\"ab\", \"cd\"}, \"-\"]",
+      "Style[\"iiiiiiii\", Bold]",
+    ] {
+      let plain = width_of(&format!("Grid[{{{{{cell}}}}}]"));
+      let text = width_of(&format!("Text@Grid[{{{{{cell}}}}}]"));
+      let in_row = width_of(&format!("Text@Row[{{Grid[{{{{{cell}}}}}]}}]"));
+      assert!(text < plain, "{cell}: {plain} vs {text}");
+      assert_eq!(in_row, text, "{cell}");
+    }
+    // A row cell sets as wide as the plain string of its joined text (plus
+    // a little for the bold digit).
+    let row =
+      width_of("Text@Grid[{{Row[{\"  \", Style[1, Bold], \": 12\"}]}}]");
+    let joined = width_of("Text@Grid[{{\"  1: 12\"}}]");
+    assert!(row >= joined && row <= joined + 2.0, "{row} vs {joined}");
+    // Narrow glyphs make a narrower row cell than wide ones.
+    let narrow = width_of("Text@Grid[{{Row[{\"iiii\", \"iiii\"}]}}]");
+    let wide = width_of("Text@Grid[{{Row[{\"MMMM\", \"MMMM\"}]}}]");
+    assert!(narrow * 2.0 < wide, "{narrow} vs {wide}");
   }
 }
 
