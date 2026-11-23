@@ -6322,6 +6322,56 @@ pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   }
 }
 
+/// Whether `expr` (possibly under `Style`) is a `MatrixForm`/`TableForm` of
+/// a list: a two-dimensional typeset layout rather than a line of text.
+pub(crate) fn is_typeset_grid_item(expr: &Expr) -> bool {
+  matches!(
+    strip_style_wrappers(expr),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "MatrixForm" | "TableForm")
+        && matches!(args.first(), Some(Expr::List(_)))
+  )
+}
+
+/// A notebook shows a list holding typeset matrices or tables
+/// (`{MatrixForm[a], MatrixForm[b]}`) with each item laid out in two
+/// dimensions between the list's braces and commas. Rewrite such a list —
+/// looking through `Text` and `Style` wrappers — as the
+/// `Row[{"{", a, ", ", b, "}"}]` that lays it out that way. `None` when
+/// `expr` is no such list.
+pub(crate) fn list_with_grids_as_row(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::List(items) if items.iter().any(is_typeset_grid_item) => {
+      let mut row = Vec::with_capacity(items.len() * 2 + 1);
+      row.push(Expr::String("{".to_string()));
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          row.push(Expr::String(", ".to_string()));
+        }
+        row.push(item.clone());
+      }
+      row.push(Expr::String("}".to_string()));
+      Some(Expr::FunctionCall {
+        name: "Row".to_string(),
+        args: vec![Expr::List(row.into())].into(),
+      })
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Text" && args.len() == 1)
+        || (is_style_wrapper(name) && !args.is_empty()) =>
+    {
+      let inner = list_with_grids_as_row(&args[0])?;
+      let mut new_args = args.to_vec();
+      new_args[0] = inner;
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      })
+    }
+    _ => None,
+  }
+}
+
 /// Does `e` hold a `Subscript`/`Superscript`/`Subsuperscript` somewhere?
 fn has_script_head(e: &Expr) -> bool {
   match e {

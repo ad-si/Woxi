@@ -5507,6 +5507,10 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = push_traditional_form_into_layout(expr);
   // `Tooltip[expr, tip]` only adds a hover label; the notebook shows `expr`.
   let expr = unwrap_tooltips(expr);
+  // A list of typeset matrices (`{MatrixForm[a], MatrixForm[b]}`) sets
+  // each matrix in two dimensions between the braces, as a row the box
+  // can break into lines.
+  let expr = functions::graphics::list_with_grids_as_row(&expr).unwrap_or(expr);
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
   let expr = pane_width
