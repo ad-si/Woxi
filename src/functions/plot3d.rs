@@ -1658,7 +1658,7 @@ fn parameter_grid_mesh_polylines<P: Copy>(
       let mut current: Vec<P> = Vec::new();
       for j in 0..=along {
         if let Some(p) = point(j) {
-          current.push(p)
+          current.push(p);
         } else {
           if current.len() >= 2 {
             polylines.push((axis, std::mem::take(&mut current)));
