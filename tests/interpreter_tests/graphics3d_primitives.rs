@@ -284,6 +284,43 @@ mod solids {
     );
   }
 
+  /// A `Tube` without a radius is as thick as a fixed fraction (0.0035) of
+  /// the diagonal of the scene's box, not of its own curve.
+  #[test]
+  fn tube_default_radius_is_sized_by_the_scene() {
+    let r = 0.0035 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}], {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}, {r}], {range}]"
+      ))
+    );
+  }
+
+  /// Every edge of a wireframe drawn as separate radius-less tubes (here
+  /// through a `GraphicsComplex`) is equally thick, however long it is.
+  /// Regression: each two-point tube took a hundredth of its own length,
+  /// so the edges of a tube icosahedron came out as hairlines.
+  #[test]
+  fn tube_default_radius_is_shared_by_tubes_of_any_length() {
+    let r = 0.0035 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    let pts = "{{0, 0, 0}, {1.5, 0, 0}, {0, 0.2, 0}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[GraphicsComplex[{pts}, Tube[{{{{1, 2}}, {{1, 3}}}}]], \
+         {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[GraphicsComplex[{pts}, \
+         {{Tube[{{1, 2}}, {r}], Tube[{{1, 3}}, {r}]}}], {range}]"
+      ))
+    );
+  }
+
   /// The head covers the last stretch of the curve measured along it, so a
   /// finely sampled curve (an arc) still gets a full-size head instead of
   /// one clipped to its last tiny segment.

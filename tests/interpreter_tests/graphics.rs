@@ -34039,7 +34039,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         let tube = export_svg(&format!("Graphics3D[Tube[{curve}{r}]]"));
         let arrow = export_svg(&format!("Graphics3D[Arrow[Tube[{curve}{r}]]]"));
         assert!(arrow.contains("<svg"));
-        assert!(arrow.len() > tube.len());
+        // The shaft stops short of the tip to make room for the head, so
+        // the arrow need not be drawn with more polygons than the tube.
+        assert_ne!(arrow, tube);
       }
     }
 
