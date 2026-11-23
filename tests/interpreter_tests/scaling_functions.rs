@@ -142,6 +142,18 @@ fn list_log_plot_labels_every_other_decade() {
 }
 
 #[test]
+fn list_log_plot_labels_decades_far_below_one() {
+  // Values down to 10^-30: the lowest labels used to stop near 10^-12.
+  let s = svg("ListLogPlot[Table[10.^-k, {k, 0, 30}]]");
+  let y = y_labels(&s);
+  assert_eq!(y.len(), 4, "{y:?}");
+  assert_eq!(y[3].1, "1");
+  for e in ["-30", "-20", "-10"] {
+    assert!(s.contains(&format!(">{e}</tspan>")), "missing 10^{e}");
+  }
+}
+
+#[test]
 fn log_axis_draws_explicit_grid_lines() {
   let s = svg(
     "Plot[x^2, {x, 1, 10}, ScalingFunctions -> \"Log\", \
