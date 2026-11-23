@@ -18898,9 +18898,30 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
   // An explicit `PlotRangePadding` replaces those defaults, side by side.
-  let y_span = y_data_max - y_data_min;
-  let y_degenerate =
-    y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
+  // A half-open `PlotRange -> {min, All}` pads its open end like an
+  // automatic range spanning from the pinned value to the curve's far
+  // extreme (not just the curve's own extent): `{300, All}` over a curve
+  // from 347 to 361 tops out at 361 + 61/18.
+  let half_open_span = if plot_range_y.is_none() {
+    let scaled = |v: f64| match scaling.1.as_ref() {
+      Some(s) => s.forward(v),
+      None => Some(v),
+    };
+    match plot_range_y_half_open {
+      Some((Some(lo), None)) => scaled(lo)
+        .map(|lo| y_data_max - lo)
+        .filter(|s| s.is_finite() && *s > 0.0),
+      Some((None, Some(hi))) => scaled(hi)
+        .map(|hi| hi - y_data_min)
+        .filter(|s| s.is_finite() && *s > 0.0),
+      _ => None,
+    }
+  } else {
+    None
+  };
+  let y_span = half_open_span.unwrap_or(y_data_max - y_data_min);
+  let y_degenerate = half_open_span.is_none()
+    && y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
   let x_span = x_max - x_min;
   let ((x_pad_lo, x_pad_hi), (y_pad_lo, y_pad_hi)) =
     if let Some(spec) = &range_padding {
@@ -18969,7 +18990,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && all_points
       .iter()
       .flatten()
-      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * y_span.abs());
+      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * (y_data_max - y_data_min).abs());
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }

@@ -19214,6 +19214,32 @@ fn stacked_fraction_svg(
   format!("{num}/{den}")
 }
 
+/// An overscript set *above* its base, centered on it, as the FrontEnd
+/// typesets `Overscript[base, over]` (`A ⟶ B` with a `k` over the arrow),
+/// in inline SVG markup: the script (at 70%) is shifted right by half the
+/// width the base has over it and raised; the base then steps back under
+/// it and down to the baseline, so the pen ends after the base and the text
+/// that follows runs on unshifted. `em` lengths resolve against each
+/// `tspan`'s own font size, hence the script's shifts are divided by 0.7.
+fn stacked_overscript_svg(base: &str, over: &str) -> String {
+  const SCALE: f64 = 0.7;
+  // How far the script's baseline sits above the base's, in base ems.
+  const RAISE: f64 = 0.7;
+  let base_w = crate::functions::plot_padding::text_width(base, 1.0);
+  let over_w = crate::functions::plot_padding::text_width(over, 1.0) * SCALE;
+  let lead = ((base_w - over_w) / 2.0).max(0.0);
+  let back = lead + over_w;
+  // A script wider than its base overhangs it equally on both sides.
+  let base_lead = ((over_w - base_w) / 2.0).max(0.0);
+  format!(
+    "<tspan dx=\"{:.3}em\" dy=\"{:.3}em\" font-size=\"70%\">{over}</tspan>\
+     <tspan dx=\"{:.3}em\" dy=\"{RAISE:.3}em\">{base}</tspan>",
+    lead / SCALE,
+    -RAISE / SCALE,
+    base_lead - back,
+  )
+}
+
 /// A rendered box layout node. Each node carries its pixel dimensions,
 /// the vertical offset of the baseline from the top, and the SVG elements
 /// needed to draw it (positioned relative to (0, 0) of the node).
@@ -24754,9 +24780,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         {
           return accent_text(&base_svg, &over_svg, true);
         }
-        format!(
-          "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
-        )
+        stacked_overscript_svg(&base_svg, &over_svg)
       }
 
       // UnderscriptBox[base, under] → base with underscript. An
@@ -26840,10 +26864,9 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
           + estimate_box_display_width(&args[0])
       }
       "StyleBox" if !args.is_empty() => estimate_box_display_width(&args[0]),
-      "OverscriptBox" if args.len() >= 2 => {
-        estimate_box_display_width(&args[0])
-          + estimate_box_display_width(&args[1]) * 0.7
-      }
+      // The script is stacked over its base (see `stacked_overscript_svg`).
+      "OverscriptBox" if args.len() >= 2 => estimate_box_display_width(&args[0])
+        .max(estimate_box_display_width(&args[1]) * 0.7),
       "UnderscriptBox" if args.len() >= 2 => {
         estimate_box_display_width(&args[0])
           + estimate_box_display_width(&args[1]) * 0.7
