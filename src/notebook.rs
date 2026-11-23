@@ -9923,11 +9923,11 @@ Cell[TextData[{
   /// typeset label like `∑` over `n` shows the current value of `n`.
   #[test]
   fn test_underoverscript_box_reads_as_underoverscript() {
-    let s = r#"BoxData[RowBox[{"Row", "[", RowBox[{"{", RowBox[{UnderoverscriptBox[RowBox[{"Style", "[", RowBox[{"\"\<x\>\"", ",", "24"}], "]"}], RowBox[{"Row", "[", RowBox[{"{", RowBox[{"\"\<j\>\"", ",", "\"\< = 1\>\""}], "}"}], "]"}], "m"], ",", "y"}], "}"}], "]"}]}]]"#;
+    let s = r#"BoxData[RowBox[{"Row", "[", RowBox[{"{", RowBox[{UnderoverscriptBox[RowBox[{"Style", "[", RowBox[{"\"\<x\>\"", ",", "24"}], "]"}], RowBox[{"Row", "[", RowBox[{"{", RowBox[{"\"\<j\>\"", ",", "\"\< = 1\>\""}], "}"}], "]"}], "m"], ",", "y"}], "}"}], "]"}]]"#;
     let src = extract_cell_content(s);
     assert_eq!(
       src,
-      r#"Row[{Underoverscript[Style["x", 24], Row[{"j", " = 1"}], m], y}]"#
+      r#"Row[{Underoverscript[Style["x",24], Row[{"j"," = 1"}], m],y}]"#
     );
     // A limit that is not an expression on its own stays a string.
     let s = r#"BoxData[UnderoverscriptBox["x", "+", "b"]]"#;
