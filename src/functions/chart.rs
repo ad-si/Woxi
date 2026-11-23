@@ -5322,15 +5322,7 @@ fn bar_chart_structure(
     );
     for (li, _, x_center) in anchors {
       let label = &opts.chart_labels[li];
-      labels.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![
-          Expr::String(label.text.clone()),
-          Expr::List(vec![Expr::Real(x_center + 0.5), Expr::Real(0.0)].into()),
-          Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
-        ]
-        .into(),
-      });
+      labels.push(chart_label_text(label, x_center + 0.5));
     }
     prims.push(Expr::List(labels.into()));
   }
@@ -5350,21 +5342,113 @@ fn bar_chart_structure(
           | "AspectRatio"
           | "FrameTicks"
           | "Ticks"
+          | "ImagePadding"
+          | "PlotRangePadding"
+          | "PlotRangeClipping"
+          | "FrameStyle"
+          | "FrameTicksStyle"
+          | "AxesStyle"
+          | "TicksStyle"
+          | "LabelStyle"
+          | "BaseStyle"
+          | "Background"
+          | "PlotLabel"
+          | "GridLines"
+          | "GridLinesStyle"
+          | "ImageMargins"
       )
     {
       framed |= name == "Frame";
       graphics_args.push(arg.clone());
     }
   }
+  let given = |option: &str| {
+    graphics_args.iter().skip(1).any(|arg| {
+      matches!(arg, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == option))
+    })
+  };
+  let mut defaults = Vec::new();
   if !framed {
-    graphics_args.push(crate::helpers::rule_expr(
+    defaults.push(crate::helpers::rule_expr(
       crate::helpers::id_expr("Axes"),
       crate::helpers::bool_expr(true),
     ));
+    // The category axis names the bars by their labels, not by numbers.
+    if !given("Ticks") {
+      defaults.push(crate::helpers::rule_expr(
+        crate::helpers::id_expr("Ticks"),
+        Expr::List(
+          vec![
+            crate::helpers::id_expr("None"),
+            crate::helpers::id_expr("Automatic"),
+          ]
+          .into(),
+        ),
+      ));
+    }
   }
+  // Like the rendered chart, the bars fill a golden-ratio frame.
+  if !given("AspectRatio") {
+    defaults.push(crate::helpers::rule_expr(
+      crate::helpers::id_expr("AspectRatio"),
+      Expr::Real(1.0 / 1.618_033_988_749_895),
+    ));
+  }
+  graphics_args.extend(defaults);
   Expr::FunctionCall {
     name: "Graphics".to_string(),
     args: graphics_args.into(),
+  }
+}
+
+/// The `Text` primitive that sets one `ChartLabels` entry under the bar
+/// (or group) centered at `x`, keeping the label's `Style` size and
+/// weight. A `Rotate[label, θ]` label is drawn along direction θ and hangs
+/// from its far end, so a tilted label reads down and away from the axis
+/// rather than straddling it.
+fn chart_label_text(label: &ChartLabel, x: f64) -> Expr {
+  let mut content = Expr::String(label.text.clone());
+  let mut styles: Vec<Expr> = Vec::new();
+  if let Some(size) = label.font_size {
+    styles.push(Expr::Real(size));
+  }
+  if label.bold {
+    styles.push(Expr::Identifier("Bold".to_string()));
+  }
+  if label.italic {
+    styles.push(Expr::Identifier("Italic".to_string()));
+  }
+  if !styles.is_empty() {
+    styles.insert(0, content);
+    content = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: styles.into(),
+    };
+  }
+  let pair = |a: Expr, b: Expr| Expr::List(vec![a, b].into());
+  let position = pair(Expr::Real(x), Expr::Real(0.0));
+  let theta = label.rotation;
+  let args = if theta.abs() < 1e-9 {
+    vec![content, position, pair(Expr::Integer(0), Expr::Real(1.5))]
+  } else {
+    // Anchor the top corner of the label's end nearest the axis: its right
+    // end for a counterclockwise tilt, its left end for a clockwise one.
+    let end = if theta.cos() * theta.sin() >= 0.0 {
+      1.0
+    } else {
+      -1.0
+    };
+    vec![
+      content,
+      position,
+      pair(Expr::Real(end), Expr::Real(1.0)),
+      pair(Expr::Real(theta.cos()), Expr::Real(theta.sin())),
+    ]
+  };
+  Expr::FunctionCall {
+    name: "Text".to_string(),
+    args: args.into(),
   }
 }
 
