@@ -2822,6 +2822,9 @@ impl ManipulateState {
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
     self.self_refreshing = false;
+    // Whether the body moved one of its own tracked controls to a new
+    // value (`T = 450` in a branch that pins the temperature).
+    let mut moved_tracked_control = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
         if slot.1 != value
@@ -2840,9 +2843,17 @@ impl ManipulateState {
       // `{{var, default}, None}` spec alongside the row that already
       // controls it) — sync both, so the widget's own selection never
       // drifts from the value the body actually bound.
+      let tracked = self
+        .tracked_symbols
+        .as_ref()
+        .is_none_or(|t| t.iter().any(|n| *n == name));
       for ctrl in &mut self.controls {
         if ctrl.name() == name {
+          let before = ctrl.current_code();
           ctrl.set_current_from_code(&value);
+          if tracked && ctrl.binds_variable() && ctrl.current_code() != before {
+            moved_tracked_control = true;
+          }
         }
       }
     }
@@ -2855,6 +2866,14 @@ impl ManipulateState {
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
+      self.reevaluate_inner(false);
+      return;
+    }
+    // The front end re-runs a body that changed a variable it tracks, so
+    // the frame shows the values the body settled on: everything computed
+    // before the body's own `T = 450` is computed again for 450. A single
+    // extra pass settles a body that pins a control to a fixed value.
+    if allow_retry && moved_tracked_control {
       self.reevaluate_inner(false);
       return;
     }
@@ -3608,6 +3627,39 @@ mod tests {
       );
     }
     assert_eq!(runs(), runs_before, "the body itself must not re-run");
+  }
+
+  /// A body that assigns one of its own tracked controls (a mode that pins
+  /// the slider to a fixed value) runs again, so what it computed before
+  /// the assignment is computed for the pinned value too — the front end
+  /// re-evaluates a `Dynamic` whose tracked variable changed.
+  #[test]
+  fn body_assigning_tracked_control_reruns_for_new_value() {
+    let code = r#"Manipulate[
+      Module[{shown = t}, If[mode == 2, t = 7]; 100 + shown],
+      {{mode, 1}, {1, 2}}, {{t, 3}, 0, 10, 1},
+      TrackedSymbols :> {mode, t}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let shown = |s: &ManipulateState| match s.check_render() {
+      Ok(r) => r.result,
+      Err(e) => panic!("render failed: {e}"),
+    };
+    assert_eq!(shown(&state), "103");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("mode control");
+    assert!(state.select_discrete(idx, "2"));
+    state.apply_tracking(idx);
+    if state.request_reeval(idx) {
+      state.run_scheduled_reeval();
+    }
+    let t = state.controls.iter().find(|c| c.name() == "t").unwrap();
+    assert_eq!(t.current_code(), "7");
+    assert_eq!(shown(&state), "107");
   }
 
   /// A Manipulate graphic's labels (`Text[Style["A", 20, "Label"], …]`)
