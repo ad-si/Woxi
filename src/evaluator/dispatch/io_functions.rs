@@ -6502,10 +6502,13 @@ fn locator_marker_units(
 /// `LocatorPane` marker's default size is scaled against, for a body that
 /// only exists as a rendered picture (so there is no `PlotRange` option
 /// lying around in a primitive list to read, as `locator_pane_graphic`
-/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
-/// that case's own fallback — when the picture carries no source range (a
-/// plain `Graphics[…]` with no plot data, or a picture kind that keeps
-/// none).
+/// reads for the symbolic-`Graphics` case). A plot is measured by its
+/// stored ranges. A picture without a usable stored range that remembers
+/// its symbolic `Graphics[prims, opts]` (a `Show[Graphics[…]]`, or a
+/// function returning one) is measured by that, as `PlotRange[g]` is: the
+/// explicit `PlotRange` or the primitives' extent, with an explicit numeric
+/// `AspectRatio` or `Automatic`. Falls back to `1.0` — matching that case's own fallback — when the
+/// picture carries no usable range.
 fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
   if let Expr::Graphics {
     source: Some(src), ..
@@ -6517,12 +6520,10 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
     let aspect = src
       .aspect_ratio
       .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
-    return locator_marker_units(x_extent, y_extent, aspect);
+    if x_extent > 0.0 && y_extent > 0.0 {
+      return locator_marker_units(x_extent, y_extent, aspect);
+    }
   }
-  // A drawing (`Show[Graphics[…]]`, a function returning one) keeps no plot
-  // source, only its symbolic `Graphics[prims, opts]`: its range is that of
-  // the primitives (or its explicit `PlotRange`), and its `AspectRatio` an
-  // explicit number or `Automatic`.
   if let Expr::Graphics {
     structure: Some(structure),
     is_3d: false,

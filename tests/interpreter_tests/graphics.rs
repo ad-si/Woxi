@@ -34124,6 +34124,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // A drawing that reaches the pane already rendered — `Show[Graphics[…]]`
+    // or a helper function returning one — takes the same default marker as
+    // the bare `Graphics` over the same plot range, instead of one sized for
+    // a unit range (a tenth of the size over a range ten units wide).
+    #[test]
+    fn locator_pane_default_marker_sized_by_a_shown_drawing() {
+      let drawing = "Graphics[{Line[{{-5, 0}, {5, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-1, 1}}, ImageSize -> 270]";
+      let radii = |body: &str| {
+        clear_state();
+        first_ellipse_radii(&export_svg(&format!(
+          "LocatorPane[{{1, 0.5}}, {body}]"
+        )))
+      };
+      let (rx, ry) = radii(drawing);
+      assert!(rx > 2.0 && (rx - ry).abs() < 0.01, "rx={rx} ry={ry}");
+      for body in [
+        format!("Show[{drawing}]"),
+        format!("Module[{{f}}, f[] := Show[{drawing}]; f[]]"),
+      ] {
+        let (srx, sry) = radii(&body);
+        assert!(
+          (srx - rx).abs() < 0.05 && (sry - ry).abs() < 0.05,
+          "{body}: rx={srx} ry={sry}, expected {rx}"
+        );
+      }
+    }
+
     // In a plot's `Epilog`, `Translate` moves a circle's center but not its
     // `{rx, ry}` radius (a length that would otherwise pass for a point),
     // and `Scale` stretches the radius along with the center.
@@ -38623,6 +38651,39 @@ mod graphics_grid {
     .graphics
     .unwrap();
     assert!(!own.contains("font-family=\"Times\""), "{own}");
+  }
+
+  /// A `Labeled` position may be a `{side, alignment}` pair: `{Top, Left}`
+  /// sets the caption above the content at its left edge, `{Top, Right}`
+  /// at its right edge, and `{Bottom, Center}` centered below it — not
+  /// every pair below the content as the plain default.
+  #[test]
+  fn labeled_side_alignment_pairs() {
+    // The `x`, `y`, width and height of the nested `<svg>` holding `text`.
+    let placed = |svg: &str, text: &str| -> (f64, f64, f64) {
+      let at = svg.find(&format!(">{text}<")).expect("caption drawn");
+      let start = svg[..at].rfind("<svg x=").expect("nested svg");
+      let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+      let attr = |name: &str| -> f64 {
+        let i = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+        tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+      };
+      (attr("x"), attr("y"), attr("width"))
+    };
+    let disk = "Graphics[Disk[], ImageSize -> 100]";
+    let svg = export_svg(&format!(
+      "Labeled[{disk}, {{\"Head\", \"Foot\"}}, {{{{Top, Left}}, {{Bottom, Center}}}}]"
+    ));
+    let (hx, hy, _) = placed(&svg, "Head");
+    let (fx, fy, fw) = placed(&svg, "Foot");
+    assert_eq!(hx, 0.0, "{svg}");
+    assert!(hy < fy, "the head is above the foot: {svg}");
+    assert!((fx + fw / 2.0 - 50.0).abs() < 1.0, "foot centered: {svg}");
+    // A single caption with a pair.
+    let svg = export_svg(&format!("Labeled[{disk}, \"Head\", {{Top, Right}}]"));
+    let (hx, hy, hw) = placed(&svg, "Head");
+    assert_eq!(hy, 0.0, "{svg}");
+    assert!((hx + hw - 100.0).abs() < 1.0, "head at the right: {svg}");
   }
 
   /// A grid's `BaseStyle -> FontFamily -> f` sets the captions of its
