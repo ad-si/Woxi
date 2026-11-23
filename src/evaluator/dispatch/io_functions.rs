@@ -7145,6 +7145,18 @@ fn pane_text_units(text: &str) -> Vec<(String, usize)> {
   units
 }
 
+/// The width in points `expr` is drawn at when it lays out as a picture of
+/// its own (a `Column`, a typeset fraction), or `None` for plain text,
+/// whose width the caller measures glyph by glyph.
+fn drawn_width(expr: &Expr) -> Option<f64> {
+  let svg = expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, _) = crate::functions::graphics::parse_svg_wh(&svg);
+  (w > 0.0).then_some(w)
+}
+
 /// About how many characters a linear-syntax box shows: its text with the
 /// escapes, box heads, brackets, separators and quotes left out.
 fn linear_syntax_shown_len(source: &str) -> usize {
@@ -7481,7 +7493,12 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
-        if let Some(px) = atom_px[u.idx] {
+        // An item that is no plain text is as wide as it is drawn: a
+        // typeset grid, fraction or column is much narrower than the
+        // characters of its expression.
+        if let Some(px) = atom_px[u.idx]
+          .or_else(|| atoms[u.idx].as_ref().and_then(drawn_width))
+        {
           u.width = px;
           continue;
         }

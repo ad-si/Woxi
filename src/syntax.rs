@@ -17168,6 +17168,27 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       indices.reverse();
       format_part_brackets(base, &expr_to_input_form(base), &indices)
     }
+    // `x // f` is `f[x]`: written as that call, its argument in InputForm
+    // (the OutputForm renderer would print a `Row[…]` inside it as plain
+    // juxtaposed text, which re-parses as a product). A symbol head goes
+    // through the call printing, so `x // TraditionalForm` reads like
+    // `TraditionalForm[x]`.
+    Expr::Postfix { expr: arg, func } => {
+      if let Expr::Identifier(name) = func.as_ref() {
+        expr_to_input_form(&Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![arg.as_ref().clone()].into(),
+        })
+      } else {
+        let func_str = expr_to_input_form(func);
+        let func_display = if curried_head_needs_parens(func.as_ref()) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
+        format!("{func_display}[{}]", expr_to_input_form(arg))
+      }
+    }
     // `Sequence[a, b]` keeps its head and quoted children in InputForm (the
     // OutputForm renderer concatenates the elements, which would also flatten
     // a nested `Row[…]` into plain text when the result is re-parsed as code,
