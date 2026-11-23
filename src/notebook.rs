@@ -1084,6 +1084,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "SubsuperscriptBox",
     "OverscriptBox",
     "UnderscriptBox",
+    "UnderoverscriptBox",
     "SqrtBox",
     "RadicalBox",
     "TagBox",
@@ -1334,6 +1335,30 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           "Underscript[{}, \"{}\"]",
           conv(&args[0]),
           escape_string(&conv(&args[1]))
+        )
+      }
+      // `UnderoverscriptBox[a, b, c]` → `Underoverscript[a, b, c]`, as the
+      // FrontEnd reads it: the limits are code (a typeset `∑` label whose
+      // upper limit is a control variable shows that variable's value). A
+      // limit that is not a valid expression on its own is quoted instead.
+      // A big operator (`∑`, `∏`, …) with its body in the enclosing row is
+      // handled by `big_operator_call`.
+      "UnderoverscriptBox"
+        if args.len() == 3 && big_operator_head(&args[0]).is_none() =>
+      {
+        let limit = |a: &str| {
+          let src = conv(a);
+          if crate::parse_to_expr(&src).is_ok() {
+            src
+          } else {
+            format!("\"{}\"", escape_string(&src))
+          }
+        };
+        format!(
+          "Underoverscript[{}, {}, {}]",
+          conv(&args[0]),
+          limit(&args[1]),
+          limit(&args[2])
         )
       }
       // `SqrtBox[a]` → `Sqrt[a]`.
@@ -9891,6 +9916,22 @@ Cell[TextData[{
     // A non-operator base keeps its box (nothing to evaluate here).
     let s = r#"BoxData[RowBox[{UnderoverscriptBox["x", "a", "b"], "f"}]]"#;
     assert!(!extract_cell_content(s).starts_with("Sum["));
+  }
+
+  /// A non-operator `UnderoverscriptBox` in code reads as the evaluable
+  /// `Underoverscript[base, under, over]`, with both limits as code, so a
+  /// typeset label like `∑` over `n` shows the current value of `n`.
+  #[test]
+  fn test_underoverscript_box_reads_as_underoverscript() {
+    let s = r#"BoxData[RowBox[{"Row", "[", RowBox[{"{", RowBox[{UnderoverscriptBox[RowBox[{"Style", "[", RowBox[{"\"\<x\>\"", ",", "24"}], "]"}], RowBox[{"Row", "[", RowBox[{"{", RowBox[{"\"\<j\>\"", ",", "\"\< = 1\>\""}], "}"}], "]"}], "m"], ",", "y"}], "}"}], "]"}]}]]"#;
+    let src = extract_cell_content(s);
+    assert_eq!(
+      src,
+      r#"Row[{Underoverscript[Style["x", 24], Row[{"j", " = 1"}], m], y}]"#
+    );
+    // A limit that is not an expression on its own stays a string.
+    let s = r#"BoxData[UnderoverscriptBox["x", "+", "b"]]"#;
+    assert_eq!(extract_cell_content(s), r#"Underoverscript[x, "+", b]"#);
   }
 
   /// In prose the same box is display text, not code: `∑_(n=1)^m …`.
