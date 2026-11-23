@@ -5898,6 +5898,14 @@ fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
 /// which differentiates the interpolating piece.
 const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 
+/// A tolerance for telling points of `[lo, hi]` apart: `rel` of the span,
+/// plus a few units of rounding at the bounds' magnitude. It scales with the
+/// range, so a tiny one (`{t, 0, 10^-9}`) is not collapsed onto its start
+/// the way a tolerance with an absolute floor would.
+fn range_tolerance(lo: f64, hi: f64, rel: f64) -> f64 {
+  (hi - lo).abs() * rel + 4.0 * f64::EPSILON * lo.abs().max(hi.abs())
+}
+
 /// Restrict integrated solution samples (ascending in x) to `[lo, hi]`.
 ///
 /// A bound that falls between two grid points becomes a sample of its own,
@@ -5910,7 +5918,7 @@ fn clip_points_to_range(
   lo: f64,
   hi: f64,
 ) -> Vec<(f64, Vec<f64>)> {
-  let tol = (hi - lo).abs().max(1.0) * 1e-9;
+  let tol = range_tolerance(lo, hi, 1e-9);
   let xs: Vec<f64> = points.iter().map(|(x, _)| *x).collect();
   let bound = |target: f64| -> (f64, Vec<f64>) {
     if let Some(p) = points.iter().find(|(x, _)| (x - target).abs() <= tol) {
@@ -10116,7 +10124,7 @@ fn dde_breaks_between(a: f64, b: f64) -> Vec<f64> {
       return Vec::new();
     };
     let (lo, hi) = if a < b { (a, b) } else { (b, a) };
-    let tol = 1e-12 * (hi - lo).abs().max(1.0);
+    let tol = range_tolerance(lo, hi, 1e-12);
     let mut v: Vec<f64> = h
       .breaks
       .iter()
@@ -17296,7 +17304,7 @@ fn evaluate_interpolating_function_values(
       if let Expr::List(pair) = pt
         && pair.len() == 2
         && let Ok(xp) = interp_value_to_f64(&pair[0])
-        && (xp - x_val).abs() < 1e-15
+        && same_abscissa(xp, x_val)
       {
         // A machine query point gives a machine value, as in wolframscript
         // (`Interpolation[{{1, 1}, {2, 3}, {3, 2}}][2.]` is `3.`).
@@ -17359,10 +17367,10 @@ fn evaluate_interpolating_function_values(
     // Linear interpolation
     let (x0, y0) = extract_point(&data_points[idx])?;
     let (x1, y1) = extract_point(&data_points[idx + 1])?;
-    let t = if (x1 - x0).abs() > 1e-15 {
-      (x_val - x0) / (x1 - x0)
-    } else {
+    let t = if same_abscissa(x0, x1) {
       0.0
+    } else {
+      (x_val - x0) / (x1 - x0)
     };
     let y_val = y0 + t * (y1 - y0);
     Ok(real_or_integer(y_val))
@@ -17376,6 +17384,14 @@ fn evaluate_interpolating_function_values(
     let y_val = lagrange_interpolate(data_points, x_val, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
+}
+
+/// Whether two abscissas are the same point up to rounding. The tolerance
+/// is relative to their magnitude, so a grid on a tiny scale (an NDSolve
+/// solution over `{t, 0, 5*10^-15}` has steps of about `10^-17`) is not
+/// collapsed onto its nodes the way a fixed absolute tolerance would.
+fn same_abscissa(a: f64, b: f64) -> bool {
+  (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs())
 }
 
 /// `InterpolatingFunctionDomain[interp]`, from the
