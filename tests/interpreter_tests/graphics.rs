@@ -73267,3 +73267,57 @@ mod show_bar_chart_layout {
     );
   }
 }
+
+mod text_grid_text_face {
+  use super::*;
+
+  /// Width of an SVG's root element.
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// `TextGrid[…]` is effectively `Text[Grid[…]]`: it draws exactly as the
+  /// text-face grid, options included.
+  #[test]
+  fn text_grid_draws_as_text_of_grid() {
+    for (rows, opts) in [
+      ("{{\"+2\", 1}, {\"0\", -1}}", ", Frame -> All"),
+      ("{{a, -12, \"xyz\"}, {-3, 4, 5}}", ", Dividers -> All"),
+      (
+        "{{\"heading\", SpanFromLeft}, {-1, -2}}",
+        ", Alignment -> Center",
+      ),
+    ] {
+      assert_eq!(
+        export_svg(&format!("TextGrid[{rows}{opts}]")),
+        export_svg(&format!("Text[Grid[{rows}{opts}]]")),
+        "{rows}{opts}"
+      );
+    }
+  }
+
+  /// Its cells are measured glyph by glyph in the proportional face, so a
+  /// column of negative numbers is narrower than in a monospace `Grid`.
+  #[test]
+  fn text_grid_cells_use_proportional_widths() {
+    let rows = "{{\"-1\", -1, \"+1\"}, {-2, \"0\", -3}}";
+    let text_grid = svg_width(&export_svg(&format!("TextGrid[{rows}]")));
+    let grid = svg_width(&export_svg(&format!("Grid[{rows}]")));
+    assert!(text_grid < grid, "TextGrid {text_grid} vs Grid {grid}");
+  }
+
+  /// Inside a row the `TextGrid` keeps its text-face width, leaving room for
+  /// the picture beside it.
+  #[test]
+  fn text_grid_in_row_keeps_text_face_width() {
+    let rows = "{{\"-1\", -1, \"+1\"}, {-2, \"0\", -3}}";
+    let row = |head: &str| {
+      svg_width(&export_svg(&format!(
+        "Row[{{{head}[{rows}], Spacer[20], Graphics[Disk[], ImageSize -> 100]}}]"
+      )))
+    };
+    assert!(row("TextGrid") < row("Grid"));
+  }
+}

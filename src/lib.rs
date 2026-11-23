@@ -4153,8 +4153,24 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
+    // `TextGrid[…]` is effectively `Text[Grid[…]]`.
     syntax::Expr::FunctionCall { name, args }
-      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
+      if name == "TextGrid" && !args.is_empty() =>
+    {
+      match render_grid_if_needed(syntax::Expr::FunctionCall {
+        name: "Text".to_string(),
+        args: vec![syntax::Expr::FunctionCall {
+          name: "Grid".to_string(),
+          args: args.clone(),
+        }]
+        .into(),
+      }) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Grid" && !args.is_empty() =>
     {
       match functions::graphics::grid_ast(args) {
         Ok(result) => result,
