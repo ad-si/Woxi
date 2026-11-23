@@ -9146,6 +9146,73 @@ fn scale_label_spacers(expr: &Expr, font_size: f64) -> Expr {
   }
 }
 
+/// Whether `content` is a `Grid[{{…}, {…}, …}]` whose rows are lists and at
+/// least one of them holds two or more cells.
+fn is_multi_column_grid(content: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = content else {
+    return false;
+  };
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  name == "Grid"
+    && !rows.is_empty()
+    && rows.iter().all(|r| matches!(r, Expr::List(_)))
+    && rows
+      .iter()
+      .any(|r| matches!(r, Expr::List(c) if c.len() > 1))
+}
+
+/// A `Row[items, (separator,) opts…]` label whose own options frame it
+/// (`Frame -> True`) or set a `Background`, rewritten as the equivalent
+/// `Framed[Row[…], FrameStyle -> …, Background -> …]` (or, unframed, a
+/// `Style[Row[…], Background -> …]`), which the label layout knows how to
+/// draw. `None` when the label is no such `Row`.
+fn row_frame_as_framed(label: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = label else {
+    return None;
+  };
+  if name != "Row" || args.is_empty() {
+    return None;
+  }
+  let is_opt = |e: &Expr| option_kv(e).is_some();
+  let (plain, opts): (Vec<&Expr>, Vec<&Expr>) =
+    args.iter().partition(|e| !is_opt(e));
+  if opts.is_empty() {
+    return None;
+  }
+  let framed = opts.iter().any(|o| {
+    matches!(option_kv(o), Some(("Frame", Expr::Identifier(v))) if v == "True")
+  });
+  let has_background = opts
+    .iter()
+    .any(|o| matches!(option_kv(o), Some(("Background", _))));
+  if !framed && !has_background {
+    return None;
+  }
+  let mut row_args: Vec<Expr> = plain.into_iter().cloned().collect();
+  let mut wrapper_opts: Vec<Expr> = Vec::new();
+  for o in opts {
+    match option_kv(o) {
+      Some(("Frame", _)) => {}
+      Some(("FrameStyle", _)) if framed => wrapper_opts.push(o.clone()),
+      Some(("FrameStyle", _)) => {}
+      Some(("Background", _)) => wrapper_opts.push(o.clone()),
+      _ => row_args.push(o.clone()),
+    }
+  }
+  let row = Expr::FunctionCall {
+    name: "Row".to_string(),
+    args: row_args.into(),
+  };
+  let mut wrapper_args = vec![row];
+  wrapper_args.extend(wrapper_opts);
+  Some(Expr::FunctionCall {
+    name: if framed { "Framed" } else { "Style" }.to_string(),
+    args: wrapper_args.into(),
+  })
+}
+
 /// The attribute marking an inset picture as a `Text` label laid out on its
 /// own (see `framed_label_picture`): like any label, it widens an automatic
 /// plot range to fit, which an ordinary inset does not.
@@ -9156,11 +9223,14 @@ const TEXT_LABEL_PICTURE_MARK: &str = "data-text-label=\"1\"";
 /// `ItemSize` widths) set in the label's font, framed in `frame_color` with
 /// the `FrameMargins` around them (5 points by default) and the optional
 /// `background` behind. Returns the SVG and its width and height.
+///
+/// With no `frame_color` (an unframed multi-column `Grid` label) no border is
+/// drawn and the margins default to zero.
 fn framed_label_picture(
   content: &Expr,
   text: &str,
   style: &StyleState,
-  frame_color: Color,
+  frame_color: Option<Color>,
   background: Option<Color>,
   frame_opts: &[Expr],
 ) -> (String, f64, f64) {
@@ -9260,8 +9330,23 @@ fn framed_label_picture(
     .max()
     .unwrap_or(1)
     .max(1);
-  // A gap separates the columns of a grid.
-  let gap = if ncols > 1 { 0.5 * fs } else { 0.0 };
+  // A gap separates the columns of a grid; a `Grid`'s `Spacings -> {w, h}`
+  // (or a lone `w`) sets it to `w` ems.
+  let spacing_em = match content {
+    Expr::FunctionCall { name, args } if name == "Grid" => {
+      args[1..].iter().find_map(|o| match option_kv(o) {
+        Some(("Spacings", Expr::List(p))) => p.first().and_then(expr_to_f64),
+        Some(("Spacings", v)) => expr_to_f64(v),
+        _ => None,
+      })
+    }
+    _ => None,
+  };
+  let gap = if ncols > 1 {
+    spacing_em.map_or(0.5, |w| w.max(0.0)) * fs
+  } else {
+    0.0
+  };
   let mut col_w: Vec<f64> = (0..ncols)
     .map(|c| {
       let item = min_widths
@@ -9302,7 +9387,7 @@ fn framed_label_picture(
   let pitch = line_pitch(fs);
   let content_h = rows.len().max(1) as f64 * pitch;
 
-  let default_margin = 5.0;
+  let default_margin = if frame_color.is_some() { 5.0 } else { 0.0 };
   let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
     Some(("FrameMargins", v)) => Some(v),
     _ => None,
@@ -9334,18 +9419,27 @@ fn framed_label_picture(
   };
   let mut svg = format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" {TEXT_LABEL_PICTURE_MARK} \
-     width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\
-     <rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
-     fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
-    w - 1.0,
-    h - 1.0,
-    frame_color.to_svg_rgb(),
-    if frame_color.a < 1.0 {
-      format!(" stroke-opacity=\"{}\"", frame_color.a)
-    } else {
-      String::new()
-    },
+     width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">"
   );
+  match frame_color {
+    Some(frame_color) => svg.push_str(&format!(
+      "<rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
+       fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
+      w - 1.0,
+      h - 1.0,
+      frame_color.to_svg_rgb(),
+      if frame_color.a < 1.0 {
+        format!(" stroke-opacity=\"{}\"", frame_color.a)
+      } else {
+        String::new()
+      },
+    )),
+    None if background.is_some() => svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{w:.2}\" height=\"{h:.2}\" \
+       fill=\"{fill}\"{fill_opacity}/>"
+    )),
+    None => {}
+  }
   let ff_attr = if style.font_family.is_empty() {
     String::new()
   } else {
@@ -9393,6 +9487,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Row` of its parts, so the matrix keeps its rows (see
   // `string_form_grids_as_rows`).
   if let Some(label) = args.first().and_then(string_form_grids_as_rows) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = label;
+    return parse_text(&rewritten, style, prims);
+  }
+  // `Row[…, Frame -> True, Background -> c]` boxes its items like `Framed`.
+  if let Some(label) = args.first().and_then(row_frame_as_framed) {
     let mut rewritten = args.to_vec();
     rewritten[0] = label;
     return parse_text(&rewritten, style, prims);
@@ -9838,7 +9938,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A framed label is laid out as its own picture — lines (or a grid's
   // columns) measured in the label's font, inside the frame's margins — and
   // set at the anchor like an inset.
-  if let Some(frame_color) = frame
+  //
+  // An unframed `Grid` of two or more columns is laid out the same way, just
+  // without the border, so its columns line up across the rows instead of
+  // each row running together as one line.
+  let frame_color = frame.as_ref().map(|f| f.color);
+  if (frame_color.is_some() || is_multi_column_grid(content))
     && direction.is_none()
     && fraction_label_parts(&text).is_none()
     && stacked_label_rows(&text).is_none()
@@ -9847,7 +9952,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       content,
       &text,
       &local_style,
-      frame_color.color,
+      frame_color,
       background,
       frame_opts,
     );
