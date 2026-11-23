@@ -3795,7 +3795,10 @@ fn generate_svg(
     })
     .unwrap_or([None, None, None]);
   let (label_face, tick_faces) = axes_text_faces(options);
+  let (tick_colors, tick_sizes) = ticks_style_option_3d(options);
   let look = AxesLook {
+    tick_colors,
+    tick_sizes,
     label_size: label_font_size(options),
     label_face,
     tick_faces,
@@ -4781,8 +4784,11 @@ fn draw_axes_on_box_with_ticks(
     if !look.shown[ai] {
       continue;
     }
-    // `TicksStyle` recolors this axis's tick marks and their labels.
+    // `TicksStyle` recolors this axis's tick marks and their labels, and
+    // a font size in it resizes the labels (over any `LabelStyle` size).
     let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
+    let tick_font_size =
+      look.tick_sizes[ai].map_or(tick_font_size, |s| s.round() as i32);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -4968,11 +4974,13 @@ fn draw_axes_on_box_with_ticks(
 }
 
 /// How each of the three axes of a 3D box is drawn: whether it is shown
-/// at all (`Axes -> {bx, by, bz}`) and the color its ticks take
-/// (`TicksStyle`), and the size of its labels (`LabelStyle`).
+/// at all (`Axes -> {bx, by, bz}`), the color and label size its ticks
+/// take (`TicksStyle`), and the size of its labels (`LabelStyle`).
 pub(crate) struct AxesLook {
   pub shown: [bool; 3],
   pub tick_colors: [Option<String>; 3],
+  /// The font size `TicksStyle` gives each axis's tick labels.
+  pub tick_sizes: [Option<f64>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
   /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
@@ -4989,6 +4997,7 @@ impl Default for AxesLook {
     AxesLook {
       shown: [true; 3],
       tick_colors: [None, None, None],
+      tick_sizes: [None, None, None],
       label_size: None,
       label_face: (false, false),
       tick_faces: [(false, false); 3],
@@ -5088,24 +5097,50 @@ fn font_face_attrs((bold, italic): (bool, bool)) -> String {
   attrs
 }
 
-/// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
-/// axes) gives the ticks of each axis.
-fn parse_ticks_style_3d(value: &Expr) -> [Option<String>; 3] {
+/// The colors and label font sizes `TicksStyle -> {sx, sy, sz}` (or one
+/// style for all three axes) gives the ticks of each axis.
+fn parse_ticks_style_3d(
+  value: &Expr,
+) -> ([Option<String>; 3], [Option<f64>; 3]) {
   let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let color = |e: &Expr| {
     crate::functions::plot::parse_style_directives(e)
       .and_then(|style| style.color)
       .map(super::graphics::Color::to_svg_rgb)
   };
-  match &value {
-    Expr::List(items) if items.len() == 3 => {
-      [color(&items[0]), color(&items[1]), color(&items[2])]
-    }
-    other => {
-      let c = color(other);
-      [c.clone(), c.clone(), c]
-    }
-  }
+  let size = |e: &Expr| {
+    crate::functions::plot::LabelStyleSpec::parse(e)
+      .and_then(|spec| spec.font_size)
+  };
+  let styles: [&Expr; 3] = match &value {
+    Expr::List(items) if items.len() == 3 => [&items[0], &items[1], &items[2]],
+    other => [other, other, other],
+  };
+  (styles.map(color), styles.map(size))
+}
+
+/// The `TicksStyle` option among `opts`, read into an `AxesLook`'s tick
+/// colors and tick label sizes.
+fn ticks_style_option_3d(
+  opts: &[Expr],
+) -> ([Option<String>; 3], [Option<f64>; 3]) {
+  opts
+    .iter()
+    .rev()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TicksStyle") => {
+        Some(parse_ticks_style_3d(replacement))
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
 }
 
 /// The pixel rectangle `(x_min, x_max, y_min, y_max)` the axes and their
@@ -14086,7 +14121,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_labels = parse_axes_labels(replacement, None);
         }
         "TicksStyle" => {
-          axes_look.tick_colors = parse_ticks_style_3d(replacement);
+          (axes_look.tick_colors, axes_look.tick_sizes) =
+            parse_ticks_style_3d(replacement);
         }
         _ => {}
       }
