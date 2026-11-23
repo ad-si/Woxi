@@ -5383,6 +5383,23 @@ pub(crate) fn plot_labels_svg(
         sf,
       ));
     }
+    // A `Column` title lines its rows up at their left edges, the block
+    // as a whole centered over the plot; every other title centers each
+    // line on its own.
+    let (tx, anchor) = if sl.left_aligned
+      && !sl.extra_lines.is_empty()
+      && sl.segments.is_empty()
+    {
+      let bold = if sl.bold {
+        plot_padding::BOLD_WIDTH_SCALE
+      } else {
+        1.0
+      };
+      let w = sl.widest_line_width(fs / sf, 1.0) * sf * bold;
+      (cx - w / 2.0, "start")
+    } else {
+      (cx, "middle")
+    };
     // A plain string with line breaks stacks its lines too.
     let body = if sl.markup.is_none()
       && sl.extra_line_count() == 0
@@ -5397,7 +5414,7 @@ pub(crate) fn plot_labels_svg(
         title_pitch,
       )
     } else {
-      sl.svg_scaled_stacked(sf, cx, title_pitch)
+      sl.svg_scaled_stacked(sf, tx, title_pitch)
     };
     if !sl.segments.is_empty() {
       // Center the line on the band the tallest picture claims.
@@ -5416,7 +5433,7 @@ pub(crate) fn plot_labels_svg(
     // A run of blanks the label asks for is kept.
     let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+      "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}{preserve_attr}>{body}</text>\n",
     ));
