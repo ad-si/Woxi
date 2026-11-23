@@ -4290,11 +4290,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "RotateLabel")
             && matches!(replacement.as_ref(), syntax::Expr::Identifier(v) if v == "True"))
       });
-      match functions::graphics::labeled_sides_svg(
-        &content_svg,
-        &sides,
-        rotate,
-      ) {
+      match functions::graphics::labeled_sides_svg(&content_svg, &sides, rotate)
+      {
         Some(svg) => graphics_result(svg),
         None => expr,
       }
