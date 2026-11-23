@@ -46567,38 +46567,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           patch_default_label(&mut c, orig, synth);
           renames.push((orig_form.clone(), synth.clone()));
         }
-        // A bare `Locator` (no corner bounds) moves over the picture the body
-        // draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there
-        // bounds the pad rather than a box padded around the start point.
-        // Without one, it is the range of the graphic the body actually
-        // draws at the initial control values (e.g. a `Show` of a
-        // `StreamPlot` over its stated domain).
-        if bare_locator_spec(&spec)
-          && let Some(((x0, y0), (x1, y1))) = args.first().and_then(|body| {
-            find_plot_range(body)
-              .or_else(|| drawn_plot_range(body, &initial_bindings))
-          })
-        {
-          match &mut c {
-            ManipulateControl::Slider2D {
-              x_min,
-              x_max,
-              y_min,
-              y_max,
-              ..
-            }
-            | ManipulateControl::Locator {
-              x_min,
-              x_max,
-              y_min,
-              y_max,
-              ..
-            } => {
-              (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
-            }
-            _ => {}
-          }
-        }
+        bound_bare_locator_to_picture(
+          &mut c,
+          &spec,
+          args.first(),
+          &initial_bindings,
+        );
         // A `Trigger`/`Animator` control spec animates its variable: the
         // widget auto-plays (paused for a Trigger, running for an Animator)
         // and the animation targets this variable.
@@ -46839,12 +46813,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .cloned()
             .collect();
           if let Some(ParsedControl::Visible {
-            control: c,
+            control: mut c,
             enabled: enabled2,
             ..
           }) = crate::with_scoped_globals(&initial_bindings, || {
-            parse_manipulate_control(&Expr::List(promoted.into()), &[])
+            parse_manipulate_control(&Expr::List(promoted.clone().into()), &[])
           }) {
+            // Hidden or not, a Locator without corner bounds moves over the
+            // picture the body draws, like any other bare Locator.
+            bound_bare_locator_to_picture(
+              &mut c,
+              &Expr::List(promoted.into()),
+              args.first(),
+              &initial_bindings,
+            );
             if let Some(cond) = enabled2 {
               control_enabled.push((c.name().to_string(), cond));
             }
@@ -50512,6 +50494,12 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
           continue;
         }
         for cell in row {
+          // A blank cell (`""`) only pads the grid layout (e.g. the empty
+          // corners around a cross of arrow buttons); it is no caption
+          // and must not leave an empty heading row in the panel.
+          if matches!(cell, Expr::String(s) if s.trim().is_empty()) {
+            continue;
+          }
           // A cell like `Control[…] Spacer[8]` (implicit product) lists
           // each factor on its own, as in a `Row` item.
           let factors = if contains_control(cell) {
@@ -53020,6 +53008,46 @@ fn drawn_plot_range(
   let evaluated =
     crate::with_scoped_globals(bindings, || evaluate_expr_to_expr(body).ok())?;
   first_graphic_range(&evaluated)
+}
+
+/// A bare `Locator` (no corner bounds) moves over the picture the body
+/// draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there bounds
+/// the pad rather than a box padded around the start point. Without one,
+/// it is the range of the graphic the body actually draws at the initial
+/// control values (e.g. a `Show` of a `StreamPlot` over its stated domain).
+fn bound_bare_locator_to_picture(
+  control: &mut ManipulateControl,
+  spec: &Expr,
+  body: Option<&Expr>,
+  initial_bindings: &[(String, String)],
+) {
+  if !bare_locator_spec(spec) {
+    return;
+  }
+  let Some(((x0, y0), (x1, y1))) = body.and_then(|body| {
+    find_plot_range(body).or_else(|| drawn_plot_range(body, initial_bindings))
+  }) else {
+    return;
+  };
+  match control {
+    ManipulateControl::Slider2D {
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    }
+    | ManipulateControl::Locator {
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    } => {
+      (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
+    }
+    _ => {}
+  }
 }
 
 /// Whether a Manipulate control spec is `{{p, init}, Locator, …options}`
@@ -62756,9 +62784,9 @@ mod manipulate_dynamic_control_list_tests {
     assert_eq!(
       summary,
       vec![
-        // A bold section caption with an empty neighbor stays a heading.
+        // A bold section caption with an empty neighbor stays a heading;
+        // the blank neighbor cell adds no row of its own.
         "heading:shape",
-        "heading:",
         "n:count",
         "r:size",
         // Both panes' controls take the live caption beside the selector
