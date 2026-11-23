@@ -454,14 +454,20 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
 /// front of it. Drawn there, the piece shows over every face behind it
 /// and under every face in front of it. `dots[k]` marks a piece that is a
 /// `Point` dot rather than a line (missing entries are lines).
+///
+/// `end_zones[k]`, when given, is the stretch `[lo, hi]` of piece `k`
+/// (as fractions of its length) away from the ends of the line it was cut
+/// from: samples before `lo` or after `hi` lie so close to an end of that
+/// line that a face there only touches it (see `line_draw_bounds`).
 fn line_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
   dots: &[bool],
   camera: &Camera,
+  end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, dots, camera, None)
+  line_draw_bounds(verts, tris, segs, dots, camera, None, end_zones)
     .into_iter()
     .map(|(slot, _)| slot)
     .collect()
@@ -481,7 +487,7 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners))
+  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None)
     .into_iter()
     .zip(owners)
     .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
@@ -549,6 +555,7 @@ fn line_draw_bounds(
   dots: &[bool],
   camera: &Camera,
   owners: Option<&[usize]>,
+  end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<(usize, usize)> {
   if tris.is_empty() || verts.len() != tris.len() {
     return vec![(0, usize::MAX); segs.len()];
@@ -624,8 +631,10 @@ fn line_draw_bounds(
       let mut end_slot = 0;
       let mut cap = usize::MAX;
       const SAMPLES: [f64; 5] = [0.02, 0.25, 0.5, 0.75, 0.98];
+      let [zone_lo, zone_hi] = end_zones.map_or([0.0, 1.0], |z| z[n]);
       for (i, t) in SAMPLES.into_iter().enumerate() {
-        let at_end = i == 0 || i == SAMPLES.len() - 1;
+        let at_end =
+          i == 0 || i == SAMPLES.len() - 1 || t < zone_lo || t > zone_hi;
         let m = Point3D {
           x: seg[0].x + t * (seg[1].x - seg[0].x),
           y: seg[0].y + t * (seg[1].y - seg[0].y),
@@ -4121,7 +4130,7 @@ fn generate_svg(
   let mesh_slots = worlds.map(|worlds| {
     let endpoints: Vec<_> =
       sorted_mesh.iter().map(|line| line.endpoints).collect();
-    line_draw_slots(worlds, triangles, &endpoints, &[], camera)
+    line_draw_slots(worlds, triangles, &endpoints, &[], camera, None)
   });
   let mut ordered_slots: Vec<_> = sorted_mesh.drain(..).enumerate().collect();
   ordered_slots.sort_by(|(a, x), (b, y)| match &mesh_slots {
@@ -15646,6 +15655,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// its position along it. Translucent pieces of one polyline drawn in
     /// a row are joined back into a single stroke (see `emit_edge_run`).
     piece_of: Option<(usize, usize)>,
+    /// The corners of a 3D `Arrow`'s cone head, filled flat in `color` as
+    /// their projected convex hull. Its `endpoints` run from the center of
+    /// the cone's base to the tip, which places the head in the same draw
+    /// order as a line piece, so an opaque surface in front of it hides it.
+    head_outline: Option<Vec<Point3D>>,
+    /// The part of the piece away from the ends of the segment it was cut
+    /// from (see `line_draw_slots`); `[0, 1]` for a whole edge.
+    end_zone: [f64; 2],
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -15696,6 +15713,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: t0 * edge_px,
           dot_radius: None,
           piece_of: None,
+          head_outline: None,
+          end_zone: [0.0, 1.0],
         });
       }
     }
@@ -15746,6 +15765,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: 0.0,
               dot_radius: None,
               piece_of: None,
+              head_outline: None,
+              end_zone: [0.0, 1.0],
             });
           }
         }
@@ -15762,18 +15783,80 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
-    // Shortest on-screen length (in pixels) worth a piece of its own.
+    // The on-screen length (px) a segment's pieces are cut to (shorter
+    // segments are not cut), and the most pieces one segment is cut into.
     const LINE_PIECE_PX: f64 = 8.0;
+    const LINE_MAX_PIECES: usize = 64;
+    // How near an end of a segment (as a fraction of it) a face counts as
+    // only touching the line: a hidden edge meeting the corner of a face
+    // in front of it is not lifted over that face. It equals the stretch
+    // the two end samples of an end piece covered back when every segment
+    // was cut into `LINE_SUBDIVISIONS` pieces, so a short piece cut from
+    // a long segment is placed as its whole segment would be.
+    const LINE_END_REACH: f64 = 0.03;
     let mut polyline_id = 0usize;
+    // The scene box diagonal that a 3D arrowhead's size is a fraction of.
+    let scene_diag = v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
     for prim in &prims {
-      let Primitive3D::Line3D { segments, style } = prim else {
-        continue;
+      // An `Arrow`'s shaft is cut into depth-sorted pieces like a `Line`,
+      // so a surface or solid in front of it hides it as Wolfram does.
+      let (segments, style): (&[Vec<Point3D>], _) = match prim {
+        Primitive3D::Line3D { segments, style } => (segments, style),
+        Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
+          (std::slice::from_ref(points), style)
+        }
+        _ => continue,
       };
       let color = match style.color {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
+      if let Primitive3D::Arrow3D { points, .. } = prim {
+        // Arrowhead: a cone in the scene, like the head of an
+        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
+        // length as a fraction of the diagonal of the scene's box, so it
+        // foreshortens with the view like the rest of the scene.
+        for (segment, size) in arrow3d_head_anchors(
+          points,
+          arrowhead_fractions(
+            style.arrowheads.as_deref(),
+            Some(svg_width as f64),
+          )
+          .as_deref(),
+        ) {
+          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          else {
+            continue;
+          };
+          let tip = head[0];
+          let ring = &head[1..];
+          let n = ring.len() as f64;
+          let base = Point3D {
+            x: ring.iter().map(|p| p.x).sum::<f64>() / n,
+            y: ring.iter().map(|p| p.y).sum::<f64>() / n,
+            z: ring.iter().map(|p| p.z).sum::<f64>() / n,
+          };
+          let mid = Point3D {
+            x: f64::midpoint(base.x, tip.x),
+            y: f64::midpoint(base.y, tip.y),
+            z: f64::midpoint(base.z, tip.z),
+          };
+          sorted_edges.push(SceneEdge {
+            endpoints: [base, tip],
+            depth: depth(mid, &camera) - bias,
+            color: color.clone(),
+            width,
+            opacity: style.opacity,
+            dashing: None,
+            dash_offset: 0.0,
+            dot_radius: None,
+            piece_of: None,
+            head_outline: Some(head),
+            end_zone: [0.0, 1.0],
+          });
+        }
+      }
       for seg in segments {
         polyline_id += 1;
         let mut piece_index = 0;
@@ -15793,9 +15876,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
           // Pieces only need to be short enough on screen to be ordered
           // against the faces around them: a finely sampled curve whose
-          // segments are a pixel long is not cut any further.
-          let pieces = ((total_px / LINE_PIECE_PX).ceil() as usize)
-            .clamp(1, LINE_SUBDIVISIONS);
+          // segments are a pixel long is not cut any further, while a
+          // segment long on screen (an axis arrow drawn through a surface)
+          // is cut finer, so the pieces in front of and behind a face meet
+          // close to where the line pierces it.
+          let pieces = if total_px.is_finite() {
+            ((total_px / LINE_PIECE_PX).ceil() as usize)
+              .clamp(1, LINE_MAX_PIECES)
+          } else {
+            LINE_SUBDIVISIONS
+          };
           for s in 0..pieces {
             let t0 = s as f64 / pieces as f64;
             let t1 = (s + 1) as f64 / pieces as f64;
@@ -15815,6 +15905,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
               piece_of: Some((polyline_id, piece_index)),
+              head_outline: None,
+              end_zone: [
+                (LINE_END_REACH - t0) / (t1 - t0),
+                (1.0 - LINE_END_REACH - t0) / (t1 - t0),
+              ],
             });
             piece_index += 1;
           }
@@ -15846,6 +15941,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: 0.0,
           dot_radius: Some(radius),
           piece_of: None,
+          head_outline: None,
+          end_zone: [0.0, 1.0],
         });
       }
     }
@@ -15909,6 +16006,30 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
+      if let Some(head) = &edge.head_outline {
+        let screen: Vec<(f64, f64, usize)> = head
+          .iter()
+          .enumerate()
+          .map(|(i, p)| {
+            let (px, py) = project(*p, &camera);
+            let (sx, sy) = to_svg(px, py);
+            (sx, sy, i)
+          })
+          .collect();
+        let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
+        if hull.len() >= 3 {
+          let pts: Vec<String> = hull
+            .iter()
+            .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+            .collect();
+          svg.push_str(&format!(
+            "<polygon points=\"{}\" fill=\"{}\"{opacity_attr}/>\n",
+            pts.join(" "),
+            edge.color
+          ));
+        }
+        return;
+      }
       if let Some(radius) = edge.dot_radius {
         svg.push_str(&format!(
           "<circle cx=\"{ex0:.1}\" cy=\"{ey0:.1}\" r=\"{radius:.2}\" fill=\"{}\"{opacity_attr}/>\n",
@@ -16019,6 +16140,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|e| e.dot_radius.is_some())
         .collect::<Vec<_>>(),
       &camera,
+      Some(&sorted_edges.iter().map(|e| e.end_zone).collect::<Vec<_>>()),
     );
     let mut by_slot: Vec<usize> = (0..sorted_edges.len()).collect();
     by_slot.sort_by_key(|&k| edge_slots[k]);
@@ -16305,241 +16427,170 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     emit_edge_run(&mut svg, &sorted_edges[ei..]);
   }
 
-  // Render points and arrows on top (lines are depth-sorted with the
-  // triangles above so surfaces occlude them correctly)
+  // Text labels go on top. Points, and the shafts and heads of arrows,
+  // were drawn in depth order with the lines and faces above, so
+  // surfaces occlude them correctly.
   for prim in &prims {
-    match prim {
-      Primitive3D::Text3D {
-        label,
-        pos,
-        offset,
-        font_size,
-        width_chars,
-        picture,
-        bold,
-        italic,
-        panel,
-        style,
-      } => {
-        let fill_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        // An `Opacity` in force fades the label like any other primitive;
-        // `Opacity[0]` hides it.
-        if style.opacity <= 0.0 {
-          continue;
-        }
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let (px, py) = project(*pos, &camera);
-        let (sx, sy) = to_svg(px, py);
-        if let Some((pic, w, h)) = picture {
-          let x = sx - w / 2.0 - offset.0 * w / 2.0;
-          let y = sy - h / 2.0 + offset.1 * h / 2.0;
-          svg.push_str(&pic.replacen(
-            "<svg ",
-            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
-            1,
-          ));
-          svg.push('\n');
-          continue;
-        }
-        // The offset names which point of the label's box sits at the
-        // projected point, so the box moves the other way — half its width
-        // per unit across, half its height per unit up (and the vertical
-        // sign flips, SVG counting y downwards).
-        let text_w = *width_chars as f64 * font_size * 0.6;
-        let fraction = crate::functions::graphics::fraction_label_parts(label);
-        let text_h = if fraction.is_some() {
-          // A stacked fraction is about two lines tall.
-          font_size * 2.4
-        } else {
-          font_size * 1.2 * label.split('\n').count() as f64
-        };
-        let x = sx - offset.0 * text_w / 2.0;
-        let y = sy + offset.1 * text_h / 2.0;
-        let mut style_attrs = String::new();
-        if *bold {
-          style_attrs.push_str(" font-weight=\"bold\"");
-        }
-        if *italic {
-          style_attrs.push_str(" font-style=\"italic\"");
-        }
-        // `Background -> color` paints a panel behind the label, hugging
-        // its glyphs, which keeps it legible over the edges it labels.
-        if let Some((r, g, b)) = style.text_background {
-          let panel_w = match fraction {
-            Some(f) => {
-              2.0
-                * crate::functions::graphics::label_fraction_bar_half(
-                  f.num, f.den, *font_size,
-                )
-                + if f.negative {
-                  crate::functions::graphics::label_fraction_minus_width(
-                    *font_size,
-                  )
-                } else {
-                  0.0
-                }
+    let Primitive3D::Text3D {
+      label,
+      pos,
+      offset,
+      font_size,
+      width_chars,
+      picture,
+      bold,
+      italic,
+      panel,
+      style,
+    } = prim
+    else {
+      continue;
+    };
+    let fill_color = if let Some((r, g, b)) = style.color {
+      format!("rgb({r},{g},{b})")
+    } else {
+      default_prim_color.to_string()
+    };
+    // An `Opacity` in force fades the label like any other primitive;
+    // `Opacity[0]` hides it.
+    if style.opacity <= 0.0 {
+      continue;
+    }
+    let opacity_attr = if style.opacity < 1.0 {
+      format!(" opacity=\"{}\"", style.opacity)
+    } else {
+      String::new()
+    };
+    let (px, py) = project(*pos, &camera);
+    let (sx, sy) = to_svg(px, py);
+    if let Some((pic, w, h)) = picture {
+      let x = sx - w / 2.0 - offset.0 * w / 2.0;
+      let y = sy - h / 2.0 + offset.1 * h / 2.0;
+      svg.push_str(&pic.replacen(
+        "<svg ",
+        &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
+        1,
+      ));
+      svg.push('\n');
+      continue;
+    }
+    // The offset names which point of the label's box sits at the
+    // projected point, so the box moves the other way — half its width
+    // per unit across, half its height per unit up (and the vertical
+    // sign flips, SVG counting y downwards).
+    let text_w = *width_chars as f64 * font_size * 0.6;
+    let fraction = crate::functions::graphics::fraction_label_parts(label);
+    let text_h = if fraction.is_some() {
+      // A stacked fraction is about two lines tall.
+      font_size * 2.4
+    } else {
+      font_size * 1.2 * label.split('\n').count() as f64
+    };
+    let x = sx - offset.0 * text_w / 2.0;
+    let y = sy + offset.1 * text_h / 2.0;
+    let mut style_attrs = String::new();
+    if *bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if *italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    // `Background -> color` paints a panel behind the label, hugging
+    // its glyphs, which keeps it legible over the edges it labels.
+    if let Some((r, g, b)) = style.text_background {
+      let panel_w = match fraction {
+        Some(f) => {
+          2.0
+            * crate::functions::graphics::label_fraction_bar_half(
+              f.num, f.den, *font_size,
+            )
+            + if f.negative {
+              crate::functions::graphics::label_fraction_minus_width(*font_size)
+            } else {
+              0.0
             }
-            None => text_w,
-          };
-          svg.push_str(&format!(
+        }
+        None => text_w,
+      };
+      svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{text_h:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
             x - panel_w / 2.0,
             y - text_h / 2.0,
           ));
+    }
+    // A `Framed` label sits on its panel, laid out as a 2-D
+    // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
+    // width, and a border keeps its margin round the text.
+    if !panel.is_empty() {
+      let panel_w = if panel.frame.is_some() {
+        text_w
+      } else {
+        crate::functions::plot_padding::text_width(label, *font_size)
+      };
+      let panel_h = crate::functions::graphics::split_markup_lines(label).len()
+        as f64
+        * font_size;
+      let (fill, fill_opacity) = match panel.background {
+        Some(bg) if bg.a < 1.0 => {
+          (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
         }
-        // A `Framed` label sits on its panel, laid out as a 2-D
-        // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
-        // width, and a border keeps its margin round the text.
-        if !panel.is_empty() {
-          let panel_w = if panel.frame.is_some() {
-            text_w
-          } else {
-            crate::functions::plot_padding::text_width(label, *font_size)
-          };
-          let panel_h = crate::functions::graphics::split_markup_lines(label)
-            .len() as f64
-            * font_size;
-          let (fill, fill_opacity) = match panel.background {
-            Some(bg) if bg.a < 1.0 => {
-              (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
-            }
-            Some(bg) => (bg.to_svg_rgb(), String::new()),
-            None => ("none".to_string(), String::new()),
-          };
-          let stroke = match panel.frame {
-            Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
-            None => String::new(),
-          };
-          svg.push_str(&format!(
+        Some(bg) => (bg.to_svg_rgb(), String::new()),
+        None => ("none".to_string(), String::new()),
+      };
+      let stroke = match panel.frame {
+        Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+        None => String::new(),
+      };
+      svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{panel_h:.1}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
             x - panel_w / 2.0,
             y - panel_h / 2.0,
           ));
-        }
-        if let Some(f) = fraction {
-          let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
-            format!(
-              "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
+    }
+    if let Some(f) = fraction {
+      let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
+        format!(
+          "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
                dominant-baseline=\"middle\" font-family=\"sans-serif\" \
                font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{markup}</text>"
-            )
-          };
-          svg.push_str(
-            &crate::functions::graphics::label_stacked_fraction_svg(
-              x,
-              y,
-              f,
-              *font_size,
-              &fill_color,
-              &text_at,
-            ),
-          );
-          svg.push('\n');
-          continue;
-        }
-        let lines = crate::functions::graphics::split_markup_lines(label);
-        let line_height = font_size * 1.2;
-        let mut body = String::new();
-        if lines.len() == 1 {
-          body.push_str(&lines[0]);
-        } else {
-          // The block of lines is centered on the anchor point.
-          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
-          for (i, line) in lines.iter().enumerate() {
-            let dy = if i == 0 { first_dy } else { line_height };
-            body.push_str(&crate::functions::graphics::stacked_line_tspan(
-              &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
-              "middle",
-              line,
-            ));
-          }
-        }
-        // Blanks padding the label (`"  axis"`) keep their room, as they
-        // do in a 2D `Text`.
-        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
-        svg.push_str(&format!(
+        )
+      };
+      svg.push_str(&crate::functions::graphics::label_stacked_fraction_svg(
+        x,
+        y,
+        f,
+        *font_size,
+        &fill_color,
+        &text_at,
+      ));
+      svg.push('\n');
+      continue;
+    }
+    let lines = crate::functions::graphics::split_markup_lines(label);
+    let line_height = font_size * 1.2;
+    let mut body = String::new();
+    if lines.len() == 1 {
+      body.push_str(&lines[0]);
+    } else {
+      // The block of lines is centered on the anchor point.
+      let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
+      for (i, line) in lines.iter().enumerate() {
+        let dy = if i == 0 { first_dy } else { line_height };
+        body.push_str(&crate::functions::graphics::stacked_line_tspan(
+          &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
+          "middle",
+          line,
+        ));
+      }
+    }
+    // Blanks padding the label (`"  axis"`) keep their room, as they
+    // do in a 2D `Text`.
+    let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
+    svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
-      }
-      // Points were drawn in depth order with the lines above.
-      Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
-        let stroke_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let pts: Vec<String> = points
-          .iter()
-          .map(|p| {
-            let (sx, sy) =
-              to_svg(project(*p, &camera).0, project(*p, &camera).1);
-            format!("{sx:.1},{sy:.1}")
-          })
-          .collect();
-        svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
-          pts.join(" "),
-          stroke_color,
-          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
-          opacity_attr
-        ));
-        // Arrowhead: a cone in the scene, like the head of an
-        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
-        // length as a fraction of the diagonal of the scene's box, so it
-        // foreshortens with the view like the rest of the scene.
-        let scene_diag =
-          v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
-        for (segment, size) in arrow3d_head_anchors(
-          points,
-          arrowhead_fractions(
-            style.arrowheads.as_deref(),
-            Some(svg_width as f64),
-          )
-          .as_deref(),
-        ) {
-          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
-          else {
-            continue;
-          };
-          let screen: Vec<(f64, f64, usize)> = head
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-              let (px, py) = project(*p, &camera);
-              let (sx, sy) = to_svg(px, py);
-              (sx, sy, i)
-            })
-            .collect();
-          let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
-          if hull.len() >= 3 {
-            let pts: Vec<String> = hull
-              .iter()
-              .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
-              .collect();
-            svg.push_str(&format!(
-              "<polygon points=\"{}\" fill=\"{stroke_color}\"{opacity_attr}/>\n",
-              pts.join(" ")
-            ));
-          }
-        }
-      }
-      _ => {}
-    }
   }
 
   // Axes (with their ticks and labels) go on top of the scene.

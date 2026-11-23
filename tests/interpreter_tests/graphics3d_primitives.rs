@@ -2076,11 +2076,20 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
-  /// The area of the first filled arrowhead `<polygon>` (the outline after
-  /// a `<polyline>`), by the shoelace formula.
+  /// The arrowhead `<polygon>`s of a scene: the filled, unstroked ones
+  /// (faces are stroked with a hairline), each with its point list.
+  fn head_polygons(svg: &str) -> Vec<&str> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<polygon points=\"") && !l.contains("stroke"))
+      .map(|l| l["<polygon points=\"".len()..].split('"').next().unwrap())
+      .collect()
+  }
+
+  /// The area of the first filled arrowhead `<polygon>`, by the shoelace
+  /// formula.
   fn head_area(svg: &str) -> f64 {
-    let after = svg.split("<polyline").nth(1).unwrap();
-    let pts = after.split("<polygon points=\"").nth(1).unwrap();
+    let pts = head_polygons(svg)[0];
     let p: Vec<(f64, f64)> = pts
       .split('"')
       .next()
@@ -2115,13 +2124,11 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
-  /// The first point of every arrowhead `<polygon>` after the arrow's
-  /// `<polyline>` (each head's outline starts at its tip).
+  /// The first point of every arrowhead `<polygon>` (each head's outline
+  /// starts at its tip).
   fn head_tips(svg: &str) -> Vec<(f64, f64)> {
-    let after = svg.split("<polyline").nth(1).unwrap();
-    after
-      .split("<polygon points=\"")
-      .skip(1)
+    head_polygons(svg)
+      .into_iter()
       .map(|pts| {
         let first = pts.split(' ').next().unwrap();
         let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
@@ -2194,6 +2201,132 @@ mod arrows_and_box {
     let short = head_area(&scene("{0.01, 0, 0}"));
     let long = head_area(&scene("{0.9, 0, 0}"));
     assert!((short - long).abs() < 0.2 * long, "{short} vs {long}");
+  }
+
+  /// The screen midpoint of every `<line>` piece stroked in `color`, with
+  /// its position among the lines of `svg`.
+  /// The line pieces drawn in `color`: each `<line>`, and each segment
+  /// between consecutive points of a `<polyline>` (opaque pieces drawn one
+  /// after another are joined into one), with the index of the SVG line
+  /// that draws it and its midpoint.
+  fn line_pieces(svg: &str, color: &str) -> Vec<(usize, (f64, f64))> {
+    let attr = |l: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let rest = &l[l.find(&key).unwrap() + key.len()..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let stroke = format!("stroke=\"{color}\"");
+    let mut pieces = Vec::new();
+    for (i, l) in svg.lines().enumerate() {
+      if !l.contains(&stroke) {
+        continue;
+      }
+      if l.starts_with("<line ") {
+        let x = f64::midpoint(attr(l, "x1"), attr(l, "x2"));
+        let y = f64::midpoint(attr(l, "y1"), attr(l, "y2"));
+        pieces.push((i, (x, y)));
+      } else if l.starts_with("<polyline ") {
+        let pts = l["<polyline points=\"".len()..].split('"').next().unwrap();
+        let pts: Vec<(f64, f64)> = pts
+          .split(' ')
+          .map(|xy| {
+            let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+            (it.next().unwrap(), it.next().unwrap())
+          })
+          .collect();
+        for w in pts.windows(2) {
+          pieces.push((
+            i,
+            (f64::midpoint(w[0].0, w[1].0), f64::midpoint(w[0].1, w[1].1)),
+          ));
+        }
+      }
+    }
+    pieces
+  }
+
+  // An opaque solid hides the part of a 3D arrow inside or behind it: the
+  // shaft is cut into depth-sorted pieces like a `Line`, so the sphere's
+  // front faces are painted over the pieces they cover.
+  #[test]
+  fn opaque_sphere_hides_the_arrow_shaft_through_it() {
+    let s = svg(
+      "Graphics3D[{Red, Thickness[0.01], Arrow[{{-3, 0, 0}, {3, 0, 0}}], \
+       White, Sphere[{0, 0, 0}, 1]}, Boxed -> False, ViewPoint -> {2, 2, 2}]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let last_face = lines
+      .iter()
+      .rposition(|l| l.starts_with("<polygon") && l.contains("stroke"))
+      .expect("sphere faces");
+    // The sphere's outline on screen, from the extent of its faces.
+    let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
+    for l in lines
+      .iter()
+      .filter(|l| l.contains("stroke") && l.starts_with("<polygon"))
+    {
+      let pts = l["<polygon points=\"".len()..].split('"').next().unwrap();
+      for xy in pts.split(' ') {
+        let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+        let (x, y) = (it.next().unwrap(), it.next().unwrap());
+        lo = (lo.0.min(x), lo.1.min(y));
+        hi = (hi.0.max(x), hi.1.max(y));
+      }
+    }
+    let center = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
+    let radius = (hi.0 - lo.0) / 2.0;
+    let pieces = line_pieces(&s, "rgb(255,0,0)");
+    // The shaft is drawn on both sides of the sphere.
+    assert!(
+      pieces.iter().any(|&(_, (x, _))| x < center.0 - radius),
+      "{s}"
+    );
+    assert!(
+      pieces.iter().any(|&(_, (x, _))| x > center.0 + radius),
+      "{s}"
+    );
+    // No piece over the middle of the sphere is painted on top of it.
+    for &(i, (x, y)) in &pieces {
+      let d = ((x - center.0).powi(2) + (y - center.1).powi(2)).sqrt();
+      assert!(i < last_face || d > 0.8 * radius, "piece at {x},{y}: {s}");
+    }
+  }
+
+  // A 3D arrowhead inside an opaque solid is hidden by it as well.
+  #[test]
+  fn opaque_sphere_hides_an_arrowhead_inside_it() {
+    let s = svg(
+      "Graphics3D[{Red, Arrowheads[0.05], Arrow[{{-3, 0, 0}, {0, 0, 0}}], \
+       White, Sphere[{0, 0, 0}, 1]}, Boxed -> False]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let head = lines
+      .iter()
+      .position(|l| {
+        l.starts_with("<polygon") && l.contains("fill=\"rgb(255,0,0)\"")
+      })
+      .expect("arrowhead");
+    let last_face = lines
+      .iter()
+      .rposition(|l| l.starts_with("<polygon") && l.contains("stroke"))
+      .expect("sphere faces");
+    assert!(head < last_face, "{s}");
+  }
+
+  // A long straight segment is cut into pieces a few pixels long, so where
+  // it passes into a surface it disappears close to the crossing rather
+  // than up to an eighth of its length away.
+  #[test]
+  fn long_3d_line_is_cut_finely_for_depth_sorting() {
+    let s =
+      svg("Graphics3D[{Red, Line[{{-3, 0, 0}, {3, 0, 0}}]}, Boxed -> False]");
+    assert!(line_pieces(&s, "rgb(255,0,0)").len() > 32, "{s}");
+    // A short one is not cut at all.
+    let s = svg(
+      "Graphics3D[{Red, Line[{{0, 0, 0}, {0.01, 0, 0}}], \
+       Point[{{-3, -3, -3}, {3, 3, 3}}]}, Boxed -> False]",
+    );
+    assert_eq!(line_pieces(&s, "rgb(255,0,0)").len(), 1, "{s}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.

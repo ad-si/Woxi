@@ -34156,12 +34156,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn graphics3d_arrow_honors_thickness() {
       let thin = export_svg("Graphics3D[{Black, Arrow[{{0,0,0}, {1,1,1}}]}]");
-      assert!(
-        thin.contains("<polyline") && thin.contains("stroke-width=\"0.5\"")
-      );
+      assert!(thin.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"0.5\""));
       let thick =
         export_svg("Graphics3D[{Black, Thick, Arrow[{{0,0,0}, {1,1,1}}]}]");
-      assert!(thick.contains("stroke-width=\"2\""));
+      assert!(thick.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"2.0\""));
     }
 
     #[test]
