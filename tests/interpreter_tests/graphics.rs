@@ -3453,7 +3453,7 @@ mod graphics {
 
     /// `TraditionalForm` of a string carrying inline box code typesets that
     /// code with single-letter symbols in italics (an italic `d²`, `xₖ`),
-    /// both standalone and as a grid entry, while plain text stays upright.
+    /// both as a graphics label and as a grid entry, while plain text stays upright.
     #[test]
     fn traditional_form_inline_box_string_italicizes_letters() {
       for (label, letter) in [
@@ -3461,7 +3461,7 @@ mod graphics {
         ("\"\\!\\(\\*SubscriptBox[\\(x\\), \\(k\\)]\\)\"", "x"),
       ] {
         for code in [
-          format!("TraditionalForm[{label}]"),
+          format!("Graphics[Text[TraditionalForm[{label}], {{0, 0}}]]"),
           format!("Grid[{{{{TraditionalForm[{label}], 1}}}}]"),
         ] {
           let svg = export_svg(&code);
@@ -3475,7 +3475,7 @@ mod graphics {
       }
       // Text outside the box code stays upright.
       let svg = export_svg(
-        "TraditionalForm[\"value \\!\\(\\*SuperscriptBox[\\(d\\), \\(2\\)]\\)\"]",
+        "Grid[{{TraditionalForm[\"value \\!\\(\\*SuperscriptBox[\\(d\\), \\(2\\)]\\)\"]}}]",
       );
       assert!(svg.contains("value "), "{svg}");
       assert!(!svg.contains("italic\">value"), "{svg}");
