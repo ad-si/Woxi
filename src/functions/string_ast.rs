@@ -9593,15 +9593,18 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
       // A quoted atom made only of bracket punctuation (`"("` in
       // `RowBox[{"sin", "(", "x", ")"}]`) keeps its quotes, like the
       // `\()\)` group above: bare, its brackets and commas would be read as
-      // the surrounding box source's own structure.
+      // the surrounding box source's own structure. A quoted blank (`" "`
+      // in `RowBox[{"a", " ", "x"}]`, the gap of a typeset product) keeps
+      // its quotes for the same reason as the `\(\ \)` group above.
       '"'
         if keep_punct_quotes
           && !in_box_text
           && let Some(len) = chars[i + 1..].iter().position(|&c| c == '"')
           && len > 0
-          && chars[i + 1..i + 1 + len]
+          && (chars[i + 1..i + 1 + len]
             .iter()
-            .all(|c| "()[]{},".contains(*c)) =>
+            .all(|c| "()[]{},".contains(*c))
+            || chars[i + 1..i + 1 + len].iter().all(|&c| c == ' ')) =>
       {
         out.extend(&chars[i..i + len + 2]);
         i += len + 2;
