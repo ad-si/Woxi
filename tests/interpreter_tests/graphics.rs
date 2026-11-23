@@ -43317,6 +43317,43 @@ mod contour_plot_3d {
   mod options {
     use super::*;
 
+    /// A level surface cut open by the plot box gets its rim outlined in
+    /// black by default (as in Plot3D). The outline belongs to the plot's
+    /// own picture: the extracted primitives stay free of default lines.
+    /// Regression: the rims were only drawn for an explicit
+    /// `BoundaryStyle`, so clipped isosurfaces showed no edge at the walls.
+    #[test]
+    fn clipped_surface_rims_are_outlined_by_default() {
+      let plot = "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -1.5, 1.5}, \
+                  {y, -1.5, 1.5}, {z, -1.5, 1.5}, Mesh -> None, \
+                  PlotPoints -> 8, MaxRecursion -> 0";
+      let black_lines = |code: &str| {
+        export_svg(code)
+          .split("<line")
+          .skip(1)
+          .filter(|l| l.split('>').next().unwrap().contains("rgb(0,0,0)"))
+          .count()
+      };
+      assert!(black_lines(&format!("{plot}]")) > 0);
+      assert_eq!(black_lines(&format!("{plot}, BoundaryStyle -> None]")), 0);
+      assert_eq!(
+        black_lines(&format!("{plot}, BoundaryStyle -> Automatic]")),
+        black_lines(&format!("{plot}]"))
+      );
+      assert_eq!(
+        interpret(&format!("Count[{plot}], _Line, Infinity]")).unwrap(),
+        "0"
+      );
+      // A sphere lying wholly inside the box has no rim to outline.
+      assert_eq!(
+        black_lines(
+          "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -2, 2}, {y, -2, 2}, \
+           {z, -2, 2}, Mesh -> None, PlotPoints -> 8, MaxRecursion -> 0]"
+        ),
+        0
+      );
+    }
+
     #[test]
     fn contour_style_color_and_opacity() {
       insta::assert_snapshot!(export_svg(

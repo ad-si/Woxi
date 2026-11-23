@@ -24,6 +24,17 @@ its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
 named list pattern is compiled into a `List` head plus an element condition,
 and the display rebuilds the pattern from the head alone.
 
+### `Show` of a 3D plot drops the default surface boundary
+
+Plot3D and ContourPlot3D outline where a surface meets the plot box in their
+own picture, but that default outline is not part of the extracted
+`Graphics3D` primitives (wolframscript keeps it implicit too, through
+`Method -> {"DefaultBoundaryStyle" -> …}`). Woxi's `Graphics3D` renderer
+does not reconstruct it, so `Show[ContourPlot3D[…], …]` draws a clipped
+isosurface without the dark rim wolframscript shows at the box walls. An
+explicit `BoundaryStyle -> style` is kept as `Line` primitives and survives
+`Show`.
+
 ### Displaying held `Graphics[…]` evaluates its primitives
 
 A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset

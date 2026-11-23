@@ -14201,7 +14201,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
-          Expr::Identifier(s) if s == "True" => {
+          // `Axes -> Automatic` draws all three axes in 3D, the same as
+          // `Axes -> True`.
+          Expr::Identifier(s) if s == "True" || s == "Automatic" => {
             show_axes = true;
             axes_look.shown = [true; 3];
           }
@@ -21016,8 +21018,13 @@ fn contour3d_render(
   // `f[x, y, z]` is True are drawn, cut cleanly along the region's edge.
   let mut region_function: Option<Expr> = None;
   // `BoundaryStyle -> s`: the surfaces' rims (where they meet the plot box
-  // or a `RegionFunction` cut) are outlined in `s`.
-  let mut boundary_style: Option<StyleState3D> = None;
+  // or a `RegionFunction` cut) are outlined in `s` — black by default, as
+  // in Plot3D; `BoundaryStyle -> None` turns the outline off.
+  let default_boundary = || StyleState3D {
+    color: Some((0, 0, 0)),
+    ..StyleState3D::default()
+  };
+  let mut boundary_style: Option<StyleState3D> = Some(default_boundary());
   // The original directive, kept for the extracted `Graphics3D` structure.
   let mut boundary_directive: Option<Expr> = None;
   // `ColorFunction -> f`: each facet colored by `f[x, y, z, value]`, the
@@ -21133,17 +21140,16 @@ fn contour3d_render(
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
           match &value {
-            Expr::Identifier(n)
-              if n == "None" || n == "Automatic" || n == "False" =>
-            {
+            Expr::Identifier(n) if n == "None" || n == "False" => {
               boundary_style = None;
               boundary_directive = None;
             }
+            Expr::Identifier(n) if n == "Automatic" => {
+              boundary_style = Some(default_boundary());
+              boundary_directive = None;
+            }
             other => {
-              let mut style = StyleState3D {
-                color: Some((0, 0, 0)),
-                ..StyleState3D::default()
-              };
+              let mut style = default_boundary();
               apply_3d_directive(other, &mut style);
               boundary_style = Some(style);
               boundary_directive = Some(other.clone());

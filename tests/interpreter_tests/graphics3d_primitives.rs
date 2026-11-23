@@ -22,6 +22,22 @@ fn fills(svg: &str) -> std::collections::BTreeSet<String> {
 mod solids {
   use super::*;
 
+  /// `Axes -> Automatic` draws the three labeled axes of a 3D scene, the
+  /// same as `Axes -> True` (Demonstrations often pass it to `Show`).
+  /// Regression: it was ignored, leaving the box without ticks or labels.
+  #[test]
+  fn axes_automatic_draws_the_axes() {
+    let with = |axes: &str| {
+      svg(&format!(
+        "Graphics3D[Sphere[], Axes -> {axes}, AxesLabel -> {{\"x\", \"y\", \"z\"}}]"
+      ))
+    };
+    let automatic = with("Automatic");
+    assert!(automatic.matches("<text").count() > 3);
+    assert_eq!(automatic, with("True"));
+    assert_eq!(with("False").matches("<text").count(), 0);
+  }
+
   #[test]
   fn scaled_polygon_coordinates_use_the_scene_bounds() {
     assert_eq!(
