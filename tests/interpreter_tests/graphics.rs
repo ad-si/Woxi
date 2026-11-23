@@ -63116,7 +63116,7 @@ mod plot_non_numeric_limit {
   }
 }
 
-mod held_graphics_display {
+mod held_graphics_display_unevaluated {
   use super::*;
 
   // Displaying a held picture typesets it without evaluating it: a plot
