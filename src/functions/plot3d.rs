@@ -24497,13 +24497,16 @@ fn parametric_plot3d_curve_ast(
 ) -> Result<Expr, InterpreterError> {
   // Body may be a single triple {fx, fy, fz} or a list of triples.
   struct Curve {
+    group: usize,
     fx: Expr,
     fy: Expr,
     fz: Expr,
   }
-  let curves: Vec<Curve> = resolve_parametric_triples(body, &[tvar])?
+  let (curve_triples, num_groups) =
+    resolve_parametric_triple_groups(body, &[tvar])?;
+  let curves: Vec<Curve> = curve_triples
     .into_iter()
-    .map(|(fx, fy, fz)| Curve { fx, fy, fz })
+    .map(|(group, (fx, fy, fz))| Curve { group, fx, fy, fz })
     .collect();
 
   // Sample each curve at `sample_n + 1` points uniformly in
@@ -24583,20 +24586,18 @@ fn parametric_plot3d_curve_ast(
   // radius `r` instead of as a line — how a Demonstration gives a knot its
   // thickness. It is not a color or a thickness, so it comes out of the
   // style list and turns each sampled polyline into a `Tube` instead.
-  let (tube_args, plot_style) = match &plot_style {
-    Some(ps) => {
-      let (tube, rest) = take_tube_directive(ps);
-      (tube, Some(rest))
-    }
-    None => (None, None),
-  };
-
-  // One style per curve (cycling through fewer styles than curves), so
+  // One style per body item (cycling through fewer styles than items), so
   // `PlotStyle -> {Blue, Purple}` on two curves colors them individually
-  // instead of applying the whole list as a single blended directive.
-  let per_curve_styles: Vec<Expr> = plot_style
+  // instead of applying the whole list as a single blended directive. The
+  // curves of one item share its style, and each style keeps its own
+  // `Tube`, so `{{Thin}, {Red, Tube[r]}}` draws only the second item's
+  // curves as tubes.
+  let per_group_styles: Vec<(Option<Vec<Expr>>, Expr)> = plot_style
     .as_ref()
-    .map_or_default(|ps| plot_style_items(ps, curves.len()));
+    .map_or_default(|ps| plot_style_items(ps, num_groups))
+    .iter()
+    .map(take_tube_directive)
+    .collect();
 
   // `ColorFunction -> f` colors the curve along its length by
   // `f[x, y, z, t]`. With `ColorFunctionScaling` (the default) x, y and z
@@ -24684,13 +24685,21 @@ fn parametric_plot3d_curve_ast(
   let mut prim_items: Vec<Expr> = Vec::new();
 
   let mut produced_any = false;
-  for (curve_idx, curve) in curves.iter().enumerate() {
+  for curve in &curves {
+    let group_idx = curve.group;
+    let (tube_args, group_style) = match per_group_styles.len() {
+      0 => (None, None),
+      n => {
+        let (tube, style) = &per_group_styles[group_idx % n];
+        (tube.clone(), Some(style))
+      }
+    };
     if color_function.is_none() {
       // Each curve takes the next color of the default plot palette (blue
       // first) rather than plain gray — also under a `PlotStyle` that only
       // sets a thickness or dashing (`PlotStyle -> Thick`).
       let (r, g, b) = crate::functions::plot::PLOT_COLORS
-        [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
+        [group_idx % crate::functions::plot::PLOT_COLORS.len()];
       prim_items.push(call(
         "Directive",
         vec![
@@ -24713,10 +24722,9 @@ fn parametric_plot3d_curve_ast(
         call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
-    if !per_curve_styles.is_empty() {
+    if let Some(style) = group_style {
       // Wrap whatever PlotStyle holds into a Directive[…] so that
       // collect_3d_primitives picks up nested colors/Thickness/etc.
-      let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
       prim_items.push(call1("Directive", style.clone()));
     }
     let mut current_segment: Vec<Expr> = Vec::new();
@@ -25106,6 +25114,25 @@ fn resolve_parametric_triples(
   body: &Expr,
   shadow_vars: &[&str],
 ) -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+  Ok(
+    resolve_parametric_triple_groups(body, shadow_vars)?
+      .0
+      .into_iter()
+      .map(|(_, triple)| triple)
+      .collect(),
+  )
+}
+
+/// Like `resolve_parametric_triples`, but each triple is tagged with the
+/// index of the top-level body item it came from, and the number of such
+/// items is returned too. An item that expands into several curves (`{{},
+/// Through[{f, g}[t]]}`) is one styled group: its curves share that item's
+/// `PlotStyle` entry, and an item yielding no curve (`{}`) still uses up
+/// its entry, so the styles stay aligned with the items as written.
+fn resolve_parametric_triple_groups(
+  body: &Expr,
+  shadow_vars: &[&str],
+) -> Result<ParametricTripleGroups, InterpreterError> {
   // A component written as a symbol whose value depends on the plot
   // variables (`Module[{x, u, v}, x = Sin[v]; ParametricPlot3D[{x, u, v},
   // …]]`) would never see the per-sample substitution; read its value first.
@@ -25118,18 +25145,30 @@ fn resolve_parametric_triples(
     }
     other => other,
   };
-  Ok(
-    resolve_parametric_triples_raw(body, shadow_vars)?
+  let (curves, groups) = resolve_parametric_triples_raw(body, shadow_vars)?;
+  Ok((
+    curves
       .into_iter()
-      .map(|(x, y, z)| (resolve(x), resolve(y), resolve(z)))
+      .map(|(g, (x, y, z))| (g, (resolve(x), resolve(y), resolve(z))))
       .collect(),
-  )
+    groups,
+  ))
+}
+
+/// Parametric `{fx, fy, fz}` triples, each tagged with its body item's
+/// index, plus the number of body items.
+type ParametricTripleGroups = (Vec<(usize, (Expr, Expr, Expr))>, usize);
+
+/// Each curve of `curves` as a group of its own.
+fn ungrouped(curves: Vec<(Expr, Expr, Expr)>) -> ParametricTripleGroups {
+  let n = curves.len();
+  (curves.into_iter().enumerate().collect(), n)
 }
 
 fn resolve_parametric_triples_raw(
   body: &Expr,
   shadow_vars: &[&str],
-) -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+) -> Result<ParametricTripleGroups, InterpreterError> {
   let err = || {
     InterpreterError::EvaluationError(
       "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
@@ -25139,7 +25178,7 @@ fn resolve_parametric_triples_raw(
   // possibly still needing its own resolution, e.g. a held `helper[u, v]`
   // call or a `{fx, fy, fz} /. rules` substitution).
   let resolve_items =
-    |items: &[Expr]| -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+    |items: &[Expr]| -> Result<ParametricTripleGroups, InterpreterError> {
       if items.is_empty() {
         return Err(err());
       }
@@ -25158,18 +25197,20 @@ fn resolve_parametric_triples_raw(
           .iter()
           .map(|item| resolve_one_parametric_triple(item, shadow_vars))
           .collect();
-        return Ok(as_three_curves.unwrap_or_else(|| {
+        return Ok(ungrouped(as_three_curves.unwrap_or_else(|| {
           vec![(items[0].clone(), items[1].clone(), items[2].clone())]
-        }));
+        })));
       }
       let mut curves = Vec::new();
-      for item in items {
+      for (group, item) in items.iter().enumerate() {
         match resolve_one_parametric_item_to_curves(item, shadow_vars) {
-          Some(item_curves) => curves.extend(item_curves),
+          Some(item_curves) => {
+            curves.extend(item_curves.into_iter().map(|c| (group, c)))
+          }
           None => return Err(err()),
         }
       }
-      Ok(curves)
+      Ok((curves, items.len()))
     };
   match body {
     Expr::List(items) => resolve_items(items),
@@ -25183,16 +25224,18 @@ fn resolve_parametric_triples_raw(
         // at each sample, as the probe in
         // `resolve_one_parametric_item_to_curves` decides.
         Expr::List(items) => resolve_items(items).or_else(|e| {
-          resolve_one_parametric_item_to_curves(other, shadow_vars).ok_or(e)
+          resolve_one_parametric_item_to_curves(other, shadow_vars)
+            .map(ungrouped)
+            .ok_or(e)
         }),
         // The body only yields a point once `u`/`v` are numeric (e.g. a
         // `BSplineFunction` surface `f[u, v]`), so read the components off
         // the evaluated body at each sample with `Part`.
-        _ => Ok(vec![(
+        _ => Ok(ungrouped(vec![(
           part_of(other, 1),
           part_of(other, 2),
           part_of(other, 3),
-        )]),
+        )])),
       }
     }
   }
