@@ -3910,6 +3910,25 @@ fn keep_fixed_pane_box(
   ))
 }
 
+/// Whether `expr` is a `Column[…]` under one or more `Style[…, directives]`
+/// wrappers.
+fn is_styled_column(expr: &syntax::Expr) -> bool {
+  let mut current = expr;
+  let mut styled = false;
+  while let syntax::Expr::FunctionCall { name, args } = current
+    && name == "Style"
+    && args.len() >= 2
+  {
+    styled = true;
+    current = &args[0];
+  }
+  styled
+    && matches!(
+      current,
+      syntax::Expr::FunctionCall { name, .. } if name == "Column"
+    )
+}
+
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
@@ -3965,6 +3984,18 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
+          // A styled `Column` layout
+          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`) is drawn in the
+          // proportional text face, so the text of its items is not left in
+          // the monospace face of a bare `Column`'s `Row`s.
+          if is_styled_column(&content) {
+            let in_face = render_visual_display_pipeline(
+              &functions::graphics::in_text_face(&content),
+            );
+            if matches!(in_face, syntax::Expr::Graphics { .. }) {
+              return in_face;
+            }
+          }
           render_grid_if_needed(content)
         })
       }) {
@@ -5350,6 +5381,23 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     _ => None,
   });
 
+  // A table of pictures in a fixed-size pane (`Pane[Grid[{{graphic, …}}],
+  // {w, h}]`) is drawn the way the pane lays it out — fitted to and placed
+  // in the pane's whole box — rather than stripped to the bare table and
+  // drawn at its own size. A pane around a plain data table stays textual.
+  if pane_box.is_some()
+    && let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Pane"
+    && let Some(syntax::Expr::FunctionCall { name: inner, .. }) = args.first()
+    && matches!(inner.as_str(), "Grid" | "TextGrid")
+    && holds_layout_graphic(&args[0])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      clear_captured_graphics();
+      return graphics_result(svg);
+    }
+  }
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
@@ -5447,7 +5495,6 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_framed_if_needed(expr);
   let expr = render_rotate_if_needed(expr);
   let result = render_highlighted_if_needed(expr);
-
   match (pane_box, &result) {
     (Some((w, h, align, shrink)), syntax::Expr::Graphics { svg, .. }) => {
       let clipped = functions::graphics::clip_svg_to_pane_box(
@@ -5665,6 +5712,9 @@ pub(crate) fn column_svg_with_rendered_items(
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(styled_content(item)).is_none()
+            // A `Framed` box is drawn edge to edge — its frame is its
+            // outline, with no blank line margin around it to take out
+            // of an explicit spacing.
             && !functions::graphics::is_framed_box(item)
         })
         .collect(),
