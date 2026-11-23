@@ -6124,6 +6124,38 @@ fn markup_with_leading_gap(markup: &str, gap: f64) -> String {
 /// baseline, in ems of the surrounding text (the SVG renderers' default).
 const SCRIPT_SHIFT_EM: f64 = 1.0 / 3.0;
 
+/// Size of a script relative to its surrounding text (`font-size="70%"`).
+const SCRIPT_SCALE: f64 = 0.7;
+
+/// The height (in ems of the surrounding text) a line needs so that its
+/// raised and lowered scripts stay inside it when it is centered on its
+/// row (`dominant-baseline="central"`).
+///
+/// The middle of the em box sits about 0.3 em above the baseline; glyphs
+/// reach about 0.75 em above it (ascenders) and 0.2 em below it
+/// (descenders) — the ascent is taken as 0.8 em to leave a hairline of
+/// room for renderers that place `central` a little lower. A script is shifted by `SCRIPT_SHIFT_EM` and drawn at
+/// `SCRIPT_SCALE`, so a superscript's top lands only a little above the
+/// line's own glyphs, while a subscript's bottom reaches further down.
+/// The row stays centered, so it grows by the larger overshoot on both
+/// sides — and never shrinks below one em.
+fn scripted_line_height_em(has_super: bool, has_sub: bool) -> f64 {
+  const CENTER: f64 = 0.3;
+  const ASCENT: f64 = 0.8;
+  const DESCENT: f64 = 0.2;
+  let above = if has_super {
+    SCRIPT_SHIFT_EM + SCRIPT_SCALE * ASCENT - CENTER
+  } else {
+    0.0
+  };
+  let below = if has_sub {
+    SCRIPT_SHIFT_EM + SCRIPT_SCALE * DESCENT + CENTER
+  } else {
+    0.0
+  };
+  (2.0 * above.max(below)).max(1.0)
+}
+
 fn markup_line_height(markup: &str, base: f64) -> f64 {
   let mut largest = base;
   for part in markup.split("font-size=\"").skip(1) {
@@ -33302,13 +33334,15 @@ fn grid_svg_styled_internal_reporting(
           let lines = markup.split('\n').count() as f64;
           cell_h =
             cell_h.max(pad_y + lines * markup_line_height(&markup, base));
-        } else if markup.contains("baseline-shift=\"super\"")
-          || markup.contains("baseline-shift=\"sub\"")
-        {
-          // A raised (or lowered) script reaches past the line's own
-          // glyphs; the text is centered on its row, so the row grows by
-          // the shift on both sides to keep the script inside it.
-          cell_h = cell_h.max(pad_y + base * (1.0 + 2.0 * SCRIPT_SHIFT_EM));
+        } else {
+          // A raised (or lowered) script may reach past the line's own
+          // glyphs; the row grows just enough to keep it inside.
+          let has_super = markup.contains("baseline-shift=\"super\"");
+          let has_sub = markup.contains("baseline-shift=\"sub\"");
+          if has_super || has_sub {
+            cell_h = cell_h
+              .max(pad_y + base * scripted_line_height_em(has_super, has_sub));
+          }
         }
       }
       // A graphic cell keeps its own height.
