@@ -7145,6 +7145,18 @@ fn pane_text_units(text: &str) -> Vec<(String, usize)> {
   units
 }
 
+/// The width in points `expr` is drawn at when it lays out as a picture of
+/// its own (a `Column`, a typeset fraction), or `None` for plain text,
+/// whose width the caller measures glyph by glyph.
+fn drawn_width(expr: &Expr) -> Option<f64> {
+  let svg = expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, _) = crate::functions::graphics::parse_svg_wh(&svg);
+  (w > 0.0).then_some(w)
+}
+
 /// About how many characters a linear-syntax box shows: its text with the
 /// escapes, box heads, brackets, separators and quotes left out.
 fn linear_syntax_shown_len(source: &str) -> usize {
@@ -7211,6 +7223,21 @@ fn wrap_pane_text_at(
   whole_words: bool,
   proportional: bool,
 ) -> Option<Expr> {
+  // A list of typeset matrices re-flows as the row of its items between
+  // braces.
+  if let Expr::List(_) = content
+    && let Some(row) =
+      crate::functions::graphics::list_with_grids_as_row(content)
+  {
+    return wrap_pane_text_at(
+      &row,
+      width,
+      font_size,
+      family,
+      whole_words,
+      proportional,
+    );
+  }
   // A bare string re-flows as the one-piece `Row` of it.
   if let Expr::String(_) = content {
     return wrap_pane_text_at(
@@ -7401,10 +7428,12 @@ fn wrap_pane_text_at(
         .collect();
       let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
       let mut atoms: Vec<Option<Expr>> = Vec::new();
+      let mut atom_px: Vec<Option<f64>> = Vec::new();
       let mut units: Vec<PaneTextUnit> = Vec::new();
       for item in &items {
         let idx = styles.len();
         if let Some((text, directives)) = pane_row_piece(item) {
+          atom_px.push(None);
           styles.push(directives);
           atoms.push(None);
           units.extend(pane_text_units(&text).into_iter().map(
@@ -7418,6 +7447,15 @@ fn wrap_pane_text_at(
         } else {
           let cols = crate::functions::graphics::estimate_display_width(item)
             .ceil() as usize;
+          // A typeset matrix or table is as wide as its drawn grid (at its
+          // own `Style` size), which its source text says nothing about.
+          atom_px.push(
+            crate::functions::graphics::is_typeset_grid_item(item)
+              .then(|| {
+                crate::functions::graphics::parse_svg_wh(&expr_to_svg(item)).0
+              })
+              .filter(|w| *w > 0.0),
+          );
           styles.push(None);
           atoms.push(Some(item.clone()));
           units.push(PaneTextUnit {
@@ -7455,6 +7493,15 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
+        // An item that is no plain text is as wide as it is drawn: a
+        // typeset grid, fraction or column is much narrower than the
+        // characters of its expression.
+        if let Some(px) =
+          atom_px[u.idx].or_else(|| atoms[u.idx].as_ref().and_then(drawn_width))
+        {
+          u.width = px;
+          continue;
+        }
         if proportional
           && atoms[u.idx].is_none()
           && u.text.chars().count() == u.cols
@@ -7725,6 +7772,11 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
         fraction(&pair[0]).unwrap_or(0.0),
         fraction(&pair[1]).unwrap_or(0.0),
       ),
+      // `{h}` gives the horizontal alignment alone; the vertical one keeps
+      // its default (`Top`).
+      Expr::List(single) if single.len() == 1 => {
+        (fraction(&single[0]).unwrap_or(0.0), 0.0)
+      }
       // A lone `Center` centers on both axes; `Top`/`Bottom` place
       // vertically and `Left`/`Right` horizontally.
       Expr::Identifier(n) if n == "Center" => (0.5, 0.5),
@@ -7919,6 +7971,11 @@ fn pane_content_is_column(content: &Expr) -> bool {
 }
 
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
+  // A list of typeset matrices sets each in two dimensions between the
+  // braces, not as the source text of the list.
+  if let Some(row) = crate::functions::graphics::list_with_grids_as_row(expr) {
+    return expr_to_svg(&row);
+  }
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
   }
@@ -7933,6 +7990,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     return expr_to_svg(&image);
   }
   match expr {
+    // `TextGrid[…]` is effectively `Text[Grid[…]]`: its cells are set in
+    // the proportional text face, so a column of `-1`s is only as wide as
+    // that face's narrow minus and digit rather than two monospace advances.
+    Expr::FunctionCall { name, args }
+      if name == "TextGrid" && !args.is_empty() =>
+    {
+      expr_to_svg(&call1("Text", call("Grid", args.to_vec())))
+    }
     // `picture -> picture` is typeset as the pictures around an arrow.
     Expr::Rule {
       pattern,
@@ -7988,6 +8053,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
       let pane_size = pane_fixed_size(args);
+      // A fixed `{width, height}` Pane is a layout box of its own: an
+      // automatically sized picture in it is laid out against the box (and
+      // shrunk to fit it), not at the reduced size of the list, `Grid` or
+      // `Column` the Pane sits in.
+      if name == "Pane"
+        && pane_size.is_some()
+        && crate::functions::container_layout::image_size_multiplier() < 1.0
+      {
+        return crate::functions::container_layout::with_image_size_multiplier(
+          1.0,
+          || expr_to_svg(expr),
+        );
+      }
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
           .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
@@ -9758,10 +9836,9 @@ fn embed_used_fonts(svg: &str) -> String {
   // (a `Graphics` `Text` without `FontFamily`) relies on the stylesheet's
   // inherited default, which viewers that ignore `<style>` replace with
   // their own (serif) face, so it gets the default sans family too.
-  let body = with_default_text_family(svg);
+  let mut body = with_default_text_family(svg);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.
-  let mut body = body;
   for (family, fallback) in [
     ("Times", "serif"),
     ("Times New Roman", "serif"),

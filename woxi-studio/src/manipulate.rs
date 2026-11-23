@@ -275,9 +275,9 @@ pub enum ControlState {
     /// slider overwrites it with `Hue[<position>]`.
     current: String,
     /// The slider handle's on-screen position in `0.0..=1.0` (the hue
-    /// fraction it was last dragged to). Purely cosmetic — defaults to
-    /// `0.0`, since the spec's initial color is usually not on the
-    /// gradient at all, without affecting `current`.
+    /// fraction it was last dragged to). Purely cosmetic — starts at the
+    /// hue of the spec's initial color (`0.0` for grays), without
+    /// affecting `current`.
     position: f64,
   },
 }
@@ -3441,7 +3441,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label: label.clone(),
         label_runs: label_runs.clone(),
         current: initial.clone(),
-        position: 0.0,
+        position: woxi::functions::graphics::manipulate_color_hue(initial),
       },
     })
     .collect()
@@ -4734,6 +4734,30 @@ mod tests {
     );
   }
 
+  /// A body `Pane[…; Grid[{{fraction}, {picture}}], {w, h}, Alignment ->
+  /// {Center}]` shows the table of pictures in the pane's whole `w` x `h`
+  /// box, not shrunk to the table's own size.
+  #[test]
+  fn grid_of_pictures_in_fixed_size_pane_keeps_its_box() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[If[a > b, a = b]; Grid[{
+        {Text@Style[a/b, 20, Bold]},
+        {Graphics[Rectangle[{0, 0}, {1, a/b}], ImageSize -> {100, 100}]}}],
+        {500, 200}, Alignment -> {Center}],
+      {{a, 1}, 0, 10, 1}, {{b, 4}, 1, 10, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    state.reevaluate();
+    let svg = state.current_svg().expect("the table is drawn").to_string();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg:.200}"
+    );
+  }
+
   /// A body that computes its table inside a scoping construct and only
   /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
   /// footer rows included — not just a nested framed table measured while
@@ -5352,6 +5376,35 @@ mod tests {
     )]);
     assert_eq!(state.error, None);
     assert!(state.graphics_handle.is_some(), "saved picture is shown");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate puts a
+  /// `Locator` control over a `ListPlot`, with the marker given as a styled
+  /// glyph (`Appearance -> Style[glyph, color, Bold, size]`). Regression
+  /// check: the glyph, not the default crosshair, marks the point on the
+  /// plot. This is a self-authored, construct-equivalent example.
+  #[test]
+  fn locator_control_with_a_styled_glyph_appearance_marks_the_plot() {
+    let code = r#"Manipulate[
+      ListPlot[Table[{k, Sin[k + s]}, {k, 0, 6, 0.5}], Frame -> True],
+      {{s, 1}, 0, 3},
+      {{q, {2, 0}}, {0, -1}, {6, 1}, Locator,
+        Appearance -> Style["\[CircleTimes]", Blue, Bold, 16]}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the plot is drawn");
+    assert!(
+      svg.contains(">⊗</text>"),
+      "the glyph marks the point: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
   }
 
   /// A saved locator position outside the range derived from its initial
@@ -7883,6 +7936,23 @@ mod tests {
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
   }
 
+  /// A setter choice captioned with a plain typeset fraction
+  /// (`\!\(\*FractionBox[\(1\), \(x\)]\)`) reads `1/x` as written, not
+  /// the OutputForm of the reciprocal `x^(-1)`; a compound side is
+  /// parenthesized.
+  #[test]
+  fn setter_label_keeps_plain_reciprocal_fraction() {
+    let code = r#"Manipulate[r, {{r, p, "pick"}, {p -> "f(\!\(\*FractionBox[\(1\), \(x\)]\))", q -> "\!\(\*FractionBox[\(a + b\), \(c\)]\)", s -> "\!\(\*FractionBox[\(x\), \(y\)]\)"}, ControlType -> SetterBar}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(
+      dump.contains(r#"value_labels: ["f(1/x)", "(a + b)/c", "x/y"]"#),
+      "{dump}"
+    );
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
@@ -9798,6 +9868,61 @@ mod bare_tabview_tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
+  }
+
+  /// A `TabView[panes, Dynamic[view]]` at the end of a `Module` body whose
+  /// `view` no Manipulate specification declares is driven only by the
+  /// front end's own tab strip. Studio has none, so it now gets a visible
+  /// selector of the tab labels starting on the first pane, and picking
+  /// the second tab switches the displayed pane.
+  /// Self-authored, construct-equivalent example.
+  #[test]
+  fn undeclared_tabview_selector_gets_a_tab_selector() {
+    let code = r#"Manipulate[
+      Module[{g}, g = k + 1;
+        TabView[{"curve" -> Plot[g x, {x, 0, 1}],
+                 "table" -> Grid[{{g, g^2}}]}, Dynamic[view],
+          LabelStyle -> {Bold}]],
+      {{k, 2, "k"}, 1, 5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "view")
+      .expect("a tab selector control");
+    match &state.controls[idx] {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2"]);
+        assert_eq!(value_labels, &["curve", "table"]);
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+    assert!(state.graphics_handle.is_some(), "first tab is the plot");
+    let render = |view: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 2; view = {view};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    assert_ne!(render(1), render(2), "the tabs must draw different panes");
+    if let ControlState::Discrete { current_index, .. } =
+      &mut state.controls[idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
   }
 }
 

@@ -3161,6 +3161,34 @@ mod tests {
     }
 
     #[test]
+    fn parametric_plot3d_single_curve_takes_first_nested_plot_style() {
+      // A list of style lists is one style per curve, so a lone curve
+      // takes the first entry rather than the last one's color.
+      let nested = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {{Thick, Red}, {Thick, Blue}, {Thick, Orange}}]",
+      );
+      let first = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {Thick, Red}]",
+      );
+      assert_eq!(nested, first);
+      assert!(nested.contains("stroke=\"rgb(255,0,0)\""), "{nested}");
+    }
+
+    #[test]
+    fn plot3d_single_surface_takes_first_nested_plot_style() {
+      let nested = svg_of(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, \
+         PlotStyle -> {{Red}, {Blue}}]",
+      );
+      let first = svg_of(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, PlotStyle -> Red]",
+      );
+      assert_eq!(nested, first);
+    }
+
+    #[test]
     fn parametric_plot3d_surface_first_repeated_plot_style_wins() {
       let first = svg_of(
         "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
@@ -5310,6 +5338,38 @@ mod tests {
       );
     }
 
+    /// A table of pictures in a fixed-size `Pane` takes up the pane's whole
+    /// box, not just the table's own size.
+    #[test]
+    fn a_grid_of_pictures_in_a_fixed_pane_fills_the_box() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{Graphics[Disk[], ImageSize -> {100, 100}], "a"}}], {500, 200}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the table is a picture");
+      assert!(
+        svg.starts_with("<svg width=\"500\" height=\"200\""),
+        "{svg:.200}"
+      );
+    }
+
+    /// `Alignment -> {Center}` centers the content horizontally and keeps
+    /// it at the top, like `Alignment -> {Center, Top}`.
+    #[test]
+    fn a_one_element_pane_alignment_list_sets_the_horizontal_alignment() {
+      let svg_for = |align: &str| {
+        woxi::interpret_with_stdout(&format!(
+          r#"Pane[Grid[{{{{Graphics[Disk[], ImageSize -> {{100, 100}}]}}}}], {{500, 200}}, Alignment -> {align}]"#
+        ))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the table is a picture")
+      };
+      let single = svg_for("{Center}");
+      assert_eq!(single, svg_for("{Center, Top}"));
+      assert_ne!(single, svg_for("{Left, Top}"));
+    }
+
     /// `Panel[table, Text[caption]]` is drawn as the table with its caption
     /// above it; with a bare-string caption a plain table stays text.
     #[test]
@@ -5573,7 +5633,7 @@ mod tests {
       // … and the left-aligned line the row factor moved to.
       let four = svg.find(">4</text>").expect("row factor drawn");
       let line_y =
-        y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
+        y_after(&svg[svg[..four].rfind("<svg x=\"6.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
     }
 

@@ -743,6 +743,37 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// Regression: a fixed `ItemSize` column was `w` full font sizes plus the
+  /// whole cell padding wide, about a third wider than the front end draws
+  /// it. Front-end snapshots measure 4, 5 and 8 units at 49.5, 60.5 and
+  /// 93 px from divider to divider.
+  #[test]
+  fn grid_item_size_column_width_matches_front_end() {
+    let svg = svg_of(
+      "Grid[{{\"a\", \"b\", \"c\", \"d\"}}, \
+       ItemSize -> {{4, 5, 8, 5}, 2}, Dividers -> All]",
+    );
+    // The x positions of the vertical divider lines.
+    let mut xs: Vec<f64> = svg
+      .match_indices("<line ")
+      .filter_map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let attr = |name: &str| -> f64 {
+          let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[j..j + tag[j..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x1") == attr("x2")).then(|| attr("x1"))
+      })
+      .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.dedup();
+    assert_eq!(xs.len(), 5, "{svg}");
+    let widths: Vec<f64> = xs.windows(2).map(|w| w[1] - w[0]).collect();
+    for (width, expected) in widths.iter().zip([49.5, 60.5, 93.0, 60.5]) {
+      assert!((width - expected).abs() < 1.5, "{widths:?}\n{svg}");
+    }
+  }
+
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
   /// as `{w, h}`: every column is `w` ems wide, not just the first one.
   #[test]
@@ -1088,6 +1119,40 @@ mod layout_display {
     let i = svg.find(">i=1<").expect("lower limit");
     assert!(n < s && s < i, "{svg}");
   }
+
+  /// A styled `Underoverscript` (as `Style`/`Text` around a row push onto
+  /// its items) still stacks its limits, the base at the style's size and
+  /// the limits at script size.
+  #[test]
+  fn styled_underoverscript_stacks_its_limits() {
+    for expr in [
+      "Style[Underoverscript[\"S\", \"i=1\", \"n\"], 20]",
+      "Style[Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}], 20]",
+      "Text[Style[Column[{Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}]}], 20]]",
+    ] {
+      let svg = svg_of(expr);
+      assert!(!svg.contains("Underoverscript"), "{expr}: {svg}");
+      let n = svg.find(">n<").expect("upper limit");
+      let s = svg.find(">S<").expect("base");
+      let i = svg.find(">i=1<").expect("lower limit");
+      assert!(n < s && s < i, "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"20"), "{expr}: {svg}");
+      assert!(!svg.contains("font-size=\"10\""), "{expr}: {svg}");
+    }
+  }
+
+  #[test]
+  fn underoverscript_to_boxes() {
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z]]").unwrap(),
+      "UnderoverscriptBox[x, y, z]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z], TraditionalForm]").unwrap(),
+      "FormBox[UnderoverscriptBox[x, y, z], TraditionalForm]"
+    );
+  }
+
   #[test]
   fn held_standard_roots_and_matrix_baselines_typeset() {
     let svg = svg_of("StandardForm[HoldForm[Sqrt[x/(1+x)]]]");
@@ -1670,6 +1735,29 @@ mod layout_display {
     let (y, h) = (attr(nested, "y"), attr(nested, "height"));
     assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
   }
+
+  /// Regression: the prime marks of a typeset derivative (`T″(a)`) were
+  /// measured with the generic fallback advance, more than twice their real
+  /// width, leaving a wide gap before the argument's parenthesis.
+  #[test]
+  fn derivative_primes_take_their_own_narrow_width() {
+    for (order, primes) in [(1, "′"), (2, "′′")] {
+      let svg = svg_of(&format!(
+        "Text@TraditionalForm@Grid[{{{{D[T[a], {{a, {order}}}]}}}}]"
+      ));
+      let marks = format!(">{primes}</text>");
+      let at = svg.find(&marks).expect("primes are typeset");
+      let rest = &svg[at..];
+      let open = rest.find("translate(").expect("argument follows") + 10;
+      let x: f64 = rest[open..].split(',').next().unwrap().parse().unwrap();
+      // `T` advances about 7.8; each prime adds about 2.1 at script size.
+      let expected = 7.8 + 2.15 * order as f64;
+      assert!(
+        (x - expected).abs() < 1.0,
+        "order {order}: argument starts at {x}, expected about {expected}"
+      );
+    }
+  }
 }
 
 #[test]
@@ -2040,5 +2128,183 @@ mod text_in_fixed_panes {
       line_widths(&svg_of("Style[HoldForm[4]/HoldForm[66], 70]")),
       vec![4.0]
     );
+  }
+}
+
+/// The `(x, y)` positions and contents of an SVG's `<text>` labels.
+fn svg_text_cells(svg: &str) -> Vec<(String, String, String)> {
+  svg
+    .split("<text")
+    .skip(1)
+    .filter_map(|chunk| {
+      let attr = |name: &str| {
+        let start = chunk.find(&format!(" {name}=\""))? + name.len() + 3;
+        let len = chunk[start..].find('"')?;
+        Some(chunk[start..start + len].to_string())
+      };
+      let body_start = chunk.find('>')? + 1;
+      let body_len = chunk[body_start..].find('<')?;
+      Some((
+        attr("x")?,
+        attr("y")?,
+        chunk[body_start..body_start + body_len].to_string(),
+      ))
+    })
+    .collect()
+}
+
+/// A `TableForm` row that mixes plain cells with list cells lays the list
+/// cells out as columns of their own: a one-element `{x}` shows as a plain
+/// `x` (the braces were drawn before), and the table is laid out exactly
+/// like the same table with the plain values.
+#[test]
+fn tableform_mixed_row_lays_out_single_element_list_cells_plainly() {
+  clear_state();
+  let nested = interpret(
+    r#"ExportString[TableForm[{{0, {2500.}, 150.}, {1, {2472.}, 154.5}}, TableSpacing -> {0, 1}], "SVG"]"#,
+  )
+  .unwrap();
+  let flat = interpret(
+    r#"ExportString[TableForm[{{0, 2500., 150.}, {1, 2472., 154.5}}, TableSpacing -> {0, 1}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(!svg_text_cells(&nested).iter().any(|c| c.2.contains('{')));
+  assert_eq!(svg_text_cells(&nested), svg_text_cells(&flat));
+}
+
+/// A longer list cell in a mixed row runs down its column, the plain cells
+/// of the row sitting on its first line.
+#[test]
+fn tableform_mixed_row_runs_list_cells_down_the_column() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[TableForm[{{a, {b, c}, d}, {e, {f}, g}}], "SVG"]"#,
+  )
+  .unwrap();
+  let cells = svg_text_cells(&svg);
+  let pos = |s: &str| {
+    let Some(c) = cells.iter().find(|c| c.2 == s) else {
+      panic!("no cell {s} in {cells:?}");
+    };
+    (c.0.parse::<f64>().unwrap(), c.1.parse::<f64>().unwrap())
+  };
+  let (a, b, c, d, e) = (pos("a"), pos("b"), pos("c"), pos("d"), pos("e"));
+  // `b` and `c` share a column, `c` below `b`.
+  assert_eq!(b.0, c.0);
+  assert!(c.1 > b.1);
+  // `a`, `b` and `d` share the first line; the next row starts below `c`.
+  assert_eq!(a.1, b.1);
+  assert_eq!(d.1, b.1);
+  assert!(e.1 > c.1);
+  assert!(!cells.iter().any(|c| c.2.contains('{')));
+}
+
+/// A fixed-size `Pane` is a layout box of its own: an automatically sized
+/// plot in it is shrunk to fill the box even when the Pane sits in a `Grid`
+/// (it was drawn at the grid's reduced half size instead), and the Pane
+/// keeps its declared size.
+#[test]
+fn fixed_pane_in_grid_sizes_its_plot_to_the_box() {
+  clear_state();
+  for code in [
+    r#"ExportString[Pane[Plot[x, {x, 0, 1}], ImageSize -> {300, 350}], "SVG"]"#,
+    r#"ExportString[Grid[{{Pane[Plot[x, {x, 0, 1}], ImageSize -> {300, 350}]}}], "SVG"]"#,
+    r#"ExportString[Column[{Pane[Plot[x, {x, 0, 1}], {300, 350}]}], "SVG"]"#,
+  ] {
+    let svg = interpret(code).unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"300\" height=\"350\""),
+      "{code}: pane box not 300x350: {}",
+      &svg[..svg.len().min(200)]
+    );
+    // The plot itself (its 3600-wide canvas) is drawn 300 wide.
+    let plot = svg
+      .split("<svg")
+      .find(|s| s.contains("viewBox=\"0 0 3600"))
+      .unwrap_or_else(|| panic!("{code}: no plot in output"));
+    assert!(
+      plot.contains("width=\"300"),
+      "{code}: plot not 300 wide: {}",
+      &plot[..plot.len().min(200)]
+    );
+  }
+}
+
+/// A list holding typeset matrices or tables (`{MatrixForm[a],
+/// MatrixForm[b]}`) shows each item laid out in two dimensions between the
+/// list's braces and commas, also inside a `Text`/`Style`/`Pane`, instead
+/// of the list's source text.
+mod list_of_typeset_matrices {
+  use super::*;
+
+  /// Whether `fragment` steps down to a new line: it opens a row placed at
+  /// the left edge below the first one.
+  fn breaks_line(fragment: &str) -> bool {
+    fragment
+      .match_indices("<svg x=\"0\" y=\"")
+      .any(|(i, m)| !fragment[i + m.len()..].starts_with('0'))
+  }
+
+  #[test]
+  fn exported_list_of_matrices_is_typeset() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[{MatrixForm[{{1, 2}, {3, 4}}], \
+       MatrixForm[{{5, 6}, {7, 8}}]}, \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("MatrixForm"), "{svg}");
+    for cell in [">1<", ">4<", ">5<", ">8<", ">{<", ">}<"] {
+      assert!(svg.contains(cell), "{cell}: {svg}");
+    }
+  }
+
+  #[test]
+  fn exported_list_of_styled_tables_is_typeset() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Text[{Style[TableForm[{{a, b}}], Small], x}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("TableForm"), "{svg}");
+    assert!(svg.contains(">a<") && svg.contains(">b<"), "{svg}");
+  }
+
+  /// In a notebook (visual mode) the list is drawn as a picture too.
+  #[test]
+  fn list_of_matrices_displays_as_a_picture() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Text[{Style[MatrixForm[{{1, 2}, {3, 4}}], Small], \
+       Style[MatrixForm[{{5, 6}, {7, 8}}], Small]}], \
+       ImageSize -> {300, 200}, Alignment -> Center]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"300\" height=\"200\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("MatrixForm"), "{svg}");
+    assert!(svg.contains(">7<"), "{svg}");
+  }
+
+  /// A fixed-size `Pane` breaks the row of matrices into lines that each
+  /// hold as many matrices as fit its width, measured by their drawn size
+  /// rather than their source text (which put every matrix on a line of
+  /// its own).
+  #[test]
+  fn sized_pane_breaks_matrices_into_lines_by_drawn_width() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Table[MatrixForm[{{i}}], {i, 6}], {120, 300}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    let at = |s: &str| svg.find(s).unwrap_or_else(|| panic!("{s}: {svg}"));
+    let (one, two, three) = (at(">1<"), at(">2<"), at(">3<"));
+    assert!(!breaks_line(&svg[one..two]), "{svg}");
+    assert!(breaks_line(&svg[two..three]), "{svg}");
   }
 }

@@ -815,7 +815,23 @@ fn adaptive_sample(
     ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     if ys.len() >= 2 {
       let at = |q: f64| ys[((ys.len() - 1) as f64 * q).round() as usize];
-      (at(0.95) - at(0.05)) * 1e-3
+      let spread = at(0.95) - at(0.05);
+      // A pole covering more than a twentieth of the domain still
+      // inflates that spread far past the window the automatic
+      // `PlotRange` shows, which clips outliers, so the dip of a
+      // potential well beside a pole would go unrefined. The visible
+      // height is never more than that clipped window.
+      let (lo, hi) = outlier_clipped_extent(
+        (sorted_quantile(&ys, 0.175), sorted_quantile(&ys, 0.825)),
+        (ys[0], ys[ys.len() - 1]),
+      );
+      let clipped = hi - lo;
+      let height = if clipped > 0.0 {
+        spread.min(clipped)
+      } else {
+        spread
+      };
+      height * 1e-3
     } else {
       0.0
     }
@@ -2332,6 +2348,15 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
     if v.abs() < step.abs() * 1e-6 {
       return "0".to_string();
     }
+    // A tick of such a set that itself reaches `10^-5` is still a real
+    // the Wolfram Language writes in decimal (`0.00001`, not `1×10⁻⁵`).
+    // Snap it onto the step grid first so float drift (`9.999…×10⁻⁶`)
+    // doesn't push it back under the threshold.
+    let snapped = (v / step).round() * step;
+    let magnitude = snapped.abs();
+    if (1e-5 * (1.0 - 1e-9)..1e6).contains(&magnitude) {
+      return format_small_decimal_tick(snapped);
+    }
     return format_scientific_tick(v);
   }
   // A set whose spacing is no short decimal (explicit ticks at computed
@@ -2363,6 +2388,16 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
 /// `5*10^-8` up to `2*10^-7` reads `5.0×10⁻⁸, 1.0×10⁻⁷, 1.5×10⁻⁷, 2.0×10⁻⁷`.
 pub(crate) fn format_axis_tick(v: f64, step: f64, lo: f64, hi: f64) -> String {
   let label = format_tick_with_step(v, step);
+  if label == "0"
+    && step.is_finite()
+    && step != 0.0
+    && step.abs() < 1e-5
+    && let Some(decimals) = axis_decimal_label_decimals(step, lo, hi)
+  {
+    // The zero of a fine set whose outer ticks read in decimal shares
+    // their decimals (`-0.00001, -5×10⁻⁶, 0.00000, 5×10⁻⁶, 0.00001`).
+    return format!("0.{}", "0".repeat(decimals));
+  }
   let Some(decimals) = axis_scientific_decimals(step, lo, hi) else {
     return label;
   };
@@ -2388,6 +2423,43 @@ fn axis_scientific_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
       Some(mantissa.split_once('.').map_or(0, |(_, frac)| frac.len()))
     })
     .max()
+}
+
+/// The most decimals any decimal-notation (non-scientific, non-integer)
+/// label of a `step`-spaced axis over `lo..hi` carries, if it has one.
+fn axis_decimal_label_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
+  if !(step.is_finite() && step > 0.0 && lo.is_finite() && hi.is_finite()) {
+    return None;
+  }
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let first = (lo / step - 1e-9).ceil();
+  let last = (hi / step + 1e-9).floor();
+  if !(last - first).is_finite() || last - first > 1000.0 {
+    return None;
+  }
+  (first as i64..=last as i64)
+    .filter_map(|k| {
+      let label = format_tick_with_step(k as f64 * step, step);
+      if label.contains('\u{d7}') {
+        return None;
+      }
+      label.split_once('.').map(|(_, frac)| frac.len())
+    })
+    .max()
+}
+
+/// A tick in `[10^-5, 10^6)` written as the Wolfram Language displays the
+/// real: 6 significant digits, trailing zeros dropped (`0.00001`,
+/// `0.000015`).
+fn format_small_decimal_tick(v: f64) -> String {
+  let magnitude = v.abs() * (1.0 + 1e-9);
+  let decimals = (5 - magnitude.log10().floor() as i32).max(0) as usize;
+  let s = format!("{v:.decimals$}");
+  if s.contains('.') {
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  } else {
+    s
+  }
 }
 
 /// Pad the mantissa of a scientific tick label (`5×10⁻⁸`) to `decimals`
@@ -5383,6 +5455,23 @@ pub(crate) fn plot_labels_svg(
         sf,
       ));
     }
+    // A `Column` title lines its rows up at their left edges, the block
+    // as a whole centered over the plot; every other title centers each
+    // line on its own.
+    let (tx, anchor) = if sl.left_aligned
+      && !sl.extra_lines.is_empty()
+      && sl.segments.is_empty()
+    {
+      let bold = if sl.bold {
+        plot_padding::BOLD_WIDTH_SCALE
+      } else {
+        1.0
+      };
+      let w = sl.widest_line_width(fs / sf, 1.0) * sf * bold;
+      (cx - w / 2.0, "start")
+    } else {
+      (cx, "middle")
+    };
     // A plain string with line breaks stacks its lines too.
     let body = if sl.markup.is_none()
       && sl.extra_line_count() == 0
@@ -5397,7 +5486,7 @@ pub(crate) fn plot_labels_svg(
         title_pitch,
       )
     } else {
-      sl.svg_scaled_stacked(sf, cx, title_pitch)
+      sl.svg_scaled_stacked(sf, tx, title_pitch)
     };
     if !sl.segments.is_empty() {
       // Center the line on the band the tallest picture claims.
@@ -5416,7 +5505,7 @@ pub(crate) fn plot_labels_svg(
     // A run of blanks the label asks for is kept.
     let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+      "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}{preserve_attr}>{body}</text>\n",
     ));
@@ -8977,7 +9066,9 @@ pub(crate) fn scatter_point_colors(
 
 /// The `(x_min, x_max, y_min, y_max)` extent of the finite points of
 /// `series`, or `None` when there are none.
-fn data_extents(series: &[Vec<(f64, f64)>]) -> Option<(f64, f64, f64, f64)> {
+pub(crate) fn data_extents(
+  series: &[Vec<(f64, f64)>],
+) -> Option<(f64, f64, f64, f64)> {
   let mut pts = series
     .iter()
     .flatten()
@@ -9454,10 +9545,31 @@ pub(crate) fn render_merged_plot_source(
   opts.aspect_automatic = overrides.aspect_automatic;
   opts.log_x = source.log_x;
   opts.log_y = source.log_y;
-  let x_range =
-    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
-  let y_range =
-    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
+  // An explicit `PlotRangePadding` (of `Show` or the first plot) pads the
+  // ends an explicit `PlotRange` pins, as in a standalone plot.
+  let padding = source.options.iter().find_map(|o| {
+    match crate::functions::graphics::option_name_value(o) {
+      Some(("PlotRangePadding", v)) => {
+        Some(crate::functions::graphics::parse_plot_range_padding(&v))
+      }
+      _ => None,
+    }
+  });
+  let x_range = pad_pinned_range_ends(
+    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range),
+    overrides.x,
+    padding.as_ref().map(|p| &p.x),
+  );
+  let pinned_y = fill_range(overrides.y, source.y_range);
+  let y_range = pad_pinned_range_ends(
+    pinned_y.unwrap_or(source.y_range),
+    overrides.y,
+    padding.as_ref().map(|p| &p.y),
+  );
+  // The curves stop at the pinned range, leaving the padding empty.
+  if padding.is_some() && pinned_y.is_some() {
+    opts.curve_clip_y = pinned_y;
+  }
 
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
@@ -18179,6 +18291,32 @@ pub(crate) fn scale_range(
 
 /// An explicit plot range side whose NaN ends (see [`scale_range`]) are
 /// filled in from the automatic range `auto`.
+/// Widen the ends of a displayed `range` that an explicit `PlotRange`
+/// (`explicit`, with `NaN` for an end left automatic) pins, by an explicit
+/// `PlotRangePadding` axis spec. An `Automatic` side keeps its end exact.
+fn pad_pinned_range_ends(
+  range: (f64, f64),
+  explicit: Option<(f64, f64)>,
+  padding: Option<&crate::functions::graphics::AxisPadding>,
+) -> (f64, f64) {
+  let (Some((lo, hi)), Some(padding)) = (explicit, padding) else {
+    return range;
+  };
+  let (pad_lo, pad_hi) = padding.resolve(range.1 - range.0, 0.0);
+  (
+    if lo.is_nan() {
+      range.0
+    } else {
+      range.0 - pad_lo
+    },
+    if hi.is_nan() {
+      range.1
+    } else {
+      range.1 + pad_hi
+    },
+  )
+}
+
 pub(crate) fn fill_range(
   explicit: Option<(f64, f64)>,
   auto: (f64, f64),
@@ -19011,6 +19149,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
   let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
 
+  // An explicit `PlotRangePadding` also pads the ends an explicit
+  // `PlotRange` pins (an `Automatic` side leaves them exact); the ends
+  // left automatic already carry the padding above.
+  let explicit_padding = range_padding
+    .as_ref()
+    .map(crate::functions::graphics::parse_plot_range_padding);
+  let pad_x = explicit_padding.map(|spec| spec.x);
+  let pad_y = explicit_padding.map(|spec| spec.y);
+  let explicit_x = plot_range_x;
+  let explicit_y = plot_range_y;
+
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let plot_range_x = fill_range(plot_range_x, x_auto);
   // A half-open `PlotRange -> {min, All}` pins one end; the open end is
@@ -19031,18 +19180,25 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let plot_range_y =
     fill_range(plot_range_y.or(half_open_y), (y_auto_min, y_auto_max));
-  let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
-  let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
-    // Labels placed above or below their curves get room inside the
-    // plot range, as WL widens the automatic `PlotRangePadding`.
-    crate::functions::plot_curve_labels::widen_y_range(
-      &plot_opts.curve_label_specs,
-      &all_points,
-      (x_display_min, x_display_max),
-      (y_auto_min, y_auto_max),
-      estimated_plot_area(&plot_opts),
-    )
-  });
+  let (x_display_min, x_display_max) = pad_pinned_range_ends(
+    plot_range_x.unwrap_or(x_auto),
+    explicit_x,
+    pad_x.as_ref(),
+  );
+  let (y_display_min, y_display_max) = plot_range_y.map_or_else(
+    || {
+      // Labels placed above or below their curves get room inside the
+      // plot range, as WL widens the automatic `PlotRangePadding`.
+      crate::functions::plot_curve_labels::widen_y_range(
+        &plot_opts.curve_label_specs,
+        &all_points,
+        (x_display_min, x_display_max),
+        (y_auto_min, y_auto_max),
+        estimated_plot_area(&plot_opts),
+      )
+    },
+    |range| pad_pinned_range_ends(range, explicit_y, pad_y.as_ref()),
+  );
   // The axes of an all-positive curve touch its lowest point, inside the
   // padding, as in Wolfram.
   if plot_range_x.is_none() {

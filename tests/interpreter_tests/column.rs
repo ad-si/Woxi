@@ -375,6 +375,25 @@ mod column_visual_mode {
     assert!(!svg.contains("Dynamic"), "{svg}");
   }
 
+  #[test]
+  fn grid_cell_text_styled_column_uses_text_face() {
+    // `Text[Style[Column[…], size]]` in a Grid cell is set in the
+    // proportional text face, as `Text[Column[…]]` and
+    // `Text[Style[Row[…], size]]` are, also when a line mixes strings and
+    // numbers; it used to fall back to the monospace face of typeset output.
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Text[Style[Column[{\"\", Row[{\"weight is \", 7, \".\"}]}], \
+       18]], SpanFromLeft}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("weight is"), "{svg}");
+    assert!(svg.contains("font-size=\"18\""), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains("sans-serif"), "{svg}");
+  }
+
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
   /// `Manipulate` body — is a large, colored column. It used to fall back
@@ -838,6 +857,40 @@ mod column_visual_mode {
     let r = interpret_with_stdout("ExpressionCell[1 + 1, \"Output\"]").unwrap();
     assert_eq!(r.result, "2");
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  /// The left edge a line of a left-aligned column starts at: the `x` of
+  /// a text item's `<text>`, or of a laid-out item's nested `<svg>`.
+  fn line_starts(svg: &str) -> Vec<f64> {
+    let body = svg.split_once('\n').map_or(svg, |(_, rest)| rest);
+    body
+      .lines()
+      .filter(|l| {
+        (l.starts_with("<text ") && l.contains("text-anchor=\"start\""))
+          || l.starts_with("<svg x=")
+      })
+      .filter_map(|l| {
+        let rest = l.split_once(" x=\"")?.1;
+        rest.split('"').next()?.parse().ok()
+      })
+      .collect()
+  }
+
+  /// A line of math (a `Row`) starts where a line of prose does, so the
+  /// lines of a left-aligned column share one edge.
+  #[test]
+  fn text_and_row_items_share_the_left_edge() {
+    for code in [
+      r#"Column[{"Since", Row[{x, " = ", y}]}]"#,
+      r#"Column[{Row[{a + b, " = ", c}], "follows", Row[{x}]}]"#,
+    ] {
+      clear_state();
+      let svg = interpret(&format!(r#"ExportString[{code}, "SVG"]"#)).unwrap();
+      let starts = line_starts(&svg);
+      assert!(starts.len() >= 2, "{code}: {svg}");
+      assert!(starts.iter().all(|&x| x == starts[0]), "{code}: {starts:?}");
+      assert!(starts[0] > 0.0, "{code}: {starts:?}");
+    }
   }
 }
 
