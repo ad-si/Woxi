@@ -61468,6 +61468,32 @@ mod grid_repeating_decimal_alignment {
     );
   }
 
+  /// The open end of a half-open `PlotRange` is padded by 1/18 of the span
+  /// from the pinned value to the curve's far extreme (Wolfram's automatic
+  /// `Scaled[0.05]`), not of the curve's own extent: over `x` on `[0, 1]`,
+  /// `{-1, All}` draws like the explicit `{-1, 1 + 2/18}` and `{All, 2}`
+  /// like `{-1/9, 2}`.
+  #[test]
+  fn plot_half_open_plot_range_pads_from_pinned_end() {
+    let frame_ticks = |range: &str| -> Vec<String> {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, PlotRange -> {{{{0, 1}}, {range}}}, \
+         Frame -> True]"
+      ));
+      svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s[..s.find('"').unwrap()].trim().to_string())
+        // The frame edges and tick marks are two-point lines.
+        .filter(|p| p.split(' ').count() == 2)
+        .collect()
+    };
+    assert_eq!(frame_ticks("{-1, All}"), frame_ticks("{-1, 1 + 2/18}"));
+    assert_ne!(frame_ticks("{-1, All}"), frame_ticks("{-1, 1 + 1/18}"));
+    assert_eq!(frame_ticks("{All, 2}"), frame_ticks("{-1/9, 2}"));
+    assert_ne!(frame_ticks("{All, 2}"), frame_ticks("{-1/18, 2}"));
+  }
+
   /// Layered by `Show`, a plot's curve stops at the pinned end of its
   /// half-open `PlotRange`, as in Wolfram (only the part the plot itself
   /// shows is drawn), and a leading graphic's half-open range clips the
