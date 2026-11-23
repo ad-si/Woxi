@@ -6140,6 +6140,69 @@ mod graphics {
         (attr("cx"), attr("cy"))
       }
 
+      // An explicit `PlotRangePadding` pads the ends an explicit `PlotRange`
+      // pins, in `Plot` and in a `Show` of a plot alike: it was ignored, so
+      // the frame stopped exactly at the pinned range.
+      #[test]
+      fn pads_an_explicit_plot_range() {
+        let labels = |code: &str| {
+          let svg = export_svg(code);
+          ["-0.5", "1.5"].map(|t| svg.contains(&format!("\n{t}\n")))
+        };
+        for code in [
+          "Plot[x, {x, 0, 1}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> 0.5, Frame -> True]",
+          "Show[Plot[x, {x, 0, 1}], PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> 0.5, Frame -> True]",
+          "Show[Plot[x, {x, 0, 1}, PlotRange -> {{0, 1}, {0, 1}}], \
+           PlotRangePadding -> 0.5, Frame -> True]",
+        ] {
+          assert_eq!(labels(code), [true, true], "{code}");
+        }
+        // Without it the pinned range is drawn exactly.
+        assert_eq!(
+          labels(
+            "Plot[x, {x, 0, 1}, PlotRange -> {{0, 1}, {0, 1}}, Frame -> True]"
+          ),
+          [false, false]
+        );
+        // `None` and `Automatic` sides stay unpadded: only the top grows.
+        let svg = export_svg(
+          "Plot[x, {x, 0, 1}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {None, {Automatic, 0.5}}, Frame -> True]",
+        );
+        let ticks: Vec<&str> = svg
+          .lines()
+          .filter(|l| !l.is_empty() && l.parse::<f64>().is_ok())
+          .collect();
+        assert_eq!(
+          ticks.join(" "),
+          "0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 0.0 0.2 0.4 0.6 0.8 1.0"
+        );
+      }
+
+      // The curves of a `Show`n plot stop at the pinned `PlotRange`, leaving
+      // the padding past it empty, as the standalone plot draws them.
+      #[test]
+      fn show_clips_curves_at_the_pinned_range() {
+        let curve = |code: &str| {
+          let svg = export_svg(code);
+          svg
+            .split("<polyline")
+            .find(|p| p.contains("stroke=\"#3D99CC\""))
+            .and_then(|p| p.split("points=\"").nth(1))
+            .and_then(|p| p.split('"').next())
+            .map_or_else(|| panic!("no curve in {svg}"), str::to_string)
+        };
+        let opts = "PlotRange -> {0, 5}, PlotRangePadding -> {Automatic, 1}";
+        assert_eq!(
+          curve(&format!(
+            "Show[Plot[x, {{x, 0, 10}}, {opts}], ImageSize -> 300]"
+          )),
+          curve(&format!("Plot[x, {{x, 0, 10}}, {opts}, ImageSize -> 300]"))
+        );
+      }
+
       // `Plot` takes its padding from `PlotRangePadding` too: `None` on the
       // x axis ends the frame at the sampled domain, so a tick just past
       // it (1.0 for a domain ending at 0.99) is not drawn, while the

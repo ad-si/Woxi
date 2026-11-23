@@ -9487,10 +9487,31 @@ pub(crate) fn render_merged_plot_source(
   opts.aspect_automatic = overrides.aspect_automatic;
   opts.log_x = source.log_x;
   opts.log_y = source.log_y;
-  let x_range =
-    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
-  let y_range =
-    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
+  // An explicit `PlotRangePadding` (of `Show` or the first plot) pads the
+  // ends an explicit `PlotRange` pins, as in a standalone plot.
+  let padding = source.options.iter().find_map(|o| {
+    match crate::functions::graphics::option_name_value(o) {
+      Some(("PlotRangePadding", v)) => {
+        Some(crate::functions::graphics::parse_plot_range_padding(&v))
+      }
+      _ => None,
+    }
+  });
+  let x_range = pad_pinned_range_ends(
+    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range),
+    overrides.x,
+    padding.as_ref().map(|p| &p.x),
+  );
+  let pinned_y = fill_range(overrides.y, source.y_range);
+  let y_range = pad_pinned_range_ends(
+    pinned_y.unwrap_or(source.y_range),
+    overrides.y,
+    padding.as_ref().map(|p| &p.y),
+  );
+  // The curves stop at the pinned range, leaving the padding empty.
+  if padding.is_some() && pinned_y.is_some() {
+    opts.curve_clip_y = pinned_y;
+  }
 
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
@@ -18212,6 +18233,32 @@ pub(crate) fn scale_range(
 
 /// An explicit plot range side whose NaN ends (see [`scale_range`]) are
 /// filled in from the automatic range `auto`.
+/// Widen the ends of a displayed `range` that an explicit `PlotRange`
+/// (`explicit`, with `NaN` for an end left automatic) pins, by an explicit
+/// `PlotRangePadding` axis spec. An `Automatic` side keeps its end exact.
+fn pad_pinned_range_ends(
+  range: (f64, f64),
+  explicit: Option<(f64, f64)>,
+  padding: Option<&crate::functions::graphics::AxisPadding>,
+) -> (f64, f64) {
+  let (Some((lo, hi)), Some(padding)) = (explicit, padding) else {
+    return range;
+  };
+  let (pad_lo, pad_hi) = padding.resolve(range.1 - range.0, 0.0);
+  (
+    if lo.is_nan() {
+      range.0
+    } else {
+      range.0 - pad_lo
+    },
+    if hi.is_nan() {
+      range.1
+    } else {
+      range.1 + pad_hi
+    },
+  )
+}
+
 pub(crate) fn fill_range(
   explicit: Option<(f64, f64)>,
   auto: (f64, f64),
@@ -19044,6 +19091,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
   let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
 
+  // An explicit `PlotRangePadding` also pads the ends an explicit
+  // `PlotRange` pins (an `Automatic` side leaves them exact); the ends
+  // left automatic already carry the padding above.
+  let explicit_padding = range_padding
+    .as_ref()
+    .map(crate::functions::graphics::parse_plot_range_padding);
+  let pad_x = explicit_padding.map(|spec| spec.x);
+  let pad_y = explicit_padding.map(|spec| spec.y);
+  let explicit_x = plot_range_x;
+  let explicit_y = plot_range_y;
+
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let plot_range_x = fill_range(plot_range_x, x_auto);
   // A half-open `PlotRange -> {min, All}` pins one end; the open end is
@@ -19064,18 +19122,25 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let plot_range_y =
     fill_range(plot_range_y.or(half_open_y), (y_auto_min, y_auto_max));
-  let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
-  let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
-    // Labels placed above or below their curves get room inside the
-    // plot range, as WL widens the automatic `PlotRangePadding`.
-    crate::functions::plot_curve_labels::widen_y_range(
-      &plot_opts.curve_label_specs,
-      &all_points,
-      (x_display_min, x_display_max),
-      (y_auto_min, y_auto_max),
-      estimated_plot_area(&plot_opts),
-    )
-  });
+  let (x_display_min, x_display_max) = pad_pinned_range_ends(
+    plot_range_x.unwrap_or(x_auto),
+    explicit_x,
+    pad_x.as_ref(),
+  );
+  let (y_display_min, y_display_max) = plot_range_y.map_or_else(
+    || {
+      // Labels placed above or below their curves get room inside the
+      // plot range, as WL widens the automatic `PlotRangePadding`.
+      crate::functions::plot_curve_labels::widen_y_range(
+        &plot_opts.curve_label_specs,
+        &all_points,
+        (x_display_min, x_display_max),
+        (y_auto_min, y_auto_max),
+        estimated_plot_area(&plot_opts),
+      )
+    },
+    |range| pad_pinned_range_ends(range, explicit_y, pad_y.as_ref()),
+  );
   // The axes of an all-positive curve touch its lowest point, inside the
   // padding, as in Wolfram.
   if plot_range_x.is_none() {
