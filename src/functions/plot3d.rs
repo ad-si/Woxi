@@ -14495,12 +14495,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // still fits its box outline to the frame. An explicit `AspectRatio -> r`
   // instead asks for the projected box to be stretched to the picture's
   // shape: the FrontEnd's snapshots of such a frame show the contents
-  // filling the whole picture, squashed or widened to it.
+  // filling the whole picture, squashed or widened to it. A frame whose
+  // picture is given no height (no `ImageSize -> {w, h}`) is as tall as
+  // the projected box needs, so it keeps the outline fit: Wolfram's
+  // snapshot of a Demonstration's unboxed grid of linked tori at the
+  // default size, pinned to a 100 × 100 × 20 `PlotRange` and seen from
+  // `ViewPoint -> {0, 0, 1}`, spans about 110 units of the picture, as the
+  // outline fit does (sphere framing would span 204).
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
     || (!spherical_region_off
       && manipulate_frame
       && explicitly_framed
+      && explicit_height
       && aspect_ratio.is_none())
     || (!spherical_region_off
       && explicitly_framed

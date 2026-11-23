@@ -71317,6 +71317,52 @@ fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
   }
 }
 
+/// Regression: a `Manipulate` frame's unboxed `Graphics3D` with a pinned
+/// `PlotRange` and a close `ViewPoint` but no `ImageSize` height was framed
+/// by the sphere around its box, which seen from one box side away spans
+/// almost twice the box, so the scene filled only half the picture.
+/// Wolfram's snapshot of such a frame (a grid of linked tori in a
+/// 100 × 100 × 20 range seen from `{0, 0, 1}`) fits the box outline, as
+/// the same scene outside a frame does. A pinned `ImageSize -> {w, h}`
+/// still switches the frame to the sphere framing.
+#[test]
+fn manipulate_frame_keeps_outline_fit_without_a_pinned_height() {
+  for (view, size) in [
+    ("{0, 0, 1}", ""),
+    ("{0, 0, 1}", ", ImageSize -> 300"),
+    ("{1.3, -2.4, 2}", ""),
+  ] {
+    let scene = |opts: &str| {
+      format!(
+        "Graphics3D[Table[Translate[Cuboid[{{-5, -5, -1}}, {{5, 5, 1}}], \
+         {{x, y, 0}}], {{x, -40, 0, 40}}, {{y, -40, 0, 40}}], \
+         PlotRange -> {{{{-60, 40}}, {{-60, 40}}, {{-10, 10}}}}, \
+         Boxed -> False, ViewPoint -> {view}{size}{opts}]"
+      )
+    };
+    let outline = export_svg(&scene(""));
+    let sphere = export_svg(&scene(", SphericalRegion -> True"));
+    assert_ne!(outline, sphere, "{view}{size}");
+    assert_eq!(
+      woxi::with_manipulate_frame(|| export_svg(&scene(""))),
+      outline,
+      "{view}{size}"
+    );
+  }
+  let pinned = |opts: &str| {
+    format!(
+      "Graphics3D[Cuboid[{{-5, -5, -1}}, {{5, 5, 1}}], \
+       PlotRange -> {{{{-60, 40}}, {{-60, 40}}, {{-10, 10}}}}, \
+       Boxed -> False, ViewPoint -> {{0, 0, 1}}, \
+       ImageSize -> {{300, 300}}{opts}]"
+    )
+  };
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&pinned(""))),
+    export_svg(&pinned(", SphericalRegion -> True"))
+  );
+}
+
 mod plot_label_number_form_held_assignment {
   use super::*;
 
