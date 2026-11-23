@@ -58343,6 +58343,22 @@ fn the_default_arrowhead_is_four_percent_of_the_width() {
     "0.1 of a 400-wide plot is a 40 px head: {}",
     head_length(&explicit)
   );
+  // A wide `ImageSize` box letterboxes a drawing whose range is taller than
+  // the box: the drawing is centered at its own width, and both an explicit
+  // and the default head are fractions of that width, not the box's.
+  for (spec, frac) in [("Arrowheads[0.1], ", 0.1), ("", 0.04)] {
+    let boxed = export_svg(&format!(
+      "Graphics[{{{spec}Arrow[{{{{1, 5}}, {{9, 5}}}}]}}, \
+       PlotRange -> {{{{0, 10}}, {{0, 5}}}}, ImageSize -> {{600, 100}}]"
+    ));
+    let expected = frac * 200.0;
+    assert!(
+      (head_length(&boxed) - expected).abs() < 0.5,
+      "{frac} of a 200-wide drawing in a 600-wide box is a {expected} px \
+       head: {}",
+      head_length(&boxed)
+    );
+  }
 }
 
 /// An undirected primitive is stroked 1 pixel wide whatever the image size —

@@ -16396,9 +16396,12 @@ fn render_primitive(
       // would swallow: 45 % of the path length, and 40 % of the shape's
       // bounding-box diagonal (which keeps a self-loop's head in
       // proportion to its visible size rather than its arc length).
+      // Under `ImageSize -> {w, h}` a drawing narrower than the box is
+      // centered in it at its own width, and the head is a fraction of that
+      // drawing width (like `Thickness`), not of the whole box.
       let head_width = style
         .arrowhead_width
-        .map_or(svg_w, |w| w * svg_w / bb.width());
+        .map_or(relative_width(svg_w), |w| w * svg_w / bb.width());
       let default_head = if screen.len() > 2 {
         (head_width * 0.04)
           .min(total_len_px * 0.45)
