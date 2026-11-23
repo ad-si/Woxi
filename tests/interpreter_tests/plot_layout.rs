@@ -1748,3 +1748,71 @@ mod scientific_tick_labels {
     assert!(svg.contains("1×10⁻¹²") && svg.contains("6×10⁻¹²"));
   }
 }
+
+mod column_plot_label {
+  use super::*;
+
+  /// The `<text …>` element of the title, from its opening tag up to the
+  /// text that starts its first line.
+  fn title_tag<'a>(svg: &'a str, first_line: &str) -> &'a str {
+    let end = svg.find(first_line).expect("title line");
+    let start = svg[..end].rfind("<text").expect("title element");
+    &svg[start..end]
+  }
+
+  fn attr(tag: &str, name: &str) -> String {
+    let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    let end = start + tag[start..].find('"').unwrap();
+    tag[start..end].to_string()
+  }
+
+  #[test]
+  fn column_lines_align_left_in_a_centered_block() {
+    // A `Column` sets its rows flush left (its default `Alignment` is
+    // `Left`); the block as a whole stays centered over the plot.
+    for plot in ["ListPlot[{1, 2, 3}", "Graphics[{Circle[]}"] {
+      let svg = svg_of(&format!(
+        "{plot}, PlotLabel -> Column[{{\"a long first line\", \"short\"}}]]"
+      ));
+      let tag = title_tag(&svg, "a long first line");
+      assert_eq!(attr(tag, "text-anchor"), "start", "{plot}: {svg}");
+      let x = attr(tag, "x");
+      assert!(
+        svg.contains(&format!("<tspan x=\"{x}\" dy=")),
+        "{plot}: every line starts at x = {x}: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn centered_column_and_grid_center_each_line() {
+    for label in [
+      "Column[{\"a long first line\", \"short\"}, Center]",
+      "Column[{\"a long first line\", \"short\"}, Alignment -> Center]",
+      "Grid[{{\"a long first line\"}, {\"short\"}}]",
+    ] {
+      for plot in ["ListPlot[{1, 2, 3}", "Graphics[{Circle[]}"] {
+        let svg = svg_of(&format!("{plot}, PlotLabel -> {label}]"));
+        let tag = title_tag(&svg, "a long first line");
+        assert_eq!(attr(tag, "text-anchor"), "middle", "{label}: {svg}");
+      }
+    }
+  }
+
+  #[test]
+  fn label_style_sets_a_stacked_title_small() {
+    // `Style[Column[…], "Label"]` takes the 9-point size of the "Label"
+    // stylesheet entry, not the default 12-point title size.
+    let svg = svg_of(
+      "ListPlot[{1, 2, 3}, PlotLabel -> Style[Column[{\"top\", \"bottom\"}], \"Label\"]]",
+    );
+    let tag = title_tag(&svg, "top");
+    assert_eq!(attr(tag, "font-size"), "90", "{svg}");
+    // An explicit size wins over the named style's, wherever it stands.
+    let svg = svg_of(
+      "ListPlot[{1, 2, 3}, PlotLabel -> Style[Column[{\"top\", \"bottom\"}], 20, \"Label\"]]",
+    );
+    let tag = title_tag(&svg, "top");
+    assert_eq!(attr(tag, "font-size"), "200", "{svg}");
+  }
+}
