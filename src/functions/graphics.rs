@@ -26869,8 +26869,10 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
       }
       "StyleBox" if !args.is_empty() => estimate_box_display_width(&args[0]),
       // The script is stacked over its base (see `stacked_overscript_svg`).
-      "OverscriptBox" if args.len() >= 2 => estimate_box_display_width(&args[0])
-        .max(estimate_box_display_width(&args[1]) * 0.7),
+      "OverscriptBox" if args.len() >= 2 => {
+        estimate_box_display_width(&args[0])
+          .max(estimate_box_display_width(&args[1]) * 0.7)
+      }
       "UnderscriptBox" if args.len() >= 2 => {
         estimate_box_display_width(&args[0])
           + estimate_box_display_width(&args[1]) * 0.7

@@ -1090,12 +1090,10 @@ pub(crate) fn plot_decorations(
   // A `Style[label, size]` label is set at its own size.
   let font_of = |t: &str| markup_font_size(t).unwrap_or(label_font);
   let text_label = |t: &Option<String>| {
-    t.as_ref()
-      .filter(|t| !t.is_empty())
-      .map(|t| {
-        let size = font_of(t);
-        block_height(label_lines(t), size) + stacked_script_room(t, size)
-      })
+    t.as_ref().filter(|t| !t.is_empty()).map(|t| {
+      let size = font_of(t);
+      block_height(label_lines(t), size) + stacked_script_room(t, size)
+    })
   };
   let label_length = |t: &Option<String>| {
     t.as_ref()

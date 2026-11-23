@@ -18993,10 +18993,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // On a log axis whose automatic range cut the curve off at the bottom
   // the axis drops to the padded edge instead.
   let log_clipped_below = scaling.1.as_ref().is_some_and(Scaling::is_log)
-    && all_points
-      .iter()
-      .flatten()
-      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * (y_data_max - y_data_min).abs());
+    && all_points.iter().flatten().any(|&(_, y)| {
+      y.is_finite() && y < y_data_min - 1e-9 * (y_data_max - y_data_min).abs()
+    });
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
