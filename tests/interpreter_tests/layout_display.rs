@@ -743,6 +743,37 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// Regression: a fixed `ItemSize` column was `w` full font sizes plus the
+  /// whole cell padding wide, about a third wider than the front end draws
+  /// it. Front-end snapshots measure 4, 5 and 8 units at 49.5, 60.5 and
+  /// 93 px from divider to divider.
+  #[test]
+  fn grid_item_size_column_width_matches_front_end() {
+    let svg = svg_of(
+      "Grid[{{\"a\", \"b\", \"c\", \"d\"}}, \
+       ItemSize -> {{4, 5, 8, 5}, 2}, Dividers -> All]",
+    );
+    // The x positions of the vertical divider lines.
+    let mut xs: Vec<f64> = svg
+      .match_indices("<line ")
+      .filter_map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let attr = |name: &str| -> f64 {
+          let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[j..j + tag[j..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x1") == attr("x2")).then(|| attr("x1"))
+      })
+      .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.dedup();
+    assert_eq!(xs.len(), 5, "{svg}");
+    let widths: Vec<f64> = xs.windows(2).map(|w| w[1] - w[0]).collect();
+    for (width, expected) in widths.iter().zip([49.5, 60.5, 93.0, 60.5]) {
+      assert!((width - expected).abs() < 1.5, "{widths:?}\n{svg}");
+    }
+  }
+
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
   /// as `{w, h}`: every column is `w` ems wide, not just the first one.
   #[test]
