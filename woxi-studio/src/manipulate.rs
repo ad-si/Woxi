@@ -9823,6 +9823,61 @@ mod bare_tabview_tests {
     assert_eq!(state.error, None);
     assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
   }
+
+  /// A `TabView[panes, Dynamic[view]]` at the end of a `Module` body whose
+  /// `view` no Manipulate specification declares is driven only by the
+  /// front end's own tab strip. Studio has none, so it now gets a visible
+  /// selector of the tab labels starting on the first pane, and picking
+  /// the second tab switches the displayed pane.
+  /// Self-authored, construct-equivalent example.
+  #[test]
+  fn undeclared_tabview_selector_gets_a_tab_selector() {
+    let code = r#"Manipulate[
+      Module[{g}, g = k + 1;
+        TabView[{"curve" -> Plot[g x, {x, 0, 1}],
+                 "table" -> Grid[{{g, g^2}}]}, Dynamic[view],
+          LabelStyle -> {Bold}]],
+      {{k, 2, "k"}, 1, 5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "view")
+      .expect("a tab selector control");
+    match &state.controls[idx] {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2"]);
+        assert_eq!(value_labels, &["curve", "table"]);
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+    assert!(state.graphics_handle.is_some(), "first tab is the plot");
+    let render = |view: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 2; view = {view};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    assert_ne!(render(1), render(2), "the tabs must draw different panes");
+    if let ControlState::Discrete { current_index, .. } =
+      &mut state.controls[idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
+  }
 }
 
 /// The output `render` re-laid out for a content area `width` wide

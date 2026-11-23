@@ -21892,7 +21892,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
   /// Regression: the widget always displayed the first pane's picture no
   /// matter what the hidden selector was set to — `promote_result_graphics`
   /// unconditionally promoted `TabView`'s first pane instead of resolving
-  /// the selector against the live state.
+  /// the selector against the live state. Also: a `TabView` ending a
+  /// compound `Module` body was never found, so its hidden selector had no
+  /// visible tab selector and could not change at all.
   #[test]
   fn hidden_selector_tab_view_switches_its_displayed_pane() {
     let code = "Manipulate[\n\
@@ -21913,21 +21915,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
       state.graphics_handle.is_some(),
       "the initial pane must draw"
     );
-    // The hidden `tab` selector is tracked state, not a visible control.
-    assert_eq!(
-      state.controls.len(),
-      1,
-      "only the k slider is a visible control, got {:?}",
-      state.controls
-    );
-    assert_eq!(state.state, vec![("tab".to_string(), "2".to_string())]);
-
-    // Flip the hidden selector and re-render through the same widget
-    // machinery the UI drives on a control change.
-    for (name, value) in &mut state.state {
-      if name == "tab" {
-        *value = "1".to_string();
+    // The hidden `tab` selector, found even though the `TabView` is the
+    // last statement of a compound `Module` body, is promoted to a visible
+    // tab selector (Studio has no tab strip of its own) on its initial tab.
+    let tab_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "tab")
+      .expect("the hidden tab selector must be promoted to a visible control");
+    match &mut state.controls[tab_idx] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(value_labels, &["trial".to_string(), "exact".to_string()]);
+        assert_eq!(*current_index, 1, "starts on the declared second tab");
+        // Pick the other tab and re-render through the same widget
+        // machinery the UI drives on a control change.
+        *current_index = 0;
       }
+      other => panic!("expected a Discrete tab selector, got {other:?}"),
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
