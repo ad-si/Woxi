@@ -2642,13 +2642,16 @@ mod graphics {
     }
 
     /// `Thickness -> t` in a primitive list styles like `Thickness[t]`
-    /// (and likewise for the other size/opacity directives).
+    /// (and likewise for the other size, opacity and dashing directives).
     #[test]
     fn option_rule_acts_as_directive() {
       for (rule, directive) in [
         ("Thickness -> 0.03", "Thickness[0.03]"),
         ("AbsoluteThickness -> 3", "AbsoluteThickness[3]"),
         ("Opacity -> 0.4", "Opacity[0.4]"),
+        ("Dashing -> {0.02, 0.01}", "Dashing[{0.02, 0.01}]"),
+        ("Dashing -> 0.05", "Dashing[0.05]"),
+        ("AbsoluteDashing -> {4, 2}", "AbsoluteDashing[{4, 2}]"),
       ] {
         assert_eq!(
           export_svg(&format!("Graphics[{{{rule}, Circle[{{0, 0}}, 1]}}]")),
