@@ -4683,9 +4683,9 @@ fn draw_axes_on_box_with_ticks(
     (z_origin, z_end, z_range, false), // z always runs from floor to ceiling
   ];
 
-  // An unboxed scene with an explicit `AxesOrigin` draws its three axes
-  // crossing at that point, each running the full extent of its range,
-  // instead of along the edges of the box.
+  // An explicit `AxesOrigin` draws the three axes crossing at that point
+  // (inside the box, when one is drawn), each running the full extent of
+  // its range, instead of along the edges of the box.
   let axes: [(Point3D, Point3D, (f64, f64), bool); 3] = match crossing {
     Some(at) => {
       // Data value -> normalized box coordinate along one axis.
@@ -14185,8 +14185,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "AxesOrigin" => {
-          // `{x, y, z}` where the axes cross; `Automatic` (or anything
-          // non-numeric) leaves that coordinate at the box's low end.
+          // `{x, y, z}` where the axes cross, inside the box when one is
+          // drawn; `Automatic` (or anything non-numeric) leaves that
+          // coordinate at the box's low end.
           if let Expr::List(items) = replacement.as_ref()
             && items.len() == 3
           {
@@ -14196,12 +14197,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 &evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone()),
               );
             }
-            axes_origin = Some(at);
+            // An all-`Automatic` origin keeps the axes on the box edges.
+            axes_origin = at.iter().any(Option::is_some).then_some(at);
           }
         }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
-          Expr::Identifier(s) if s == "True" => {
+          // `Axes -> Automatic` draws all three axes in 3D, the same as
+          // `Axes -> True`.
+          Expr::Identifier(s) if s == "True" || s == "Automatic" => {
             show_axes = true;
             axes_look.shown = [true; 3];
           }
@@ -15446,7 +15450,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (z3_min / axis_scale[2], z3_max / axis_scale[2]),
         &axes_labels,
         &tick_spec,
-        axes_origin.as_ref().filter(|_| !show_box),
+        axes_origin.as_ref(),
         axes_edge.as_ref(),
         &axes_look,
       )
@@ -16607,7 +16611,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
       &tick_spec,
-      axes_origin.as_ref().filter(|_| !show_box),
+      axes_origin.as_ref(),
       axes_edge.as_ref(),
       &axes_look,
     );
@@ -21016,8 +21020,13 @@ fn contour3d_render(
   // `f[x, y, z]` is True are drawn, cut cleanly along the region's edge.
   let mut region_function: Option<Expr> = None;
   // `BoundaryStyle -> s`: the surfaces' rims (where they meet the plot box
-  // or a `RegionFunction` cut) are outlined in `s`.
-  let mut boundary_style: Option<StyleState3D> = None;
+  // or a `RegionFunction` cut) are outlined in `s` — black by default, as
+  // in Plot3D; `BoundaryStyle -> None` turns the outline off.
+  let default_boundary = || StyleState3D {
+    color: Some((0, 0, 0)),
+    ..StyleState3D::default()
+  };
+  let mut boundary_style: Option<StyleState3D> = Some(default_boundary());
   // The original directive, kept for the extracted `Graphics3D` structure.
   let mut boundary_directive: Option<Expr> = None;
   // `ColorFunction -> f`: each facet colored by `f[x, y, z, value]`, the
@@ -21133,17 +21142,16 @@ fn contour3d_render(
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
           match &value {
-            Expr::Identifier(n)
-              if n == "None" || n == "Automatic" || n == "False" =>
-            {
+            Expr::Identifier(n) if n == "None" || n == "False" => {
               boundary_style = None;
               boundary_directive = None;
             }
+            Expr::Identifier(n) if n == "Automatic" => {
+              boundary_style = Some(default_boundary());
+              boundary_directive = None;
+            }
             other => {
-              let mut style = StyleState3D {
-                color: Some((0, 0, 0)),
-                ..StyleState3D::default()
-              };
+              let mut style = default_boundary();
               apply_3d_directive(other, &mut style);
               boundary_style = Some(style);
               boundary_directive = Some(other.clone());

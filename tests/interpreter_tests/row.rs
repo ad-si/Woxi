@@ -1245,6 +1245,34 @@ fn text_items_of_bold_row_are_plain() {
   assert!(line.contains("font-size=\"18\""), "size lost: {line}");
 }
 
+// A row of typeset layouts in a sized `Pane` is measured by how wide its
+// items are drawn, not by the length of their expressions' text: three
+// continued fractions that fit side by side stay on one line.
+#[test]
+fn pane_row_of_typeset_layouts_measures_drawn_width() {
+  clear_state();
+  let item =
+    "TraditionalForm[Column[{1 + 1/(1 + 1/(1 + 1/(1 + 1/(1 + 1/x))))}]]";
+  let row = format!("Row[{{{item}, {item}, {item}}}, \"  \"]");
+  let size = |svg: &str, nth: usize| -> (String, String) {
+    let tag = svg.match_indices("<svg ").nth(nth).unwrap().0;
+    let attr = |name: &str| {
+      let start = svg[tag..].find(&format!(" {name}=\"")).unwrap() + tag;
+      let rest = &svg[start + name.len() + 3..];
+      rest[..rest.find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  };
+  let own = interpret(&format!("ExportString[{row}, \"SVG\"]")).unwrap();
+  let paned = interpret(&format!(
+    "ExportString[Pane[{row}, ImageSize -> {{600, 400}}], \"SVG\"]"
+  ))
+  .unwrap();
+  let (own_w, own_h) = size(&own, 0);
+  assert!(own_w.parse::<f64>().unwrap() < 600.0, "{own_w}");
+  assert_eq!(size(&paned, 1), (own_w, own_h));
+}
+
 /// The x coordinate of the first `<text>` element with `text-anchor="start"`.
 fn first_start_text_x(svg: &str) -> f64 {
   svg

@@ -23017,9 +23017,9 @@ fn style_form_name_as_wrapper(expr: &Expr) -> Option<Expr> {
   })
 }
 
-/// A number format around a `Style` typesets as the style around the
-/// formatted number: `NumberForm[Style[x, Red], {4, 2}]` draws `x` to two
-/// decimals in red. `None` for anything else.
+/// A number format around a `Style` (or a one-argument `Text`) typesets as
+/// that wrapper around the formatted number: `NumberForm[Style[x, Red],
+/// {4, 2}]` draws `x` to two decimals in red. `None` for anything else.
 pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
@@ -23041,6 +23041,22 @@ pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
   else {
     return None;
   };
+  // `Text[expr]` typesets as `expr` itself, so a number format around it
+  // formats the wrapped number: `PaddedForm[Text[Style[1, Blue]], 3]`
+  // draws a padded blue `1`, not the flattened `Text[1]`.
+  if style == "Text" && style_args.len() == 1 {
+    return Some(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: name.clone(),
+        args: std::iter::once(style_args[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      }]
+      .into(),
+    });
+  }
   if style != "Style" || style_args.is_empty() {
     return None;
   }
@@ -24348,6 +24364,11 @@ fn factorial_operand_parenthesized(expr: &Expr) -> bool {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
+  // Measure the same normalized form `expr_to_svg_markup` draws (a number
+  // format hoisted out of its `Style`/`Text`), not the raw wrapper text.
+  if let Some(styled) = normalize_display_style(expr) {
+    return estimate_display_width(&styled);
+  }
   if let Some((base, exp)) = as_power(expr) {
     // `Subscript[x, i]^k` stacks the exponent over the index.
     if let Expr::FunctionCall { name, args } = base
@@ -31344,10 +31365,16 @@ fn traditional_inline_box_content_svg(
   {
     return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   }
+  // The style wrappers around the form (`Style[TraditionalForm[1], Blue,
+  // Bold]`) are typeset with it, so their color and weight reach the text.
+  let body = match styled {
+    Some(outer) => restyle_innermost(outer, content, &args[0]),
+    None => args[0].clone(),
+  };
   let boxes = if name == "StandardForm" {
-    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&body)
   } else {
-    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(&args[0])
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(&body)
   };
   let source = crate::syntax::expr_to_string(&boxes);
   // A two-dimensional box — a stacked fraction, a radical, a binomial's
@@ -31377,6 +31404,25 @@ fn traditional_inline_box_content_svg(
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// `outer`, a run of style wrappers whose innermost content is `inner`,
+/// with that content replaced by `replacement`.
+fn restyle_innermost(outer: &Expr, inner: &Expr, replacement: &Expr) -> Expr {
+  if std::ptr::eq(outer, inner) {
+    return replacement.clone();
+  }
+  match outer {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      let mut new_args = args.to_vec();
+      new_args[0] = restyle_innermost(&args[0], inner, replacement);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => replacement.clone(),
+  }
 }
 
 /// The rendered SVG of a grid cell that is a graphic, and its natural
@@ -31520,6 +31566,14 @@ fn graphic_content_anchor(cell: &Expr, height: f64) -> f64 {
 }
 
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
+  // `TextGrid[…]` is effectively `Text[Grid[…]]`: as an item it is laid out
+  // in the proportional text face, exactly as it is on its own.
+  if let Expr::FunctionCall { name, args } = cell
+    && name == "TextGrid"
+    && !args.is_empty()
+  {
+    return grid_cell_graphic(&call1("Text", call("Grid", args.to_vec())));
+  }
   if let Some(svg) = traditional_inline_box_cell_svg(cell) {
     return parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h));
   }
@@ -40960,7 +41014,11 @@ fn column_layout_svg(
     .collect();
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
-  let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
+  // A ruled column keeps the grid's edge offset of 0.28 em between its
+  // items and the frame, as the FrontEnd's `GridBox` does: a 350 pt pane
+  // in `Column[…, Frame -> All]` is framed about 358 pt wide, so it still
+  // fits a 360 pt `Pane` around it.
+  let frame_padding = if frame_all { 0.28 * font_size } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
   let svg_w = total_width.ceil() as u32;
@@ -41059,13 +41117,15 @@ fn column_layout_svg(
         height: ch,
         ..
       } => {
+        // `total_width` already holds the frame padding on both sides, so
+        // a centered item sits in the middle of it and a right-aligned one
+        // against the padding on the right.
         let margin = if text_layout(i) { edge_pad } else { 0.0 };
-        let x_off: f64 = frame_padding
-          + match alignment {
-            "middle" => (total_width - cw) / 2.0,
-            "end" => total_width - cw - margin,
-            _ => margin,
-          };
+        let x_off: f64 = match alignment {
+          "middle" => (total_width - cw) / 2.0,
+          "end" => total_width - frame_padding - cw - margin,
+          _ => frame_padding + margin,
+        };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
@@ -43635,11 +43695,16 @@ pub(crate) fn clip_svg_to_pane_box(
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
-  // cutting it off, keeping its aspect ratio.
+  // cutting it off, keeping its aspect ratio. The Pane still keeps its
+  // declared box, with the shrunk picture placed in it by the alignment:
+  // `Pane[ListPlot[…], {350, 150}]` is 350 wide, not as narrow as the plot.
   if let Some(scaled) =
     shrink_scalable_svg(svg, natural_w, natural_h, width, height, auto_sized)
   {
-    return scaled;
+    let (scaled_w, scaled_h) = parse_svg_wh(&scaled);
+    return place_in_pane_box(
+      &scaled, scaled_w, scaled_h, width, height, align,
+    );
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
   // the box (keeping its aspect ratio) instead of cutting it off. The
@@ -48981,6 +49046,36 @@ fn collect_display_locator_pane_vars(
   let mut found = Vec::new();
   walk(expr, &mut found);
   found
+}
+
+/// The write-back callback of a 2D control with a step: it stores the
+/// candidate point `#` snapped to the `step` grid that starts at the
+/// `origin` corner, in each coordinate `min + Round[c - min, step]`.
+fn slider2d_step_callback(
+  name: &str,
+  origin: (f64, f64),
+  step: (f64, f64),
+) -> String {
+  let num = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      format!("{}", v as i64)
+    } else {
+      format!("{v:?}")
+    }
+  };
+  let axis = |k: usize, min: f64, step: f64| {
+    format!(
+      "{} + Round[#[[{k}]] - ({}), {}]",
+      num(min),
+      num(min),
+      num(step)
+    )
+  };
+  format!(
+    "({name} = {{{}, {}}}) &",
+    axis(1, origin.0, step.0),
+    axis(2, origin.1, step.1)
+  )
 }
 
 /// Whether `expr` is a `Slider2D[…]` call.
@@ -57156,6 +57251,15 @@ fn parse_manipulate_control(
         Some((a, b)) => (a, b),
         None => (x_min, y_min),
       };
+    // A third bound is the step (`{{u, …}, {3, 2}, {1000, 1000}, {1, 1}}`):
+    // a dragged point snaps to the grid it spans from the minimum corner,
+    // so a unit step binds an integer pair, as in Wolfram.
+    let step = bounds.get(2).and_then(|b| {
+      list2_f64(b).or_else(|| eval_manipulate_bound(b).map(|(v, _)| (v, v)))
+    });
+    let write_callback = step
+      .filter(|(sx, sy)| *sx > 0.0 && *sy > 0.0)
+      .map(|(sx, sy)| slider2d_step_callback(&name, (x_min, y_min), (sx, sy)));
     return Some(ParsedControl::Visible {
       control: ManipulateControl::Slider2D {
         name,
@@ -57166,7 +57270,7 @@ fn parse_manipulate_control(
         x_initial,
         y_initial,
         label,
-        write_callback: None,
+        write_callback,
         real: false,
         exact_initial: false,
       },

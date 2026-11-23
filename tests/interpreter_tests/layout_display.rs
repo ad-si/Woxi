@@ -1670,6 +1670,29 @@ mod layout_display {
     let (y, h) = (attr(nested, "y"), attr(nested, "height"));
     assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
   }
+
+  /// Regression: the prime marks of a typeset derivative (`T″(a)`) were
+  /// measured with the generic fallback advance, more than twice their real
+  /// width, leaving a wide gap before the argument's parenthesis.
+  #[test]
+  fn derivative_primes_take_their_own_narrow_width() {
+    for (order, primes) in [(1, "′"), (2, "′′")] {
+      let svg = svg_of(&format!(
+        "Text@TraditionalForm@Grid[{{{{D[T[a], {{a, {order}}}]}}}}]"
+      ));
+      let marks = format!(">{primes}</text>");
+      let at = svg.find(&marks).expect("primes are typeset");
+      let rest = &svg[at..];
+      let open = rest.find("translate(").expect("argument follows") + 10;
+      let x: f64 = rest[open..].split(',').next().unwrap().parse().unwrap();
+      // `T` advances about 7.8; each prime adds about 2.1 at script size.
+      let expected = 7.8 + 2.15 * order as f64;
+      assert!(
+        (x - expected).abs() < 1.0,
+        "order {order}: argument starts at {x}, expected about {expected}"
+      );
+    }
+  }
 }
 
 #[test]
@@ -2039,6 +2062,105 @@ mod text_in_fixed_panes {
     assert_eq!(
       line_widths(&svg_of("Style[HoldForm[4]/HoldForm[66], 70]")),
       vec![4.0]
+    );
+  }
+}
+
+/// The `(x, y)` positions and contents of an SVG's `<text>` labels.
+fn svg_text_cells(svg: &str) -> Vec<(String, String, String)> {
+  svg
+    .split("<text")
+    .skip(1)
+    .filter_map(|chunk| {
+      let attr = |name: &str| {
+        let start = chunk.find(&format!(" {name}=\""))? + name.len() + 3;
+        let len = chunk[start..].find('"')?;
+        Some(chunk[start..start + len].to_string())
+      };
+      let body_start = chunk.find('>')? + 1;
+      let body_len = chunk[body_start..].find('<')?;
+      Some((
+        attr("x")?,
+        attr("y")?,
+        chunk[body_start..body_start + body_len].to_string(),
+      ))
+    })
+    .collect()
+}
+
+/// A `TableForm` row that mixes plain cells with list cells lays the list
+/// cells out as columns of their own: a one-element `{x}` shows as a plain
+/// `x` (the braces were drawn before), and the table is laid out exactly
+/// like the same table with the plain values.
+#[test]
+fn tableform_mixed_row_lays_out_single_element_list_cells_plainly() {
+  clear_state();
+  let nested = interpret(
+    r#"ExportString[TableForm[{{0, {2500.}, 150.}, {1, {2472.}, 154.5}}, TableSpacing -> {0, 1}], "SVG"]"#,
+  )
+  .unwrap();
+  let flat = interpret(
+    r#"ExportString[TableForm[{{0, 2500., 150.}, {1, 2472., 154.5}}, TableSpacing -> {0, 1}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(!svg_text_cells(&nested).iter().any(|c| c.2.contains('{')));
+  assert_eq!(svg_text_cells(&nested), svg_text_cells(&flat));
+}
+
+/// A longer list cell in a mixed row runs down its column, the plain cells
+/// of the row sitting on its first line.
+#[test]
+fn tableform_mixed_row_runs_list_cells_down_the_column() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[TableForm[{{a, {b, c}, d}, {e, {f}, g}}], "SVG"]"#,
+  )
+  .unwrap();
+  let cells = svg_text_cells(&svg);
+  let pos = |s: &str| {
+    let Some(c) = cells.iter().find(|c| c.2 == s) else {
+      panic!("no cell {s} in {cells:?}");
+    };
+    (c.0.parse::<f64>().unwrap(), c.1.parse::<f64>().unwrap())
+  };
+  let (a, b, c, d, e) = (pos("a"), pos("b"), pos("c"), pos("d"), pos("e"));
+  // `b` and `c` share a column, `c` below `b`.
+  assert_eq!(b.0, c.0);
+  assert!(c.1 > b.1);
+  // `a`, `b` and `d` share the first line; the next row starts below `c`.
+  assert_eq!(a.1, b.1);
+  assert_eq!(d.1, b.1);
+  assert!(e.1 > c.1);
+  assert!(!cells.iter().any(|c| c.2.contains('{')));
+}
+
+/// A fixed-size `Pane` is a layout box of its own: an automatically sized
+/// plot in it is shrunk to fill the box even when the Pane sits in a `Grid`
+/// (it was drawn at the grid's reduced half size instead), and the Pane
+/// keeps its declared size.
+#[test]
+fn fixed_pane_in_grid_sizes_its_plot_to_the_box() {
+  clear_state();
+  for code in [
+    r#"ExportString[Pane[Plot[x, {x, 0, 1}], ImageSize -> {300, 350}], "SVG"]"#,
+    r#"ExportString[Grid[{{Pane[Plot[x, {x, 0, 1}], ImageSize -> {300, 350}]}}], "SVG"]"#,
+    r#"ExportString[Column[{Pane[Plot[x, {x, 0, 1}], {300, 350}]}], "SVG"]"#,
+  ] {
+    let svg = interpret(code).unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"300\" height=\"350\""),
+      "{code}: pane box not 300x350: {}",
+      &svg[..svg.len().min(200)]
+    );
+    // The plot itself (its 3600-wide canvas) is drawn 300 wide.
+    let plot = svg
+      .split("<svg")
+      .find(|s| s.contains("viewBox=\"0 0 3600"))
+      .unwrap_or_else(|| panic!("{code}: no plot in output"));
+    assert!(
+      plot.contains("width=\"300"),
+      "{code}: plot not 300 wide: {}",
+      &plot[..plot.len().min(200)]
     );
   }
 }
