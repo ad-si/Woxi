@@ -415,3 +415,216 @@ pub fn show_legend_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   evaluate_expr_to_expr(&shown)
 }
+
+/// The plots the package teaches its `PlotLegend` option.
+const LEGEND_PLOTS: &[&str] = &[
+  "Plot",
+  "ListPlot",
+  "ListLinePlot",
+  "ParametricPlot",
+  "PolarPlot",
+  "LogPlot",
+  "LogLinearPlot",
+  "LogLogPlot",
+  "ListLogPlot",
+  "ListLogLinearPlot",
+  "ListLogLogPlot",
+];
+
+/// The `Legend` options a plot with `PlotLegend` hands on to its legend.
+const LEGEND_OPTIONS: &[&str] = &[
+  "LegendBackground",
+  "LegendBorder",
+  "LegendLabel",
+  "LegendLabelSpace",
+  "LegendPosition",
+  "LegendShadow",
+  "LegendSize",
+  "LegendTextSpace",
+];
+
+/// The name `name` stands for, if it is the package's symbol `short`: its
+/// qualified name, or the bare one a read resolves to once the package is
+/// on `$ContextPath`. (`LegendLabel` is a System symbol, which the package
+/// reads as well.)
+fn is_package_symbol(pattern: &Expr, short: &str) -> bool {
+  match pattern {
+    Expr::Identifier(name) => {
+      name == short
+        || name
+          .strip_prefix("PlotLegends`")
+          .is_some_and(|rest| rest == short)
+    }
+    _ => false,
+  }
+}
+
+fn rule_parts(e: &Expr) -> Option<(&Expr, &Expr)> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement)),
+    _ => None,
+  }
+}
+
+/// The color of the `k`-th curve in the plots the package was written
+/// for: hues stepping by `Sqrt[5] - 2` from `0.67`, at saturation and
+/// brightness `0.6`. The legend keys keep these colors whatever the plot
+/// itself draws today.
+fn legacy_curve_style(k: usize) -> Expr {
+  let hue = (0.67 + k as f64 * (5f64.sqrt() - 2.0)).fract();
+  call("Hue", vec![real(hue), real(0.6), real(0.6)])
+}
+
+/// The `k`-th entry of a per-dataset setting: a list is cycled through,
+/// anything else applies to every dataset.
+fn nth_setting(value: &Expr, k: usize) -> Expr {
+  match value {
+    Expr::List(items) if !items.is_empty() => items[k % items.len()].clone(),
+    other => other.clone(),
+  }
+}
+
+/// `plot[…, PlotLegend -> {label1, …}, legendOpts…]` once the package is
+/// loaded: the plot without those options, under `ShowLegend` with one row
+/// per label. Each row's key is a short line in the curve's style (a point
+/// for a `ListPlot` dataset that is not joined); the `Legend` options given
+/// to the plot style the legend, and an automatic size gives each row 0.3
+/// of the frame's height in a box 0.8 wide, shrunk to fit a 0.8 square.
+pub fn plot_with_legend(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if !LEGEND_PLOTS.contains(&name) {
+    return None;
+  }
+  let legend_at = args.iter().position(|a| {
+    rule_parts(a).is_some_and(|(p, _)| is_package_symbol(p, "PlotLegend"))
+  })?;
+  let mut plot_args = Vec::new();
+  let mut legend_options = Vec::new();
+  for (i, arg) in args.iter().enumerate() {
+    match rule_parts(arg) {
+      Some(_) if i == legend_at => {}
+      // A second `PlotLegend` is shadowed by the first.
+      Some((p, _)) if is_package_symbol(p, "PlotLegend") => {}
+      Some((p, _))
+        if LEGEND_OPTIONS.iter().any(|o| is_package_symbol(p, o)) =>
+      {
+        legend_options.push(arg.clone());
+      }
+      _ => plot_args.push(arg.clone()),
+    }
+  }
+  Some(build_plot_legend(
+    name,
+    args,
+    legend_at,
+    &plot_args,
+    legend_options,
+  ))
+}
+
+fn build_plot_legend(
+  name: &str,
+  args: &[Expr],
+  legend_at: usize,
+  plot_args: &[Expr],
+  mut legend_options: Vec<Expr>,
+) -> Result<Expr, InterpreterError> {
+  let (_, labels) = rule_parts(&args[legend_at]).unwrap();
+  let labels = match evaluate_expr_to_expr(labels)? {
+    Expr::List(ref items) => items.to_vec(),
+    single => vec![single],
+  };
+  let plot = evaluate_expr_to_expr(&call(name, plot_args.to_vec()))?;
+  if labels.is_empty() {
+    return Ok(plot);
+  }
+  let setting = |option: &str| -> Option<Expr> {
+    plot_args.iter().rev().find_map(|a| {
+      let (p, r) = rule_parts(a)?;
+      matches!(p, Expr::Identifier(n) if n == option)
+        .then(|| evaluate_expr_to_expr(r).unwrap_or_else(|_| r.clone()))
+    })
+  };
+  let styles = setting("PlotStyle")
+    .filter(|s| !matches!(s, Expr::Identifier(n) if n == "Automatic"));
+  let joined = setting("Joined");
+  let points_by_default = name.starts_with("List") && name != "ListLinePlot";
+  let rows: Vec<Expr> = labels
+    .into_iter()
+    .enumerate()
+    .map(|(k, label)| {
+      let style = match &styles {
+        Some(s) => nth_setting(s, k),
+        None => legacy_curve_style(k),
+      };
+      let as_point = points_by_default
+        && !matches!(
+          joined.as_ref().map(|j| nth_setting(j, k)),
+          Some(Expr::Identifier(ref b)) if b == "True"
+        );
+      let mark = if as_point {
+        call("Point", vec![point(0.5, 0.0)])
+      } else {
+        call(
+          "Line",
+          vec![Expr::List(vec![point(0.0, 0.0), point(1.0, 0.0)].into())],
+        )
+      };
+      // The mark takes the middle half of its key box.
+      let key = call(
+        "Graphics",
+        vec![
+          Expr::List(vec![style, mark].into()),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AspectRatio".into())),
+            replacement: Box::new(Expr::Identifier("Full".into())),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("PlotRange".into())),
+            replacement: Box::new(Expr::List(
+              vec![point(-0.5, 1.5), point(-1.0, 1.0)].into(),
+            )),
+          },
+        ],
+      );
+      Expr::List(vec![key, label].into())
+    })
+    .collect();
+  let has_size = legend_options.iter().any(|o| {
+    rule_parts(o).is_some_and(|(p, _)| is_package_symbol(p, "LegendSize"))
+  });
+  if !has_size {
+    let (w, h): (f64, f64) = (0.8, 0.3 * rows.len() as f64);
+    let fit = (0.8 / w.max(h)).min(1.0);
+    legend_options.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("PlotLegends`LegendSize".into())),
+      replacement: Box::new(point(w * fit, h * fit)),
+    });
+  }
+  let mut legend = vec![Expr::List(rows.into())];
+  legend.extend(legend_options);
+  show_legend_ast(&[plot, Expr::List(legend.into())])
+}
+
+/// The legacy packages that announce on loading that they are obsolete.
+pub const OBSOLETE_PACKAGES: &[&str] = &["PlotLegends`", "VectorFieldPlots`"];
+
+/// `General::obspkg`, printed each time an obsolete package is read.
+pub fn announce_obsolete_package(ctx: &str) {
+  if OBSOLETE_PACKAGES.contains(&ctx) {
+    crate::emit_message_to_stdout(&format!(
+      "General::obspkg: {ctx} is now obsolete. The legacy version being \
+       loaded may conflict with current functionality. See the Compatibility \
+       Guide for updating information."
+    ));
+  }
+}

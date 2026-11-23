@@ -11381,10 +11381,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
-  /// `TraditionalForm` at a large size. The widget shows it typeset
-  /// (subscripts, operator, font size), like an output cell, instead of the
-  /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
-  /// copied from any specific Demonstration.
+  /// `TraditionalForm` at a large size, in a fixed-size `Pane`. The widget
+  /// shows it typeset (subscripts, operator, font size) in the pane's box,
+  /// like an output cell, instead of the raw `TraditionalForm[Infix[…]]`
+  /// source text. Independently written, not copied from any specific
+  /// Demonstration.
   #[test]
   fn manipulate_typesets_traditional_form_infix_sum() {
     let code = r#"Manipulate[
@@ -11397,21 +11398,13 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    // The fixed-size `Pane` is drawn as its 500×200 picture holding the
-    // typeset formula; without one the formula is a typeset text result.
-    let svg = match state.graphics_handle.as_ref().map(|h| h.data()) {
-      Some(iced::advanced::svg::Data::Bytes(bytes)) => {
-        String::from_utf8_lossy(bytes).into_owned()
-      }
-      _ => {
-        assert!(state.typeset_handle.is_some());
-        state
-          .typeset_output
-          .clone()
-          .expect("the textual result is typeset")
-      }
-    };
-    assert!(svg.contains("width=\"500\" height=\"200\""), "{svg}");
+    // The fixed-size `Pane` is drawn as a picture of that size, its
+    // content typeset inside it.
+    let svg = state.current_svg().expect("the result is drawn");
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "the pane's box: {svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
@@ -11563,7 +11556,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         assert_eq!(current, "RGBColor[0, 0, 0]");
         assert_eq!(
           *position, 0.0,
-          "the handle defaults to position 0 even though black isn't on the gradient"
+          "black has no hue, so its handle sits at the start of the gradient"
         );
       }
       other => panic!("expected a Color control, got {other:?}"),
@@ -11597,6 +11590,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         assert_eq!(current, "RGBColor[1, 0, 0]");
       }
       other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// A color control's handle starts at the hue of its initial color, so
+  /// the handle of a green `ColorSetter` sits a third of the way along the
+  /// rainbow bar rather than at its red start, while the bound variable
+  /// keeps the spec's literal color. Grays have no hue and start at 0.
+  /// Regression: every handle started at position 0 whatever its color.
+  #[test]
+  fn color_control_handle_starts_at_the_initial_hue() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[{a, b, c, d, e}, {{a, Green, "a"}, Green, ControlType -> ColorSetter}, {{b, Blue, "b"}, ColorSlider}, {{c, RGBColor[1, 0.5, 0], "c"}, ColorSetter}, {{d, GrayLevel[0], "d"}, GrayLevel[0], ControlType -> ColorSetter}, {{e, Hue[0.8, 0.5, 0.5], "e"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("color controls should build a ManipulateState");
+    let handles: Vec<(String, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Color {
+          current, position, ..
+        } => (current.clone(), *position),
+        other => panic!("expected a Color control, got {other:?}"),
+      })
+      .collect();
+    let expected = [
+      ("RGBColor[0, 1, 0]", 1.0 / 3.0),
+      ("RGBColor[0, 0, 1]", 2.0 / 3.0),
+      ("RGBColor[1, 0.5, 0]", 1.0 / 12.0),
+      ("GrayLevel[0]", 0.0),
+      ("Hue[0.8, 0.5, 0.5]", 0.8),
+    ];
+    assert_eq!(handles.len(), expected.len());
+    for ((current, position), (want_current, want_position)) in
+      handles.iter().zip(expected)
+    {
+      assert_eq!(current, want_current);
+      assert!(
+        (position - want_position).abs() < 1e-9,
+        "{current}: handle at {position}, expected {want_position}"
+      );
     }
   }
 
@@ -21899,7 +21934,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
   /// Regression: the widget always displayed the first pane's picture no
   /// matter what the hidden selector was set to — `promote_result_graphics`
   /// unconditionally promoted `TabView`'s first pane instead of resolving
-  /// the selector against the live state.
+  /// the selector against the live state. Also: a `TabView` ending a
+  /// compound `Module` body was never found, so its hidden selector had no
+  /// visible tab selector and could not change at all.
   #[test]
   fn hidden_selector_tab_view_switches_its_displayed_pane() {
     let code = "Manipulate[\n\
@@ -21920,21 +21957,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
       state.graphics_handle.is_some(),
       "the initial pane must draw"
     );
-    // The hidden `tab` selector is tracked state, not a visible control.
-    assert_eq!(
-      state.controls.len(),
-      1,
-      "only the k slider is a visible control, got {:?}",
-      state.controls
-    );
-    assert_eq!(state.state, vec![("tab".to_string(), "2".to_string())]);
-
-    // Flip the hidden selector and re-render through the same widget
-    // machinery the UI drives on a control change.
-    for (name, value) in &mut state.state {
-      if name == "tab" {
-        *value = "1".to_string();
+    // The hidden `tab` selector, found even though the `TabView` is the
+    // last statement of a compound `Module` body, is promoted to a visible
+    // tab selector (Studio has no tab strip of its own) on its initial tab.
+    let tab_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "tab")
+      .expect("the hidden tab selector must be promoted to a visible control");
+    match &mut state.controls[tab_idx] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(value_labels, &["trial".to_string(), "exact".to_string()]);
+        assert_eq!(*current_index, 1, "starts on the declared second tab");
+        // Pick the other tab and re-render through the same widget
+        // machinery the UI drives on a control change.
+        *current_index = 0;
       }
+      other => panic!("expected a Discrete tab selector, got {other:?}"),
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
@@ -33371,11 +33414,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         y,
         ..
       } => {
-        // No explicit corner bounds were given, so the range must fall back
-        // to a box padded by at least 1 unit around the initial point {2,2}
-        // (a degenerate single-point bounding box pads by a full unit).
+        // No explicit corner bounds were given, so the (invisible) Locator
+        // moves over the picture the body draws: the 7×7 lattice of
+        // squares reaching 0.4 past the outer points.
         assert_eq!((*x, *y), (2.0, 2.0));
-        assert_eq!((*x_min, *x_max, *y_min, *y_max), (1.0, 3.0, 1.0, 3.0));
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-0.4, 6.4, -0.4, 6.4));
       }
       other => panic!("expected `query` as a Slider2D stand-in, got {other:?}"),
     }

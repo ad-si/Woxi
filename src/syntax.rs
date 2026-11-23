@@ -428,6 +428,8 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F51F}' => "\u{29F4}",              // RuleDelayed: ⧴
     '\u{F523}' => "\u{21D2}",              // Implies: ⇒
     '\u{F520}' => "\u{25A1}",              // Square: □
+    '\u{F527}' => "\u{25A0}",              // SelectionPlaceholder: ■
+    '\u{F528}' => "\u{25A1}",              // Placeholder: □
     '\u{F525}' => "\u{2192}",              // ShortRightArrow: →
     '\u{F526}' => "\u{2190}",              // ShortLeftArrow: ←
     '\u{F52A}' => "\u{2191}",              // ShortUpArrow: ↑
@@ -17167,6 +17169,27 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
       indices.reverse();
       format_part_brackets(base, &expr_to_input_form(base), &indices)
+    }
+    // `x // f` is `f[x]`: written as that call, its argument in InputForm
+    // (the OutputForm renderer would print a `Row[…]` inside it as plain
+    // juxtaposed text, which re-parses as a product). A symbol head goes
+    // through the call printing, so `x // TraditionalForm` reads like
+    // `TraditionalForm[x]`.
+    Expr::Postfix { expr: arg, func } => {
+      if let Expr::Identifier(name) = func.as_ref() {
+        expr_to_input_form(&Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![arg.as_ref().clone()].into(),
+        })
+      } else {
+        let func_str = expr_to_input_form(func);
+        let func_display = if curried_head_needs_parens(func.as_ref()) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
+        format!("{func_display}[{}]", expr_to_input_form(arg))
+      }
     }
     // `Sequence[a, b]` keeps its head and quoted children in InputForm (the
     // OutputForm renderer concatenates the elements, which would also flatten
