@@ -783,11 +783,24 @@ pub struct DrawMolecule {
   pub atoms: Vec<(String, i64, Option<i64>)>,
   /// `(atom_i, atom_j, bond_kind)` with 0-based indices into `atoms`.
   pub bonds: Vec<(usize, usize, &'static str)>,
+  /// 1-based index of each drawn atom in the full molecule (heavy atoms keep
+  /// their `Molecule` position, materialized hydrogens follow them), as
+  /// `AtomLabels -> "AtomIndex"` reports it.
+  pub index: Vec<usize>,
 }
 
 /// Build the drawable (skeletal) view of a canonical molecule expression.
 /// Returns `None` when `expr` is not a valid `Molecule[{atoms…}, {bonds…}]`.
 pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
+  drawable_molecule_with(expr, false)
+}
+
+/// Like [`drawable_molecule`], but with `all_atom` set every hydrogen is kept
+/// (the `"AllAtom"` plot theme and the 3-D ball-and-stick model).
+pub fn drawable_molecule_with(
+  expr: &Expr,
+  all_atom: bool,
+) -> Option<DrawMolecule> {
   let mut graph = graph_from_molecule_expr(expr)?;
   // Materialize implicit hydrogens (SMILES-sourced molecules keep them
   // implicit) so the skeletal reduction below sees the full connectivity.
@@ -805,7 +818,8 @@ pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
   // Decide which atoms survive into the skeletal drawing.
   let mut keep = vec![true; n];
   for i in 0..n {
-    if is_h(i)
+    if !all_atom
+      && is_h(i)
       && let Some(&j) = neighbors[i].first()
       && graph.atoms[j].symbol == "C"
       && heavy_degree(j) >= 1
@@ -816,10 +830,12 @@ pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
 
   let mut new_index = vec![usize::MAX; n];
   let mut atoms = Vec::new();
+  let mut index = Vec::new();
   for (i, atom) in graph.atoms.iter().enumerate() {
     if keep[i] {
       new_index[i] = atoms.len();
       atoms.push((atom.symbol.clone(), atom.formal_charge, atom.mass_number));
+      index.push(i + 1);
     }
   }
   let mut bonds = Vec::new();
@@ -828,7 +844,11 @@ pub fn drawable_molecule(expr: &Expr) -> Option<DrawMolecule> {
       bonds.push((new_index[*a], new_index[*b], kind.as_str()));
     }
   }
-  Some(DrawMolecule { atoms, bonds })
+  Some(DrawMolecule {
+    atoms,
+    bonds,
+    index,
+  })
 }
 
 /// Resolve a molecule *argument*: either an evaluated canonical
