@@ -117,10 +117,15 @@ fn scale(lo: &Expr, hi: &Expr, divisions: Option<(i128, i128)>) -> Scale {
     try_eval_to_f64(hi).unwrap_or(1.0),
   );
   let span = hi_f - lo_f;
+  // A reversed range (`{500, -1000}`) runs its scale from the larger end:
+  // the divisions are those of the ascending range, placed by the given
+  // order.
+  let (small, large) = if span < 0.0 { (hi, lo) } else { (lo, hi) };
+  let (min_f, max_f) = (lo_f.min(hi_f), lo_f.max(hi_f));
   let inside =
-    |v: f64| v >= lo_f - 1e-9 * span.abs() && v <= hi_f + 1e-9 * span.abs();
+    |v: f64| v >= min_f - 1e-9 * span.abs() && v <= max_f + 1e-9 * span.abs();
   let (major_n, minor_per) = divisions.unwrap_or((5, 4));
-  let all_major = find_divisions(lo, hi, major_n);
+  let all_major = find_divisions(small, large, major_n);
   let major: Vec<Expr> = all_major
     .iter()
     .filter(|t| try_eval_to_f64(t).is_some_and(inside))
@@ -128,7 +133,7 @@ fn scale(lo: &Expr, hi: &Expr, divisions: Option<(i128, i128)>) -> Scale {
     .collect();
   let major_f: Vec<f64> = major.iter().filter_map(try_eval_to_f64).collect();
   let gaps = all_major.len().saturating_sub(1).max(1) as i128;
-  let minor: Vec<f64> = find_divisions(lo, hi, gaps * minor_per)
+  let minor: Vec<f64> = find_divisions(small, large, gaps * minor_per)
     .iter()
     .filter_map(try_eval_to_f64)
     .filter(|&v| inside(v))
@@ -138,7 +143,7 @@ fn scale(lo: &Expr, hi: &Expr, divisions: Option<(i128, i128)>) -> Scale {
   let integral = major.iter().all(|t| matches!(t, Expr::Integer(_)));
   let step = major_f
     .windows(2)
-    .map(|w| w[1] - w[0])
+    .map(|w| (w[1] - w[0]).abs())
     .next()
     .unwrap_or(1.0);
   let d = decimals(step).max(1);
@@ -158,9 +163,11 @@ fn scale(lo: &Expr, hi: &Expr, divisions: Option<(i128, i128)>) -> Scale {
 }
 
 /// The values of a gauge's first argument: one or a list.
+/// Nested lists are flattened, so a value that came out of `expr /. sol`
+/// as `{x}` still gets its marker.
 fn values_of(e: &Expr) -> Vec<Option<f64>> {
   match e {
-    Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+    Expr::List(items) => items.iter().flat_map(values_of).collect(),
     other => vec![try_eval_to_f64(other)],
   }
 }
@@ -768,6 +775,47 @@ impl LinearScale<'_> {
   }
 }
 
+/// The shape of a linear gauge's value marker.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MarkerShape {
+  Triangle,
+  Bar,
+}
+
+/// The marker shape of each of `n` values: `GaugeMarkers -> "BarMarker"`
+/// (or a list of marker names, cycled) draws bars, anything else the
+/// default triangles.
+fn marker_shapes(args: &[Expr], n: usize) -> Vec<MarkerShape> {
+  let shape = |e: &Expr| match e {
+    Expr::String(s) if s == "BarMarker" => MarkerShape::Bar,
+    _ => MarkerShape::Triangle,
+  };
+  let shapes: Vec<MarkerShape> = match &option(args, "GaugeMarkers") {
+    Some(Expr::List(items)) => items.iter().map(shape).collect(),
+    Some(e) => vec![shape(e)],
+    None => Vec::new(),
+  };
+  (0..n)
+    .map(|i| {
+      shapes
+        .get(i % shapes.len().max(1))
+        .copied()
+        .unwrap_or(MarkerShape::Triangle)
+    })
+    .collect()
+}
+
+/// The fill of a linear gauge's face from `GaugeFaceStyle`: a named face
+/// (e.g. `"GlassRectangle"`) is a light gray panel, any other style fills
+/// the panel with it; unset, `Automatic` or `None` draws no face.
+fn linear_face(args: &[Expr]) -> Option<String> {
+  match &option(args, "GaugeFaceStyle")? {
+    Expr::Identifier(a) if a == "Automatic" || a == "None" => None,
+    Expr::String(_) => Some("GrayLevel[0.85]".to_string()),
+    e => Some(expr_to_source_form(e)),
+  }
+}
+
 /// `HorizontalGauge[value(s), {min, max}, opts]` / `VerticalGauge[…]`: a
 /// scale line with ticks and labels and a triangular pointer per value.
 pub fn linear_gauge_ast(
@@ -795,6 +843,13 @@ pub fn linear_gauge_ast(
     pt(p0.0, p0.1),
     pt(p1.0, p1.1)
   )];
+  if let Some(face) = linear_face(args) {
+    parts.push(format!(
+      "{{EdgeForm[None], {face}, Rectangle[{}, {}, RoundingRadius -> 0.05]}}",
+      pt(p0.0.min(p1.0), p0.1.min(p1.1)),
+      pt(p0.0.max(p1.0), p0.1.max(p1.1))
+    ));
+  }
   let scale_spec = LinearScale {
     place: &place,
     tick: if vertical { (-1.0, 0.0) } else { (0.0, 1.0) },
@@ -818,9 +873,25 @@ pub fn linear_gauge_ast(
   }
   let values = values_of(&args[0]);
   let colors = marker_colors(args, values.len());
-  for (v, color) in values.iter().zip(&colors) {
+  let shapes = marker_shapes(args, values.len());
+  for ((v, color), shape) in values.iter().zip(&colors).zip(&shapes) {
     let Some(v) = v else { continue };
     let t = ((v - lo_f) / (hi_f - lo_f)).clamp(0.0, 1.0);
+    if *shape == MarkerShape::Bar {
+      // A thin bar standing on the scale on the side the ticks are on.
+      let (a, b) = if vertical {
+        ((-0.08, t - 0.006), (0.0, t + 0.006))
+      } else {
+        ((t - 0.006, 0.0), (t + 0.006, 0.08))
+      };
+      parts.push(format!(
+        "{{Directive[{color}], Tooltip[Rectangle[{}, {}], {}]}}",
+        pt(a.0, a.1),
+        pt(b.0, b.1),
+        num(*v)
+      ));
+      continue;
+    }
     // The triangle points at the scale from the side the ticks are on.
     let (matrix, shift) = if vertical {
       ("{{0., -0.075}, {0.075, 0.}}", pt(-0.0375, t))
@@ -832,7 +903,100 @@ pub fn linear_gauge_ast(
       num(*v)
     ));
   }
+  if let Some(label) = gauge_label(args, &values) {
+    parts.push(label_text(&label, &place, vertical));
+  }
   Ok(Some(graphics(&parts.join(", "), args, false, GRAY_25)?))
+}
+
+/// Where a linear gauge's `GaugeLabels` go: beside the scale on one of its
+/// four sides, or over its middle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum LabelSide {
+  Top,
+  Bottom,
+  Left,
+  Right,
+  Center,
+}
+
+/// A linear gauge's `GaugeLabels`: the label (as WL source) and its side.
+/// `"Value"` shows the values; `None`, `Automatic` and `Full` show nothing
+/// here. `Placed[label, side]` picks the side, which is otherwise the
+/// bottom.
+fn gauge_label(
+  args: &[Expr],
+  values: &[Option<f64>],
+) -> Option<(String, LabelSide)> {
+  let spec = option(args, "GaugeLabels")?;
+  let (label, side) = match &spec {
+    Expr::FunctionCall { name, args: p }
+      if name == "Placed" && p.len() == 2 =>
+    {
+      let side = match &p[1] {
+        Expr::Identifier(s) => match s.as_str() {
+          "Top" | "Above" => LabelSide::Top,
+          "Bottom" | "Below" => LabelSide::Bottom,
+          "Left" | "Before" => LabelSide::Left,
+          "Right" | "After" => LabelSide::Right,
+          "Center" => LabelSide::Center,
+          _ => LabelSide::Bottom,
+        },
+        _ => LabelSide::Bottom,
+      };
+      (p[0].clone(), side)
+    }
+    other => (other.clone(), LabelSide::Bottom),
+  };
+  let text = match &label {
+    Expr::Identifier(s)
+      if matches!(s.as_str(), "None" | "Automatic" | "Full") =>
+    {
+      return None;
+    }
+    Expr::String(s) if s == "Value" => {
+      let shown: Vec<String> =
+        values.iter().flatten().map(|v| num(*v)).collect();
+      if shown.is_empty() {
+        return None;
+      }
+      format!("Row[{{{}}}, \"  \"]", shown.join(", "))
+    }
+    other => expr_to_source_form(other),
+  };
+  Some((text, side))
+}
+
+/// The `Text` primitive for a linear gauge's label, `side` of the scale.
+fn label_text(
+  (label, side): &(String, LabelSide),
+  place: &dyn Fn(f64, f64) -> (f64, f64),
+  vertical: bool,
+) -> String {
+  // The scale's ticks and their labels lie on the positive `across` side of
+  // a horizontal gauge and on the negative one of a vertical gauge, so the
+  // label clears them there.
+  let (along, across, offset, align) = match (side, vertical) {
+    (LabelSide::Top, false) => (0.5, 0.15, (0.0, 4.0), (0.0, -1.0)),
+    (LabelSide::Bottom, false) => (0.5, -0.15, (0.0, -4.0), (0.0, 1.0)),
+    (LabelSide::Left, false) => (-0.1, 0.0, (-4.0, 0.0), (1.0, 0.0)),
+    (LabelSide::Right, false) => (1.1, 0.0, (4.0, 0.0), (-1.0, 0.0)),
+    (LabelSide::Top, true) => (1.1, 0.0, (0.0, 4.0), (0.0, -1.0)),
+    (LabelSide::Bottom, true) => (-0.1, 0.0, (0.0, -4.0), (0.0, 1.0)),
+    (LabelSide::Left, true) => (0.5, -0.15, (-4.0, 0.0), (1.0, 0.0)),
+    (LabelSide::Right, true) => (0.5, 0.15, (4.0, 0.0), (-1.0, 0.0)),
+    (LabelSide::Center, _) => (0.5, 0.0, (0.0, 0.0), (0.0, 0.0)),
+  };
+  let (x, y) = place(along, across);
+  // An invisible point past the label keeps it inside the plot range.
+  let (ex, ey) = place(along + (along - 0.5) * 0.5, across * 2.0);
+  format!(
+    "{{Opacity[0], Point[{}]}}, Style[Text[{label}, Offset[{}, {}], {}], {GRAY_25}, {LINEAR_FONT}]",
+    pt(ex, ey),
+    pt(offset.0, offset.1),
+    pt(x, y),
+    pt(align.0, align.1)
+  )
 }
 
 /// The red, green, blue of a color expression, if it is one.

@@ -3418,6 +3418,120 @@ mod batch_unevaluated_wrappers_2 {
       "-Graphics-"
     );
   }
+  /// Regression: a reversed range `{max, min}` drew no ticks or labels.
+  #[test]
+  fn horizontal_gauge_reversed_range_draws_its_scale() {
+    let svg = interpret(
+      "ExportString[HorizontalGauge[-300, {500, -1000}, ScaleDivisions -> {10, 10}], \"SVG\"]",
+    )
+    .unwrap();
+    for l in ["-1000", "-600", "-200", "0", "400"] {
+      assert!(svg.contains(&format!(">{l}</text>")), "{l}: {svg}");
+    }
+    // The scale runs from 500 on the left to -1000 on the right.
+    let x_of = |l: &str| -> f64 {
+      let i = svg.find(&format!(">{l}</text>")).unwrap();
+      let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+      tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    assert!(x_of("400") < x_of("-1000"), "{svg}");
+  }
+
+  /// Regression: values that came out of `/. sol` as one-element lists
+  /// (`{x}`) were dropped instead of getting a marker.
+  #[test]
+  fn horizontal_gauge_flattens_nested_values() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    assert_eq!(
+      svg("HorizontalGauge[{2, {5}, {8}}, {0, 10}]"),
+      svg("HorizontalGauge[{2, 5, 8}, {0, 10}]")
+    );
+  }
+
+  /// `GaugeLabels` shows its label beside a linear gauge's scale: below by
+  /// default, above with `Placed[…, Top]`.
+  #[test]
+  fn linear_gauge_labels() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let y_of = |svg: &str, l: &str| -> f64 {
+      let i = svg.find(&format!(">{l}</text>")).unwrap();
+      let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+      tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    let below = svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> \"speed\"]");
+    let above =
+      svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> Placed[\"speed\", Top]]");
+    assert!(y_of(&below, "speed") > y_of(&below, "10"), "{below}");
+    assert!(y_of(&above, "speed") < y_of(&above, "10"), "{above}");
+    // Styled pieces keep their colors.
+    let styled = svg(
+      "HorizontalGauge[4, {0, 10}, GaugeLabels -> Placed[Row[{Style[\"a\", Red], Style[\"b\", Blue]}], Top]]",
+    );
+    assert!(styled.contains("rgb(255,0,0)"), "{styled}");
+    assert!(styled.contains("rgb(0,0,255)"), "{styled}");
+    // `None` shows nothing; `"Value"` shows the value.
+    assert_eq!(
+      svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> None]"),
+      svg("HorizontalGauge[4, {0, 10}]")
+    );
+    let value = svg("VerticalGauge[4.5, {0, 10}, GaugeLabels -> \"Value\"]");
+    assert!(value.contains(">4.5</text>"), "{value}");
+  }
+
+  /// `GaugeMarkers -> "BarMarker"` draws a thin bar instead of the
+  /// triangular pointer, `GaugeFaceStyle` fills a rounded face panel behind
+  /// the scale and `GaugeLabels -> Placed[label, Top]` titles the gauge.
+  #[test]
+  fn linear_gauge_bar_marker_face_and_label() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let blue_rect = |s: &str| {
+      s.split("<rect").skip(1).any(|r| {
+        r.split('>')
+          .next()
+          .unwrap()
+          .contains("fill=\"rgb(0,0,255)\"")
+      })
+    };
+    let gauge = svg(
+      "HorizontalGauge[{0.3, 0.7}, {0, 1}, GaugeMarkers -> \"BarMarker\", \
+       GaugeFaceStyle -> \"GlassRectangle\", GaugeStyle -> Blue, \
+       GaugeLabels -> Placed[\"speeds\", Top]]",
+    );
+    assert!(blue_rect(&gauge), "bar markers: {gauge}");
+    assert!(!gauge.contains("<polygon"), "no triangles: {gauge}");
+    assert!(gauge.contains("fill=\"rgb(217,217,217)\""), "face: {gauge}");
+    assert!(gauge.contains(">speeds</text>"), "label: {gauge}");
+
+    // A color face fills the panel with that color; a plain label sits on
+    // a vertical gauge too, and the default markers stay triangles.
+    let vertical = svg(
+      "VerticalGauge[7, {0, 10}, GaugeFaceStyle -> RGBColor[1, 0, 0], \
+       GaugeLabels -> \"level\"]",
+    );
+    assert!(vertical.contains("fill=\"rgb(255,0,0)\""), "{vertical}");
+    assert!(vertical.contains(">level</text>"), "{vertical}");
+
+    // Without the options there is no face and no label.
+    let plain = svg("HorizontalGauge[0.3, {0, 1}, GaugeStyle -> Blue]");
+    assert!(!blue_rect(&plain), "{plain}");
+    assert!(!plain.contains("rgb(217,217,217)"), "{plain}");
+  }
   #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
