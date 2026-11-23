@@ -53399,18 +53399,18 @@ fn resolve_choice_label(label: &Expr) -> Option<Expr> {
   fn has_user_symbol(e: &Expr) -> bool {
     match e {
       Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
-      Expr::List(items) => items.iter().any(has_user_symbol),
-      // `names[[3]]` — a part of a user list.
-      Expr::Part { expr, index } => {
-        has_user_symbol(expr) || has_user_symbol(index)
-      }
       // A call to a user-defined function (`reactionNames[1]`) also needs
       // resolving, not just calls whose arguments mention a user symbol.
-      Expr::FunctionCall { name, args } => {
-        !crate::evaluator::is_builtin_symbol(name)
-          || args.iter().any(has_user_symbol)
+      Expr::FunctionCall { name, .. }
+        if !crate::evaluator::is_builtin_symbol(name) =>
+      {
+        true
       }
-      _ => false,
+      // Any other form (`names[[3]]`, a lookup `k /. names`, an arithmetic
+      // label) needs resolving when some part of it names a user symbol.
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(has_user_symbol),
     }
   }
   if !has_user_symbol(label) {

@@ -19483,6 +19483,40 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn popup_menu_choice_labels_read_dynamic_lookups_in_hidden_state() {
+    use woxi::functions::graphics::DisplayNode;
+    // A display-area `PopupMenu[Dynamic[v], {k -> Dynamic[k /. names]}]`
+    // whose labels look each value up in a hidden `ControlType -> None`
+    // rule list must show the looked-up names, not the lookup's code.
+    let code = "Manipulate[{v, w}, \
+      Row[{PopupMenu[Dynamic[v], {0 -> Dynamic[0 /. names], \
+        1 -> Dynamic[1 /. names], None -> Dynamic[None /. names]}], \
+      PopupMenu[Dynamic[w], {2 -> Dynamic[names[[2, 2]]], \
+        3 -> Dynamic[StringJoin[\"x\", 3 /. names]]}]}], \
+      {{names, {None -> \"Rest\", 0 -> \"P\", 1 -> \"Q\", 2 -> \"R\", \
+        3 -> \"S\"}}, ControlType -> None}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("popup Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    let labels: Vec<Vec<String>> = collect_popups(&state.display_trees)
+      .iter()
+      .map(|p| {
+        let DisplayNode::Popup { choices, .. } = p else {
+          panic!("expected a Popup leaf, got {p:?}");
+        };
+        choices.iter().map(|(_, l)| l.clone()).collect()
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        vec!["P".to_string(), "Q".to_string(), "Rest".to_string()],
+        vec!["P".to_string(), "xS".to_string()],
+      ]
+    );
+  }
+
+  #[test]
   fn gray_scott_manipulate_steps_and_resets() {
     // End-to-end regression for the "Gray-Scott Reaction-Diffusion"
     // Demonstration: Row-grouped SetterBars, a reset Button, a Trigger
