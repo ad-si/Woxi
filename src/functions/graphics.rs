@@ -2946,7 +2946,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(k)
       if matches!(k.as_str(), "Thickness" | "AbsoluteThickness"
-        | "PointSize" | "AbsolutePointSize" | "Opacity")) =>
+        | "PointSize" | "AbsolutePointSize" | "Opacity" | "Dashing"
+        | "AbsoluteDashing")) =>
     {
       let Expr::Identifier(k) = pattern.as_ref() else {
         return false;
