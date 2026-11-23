@@ -35491,6 +35491,9 @@ pub fn combine_graphics_svgs_with_options(
   combine_svgs_grid(rows, &parse_layout_options(option_args))
 }
 
+/// The em of a `Grid`'s text, in points: what its `Spacings` count.
+const GRID_EM_POINTS: f64 = 14.0;
+
 /// Like [`combine_graphics_svgs_with_options`], for a `Grid`, `Column` or
 /// `Row` (not `GraphicsGrid`): without `Spacings` the cells are `gap`
 /// points apart whatever their size, as the front end spaces a table,
@@ -35503,7 +35506,17 @@ pub fn combine_layout_svgs(
 ) -> Option<String> {
   let mut opts = parse_layout_options(option_args);
   opts.row_align = row_align;
-  if !opts.spacings_explicit {
+  // A `Grid`'s numeric `Spacings` count ems of its 14 pt text (as for a
+  // grid of text cells), not the printer's points of `GraphicsGrid`:
+  // `Spacings -> {0, 1}` stacks two pictures one em apart.
+  let ems = |spec: SpacingSpec| match spec {
+    SpacingSpec::Points(s) => SpacingSpec::Points(s * GRID_EM_POINTS * 0.75),
+    scaled @ SpacingSpec::Scaled(_) => scaled,
+  };
+  if opts.spacings_explicit {
+    opts.h_spacing = ems(opts.h_spacing);
+    opts.v_spacing = ems(opts.v_spacing);
+  } else {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
     let gap = gap * 0.75;

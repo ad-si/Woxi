@@ -8380,6 +8380,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !is_traditional_matrix_form(&args[0])
         && distribute_format_over_tableform(&args[0]).is_none() =>
     {
+      // `Style[picture, Magnification -> m]` shows the picture `m` times
+      // its size, also as an item of a layout (a `Grid` or `Column` cell).
+      if let Some(Expr::Graphics { ref svg, .. }) =
+        crate::functions::graphics::magnified_picture(expr)
+      {
+        return svg.clone();
+      }
       // `Style[Framed[content, opts…], dirs…]`: the style is inherited by the
       // framed content, and the box keeps its frame. Typeset as styled text,
       // the frame was dropped and only the content's text was shown.

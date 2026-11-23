@@ -69126,6 +69126,53 @@ mod pane_layout {
       "{svg}"
     );
   }
+
+  /// Regression: a magnified picture inside a `Grid` (or `Column`) cell
+  /// kept its own size, so a slider driving the `Magnification` of one
+  /// tile of a layout changed nothing.
+  #[test]
+  fn magnification_scales_pictures_in_layout_cells() {
+    for layout in [
+      "Grid[{{Style[Graphics[Disk[], ImageSize -> 50], Magnification -> 2]}, \
+       {Graphics[Disk[], ImageSize -> 50]}}]",
+      "Column[{Style[Graphics[Disk[], ImageSize -> 50], Magnification -> 2], \
+       Graphics[Disk[], ImageSize -> 50]}]",
+    ] {
+      let svg = studio_svg(layout);
+      assert!(
+        svg.contains("width=\"100\" height=\"100\" viewBox=\"0 0 50 50\"")
+          || svg.contains("width=\"100.0\" height=\"100.0\""),
+        "{layout}: {svg}"
+      );
+    }
+    // A wrapped nested picture (`Graphics[g]` is just `g`) is magnified
+    // the same way.
+    let svg = studio_svg(
+      "Grid[{{Style[Graphics[Graphics[Disk[], ImageSize -> 50]], \
+       Magnification -> 2]}}]",
+    );
+    assert!(svg.starts_with("<svg width=\"100"), "{svg}");
+  }
+
+  /// A `Grid`'s numeric `Spacings` count ems (14 pt), for a grid of
+  /// pictures as for a grid of text. Regression: they were taken as
+  /// printer's points, so `Spacings -> 1` set two pictures barely a pixel
+  /// apart.
+  #[test]
+  fn grid_spacings_between_pictures_are_ems() {
+    let g = "Graphics[Disk[], ImageSize -> 50]";
+    for (spacings, w, h) in
+      [("0", 100, 100), ("1", 114, 114), ("{2, 0}", 128, 100)]
+    {
+      let svg = studio_svg(&format!(
+        "Grid[{{{{{g}, {g}}}, {{{g}, {g}}}}}, Spacings -> {spacings}]"
+      ));
+      assert!(
+        svg.starts_with(&format!("<svg width=\"{w}\" height=\"{h}\"")),
+        "Spacings -> {spacings}: {svg}"
+      );
+    }
+  }
 }
 
 mod show_plot_aspect_with_explicit_image_size {
