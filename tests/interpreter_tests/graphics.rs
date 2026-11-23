@@ -5143,6 +5143,51 @@ mod graphics {
       }
     }
 
+    /// A `Subsuperscript` in a picture label stacks its superscript right
+    /// above its subscript, as the front end sets a `SubsuperscriptBox`
+    /// (an ion label `SO₄` with `2-` over the `4`). It used to fold both
+    /// scripts into Unicode glyphs side by side (`SO₄²⁻`), even for digit
+    /// scripts, and wider scripts must still be pulled back by the narrower
+    /// one's width.
+    #[test]
+    fn text_stacks_subsuperscript_scripts() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Subsuperscript[\"SO\", \"4\", \"2-\"], Bold, 8], \
+         {0, 0}], Text[Row[{Subsuperscript[x, 1, 2], \" end\"}], {1, 0}], \
+         Text[Subsuperscript[\"N\", \"ab\", \"c\"], {2, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          ">SO<tspan baseline-shift=\"sub\" font-size=\"70%\">4</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"super\" font-size=\"70%\">\
+           2-</tspan><"
+        ),
+        "the stacked ion label: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">\
+           1</tspan> end<"
+        ),
+        "the stacked digit scripts inside a row: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">N<tspan baseline-shift=\"super\" font-size=\"70%\">c</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">\
+           ab</tspan><"
+        ),
+        "the narrower superscript is drawn first: {svg}"
+      );
+      for glyph in ['\u{2084}', '\u{00B2}', '\u{207B}', '\u{2081}'] {
+        assert!(
+          !svg.contains(glyph),
+          "no side-by-side Unicode script: {svg}"
+        );
+      }
+    }
+
     /// The same lowering reaches a `Graphics3D` `Epilog` overlay, which is
     /// drawn as a 2D picture over the scene.
     #[test]
