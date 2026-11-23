@@ -3117,7 +3117,7 @@ mod plot_label {
        \"energy = -2.0000, kinetic = 0.0000, potential = -2.0000 units\"}]]",
     );
     let size = first_text_font_size(&s);
-    assert!(size < 16.0 && size >= 9.0, "font-size {size}: {s}");
+    assert!((9.0..16.0).contains(&size), "font-size {size}: {s}");
   }
 
   #[test]

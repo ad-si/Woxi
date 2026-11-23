@@ -5473,7 +5473,7 @@ fn bar_chart_structure(
   if !given("AspectRatio") {
     defaults.push(crate::helpers::rule_expr(
       crate::helpers::id_expr("AspectRatio"),
-      Expr::Real(1.0 / 1.618_033_988_749_895),
+      Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO),
     ));
   }
   graphics_args.extend(defaults);
