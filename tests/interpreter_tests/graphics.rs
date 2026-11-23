@@ -17987,6 +17987,34 @@ mod plot3d {
       }
     }
 
+    // A tick set stepping below 10^-5 still writes a tick that reaches
+    // 10^-5 in decimal (`0.00001`, as the real displays), and its zero then
+    // shares those decimals. Regression: the outer ticks read `1×10⁻⁵`
+    // and the zero `0`.
+    #[test]
+    fn fine_tick_set_reaching_ten_to_minus_five_reads_decimal() {
+      let svg = export_svg(
+        "DensityPlot[x y, {x, -0.00001, 0.00001}, {y, -0.00001, 0.00001}, PlotPoints -> 5]",
+      );
+      for label in [
+        ">-0.00001<",
+        ">-5×10⁻⁶<",
+        ">0.00000<",
+        ">5×10⁻⁶<",
+        ">0.00001<",
+      ] {
+        assert!(svg.contains(label), "missing tick {label}: {svg}");
+      }
+      assert!(!svg.contains("1×10⁻⁵"), "{svg}");
+      // With no decimal label in the set, the zero stays a plain `0`.
+      let svg = export_svg(
+        "DensityPlot[x y, {x, -2.31*^-6, 2.31*^-6}, {y, -2.31*^-6, 2.31*^-6}, PlotPoints -> 5]",
+      );
+      assert!(svg.contains(">2×10⁻⁶<"), "{svg}");
+      assert!(svg.contains(">0<"), "{svg}");
+      assert!(!svg.contains(">0.0000"), "{svg}");
+    }
+
     // Enough decimals to tell neighboring ticks apart. Regression: a
     // 0.0002 step rendered every label as `0.0`.
     #[test]

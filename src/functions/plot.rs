@@ -2332,6 +2332,15 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
     if v.abs() < step.abs() * 1e-6 {
       return "0".to_string();
     }
+    // A tick of such a set that itself reaches `10^-5` is still a real
+    // the Wolfram Language writes in decimal (`0.00001`, not `1×10⁻⁵`).
+    // Snap it onto the step grid first so float drift (`9.999…×10⁻⁶`)
+    // doesn't push it back under the threshold.
+    let snapped = (v / step).round() * step;
+    let magnitude = snapped.abs();
+    if (1e-5 * (1.0 - 1e-9)..1e6).contains(&magnitude) {
+      return format_small_decimal_tick(snapped);
+    }
     return format_scientific_tick(v);
   }
   // A set whose spacing is no short decimal (explicit ticks at computed
@@ -2363,6 +2372,16 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
 /// `5*10^-8` up to `2*10^-7` reads `5.0×10⁻⁸, 1.0×10⁻⁷, 1.5×10⁻⁷, 2.0×10⁻⁷`.
 pub(crate) fn format_axis_tick(v: f64, step: f64, lo: f64, hi: f64) -> String {
   let label = format_tick_with_step(v, step);
+  if label == "0"
+    && step.is_finite()
+    && step != 0.0
+    && step.abs() < 1e-5
+    && let Some(decimals) = axis_decimal_label_decimals(step, lo, hi)
+  {
+    // The zero of a fine set whose outer ticks read in decimal shares
+    // their decimals (`-0.00001, -5×10⁻⁶, 0.00000, 5×10⁻⁶, 0.00001`).
+    return format!("0.{}", "0".repeat(decimals));
+  }
   let Some(decimals) = axis_scientific_decimals(step, lo, hi) else {
     return label;
   };
@@ -2388,6 +2407,43 @@ fn axis_scientific_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
       Some(mantissa.split_once('.').map_or(0, |(_, frac)| frac.len()))
     })
     .max()
+}
+
+/// The most decimals any decimal-notation (non-scientific, non-integer)
+/// label of a `step`-spaced axis over `lo..hi` carries, if it has one.
+fn axis_decimal_label_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
+  if !(step.is_finite() && step > 0.0 && lo.is_finite() && hi.is_finite()) {
+    return None;
+  }
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let first = (lo / step - 1e-9).ceil();
+  let last = (hi / step + 1e-9).floor();
+  if !(last - first).is_finite() || last - first > 1000.0 {
+    return None;
+  }
+  (first as i64..=last as i64)
+    .filter_map(|k| {
+      let label = format_tick_with_step(k as f64 * step, step);
+      if label.contains('\u{d7}') {
+        return None;
+      }
+      label.split_once('.').map(|(_, frac)| frac.len())
+    })
+    .max()
+}
+
+/// A tick in `[10^-5, 10^6)` written as the Wolfram Language displays the
+/// real: 6 significant digits, trailing zeros dropped (`0.00001`,
+/// `0.000015`).
+fn format_small_decimal_tick(v: f64) -> String {
+  let magnitude = v.abs() * (1.0 + 1e-9);
+  let decimals = (5 - magnitude.log10().floor() as i32).max(0) as usize;
+  let s = format!("{v:.decimals$}");
+  if s.contains('.') {
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  } else {
+    s
+  }
 }
 
 /// Pad the mantissa of a scientific tick label (`5×10⁻⁸`) to `decimals`
