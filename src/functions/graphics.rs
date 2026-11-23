@@ -241,6 +241,16 @@ pub fn manipulate_color_to_rgb(code: &str) -> (f64, f64, f64) {
   }
 }
 
+/// The hue (`0.0..=1.0`) of a color expression's InputForm code, as
+/// `ColorConvert[c, "HSB"]` would give it; `0.0` for achromatic colors
+/// (grays, black, white) and anything that isn't a recognized color. Used
+/// by a frontend to place a Manipulate ColorSlider/ColorSetter handle at
+/// its initial color on the hue gradient.
+pub fn manipulate_color_hue(code: &str) -> f64 {
+  let (r, g, b) = manipulate_color_to_rgb(code);
+  crate::functions::image_ast::rgb_to_hsv(r, g, b).0
+}
+
 // ── Theme colors for light/dark mode ────────────────────────────────────
 
 pub struct ThemeColors {
@@ -2936,7 +2946,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(k)
       if matches!(k.as_str(), "Thickness" | "AbsoluteThickness"
-        | "PointSize" | "AbsolutePointSize" | "Opacity")) =>
+        | "PointSize" | "AbsolutePointSize" | "Opacity" | "Dashing"
+        | "AbsoluteDashing")) =>
     {
       let Expr::Identifier(k) = pattern.as_ref() else {
         return false;
@@ -4362,7 +4373,7 @@ fn collect_primitives(
         // drawn at the point's current position. A custom appearance
         // graphic keeps its own ImageSize in screen pixels.
         "Locator" if !args.is_empty() => {
-          parse_locator(args, prims);
+          parse_locator(args, style, prims, errors);
         }
         _ => {
           // An unrecognized head may be a user-defined helper (e.g. a
@@ -6678,6 +6689,15 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         && is_traditional_layout(&args[0]) =>
     {
       graphics_text_content(&traditionalize_layout_items(&args[0]))
+    }
+    // A string is its own text in any form: `TraditionalForm["ab"]` shows
+    // `ab`, not the `FormBox` source it serializes to.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(args[0], Expr::String(_)) =>
+    {
+      graphics_text_content(&args[0])
     }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
@@ -10836,20 +10856,46 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
 /// interactive front-ends). A custom appearance graphic is embedded at its
 /// own ImageSize in screen pixels, centered on the position — Wolfram
 /// treats the appearance as a screen-space icon, not data-space geometry.
-fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
-  for (x, y, svg, w, h) in locator_markers(args) {
-    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+fn parse_locator(
+  args: &[Expr],
+  style: &mut StyleState,
+  prims: &mut Vec<Primitive>,
+  errors: &mut Vec<String>,
+) {
+  for mark in locator_markers(args) {
+    match mark {
+      LocatorMark::Picture { x, y, svg, w, h } => {
+        prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+      }
+      LocatorMark::Inset(inset) => {
+        collect_primitives(&inset, &mut style.clone(), prims, errors);
+      }
+    }
   }
 }
 
-/// The markers `Locator[pos, appearance]` draws, as `(x, y, svg, width,
-/// height)`: one per point at `pos` (a point or a list of points), each the
-/// appearance graphic at its own size or Wolfram's default crosshair, and
-/// none for `Appearance -> None`. Shared by `Graphics` and plot overlays
-/// (`Epilog`).
-pub(crate) fn locator_markers(
-  args: &[Expr],
-) -> Vec<(f64, f64, String, f64, f64)> {
+/// One marker a `Locator` draws (see [`locator_markers`]).
+pub(crate) enum LocatorMark {
+  /// A picture (the appearance graphic or Wolfram's default crosshair)
+  /// centered on `(x, y)` at its own `w`×`h` screen size.
+  Picture {
+    x: f64,
+    y: f64,
+    svg: String,
+    w: f64,
+    h: f64,
+  },
+  /// An appearance that is not a graphic — a string, a `Style[…]`d glyph,
+  /// a number — placed at the point like `Inset[appearance, {x, y}]`.
+  Inset(Expr),
+}
+
+/// The markers `Locator[pos, appearance]` draws: one per point at `pos` (a
+/// point or a list of points), each the appearance graphic at its own size,
+/// the appearance expression inset at the point, or Wolfram's default
+/// crosshair, and none for `Appearance -> None`. Shared by `Graphics` and
+/// plot overlays (`Epilog`).
+pub(crate) fn locator_markers(args: &[Expr]) -> Vec<LocatorMark> {
   let mut markers = Vec::new();
   if args.is_empty() {
     return markers;
@@ -10886,7 +10932,13 @@ pub(crate) fn locator_markers(
     crate::truncate_captured_graphics(captured);
     return markers;
   }
-  let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
+  // The appearance as a picture pre-rendered at its own ImageSize, or (for
+  // a string, a styled glyph, …) as the expression to inset at each point.
+  enum Appearance {
+    Picture(String, f64, f64),
+    Inset(Expr),
+  }
+  let marker: Option<Appearance> = appearance.and_then(|a| {
     // Render the appearance to a graphic. A held `Graphics[…]` call is
     // rendered directly (Graphics evaluates lazily at display time);
     // anything else is evaluated first.
@@ -10901,7 +10953,7 @@ pub(crate) fn locator_markers(
           Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
             graphics_ast(&gargs.iter().cloned().collect::<Vec<_>>()).ok()
           }
-          _ => None,
+          _ => return Some(Appearance::Inset(ev)),
         },
         Err(_) => None,
       },
@@ -10909,11 +10961,10 @@ pub(crate) fn locator_markers(
     if let Some(Expr::Graphics { svg, .. }) = &rendered {
       let (w, h) = parse_svg_wh(svg);
       if w > 0.0 && h > 0.0 {
-        return Some((svg.clone(), w, h));
+        return Some(Appearance::Picture(svg.clone(), w, h));
       }
-      return None;
     }
-    locator_text_marker(a)
+    None
   });
   // Sub-evaluations may have rendered graphics (the appearance itself, or
   // anything a Dynamic position computed); those are embedded here, not
@@ -10921,82 +10972,34 @@ pub(crate) fn locator_markers(
   crate::truncate_captured_graphics(captured);
 
   for (x, y) in points {
-    let (svg, w, h) = if let Some((svg, w, h)) = &marker {
-      (svg.clone(), *w, *h)
-    } else {
-      let (svg, size) = default_locator_marker_svg();
-      (svg, size, size)
-    };
-    markers.push((x, y, svg, w, h));
+    markers.push(match &marker {
+      Some(Appearance::Picture(svg, w, h)) => LocatorMark::Picture {
+        x,
+        y,
+        svg: svg.clone(),
+        w: *w,
+        h: *h,
+      },
+      Some(Appearance::Inset(obj)) => LocatorMark::Inset(call(
+        "Inset",
+        vec![
+          obj.clone(),
+          Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+        ],
+      )),
+      None => {
+        let (svg, size) = default_locator_marker_svg();
+        LocatorMark::Picture {
+          x,
+          y,
+          svg,
+          w: size,
+          h: size,
+        }
+      }
+    });
   }
   markers
-}
-
-/// A `Locator[pos, obj]` whose appearance `obj` is not a graphic (a string
-/// glyph such as `"⊕"`, a `Style[…]`d label, a number) shows `obj` itself as
-/// the marker, typeset like a `Text` centered on the point — Wolfram draws
-/// any expression as the locator, not only graphics. Returns the marker
-/// `(svg, width, height)`, sized to fit the typeset text.
-fn locator_text_marker(appearance: &Expr) -> Option<(String, f64, f64)> {
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(appearance)
-    .unwrap_or_else(|_| appearance.clone());
-  if matches!(&evaluated, Expr::String(s) if s.is_empty()) {
-    return None;
-  }
-  let size = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Style" && args.len() > 1 => {
-      crate::functions::chart::parse_style_directive_args(&args[1..]).3
-    }
-    _ => None,
-  }
-  .unwrap_or(14.0);
-  let markup = expr_to_svg_markup(&evaluated);
-  let width = (crate::functions::plot_padding::text_width(&markup, size)
-    + size * 0.3)
-    .ceil()
-    .max(size * 0.6);
-  let height = (size * 1.4).ceil();
-  let args = vec![
-    Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![
-        evaluated,
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-      ]
-      .into(),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-      replacement: Box::new(Expr::List(
-        vec![Expr::Real(width), Expr::Real(height)].into(),
-      )),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
-      replacement: Box::new(Expr::List(
-        vec![
-          Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)].into()),
-          Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)].into()),
-        ]
-        .into(),
-      )),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("ImagePadding".to_string())),
-      replacement: Box::new(Expr::Integer(0)),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-      replacement: Box::new(Expr::Identifier("Full".to_string())),
-    },
-  ];
-  match &graphics_ast(&args).ok()? {
-    Expr::Graphics { svg, .. } => {
-      let (w, h) = parse_svg_wh(svg);
-      (w > 0.0 && h > 0.0).then(|| (svg.clone(), w, h))
-    }
-    _ => None,
-  }
 }
 
 /// Wolfram's default Locator appearance: a dark ring with a translucent
@@ -13858,6 +13861,20 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
         && !items.iter().all(is_edge_pair) =>
     {
       [EdgeTicks::Labels, EdgeTicks::Labels, d[2], d[3]]
+    }
+    // `{xspec, yspec}` with a symbol for each axis (`{None, Automatic}`):
+    // the first covers the bottom and top edges, the second the left and
+    // right ones.
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().all(|e| !matches!(e, Expr::List(_))) =>
+    {
+      [
+        one(&items[0], d[0]),
+        one(&items[1], d[1]),
+        one(&items[0], d[2]),
+        one(&items[1], d[3]),
+      ]
     }
     Expr::List(items) if items.len() == 2 => {
       let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
@@ -19629,6 +19646,10 @@ pub struct BoxLayout {
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
 
+/// The width of one `Grid` `ItemSize` unit as a fraction of the font size:
+/// the front end's item-size "em" is narrower than the full font size.
+const ITEM_SIZE_EM: f64 = 0.775;
+
 /// Whether a `FontFamily` name is a fixed-width face (`"Courier"`,
 /// `"Source Code Pro"`, `"Menlo"`, any `"… Mono"`, …).
 pub(crate) fn is_monospace_font_family(family: &str) -> bool {
@@ -23899,6 +23920,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           );
           with_single_letter_italics(|| boxes_to_svg(&boxes))
         }
+        // A string carrying inline `\!\(\*…\)` box code typesets that code in
+        // `TraditionalForm`: its single-letter symbols are set in italics
+        // (`"\!\(\*SuperscriptBox[\(d\), \(2\)]\)"` shows an italic d²),
+        // while its plain text runs stay upright.
+        "TraditionalForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::String(s)
+              if inline_box_string_to_box_expr(s).is_some()) =>
+        {
+          let Expr::String(s) = &args[0] else {
+            unreachable!()
+          };
+          traditional_box_string_to_svg(s)
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
@@ -26081,12 +26116,20 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
 /// typeset like any other title text and measured with proportional glyph
 /// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
 /// placed by the grid's horizontal `Alignment` (`Center` by default). A
-/// single-column `Grid` stays a block of title lines unless it is framed.
+/// single-column `Grid` stays a block of title lines unless it is framed,
+/// ruled or shaded.
 ///
 /// A `Text[grid]` wrapper is the grid itself. `Frame -> All` rules every
-/// cell and `Frame -> True` draws the outer box; a framed grid gains half
-/// a column gap of padding at its left and right edges so the lines clear
-/// the text, and its rules are drawn in the title's color.
+/// cell and `Frame -> True` draws the outer box; `Dividers` rules the
+/// column and row boundaries it names. A ruled grid gains half a column gap
+/// of padding at its left and right edges so the lines clear the text, and
+/// its rules are drawn in the title's color. `SpanFromLeft` (and
+/// `SpanFromAbove`) cells merge with their neighbor, so the neighbor is
+/// centered across the span and no rule crosses it. `Background` shades
+/// the whole grid, or columns and rows (`{colspec, rowspec}`, each a color,
+/// a list of colors for the first columns or rows, or `{{c1, c2, …}}`
+/// cycled), and `ItemSize -> {{w1, w2, …}, …}` makes each column at least
+/// `w` ems wide.
 fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   use crate::functions::plot_padding::{ascent, line_pitch, text_width};
   let expr = match expr {
@@ -26112,35 +26155,109 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
     })
     .collect::<Option<_>>()?;
   let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-  #[derive(PartialEq)]
-  enum GridFrame {
-    None,
-    Outer,
-    All,
+  let num_rows = rows.len();
+  if num_cols == 0 {
+    return None;
   }
-  let frame = args[1..]
-    .iter()
-    .find_map(|opt| match opt {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(&**pattern, Expr::Identifier(n) if n == "Frame") => {
-        Some(match &**replacement {
-          Expr::Identifier(n) if n == "All" => GridFrame::All,
-          Expr::Identifier(n) if n == "True" => GridFrame::Outer,
-          _ => GridFrame::None,
-        })
-      }
+  let opt = |key: &str| {
+    args[1..].iter().find_map(|o| match option_kv(o) {
+      Some((k, v)) if k == key => Some(v),
       _ => None,
     })
-    .unwrap_or(GridFrame::None);
-  let min_cols = if frame == GridFrame::None { 2 } else { 1 };
+  };
+  // Which of the `n + 1` boundaries of `n` columns (or rows) are ruled.
+  let all_rules = |n: usize| vec![true; n + 1];
+  let outer_rules = |n: usize| {
+    let mut v = vec![false; n + 1];
+    v[0] = true;
+    v[n] = true;
+    v
+  };
+  let no_rules = |n: usize| vec![false; n + 1];
+  let (mut v_rules, mut h_rules) = match opt("Frame") {
+    Some(Expr::Identifier(n)) if n == "All" => {
+      (all_rules(num_cols), all_rules(num_rows))
+    }
+    Some(Expr::Identifier(n)) if n == "True" => {
+      (outer_rules(num_cols), outer_rules(num_rows))
+    }
+    _ => (no_rules(num_cols), no_rules(num_rows)),
+  };
+  let divider_rules = |spec: &Expr, n: usize| -> Vec<bool> {
+    match spec {
+      Expr::Identifier(s) if s == "All" || s == "True" => all_rules(n),
+      Expr::Identifier(s) if s == "Center" => {
+        let mut v = all_rules(n);
+        v[0] = false;
+        v[n] = false;
+        v
+      }
+      _ => no_rules(n),
+    }
+  };
+  if let Some(spec) = opt("Dividers") {
+    let (x, y) = match spec {
+      Expr::List(items) if items.len() == 2 => (
+        divider_rules(&items[0], num_cols),
+        divider_rules(&items[1], num_rows),
+      ),
+      other => (
+        divider_rules(other, num_cols),
+        divider_rules(other, num_rows),
+      ),
+    };
+    v_rules.iter_mut().zip(x).for_each(|(r, d)| *r |= d);
+    h_rules.iter_mut().zip(y).for_each(|(r, d)| *r |= d);
+  }
+  let ruled = v_rules.iter().chain(&h_rules).any(|r| *r);
+  // `Background`: one color for the whole grid, or `{colspec, rowspec}`.
+  let to_color = |e: &Expr| {
+    parse_color(e)
+      .or_else(|| evaluate_expr_to_expr(e).ok().and_then(|v| parse_color(&v)))
+  };
+  let band_colors = |spec: &Expr, n: usize| -> Vec<Option<Color>> {
+    match spec {
+      // `{{c1, c2, …}}` cycles its colors.
+      Expr::List(items)
+        if items.len() == 1 && matches!(&items[0], Expr::List(_)) =>
+      {
+        let Expr::List(cycle) = &items[0] else {
+          unreachable!()
+        };
+        let colors: Vec<Option<Color>> = cycle.iter().map(to_color).collect();
+        if colors.is_empty() {
+          vec![None; n]
+        } else {
+          (0..n).map(|i| colors[i % colors.len()]).collect()
+        }
+      }
+      // `{c1, c2, …}` colors the first bands in turn.
+      Expr::List(items) => {
+        (0..n).map(|i| items.get(i).and_then(to_color)).collect()
+      }
+      other => vec![to_color(other); n],
+    }
+  };
+  let (col_bg, row_bg) = match opt("Background") {
+    Some(Expr::List(items)) if items.len() == 2 => (
+      band_colors(&items[0], num_cols),
+      band_colors(&items[1], num_rows),
+    ),
+    Some(other) => (vec![None; num_cols], vec![to_color(other); num_rows]),
+    None => (vec![None; num_cols], vec![None; num_rows]),
+  };
+  let shaded = col_bg.iter().chain(&row_bg).any(Option::is_some);
+  let min_cols = if ruled || shaded { 1 } else { 2 };
+  let is_left_span = |c: &Expr| matches!(c, Expr::Identifier(s) if s == "SpanFromLeft" || s == "SpanFromBoth");
+  let is_above_span = |c: &Expr| matches!(c, Expr::Identifier(s) if s == "SpanFromAbove" || s == "SpanFromBoth");
+  let is_placeholder = |c: &Expr| is_left_span(c) || is_above_span(c);
   // A cell that stacks its own lines (a nested `Column`) has no single
   // line to align, so such a grid keeps the line-based layout.
   if num_cols < min_cols
     || rows
       .iter()
       .flat_map(|r| r.iter())
+      .filter(|c| !is_placeholder(c))
       .any(|c| expr_to_svg_markup_lines(c).len() > 1)
   {
     return None;
@@ -26148,100 +26265,226 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   // The horizontal alignment of each column: one symbol for all of them,
   // or a list cycled over the columns, possibly inside `{h, v}`.
   let mut aligns = vec!["Center"];
-  for opt in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(&**pattern, Expr::Identifier(n) if n == "Alignment")
-    {
-      let h = match &**replacement {
-        Expr::List(items) if items.len() == 2 => &items[0],
-        other => other,
-      };
-      let names: Vec<&str> = match h {
-        Expr::Identifier(n) => vec![n.as_str()],
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|i| match i {
-            Expr::Identifier(n) => Some(n.as_str()),
-            _ => None,
-          })
-          .collect(),
-        _ => Vec::new(),
-      };
-      if !names.is_empty() {
-        aligns = names;
-      }
+  if let Some(a) = opt("Alignment") {
+    let h = match a {
+      Expr::List(items) if items.len() == 2 => &items[0],
+      other => other,
+    };
+    let names: Vec<&str> = match h {
+      Expr::Identifier(n) => vec![n.as_str()],
+      Expr::List(items) => items
+        .iter()
+        .filter_map(|i| match i {
+          Expr::Identifier(n) => Some(n.as_str()),
+          _ => None,
+        })
+        .collect(),
+      _ => Vec::new(),
+    };
+    if !names.is_empty() {
+      aligns = names;
     }
   }
   let size = TITLE_FONT;
+  // Each cell's markup and the number of columns it covers; a span
+  // placeholder holds no markup of its own.
+  let cell_at = |i: usize, j: usize| rows[i].get(j);
+  let span_of = |i: usize, j: usize| {
+    1 + (j + 1..num_cols)
+      .take_while(|&k| cell_at(i, k).is_some_and(is_left_span))
+      .count()
+  };
   let markup: Vec<Vec<String>> = rows
     .iter()
-    .map(|r| r.iter().map(expr_to_svg_markup).collect())
+    .map(|r| {
+      r.iter()
+        .map(|c| {
+          if is_placeholder(c) {
+            String::new()
+          } else {
+            expr_to_svg_markup(c)
+          }
+        })
+        .collect()
+    })
     .collect();
-  let mut col_w = vec![0.0_f64; num_cols];
-  for row in &markup {
+  let gap = 0.8 * size;
+  // `ItemSize` widths (in ems) include the gap between columns.
+  let mut col_w: Vec<f64> = match opt("ItemSize") {
+    Some(Expr::List(dims)) if !dims.is_empty() => {
+      let widths: Vec<f64> = match &dims[0] {
+        Expr::List(ws) => {
+          ws.iter().map(|w| expr_to_f64(w).unwrap_or(0.0)).collect()
+        }
+        w => expr_to_f64(w).into_iter().collect(),
+      };
+      (0..num_cols)
+        .map(|j| {
+          let w = widths.get(j).or(widths.last()).copied().unwrap_or(0.0);
+          (w * size - gap).max(0.0)
+        })
+        .collect()
+    }
+    Some(w) => {
+      let w = expr_to_f64(w).unwrap_or(0.0);
+      vec![(w * size - gap).max(0.0); num_cols]
+    }
+    None => vec![0.0; num_cols],
+  };
+  for (i, row) in markup.iter().enumerate() {
     for (j, cell) in row.iter().enumerate() {
-      col_w[j] = col_w[j].max(text_width(cell, size));
+      if span_of(i, j) == 1 {
+        col_w[j] = col_w[j].max(text_width(cell, size));
+      }
     }
   }
-  let gap = 0.8 * size;
-  let pad = if frame == GridFrame::None {
-    0.0
-  } else {
-    gap / 2.0
-  };
+  // A cell spanning several columns widens the last of them if it needs to.
+  for (i, row) in markup.iter().enumerate() {
+    for (j, cell) in row.iter().enumerate() {
+      let span = span_of(i, j);
+      if span > 1 && !cell.is_empty() {
+        let have =
+          col_w[j..j + span].iter().sum::<f64>() + gap * (span - 1) as f64;
+        let need = text_width(cell, size);
+        if need > have {
+          col_w[j + span - 1] += need - have;
+        }
+      }
+    }
+  }
+  let pad = if ruled { gap / 2.0 } else { 0.0 };
   let width =
     col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64 + 2.0 * pad;
   let pitch = line_pitch(size);
-  let height = pitch * markup.len() as f64;
+  let height = pitch * num_rows as f64;
+  // The left edge of each column, and the boundaries between columns
+  // (halfway through the gap), with the outer edges at either end.
+  let col_x: Vec<f64> = col_w
+    .iter()
+    .scan(pad, |x, w| {
+      let left = *x;
+      *x += w + gap;
+      Some(left)
+    })
+    .collect();
+  let mut bounds = vec![0.0];
+  bounds.extend((1..num_cols).map(|j| col_x[j] - gap / 2.0));
+  bounds.push(width);
   let mut body = String::new();
-  for (i, row) in markup.iter().enumerate() {
-    let y = i as f64 * pitch + ascent(size);
-    let mut x0 = pad;
-    for (j, w) in col_w.iter().enumerate() {
-      if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
-        let (x, anchor) = match aligns[j % aligns.len()] {
-          "Left" => (x0, "start"),
-          "Right" => (x0 + w, "end"),
-          _ => (x0 + w / 2.0, "middle"),
-        };
-        body.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
-           xml:space=\"preserve\">{cell}</text>\n"
-        ));
-      }
-      x0 += w + gap;
+  // Column shading first, row shading over it.
+  for (j, c) in col_bg.iter().enumerate() {
+    if let Some(c) = c {
+      body.push_str(&format!(
+        "<rect x=\"{:.2}\" y=\"0\" width=\"{:.2}\" height=\"{height:.2}\" \
+         fill=\"{}\"{}/>\n",
+        bounds[j],
+        bounds[j + 1] - bounds[j],
+        c.to_svg_rgb(),
+        c.opacity_attr()
+      ));
     }
   }
-  if frame != GridFrame::None {
-    // Rules sit half a stroke inside the outer edge so none is clipped.
-    let (l, t, r, b) = (0.5, 0.5, width - 0.5, height - 0.5);
-    let mut xs = vec![l];
-    let mut ys = vec![t];
-    if frame == GridFrame::All {
-      let mut x = pad;
-      for w in &col_w[..num_cols - 1] {
-        x += w + gap / 2.0;
-        xs.push(x);
-        x += gap / 2.0;
+  for (i, c) in row_bg.iter().enumerate() {
+    if let Some(c) = c {
+      body.push_str(&format!(
+        "<rect x=\"0\" y=\"{:.2}\" width=\"{width:.2}\" height=\"{pitch:.2}\" \
+         fill=\"{}\"{}/>\n",
+        i as f64 * pitch,
+        c.to_svg_rgb(),
+        c.opacity_attr()
+      ));
+    }
+  }
+  for (i, row) in markup.iter().enumerate() {
+    let y = i as f64 * pitch + ascent(size);
+    for (j, cell) in row.iter().enumerate() {
+      if cell.is_empty() {
+        continue;
       }
-      ys.extend((1..markup.len()).map(|i| i as f64 * pitch));
-    }
-    xs.push(r);
-    ys.push(b);
-    for x in &xs {
+      let span = span_of(i, j);
+      let x0 = col_x[j];
+      let w = col_w[j..j + span].iter().sum::<f64>() + gap * (span - 1) as f64;
+      let (x, anchor) = match aligns[j % aligns.len()] {
+        "Left" => (x0, "start"),
+        "Right" => (x0 + w, "end"),
+        _ => (x0 + w / 2.0, "middle"),
+      };
+      // resvg leaves `dx` shifts out of the `text-anchor` placement, so a
+      // centered or right-aligned number sets its digit-group gaps as thin
+      // spaces instead of `<tspan dx>` gaps.
+      let cell = if anchor == "start" {
+        cell.clone()
+      } else {
+        digit_group_gaps_as_thin_spaces(cell)
+      };
       body.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{t:.2}\" x2=\"{x:.2}\" y2=\"{b:.2}\" \
-         stroke=\"currentColor\" stroke-width=\"1\"/>\n"
+        "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
+         xml:space=\"preserve\">{cell}</text>\n"
       ));
     }
-    for y in &ys {
-      body.push_str(&format!(
-        "<line x1=\"{l:.2}\" y1=\"{y:.2}\" x2=\"{r:.2}\" y2=\"{y:.2}\" \
+  }
+  if ruled {
+    // Rules sit half a stroke inside the outer edge so none is clipped.
+    let edge = |k: usize, n: usize, full: f64, at: f64| {
+      if k == 0 {
+        0.5
+      } else if k == n {
+        full - 0.5
+      } else {
+        at
+      }
+    };
+    let line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+      format!(
+        "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" \
          stroke=\"currentColor\" stroke-width=\"1\"/>\n"
-      ));
+      )
+    };
+    // Each rule runs along the cells it separates, broken where it would
+    // cross a merged cell.
+    let runs = |n: usize, crossed: &dyn Fn(usize) -> bool| {
+      let mut out: Vec<(usize, usize)> = Vec::new();
+      let mut start = None;
+      for c in 0..=n {
+        let drawn = c < n && !crossed(c);
+        match (drawn, start) {
+          (true, None) => start = Some(c),
+          (false, Some(s)) => {
+            out.push((s, c));
+            start = None;
+          }
+          _ => {}
+        }
+      }
+      out
+    };
+    // The start and end of a run of cells `a..b` along an axis whose
+    // boundaries are `at`, kept half a stroke inside the outer edges.
+    let span_ends =
+      |a: usize, b: usize, n: usize, full: f64, at: &dyn Fn(usize) -> f64| {
+        (edge(a, n, full, at(a)), edge(b, n, full, at(b)))
+      };
+    let row_y = |i: usize| i as f64 * pitch;
+    let col_b = |j: usize| bounds[j];
+    for (k, _) in v_rules.iter().enumerate().filter(|(_, r)| **r) {
+      let x = edge(k, num_cols, width, bounds[k]);
+      let crossed = |i: usize| {
+        k > 0 && k < num_cols && cell_at(i, k).is_some_and(is_left_span)
+      };
+      for (a, b) in runs(num_rows, &crossed) {
+        let (y1, y2) = span_ends(a, b, num_rows, height, &row_y);
+        body.push_str(&line(x, y1, x, y2));
+      }
+    }
+    for (k, _) in h_rules.iter().enumerate().filter(|(_, r)| **r) {
+      let y = edge(k, num_rows, height, row_y(k));
+      let crossed = |j: usize| {
+        k > 0 && k < num_rows && cell_at(k, j).is_some_and(is_above_span)
+      };
+      for (a, b) in runs(num_cols, &crossed) {
+        let (x1, x2) = span_ends(a, b, num_cols, width, &col_b);
+        body.push_str(&line(x1, y, x2, y));
+      }
     }
   }
   let svg = format!(
@@ -33992,10 +34235,13 @@ fn grid_svg_styled_internal_reporting(
       col_widths[j] = (max_int + max_frac) * char_width + col_pad(j);
     }
   }
-  // `ItemSize` fixes a column's width at `w` ems.
+  // `ItemSize` fixes a column's width at `w` of the front end's item-size
+  // units. Measured against front-end snapshots (14 px text, divider to
+  // divider), `ItemSize` 4, 5 and 8 give 49.5, 60.5 and 93 px: a unit is
+  // about 0.775 of the font size, plus half the cell's usual padding.
   for (j, width) in col_widths.iter_mut().enumerate() {
     if let Some(w) = item_size_at(&item_size_w, j, num_cols) {
-      *width = w * font_size + col_pad(j);
+      *width = w * ITEM_SIZE_EM * font_size + col_pad(j) / 2.0;
     }
   }
 
@@ -38969,6 +39215,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
     current = call1("TraditionalForm", current);
+  } else if traditional
+    && matches!(&current, Expr::String(s)
+      if inline_box_string_to_box_expr(s).is_some()
+        && !has_stacked_inline_box(s))
+  {
+    // Its one-line box code is still set traditionally — the single-letter
+    // symbols in italics — so the form stays on for the renderer. (Stacked
+    // box code, a fraction or root, is laid out by the box renderer.)
+    current = call1("TraditionalForm", current);
   } else if traditional {
     current = traditionalize_layout_items(&current);
   } else if standard
@@ -39490,6 +39745,49 @@ pub(crate) fn style_pushed_into_layout(
         .collect(),
     );
     return Some(call(name.as_str(), new_args));
+  }
+  // `Style[Underoverscript[base, under, over], 20]`: the base takes the
+  // directives as they are, and the limits take them with every type size
+  // scaled down to script size (10pt scripts on 14pt text), so the stack
+  // keeps its proportions at any size.
+  if name == "Underoverscript" && args.len() == 3 {
+    let script_directives: Vec<Expr> = directives
+      .iter()
+      .map(|d| match d {
+        Expr::Integer(_) | Expr::Real(_) => expr_to_f64(d)
+          .filter(|s| *s > 0.0)
+          .map_or_else(|| d.clone(), |s| Expr::Real(s * 10.0 / 14.0)),
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FontSize") => {
+          expr_to_f64(replacement).filter(|s| *s > 0.0).map_or_else(
+            || d.clone(),
+            |s| Expr::Rule {
+              pattern: pattern.clone(),
+              replacement: Box::new(Expr::Real(s * 10.0 / 14.0)),
+            },
+          )
+        }
+        _ => d.clone(),
+      })
+      .collect();
+    let styled = |e: &Expr, ds: &[Expr]| {
+      call(
+        "Style",
+        std::iter::once(e.clone())
+          .chain(ds.iter().cloned())
+          .collect(),
+      )
+    };
+    return Some(call(
+      name.as_str(),
+      vec![
+        styled(&args[0], directives),
+        styled(&args[1], &script_directives),
+        styled(&args[2], &script_directives),
+      ],
+    ));
   }
   if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     || args.is_empty()

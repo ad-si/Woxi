@@ -743,6 +743,37 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// Regression: a fixed `ItemSize` column was `w` full font sizes plus the
+  /// whole cell padding wide, about a third wider than the front end draws
+  /// it. Front-end snapshots measure 4, 5 and 8 units at 49.5, 60.5 and
+  /// 93 px from divider to divider.
+  #[test]
+  fn grid_item_size_column_width_matches_front_end() {
+    let svg = svg_of(
+      "Grid[{{\"a\", \"b\", \"c\", \"d\"}}, \
+       ItemSize -> {{4, 5, 8, 5}, 2}, Dividers -> All]",
+    );
+    // The x positions of the vertical divider lines.
+    let mut xs: Vec<f64> = svg
+      .match_indices("<line ")
+      .filter_map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let attr = |name: &str| -> f64 {
+          let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[j..j + tag[j..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x1") == attr("x2")).then(|| attr("x1"))
+      })
+      .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.dedup();
+    assert_eq!(xs.len(), 5, "{svg}");
+    let widths: Vec<f64> = xs.windows(2).map(|w| w[1] - w[0]).collect();
+    for (width, expected) in widths.iter().zip([49.5, 60.5, 93.0, 60.5]) {
+      assert!((width - expected).abs() < 1.5, "{widths:?}\n{svg}");
+    }
+  }
+
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
   /// as `{w, h}`: every column is `w` ems wide, not just the first one.
   #[test]
@@ -1088,6 +1119,40 @@ mod layout_display {
     let i = svg.find(">i=1<").expect("lower limit");
     assert!(n < s && s < i, "{svg}");
   }
+
+  /// A styled `Underoverscript` (as `Style`/`Text` around a row push onto
+  /// its items) still stacks its limits, the base at the style's size and
+  /// the limits at script size.
+  #[test]
+  fn styled_underoverscript_stacks_its_limits() {
+    for expr in [
+      "Style[Underoverscript[\"S\", \"i=1\", \"n\"], 20]",
+      "Style[Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}], 20]",
+      "Text[Style[Column[{Row[{Underoverscript[\"S\", \"i=1\", \"n\"], \"a\"}]}], 20]]",
+    ] {
+      let svg = svg_of(expr);
+      assert!(!svg.contains("Underoverscript"), "{expr}: {svg}");
+      let n = svg.find(">n<").expect("upper limit");
+      let s = svg.find(">S<").expect("base");
+      let i = svg.find(">i=1<").expect("lower limit");
+      assert!(n < s && s < i, "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"20"), "{expr}: {svg}");
+      assert!(!svg.contains("font-size=\"10\""), "{expr}: {svg}");
+    }
+  }
+
+  #[test]
+  fn underoverscript_to_boxes() {
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z]]").unwrap(),
+      "UnderoverscriptBox[x, y, z]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Underoverscript[x, y, z], TraditionalForm]").unwrap(),
+      "FormBox[UnderoverscriptBox[x, y, z], TraditionalForm]"
+    );
+  }
+
   #[test]
   fn held_standard_roots_and_matrix_baselines_typeset() {
     let svg = svg_of("StandardForm[HoldForm[Sqrt[x/(1+x)]]]");

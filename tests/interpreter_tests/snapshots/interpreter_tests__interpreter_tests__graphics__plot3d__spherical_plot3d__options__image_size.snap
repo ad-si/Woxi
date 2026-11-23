@@ -13,8 +13,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="93.5" y1="102.0" x2="95.9" y2="99.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.4" y1="101.1" x2="114.4" y2="102.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="98.0" y1="89.6" x2="97.9" y2="85.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="114.4" y1="102.5" x2="118.6" y2="103.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="91.0" y1="104.5" x2="93.5" y2="102.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="114.4" y1="102.5" x2="118.6" y2="103.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="97.9" y1="85.7" x2="97.8" y2="81.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="118.6" y1="103.8" x2="122.8" y2="105.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="88.5" y1="107.0" x2="91.0" y2="104.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -50,16 +50,16 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="181.0" y1="124.4" x2="185.8" y2="126.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="96.4" y1="43.7" x2="96.3" y2="39.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="185.8" y1="126.0" x2="186.3" y2="122.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="184.0" y1="129.0" x2="185.8" y2="126.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="66.6" y1="129.0" x2="69.5" y2="126.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="184.0" y1="129.0" x2="185.8" y2="126.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="96.3" y1="39.2" x2="96.1" y2="34.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="186.3" y1="122.1" x2="186.9" y2="118.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="182.1" y1="131.9" x2="184.0" y2="129.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="63.6" y1="132.0" x2="66.6" y2="129.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="96.1" y1="34.5" x2="95.9" y2="29.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="186.9" y1="118.1" x2="187.5" y2="114.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="180.3" y1="135.0" x2="182.1" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="60.6" y1="135.1" x2="63.6" y2="132.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="180.3" y1="135.0" x2="182.1" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="95.9" y1="29.8" x2="95.8" y2="25.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="187.5" y1="114.1" x2="188.0" y2="110.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="178.4" y1="138.1" x2="180.3" y2="135.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -78,13 +78,13 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="92.4" y1="12.1" x2="95.2" y2="10.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="189.8" y1="97.2" x2="190.5" y2="92.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="172.4" y1="147.8" x2="174.4" y2="144.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="99.9" y1="11.2" x2="104.5" y2="12.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="47.8" y1="147.9" x2="51.1" y2="144.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="99.9" y1="11.2" x2="104.5" y2="12.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="104.5" y1="12.3" x2="109.3" y2="13.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="190.5" y1="92.8" x2="191.1" y2="88.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="89.5" y1="14.1" x2="92.4" y2="12.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="170.3" y1="151.2" x2="172.4" y2="147.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="44.5" y1="151.3" x2="47.8" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="170.3" y1="151.2" x2="172.4" y2="147.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.3" y1="13.3" x2="114.1" y2="14.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="191.1" y1="88.4" x2="191.7" y2="83.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="114.1" y1="14.4" x2="118.9" y2="15.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -129,8 +129,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="73.6" y1="168.7" x2="78.4" y2="170.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="70.9" y1="26.7" x2="74.2" y2="24.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="157.0" y1="173.0" x2="159.3" y2="169.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="37.6" y1="133.8" x2="36.9" y2="129.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="165.1" y1="26.0" x2="170.6" y2="27.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="37.6" y1="133.8" x2="36.9" y2="129.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="78.4" y1="170.8" x2="83.3" y2="172.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="195.8" y1="54.8" x2="196.6" y2="49.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="67.5" y1="29.0" x2="70.9" y2="26.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -142,8 +142,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="176.1" y1="28.5" x2="181.7" y2="29.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="88.3" y1="175.0" x2="93.4" y2="177.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="64.1" y1="31.4" x2="67.5" y2="29.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="36.1" y1="124.9" x2="35.4" y2="120.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="181.7" y1="29.8" x2="187.3" y2="31.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="36.1" y1="124.9" x2="35.4" y2="120.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="93.4" y1="177.2" x2="98.5" y2="179.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="197.3" y1="44.4" x2="198.1" y2="39.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="152.1" y1="180.9" x2="154.6" y2="176.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -163,13 +163,13 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="114.2" y1="186.1" x2="119.6" y2="188.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="33.8" y1="110.9" x2="33.0" y2="106.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="119.6" y1="188.4" x2="125.0" y2="190.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="194.8" y1="38.6" x2="196.8" y2="36.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="53.4" y1="38.7" x2="57.0" y2="36.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="194.8" y1="38.6" x2="196.8" y2="36.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="144.4" y1="193.5" x2="147.0" y2="189.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="33.0" y1="106.1" x2="32.2" y2="101.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="125.0" y1="190.7" x2="130.5" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="192.7" y1="41.1" x2="194.8" y2="38.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="33.0" y1="106.1" x2="32.2" y2="101.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="130.5" y1="193.1" x2="136.1" y2="195.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="192.7" y1="41.1" x2="194.8" y2="38.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="49.6" y1="41.2" x2="53.4" y2="38.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="32.2" y1="101.2" x2="31.4" y2="96.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="141.7" y1="197.9" x2="144.4" y2="193.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -188,16 +188,16 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="37.8" y1="49.3" x2="41.8" y2="46.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="28.8" y1="80.4" x2="27.9" y2="75.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="142.5" y1="185.2" x2="142.8" y2="180.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="183.8" y1="52.0" x2="186.1" y2="49.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="33.7" y1="52.1" x2="37.8" y2="49.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="183.8" y1="52.0" x2="186.1" y2="49.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="27.9" y1="75.0" x2="27.0" y2="69.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="142.8" y1="180.8" x2="143.0" y2="176.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="181.5" y1="54.9" x2="183.8" y2="52.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="29.5" y1="55.0" x2="33.7" y2="52.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="27.0" y1="69.4" x2="26.1" y2="63.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.0" y1="176.3" x2="143.3" y2="171.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="179.1" y1="57.8" x2="181.5" y2="54.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="25.1" y1="57.9" x2="29.5" y2="55.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="179.1" y1="57.8" x2="181.5" y2="54.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="26.1" y1="63.7" x2="25.1" y2="57.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.3" y1="171.8" x2="143.6" y2="167.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="25.1" y1="57.9" x2="30.5" y2="59.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -1391,8 +1391,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="146.2" y1="90.5" x2="141.3" y2="88.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s5b31608def" gradientUnits="userSpaceOnUse" x1="105.0" y1="126.0" x2="104.9" y2="128.2"><stop stop-color="#ffd620"/><stop offset="1" stop-color="#ffce1e"/></linearGradient>
 <polygon points="104.9,126.0 105.9,126.4 107.2,128.1 106.7,128.3 106.2,128.6 104.0,127.8 103.2,127.0 102.8,126.6 104.3,125.8" fill="url(#s5b31608def)" stroke="url(#s5b31608def)" stroke-width="0.5"/>
-<line x1="106.8" y1="125.1" x2="104.9" y2="126.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="103.1" y1="123.6" x2="104.9" y2="126.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="106.8" y1="125.1" x2="104.9" y2="126.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sd9c2ac55a4" gradientUnits="userSpaceOnUse" x1="122.1" y1="128.0" x2="123.7" y2="129.5"><stop stop-color="#ffb61a"/><stop offset="1" stop-color="#ffae19"/></linearGradient>
 <polygon points="122.0,129.4 121.8,128.6 122.7,126.8 123.2,126.9 123.7,127.1 123.8,129.2 123.4,129.9 123.0,130.3 121.9,129.9" fill="url(#sd9c2ac55a4)" stroke="url(#sd9c2ac55a4)" stroke-width="0.5"/>
 <line x1="124.4" y1="124.4" x2="123.2" y2="126.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -1732,8 +1732,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <polygon points="107.2,62.6 106.7,62.5 106.7,60.2 107.2,60.2 108.6,60.1 113.4,61.7 113.4,62.2 113.4,62.7 108.4,63.0" fill="url(#s602602f007)" stroke="url(#s602602f007)" stroke-width="0.5"/>
 <linearGradient id="sc8d81f442c" gradientUnits="userSpaceOnUse" x1="138.9" y1="70.6" x2="140.7" y2="68.7"><stop stop-color="#693806"/><stop offset="1" stop-color="#5d3105"/></linearGradient>
 <polygon points="138.0,69.8 137.5,69.5 137.6,67.1 138.1,67.2 139.4,67.6 143.8,70.8 143.8,71.5 143.7,72.0 139.1,70.6" fill="url(#sc8d81f442c)" stroke="url(#sc8d81f442c)" stroke-width="0.5"/>
-<line x1="138.0" y1="69.8" x2="132.1" y2="68.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="138.0" y1="69.8" x2="137.9" y2="72.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="138.0" y1="69.8" x2="132.1" y2="68.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sed2a630bdf" gradientUnits="userSpaceOnUse" x1="148.1" y1="111.8" x2="150.9" y2="111.6"><stop stop-color="#b0610d"/><stop offset="1" stop-color="#9d560b"/></linearGradient>
 <polygon points="150.9,111.7 151.0,112.5 149.3,114.6 149.0,114.2 148.4,113.7 147.6,109.8 148.0,109.2 148.2,108.7 150.7,110.9" fill="url(#sed2a630bdf)" stroke="url(#sed2a630bdf)" stroke-width="0.5"/>
 <line x1="148.0" y1="109.2" x2="146.3" y2="111.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -2172,8 +2172,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <polygon points="91.3,125.6 92.2,125.6 94.2,127.1 93.9,127.4 93.6,128.0 90.8,128.1 90.1,127.7 89.6,127.4 90.7,125.6" fill="url(#s34d0aff480)" stroke="url(#s34d0aff480)" stroke-width="0.5"/>
 <linearGradient id="s67bb01500e" gradientUnits="userSpaceOnUse" x1="108.9" y1="134.4" x2="109.2" y2="136.1"><stop stop-color="#ffb719"/><stop offset="1" stop-color="#ffaf18"/></linearGradient>
 <polygon points="108.3,134.4 110.9,135.2 111.4,135.5 111.1,135.8 110.7,136.3 110.4,136.2 107.8,135.2 107.3,135.0 107.7,134.3" fill="url(#s67bb01500e)" stroke="url(#s67bb01500e)" stroke-width="0.5"/>
-<line x1="109.0" y1="133.8" x2="108.3" y2="134.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="105.6" y1="132.9" x2="108.3" y2="134.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="109.0" y1="133.8" x2="108.3" y2="134.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s50e15b349e" gradientUnits="userSpaceOnUse" x1="129.0" y1="133.2" x2="129.8" y2="134.0"><stop stop-color="#ff9213"/><stop offset="1" stop-color="#ff8d13"/></linearGradient>
 <polygon points="128.4,133.8 129.1,133.0 131.0,132.0 131.3,132.4 131.5,132.9 130.1,134.4 129.0,134.9 128.5,135.0 128.0,134.2" fill="url(#s50e15b349e)" stroke="url(#s50e15b349e)" stroke-width="0.5"/>
 <linearGradient id="s79aeafca42" gradientUnits="userSpaceOnUse" x1="102.8" y1="132.5" x2="102.7" y2="133.9"><stop stop-color="#ffbe1a"/><stop offset="1" stop-color="#ffb819"/></linearGradient>
@@ -2870,14 +2870,14 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <linearGradient id="se52f02ab15" gradientUnits="userSpaceOnUse" x1="116.7" y1="138.2" x2="116.7" y2="140.3"><stop stop-color="#ff9d14"/><stop offset="1" stop-color="#ff9212"/></linearGradient>
 <polygon points="116.5,140.3 116.7,138.2 116.9,140.3 116.9,140.8 116.6,140.8" fill="url(#se52f02ab15)" stroke="url(#se52f02ab15)" stroke-width="0.5"/>
 <line x1="116.9" y1="136.0" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="115.7" y1="136.1" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="118.0" y1="136.2" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="115.7" y1="136.1" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="114.6" y1="136.5" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="119.3" y1="136.9" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="113.8" y1="137.1" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="119.8" y1="137.6" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="113.5" y1="137.9" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2 116.7,138.2" fill="none" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="113.5" y1="137.9" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="119.9" y1="138.4" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="113.5" y1="138.7" x2="116.7" y2="138.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s0c46cc2dbe" gradientUnits="userSpaceOnUse" x1="87.3" y1="64.3" x2="88.0" y2="66.6"><stop stop-color="#a0560a"/><stop offset="1" stop-color="#b0600c"/></linearGradient>
@@ -3134,8 +3134,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <polygon points="116.9,140.3 117.5,141.5 117.6,142.3 117.1,142.3 116.6,142.3 116.3,141.6 116.5,140.3 116.5,139.8 116.8,139.8" fill="url(#s9f09402865)" stroke="url(#s9f09402865)" stroke-width="0.5"/>
 <linearGradient id="sd932b9d97d" gradientUnits="userSpaceOnUse" x1="105.3" y1="140.3" x2="105.4" y2="139.1"><stop stop-color="#ff9b13"/><stop offset="1" stop-color="#ffa114"/></linearGradient>
 <polygon points="104.2,139.2 106.0,138.7 107.2,138.7 107.3,139.2 107.5,139.6 106.4,140.1 104.6,140.2 104.1,140.3 103.7,139.4" fill="url(#sd932b9d97d)" stroke="url(#sd932b9d97d)" stroke-width="0.5"/>
-<line x1="107.1" y1="138.4" x2="107.3" y2="139.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="107.3" y1="139.2" x2="110.4" y2="139.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="107.1" y1="138.4" x2="107.3" y2="139.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s0621369036" gradientUnits="userSpaceOnUse" x1="113.5" y1="141.6" x2="113.3" y2="140.1"><stop stop-color="#ff9112"/><stop offset="1" stop-color="#ff9813"/></linearGradient>
 <polygon points="112.5,141.3 114.3,139.6 114.3,139.6 114.6,139.8 114.9,140.0 114.9,140.0 113.2,141.6 112.8,142.0 112.3,141.7" fill="url(#s0621369036)" stroke="url(#s0621369036)" stroke-width="0.5"/>
 <linearGradient id="sad9eb8f53f" gradientUnits="userSpaceOnUse" x1="119.1" y1="139.6" x2="120.1" y2="141.7"><stop stop-color="#ff9112"/><stop offset="1" stop-color="#f98710"/></linearGradient>
@@ -5068,8 +5068,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="93.3" y1="143.5" x2="95.5" y2="145.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sa517589d6e" gradientUnits="userSpaceOnUse" x1="84.5" y1="52.5" x2="85.0" y2="53.6"><stop stop-color="#633204"/><stop offset="1" stop-color="#683505"/></linearGradient>
 <polygon points="83.0,54.5 82.4,54.6 83.2,53.2 84.2,52.7 85.4,52.1 87.7,52.0 87.5,52.5 87.1,53.2 84.3,54.5" fill="url(#sa517589d6e)" stroke="url(#sa517589d6e)" stroke-width="0.5"/>
-<line x1="87.5" y1="52.5" x2="86.6" y2="54.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="92.3" y1="50.9" x2="87.5" y2="52.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="87.5" y1="52.5" x2="86.6" y2="54.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s7b756ca05b" gradientUnits="userSpaceOnUse" x1="87.6" y1="141.0" x2="86.7" y2="142.4"><stop stop-color="#e1750b"/><stop offset="1" stop-color="#ca6709"/></linearGradient>
 <polygon points="88.5,142.8 88.7,143.4 87.1,142.9 86.3,142.2 85.8,141.6 85.9,140.1 86.4,140.3 87.3,140.5 88.7,142.2" fill="url(#s7b756ca05b)" stroke="url(#s7b756ca05b)" stroke-width="0.5"/>
 <linearGradient id="se8a6ba3936" gradientUnits="userSpaceOnUse" x1="92.1" y1="48.2" x2="92.5" y2="49.4"><stop stop-color="#5d3004"/><stop offset="1" stop-color="#623204"/></linearGradient>
@@ -9183,8 +9183,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <linearGradient id="s33e00072df" gradientUnits="userSpaceOnUse" x1="116.3" y1="47.4" x2="116.9" y2="49.3"><stop stop-color="#ff9d14"/><stop offset="1" stop-color="#ffa917"/></linearGradient>
 <polygon points="116.9,49.3 116.7,47.3 116.4,49.3 116.4,49.8 116.8,49.8" fill="url(#s33e00072df)" stroke="url(#s33e00072df)" stroke-width="0.5"/>
 <line x1="116.7" y1="47.3" x2="116.9" y2="45.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="116.7" y1="47.3" x2="115.5" y2="45.7" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.7" y1="47.3" x2="118.3" y2="45.7" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="116.7" y1="47.3" x2="115.5" y2="45.7" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.7" y1="47.3" x2="114.2" y2="46.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.7" y1="47.3" x2="119.8" y2="46.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.7" y1="47.3" x2="113.3" y2="46.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -10295,8 +10295,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <line x1="120.3" y1="53.7" x2="121.5" y2="56.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sad17a375ea" gradientUnits="userSpaceOnUse" x1="133.6" y1="133.6" x2="133.9" y2="128.7"><stop stop-color="#bd6a0e"/><stop offset="1" stop-color="#dc7c11"/></linearGradient>
 <polygon points="136.2,132.0 136.7,131.6 136.8,128.8 136.3,128.9 134.9,129.2 128.6,132.7 128.6,133.3 128.6,133.8 134.9,132.7" fill="url(#sad17a375ea)" stroke="url(#sad17a375ea)" stroke-width="0.5"/>
-<line x1="136.2" y1="132.0" x2="136.1" y2="134.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="136.2" y1="132.0" x2="143.4" y2="130.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="136.2" y1="132.0" x2="136.1" y2="134.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s4e2439592e" gradientUnits="userSpaceOnUse" x1="137.5" y1="61.7" x2="136.7" y2="65.7"><stop stop-color="#ffd820"/><stop offset="1" stop-color="#ffe122"/></linearGradient>
 <polygon points="138.9,64.3 138.7,63.4 136.7,61.2 136.2,61.5 135.7,61.7 135.7,65.0 136.2,65.6 136.5,66.0 138.8,64.8" fill="url(#s4e2439592e)" stroke="url(#s4e2439592e)" stroke-width="0.5"/>
 <linearGradient id="s7512241431" gradientUnits="userSpaceOnUse" x1="79.7" y1="78.5" x2="85.1" y2="78.3"><stop stop-color="#bd690e"/><stop offset="1" stop-color="#e07e11"/></linearGradient>
@@ -11347,8 +11347,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Ima
 <polygon points="120.4,105.0 120.9,104.6 120.7,100.8 120.2,100.9 119.2,100.9 113.2,104.4 113.2,105.0 113.2,105.5 119.5,105.5" fill="url(#s2b1e137493)" stroke="url(#s2b1e137493)" stroke-width="0.5"/>
 <linearGradient id="scc2f845be1" gradientUnits="userSpaceOnUse" x1="113.0" y1="91.9" x2="118.9" y2="87.5"><stop stop-color="#ffc71f"/><stop offset="1" stop-color="#ffd822"/></linearGradient>
 <polygon points="113.8,88.6 113.2,88.9 113.1,92.6 113.6,92.7 114.5,92.7 119.8,89.2 119.7,88.6 119.7,88.1 114.5,88.1" fill="url(#scc2f845be1)" stroke="url(#scc2f845be1)" stroke-width="0.5"/>
-<line x1="113.9" y1="84.5" x2="113.8" y2="88.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="107.8" y1="88.2" x2="113.8" y2="88.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="113.9" y1="84.5" x2="113.8" y2="88.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s2be0c07eff" gradientUnits="userSpaceOnUse" x1="107.8" y1="102.0" x2="113.7" y2="97.1"><stop stop-color="#ffa91a"/><stop offset="1" stop-color="#ffc01e"/></linearGradient>
 <polygon points="113.3,100.9 113.8,100.6 113.9,96.8 113.4,96.8 112.5,96.7 106.5,99.8 106.4,100.4 106.4,100.9 112.4,101.3" fill="url(#s2be0c07eff)" stroke="url(#s2be0c07eff)" stroke-width="0.5"/>
 <line x1="99.8" y1="99.3" x2="106.4" y2="100.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>

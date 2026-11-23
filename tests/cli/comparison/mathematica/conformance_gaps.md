@@ -7027,6 +7027,16 @@ internal hash order. Woxi keeps input order.
   WL's head graphics; `"CurvedArc"` is WL's quadratic Bézier. A curved
   edge is cut where it leaves the vertex along the line to its control
   point; WL cuts it where the curve crosses the vertex's disk.
+- **`MultiedgeStyle -> d`**: Woxi bends each of two parallel edges out by
+  about `d / 2` of their length (a quadratic Bézier with control points
+  `2 d` lengths apart), read off a Demonstration snapshot of
+  `MultiedgeStyle -> 0.3`; WL's exact curve has not been measured, nor how
+  it fans out three or more parallel edges. `Automatic` keeps Woxi's own
+  smaller spread.
+- **Vertex labels at the edge of a `GraphPlot`**: WL pads the plot so a
+  vertex label right of the rightmost vertex stays inside the image; Woxi
+  sizes the plot range from the vertices alone, so a long label there is
+  cut off at the image border.
 
 
 ## Knot data
@@ -10579,19 +10589,6 @@ in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
 Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
-
-### Studio: Grid `ItemSize -> w` columns are wider than the front end's
-
-Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
-plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
-gives 68 px per column. A front-end snapshot of the same grid (text about
-14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
-27% narrower. A six-column grid like that inside a
-`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
-the pane in Woxi (409 px) and loses its right frame line and its centering,
-while Wolfram draws it about 297 px wide, centered. The front end's em unit
-for `ItemSize` and whether it includes the grid's `Spacings` have not been
-verified against `wolframscript`, so the width rule is left unchanged.
 
 ### `Plot` runs the cells of a multi-column `Grid` title together
 

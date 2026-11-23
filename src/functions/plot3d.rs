@@ -2251,7 +2251,16 @@ fn parse_iterator(
           "Plot3D: cannot evaluate {label} iterator max to a number"
         ))
       })?;
-      Ok((var, min_val, max_val))
+      // Wolfram samples a reversed range `{u, 2 Pi, 0.9}` exactly like
+      // `{u, 0.9, 2 Pi}`. Keeping the given order would flip the winding
+      // of every surface facet, which swaps the sides that a two-sided
+      // `FaceForm[front, back]` paints, and it breaks code below that
+      // clips a `min <= max` interval against `PlotRange`.
+      Ok(if min_val <= max_val {
+        (var, min_val, max_val)
+      } else {
+        (var, max_val, min_val)
+      })
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Plot3D: {label} iterator must be {{var, min, max}}"
@@ -15777,15 +15786,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Depths closer than this fraction of the scene size cannot be told
+  // apart on screen.
+  let depth_quantum = ((x3_max - x3_min).powi(2)
+    + (y3_max - y3_min).powi(2)
+    + (z3_max - z3_min).powi(2))
+  .sqrt()
+    * 1e-3;
   {
     // Lines sit exactly on the surfaces they outline, so nudge them
     // toward the viewer by a fraction of the scene size: a face's own
     // outline stays visible while lines behind other faces are hidden.
-    let diag = ((x3_max - x3_min).powi(2)
-      + (y3_max - y3_min).powi(2)
-      + (z3_max - z3_min).powi(2))
-    .sqrt();
-    let bias = diag * 1e-3;
+    let bias = depth_quantum;
     const LINE_SUBDIVISIONS: usize = 8;
     // The on-screen length (px) a segment's pieces are cut to (shorter
     // segments are not cut), and the most pieces one segment is cut into.
@@ -15951,11 +15963,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  sorted_edges.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  // Far-to-near. Pieces at indistinguishable depths (two curves that
+  // coincide, like a synchronized pair of trajectories) keep their
+  // primitive order, so the later primitive is drawn on top as with a
+  // depth buffer, instead of the two interleaving piece by piece.
+  if depth_quantum > 0.0 && depth_quantum.is_finite() {
+    sorted_edges.sort_by_cached_key(|e| {
+      std::cmp::Reverse((e.depth / depth_quantum).round() as i64)
+    });
+  } else {
+    sorted_edges.sort_by(|a, b| {
+      b.depth
+        .partial_cmp(&a.depth)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+  }
 
   let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
   if full_width {
