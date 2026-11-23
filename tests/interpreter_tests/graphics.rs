@@ -37724,8 +37724,9 @@ mod graphics_grid {
     );
   }
 
-  /// Text that names only the generic `sans-serif` family gets the bundled
-  /// sans face spelled out, with the generic family kept as its fallback.
+  /// Text that names only a generic `sans-serif` / `monospace` family gets
+  /// the bundled face spelled out, with the generic family kept as its
+  /// fallback.
   #[test]
   fn default_text_family_spells_out_generic_sans_serif() {
     let svg = "<svg><text font-family=\"sans-serif\" x=\"2\">A</text>\
@@ -37734,7 +37735,8 @@ mod graphics_grid {
     assert_eq!(
       out,
       "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
-       x=\"2\">A</text><text font-family=\"monospace\">B</text></svg>"
+       x=\"2\">A</text><text font-family=\"Atkinson Hyperlegible Mono, \
+       monospace\">B</text></svg>"
     );
   }
 
