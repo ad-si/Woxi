@@ -188,12 +188,46 @@ fn ranged_gradient_color_function(scheme: &str, range: &Expr) -> Expr {
 /// samples over the unit square, drawn at a 1/8 aspect ratio.
 fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
   const SAMPLES: usize = 101;
-  let row: Vec<Expr> = (0..SAMPLES)
+  let row: Vec<(f64, f64, f64)> = (0..SAMPLES)
     .map(|x| {
-      let (r, g, b) = crate::functions::chart::gradient_color_at(
+      crate::functions::chart::gradient_color_at(
         controls,
         x as f64 / (SAMPLES - 1) as f64,
-      );
+      )
+    })
+    .collect();
+  color_strip_graphics(&row)
+}
+
+/// `ColorData[n, "Image"]` for an indexed scheme: its swatches side by side
+/// in one strip — one full cycle of a cycling palette, or the first 15
+/// colors of a generated one (the colors `"ColorList"` gives).
+fn indexed_strip_image(n: i128) -> Option<Expr> {
+  let list = indexed_color_list(n)?;
+  let Expr::List(colors) = &list else {
+    return None;
+  };
+  let row = colors
+    .iter()
+    .map(|color| {
+      let rgb = crate::evaluator::evaluate_function_call_ast(
+        "ColorConvert",
+        &[color.clone(), str_expr("RGB")],
+      )
+      .ok()?;
+      let (r, g, b, _) =
+        crate::functions::image_ast::color_directive_to_rgb(&rgb)?;
+      Some((r, g, b))
+    })
+    .collect::<Option<Vec<_>>>()?;
+  (!row.is_empty()).then(|| color_strip_graphics(&row))
+}
+
+/// A one-row `Raster` of `row` over the unit square, drawn as a wide strip.
+fn color_strip_graphics(row: &[(f64, f64, f64)]) -> Expr {
+  let row: Vec<Expr> = row
+    .iter()
+    .map(|&(r, g, b)| {
       Expr::List(vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into())
     })
     .collect();
@@ -1707,6 +1741,11 @@ pub fn dispatch_image_functions(
               return Some(Ok(range));
             }
           }
+          "Image" => {
+            if let Some(image) = indexed_strip_image(*n) {
+              return Some(Ok(image));
+            }
+          }
           _ => {}
         }
       }
@@ -1722,6 +1761,14 @@ pub fn dispatch_image_functions(
             .map(|n| str_expr(n))
             .collect(),
         )));
+      }
+      // ColorData["Indexed"]: the numbers of the cataloged indexed
+      // schemes, 1–112 (scheme 0 and the plot-theme palettes above 112
+      // exist but are not listed).
+      if let Expr::String(s) = &args[0]
+        && s == "Indexed"
+      {
+        return Some(Ok(Expr::List((1..=112).map(Expr::Integer).collect())));
       }
       // ColorData["Charting"]: the indexed schemes made for charts, 44–62
       // (so `ColorData[ColorData["Charting"][[k]]]` colors a chart like
