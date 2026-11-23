@@ -7923,6 +7923,53 @@ mod plot3d {
     assert!(white * 10 < fills.len(), "{white} of {} white", fills.len());
   }
 
+  /// A named gradient `ColorFunction` colors a `ParametricPlot3D` surface by
+  /// its scaled height, also when it is chosen by a computation (`Which`),
+  /// and the colors are baked into the primitives, so a copy of `p[[1]]`
+  /// moved into another `Graphics3D` keeps them.
+  #[test]
+  fn parametric_plot3d_named_color_function_colors_by_height() {
+    let plot = |cf: &str| {
+      format!(
+        "ParametricPlot3D[{{r Cos[t], r Sin[t], r^2}}, {{r, 0, 1}}, \
+         {{t, 0, 2 Pi}}, Mesh -> None, ColorFunction -> {cf}]"
+      )
+    };
+    let fills = |svg: &str| -> Vec<(u8, u8, u8)> {
+      svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|s| {
+          let mut it = s.split(')').next()?.split(',').map(|v| v.parse().ok());
+          Some((it.next()??, it.next()??, it.next()??))
+        })
+        .collect()
+    };
+    let named = export_svg(&plot("\"BlueGreenYellow\""));
+    assert_eq!(named, export_svg(&plot("ColorData[\"BlueGreenYellow\"]")));
+    let mode = "m = \"color\"; ";
+    assert_eq!(
+      named,
+      export_svg(&format!(
+        "{mode}{}",
+        plot("Which[m == \"color\", \"BlueGreenYellow\", True, None]")
+      ))
+    );
+    for svg in [
+      named,
+      export_svg(&format!(
+        "p = {}; Show[Graphics3D[Translate[p[[1]], {{0, 0, 2}}]]]",
+        plot("\"BlueGreenYellow\"")
+      )),
+    ] {
+      let fills = fills(&svg);
+      // The bottom takes the gradient's dark blue end, the rim its
+      // yellow end.
+      assert!(fills.iter().any(|&(r, g, b)| b > 100 && r < 80 && g < 80));
+      assert!(fills.iter().any(|&(r, g, b)| r > 180 && g > 180 && b < 140));
+    }
+  }
+
   /// A translucent `PlotStyle` surface must stay translucent when `Show`
   /// re-renders it from its symbolic form together with other graphics,
   /// for every surface plot that carries one.
