@@ -34124,10 +34124,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
-    // A drawing that reaches the pane already rendered — `Show[Graphics[…]]`
-    // or a helper function returning one — takes the same default marker as
-    // the bare `Graphics` over the same plot range, instead of one sized for
-    // a unit range (a tenth of the size over a range ten units wide).
+    // A drawing shown through `Show[Graphics[…]]` (directly or from a
+    // helper function), which hands its options over as one list, takes the
+    // same default marker as the bare `Graphics` over the same plot range,
+    // instead of one sized for a unit range (a tenth of the size over a
+    // range ten units wide).
     #[test]
     fn locator_pane_default_marker_sized_by_a_shown_drawing() {
       let drawing = "Graphics[{Line[{{-5, 0}, {5, 0}}]}, \

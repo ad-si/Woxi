@@ -6412,10 +6412,19 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
     _ => None,
   });
   let (body_prims, body_opts) = match &body {
+    // The options may come as one list (`Graphics[prims, {opts…}]`, the
+    // form `Show[Graphics[…]]` returns); they are read one by one.
     Expr::FunctionCall { name, args }
       if name == "Graphics" && !args.is_empty() =>
     {
-      (args[0].clone(), args[1..].to_vec())
+      let opts = args[1..]
+        .iter()
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .collect();
+      (args[0].clone(), opts)
     }
     // A body that evaluates straight to a rendered picture instead of
     // staying the symbolic `Graphics[prims, opts]` above — `Show[…]`,
@@ -6502,13 +6511,10 @@ fn locator_marker_units(
 /// `LocatorPane` marker's default size is scaled against, for a body that
 /// only exists as a rendered picture (so there is no `PlotRange` option
 /// lying around in a primitive list to read, as `locator_pane_graphic`
-/// reads for the symbolic-`Graphics` case). A plot is measured by its
-/// stored ranges. A picture without a usable stored range that remembers
-/// its symbolic `Graphics[prims, opts]` (a `Show[Graphics[…]]`, or a
-/// function returning one) is measured by that, as `PlotRange[g]` is: the
-/// explicit `PlotRange` or the primitives' extent, with an explicit numeric
-/// `AspectRatio` or `Automatic`. Falls back to `1.0` — matching that case's own fallback — when the
-/// picture carries no usable range.
+/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
+/// that case's own fallback — when the picture carries no source range (a
+/// plain `Graphics[…]` with no plot data, or a picture kind that keeps
+/// none).
 fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
   if let Expr::Graphics {
     source: Some(src), ..
@@ -6520,32 +6526,7 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
     let aspect = src
       .aspect_ratio
       .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
-    if x_extent > 0.0 && y_extent > 0.0 {
-      return locator_marker_units(x_extent, y_extent, aspect);
-    }
-  }
-  if let Expr::Graphics {
-    structure: Some(structure),
-    is_3d: false,
-    ..
-  } = body
-    && let Some(((x0, x1), (y0, y1))) =
-      crate::functions::graphics::absolute_plot_range(structure)
-  {
-    let aspect = match structure.as_ref() {
-      Expr::FunctionCall { args, .. } => args.iter().skip(1).find_map(|o| {
-        match o {
-          Expr::Rule { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "AspectRatio") =>
-          {
-            crate::functions::math_ast::try_eval_to_f64(replacement)
-          }
-          _ => None,
-        }
-      }),
-      _ => None,
-    };
-    return locator_marker_units((x1 - x0).abs(), (y1 - y0).abs(), aspect);
+    return locator_marker_units(x_extent, y_extent, aspect);
   }
   (1.0, 1.0)
 }
