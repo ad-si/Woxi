@@ -10670,6 +10670,17 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
 
+### A one-letter string subscripted in a graphics label is drawn upright
+
+A saved snapshot of `Graphics[{…, Inset[Style[Column[{Row[{Subscript["ζ",
+1], " = ", val}], …}], 14], pos]}]` shows the subscripted one-letter
+strings (`ζ₁`, `ω₁`, `f₁`) in italics and the longer strings (`" = "`,
+`" Hz"`) upright. Woxi sets every quoted string upright whatever the form,
+so it draws `ζ₁` upright; only a one-letter *symbol* (`Subscript[f, 1]`) is
+italicized. Not verified against `wolframscript`; it is open whether the
+front end italicizes every one-letter string in a `TraditionalForm` label or
+only one that is a script's base.
+
 ### `SliceContourPlot3D` automatic contour levels on coarse slices
 
 With `Contours -> n` Woxi spaces the levels over the range of its own slice
