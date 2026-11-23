@@ -9010,7 +9010,9 @@ pub(crate) fn scatter_point_colors(
 
 /// The `(x_min, x_max, y_min, y_max)` extent of the finite points of
 /// `series`, or `None` when there are none.
-fn data_extents(series: &[Vec<(f64, f64)>]) -> Option<(f64, f64, f64, f64)> {
+pub(crate) fn data_extents(
+  series: &[Vec<(f64, f64)>],
+) -> Option<(f64, f64, f64, f64)> {
   let mut pts = series
     .iter()
     .flatten()

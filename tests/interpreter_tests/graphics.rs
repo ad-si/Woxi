@@ -23151,6 +23151,42 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(list, rgb);
     }
 
+    /// Regression: `ColorFunctionScaling` rescaled a parametric curve's `x`
+    /// over the explicit `PlotRange`, so a curve filling only part of a wide
+    /// plot never reached either end of the gradient. Like `Plot`, the
+    /// scaling follows the extent of the drawn curve.
+    #[test]
+    fn parametric_curve_color_function_scales_over_curve_extent() {
+      let reds = |code: &str| -> (f64, f64) {
+        let out = interpret(&format!(
+          "Cases[{code}, RGBColor[r_, __] :> r, Infinity] // \
+           {{Min[#], Max[#]}} &"
+        ))
+        .unwrap();
+        let vals: Vec<f64> = out
+          .trim_matches(|c| c == '{' || c == '}')
+          .split(',')
+          .map(|v| v.trim().parse().unwrap())
+          .collect();
+        (vals[0], vals[1])
+      };
+      for range in ["", ", PlotRange -> {{-4, 4}, {-4, 4}}"] {
+        let (lo, hi) = reds(&format!(
+          "ParametricPlot[{{Cos[t], Sin[t]}}, {{t, 0, 2 Pi}}, \
+           ColorFunction -> Function[{{x, y}}, RGBColor[x, 0, 0]]{range}]"
+        ));
+        assert!(lo < 0.05 && hi > 0.95, "{range}: {lo}..{hi}");
+      }
+      // A curve clipped by `RegionFunction` spans the gradient over what
+      // remains of it.
+      let (lo, hi) = reds(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+         RegionFunction -> Function[{x}, x < 0], \
+         ColorFunction -> Function[{x, y}, RGBColor[x, 0, 0]]]",
+      );
+      assert!(lo < 0.05 && hi > 0.95, "{lo}..{hi}");
+    }
+
     /// The dash offsets of an SVG's dashed strokes, in drawing order (0 for
     /// a stroke that starts its pattern afresh).
     fn dash_offsets(svg: &str) -> Vec<f64> {

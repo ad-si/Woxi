@@ -526,8 +526,8 @@ fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
 
 /// Split each sampled curve into runs of constant `ColorFunction` color.
 /// The function receives `{x, y, t}` taken at the midpoint of every step;
-/// with `ColorFunctionScaling` on, `x` and `y` are rescaled over the plot
-/// range and `t` over the parameter range first. A named gradient colors by
+/// with `ColorFunctionScaling` on, `x` and `y` are rescaled over the
+/// curve's extent and `t` over the parameter range first. A named gradient colors by
 /// the scaled `x`. Consecutive runs share their boundary point so the curve
 /// stays connected. Returns the run polylines and the RGBA color of each.
 /// (See [`ColorRuns`].)
@@ -1445,6 +1445,12 @@ fn render_curves(
   // gets the colored runs, since the parameter `f` needs is gone by then.
   let mut colored_runs: Option<(Vec<Vec<(f64, f64)>>, Vec<SeriesStyle>)> = None;
   let svg = if let Some(cf) = plot_opts.color_function.take() {
+    // Like `Plot`, `ColorFunctionScaling` rescales `x` and `y` over the
+    // extent of the drawn curve, not over an explicit `PlotRange`: a curve
+    // spanning only part of the plot still runs through the whole gradient.
+    let (cf_x_range, cf_y_range) =
+      crate::functions::plot::data_extents(all_points)
+        .map_or((x_range, y_range), |(x0, x1, y0, y1)| ((x0, x1), (y0, y1)));
     let ColorRuns {
       runs,
       colors,
@@ -1456,8 +1462,8 @@ fn render_curves(
       radii,
       &cf,
       plot_opts.color_function_scaling,
-      x_range,
-      y_range,
+      cf_x_range,
+      cf_y_range,
       (t_min, t_max),
     );
     let base = plot_opts.plot_style.clone();
