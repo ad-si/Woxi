@@ -25205,7 +25205,7 @@ fn resolve_parametric_triples_raw(
       for (group, item) in items.iter().enumerate() {
         match resolve_one_parametric_item_to_curves(item, shadow_vars) {
           Some(item_curves) => {
-            curves.extend(item_curves.into_iter().map(|c| (group, c)))
+            curves.extend(item_curves.into_iter().map(|c| (group, c)));
           }
           None => return Err(err()),
         }
