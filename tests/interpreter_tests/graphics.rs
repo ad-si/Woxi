@@ -7832,6 +7832,28 @@ mod plot3d {
     );
   }
 
+  /// `Glow[]` is `Glow[Black]`: it switches off an earlier glow, so the
+  /// faces after it are lit as if no glow had been set.
+  #[test]
+  fn empty_glow_switches_an_earlier_glow_off() {
+    let face = "Polygon[{{0,0,0},{1,0,0},{0,0,1}}]";
+    let opts = "Boxed -> False, ViewPoint -> {0,-20,0}";
+    let plain = export_svg(&format!("Graphics3D[{{Red, {face}}}, {opts}]"));
+    for off in ["Glow[]", "Glow[Black]"] {
+      assert_eq!(
+        export_svg(&format!(
+          "Graphics3D[{{Glow[Pink], {off}, Red, {face}}}, {opts}]"
+        )),
+        plain,
+        "{off}"
+      );
+    }
+    assert_ne!(
+      export_svg(&format!("Graphics3D[{{Glow[Pink], Red, {face}}}, {opts}]")),
+      plain
+    );
+  }
+
   /// `Cuboid[{pmin, pmax}]` is the box `Cuboid[pmin, pmax]`.
   #[test]
   fn cuboid_accepts_corner_pair_in_one_list() {
