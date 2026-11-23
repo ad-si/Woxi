@@ -4734,6 +4734,30 @@ mod tests {
     );
   }
 
+  /// A body `Pane[…; Grid[{{fraction}, {picture}}], {w, h}, Alignment ->
+  /// {Center}]` shows the table of pictures in the pane's whole `w` x `h`
+  /// box, not shrunk to the table's own size.
+  #[test]
+  fn grid_of_pictures_in_fixed_size_pane_keeps_its_box() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[If[a > b, a = b]; Grid[{
+        {Text@Style[a/b, 20, Bold]},
+        {Graphics[Rectangle[{0, 0}, {1, a/b}], ImageSize -> {100, 100}]}}],
+        {500, 200}, Alignment -> {Center}],
+      {{a, 1}, 0, 10, 1}, {{b, 4}, 1, 10, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    state.reevaluate();
+    let svg = state.current_svg().expect("the table is drawn").to_string();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg:.200}"
+    );
+  }
+
   /// A body that computes its table inside a scoping construct and only
   /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
   /// footer rows included — not just a nested framed table measured while

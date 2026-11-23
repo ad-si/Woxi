@@ -5310,6 +5310,38 @@ mod tests {
       );
     }
 
+    /// A table of pictures in a fixed-size `Pane` takes up the pane's whole
+    /// box, not just the table's own size.
+    #[test]
+    fn a_grid_of_pictures_in_a_fixed_pane_fills_the_box() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{Graphics[Disk[], ImageSize -> {100, 100}], "a"}}], {500, 200}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the table is a picture");
+      assert!(
+        svg.starts_with("<svg width=\"500\" height=\"200\""),
+        "{svg:.200}"
+      );
+    }
+
+    /// `Alignment -> {Center}` centers the content horizontally and keeps
+    /// it at the top, like `Alignment -> {Center, Top}`.
+    #[test]
+    fn a_one_element_pane_alignment_list_sets_the_horizontal_alignment() {
+      let svg_for = |align: &str| {
+        woxi::interpret_with_stdout(&format!(
+          r#"Pane[Grid[{{{{Graphics[Disk[], ImageSize -> {{100, 100}}]}}}}], {{500, 200}}, Alignment -> {align}]"#
+        ))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the table is a picture")
+      };
+      let single = svg_for("{Center}");
+      assert_eq!(single, svg_for("{Center, Top}"));
+      assert_ne!(single, svg_for("{Left, Top}"));
+    }
+
     /// `Panel[table, Text[caption]]` is drawn as the table with its caption
     /// above it; with a bare-string caption a plain table stays text.
     #[test]

@@ -7725,6 +7725,11 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
         fraction(&pair[0]).unwrap_or(0.0),
         fraction(&pair[1]).unwrap_or(0.0),
       ),
+      // `{h}` gives the horizontal alignment alone; the vertical one keeps
+      // its default (`Top`).
+      Expr::List(single) if single.len() == 1 => {
+        (fraction(&single[0]).unwrap_or(0.0), 0.0)
+      }
       // A lone `Center` centers on both axes; `Top`/`Bottom` place
       // vertically and `Left`/`Right` horizontally.
       Expr::Identifier(n) if n == "Center" => (0.5, 0.5),
