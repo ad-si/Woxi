@@ -6200,12 +6200,18 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
 /// nothing, and with no `Appearance` at all the Wolfram default is a small
 /// circle with a crosshair through it, sized here as a fraction of the plot
 /// range so it keeps its proportions whatever the scale.
+///
+/// `units` are the x and y data extents that cover the same on-screen
+/// length (see [`locator_marker_units`]), so a marker stays round in a pane
+/// whose axes are scaled differently (`Plot[…, AspectRatio -> 1]` over an x
+/// range far wider than its y range).
 fn locator_marker(
   appearance: Option<&Expr>,
   index: usize,
   point: &Expr,
-  span: f64,
+  units: (f64, f64),
 ) -> Option<Expr> {
+  let (ux, uy) = units;
   let translate =
     |prims: &Expr| call("Translate", vec![prims.clone(), point.clone()]);
   // An `Appearance` picture with a numeric `ImageSize -> n` is `n` pixels
@@ -6231,10 +6237,15 @@ fn locator_marker(
         if extent <= 0.0 {
           return translate(&prims);
         }
-        let k = n * span / 360.0 / extent;
+        let (kx, ky) = (n * ux / 360.0 / extent, n * uy / 360.0 / extent);
         let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
         let center = Expr::List(vec![num(cx), num(cy)].into());
-        let scaled = call("Scale", vec![prims, num(k), center]);
+        let factor = if kx == ky {
+          num(kx)
+        } else {
+          Expr::List(vec![num(kx), num(ky)].into())
+        };
+        let scaled = call("Scale", vec![prims, factor, center]);
         // Move the (scaled-in-place) marker's center onto the locator.
         call(
           "Translate",
@@ -6278,16 +6289,20 @@ fn locator_marker(
     }
     Some(single) => Some(marker(single)),
     None => {
-      let r = span * 0.015;
-      let arm = span * 0.03;
       let offset = |dx: f64, dy: f64| Expr::List(vec![num(dx), num(dy)].into());
+      let radius = if ux == uy {
+        num(ux * 0.015)
+      } else {
+        offset(ux * 0.015, uy * 0.015)
+      };
+      let (arm_x, arm_y) = (ux * 0.03, uy * 0.03);
       let line =
         |a: Expr, b: Expr| call("Line", vec![Expr::List(vec![a, b].into())]);
       Some(translate(&Expr::List(
         vec![
-          call("Circle", vec![offset(0.0, 0.0), num(r)]),
-          line(offset(-arm, 0.0), offset(arm, 0.0)),
-          line(offset(0.0, -arm), offset(0.0, arm)),
+          call("Circle", vec![offset(0.0, 0.0), radius]),
+          line(offset(-arm_x, 0.0), offset(arm_x, 0.0)),
+          line(offset(0.0, -arm_y), offset(0.0, arm_y)),
         ]
         .into(),
       )))
@@ -6418,33 +6433,38 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
 
   // The default marker is sized against the plot range, so it stays a small
   // fraction of the picture whatever the coordinates are.
-  let span = body_opts
-    .iter()
-    .find_map(|o| match o {
-      Expr::Rule { pattern, replacement }
-        if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "PlotRange") =>
-      {
-        match replacement.as_ref() {
-          Expr::List(axes) if axes.len() == 2 => {
-            let extent = |e: &Expr| match e {
-              Expr::List(b) if b.len() == 2 => {
-                let f = crate::functions::math_ast::try_eval_to_f64;
-                Some((f(&b[1])? - f(&b[0])?).abs())
-              }
-              _ => None,
-            };
-            Some(extent(&axes[0])?.max(extent(&axes[1])?))
-          }
-          _ => None,
-        }
+  let option = |key: &str| {
+    body_opts.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == key) => {
+        Some(replacement.as_ref())
       }
       _ => None,
     })
-    .unwrap_or(1.0);
+  };
+  let extents = option("PlotRange").and_then(|range| match range {
+    Expr::List(axes) if axes.len() == 2 => {
+      let extent = |e: &Expr| match e {
+        Expr::List(b) if b.len() == 2 => {
+          let f = crate::functions::math_ast::try_eval_to_f64;
+          Some((f(&b[1])? - f(&b[0])?).abs())
+        }
+        _ => None,
+      };
+      Some((extent(&axes[0])?, extent(&axes[1])?))
+    }
+    _ => None,
+  });
+  let aspect =
+    option("AspectRatio").and_then(crate::functions::math_ast::try_eval_to_f64);
+  let units =
+    extents.map_or((1.0, 1.0), |(xs, ys)| locator_marker_units(xs, ys, aspect));
 
   let mut prims = vec![body_prims];
   for (i, point) in points.iter().enumerate() {
-    if let Some(marker) = locator_marker(appearance.as_ref(), i, point, span) {
+    if let Some(marker) = locator_marker(appearance.as_ref(), i, point, units) {
       prims.push(marker);
     }
   }
@@ -6453,26 +6473,50 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   Some(call("Graphics", graphics_args))
 }
 
-/// The data-space extent a `LocatorPane` marker's default size is scaled
-/// against, for a body that only exists as a rendered picture (so there is
-/// no `PlotRange` option lying around in a primitive list to read, as
-/// `locator_pane_graphic` reads for the symbolic-`Graphics` case). Falls
-/// back to `1.0` — matching that case's own fallback — when the picture
-/// carries no source range (a plain `Graphics[…]` with no plot data, or a
-/// picture kind that keeps none).
-fn rendered_graphic_span(body: &Expr) -> f64 {
+/// The x and y data extents a `LocatorPane` marker's default size is
+/// scaled against, given the pane's plot range extents and its
+/// height/width `aspect` ratio (`None` = `Automatic`, one unit the same
+/// length on both axes). Both cover the same on-screen length — the longer
+/// side of the pane — so a marker sized from them keeps its shape however
+/// differently the two axes are stretched.
+fn locator_marker_units(
+  x_extent: f64,
+  y_extent: f64,
+  aspect: Option<f64>,
+) -> (f64, f64) {
+  let span = x_extent.max(y_extent);
+  match aspect {
+    Some(a) if a > 0.0 && x_extent > 0.0 && y_extent > 0.0 => {
+      let longer = a.max(1.0);
+      (longer * x_extent, longer * y_extent / a)
+    }
+    _ if span > 0.0 => (span, span),
+    _ => (1.0, 1.0),
+  }
+}
+
+/// The per-axis data extents (see [`locator_marker_units`]) a
+/// `LocatorPane` marker's default size is scaled against, for a body that
+/// only exists as a rendered picture (so there is no `PlotRange` option
+/// lying around in a primitive list to read, as `locator_pane_graphic`
+/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
+/// that case's own fallback — when the picture carries no source range (a
+/// plain `Graphics[…]` with no plot data, or a picture kind that keeps
+/// none).
+fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
   if let Expr::Graphics {
     source: Some(src), ..
   } = body
   {
     let x_extent = (src.x_range.1 - src.x_range.0).abs();
     let y_extent = (src.y_range.1 - src.y_range.0).abs();
-    let span = x_extent.max(y_extent);
-    if span > 0.0 {
-      return span;
-    }
+    let (w, h) = src.image_size;
+    let aspect = src
+      .aspect_ratio
+      .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
+    return locator_marker_units(x_extent, y_extent, aspect);
   }
-  1.0
+  (1.0, 1.0)
 }
 
 /// The `Epilog` option a rendered picture was drawn with, if any: one its
@@ -6690,11 +6734,11 @@ fn locator_pane_graphic_via_epilog(
   if !lays_out_a_graphic(body) {
     return None;
   }
-  let span = rendered_graphic_span(body);
+  let units = rendered_graphic_units(body);
   let markers: Vec<Expr> = points
     .iter()
     .enumerate()
-    .filter_map(|(i, p)| locator_marker(appearance, i, p, span))
+    .filter_map(|(i, p)| locator_marker(appearance, i, p, units))
     .collect();
   if markers.is_empty() {
     return Some(body.clone());
