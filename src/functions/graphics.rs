@@ -17869,11 +17869,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             || !fl.top.is_empty()
             || !fl.right.is_empty()
           {
+            // A stacked-fraction label is drawn as its picture.
+            let markup = |edge: usize, text: &str| {
+              fl.pictures[edge]
+                .clone()
+                .unwrap_or_else(|| box_string_to_svg(text))
+            };
             frame_label = Some((
-              box_string_to_svg(&fl.bottom),
-              box_string_to_svg(&fl.left),
-              box_string_to_svg(&fl.top),
-              box_string_to_svg(&fl.right),
+              markup(0, &fl.bottom),
+              markup(1, &fl.left),
+              markup(2, &fl.top),
+              markup(3, &fl.right),
             ));
           }
         }
@@ -19134,7 +19140,18 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pitch = line_pitch(flf);
     let room =
       |edge: usize| decorations.frame_tick_room(edge, 0.0) + FRAME_LABEL_GAP;
-    if !bottom.is_empty() {
+    // A stacked-fraction caption is a picture, centered on its edge at
+    // its own height (padded for by `frame_labels` above).
+    let picture_h = |s: &str| axes_label_picture_size(s).map(|(_, h)| h);
+    if let Some(h) = picture_h(bottom) {
+      svg.push_str(&frame_label_picture_svg(
+        bottom,
+        svg_w / 2.0,
+        svg_h + room(0) + h / 2.0,
+        false,
+        1.0,
+      ));
+    } else if !bottom.is_empty() {
       let x = svg_w / 2.0;
       svg.push_str(&format!(
         "<text x=\"{x:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
@@ -19143,7 +19160,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::plot::join_label_lines(&text_label_lines(bottom), x, pitch),
       ));
     }
-    if !left.is_empty() {
+    if let Some(h) = picture_h(left) {
+      svg.push_str(&frame_label_picture_svg(
+        left,
+        -(room(1) + h / 2.0),
+        svg_h / 2.0,
+        true,
+        1.0,
+      ));
+    } else if !left.is_empty() {
       // Rotated counterclockwise the glyphs rise to the left of the
       // baseline.
       let lines = text_label_lines(left);
@@ -19155,7 +19180,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::plot::join_label_lines(&lines, lx, pitch),
       ));
     }
-    if !top.is_empty() {
+    if let Some(h) = picture_h(top) {
+      svg.push_str(&frame_label_picture_svg(
+        top,
+        svg_w / 2.0,
+        -room(2) - h / 2.0,
+        false,
+        1.0,
+      ));
+    } else if !top.is_empty() {
       let lines = text_label_lines(top);
       let x = svg_w / 2.0;
       svg.push_str(&format!(
@@ -19165,7 +19198,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::plot::join_label_lines(&lines, x, pitch),
       ));
     }
-    if !right.is_empty() {
+    if let Some(h) = picture_h(right) {
+      svg.push_str(&frame_label_picture_svg(
+        right,
+        svg_w + room(3) + h / 2.0,
+        svg_h / 2.0,
+        true,
+        1.0,
+      ));
+    } else if !right.is_empty() {
       // Reading upwards like the left one.
       let rx = svg_w + room(3) + ascent(flf);
       let ry = svg_h / 2.0;
@@ -38998,7 +39039,7 @@ pub(crate) fn axes_label_markup(expr: &Expr) -> String {
 /// picture. It is typeset at the label font's point size (the caller scales
 /// it to the plot's label size) and in the plot's label face, like the text
 /// labels around it, not in the box layout's 14 pt monospace default.
-fn axes_label_fraction_picture(expr: &Expr) -> Option<String> {
+pub(crate) fn axes_label_fraction_picture(expr: &Expr) -> Option<String> {
   with_box_font_family(Some("sans-serif"), || {
     inline_fraction_string_svg_at(expr, LABEL_FONT)
       .or_else(|| fraction_label_svg(expr, LABEL_FONT))
@@ -39053,6 +39094,32 @@ pub(crate) fn fraction_label_svg(expr: &Expr, size: f64) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// A frame caption typeset as a picture (see [`axes_label_picture_size`])
+/// centered on `(cx, cy)`; a `rotated` one (the left and right edges) is
+/// turned a quarter counterclockwise to read upwards along its edge, the
+/// way a text caption there is. `scale` sizes the picture's natural size
+/// into the drawing's coordinates.
+pub(crate) fn frame_label_picture_svg(
+  markup: &str,
+  cx: f64,
+  cy: f64,
+  rotated: bool,
+  scale: f64,
+) -> String {
+  let (w, h) = axes_label_picture_size(markup).unwrap_or((0.0, 0.0));
+  let turn = if rotated { " rotate(-90)" } else { "" };
+  let zoom = if scale == 1.0 {
+    String::new()
+  } else {
+    format!(" scale({scale})")
+  };
+  format!(
+    "<g transform=\"translate({cx:.2},{cy:.2}){turn}{zoom} translate({:.2},{:.2})\">{markup}</g>\n",
+    -w / 2.0,
+    -h / 2.0,
+  )
 }
 
 /// Width and height of an axes label that [`axes_label_markup`] typeset as a

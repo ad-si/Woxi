@@ -17158,6 +17158,42 @@ mod plot3d {
       assert!(svg.contains(">2</text>"), "{svg}");
     }
 
+    /// A `FrameLabel` entry that TraditionalForm typesets as a fraction
+    /// (`Subscript[c, p]/Subscript[c, a][0]`) is drawn as a stacked-fraction
+    /// picture on every edge — rotated on the left and right — in a plot, a
+    /// `Graphics` frame and a `Show` merge alike. Regression: it was
+    /// flattened to inline `cp/(ca(0))` text.
+    #[test]
+    fn fraction_frame_labels_are_stacked_on_every_edge() {
+      let labels = "FrameLabel -> {{Subscript[c, p]/Subscript[c, a][0], \
+                    u/w}, {Subscript[c, a]/Subscript[c, a][0], x/y}}";
+      for code in [
+        format!("Plot[u, {{u, 0, 1}}, Frame -> True, {labels}]"),
+        format!(
+          "ParametricPlot[{{1 - u, u (1 - u)}}, {{u, 0, 1}}, \
+           Frame -> True, {labels}]"
+        ),
+        format!(
+          "Graphics[Line[{{{{0, 0}}, {{1, 1}}}}], Frame -> True, {labels}]"
+        ),
+        format!(
+          "Show[ParametricPlot[{{1 - u, u (1 - u)}}, {{u, 0, 1}}, \
+           Frame -> True, {labels}], Graphics[Point[{{0.5, 0.2}}]]]"
+        ),
+      ] {
+        let svg = export_svg(&code);
+        // All four captions are nested <svg> pictures, two of them turned.
+        assert_eq!(svg.matches("<svg xmlns").count(), 4, "{code}: {svg}");
+        assert_eq!(svg.matches(" rotate(-90)").count(), 2, "{code}: {svg}");
+        assert!(!svg.contains("(0))"), "{code}: {svg}");
+        assert!(!svg.contains("/("), "{code}: {svg}");
+      }
+      // A plain caption keeps its text rendering.
+      let svg =
+        export_svg("Plot[u, {u, 0, 1}, Frame -> True, FrameLabel -> {u, v}]");
+      assert!(!svg.contains("<svg xmlns"), "{svg}");
+    }
+
     /// `FrameLabel -> {{left, right}, {bottom, top}}` captions all four
     /// edges of a `Graphics` frame. Regression: the graphics renderer read
     /// only the bottom and left entries, so the top caption a merged
@@ -70852,13 +70888,19 @@ fn frame_label_scientific_form_is_one_line() {
   assert!(svg.contains(">1.5×10⁻⁷</text>"), "{svg}");
 }
 
-/// Lettered subscripts inside an arithmetic frame label are lowered with a
-/// `<tspan>`, as a bare `Subscript` label's are (the label is set in
-/// `TraditionalForm`, so its letters are italic).
+/// An arithmetic frame label with lettered subscripts that TraditionalForm
+/// sets as a quotient is a stacked fraction picture, not inline
+/// `(ω-ωσ)/γσ` text; a sum of subscripted letters stays inline text with
+/// lowered, italic subscripts.
 #[test]
 fn frame_label_arithmetic_with_letter_subscripts() {
   let svg = export_svg(
     r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {(\[Omega] - Subscript[\[Omega], \[Sigma]])/Subscript[\[Gamma], \[Sigma]], "y"}]"#,
+  );
+  assert_eq!(svg.matches("<svg xmlns").count(), 1, "{svg}");
+  assert!(!svg.contains(")/"), "{svg}");
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\[Omega] - Subscript[\[Omega], \[Sigma]], "y"}]"#,
   );
   let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
   let sub = format!(
@@ -70866,7 +70908,7 @@ fn frame_label_arithmetic_with_letter_subscripts() {
     it("σ")
   );
   assert!(
-    svg.contains(&format!("({}-{}{sub})/{}{sub}", it("ω"), it("ω"), it("γ"))),
+    svg.contains(&format!("{}-{}{sub}", it("ω"), it("ω"))),
     "{svg}"
   );
 }
