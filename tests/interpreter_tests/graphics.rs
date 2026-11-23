@@ -18128,6 +18128,46 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// The mathematical items of an unstyled `Row` label are typeset in
+    /// `TraditionalForm` like a bare one, while its strings stay as written:
+    /// `Row[{p[s], " / ", "u"}]` reads `p(s) / u` with an italic p and s.
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook whose axis label was
+    /// such a `Row` of a function application and a unit string; it was
+    /// drawn upright. This is a self-authored, construct-equivalent example.
+    #[test]
+    fn row_axes_label_sets_math_items_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let applied = format!("{}({}) / u", italic("p"), italic("s"));
+      for code in [
+        "Plot[s, {s, 0, 1}, AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+        "ListPlot[{1, 2}, AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+        "Show[Plot[s, {s, 0, 1}, LabelStyle -> 14, \
+         AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Row[{p[s], \" / \", \"u\"}], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&applied), "{code}: {svg}");
+      }
+      // A bare symbol item is italic beside the unit string.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Row[{t, \" (s)\"}], None}]",
+      );
+      assert!(
+        svg.contains(&format!(">{} (s)</text>", italic("t"))),
+        "{svg}"
+      );
+      // `LabelStyle` still sizes the label.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, LabelStyle -> 14, \
+         AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+      );
+      let line = svg.lines().find(|l| l.contains(&applied)).unwrap();
+      assert!(line.contains("font-size=\"140\""), "{line}");
+    }
+
     /// A subscripted symbol in a label is typeset in `TraditionalForm`
     /// too: single letters are italic, multi-letter symbols stay upright,
     /// whether the label is bare or styled, inside a `Row`, on an axis or
