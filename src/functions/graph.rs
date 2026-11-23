@@ -1627,10 +1627,8 @@ fn graph_render(
         let t = position.unwrap_or(0.5);
         let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
         // A curved edge carries its label on the curve.
-        let (cx, cy) = curve_ctrl.unwrap_or((
-          f64::midpoint(x1, x2),
-          f64::midpoint(y1, y2),
-        ));
+        let (cx, cy) =
+          curve_ctrl.unwrap_or((f64::midpoint(x1, x2), f64::midpoint(y1, y2)));
         let omt = 1.0 - t;
         let point = Expr::List(
           vec![
