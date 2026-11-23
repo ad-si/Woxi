@@ -1580,3 +1580,90 @@ mod operator_only_heads_display_infix {
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);
   }
 }
+
+mod styled_number_forms {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  // Mapping a styling function over `PaddedForm[n, 3]` (what
+  // `f /@ PaddedForm[…]` gives) wraps both the number and the digit count:
+  // the number is drawn styled, never as the flattened `Text[1]` text.
+  #[test]
+  fn padded_form_of_styled_text_in_grid_keeps_style() {
+    for code in [
+      "Grid[{{PaddedForm[Text[Style[7, Blue, Bold]], 3], 2}}]",
+      "Grid[{{PaddedForm[Text[Style[7, Blue, Bold]], Text[Style[3, Blue, Bold]]], 2}}]",
+      "TraditionalForm[Grid[{{PaddedForm[Text[Style[7, Blue, Bold]], 3], 2}}]]",
+      "TraditionalForm[Grid[{{PaddedForm[Text[Style[7, Blue, Bold]], Text[Style[3, Blue, Bold]]], 2}}]]",
+    ] {
+      let out = svg(code);
+      assert!(!out.contains("Text["), "{code}: {out}");
+      assert!(!out.contains("PaddedForm"), "{code}: {out}");
+      assert!(out.contains("rgb(0,0,255)"), "{code}: {out}");
+      assert!(out.contains("bold"), "{code}: {out}");
+    }
+  }
+
+  // A number format around `Text` typesets the number formatted inside it.
+  #[test]
+  fn traditional_padded_form_of_text_is_the_number() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[PaddedForm[Text[7], 3]]]").unwrap(),
+      interpret("ToBoxes[TraditionalForm[PaddedForm[7, 3]]]").unwrap()
+    );
+  }
+
+  // A digit count that is no number (`PaddedForm[7, x]`) cannot format the
+  // number, so it typesets as just the number.
+  #[test]
+  fn traditional_number_form_with_invalid_spec_is_the_number() {
+    clear_state();
+    for code in [
+      "ToBoxes[TraditionalForm[PaddedForm[7, x]]]",
+      "ToBoxes[TraditionalForm[NumberForm[7, Text[3]]]]",
+    ] {
+      assert_eq!(
+        interpret(code).unwrap(),
+        "TagBox[FormBox[7, TraditionalForm], TraditionalForm, Editable -> True]",
+        "{code}"
+      );
+    }
+  }
+
+  // A generic sans-serif family (a styled graphics label) gets the bundled
+  // sans face, like text that names no family; other families are kept.
+  #[test]
+  fn default_text_family_replaces_generic_sans_serif() {
+    let out = woxi::with_default_text_family(
+      "<svg><text font-family=\"sans-serif\">a</text>\
+       <text font-family=\"Times\">b</text><text>c</text></svg>",
+    );
+    assert_eq!(
+      out
+        .matches("font-family=\"Atkinson Hyperlegible Next, sans-serif\"")
+        .count(),
+      2,
+      "{out}"
+    );
+    assert!(out.contains("font-family=\"Times\""), "{out}");
+    assert!(!out.contains("font-family=\"sans-serif\""), "{out}");
+  }
+
+  // A styled cell of a traditional grid keeps its color and weight.
+  #[test]
+  fn styled_traditional_grid_cell_keeps_style() {
+    for code in [
+      "TraditionalForm[Grid[{{Style[7, Red, Bold], 2}}]]",
+      "Grid[{{Style[TraditionalForm[x^2], Red, Bold], 2}}]",
+    ] {
+      let out = svg(code);
+      assert!(out.contains("rgb(255,0,0)"), "{code}: {out}");
+      assert!(out.contains("bold"), "{code}: {out}");
+    }
+  }
+}
