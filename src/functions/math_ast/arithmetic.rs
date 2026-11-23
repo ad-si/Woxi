@@ -11818,6 +11818,25 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let args = &flat_args;
 
+  // A product of arbitrary-precision complex numbers (and other numeric
+  // factors) is one such number: `(1.`30 + 2.`30 I) (2.1`30 + 0.3`30 I)`.
+  // The canonical `im*I` monomial itself is left alone.
+  let canonical_imaginary = args.len() == 2
+    && args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)))
+    && args
+      .iter()
+      .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+  if args.len() >= 2
+    && !canonical_imaginary
+    && let Some(value) =
+      super::numerical::fold_complex_bigfloat(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: args.clone().into(),
+      })
+  {
+    return Ok(value);
+  }
+
   // Try complex multiplication: if all args can be extracted as exact complex
   // numbers (and at least one has nonzero imaginary part), multiply them.
   if args.len() >= 2 {
@@ -14731,6 +14750,18 @@ fn log_quotient_for_base(base: &Expr, exp: &Expr) -> Option<Expr> {
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // An arbitrary-precision complex base keeps its precision:
+  // `(2.1`30 + 0.3`30 I)^-1`.
+  if super::numeric_utils::contains_inexact_real(base)
+    && crate::functions::predicate_ast::is_numeric_q(exp)
+    && let Some(value) =
+      super::numerical::fold_complex_bigfloat(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base.clone(), exp.clone()].into(),
+      })
+  {
+    return Ok(value);
+  }
   // Zero to a complex power with a positive real part vanishes: exactly when
   // everything is exact (`0^(1/2 + I/3)` is 0), else as the machine complex
   // zero (`0.^(1/2 + I/3)`, `0^(1. + I)` are `0. + 0.*I`).
