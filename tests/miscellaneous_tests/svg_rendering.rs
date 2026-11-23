@@ -3150,6 +3150,34 @@ mod tests {
     }
 
     #[test]
+    fn parametric_plot3d_single_curve_takes_first_nested_plot_style() {
+      // A list of style lists is one style per curve, so a lone curve
+      // takes the first entry rather than the last one's color.
+      let nested = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {{Thick, Red}, {Thick, Blue}, {Thick, Orange}}]",
+      );
+      let first = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {Thick, Red}]",
+      );
+      assert_eq!(nested, first);
+      assert!(nested.contains("stroke=\"rgb(255,0,0)\""), "{nested}");
+    }
+
+    #[test]
+    fn plot3d_single_surface_takes_first_nested_plot_style() {
+      let nested = svg_of(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, \
+         PlotStyle -> {{Red}, {Blue}}]",
+      );
+      let first = svg_of(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, PlotStyle -> Red]",
+      );
+      assert_eq!(nested, first);
+    }
+
+    #[test]
     fn parametric_plot3d_surface_first_repeated_plot_style_wins() {
       let first = svg_of(
         "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \

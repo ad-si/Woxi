@@ -8067,6 +8067,16 @@ fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
         vec![val]
       }
     }
+    // With a single object, a list made only of nested lists is still one
+    // style list per object (`PlotStyle -> {{Thick, Red}, {Thick, Blue}}`),
+    // so the lone object takes the first one rather than merging them all
+    // (which would let the last entry's color win).
+    Expr::List(list_items)
+      if !list_items.is_empty()
+        && list_items.iter().all(|item| matches!(item, Expr::List(_))) =>
+    {
+      vec![list_items[0].clone()]
+    }
     _ => vec![val],
   }
 }
