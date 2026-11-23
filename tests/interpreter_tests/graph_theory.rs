@@ -706,6 +706,49 @@ mod graph_plot_labeled_edges {
       "{x, y}"
     );
   }
+
+  /// Regression: two edges joining the same vertices both showed the
+  /// first edge's label, stacked at the middle of the straight line
+  /// between the vertices instead of on their curves.
+  #[test]
+  fn parallel_edges_take_their_own_labels() {
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{{a -> b, \"x\"}, {a -> b, \"y\"}, {c -> b, \"z\"}}, \
+         DirectedEdges -> True, VertexLabeling -> True], \
+         Text[Style[s_String, ___], ___] :> s, Infinity]"
+      )
+      .unwrap(),
+      "{x, y, z}"
+    );
+  }
+
+  /// The label distance between two parallel edges, for a given
+  /// `MultiedgeStyle` setting.
+  fn parallel_label_gap(style: &str) -> f64 {
+    interpret(&format!(
+      "g = GraphPlot[{{{{a -> b, \"x\"}}, {{a -> b, \"y\"}}}}, \
+       MultiedgeStyle -> {style}]; \
+       labels = Cases[g, Text[Style[_String, ___], p_, ___] :> p, Infinity]; \
+       disks = Cases[g, Disk[p_, ___] :> p, Infinity]; \
+       ToString[N[EuclideanDistance @@ labels / EuclideanDistance @@ disks]]"
+    ))
+    .unwrap()
+    .parse()
+    .unwrap()
+  }
+
+  /// `MultiedgeStyle -> d` spreads parallel edges apart by `d` times their
+  /// length; `None` draws them on top of each other.
+  #[test]
+  fn multiedge_style_sets_the_spread() {
+    let none = parallel_label_gap("None");
+    let small = parallel_label_gap("0.1");
+    let large = parallel_label_gap("0.3");
+    assert!(none.abs() < 1e-9, "None: {none}");
+    assert!((small - 0.1).abs() < 0.02, "0.1: {small}");
+    assert!((large - 0.3).abs() < 0.05, "0.3: {large}");
+  }
 }
 
 /// Regression: the automatic layout drew every tree in layers, so a large

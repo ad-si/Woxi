@@ -3944,9 +3944,24 @@ pub fn dispatch_list_operations(
           return Some(evaluate_expr_to_expr(&plus));
         }
 
-        // Combine terms with Plus, preserving order (low to high power)
-        let result = terms.into_iter().reduce(plus2).unwrap();
-        return Some(Ok(result));
+        // Combine the terms into one flat Plus, preserving their order (low
+        // to high power). A nested binary chain would print the same but
+        // address its parts wrongly: `Part[…, 1 ;; n]` would see only two
+        // operands. A coefficient that is itself a sum is spliced in, as
+        // the Flat Plus would.
+        if terms.len() == 1 {
+          return Some(Ok(terms.pop().unwrap()));
+        }
+        let mut flat: Vec<Expr> = Vec::with_capacity(terms.len());
+        for term in terms {
+          match &term {
+            Expr::FunctionCall { name, args } if name == "Plus" => {
+              flat.extend(args.iter().cloned());
+            }
+            _ => flat.push(term),
+          }
+        }
+        return Some(Ok(plus(flat)));
       }
       // Normal[<|k -> v, ...|>] converts Association to List of rules.
       // A `RuleDelayed { pattern == key, replacement }` value is the marker
