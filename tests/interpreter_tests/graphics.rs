@@ -33091,6 +33091,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("<ellipse"), "the circle is drawn: {svg}");
     }
 
+    // `Locator[pos, appearance]` with an appearance that is not a graphic (a
+    // styled glyph, a plain string) draws that expression centered on the
+    // point instead of the default crosshair marker.
+    #[test]
+    fn locator_with_a_styled_glyph_appearance_draws_the_glyph() {
+      let svg = export_svg(
+        "Graphics[{Locator[{0, 0}, Style[\"\\[CirclePlus]\", Red, Bold, 18]], \
+         Circle[]}, PlotRange -> 2]",
+      );
+      assert!(svg.contains(">⊕</text>"), "the glyph is drawn: {svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "in red: {svg}");
+      assert!(svg.contains("font-weight=\"bold\""), "in bold: {svg}");
+      assert!(svg.contains("font-size=\"18\""), "at size 18: {svg}");
+      assert!(
+        !svg.contains("rgba(180,180,180,0.35)"),
+        "no default crosshair marker: {svg}"
+      );
+
+      let svg = export_svg(
+        "Graphics[{Locator[{{0, 0}, {1, 1}}, \"P\"]}, PlotRange -> 2]",
+      );
+      assert_eq!(svg.matches(">P</text>").count(), 2, "one per point: {svg}");
+    }
+
+    // The same text appearance on a locator a plot's `Epilog` carries (how a
+    // Manipulate's `Locator` control is shown over a `ListPlot`).
+    #[test]
+    fn locator_with_a_text_appearance_in_a_plot_epilog() {
+      let svg = export_svg(
+        "ListPlot[{{1, 1}, {2, 2}}, \
+         Epilog -> {Locator[{1.5, 1.5}, Style[\"Q\", Red, 20]]}]",
+      );
+      assert!(svg.contains(">Q</text>"), "the glyph is drawn: {svg}");
+      assert!(
+        !svg.contains("rgba(180,180,180,0.35)"),
+        "no default crosshair marker: {svg}"
+      );
+    }
+
     // `LocatorPane[locators, body]` shows `body` with a marker on every
     // locator. Wolfram's default marker is a small circle with a crosshair
     // through it; a Demonstration that lets you drag the vertices of a shape
