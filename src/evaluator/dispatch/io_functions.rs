@@ -7496,8 +7496,8 @@ fn wrap_pane_text_at(
         // An item that is no plain text is as wide as it is drawn: a
         // typeset grid, fraction or column is much narrower than the
         // characters of its expression.
-        if let Some(px) = atom_px[u.idx]
-          .or_else(|| atoms[u.idx].as_ref().and_then(drawn_width))
+        if let Some(px) =
+          atom_px[u.idx].or_else(|| atoms[u.idx].as_ref().and_then(drawn_width))
         {
           u.width = px;
           continue;
