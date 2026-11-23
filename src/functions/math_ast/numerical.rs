@@ -2087,6 +2087,55 @@ fn n_eval_beyond_machine_range(expr: &Expr) -> Option<Expr> {
   }
 }
 
+thread_local! {
+  static IN_COMPLEX_BIGFLOAT_FOLD: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// A numeric expression mixing arbitrary-precision reals with `I` (and no
+/// machine reals), such as `(1.`30 + 2.`30 I) (2.1`30 + 0.3`30 I)` or
+/// `(2.1`30 + 0.3`30 I)^-1`, as the arbitrary-precision complex number it
+/// equals, at the lowest precision among its reals. `None` when the
+/// expression is not of that kind or does not evaluate.
+pub fn fold_complex_bigfloat(expr: &Expr) -> Option<Expr> {
+  fn scan(e: &Expr, min: &mut Option<f64>, machine: &mut bool, i: &mut bool) {
+    match e {
+      Expr::Real(_) => *machine = true,
+      Expr::BigFloat(_, p) => *min = Some(min.map_or(*p, |m: f64| m.min(*p))),
+      Expr::Identifier(n) if n == "I" => *i = true,
+      _ => {
+        for child in crate::syntax::expr_children(e) {
+          scan(child, min, machine, i);
+        }
+      }
+    }
+  }
+  if IN_COMPLEX_BIGFLOAT_FOLD.with(std::cell::Cell::get) {
+    return None;
+  }
+  let (mut min, mut machine, mut has_i) = (None, false, false);
+  scan(expr, &mut min, &mut machine, &mut has_i);
+  let precision = min?;
+  if machine || !has_i || !crate::functions::predicate_ast::is_numeric_q(expr) {
+    return None;
+  }
+  IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.set(true));
+  let mut cc = astro_consts().ok();
+  let rm = astro_float::RoundingMode::ToEven;
+  let prec_usize = precision.floor().max(1.0) as usize;
+  let bits = nominal_bits(prec_usize) + 64;
+  let value = cc.as_mut().and_then(|cc| {
+    let (re, im) = expr_to_complex_bigfloat(expr, bits, rm, cc).ok()?;
+    if im.is_zero() {
+      let re_str = bigfloat_to_string(&re, None, rm, cc).ok()?;
+      return Some(Expr::BigFloat(re_str, precision));
+    }
+    complex_bigfloat_expr(&re, &im, precision, precision, rm, cc).ok()
+  });
+  IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.set(false));
+  value
+}
+
 /// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
 pub fn n_eval_arbitrary(
   expr: &Expr,
@@ -2999,6 +3048,114 @@ pub fn expr_to_bigfloat(
 /// `z^w` for complex arbitrary-precision `z` and `w`. An integer exponent
 /// multiplies out exactly (a negative one through the reciprocal); any other
 /// is `exp(w log z)` on the principal branch, `log z = ln|z| + i arg z`.
+/// `BesselJ[ν, z]` (`is_j`) or `BesselI[ν, z]` for a real order and a
+/// complex (or negative real) argument, as `(re, im)`, from the ascending
+/// series `(z/2)^ν Σ (∓z²/4)^m / (m! Γ(m + ν + 1))` on the principal branch
+/// of `(z/2)^ν`. The terms grow to about `e^|z|` before they shrink, so the
+/// sum carries that many guard bits on top of the requested precision.
+fn complex_bessel_ji_bigfloat(
+  is_j: bool,
+  nu: &astro_float::BigFloat,
+  (zr, zi): (astro_float::BigFloat, astro_float::BigFloat),
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use astro_float::BigFloat;
+  let fail = || {
+    InterpreterError::EvaluationError(
+      "N: cannot evaluate a Bessel function to complex arbitrary precision"
+        .into(),
+    )
+  };
+  let nu_f = bigfloat_to_f64_approx(nu).ok_or_else(fail)?;
+  // Integer orders reduce to non-negative ones: J_{−n} = (−1)^n J_n and
+  // I_{−n} = I_n (Γ(m + ν + 1) has poles there otherwise).
+  if nu_f < 0.0 && nu_f.fract() == 0.0 {
+    let (re, im) =
+      complex_bessel_ji_bigfloat(is_j, &nu.neg(), (zr, zi), bits, rm, cc)?;
+    let odd = (nu_f as i64) % 2 != 0;
+    return Ok(if is_j && odd {
+      (re.neg(), im.neg())
+    } else {
+      (re, im)
+    });
+  }
+  let abs_z = bigfloat_to_f64_approx(&zr.mul(&zr, bits, rm).add(
+    &zi.mul(&zi, bits, rm),
+    bits,
+    rm,
+  ))
+  .ok_or_else(fail)?
+  .sqrt();
+  let wp = bits + 64 + (abs_z * std::f64::consts::LOG2_E).ceil() as usize;
+  let (zr, zi) = (zr.add(&BigFloat::from_i32(0, wp), wp, rm), zi);
+  let nu_w = nu.add(&BigFloat::from_i32(0, wp), wp, rm);
+  let one = BigFloat::from_i32(1, wp);
+  let four = BigFloat::from_i32(4, wp);
+  // w = ∓z²/4
+  let mut wr = zr
+    .mul(&zr, wp, rm)
+    .sub(&zi.mul(&zi, wp, rm), wp, rm)
+    .div(&four, wp, rm);
+  let mut wi = zr
+    .mul(&zi, wp, rm)
+    .mul(&BigFloat::from_i32(2, wp), wp, rm)
+    .div(&four, wp, rm);
+  if is_j {
+    wr = wr.neg();
+    wi = wi.neg();
+  }
+  let gamma = gamma_bigfloat(&nu_w.add(&one, wp, rm), wp, rm, cc);
+  let mut tr = one.div(&gamma, wp, rm);
+  let mut ti = BigFloat::from_i32(0, wp);
+  let (mut sr, mut si) = (tr.clone(), ti.clone());
+  // A zero part still reports an exponent, so it is tested for first.
+  let exp_of = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      b.exponent().map_or(i64::MIN / 4, i64::from)
+    }
+  };
+  let mut m: i64 = 0;
+  loop {
+    let k = BigFloat::from_i64(m + 1, wp);
+    let denom = k.mul(&k.add(&nu_w, wp, rm), wp, rm);
+    let nr = tr.mul(&wr, wp, rm).sub(&ti.mul(&wi, wp, rm), wp, rm);
+    let ni = tr.mul(&wi, wp, rm).add(&ti.mul(&wr, wp, rm), wp, rm);
+    tr = nr.div(&denom, wp, rm);
+    ti = ni.div(&denom, wp, rm);
+    sr = sr.add(&tr, wp, rm);
+    si = si.add(&ti, wp, rm);
+    m += 1;
+    let term_exp = exp_of(&tr).max(exp_of(&ti));
+    let sum_exp = exp_of(&sr).max(exp_of(&si));
+    if (m as f64) > abs_z && term_exp < sum_exp - wp as i64 {
+      break;
+    }
+    if m > 100_000 {
+      return Err(fail());
+    }
+  }
+  let two = BigFloat::from_i32(2, wp);
+  let half_z = (zr.div(&two, wp, rm), zi.div(&two, wp, rm));
+  let integer_order = (nu_f.fract() == 0.0).then_some(nu_f as i128);
+  let (pr, pi) = complex_bigfloat_pow(
+    (&half_z.0, &half_z.1),
+    (&nu_w, &BigFloat::from_i32(0, wp)),
+    integer_order,
+    wp,
+    rm,
+    cc,
+  )?;
+  let mut re = sr.mul(&pr, wp, rm).sub(&si.mul(&pi, wp, rm), wp, rm);
+  let mut im = sr.mul(&pi, wp, rm).add(&si.mul(&pr, wp, rm), wp, rm);
+  let _ = re.set_precision(bits, rm);
+  let _ = im.set_precision(bits, rm);
+  Ok((re, im))
+}
+
 fn complex_bigfloat_pow(
   (zr, zi): (&astro_float::BigFloat, &astro_float::BigFloat),
   (wr, wi): (&astro_float::BigFloat, &astro_float::BigFloat),
@@ -3395,6 +3552,11 @@ fn expr_to_complex_bigfloat(
       }
       "ExpIntegralE" | "LogIntegral" | "Gamma" => {
         exp_integral_family_bigfloat(name, args, bits, rm, cc)
+      }
+      "BesselJ" | "BesselI" if args.len() == 2 => {
+        let nu = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+        let z = expr_to_complex_bigfloat(&args[1], bits, rm, cc)?;
+        complex_bessel_ji_bigfloat(name == "BesselJ", &nu, z, bits, rm, cc)
       }
       _ => Err(InterpreterError::EvaluationError(format!(
         "N: cannot evaluate {name}[...] to complex arbitrary precision"

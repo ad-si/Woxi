@@ -466,6 +466,86 @@ mod row_visual_mode {
     assert!(script.contains("font-size=\"11.2\""), "{script}");
   }
 
+  /// The `<text>` element of an SVG that draws `needle`.
+  fn text_element<'a>(svg: &'a str, needle: &str) -> &'a str {
+    let text = svg
+      .split("<text")
+      .find(|t| t.contains(needle))
+      .expect("text element");
+    &text[..text.find("</text>").unwrap()]
+  }
+
+  /// The largest number of `<tspan>`s open at once in `text`.
+  fn tspan_depth(text: &str) -> usize {
+    let (mut depth, mut max_depth) = (0usize, 0usize);
+    for part in text.split('<').skip(1) {
+      if part.starts_with("tspan") {
+        depth += 1;
+        max_depth = max_depth.max(depth);
+      } else if part.starts_with("/tspan") {
+        depth -= 1;
+      }
+    }
+    max_depth
+  }
+
+  /// The `baseline-shift` of the span that draws `content`.
+  fn span_shift<'a>(text: &'a str, content: &str) -> &'a str {
+    let span = text
+      .split("<tspan")
+      .find(|t| t.contains(&format!(">{content}</tspan>")))
+      .expect("span");
+    span
+      .split("baseline-shift=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .expect("baseline-shift")
+  }
+
+  /// A subscript of a subscript (`d` sub `X` sub `65`) flattened into
+  /// sibling spans must still sit below its parent script: the inner
+  /// span carries the combined shift, not just its own `sub`.
+  #[test]
+  fn nested_subscript_in_grid_combines_shifts() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Text@Grid[{{Row[{Subscript[Style[\"d\", Italic], \
+       Subscript[\"X\", \"65\"]], \" = \", 2.5}]}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    let text = text_element(&svg, ">65<");
+    assert_eq!(tspan_depth(text), 1, "{text}");
+    assert_eq!(span_shift(text, "X"), "sub", "{text}");
+    let inner: f64 = span_shift(text, "65")
+      .strip_suffix("em")
+      .and_then(|v| v.parse().ok())
+      .expect("em shift");
+    // Lower than a plain `sub` (0.4 em) of the 49% script would draw it.
+    assert!((inner + 0.971).abs() < 0.01, "{text}");
+  }
+
+  #[test]
+  fn nested_scripts_in_row_combine_shifts() {
+    clear_state();
+    for (code, outer, inner) in [
+      ("Subscript[a, Superscript[b, c]]", "sub", -0.226),
+      ("Superscript[a, Subscript[b, c]]", "super", 0.093),
+      ("Superscript[a, Superscript[b, c]]", "super", 0.838),
+    ] {
+      let svg =
+        interpret(&format!("ExportString[Row[{{x, \" \", {code}}}], \"SVG\"]"))
+          .unwrap();
+      let text = text_element(&svg, ">c<");
+      assert_eq!(tspan_depth(text), 1, "{code}: {text}");
+      assert_eq!(span_shift(text, "b"), outer, "{code}: {text}");
+      let shift: f64 = span_shift(text, "c")
+        .strip_suffix("em")
+        .and_then(|v| v.parse().ok())
+        .expect("em shift");
+      assert!((shift - inner).abs() < 0.01, "{code}: {text}");
+    }
+  }
+
   // ToBoxes hands back wolframscript's row template; Woxi's own renderers
   // still stack the lines of a newline string (see the SVG tests above).
   #[test]

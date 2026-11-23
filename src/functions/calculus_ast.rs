@@ -17826,6 +17826,38 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return series_ast(&inner);
   }
 
+  // Sinc[u] has a removable singularity where u vanishes: the derivative
+  // path samples Sin[u]/u at that point and divides by zero. There Sinc[u]
+  // is expanded as the quotient Sin[u]/u, whose series the Laurent machinery
+  // handles (the pole of 1/u cancels against the zero of Sin[u]). Elsewhere
+  // Sinc stays as is, so its coefficients keep the Sinc[x0] form.
+  let sinc_at_zero = |n: &Expr| match n {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Sinc"
+        && inner.len() == 1
+        && !is_constant_wrt(&inner[0], &var_name)
+        && matches!(
+          probe_val_for_parts(&inner[0], &var_name, &x0),
+          Ok(Expr::Integer(0))
+        ) =>
+    {
+      Some(times(vec![
+        call1("Sin", inner[0].clone()),
+        call("Power", vec![inner[0].clone(), Expr::Integer(-1)]),
+      ]))
+    }
+    _ => None,
+  };
+  let desinced =
+    crate::functions::string_ast::map_expr_tree(&args[0], &sinc_at_zero);
+  if crate::syntax::expr_to_string(&desinced)
+    != crate::syntax::expr_to_string(&args[0])
+  {
+    let mut inner = args.to_vec();
+    inner[0] = desinced;
+    return series_ast(&inner);
+  }
+
   // A negative order keeps only the principal part up to x^order: expand to
   // order 0 (every pole term is there) and cut the series back to the
   // next exponent past x^order.

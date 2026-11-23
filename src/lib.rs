@@ -3910,6 +3910,25 @@ fn keep_fixed_pane_box(
   ))
 }
 
+/// Whether `expr` is a `Column[…]` under one or more `Style[…, directives]`
+/// wrappers.
+fn is_styled_column(expr: &syntax::Expr) -> bool {
+  let mut current = expr;
+  let mut styled = false;
+  while let syntax::Expr::FunctionCall { name, args } = current
+    && name == "Style"
+    && args.len() >= 2
+  {
+    styled = true;
+    current = &args[0];
+  }
+  styled
+    && matches!(
+      current,
+      syntax::Expr::FunctionCall { name, .. } if name == "Column"
+    )
+}
+
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
@@ -3965,6 +3984,18 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
+          // A styled `Column` layout
+          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`) is drawn in the
+          // proportional text face, so the text of its items is not left in
+          // the monospace face of a bare `Column`'s `Row`s.
+          if is_styled_column(&content) {
+            let in_face = render_visual_display_pipeline(
+              &functions::graphics::in_text_face(&content),
+            );
+            if matches!(in_face, syntax::Expr::Graphics { .. }) {
+              return in_face;
+            }
+          }
           render_grid_if_needed(content)
         })
       }) {
@@ -5667,6 +5698,9 @@ pub(crate) fn column_svg_with_rendered_items(
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(item).is_none()
+            // A `Framed` box is drawn edge to edge — its frame is its
+            // outline, with no blank line margin around it to take out
+            // of an explicit spacing.
             && !functions::graphics::is_framed_box(item)
         })
         .collect(),
