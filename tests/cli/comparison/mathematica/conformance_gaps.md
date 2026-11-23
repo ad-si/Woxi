@@ -2765,6 +2765,19 @@ differences:
   default gives `T[1, 0.015] == 381.96`, its own converged value
   (`"MinPoints" -> 51` or more) is 374.75, and Woxi gives 374.75. The grid
   coordinates (`"Coordinates"`) never match WL's.
+- A steep initial profile of tiny amplitude that meets a flux condition
+  only in the continuum is not resolved by WL's coarse default grid, and
+  WL's solution keeps the *discrete* boundary flux of the initial profile
+  instead of the prescribed one. For `D[u[t, x], t] == D[u[t, x], x, x]`
+  with `Derivative[0, 1][u][t, 0] == -1`, `Derivative[0, 1][u][t, 1] == 0`
+  and `u[0, x] == Exp[-1000 x]/1000`, the exact solution grows like
+  `t + x^2/2 - x + 1/3` (Woxi: `u[25, 0.5] == 24.958`,
+  `u[100, 0.5] == 99.958`), while WL's grows about 18 times slower
+  (≈ 1.33 at `t == 25`, ≈ 5.44 at `t == 99.7`, read off the stored
+  snapshots of the TransientHeatConductionWithNoSteadyState
+  Demonstration, whose `PlotRange -> {0, 10}` therefore shows a curve in
+  WL and none in Woxi). Woxi instead makes the boundary values consistent
+  with the conditions before integrating.
 - `NeumannValue` problems are solved by the same finite differences, not
   WL's finite elements; values agree to 3–5 digits except in thin early
   boundary layers.
