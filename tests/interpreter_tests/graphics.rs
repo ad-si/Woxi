@@ -67379,6 +67379,33 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn show_keeps_plot_markers_of_a_joined_list_plot() {
+    // The markers of a joined series sit on its data points over the
+    // line, as on the plot drawn alone, for every series.
+    let svg = export_svg(
+      "Show[ListPlot[{{1, 2, 3}, {3, 1, 2}}, Joined -> True, \
+       PlotMarkers -> {\"●\", 12}], Graphics[Text[\"t\", {2, 2}]]]",
+    );
+    assert!(svg.contains("<polyline"), "{svg}");
+    assert_eq!(svg.matches("<ellipse").count(), 6, "{svg}");
+    // A text glyph is kept as text at each point.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, Joined -> True, PlotMarkers -> \"x\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert_eq!(svg.matches(">x</text>").count(), 3, "{svg}");
+    // The same holds for the primitives `Show` builds from the plot.
+    assert_eq!(
+      interpret(
+        "Count[Show[ListPlot[{1, 2, 3}, Joined -> True, \
+         PlotMarkers -> \"x\"], Graphics[{}]], _Text, Infinity]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
   fn letterboxed_plot_label_stays_above_the_drawing_area() {
     // The 1/GoldenRatio area is centered in the 400 pt tall picture; the
     // label moves down with it rather than staying at the top edge.
