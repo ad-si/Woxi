@@ -37414,6 +37414,24 @@ mod graphics_grid {
     );
   }
 
+  /// Regression: text asking only for the generic `sans-serif` family
+  /// (`Style[…, "Label"]` labels) kept the viewer's own sans face in the
+  /// Studio instead of the Atkinson face unset text gets.
+  #[test]
+  fn default_text_family_gives_generic_sans_its_face() {
+    let svg = "<svg><text font-family=\"sans-serif\">A</text>\
+      <g font-family=\"sans-serif\"><text>B</text></g></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\">A</text><g font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\"><text>B</text></g></svg>"
+    );
+    // Already-baked families are left as they are.
+    assert_eq!(woxi::with_default_text_family(&out), out);
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked
