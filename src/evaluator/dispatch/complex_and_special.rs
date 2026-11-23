@@ -4783,6 +4783,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // `Underoverscript[a, b, c]` stacks `b` under and `c` over `a`.
+    Expr::FunctionCall { name, args }
+      if name == "Underoverscript" && args.len() == 3 =>
+    {
+      call(
+        "UnderoverscriptBox",
+        args.iter().map(expr_to_box_form).collect(),
+      )
+    }
     Expr::FunctionCall { name, args }
       if (name == "OverBar" || name == "UnderBar") && args.len() == 1 =>
     {
@@ -8624,6 +8633,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       tf_box(box_name, vec![tf(&args[0]), tf(&args[1])])
     }
+    "Underoverscript" if args.len() == 3 => tf_box(
+      "UnderoverscriptBox",
+      vec![tf(&args[0]), tf(&args[1]), tf(&args[2])],
+    ),
     "OverBar" | "UnderBar" if args.len() == 1 => {
       let box_name = if name == "OverBar" {
         "OverscriptBox"
