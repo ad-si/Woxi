@@ -9545,6 +9545,29 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
   )
 }
 
+/// Bake the preferred Atkinson faces onto every `<text>` element: a
+/// generic `sans-serif`/`monospace` family becomes the Atkinson face with
+/// the generic one kept as its fallback (so `[font-family*="Mono"]` CSS
+/// selectors still match), and a bare `<text>` gets the default sans face
+/// (see [`with_default_text_family`]). Exact-quoted matches make this
+/// idempotent: an already-rewritten value no longer equals the generic form.
+pub fn with_preferred_text_families(svg: &str) -> String {
+  let body = svg
+    .replace(
+      "font-family=\"sans-serif\"",
+      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+    )
+    .replace(
+      "font-family=\"monospace\"",
+      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+    );
+  // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
+  // the stylesheet's inherited default, which viewers that ignore
+  // `<style>` replace with their own (serif) face. Bake the default sans
+  // family onto it too, as WL's default graphics font is a sans-serif one.
+  with_default_text_family(&body)
+}
+
 /// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
@@ -9672,28 +9695,10 @@ fn embed_used_fonts(svg: &str) -> String {
     );
   }
 
-  // Bake the preferred Atkinson family onto each text element's `font-family`
-  // attribute, keeping the generic family as a fallback. The generic token is
-  // retained so the mono `[font-family*="Mono"]` CSS selectors below still
-  // match. Exact-quoted matches make this idempotent (an already-rewritten
-  // value no longer equals the generic form).
-  let body = svg
-    .replace(
-      "font-family=\"sans-serif\"",
-      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
-    )
-    .replace(
-      "font-family=\"monospace\"",
-      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
-    );
-  // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
-  // the stylesheet's inherited default, which viewers that ignore
-  // `<style>` replace with their own (serif) face. Bake the default sans
-  // family onto it too, as WL's default graphics font is a sans-serif one.
-  let body = with_default_text_family(&body);
+  // Bake the preferred Atkinson family onto each text element.
+  let mut body = with_preferred_text_families(svg);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.
-  let mut body = body;
   for (family, fallback) in [
     ("Times", "serif"),
     ("Times New Roman", "serif"),
