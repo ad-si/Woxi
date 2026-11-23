@@ -72177,3 +72177,89 @@ mod held_graphics_display {
     );
   }
 }
+
+mod show_bar_chart_layout {
+  use super::*;
+
+  /// `Show[BarChart[…, ImagePadding -> …], …]` keeps the chart's padding:
+  /// the bars' clip region spans the image minus the padding on each side.
+  #[test]
+  fn show_keeps_the_bar_charts_image_padding() {
+    let svg = export_svg(
+      "Show[BarChart[{1, 2, 3}, ImagePadding -> {{90, 5}, {75, 5}}], \
+       ImageSize -> {600, 390}, AspectRatio -> Full]",
+    );
+    assert!(
+      svg.contains("width=\"505.00\" height=\"310.00\"")
+        && svg.contains("translate(90.00,5.00)"),
+      "the bars must fill the padded region: {svg}"
+    );
+  }
+
+  /// A `Rotate[Style[label, size], θ]` chart label stays tilted and sized
+  /// when the chart goes through `Show`, hanging below the axis from its
+  /// end instead of being centered on it.
+  #[test]
+  fn show_keeps_rotated_styled_chart_labels() {
+    let svg = export_svg(
+      "Show[BarChart[{1, 2, 3}, ChartLabels -> \
+       (Rotate[Style[#, 17], 30 Degree] & /@ {\"ab\", \"cd\", \"ef\"})], \
+       ImageSize -> 400]",
+    );
+    for label in ["ab", "cd", "ef"] {
+      let text = svg
+        .split("<text")
+        .find(|t| t.contains(&format!(">{label}</text>")))
+        .unwrap_or_else(|| panic!("label {label} missing: {svg}"));
+      assert!(
+        text.contains("font-size=\"17\"")
+          && text.contains("text-anchor=\"end\"")
+          && text.contains("rotate(-30.000"),
+        "label {label} lost its style or rotation: {text}"
+      );
+    }
+  }
+
+  /// A clockwise tilt hangs the label from its left end.
+  #[test]
+  fn clockwise_chart_labels_hang_from_their_start() {
+    let svg = export_svg(
+      "Show[BarChart[{1, 2}, ChartLabels -> \
+       (Rotate[#, -45 Degree] & /@ {\"ab\", \"cd\"})], ImageSize -> 400]",
+    );
+    let text = svg
+      .split("<text")
+      .find(|t| t.contains(">ab</text>"))
+      .unwrap_or_else(|| panic!("label missing: {svg}"));
+    assert!(
+      text.contains("text-anchor=\"start\"") && text.contains("rotate(45.000"),
+      "{text}"
+    );
+  }
+
+  /// Through `Show`, a bar chart keeps its golden-ratio shape and its
+  /// category axis carries no numeric ticks.
+  #[test]
+  fn show_keeps_bar_chart_aspect_and_category_axis() {
+    let svg = export_svg(
+      "Show[BarChart[{1, 2, 3}, ChartLabels -> {\"a\", \"b\", \"c\"}], \
+       ImageSize -> 400]",
+    );
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(
+      // The axis padding takes a few points off the golden-ratio height.
+      (height - 400.0 / 1.618_033_988_749_895).abs() < 10.0,
+      "height {height}: {svg}"
+    );
+    assert!(
+      !svg.split("<text").any(|t| t.contains("fill=\"#555555\"")
+        && t.contains("text-anchor=\"middle\"")),
+      "the category axis must not carry numeric ticks: {svg}"
+    );
+  }
+}
