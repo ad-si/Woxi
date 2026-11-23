@@ -3065,7 +3065,10 @@ mod coincident_lines {
           .unwrap()
           .split(' ')
           .collect();
-        pts.windows(2).map(|w| format!("{} {}", w[0], w[1])).collect()
+        pts
+          .windows(2)
+          .map(|w| format!("{} {}", w[0], w[1]))
+          .collect()
       } else {
         continue;
       };

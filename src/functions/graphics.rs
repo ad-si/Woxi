@@ -10962,9 +10962,8 @@ pub(crate) fn locator_markers(args: &[Expr]) -> Vec<LocatorMark> {
       if w > 0.0 && h > 0.0 {
         return Some(Appearance::Picture(svg.clone(), w, h));
       }
-      return None;
     }
-    locator_text_marker(a)
+    None
   });
   // Sub-evaluations may have rendered graphics (the appearance itself, or
   // anything a Dynamic position computed); those are embedded here, not
@@ -11000,73 +10999,6 @@ pub(crate) fn locator_markers(args: &[Expr]) -> Vec<LocatorMark> {
     });
   }
   markers
-}
-
-/// A `Locator[pos, obj]` whose appearance `obj` is not a graphic (a string
-/// glyph such as `"⊕"`, a `Style[…]`d label, a number) shows `obj` itself as
-/// the marker, typeset like a `Text` centered on the point — Wolfram draws
-/// any expression as the locator, not only graphics. Returns the marker
-/// `(svg, width, height)`, sized to fit the typeset text.
-fn locator_text_marker(appearance: &Expr) -> Option<(String, f64, f64)> {
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(appearance)
-    .unwrap_or_else(|_| appearance.clone());
-  if matches!(&evaluated, Expr::String(s) if s.is_empty()) {
-    return None;
-  }
-  let size = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Style" && args.len() > 1 => {
-      crate::functions::chart::parse_style_directive_args(&args[1..]).3
-    }
-    _ => None,
-  }
-  .unwrap_or(14.0);
-  let markup = expr_to_svg_markup(&evaluated);
-  let width = (crate::functions::plot_padding::text_width(&markup, size)
-    + size * 0.3)
-    .ceil()
-    .max(size * 0.6);
-  let height = (size * 1.4).ceil();
-  let args = vec![
-    Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![
-        evaluated,
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-      ]
-      .into(),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-      replacement: Box::new(Expr::List(
-        vec![Expr::Real(width), Expr::Real(height)].into(),
-      )),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
-      replacement: Box::new(Expr::List(
-        vec![
-          Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)].into()),
-          Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)].into()),
-        ]
-        .into(),
-      )),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("ImagePadding".to_string())),
-      replacement: Box::new(Expr::Integer(0)),
-    },
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-      replacement: Box::new(Expr::Identifier("Full".to_string())),
-    },
-  ];
-  match &graphics_ast(&args).ok()? {
-    Expr::Graphics { svg, .. } => {
-      let (w, h) = parse_svg_wh(svg);
-      (w > 0.0 && h > 0.0).then(|| (svg.clone(), w, h))
-    }
-    _ => None,
-  }
 }
 
 /// Wolfram's default Locator appearance: a dark ring with a translucent
