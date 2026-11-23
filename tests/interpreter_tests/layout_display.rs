@@ -1670,6 +1670,29 @@ mod layout_display {
     let (y, h) = (attr(nested, "y"), attr(nested, "height"));
     assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
   }
+
+  /// Regression: the prime marks of a typeset derivative (`T″(a)`) were
+  /// measured with the generic fallback advance, more than twice their real
+  /// width, leaving a wide gap before the argument's parenthesis.
+  #[test]
+  fn derivative_primes_take_their_own_narrow_width() {
+    for (order, primes) in [(1, "′"), (2, "′′")] {
+      let svg = svg_of(&format!(
+        "Text@TraditionalForm@Grid[{{{{D[T[a], {{a, {order}}}]}}}}]"
+      ));
+      let marks = format!(">{primes}</text>");
+      let at = svg.find(&marks).expect("primes are typeset");
+      let rest = &svg[at..];
+      let open = rest.find("translate(").expect("argument follows") + 10;
+      let x: f64 = rest[open..].split(',').next().unwrap().parse().unwrap();
+      // `T` advances about 7.8; each prime adds about 2.1 at script size.
+      let expected = 7.8 + 2.15 * order as f64;
+      assert!(
+        (x - expected).abs() < 1.0,
+        "order {order}: argument starts at {x}, expected about {expected}"
+      );
+    }
+  }
 }
 
 #[test]
@@ -2040,5 +2063,84 @@ mod text_in_fixed_panes {
       line_widths(&svg_of("Style[HoldForm[4]/HoldForm[66], 70]")),
       vec![4.0]
     );
+  }
+}
+
+/// A list holding typeset matrices or tables (`{MatrixForm[a],
+/// MatrixForm[b]}`) shows each item laid out in two dimensions between the
+/// list's braces and commas, also inside a `Text`/`Style`/`Pane`, instead
+/// of the list's source text.
+mod list_of_typeset_matrices {
+  use super::*;
+
+  /// Whether `fragment` steps down to a new line: it opens a row placed at
+  /// the left edge below the first one.
+  fn breaks_line(fragment: &str) -> bool {
+    fragment
+      .match_indices("<svg x=\"0\" y=\"")
+      .any(|(i, m)| !fragment[i + m.len()..].starts_with('0'))
+  }
+
+  #[test]
+  fn exported_list_of_matrices_is_typeset() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[{MatrixForm[{{1, 2}, {3, 4}}], \
+       MatrixForm[{{5, 6}, {7, 8}}]}, \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("MatrixForm"), "{svg}");
+    for cell in [">1<", ">4<", ">5<", ">8<", ">{<", ">}<"] {
+      assert!(svg.contains(cell), "{cell}: {svg}");
+    }
+  }
+
+  #[test]
+  fn exported_list_of_styled_tables_is_typeset() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Text[{Style[TableForm[{{a, b}}], Small], x}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("TableForm"), "{svg}");
+    assert!(svg.contains(">a<") && svg.contains(">b<"), "{svg}");
+  }
+
+  /// In a notebook (visual mode) the list is drawn as a picture too.
+  #[test]
+  fn list_of_matrices_displays_as_a_picture() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Text[{Style[MatrixForm[{{1, 2}, {3, 4}}], Small], \
+       Style[MatrixForm[{{5, 6}, {7, 8}}], Small]}], \
+       ImageSize -> {300, 200}, Alignment -> Center]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"300\" height=\"200\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("MatrixForm"), "{svg}");
+    assert!(svg.contains(">7<"), "{svg}");
+  }
+
+  /// A fixed-size `Pane` breaks the row of matrices into lines that each
+  /// hold as many matrices as fit its width, measured by their drawn size
+  /// rather than their source text (which put every matrix on a line of
+  /// its own).
+  #[test]
+  fn sized_pane_breaks_matrices_into_lines_by_drawn_width() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Table[MatrixForm[{{i}}], {i, 6}], {120, 300}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    let at = |s: &str| svg.find(s).unwrap_or_else(|| panic!("{s}: {svg}"));
+    let (one, two, three) = (at(">1<"), at(">2<"), at(">3<"));
+    assert!(!breaks_line(&svg[one..two]), "{svg}");
+    assert!(breaks_line(&svg[two..three]), "{svg}");
   }
 }
