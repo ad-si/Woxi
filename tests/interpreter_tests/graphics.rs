@@ -37807,6 +37807,38 @@ mod graphics_row {
     assert_eq!(cell_sizes(shown), cell_sizes(bare));
   }
 
+  /// Regression: pictures that each set their own `ImageSize` keep it in a
+  /// `GraphicsRow` without a size of its own (when they fit the automatic
+  /// row width together). They used to be stretched to a shared ~200 pt
+  /// cell width, so a 130 × 300 panel came out 200 × 462.
+  #[test]
+  fn cells_keep_their_own_image_size() {
+    clear_state();
+    let code = "GraphicsRow[{\
+       ListPlot[{1, 2, 3}, AspectRatio -> 1.5, ImageSize -> {130, 300}], \
+       Plot[x, {x, 0, 1}, ImageSize -> {130, 300}], \
+       Show[ListPlot[{3, 1, 2}], ImageSize -> {270, 300}]}]";
+    let sizes = cell_sizes(code);
+    assert_eq!(
+      sizes,
+      vec![
+        ("130".to_string(), "300".to_string()),
+        ("130".to_string(), "300".to_string()),
+        ("270".to_string(), "300".to_string()),
+      ]
+    );
+    assert_eq!(outer_size(code).1, 300);
+    // A width-only `ImageSize` keeps that width too.
+    let widths: Vec<String> = cell_sizes(
+      "GraphicsRow[{Plot[x, {x, 0, 1}, ImageSize -> 150], \
+         Graphics[Disk[], ImageSize -> 100]}]",
+    )
+    .into_iter()
+    .map(|(w, _)| w)
+    .collect();
+    assert_eq!(widths, vec!["150".to_string(), "100".to_string()]);
+  }
+
   /// A numeric `ImageSize` on a plot cell only sets its shape, as it does
   /// on a `Graphics` cell: a sized plot above a sized legend picture, both
   /// 200 wide, are drawn at the same width, with or without `Show`.
