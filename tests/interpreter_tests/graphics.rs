@@ -5482,6 +5482,77 @@ mod graphics {
       }
     }
 
+    /// Regression: a `Row` label's own `Frame -> True`, `FrameStyle` and
+    /// `Background` options were dropped, so the label was drawn as bare
+    /// text with neither its border nor its panel.
+    #[test]
+    fn a_row_label_draws_its_own_frame_and_background() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"x \", Style[\"h\", Italic], \" = 1\"}, \
+         Frame -> True, FrameStyle -> Red, Background -> Yellow], {0, 0}]}]",
+      );
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(
+        drawn.contains("fill=\"rgb(255,255,0)\" stroke=\"rgb(255,0,0)\""),
+        "the Row's options style its box: {drawn}"
+      );
+      assert!(drawn.contains("font-style=\"italic\">h<"), "{drawn}");
+      assert!(!drawn.contains("Frame"), "{drawn}");
+
+      // A `Background` without a frame paints only the panel.
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"a\", \"b\"}, Background -> Yellow], {0, 0}]}]",
+      );
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(drawn.contains("fill=\"rgb(255,255,0)\""), "{drawn}");
+      assert!(!drawn.contains("stroke=\"rgb(0,0,0)\""), "{drawn}");
+    }
+
+    /// Regression: an unframed multi-column `Grid` label ran each row
+    /// together as one line, so its columns did not line up; each cell is
+    /// now set in its own column, `Alignment -> Left` sets the cells flush
+    /// left and `Spacings -> {w, h}` sets the column gap to `w` ems.
+    #[test]
+    fn an_unframed_grid_label_lines_up_its_columns() {
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{\"a\", \"b\"}, {\"cccccccc\", \"d\"}}, \
+         Alignment -> Left, Spacings -> {2, 0}], {0, 0}]}]",
+      );
+      let x_of = |cell: &str| -> f64 {
+        let tag = svg
+          .split("<text ")
+          .find(|t| t.contains(&format!(">{cell}</text>")))
+          .unwrap_or_else(|| panic!("no cell {cell}: {svg}"));
+        let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+        x.parse().unwrap()
+      };
+      assert!(!svg.contains("a  b"), "rows must not run together: {svg}");
+      // Flush-left columns: both rows start each column at the same x.
+      assert_eq!(x_of("a"), x_of("cccccccc"), "{svg}");
+      assert_eq!(x_of("b"), x_of("d"), "{svg}");
+      assert!(x_of("b") > x_of("cccccccc"), "{svg}");
+      // No border is drawn around an unframed grid.
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(!drawn.contains("stroke=\"rgb(0,0,0)\""), "{drawn}");
+
+      // A wider `Spacings` widens the gap between the columns.
+      let narrow = export_svg(
+        "Graphics[{Text[Grid[{{\"a\", \"b\"}, {\"cccccccc\", \"d\"}}, \
+         Alignment -> Left, Spacings -> {0.5, 0}], {0, 0}]}]",
+      );
+      let gap = |s: &str| -> f64 {
+        let xs: Vec<f64> = s
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| {
+            t.split("x=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .collect();
+        xs[1] - xs[0]
+      };
+      assert!(gap(&svg) > gap(&narrow), "{svg}\n{narrow}");
+    }
+
     /// Regression: a styled rational was printed as the flat text `31/10`
     /// instead of a stacked fraction set in the styled font.
     #[test]
