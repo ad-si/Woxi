@@ -5791,7 +5791,13 @@ surface plots drawn through the shared surface renderer (`Plot3D`,
 own: a Demonstration's snapshot of a `ParametricPlot3D` at
 `ImageSize -> {450, 450}, ImagePadding -> 20` inside a `Manipulate` drew
 its box 351 px wide (Woxi: 348 px with the sphere framing, 405 px with the
-box-outline fit it used before).
+box-outline fit it used before). With the automatic `ImagePadding`, three
+snapshots of a morphing `ParametricPlot3D` surface (`SphericalRegion -> True`,
+`ImageSize -> {400, 400}`, a bowl, a torus-like ring and a mushroom shape)
+all draw it 0.90–0.91× as large as the bare sphere circle fills the picture,
+so Woxi widens the sphere-framed view by 1.1 there. Whether that margin is
+proportional or a fixed band of about 18 px (as an automatic padding would
+be) can't be told from snapshots of one size; unverified with wolframscript.
 
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 

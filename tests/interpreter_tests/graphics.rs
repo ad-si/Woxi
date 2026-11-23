@@ -44741,6 +44741,57 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  /// Width and height spanned by every `<polygon>` vertex of an SVG.
+  fn polygon_size(svg: &str) -> (f64, f64) {
+    let (mut x0, mut x1, mut y0, mut y1) = (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    );
+    for tag in svg.split("<polygon points=\"").skip(1) {
+      for pair in tag.split('"').next().unwrap().split_whitespace() {
+        let mut it = pair.split(',').map(|v| v.parse::<f64>().unwrap());
+        let (x, y) = (it.next().unwrap(), it.next().unwrap());
+        x0 = x0.min(x);
+        x1 = x1.max(x);
+        y0 = y0.min(y);
+        y1 = y1.max(y);
+      }
+    }
+    assert!(x0.is_finite(), "expected a drawn surface: {svg}");
+    (x1 - x0, y1 - y0)
+  }
+
+  /// Regression: a sphere-framed surface with the automatic `ImagePadding`
+  /// filled the bare circle of the box's sphere, about 10 % larger than
+  /// Wolfram's snapshots (which leave a margin around it). An explicit
+  /// `ImagePadding` still fits the circle into the padded region.
+  #[test]
+  fn sphere_framing_leaves_a_margin_without_image_padding() {
+    for surface in [
+      "{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, {u, 0, 2 Pi}, {v, Pi/2, Pi}",
+      "{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], Sin[v]}, {u, 0, 2 Pi}, \
+       {v, 0, 2 Pi}",
+    ] {
+      let plot = |extra: &str| {
+        export_svg(&format!(
+          "ParametricPlot3D[{surface}, Mesh -> None, PlotPoints -> 15, \
+           SphericalRegion -> True, Boxed -> False, Axes -> False, \
+           ImageSize -> {{400, 400}}{extra}]"
+        ))
+      };
+      let (aw, ah) = polygon_size(&plot(""));
+      let (pw, ph) = polygon_size(&plot(", ImagePadding -> 0"));
+      for (a, p) in [(aw, pw), (ah, ph)] {
+        assert!(
+          (a / p - 1.0 / 1.1).abs() < 0.005,
+          "{surface}: automatic {a} vs padded {p}"
+        );
+      }
+    }
+  }
+
   // A body that is a curve only once the variable is a number — the parts
   // of a `Piecewise` of points, flattened (Demonstration
   // WrappingACurveAroundASphere) — is read off at each sample; it used to
