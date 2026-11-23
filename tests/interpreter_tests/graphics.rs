@@ -73106,7 +73106,7 @@ mod show_bar_chart_layout {
       .unwrap();
     assert!(
       // The axis padding takes a few points off the golden-ratio height.
-      (height - 400.0 / 1.618_033_988_749_895).abs() < 10.0,
+      (height - 400.0 / std::f64::consts::GOLDEN_RATIO).abs() < 10.0,
       "height {height}: {svg}"
     );
     assert!(
