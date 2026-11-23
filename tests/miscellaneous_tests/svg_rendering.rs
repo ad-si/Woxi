@@ -1710,7 +1710,8 @@ mod tests {
         (
           r#"Plot[x, {x, 0, 1}, Frame -> True,
           FrameLabel -> {t, Row[{x, ",", "    ", y}]}]"#,
-          "xml:space=\"preserve\">x,    y</text>",
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">x</tspan>,    \
+           <tspan font-style=\"italic\">y</tspan></text>",
         ),
         (
           r#"ListLinePlot[{1, 2, 3}, Frame -> True,
@@ -3058,9 +3059,19 @@ mod tests {
         "Graphics3D[BSplineCurve[Table[{Sin[t], Cos[t], 0}, \
          {t, 0, 6.0, 0.5}], SplineClosed -> True]]",
       );
-      assert!(open.contains("<line"), "expected an open spline: {open}");
+      // Vertices drawn, whether as `<line>` pieces or one `<polyline>`.
+      let vertices = |svg: &str| {
+        svg.matches("<line").count() * 2
+          + svg
+            .split("<polyline points=\"")
+            .skip(1)
+            .filter_map(|p| p.split('"').next())
+            .map(|p| p.split_whitespace().count())
+            .sum::<usize>()
+      };
+      assert!(vertices(&open) > 0, "expected an open spline: {open}");
       assert!(
-        closed.matches("<line").count() > open.matches("<line").count(),
+        vertices(&closed) > vertices(&open),
         "a closed spline runs further than the open one"
       );
     }
@@ -5117,6 +5128,51 @@ mod tests {
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
     }
 
+    /// A grid row whose string holds a superscript grows only slightly
+    /// past a plain row: the raised script barely clears the line's own
+    /// ascenders, so the rows stay evenly spaced (as in Wolfram) instead of
+    /// spreading the scripted rows apart. A subscript reaches further below
+    /// the baseline and grows its row more.
+    #[test]
+    fn grid_script_rows_grow_only_by_the_script_overshoot() {
+      let row_centers = |code: &str| -> Vec<f64> {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        let mut ys: Vec<f64> = svg
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| {
+            t.split(" y=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .collect();
+        ys.dedup();
+        ys
+      };
+      let steps = |ys: &[f64]| -> Vec<f64> {
+        ys.windows(2).map(|w| w[1] - w[0]).collect()
+      };
+
+      let sup = row_centers(
+        r#"ExportString[Grid[{{"\!\(\*SuperscriptBox[\(9\), \(th\)]\) row", 1}, {"\!\(\*SuperscriptBox[\(7\), \(th\)]\) row", 2}, {"plain a", 3}, {"plain b", 4}}], "SVG"]"#,
+      );
+      assert_eq!(sup.len(), 4, "{sup:?}");
+      let d = steps(&sup);
+      let plain_step = d[2];
+      let script_step = d[0];
+      assert!(
+        script_step > plain_step && script_step < plain_step * 1.2,
+        "superscript rows should be only a little taller: {d:?}"
+      );
+
+      let sub = row_centers(
+        r#"ExportString[Grid[{{"\!\(\*SubscriptBox[\(x\), \(i\)]\) row", 1}, {"\!\(\*SubscriptBox[\(y\), \(j\)]\) row", 2}, {"plain a", 3}, {"plain b", 4}}], "SVG"]"#,
+      );
+      let ds = steps(&sub);
+      assert!(
+        ds[0] > script_step && ds[0] < ds[2] * 1.6,
+        "subscript rows grow more than superscript rows: {ds:?}"
+      );
+    }
+
     /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
     /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
     /// exponents), not flattened to one unspaced text run.
@@ -5252,6 +5308,38 @@ mod tests {
         "a text-only layout composes no picture: {:?}",
         result.graphics
       );
+    }
+
+    /// A table of pictures in a fixed-size `Pane` takes up the pane's whole
+    /// box, not just the table's own size.
+    #[test]
+    fn a_grid_of_pictures_in_a_fixed_pane_fills_the_box() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{Graphics[Disk[], ImageSize -> {100, 100}], "a"}}], {500, 200}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the table is a picture");
+      assert!(
+        svg.starts_with("<svg width=\"500\" height=\"200\""),
+        "{svg:.200}"
+      );
+    }
+
+    /// `Alignment -> {Center}` centers the content horizontally and keeps
+    /// it at the top, like `Alignment -> {Center, Top}`.
+    #[test]
+    fn a_one_element_pane_alignment_list_sets_the_horizontal_alignment() {
+      let svg_for = |align: &str| {
+        woxi::interpret_with_stdout(&format!(
+          r#"Pane[Grid[{{{{Graphics[Disk[], ImageSize -> {{100, 100}}]}}}}], {{500, 200}}, Alignment -> {align}]"#
+        ))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the table is a picture")
+      };
+      let single = svg_for("{Center}");
+      assert_eq!(single, svg_for("{Center, Top}"));
+      assert_ne!(single, svg_for("{Left, Top}"));
     }
 
     /// `Panel[table, Text[caption]]` is drawn as the table with its caption
@@ -5517,7 +5605,7 @@ mod tests {
       // … and the left-aligned line the row factor moved to.
       let four = svg.find(">4</text>").expect("row factor drawn");
       let line_y =
-        y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
+        y_after(&svg[svg[..four].rfind("<svg x=\"6.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
     }
 
@@ -5924,6 +6012,34 @@ mod grid_item_style_tests {
     // A `Row` without a quotient keeps its plain text.
     let plain =
       woxi::interpret(r#"ExportString[Grid[{{Row[{a, b}]}}], "SVG"]"#).unwrap();
+    assert!(!plain.contains("<line"), "unexpected bar in {plain}");
+  }
+
+  #[test]
+  fn test_grid_raw_boxes_radical_over_fraction_is_stacked() {
+    // A `RawBoxes` cell holding a radical over a stacked fraction is drawn
+    // through the box layout (radical stroke, fraction bar), not written on
+    // one line as `√a/b` under a text overline.
+    let svg = woxi::interpret(
+      r#"ExportString[Grid[{{RawBoxes[RowBox[{SqrtBox[FractionBox["p", "q"]], "+", "s"}]], 1}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<line"), "missing fraction bar in {svg}");
+    assert!(svg.contains("<path"), "missing radical stroke in {svg}");
+    assert!(!svg.contains("p/q"), "fraction printed inline in {svg}");
+    assert!(!svg.contains("overline"), "radical drawn as text in {svg}");
+    // The same works for `DisplayForm` of a box and for a fraction alone.
+    let frac = woxi::interpret(
+      r#"ExportString[Grid[{{DisplayForm[FractionBox["m", "n"]]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(frac.contains("<line"), "missing fraction bar in {frac}");
+    assert!(!frac.contains("m/n"), "fraction printed inline in {frac}");
+    // One-line boxes keep their plain text rendering.
+    let plain = woxi::interpret(
+      r#"ExportString[Grid[{{RawBoxes[RowBox[{"u", "+", "v"}]]}}], "SVG"]"#,
+    )
+    .unwrap();
     assert!(!plain.contains("<line"), "unexpected bar in {plain}");
   }
 
