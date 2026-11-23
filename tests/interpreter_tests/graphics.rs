@@ -3484,6 +3484,46 @@ mod graphics {
       assert!(svg.contains("font-style=\"italic\""), "{svg}");
     }
 
+    /// `TraditionalForm` of a string carrying inline box code typesets that
+    /// code with its single-letter symbols in italics (an italic `d²`, `xₖ`)
+    /// as a grid entry, while plain text runs stay upright.
+    #[test]
+    fn traditional_form_inline_box_string_italicizes_letters() {
+      for (label, letter) in [
+        ("\"\\!\\(\\*SuperscriptBox[\\(d\\), \\(2\\)]\\)\"", "d"),
+        ("\"\\!\\(\\*SubscriptBox[\\(x\\), \\(k\\)]\\)\"", "x"),
+      ] {
+        let code = format!("Grid[{{{{TraditionalForm[{label}], 1}}}}]");
+        let svg = export_svg(&code);
+        assert!(
+          svg.contains(&format!(
+            "<tspan font-style=\"italic\">{letter}</tspan>"
+          )),
+          "{code}: {svg}"
+        );
+      }
+      // Text outside the box code stays upright.
+      let svg = export_svg(
+        "Grid[{{TraditionalForm[\"value \\!\\(\\*SuperscriptBox[\\(d\\), \\(2\\)]\\)\"]}}]",
+      );
+      assert!(svg.contains("value "), "{svg}");
+      assert!(!svg.contains("italic\">value"), "{svg}");
+    }
+
+    /// A graphics label `Text[TraditionalForm["…"]]` shows the string's
+    /// text, not the `FormBox` source it serializes to.
+    #[test]
+    fn graphics_text_traditional_form_string_shows_its_text() {
+      let svg = export_svg("Graphics[Text[TraditionalForm[\"ab\"], {0, 0}]]");
+      assert!(svg.contains(">ab</text>"), "{svg}");
+      assert!(!svg.contains("FormBox"), "{svg}");
+      let svg = export_svg(
+        "Graphics[Text[TraditionalForm[\"\\!\\(\\*SubscriptBox[\\(x\\), \\(k\\)]\\)\"], {0, 0}]]",
+      );
+      assert!(!svg.contains("FormBox"), "{svg}");
+      assert!(svg.contains("baseline-shift=\"sub\""), "{svg}");
+    }
+
     /// A nested `Style[…, size]` part of a label inside a `Style` of
     /// another size is drawn at its own size.
     #[test]

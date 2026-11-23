@@ -6679,6 +6679,15 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&traditionalize_layout_items(&args[0]))
     }
+    // A string is its own text in any form: `TraditionalForm["ab"]` shows
+    // `ab`, not the `FormBox` source it serializes to.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(args[0], Expr::String(_)) =>
+    {
+      graphics_text_content(&args[0])
+    }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -23934,6 +23943,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           );
           with_single_letter_italics(|| boxes_to_svg(&boxes))
         }
+        // A string carrying inline `\!\(\*…\)` box code typesets that code in
+        // `TraditionalForm`: its single-letter symbols are set in italics
+        // (`"\!\(\*SuperscriptBox[\(d\), \(2\)]\)"` shows an italic d²),
+        // while its plain text runs stay upright.
+        "TraditionalForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::String(s)
+              if inline_box_string_to_box_expr(s).is_some()) =>
+        {
+          let Expr::String(s) = &args[0] else {
+            unreachable!()
+          };
+          traditional_box_string_to_svg(s)
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
@@ -39191,6 +39214,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
+    current = call1("TraditionalForm", current);
+  } else if traditional
+    && matches!(&current, Expr::String(s)
+      if inline_box_string_to_box_expr(s).is_some()
+        && !has_stacked_inline_box(s))
+  {
+    // Its one-line box code is still set traditionally — the single-letter
+    // symbols in italics — so the form stays on for the renderer. (Stacked
+    // box code, a fraction or root, is laid out by the box renderer.)
     current = call1("TraditionalForm", current);
   } else if traditional {
     current = traditionalize_layout_items(&current);
