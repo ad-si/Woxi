@@ -38299,7 +38299,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         })
         .collect();
-      return finish_graphics_row(svgs, &opts);
+      return Ok(finish_graphics_row(svgs, &opts));
     }
     let (mut per_cell_w, per_cell_h) =
       layout_cell_size(&opts, items.len(), 1, items.len());
@@ -38332,7 +38332,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     extract_svgs_from_list(&items)
   };
-  finish_graphics_row(svgs, &opts)
+  Ok(finish_graphics_row(svgs, &opts))
 }
 
 /// The width an inline graphics call (`Plot[…, ImageSize -> {w, h}]`,
@@ -38368,25 +38368,20 @@ fn own_image_width(item: &Expr) -> Option<f64> {
 }
 
 /// Lay the rendered cells of a `GraphicsRow` out side by side.
-fn finish_graphics_row(
-  svgs: Vec<String>,
-  opts: &LayoutOptions,
-) -> Result<Expr, InterpreterError> {
-  if svgs.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-
-  let row = vec![svgs];
-  match combine_svgs_grid(&row, opts) {
+fn finish_graphics_row(svgs: Vec<String>, opts: &LayoutOptions) -> Expr {
+  let combined = if svgs.is_empty() {
+    None
+  } else {
+    combine_svgs_grid(&[svgs], opts)
+  };
+  match combined {
     Some(combined) => {
       crate::clear_captured_graphics();
-      Ok(crate::graphics_result(combined))
+      crate::graphics_result(combined)
     }
-    None => Ok(crate::graphics_result(
+    None => crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    )),
+    ),
   }
 }
 
