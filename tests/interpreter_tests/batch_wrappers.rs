@@ -3418,6 +3418,46 @@ mod batch_unevaluated_wrappers_2 {
       "-Graphics-"
     );
   }
+  /// `GaugeMarkers -> "BarMarker"` draws a thin bar instead of the
+  /// triangular pointer, `GaugeFaceStyle` fills a rounded face panel behind
+  /// the scale and `GaugeLabels -> Placed[label, Top]` titles the gauge.
+  #[test]
+  fn linear_gauge_bar_marker_face_and_label() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let blue_rect = |s: &str| {
+      s.split("<rect").skip(1).any(|r| {
+        r.split('>')
+          .next()
+          .unwrap()
+          .contains("fill=\"rgb(0,0,255)\"")
+      })
+    };
+    let gauge = svg(
+      "HorizontalGauge[{0.3, 0.7}, {0, 1}, GaugeMarkers -> \"BarMarker\", \
+       GaugeFaceStyle -> \"GlassRectangle\", GaugeStyle -> Blue, \
+       GaugeLabels -> Placed[\"speeds\", Top]]",
+    );
+    assert!(blue_rect(&gauge), "bar markers: {gauge}");
+    assert!(!gauge.contains("<polygon"), "no triangles: {gauge}");
+    assert!(gauge.contains("fill=\"rgb(217,217,217)\""), "face: {gauge}");
+    assert!(gauge.contains(">speeds</text>"), "label: {gauge}");
+
+    // A color face fills the panel with that color; a plain label sits on
+    // a vertical gauge too, and the default markers stay triangles.
+    let vertical = svg(
+      "VerticalGauge[7, {0, 10}, GaugeFaceStyle -> RGBColor[1, 0, 0], \
+       GaugeLabels -> \"level\"]",
+    );
+    assert!(vertical.contains("fill=\"rgb(255,0,0)\""), "{vertical}");
+    assert!(vertical.contains(">level</text>"), "{vertical}");
+
+    // Without the options there is no face and no label.
+    let plain = svg("HorizontalGauge[0.3, {0, 1}, GaugeStyle -> Blue]");
+    assert!(!blue_rect(&plain), "{plain}");
+    assert!(!plain.contains("rgb(217,217,217)"), "{plain}");
+  }
   #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");

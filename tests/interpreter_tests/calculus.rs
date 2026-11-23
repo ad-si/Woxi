@@ -9030,6 +9030,51 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  /// `a x y' + b y + c y^2 == d x^k` is a Riccati equation that the
+  /// substitution `y = (a/c) x u'/u` turns into a Bessel equation; it used
+  /// to stay unevaluated. The general solution must satisfy the equation
+  /// for every value of the constant, including when `c d` has the sign
+  /// that makes the Bessel argument imaginary and for a negative power.
+  #[test]
+  fn power_coefficient_riccati_equation() {
+    for (a, b, c, d, k) in [
+      ("-3", "4", "3", "-2", "5"),
+      ("2", "1", "1", "3", "2"),
+      ("1", "-2", "1", "1", "3"),
+      ("1", "1", "1", "-1", "-1"),
+      ("2", "0", "1", "1/2", "4"),
+    ] {
+      let code = format!(
+        "sol = DSolve[{a} x y'[x] + {b} y[x] + {c} y[x]^2 == {d} x^{k}, \
+         y[x], x]; f = y[x] /. First[sol]; \
+         r = {a} x D[f, x] + {b} f + {c} f^2 - {d} x^{k}; \
+         {{Length[sol], Max[Abs[N[r /. {{{{x -> 0.7, C[1] -> 0.3}}, \
+         {{x -> 1.4, C[1] -> -2}}, {{x -> 1.1, C[1] -> 0}}}}]]] < 10^-8}}"
+      );
+      assert_eq!(interpret(&code).unwrap(), "{1, True}", "{code}");
+    }
+  }
+
+  #[test]
+  fn power_coefficient_riccati_equation_solution_form() {
+    assert_eq!(
+      interpret("DSolve[x y'[x] + y[x]^2 == -x^2, y[x], x]").unwrap(),
+      "{{y[x] -> (x*(-BesselJ[1, x] - BesselY[1, x]*C[1]))/\
+       (BesselJ[0, x] + BesselY[0, x]*C[1])}}"
+    );
+  }
+
+  /// An equation that is not of that shape (a `y y'` term) is not taken
+  /// for one.
+  #[test]
+  fn riccati_solver_rejects_other_shapes() {
+    assert!(
+      !interpret("DSolve[x y[x] y'[x] + y[x]^2 == x^2, y[x], x]")
+        .unwrap()
+        .starts_with("{{y[x] -> (x*(BesselJ")
+    );
+  }
+
   /// Fewer conditions than constants fix the last constants the conditions
   /// involve and leave the others free, as in wolframscript; the
   /// conditions used to be dropped altogether.

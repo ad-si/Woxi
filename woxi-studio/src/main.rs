@@ -11382,7 +11382,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
   /// `TraditionalForm` at a large size. The widget shows it typeset
-  /// (subscripts, operator, font size), like an output cell, instead of the
+  /// (subscripts, operator, font size) in the `Pane`'s picture, instead of the
   /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
   /// copied from any specific Demonstration.
   #[test]
@@ -11397,11 +11397,25 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    let svg = state
-      .typeset_output
-      .as_deref()
-      .expect("the textual result is typeset");
-    assert!(state.typeset_handle.is_some());
+    // The fixed-size `Pane` is drawn as a picture of its typeset content
+    // (or, without one, the content shows as a typeset output) — either
+    // way never as source text.
+    assert_eq!(state.text_output, None, "no source-text fallback");
+    let svg = match (&state.graphics_handle, &state.typeset_output) {
+      (Some(handle), _) => match handle.data() {
+        iced::advanced::svg::Data::Bytes(bytes) => {
+          String::from_utf8_lossy(bytes).into_owned()
+        }
+        other => panic!("in-memory svg expected, got {other:?}"),
+      },
+      (None, Some(svg)) => svg.clone(),
+      (None, None) => panic!("the textual result is typeset"),
+    };
+    // The `Pane` lays the typeset text out at its stated size.
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
@@ -33361,11 +33375,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         y,
         ..
       } => {
-        // No explicit corner bounds were given, so the range must fall back
-        // to a box padded by at least 1 unit around the initial point {2,2}
-        // (a degenerate single-point bounding box pads by a full unit).
+        // No explicit corner bounds were given, so the (invisible) Locator
+        // moves over the picture the body draws: the 7×7 lattice of
+        // squares reaching 0.4 past the outer points.
         assert_eq!((*x, *y), (2.0, 2.0));
-        assert_eq!((*x_min, *x_max, *y_min, *y_max), (1.0, 3.0, 1.0, 3.0));
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-0.4, 6.4, -0.4, 6.4));
       }
       other => panic!("expected `query` as a Slider2D stand-in, got {other:?}"),
     }
