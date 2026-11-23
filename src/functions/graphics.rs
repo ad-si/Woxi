@@ -38578,7 +38578,9 @@ pub(crate) fn style_pushed_into_layout(
     let styled = |e: &Expr, ds: &[Expr]| {
       call(
         "Style",
-        std::iter::once(e.clone()).chain(ds.iter().cloned()).collect(),
+        std::iter::once(e.clone())
+          .chain(ds.iter().cloned())
+          .collect(),
       )
     };
     return Some(call(
