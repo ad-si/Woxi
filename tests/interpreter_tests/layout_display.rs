@@ -2001,7 +2001,8 @@ mod text_in_fixed_panes {
     let svg = svg_of(
       r#"Column[{Pane["", {300, 50}], Style[Text[Pane[Row[{47, "x", 87}, " "], {500, 25}, Alignment -> Center]], Bold]}, Alignment -> Center]"#,
     );
-    assert_eq!(root_size(&svg), ("500".into(), "75".into()), "{svg}");
+    // The two sized panes, stacked the default 6 pt apart.
+    assert_eq!(root_size(&svg), ("500".into(), "81".into()), "{svg}");
     let row = svg.lines().find(|l| l.contains(">87</text>")).unwrap();
     assert!(
       row.contains("Atkinson Hyperlegible Next, sans-serif"),

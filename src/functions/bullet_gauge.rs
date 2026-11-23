@@ -117,6 +117,8 @@ pub fn bullet_gauge_ast(
   let mut styles: Vec<Expr> = Vec::new();
   let mut label = None;
   let mut divisions = None;
+  let mut image_size = "Small".to_string();
+  let mut background = "None".to_string();
   for opt in &args[positional.len()..] {
     let (Expr::Rule {
       pattern,
@@ -135,6 +137,12 @@ pub fn bullet_gauge_ast(
       Expr::Identifier(k) if k == "GaugeLabels" => {
         let v = value();
         label = matches!(v, Expr::String(_)).then_some(v);
+      }
+      Expr::Identifier(k) if k == "ImageSize" => {
+        image_size = expr_to_source_form(&value());
+      }
+      Expr::Identifier(k) if k == "Background" => {
+        background = expr_to_source_form(&value());
       }
       Expr::Identifier(k) if k == "ScaleDivisions" => {
         divisions = match &value() {
@@ -330,10 +338,10 @@ pub fn bullet_gauge_ast(
      Directive[AbsoluteThickness[1], GrayLevel[0.5]]], {{{{}}, {{}}, {{}}}}}}, {{{label}}}, {{{marks}}}, {{}}, Rotate[{{}}, 0, {{0, 0}}]}}, \
      {{DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {{\"PlotGraphics\", \"Graphics\"}}, \
      AlignmentPoint -> Center, AspectRatio -> Automatic, Axes -> False, AxesLabel -> None, AxesOrigin -> Automatic, AxesStyle -> {GRAY_25}, \
-     Background -> None, BaselinePosition -> Automatic, BaseStyle -> {{}}, ColorOutput -> Automatic, ContentSelectable -> Automatic, \
+     Background -> {background}, BaselinePosition -> Automatic, BaseStyle -> {{}}, ColorOutput -> Automatic, ContentSelectable -> Automatic, \
      CoordinatesToolOptions -> Automatic, DisplayFunction -> Identity, Epilog -> {{}}, FormatType -> TraditionalForm, Frame -> False, \
      FrameLabel -> None, FrameStyle -> {{}}, FrameTicks -> Automatic, FrameTicksStyle -> {{}}, GridLines -> None, GridLinesStyle -> {{}}, \
-     ImageMargins -> 0., ImagePadding -> All, ImageSize -> Small, ImageSizeRaw -> Automatic, LabelStyle -> {GRAY_50}, \
+     ImageMargins -> 0., ImagePadding -> All, ImageSize -> {image_size}, ImageSizeRaw -> Automatic, LabelStyle -> {GRAY_50}, \
      Method -> {{\"BulletGauge\", \"NumericDisplayLocation\" -> Above, \"MarkerBackground\" -> None, \"DefaultBoundaryStyle\" -> Automatic, \
      \"DefaultGraphicsInteraction\" -> {{\"Version\" -> 1.2, \"TrackMousePosition\" -> {{True, False}}, \"Effects\" -> {{\"Highlight\" -> {{\"ratio\" -> 2}}, \
      \"HighlightPoint\" -> {{\"ratio\" -> 2}}, \"Droplines\" -> {{\"freeformCursorMode\" -> True, \"placement\" -> {{\"x\" -> \"All\", \"y\" -> \"None\"}}}}}}}}, \
