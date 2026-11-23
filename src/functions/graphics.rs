@@ -33349,6 +33349,97 @@ fn grid_svg_styled_internal(
   result
 }
 
+/// A `Row[{…}]` grid cell (possibly under `Style` wrappers) that is drawn
+/// as a picture — an item of it is two-dimensional, like a matrix — broken
+/// between its items onto further lines when it is wider than `max_w`
+/// pixels, the way the front end wraps a row in a fixed-width column:
+/// `Row[{"C = ", MatrixForm[m]}]` puts the matrix under its label rather
+/// than across the next column. Each line takes as many items as fit (at
+/// least one). `None` when the cell is no such row or already fits.
+fn wrap_row_cell_to_width(cell: &Expr, max_w: f64) -> Option<Expr> {
+  let mut styles: Vec<Vec<Expr>> = Vec::new();
+  let mut row = cell;
+  while let Expr::FunctionCall { name, args } = row
+    && name == "Style"
+    && !args.is_empty()
+  {
+    styles.push(args[1..].to_vec());
+    row = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = row else {
+    return None;
+  };
+  if name != "Row" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  if items.len() < 2 || !crate::evaluator::lays_out_a_graphic(row) {
+    return None;
+  }
+  // A line is measured as it is drawn: in the cell's style, as a picture
+  // when an item of it is two-dimensional and as a row of text otherwise.
+  let directives: Vec<Expr> = styles.iter().flatten().cloned().collect();
+  let width_of = |part: &[Expr]| -> Option<f64> {
+    let line = call1("Row", Expr::List(part.to_vec().into()));
+    let styled_line = call(
+      "Style",
+      std::iter::once(line)
+        .chain(directives.iter().cloned())
+        .collect(),
+    );
+    if let Some((_, w, _)) = grid_cell_graphic(&styled_line) {
+      return Some(w);
+    }
+    let styled: Vec<Expr> = part
+      .iter()
+      .map(|item| {
+        call(
+          "Style",
+          std::iter::once(item.clone())
+            .chain(directives.iter().cloned())
+            .collect(),
+        )
+      })
+      .collect();
+    let svg = row_to_svg(&[Expr::List(styled.into())])?;
+    parse_svg_dimensions(&svg).map(|d| d.nat_w)
+  };
+  if width_of(items)? <= max_w {
+    return None;
+  }
+  let mut lines: Vec<Expr> = Vec::new();
+  let mut start = 0;
+  while start < items.len() {
+    let mut end = start + 1;
+    while end < items.len()
+      && width_of(&items[start..=end]).is_some_and(|lw| lw <= max_w)
+    {
+      end += 1;
+    }
+    lines.push(call1("Row", Expr::List(items[start..end].to_vec().into())));
+    start = end;
+  }
+  if lines.len() < 2 {
+    return None;
+  }
+  let mut wrapped = call(
+    "Column",
+    vec![
+      Expr::List(lines.into()),
+      Expr::Identifier("Left".to_string()),
+    ],
+  );
+  for directives in styles.into_iter().rev() {
+    wrapped = call(
+      "Style",
+      std::iter::once(wrapped).chain(directives).collect(),
+    );
+  }
+  Some(wrapped)
+}
+
 fn grid_svg_styled_internal_reporting(
   args: &[Expr],
   group_gaps: &[usize],
@@ -33499,6 +33590,26 @@ fn grid_svg_styled_internal_reporting(
           directives.push(Expr::Real(size));
         }
         *cell = call("Style", directives);
+      } else if let Some(family) = default_style
+        .font_family
+        .as_deref()
+        .filter(|ff| !is_monospace_font_family(ff))
+        && matches!(&*cell, Expr::FunctionCall { name, .. } if name == "Row")
+        && crate::evaluator::lays_out_a_graphic(cell)
+      {
+        // A `Row` cell drawn as a picture because an item of it is
+        // two-dimensional (`Row[{"C = ", MatrixForm[m]}]`) sets its labels
+        // in the grid's proportional face, like the text cells beside it.
+        *cell = call(
+          "Style",
+          vec![
+            cell.clone(),
+            Expr::Rule {
+              pattern: Box::new(id_expr("FontFamily")),
+              replacement: Box::new(str_expr(family)),
+            },
+          ],
+        );
       }
     }
   }
@@ -34193,6 +34304,11 @@ fn grid_svg_styled_internal_reporting(
           // An average character is about half an em wide.
           let max_chars = (w * 2.0).round().max(1.0) as usize;
           *cell = Expr::String(wrap_text_to_width(text, max_chars));
+        } else if let Some(w) = span_w
+          && let Some(wrapped) =
+            wrap_row_cell_to_width(cell, w * ITEM_SIZE_EM * font_size)
+        {
+          *cell = wrapped;
         }
       }
     }
@@ -39871,6 +39987,31 @@ pub(crate) fn style_pushed_into_layout(
         "Times",
         args.iter().map(|f| restyle(f, directives)).collect(),
       );
+    }
+    // A nested `Row` drawn as a picture because an item of it is
+    // two-dimensional (`Row[{"C = ", MatrixForm[m]}]`) is still a layout of
+    // text: the directives go onto its items, so its labels take the
+    // enclosing face and size instead of the monospace default. A nested
+    // `Grid`/`Column` of such items takes them as its own `Style`, which
+    // it hands on to its cells.
+    if let Expr::FunctionCall { name, .. } = e
+      && crate::evaluator::lays_out_a_graphic(e)
+    {
+      if name == "Row"
+        && let Some(pushed) = style_pushed_into_layout(e, directives)
+      {
+        return pushed;
+      }
+      if matches!(name.as_str(), "Grid" | "Column")
+        && !crate::evaluator::styled_table_core(e)
+      {
+        return call(
+          "Style",
+          std::iter::once(e.clone())
+            .chain(directives.iter().cloned())
+            .collect(),
+        );
+      }
     }
     // A `Grid` span marker holds no content and is only recognized bare:
     // inside a `Style` it would be drawn as its own name.

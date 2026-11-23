@@ -1408,3 +1408,67 @@ mod column_item_style_and_size {
     assert_eq!(svg_dims(&svg).1, 2.0 * h, "{svg}");
   }
 }
+
+mod typeset_row_items_in_text_face {
+  use super::*;
+
+  fn root_height(svg: &str) -> f64 {
+    let start = svg.find("height=\"").unwrap() + "height=\"".len();
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Row` drawn as a picture because one of its items is a matrix keeps
+  /// the face of a `Style` around the `Column` it sits in: its label used
+  /// to fall back to the monospace face of typeset output.
+  #[test]
+  fn styled_column_row_with_matrix_takes_the_font_family() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Style[Column[{Row[{q, " = ", MatrixForm[{{1, 2}, {3, 4}}]}]}], FontFamily -> "Times"], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">q<"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains("Times"), "{svg}");
+  }
+
+  /// `Text[Column[{Grid[…], …}]]` sets a typeset `Row` cell of the grid
+  /// (`Row[{label, " = ", MatrixForm[m]}]`) in the proportional text face,
+  /// like the plain text cells around it.
+  #[test]
+  fn text_column_grid_row_with_matrix_uses_text_face() {
+    clear_state();
+    for code in [
+      r#"ExportString[Text[Column[{Grid[{{Row[{q, " = ", MatrixForm[{{1, 2}, {3, 4}}]}]}}], "x"}]], "SVG"]"#,
+      r#"ExportString[Style[Column[{Grid[{{Row[{q, " = ", MatrixForm[{{1, 2}, {3, 4}}]}]}}], "x"}], FontFamily -> "sans-serif"], "SVG"]"#,
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains(">q<"), "{code}: {svg}");
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+    }
+  }
+
+  /// A `Row` cell holding a matrix that is wider than its fixed `ItemSize`
+  /// column breaks between its items, so the matrix goes under its label
+  /// instead of running into the next column; one that fits stays on one
+  /// line.
+  #[test]
+  fn row_cell_wraps_to_fixed_item_size_width() {
+    clear_state();
+    let grid = |w: u32| {
+      format!(
+        r#"ExportString[Text[Grid[{{{{Row[{{q, " = ", MatrixForm[{{{{-1, -2, -2}}, {{2, 1, 2}}, {{2, 2, 3}}}}]}}], "next"}}}}, ItemSize -> {{{{{w}, 5}}}}]], "SVG"]"#
+      )
+    };
+    let wrapped = interpret(&grid(7)).unwrap();
+    let single = interpret(&grid(20)).unwrap();
+    assert!(
+      root_height(&wrapped) > root_height(&single) + 14.0,
+      "wrapped: {wrapped}\nsingle: {single}"
+    );
+    // The label and the matrix are each still drawn once.
+    assert_eq!(wrapped.matches(">q<").count(), 1, "{wrapped}");
+    assert_eq!(wrapped.matches(">-1<").count(), 1, "{wrapped}");
+  }
+}

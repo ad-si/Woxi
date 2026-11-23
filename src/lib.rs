@@ -4003,23 +4003,20 @@ fn keep_fixed_pane_box(
   ))
 }
 
-/// Whether `expr` is a `Column[…]` under one or more `Style[…, directives]`
+/// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
 /// wrappers.
-fn is_styled_column(expr: &syntax::Expr) -> bool {
+fn is_text_column(expr: &syntax::Expr) -> bool {
   let mut current = expr;
-  let mut styled = false;
   while let syntax::Expr::FunctionCall { name, args } = current
     && name == "Style"
     && args.len() >= 2
   {
-    styled = true;
     current = &args[0];
   }
-  styled
-    && matches!(
-      current,
-      syntax::Expr::FunctionCall { name, .. } if name == "Column"
-    )
+  matches!(
+    current,
+    syntax::Expr::FunctionCall { name, .. } if name == "Column"
+  )
 }
 
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
@@ -4077,11 +4074,13 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
-          // A styled `Column` layout
-          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`) is drawn in the
-          // proportional text face, so the text of its items is not left in
-          // the monospace face of a bare `Column`'s `Row`s.
-          if is_styled_column(&content) {
+          // A `Column` layout, styled or not
+          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`,
+          // `Text[Column[{Grid[…], Grid[…]}]]`) is drawn in the proportional
+          // text face, so the text of its items (numbers and subscripted
+          // symbols included) is not left in the monospace face of a bare
+          // `Column`'s `Row`s and grid cells.
+          if is_text_column(&content) {
             let in_face = render_visual_display_pipeline(
               &functions::graphics::in_text_face(&content),
             );
