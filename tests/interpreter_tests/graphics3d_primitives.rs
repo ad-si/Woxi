@@ -2205,24 +2205,44 @@ mod arrows_and_box {
 
   /// The screen midpoint of every `<line>` piece stroked in `color`, with
   /// its position among the lines of `svg`.
+  /// The line pieces drawn in `color`: each `<line>`, and each segment
+  /// between consecutive points of a `<polyline>` (opaque pieces drawn one
+  /// after another are joined into one), with the index of the SVG line
+  /// that draws it and its midpoint.
   fn line_pieces(svg: &str, color: &str) -> Vec<(usize, (f64, f64))> {
     let attr = |l: &str, name: &str| -> f64 {
       let key = format!(" {name}=\"");
       let rest = &l[l.find(&key).unwrap() + key.len()..];
       rest[..rest.find('"').unwrap()].parse().unwrap()
     };
-    svg
-      .lines()
-      .enumerate()
-      .filter(|(_, l)| {
-        l.starts_with("<line ") && l.contains(&format!("stroke=\"{color}\""))
-      })
-      .map(|(i, l)| {
+    let stroke = format!("stroke=\"{color}\"");
+    let mut pieces = Vec::new();
+    for (i, l) in svg.lines().enumerate() {
+      if !l.contains(&stroke) {
+        continue;
+      }
+      if l.starts_with("<line ") {
         let x = f64::midpoint(attr(l, "x1"), attr(l, "x2"));
         let y = f64::midpoint(attr(l, "y1"), attr(l, "y2"));
-        (i, (x, y))
-      })
-      .collect()
+        pieces.push((i, (x, y)));
+      } else if l.starts_with("<polyline ") {
+        let pts = l["<polyline points=\"".len()..].split('"').next().unwrap();
+        let pts: Vec<(f64, f64)> = pts
+          .split(' ')
+          .map(|xy| {
+            let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+            (it.next().unwrap(), it.next().unwrap())
+          })
+          .collect();
+        for w in pts.windows(2) {
+          pieces.push((
+            i,
+            (f64::midpoint(w[0].0, w[1].0), f64::midpoint(w[0].1, w[1].1)),
+          ));
+        }
+      }
+    }
+    pieces
   }
 
   // An opaque solid hides the part of a 3D arrow inside or behind it: the
@@ -2301,12 +2321,12 @@ mod arrows_and_box {
     let s =
       svg("Graphics3D[{Red, Line[{{-3, 0, 0}, {3, 0, 0}}]}, Boxed -> False]");
     assert!(line_pieces(&s, "rgb(255,0,0)").len() > 32, "{s}");
-    // A short one keeps the usual eight pieces.
+    // A short one is not cut at all.
     let s = svg(
       "Graphics3D[{Red, Line[{{0, 0, 0}, {0.01, 0, 0}}], \
        Point[{{-3, -3, -3}, {3, 3, 3}}]}, Boxed -> False]",
     );
-    assert_eq!(line_pieces(&s, "rgb(255,0,0)").len(), 8, "{s}");
+    assert_eq!(line_pieces(&s, "rgb(255,0,0)").len(), 1, "{s}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.
