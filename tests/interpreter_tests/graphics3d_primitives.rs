@@ -3034,39 +3034,48 @@ mod coincident_lines {
   use super::*;
 
   /// For every on-screen line position drawn in both colors, the color
-  /// of the stroke that ends up on top.
+  /// of the stroke that ends up on top. A position is a segment of a
+  /// `<line>` or between consecutive points of a `<polyline>`.
   fn top_colors(svg: &str) -> Vec<String> {
     let mut last: std::collections::HashMap<String, (String, bool)> =
       std::collections::HashMap::new();
-    for line in svg.split("<line ").skip(1) {
-      let line = line.split("/>").next().unwrap();
-      let Some(color) = line
-        .split("stroke=\"")
+    let attr = |el: &str, name: &str| -> Option<String> {
+      el.split(&format!(" {name}=\""))
         .nth(1)
         .and_then(|s| s.split('"').next())
-      else {
+        .map(str::to_string)
+    };
+    for el in svg.lines() {
+      let Some(color) = attr(el, "stroke") else {
         continue;
       };
       if color != "rgb(0,0,255)" && color != "rgb(255,0,0)" {
         continue;
       }
-      let coords: String = ["x1", "y1", "x2", "y2"]
-        .iter()
-        .map(|a| {
-          line
-            .split(&format!(" {a}=\""))
-            .nth(1)
-            .and_then(|s| s.split('"').next())
-            .unwrap_or("")
-            .to_string()
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-      let entry = last.entry(coords).or_insert((color.to_string(), false));
-      if entry.0 != color {
-        entry.1 = true;
+      let segments: Vec<String> = if el.starts_with("<line ") {
+        let c: Vec<String> = ["x1", "y1", "x2", "y2"]
+          .iter()
+          .map(|a| attr(el, a).unwrap_or_default())
+          .collect();
+        vec![format!("{},{} {},{}", c[0], c[1], c[2], c[3])]
+      } else if el.starts_with("<polyline ") {
+        let pts: Vec<&str> = el["<polyline points=\"".len()..]
+          .split('"')
+          .next()
+          .unwrap()
+          .split(' ')
+          .collect();
+        pts.windows(2).map(|w| format!("{} {}", w[0], w[1])).collect()
+      } else {
+        continue;
+      };
+      for key in segments {
+        let entry = last.entry(key).or_insert((color.clone(), false));
+        if entry.0 != color {
+          entry.1 = true;
+        }
+        entry.0 = color.clone();
       }
-      entry.0 = color.to_string();
     }
     last
       .into_values()
