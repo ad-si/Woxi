@@ -63116,6 +63116,61 @@ mod plot_non_numeric_limit {
   }
 }
 
+mod held_graphics_display_unevaluated {
+  use super::*;
+
+  // Displaying a held picture typesets it without evaluating it: a plot
+  // inside (the body of a `Manipulate` before its controls are set) is not
+  // run, so it raises no messages for its still-symbolic limits.
+  #[test]
+  fn held_plot_inside_graphics_is_not_run_for_display() {
+    clear_state();
+    let r = interpret_with_stdout("Hold[Graphics[{Plot[x, {x, 0, k}][[1]]}]]")
+      .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
+  fn manipulate_body_with_symbolic_plot_limit_raises_no_message() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Manipulate[Graphics3D[{ParametricPlot3D[{Cos[t], Sin[t], t}, \
+       {t, 0, 2 Pi Switch[FractionalPart[n], 0., 1, 0.5, 2]}][[1]]}], \
+       {{n, 1.5}, 0.5, 3, 0.5}]",
+    )
+    .unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // Side effects inside a held picture do not happen when it is shown.
+  #[test]
+  fn held_side_effects_do_not_run_for_display() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Hold[Graphics[{Print[\"side effect\"]; Point[{0, 0}]}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    assert_eq!(r.stdout, "");
+    clear_state();
+    interpret_with_stdout("Hold[Graphics3D[{y = 5; Sphere[]}]]").unwrap();
+    assert_eq!(interpret("y").unwrap(), "y");
+  }
+
+  // A held picture made of plain primitives is still drawn inline.
+  #[test]
+  fn held_primitives_are_still_drawn() {
+    clear_state();
+    let r =
+      interpret_with_stdout("Hold[Graphics[{Red, Disk[{0, 0}, Sqrt[2]]}]]")
+        .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    let svg = r.output_svg.expect("typeset output");
+    assert!(svg.matches("<svg").count() >= 2, "{svg}");
+  }
+}
+
 mod plot_replaced_solution {
   use super::*;
 
