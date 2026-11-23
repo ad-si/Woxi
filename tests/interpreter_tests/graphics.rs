@@ -46554,6 +46554,38 @@ mod manipulate {
     }
   }
 
+  // A choice quotient with a special-function factor
+  // (`(-1)^k BesselJ[1, k Pi]/k`, `Sin[k]/k`) is typeset as a stacked
+  // fraction like any other arithmetic choice; it used to fall back to its
+  // flat InputForm because the function call was not an accepted operand.
+  // A call to a non-numeric head inside a quotient stays text.
+  #[test]
+  fn setter_choices_with_special_function_factors_are_typeset() {
+    let expr = interpret_to_expr(
+      r#"Manipulate[c, {c, {(-1)^k BesselJ[1, k Pi]/k, Sin[k]/k,
+        Gamma[k + 1]/k^2, g[k]/k, StringLength[k]/k}}]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let ManipulateControl::Discrete {
+      value_label_svgs, ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control, got {:?}", spec.controls[0]);
+    };
+    for i in [0, 1, 2] {
+      let svg = value_label_svgs[i].as_deref().unwrap_or_default();
+      assert!(svg.starts_with("<svg"), "choice {i}: {svg:?}");
+      assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
+    }
+    // Labels are typeset in TraditionalForm: `BesselJ[1, k Pi]` is `J₁(π k)`.
+    let bessel = value_label_svgs[0].as_deref().unwrap();
+    assert!(bessel.contains(">J</text>"), "{bessel}");
+    for i in [3, 4] {
+      assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
+    }
+  }
+
   // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
   // `Dynamic[…]` (a keypad of buttons, one per allowed digit) is held until
   // the display runs with `n` bound. Extracting the spec used to evaluate

@@ -58664,6 +58664,16 @@ fn is_arithmetic_label(label: &Expr) -> bool {
       | Expr::Real(_)
       | Expr::Constant(_)
       | Expr::Identifier(_) => true,
+      // A special-function factor of a quotient or product
+      // (`(-1)^n BesselJ[1, n Pi]/n`, `Sin[x]/x`) is typeset as math too;
+      // only built-in numeric functions qualify, so a `Row`/`Style`
+      // wrapper or a user-defined call stays with the text renderer.
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        is_arithmetic_label(e)
+          || (crate::evaluator::get_builtin_attributes(name)
+            .contains(crate::evaluator::Attributes::NumericFunction)
+            && args.iter().all(operand))
+      }
       _ => is_arithmetic_label(e),
     }
   }
