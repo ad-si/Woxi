@@ -6256,6 +6256,23 @@ fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
     .filter(|w| *w > 0.0)
 }
 
+/// The width in printer's points of a `Row[items, …, ImageSize -> w]`
+/// (or `ImageSize -> {w, h}`); `None` without a fixed width.
+fn row_image_width_points(row_args: &[Expr]) -> Option<f64> {
+  let size = row_args
+    .iter()
+    .skip(1)
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ImageSize")
+    .map(|(_, v)| v)?;
+  let width = match size {
+    Expr::List(dims) => dims.first()?,
+    other => other,
+  };
+  crate::evaluator::dispatch::io_functions::pane_size_component(width)
+    .filter(|w| *w > 0.0)
+}
+
 /// Break `text` into lines no wider than `width` printer's points when set
 /// at `font_size` points, measuring each word with the glyph widths of the
 /// label font (a longer word keeps its own line); existing line breaks stay.
@@ -8106,7 +8123,13 @@ pub(crate) fn text_row_inset_object(
       other => other.clone(),
     })
     .collect();
-  let mut label = call("Row", vec![Expr::List(new_parts.into())]);
+  // The row keeps its width, so the label is laid out in a box that wide
+  // (its lines flush left) rather than centered on its widest line.
+  let mut row_args = vec![Expr::List(new_parts.into())];
+  if let Some(w) = width.filter(|w| *w > 0.0) {
+    row_args.push(rule_expr(id_expr("ImageSize"), Expr::Real(w)));
+  }
+  let mut label = call("Row", row_args);
   // Rebuild the outer `Style`s around the flowed row.
   fn rewrap(e: &Expr, inner: Expr) -> Expr {
     match e {
@@ -9522,6 +9545,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       }
       content = &sargs[0];
       continue;
+    }
+    // `Row[items, ImageSize -> w]` sets its parts in a box `w` points
+    // wide, wrapped at that width and flush left, as a `Pane` does.
+    if name == "Row" {
+      if let Some(w) = row_image_width_points(sargs) {
+        pane_width = Some(pane_width.map_or(w, |p: f64| p.min(w)));
+        if style_line_anchor.is_none() {
+          style_line_anchor = Some("start");
+        }
+      }
+      break;
     }
     if !is_style_wrapper(name) {
       break;
@@ -16509,8 +16543,13 @@ fn render_primitive(
       // a panel is painted behind it, which is laid out unrotated.
       // The box the offset positions is the one a background panel paints:
       // the glyphs' advance width, or — framed — the text with its margin.
+      // A label set in a box of fixed width (`Pane[…, w]`,
+      // `Row[…, ImageSize -> w]`) is positioned by that box.
+      let block_w = style.text_block_width.filter(|_| frame.is_none());
       let box_w = if frame.is_some() {
         text_w
+      } else if let Some(w) = block_w {
+        w
       } else {
         text
           .split('\n')
@@ -16518,7 +16557,13 @@ fn render_primitive(
           .fold(0.0, f64::max)
           * fs
       };
+      // A single line flush with one edge of its box hangs from that edge,
+      // just as the lines of a multi-line label do.
+      let block_line_anchor = block_w
+        .and(style.text_line_anchor)
+        .filter(|_| !text.contains('\n') && !has_direction);
       let edge_anchorable = !text.contains('\n')
+        && block_line_anchor.is_none()
         && (!has_direction || (background.is_none() && frame.is_none()));
       // A `Rotate[label, θ]` label is a box of its own: the offset picks a
       // point of its axis-aligned bounding box, so the label is centered
@@ -16531,6 +16576,9 @@ fn render_primitive(
         ("start", 0.0)
       } else if offset.0 == 1.0 && edge_anchorable {
         ("end", 0.0)
+      } else if let Some(line_anchor) = block_line_anchor {
+        let edge = if line_anchor == "start" { 1.0 } else { -1.0 };
+        (line_anchor, (offset.0 + edge) * box_w / 2.0)
       } else {
         ("middle", offset.0 * box_w / 2.0)
       };
