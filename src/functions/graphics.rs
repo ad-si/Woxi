@@ -52283,6 +52283,22 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
         out.push(splice_sequence_applies(&evaluated));
         continue;
       }
+      // `Grid[Transpose[{{"label", Control[…]}, …}]]`: a structural list
+      // rearrangement of literal rows that hold controls. Like the mapped
+      // form above, evaluating it only reorders the (inert) controls, which
+      // the spec parser can then see as those of a literal layout list.
+      if let Expr::FunctionCall { name, args } = item
+        && matches!(
+          name.as_str(),
+          "Transpose" | "Reverse" | "Partition" | "Flatten" | "Join"
+        )
+        && matches!(args.first(), Some(Expr::List(_)))
+        && args.iter().any(|a| expr_contains_call(a, &["Control"]))
+        && let Ok(evaluated @ Expr::List(_)) = evaluate_expr_to_expr(item)
+      {
+        out.push(splice_sequence_applies(&evaluated));
+        continue;
+      }
       out.push(splice_sequence_applies(item));
     }
     out

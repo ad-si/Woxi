@@ -24623,6 +24623,11 @@ fn parametric_plot3d_curve_ast(
       0.5
     }
   };
+  // `ColorFunction -> n`: indexed scheme n as a gradient, by height like a
+  // named gradient.
+  let indexed_colors = color_function
+    .as_ref()
+    .and_then(crate::functions::field_plot::indexed_color_function_rgb);
   let segment_color = |p: [f64; 3], t: f64| -> Option<Expr> {
     let cf = color_function.as_ref()?;
     let t_scaled = if color_scaling && t_max > t_min {
@@ -24635,6 +24640,13 @@ fn parametric_plot3d_curve_ast(
       scale(p[1], color_bounds[1]),
       scale(p[2], color_bounds[2]),
     );
+    if let Some(colors) = &indexed_colors {
+      let (r, g, b) = crate::functions::chart::gradient_color_at(colors, z);
+      return Some(call(
+        "RGBColor",
+        vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+      ));
+    }
     if let Some(name) =
       crate::functions::field_plot::color_function_scheme_name(cf)
     {

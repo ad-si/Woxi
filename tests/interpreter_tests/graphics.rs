@@ -9653,6 +9653,24 @@ mod plot3d {
       assert_eq!(result, "True");
     }
 
+    /// `ColorFunction -> n` names indexed color scheme n: the curve is
+    /// shaded through that scheme's colors by height, from its first color
+    /// at the bottom to its last at the top. It used to be applied as the
+    /// literal head `n[x, y, z, t]`, which drew the curve black.
+    #[test]
+    fn parametric_curve_indexed_color_function() {
+      clear_state();
+      let result = interpret(
+        "cols = Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, \
+         ColorFunction -> 52], _RGBColor, Infinity]; \
+         {Length[DeleteDuplicates[cols]] > 10, \
+          Max[Abs[List @@ cols[[1]] - List @@ ColorData[52, 1]]] < 0.02, \
+          Max[Abs[List @@ cols[[-1]] - List @@ ColorData[52, 10]]] < 0.02}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True, True}");
+    }
+
     /// Regression: `ParametricPlot3D` surfaces ignored `RegionFunction`, so
     /// cylinders meant to have holes cut into them were drawn solid.
     #[test]
@@ -48172,6 +48190,30 @@ mod manipulate {
       spec.displays.is_empty(),
       "span markers are layout, not displays: {:?}",
       spec.displays
+    );
+  }
+
+  /// A `Grid` control panel whose rows are built with `Transpose` (labels
+  /// over controls, written column by column) still declares every
+  /// control: the variables used to stay unbound, so the body drew nothing
+  /// and the controls never showed.
+  #[test]
+  fn spec_grid_transposed_rows_keep_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[x + y, Grid[Transpose[{{\"left\", \
+       Control[{{x, 1, \"\"}, Range[3]}]}, {\"right\", \
+       Control[{{y, 2, \"\"}, Range[3]}]}}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert!(
+      names.contains(&"x") && names.contains(&"y"),
+      "both transposed controls must be declared: {names:?}"
     );
   }
 
