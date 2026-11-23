@@ -1583,7 +1583,7 @@ fn grid_mesh_lines(
 /// The default mesh of a surface sampled on a `(grid_u + 1) × (grid_v + 1)`
 /// parameter grid (`ParametricPlot3D`, `RevolutionPlot3D`): `n[0]` lines of
 /// constant first and `n[1]` of constant second parameter, evenly spaced
-/// and snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
+/// (see `parameter_grid_mesh_polylines`), plus the surface's edges. `at(i, j)`
 /// is the sample in the normalized box (`None` where the surface has a
 /// hole); `segment(a, b, axis)` builds the line piece between two samples
 /// of a line of constant first (`axis == 0`) or second (`axis == 1`)
@@ -1595,14 +1595,40 @@ fn parameter_grid_mesh_lines(
   at: &dyn Fn(usize, usize) -> Option<Point3D>,
   segment: &dyn Fn(Point3D, Point3D, usize) -> MeshLine,
 ) -> Vec<MeshLine> {
-  let mut lines = Vec::new();
-  // Mesh levels are independent of PlotPoints. Interpolate between rows
-  // instead of snapping to them (which loses levels on coarse surfaces).
   let interpolate = |a: Point3D, b: Point3D, f: f64| Point3D {
     x: a.x + (b.x - a.x) * f,
     y: a.y + (b.y - a.y) * f,
     z: a.z + (b.z - a.z) * f,
   };
+  let mut lines = Vec::new();
+  for (axis, polyline) in
+    parameter_grid_mesh_polylines(grid_u, grid_v, n, at, &interpolate)
+  {
+    for pair in polyline.windows(2) {
+      lines.push(segment(pair[0], pair[1], axis));
+    }
+  }
+  lines
+}
+
+/// The mesh lines of a surface sampled on a `(grid_u + 1) × (grid_v + 1)`
+/// parameter grid, as polylines of samples: for each `m` in `0..=n + 1`
+/// the line of constant first (`axis == 0`) or second (`axis == 1`)
+/// parameter at the fraction `m / (n + 1)` of its range, so `m == 0` and
+/// `m == n + 1` are the surface's edges. Mesh levels are independent of
+/// `PlotPoints`: a level between two grid rows is interpolated between
+/// them (`interpolate(a, b, f)`) rather than snapped to one, which would
+/// lose levels on coarse surfaces. A line is split where the surface has a
+/// hole (`at(i, j)` is `None`). Both the rendered mesh and the symbolic
+/// `GraphicsComplex` that `Show` redraws use these, so they agree.
+fn parameter_grid_mesh_polylines<P: Copy>(
+  grid_u: usize,
+  grid_v: usize,
+  n: [usize; 2],
+  at: &dyn Fn(usize, usize) -> Option<P>,
+  interpolate: &dyn Fn(P, P, f64) -> P,
+) -> Vec<(usize, Vec<P>)> {
+  let mut polylines = Vec::new();
   for m in 0..=n[0].max(n[1]) + 1 {
     for axis in 0..2 {
       let (across, along) = if axis == 0 {
@@ -1627,14 +1653,25 @@ fn parameter_grid_mesh_lines(
           Some(interpolate(get(k)?, get(k + 1)?, f))
         }
       };
-      for j in 0..along {
-        if let (Some(a), Some(b)) = (point(j), point(j + 1)) {
-          lines.push(segment(a, b, axis));
+      // Only pieces whose both ends exist are drawn, so a lone sample
+      // between two holes contributes nothing.
+      let mut current: Vec<P> = Vec::new();
+      for j in 0..=along {
+        if let Some(p) = point(j) {
+          current.push(p)
+        } else {
+          if current.len() >= 2 {
+            polylines.push((axis, std::mem::take(&mut current)));
+          }
+          current.clear();
         }
+      }
+      if current.len() >= 2 {
+        polylines.push((axis, current));
       }
     }
   }
-  lines
+  polylines
 }
 
 /// The default mesh of a triangulated surface given in fractional grid
@@ -25724,34 +25761,76 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
-        if let Some([nu, nv]) = mesh_count.filter(|n| n.iter().any(|&c| c > 0))
+        // The same mesh the standalone render draws (the default 15 × 15
+        // lines or `Mesh -> n`, plus the edges), so a `Show` of the plot
+        // keeps it. A level between two grid rows becomes new points of
+        // the complex, interpolated between the rows' samples.
+        if mesh_mode == MeshMode::Default
+          && !mesh_style_none
+          && !mesh_shading_active
         {
-          // Segments of the lines of constant first (`[0]`) and of
-          // constant second (`[1]`) parameter.
-          let mut segments: [Vec<Expr>; 2] = [Vec::new(), Vec::new()];
-          let mut push_segment =
-            |axis: usize, a: Option<usize>, b: Option<usize>| {
-              if let (Some(a), Some(b)) = (a, b) {
-                segments[axis].push(Expr::List(
-                  vec![
-                    Expr::Integer(a as i128 + 1),
-                    Expr::Integer(b as i128 + 1),
-                  ]
-                  .into(),
-                ));
-              }
-            };
-          for m in 1..=nv {
-            let kv = (grid_v * m + nv.div_ceil(2)) / (nv + 1);
-            for i in 0..grid_u {
-              push_segment(1, index_of[i][kv], index_of[i + 1][kv]);
-            }
+          #[derive(Clone, Copy)]
+          struct MeshVertex {
+            index: Option<usize>,
+            pos: (f64, f64, f64),
+            uv: (f64, f64),
           }
-          for m in 1..=nu {
-            let ku = (grid_u * m + nu.div_ceil(2)) / (nu + 1);
-            for j in 0..grid_v {
-              push_segment(0, index_of[ku][j], index_of[ku][j + 1]);
-            }
+          let at = |i: usize, j: usize| -> Option<MeshVertex> {
+            let (x, y, z) = sg[i][j]?;
+            let uv = if textured {
+              let u = u_min + i as f64 * u_step;
+              let v = v_ranges[i].0 + j as f64 * v_step_at(i);
+              texture_uv((x, y, z), u, v)
+            } else {
+              (0.0, 0.0)
+            };
+            Some(MeshVertex {
+              index: index_of[i][j],
+              pos: (x, y, z),
+              uv,
+            })
+          };
+          let lerp = |a: f64, b: f64, f: f64| a + (b - a) * f;
+          let interpolate = |a: MeshVertex, b: MeshVertex, f: f64| MeshVertex {
+            index: None,
+            pos: (
+              lerp(a.pos.0, b.pos.0, f),
+              lerp(a.pos.1, b.pos.1, f),
+              lerp(a.pos.2, b.pos.2, f),
+            ),
+            uv: (lerp(a.uv.0, b.uv.0, f), lerp(a.uv.1, b.uv.1, f)),
+          };
+          let polylines = parameter_grid_mesh_polylines(
+            grid_u,
+            grid_v,
+            mesh_count.unwrap_or([15, 15]),
+            &at,
+            &interpolate,
+          );
+          // Lines of constant first (`[0]`) and of constant second (`[1]`)
+          // parameter, as lists of 1-based point indices.
+          let mut segments: [Vec<Expr>; 2] = [Vec::new(), Vec::new()];
+          for (axis, polyline) in polylines {
+            let indices: Vec<Expr> = polyline
+              .into_iter()
+              .map(|vertex| {
+                let index = vertex.index.unwrap_or_else(|| {
+                  let (x, y, z) = vertex.pos;
+                  if textured {
+                    point_uvs.push(Expr::List(
+                      vec![Expr::Real(vertex.uv.0), Expr::Real(vertex.uv.1)]
+                        .into(),
+                    ));
+                  }
+                  point_exprs.push(Expr::List(
+                    vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+                  ));
+                  point_exprs.len() - 1
+                });
+                Expr::Integer(index as i128 + 1)
+              })
+              .collect();
+            segments[axis].push(Expr::List(indices.into()));
           }
           let mut push_lines = |style: Vec<Expr>, segments: Vec<Expr>| {
             if !segments.is_empty() {
@@ -25817,6 +25896,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+    }
+    // Like wolframscript, the result pins its range to the extent of the
+    // sampled surface (`PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`), so
+    // a `Show` of it frames the scene by that box — under sphere framing,
+    // by the sphere around the box rather than around the contents.
+    let names_plot_range = structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
+    });
+    let extents = [(gx_min, gx_max), (gy_min, gy_max), (gz_min, gz_max)];
+    if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
+      let range = extents
+        .iter()
+        .map(|&(lo, hi)| {
+          Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+        })
+        .collect::<Vec<_>>();
+      structure_args
+        .push(rule_expr(id_expr("PlotRange"), Expr::List(range.into())));
     }
     call("Graphics3D", structure_args)
   };
