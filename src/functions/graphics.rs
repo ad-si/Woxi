@@ -29794,6 +29794,39 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           id_expr("PlotRange"),
           Expr::List(vec![span(ps.x_range), span(ps.y_range)].into()),
         ));
+      } else if let Some(ps) = plot_sources.first() {
+        // A per-axis `PlotRange -> {{-4, 4}, Automatic}` settles each
+        // `Automatic` axis to the range the plot chose for it, just as a
+        // wholly automatic one does: a later marker line reaching below the
+        // curve is clipped, not allowed to stretch that axis.
+        let settled = |r: (f64, f64)| {
+          (r.0.is_finite() && r.1.is_finite() && r.0 < r.1)
+            .then(|| Expr::List(vec![Expr::Real(r.0), Expr::Real(r.1)].into()))
+        };
+        for opt in &mut merged_options {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = opt
+            && option_name(pattern) == Some("PlotRange")
+            && let Expr::List(items) = replacement.as_ref()
+            && items.len() == 2
+            && items.iter().all(is_axis_range_spec)
+            && items.iter().any(|e| matches!(e, Expr::List(_)))
+          {
+            let is_auto =
+              |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Automatic");
+            let axes: Vec<Expr> = items
+              .iter()
+              .zip([ps.x_range, ps.y_range])
+              .map(|(item, r)| match settled(r) {
+                Some(span) if is_auto(item) => span,
+                _ => item.clone(),
+              })
+              .collect();
+            **replacement = Expr::List(axes.into());
+          }
+        }
       }
       // A plot clips what it draws to its range (`PlotRangeClipping ->
       // True`), so a layer reaching past it is cut at the frame instead of
