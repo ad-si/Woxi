@@ -7993,6 +7993,32 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
       call("TagBox", vec![tf(&formatted), id_expr(name)])
     }
+    // `PolynomialForm[p, TraditionalOrder -> False]` (the default) sets the
+    // sums of `p` in their standard, ascending order instead of the
+    // descending one TraditionalForm uses; `TraditionalOrder -> True`
+    // keeps that descending order.
+    "PolynomialForm"
+      if !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      let traditional = args[1..].iter().any(|opt| {
+        matches!(opt, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
+      });
+      if traditional {
+        tf(&args[0])
+      } else {
+        struct Reset(bool);
+        impl Drop for Reset {
+          fn drop(&mut self) {
+            TF_HELD.set(self.0);
+          }
+        }
+        let _reset = Reset(TF_HELD.replace(true));
+        tf(&args[0])
+      }
+    }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {

@@ -16875,3 +16875,78 @@ fn huge_integer_times_real_keeps_its_leading_digits() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+/// Products, quotients, powers and absolute values of arbitrary-precision
+/// complex numbers fell back to machine numbers or stayed unevaluated
+/// (`(1.`30 + 2.`30 I) (2.1`30 + 0.3`30 I)` was left as a product).
+mod complex_arbitrary_precision_arithmetic {
+  use super::*;
+
+  #[test]
+  fn results_keep_their_precision() {
+    for (code, machine) in [
+      (
+        "(1.`30 + 2.`30 I) (2.1`30 + 0.3`30 I)",
+        "(1. + 2. I) (2.1 + 0.3 I)",
+      ),
+      (
+        "(1.`30 + 2.`30 I)/(2.1`30 + 0.3`30 I)",
+        "(1. + 2. I)/(2.1 + 0.3 I)",
+      ),
+      ("(2.1`30 + 0.3`30 I)^-1", "(2.1 + 0.3 I)^-1"),
+      ("Sqrt[6] (0.5`30 + 0.5`30 I)", "Sqrt[6] (0.5 + 0.5 I)"),
+      ("Abs[0.1`30 + 0.2`30 I]", "Abs[0.1 + 0.2 I]"),
+    ] {
+      let check = format!(
+        "v = {code}; {{NumberQ[v], Precision[v] >= 29, \
+         Abs[v - ({machine})] < 10^-12}}"
+      );
+      assert_eq!(interpret(&check).unwrap(), "{True, True, True}", "{check}");
+    }
+  }
+
+  #[test]
+  fn imaginary_monomials() {
+    assert_eq!(interpret("(0.5`30 I)^2").unwrap(), "-0.25`30.");
+    assert_eq!(interpret("2.5`20 I").unwrap(), "2.5`20.*I");
+    assert_eq!(interpret("x (0.5`30 + I)").unwrap(), "(0.5`30. + I)*x");
+  }
+}
+
+/// `PolynomialForm[p, TraditionalOrder -> False]` (the default) typesets
+/// the sums of `p` in standard, ascending order inside TraditionalForm;
+/// `TraditionalOrder -> True` keeps TraditionalForm's descending order. The
+/// wrapper and its options used to be drawn literally.
+mod polynomial_form_typesetting {
+  use super::*;
+
+  #[test]
+  fn traditional_order_option() {
+    assert_eq!(
+      interpret(
+        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
+         TraditionalOrder -> False]]]"
+      )
+      .unwrap(),
+      "DisplayForm[FormBox[RowBox[{1, +, RowBox[{3,  , x}], +, \
+       SuperscriptBox[x, 2]}], TraditionalForm]]"
+    );
+    assert_eq!(
+      interpret("ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2]]]")
+        .unwrap(),
+      interpret(
+        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
+         TraditionalOrder -> False]]]"
+      )
+      .unwrap()
+    );
+    assert_eq!(
+      interpret(
+        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
+         TraditionalOrder -> True]]]"
+      )
+      .unwrap(),
+      interpret("ToString[TraditionalForm[1 + 3 x + x^2]]").unwrap()
+    );
+  }
+}
