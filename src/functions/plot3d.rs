@@ -432,14 +432,16 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
 /// (corners `verts`, already back to front): the index just past the last
 /// triangle that covers the piece's midpoint on screen without lying in
 /// front of it. Drawn there, the piece shows over every face behind it
-/// and under every face in front of it.
+/// and under every face in front of it. `dots[k]` marks a piece that is a
+/// `Point` dot rather than a line (missing entries are lines).
 fn line_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
+  dots: &[bool],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, None)
+  line_draw_bounds(verts, tris, segs, dots, camera, None)
     .into_iter()
     .map(|(slot, _)| slot)
     .collect()
@@ -459,7 +461,7 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, Some(owners))
+  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners))
     .into_iter()
     .zip(owners)
     .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
@@ -524,6 +526,7 @@ fn line_draw_bounds(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
+  dots: &[bool],
   camera: &Camera,
   owners: Option<&[usize]>,
 ) -> Vec<(usize, usize)> {
@@ -590,6 +593,7 @@ fn line_draw_bounds(
       // A piece can cross several small faces: it is sampled along its
       // length.
       let floor = owners.map(|o| o[n] + 1);
+      let is_dot = dots.get(n).copied().unwrap_or(false);
       let mut slot = floor.unwrap_or(0);
       let mut first_front = usize::MAX;
       // Faces the piece runs along (or crosses in front of) lift it over
@@ -638,6 +642,19 @@ fn line_draw_bounds(
             })
             .fold(0.0, f64::max);
           let d = v_dot(n, [m.x - v[0].x, m.y - v[0].y, m.z - v[0].z]);
+          // A dot (a `Point`, whose piece has coinciding ends) on the
+          // rim of a face that lies wholly in front of it, such as the
+          // corner of a solid turned away from the viewer, is hidden by
+          // that face: the face covers the part of the dot's disc it
+          // overlaps and is nearer than the dot everywhere there. Only a
+          // face the dot lies inside of (with a corner on each side of
+          // the dot's depth) is drawn under it.
+          if is_dot
+            && d.abs() <= 1e-6 * size.max(1e-300)
+            && face_in_front_of(v, m, &toward_viewer, size)
+          {
+            continue;
+          }
           // A line on a curved surface lies a little behind the planes
           // of the faces next to the ones it runs along.
           if d >= -1e-2 * size.max(1e-300) {
@@ -663,6 +680,26 @@ fn line_draw_bounds(
       (slot.max(end_slot.min(cap)), first_front)
     })
     .collect()
+}
+
+/// Whether the face `v` lies wholly in front of the point `p` on its
+/// rim: no corner is farther from the viewer than `p`, and some corner is
+/// nearer (a face seen edge-on, all at the depth of `p`, is not in front).
+fn face_in_front_of(
+  v: &[Point3D; 3],
+  p: Point3D,
+  toward_viewer: &impl Fn(Point3D) -> [f64; 3],
+  size: f64,
+) -> bool {
+  let view = toward_viewer(p);
+  let len = v_len(view);
+  if len <= 0.0 || !len.is_finite() {
+    return false;
+  }
+  let nearer =
+    |c: &Point3D| v_dot(view, [c.x - p.x, c.y - p.y, c.z - p.z]) / len;
+  let tol = 1e-6 * size.max(1e-300);
+  v.iter().all(|c| nearer(c) >= -tol) && v.iter().any(|c| nearer(c) > tol)
 }
 
 /// Whether two triangles lie in one plane.
@@ -3795,7 +3832,10 @@ fn generate_svg(
     })
     .unwrap_or([None, None, None]);
   let (label_face, tick_faces) = axes_text_faces(options);
+  let (tick_colors, tick_sizes) = ticks_style_option_3d(options);
   let look = AxesLook {
+    tick_colors,
+    tick_sizes,
     label_size: label_font_size(options),
     label_face,
     tick_faces,
@@ -4061,7 +4101,7 @@ fn generate_svg(
   let mesh_slots = worlds.map(|worlds| {
     let endpoints: Vec<_> =
       sorted_mesh.iter().map(|line| line.endpoints).collect();
-    line_draw_slots(worlds, triangles, &endpoints, camera)
+    line_draw_slots(worlds, triangles, &endpoints, &[], camera)
   });
   let mut ordered_slots: Vec<_> = sorted_mesh.drain(..).enumerate().collect();
   ordered_slots.sort_by(|(a, x), (b, y)| match &mesh_slots {
@@ -4781,8 +4821,11 @@ fn draw_axes_on_box_with_ticks(
     if !look.shown[ai] {
       continue;
     }
-    // `TicksStyle` recolors this axis's tick marks and their labels.
+    // `TicksStyle` recolors this axis's tick marks and their labels, and
+    // a font size in it resizes the labels (over any `LabelStyle` size).
     let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
+    let tick_font_size =
+      look.tick_sizes[ai].map_or(tick_font_size, |s| s.round() as i32);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -4968,11 +5011,13 @@ fn draw_axes_on_box_with_ticks(
 }
 
 /// How each of the three axes of a 3D box is drawn: whether it is shown
-/// at all (`Axes -> {bx, by, bz}`) and the color its ticks take
-/// (`TicksStyle`), and the size of its labels (`LabelStyle`).
+/// at all (`Axes -> {bx, by, bz}`), the color and label size its ticks
+/// take (`TicksStyle`), and the size of its labels (`LabelStyle`).
 pub(crate) struct AxesLook {
   pub shown: [bool; 3],
   pub tick_colors: [Option<String>; 3],
+  /// The font size `TicksStyle` gives each axis's tick labels.
+  pub tick_sizes: [Option<f64>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
   /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
@@ -4989,6 +5034,7 @@ impl Default for AxesLook {
     AxesLook {
       shown: [true; 3],
       tick_colors: [None, None, None],
+      tick_sizes: [None, None, None],
       label_size: None,
       label_face: (false, false),
       tick_faces: [(false, false); 3],
@@ -5088,24 +5134,50 @@ fn font_face_attrs((bold, italic): (bool, bool)) -> String {
   attrs
 }
 
-/// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
-/// axes) gives the ticks of each axis.
-fn parse_ticks_style_3d(value: &Expr) -> [Option<String>; 3] {
+/// The colors and label font sizes `TicksStyle -> {sx, sy, sz}` (or one
+/// style for all three axes) gives the ticks of each axis.
+fn parse_ticks_style_3d(
+  value: &Expr,
+) -> ([Option<String>; 3], [Option<f64>; 3]) {
   let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let color = |e: &Expr| {
     crate::functions::plot::parse_style_directives(e)
       .and_then(|style| style.color)
       .map(super::graphics::Color::to_svg_rgb)
   };
-  match &value {
-    Expr::List(items) if items.len() == 3 => {
-      [color(&items[0]), color(&items[1]), color(&items[2])]
-    }
-    other => {
-      let c = color(other);
-      [c.clone(), c.clone(), c]
-    }
-  }
+  let size = |e: &Expr| {
+    crate::functions::plot::LabelStyleSpec::parse(e)
+      .and_then(|spec| spec.font_size)
+  };
+  let styles: [&Expr; 3] = match &value {
+    Expr::List(items) if items.len() == 3 => [&items[0], &items[1], &items[2]],
+    other => [other, other, other],
+  };
+  (styles.map(color), styles.map(size))
+}
+
+/// The `TicksStyle` option among `opts`, read into an `AxesLook`'s tick
+/// colors and tick label sizes.
+fn ticks_style_option_3d(
+  opts: &[Expr],
+) -> ([Option<String>; 3], [Option<f64>; 3]) {
+  opts
+    .iter()
+    .rev()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TicksStyle") => {
+        Some(parse_ticks_style_3d(replacement))
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
 }
 
 /// The pixel rectangle `(x_min, x_max, y_min, y_max)` the axes and their
@@ -7770,8 +7842,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       }
       // `Glow[color]` makes the surfaces that follow emit light of their
       // own; like `Specularity` its color never repaints the face.
-      "Glow" if args.len() == 1 => {
-        style.glow = parse_glow(&args[0]);
+      // `Glow[]` is `Glow[Black]`: it switches an earlier glow off.
+      "Glow" if args.len() <= 1 => {
+        style.glow = args.first().and_then(parse_glow);
         return true;
       }
       // `Texture[image]` paints the surfaces that follow with the image.
@@ -12443,6 +12516,26 @@ fn cylinder_max_subdivisions(
 /// Total longitudinal rings shared by all `Cylinder`s of a crowded scene.
 const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
+/// The finest a `Cylinder` side is ever cut along its length, as a fraction
+/// of the span of the scene's cylinders: no ring is shorter than
+/// `1 / CYLINDER_SCENE_RING_DIVISIONS` of that span.
+const CYLINDER_SCENE_RING_DIVISIONS: f64 = 24.0;
+
+/// Caps the rings of a `Cylinder` side of length `len` by the scene's span.
+/// The rings only keep each face's centroid a good depth estimate for the
+/// painter's sort, and a depth error matters relative to the scene, not to
+/// the cylinder's own radius: cutting a thin rod into faces as short as it
+/// is wide (`side_subdivision_steps`) made every long, thin rod of a scene
+/// thousands of triangles. Regression: a motor model with a dozen thin bars
+/// through translucent drums drew a 16 MB SVG per animation frame.
+fn cylinder_scene_ring_cap(len: f64, scene_extent: f64) -> usize {
+  if scene_extent.is_nan() || scene_extent <= 0.0 || !len.is_finite() {
+    return MAX_SIDE_SUBDIVISIONS;
+  }
+  ((CYLINDER_SCENE_RING_DIVISIONS * len / scene_extent).ceil() as usize)
+    .clamp(1, MAX_SIDE_SUBDIVISIONS)
+}
+
 thread_local! {
   /// Width in pixels of the `Graphics3D` currently being collected, which
   /// a relative `Thickness[t]` is a fraction of.
@@ -14066,7 +14159,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_labels = parse_axes_labels(replacement, None);
         }
         "TicksStyle" => {
-          axes_look.tick_colors = parse_ticks_style_3d(replacement);
+          (axes_look.tick_colors, axes_look.tick_sizes) =
+            parse_ticks_style_3d(replacement);
         }
         _ => {}
       }
@@ -14569,14 +14663,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
+          let len = ((p2.x - p1.x).powi(2)
+            + (p2.y - p1.y).powi(2)
+            + (p2.z - p1.z).powi(2))
+          .sqrt();
           let max_subdiv =
-            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count);
+            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count)
+              .min(cylinder_scene_ring_cap(len, cyl_extent));
           let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv);
           if style.edges {
-            let len = ((p2.x - p1.x).powi(2)
-              + (p2.y - p1.y).powi(2)
-              + (p2.z - p1.z).powi(2))
-            .sqrt();
             let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
@@ -15868,6 +15963,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &triangle_vertices,
       &all_triangles,
       &sorted_edges.iter().map(|e| e.endpoints).collect::<Vec<_>>(),
+      &sorted_edges
+        .iter()
+        .map(|e| e.dot_radius.is_some())
+        .collect::<Vec<_>>(),
       &camera,
     );
     let mut by_slot: Vec<usize> = (0..sorted_edges.len()).collect();
@@ -16723,8 +16822,15 @@ fn with_plot_label(
   // the size it wrote wins over the requested one.
   let (width, height) = svg_header_size(&svg).unwrap_or((width, height));
   // A `FontSize` directive on the label resizes it, same as a 2-D title;
-  // otherwise it keeps the default 16pt.
-  let font_size = styled.font_size.unwrap_or(16.0);
+  // otherwise it keeps the default 16pt, shrunk (like a 2-D title) when
+  // its widest line would not fit across the picture — a long readout
+  // `Row` of numbers would otherwise be clipped at both edges.
+  let font_size = styled.font_size.unwrap_or_else(|| {
+    let lines: Vec<String> = std::iter::once(styled.svg())
+      .chain(styled.extra_lines.iter().cloned())
+      .collect();
+    crate::functions::graphics::fit_title_font(&lines, 16.0, f64::from(width))
+  });
   // A stacked title (`Grid`/`Column`) needs one more line height per extra
   // row, on top of the strip a single-line title reserves.
   let line_height = font_size * 1.2;

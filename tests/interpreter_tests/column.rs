@@ -1227,6 +1227,39 @@ mod text_display_face {
     // The value column starts right after the widest label (its drawn extent).
     assert!(text.contains("<text x=\"90.3\""), "{text}");
   }
+
+  /// A `Text@Grid` cell that is a `Row` of plain items (a bold number
+  /// between strings) or a bold `Style` string is measured in the text face
+  /// too, glyph by glyph, as its plain-string neighbors are — not at the
+  /// monospace advance, which spread such a grid far too wide.
+  #[test]
+  fn text_grid_row_and_style_cells_use_proportional_widths() {
+    clear_state();
+    let width_of = |code: &str| {
+      svg_width(&interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap())
+    };
+    for cell in [
+      "Row[{\"  \", Style[1, Bold], \": 12-34-65\"}]",
+      "Row[{\"ab\", \"cd\"}, \"-\"]",
+      "Style[\"iiiiiiii\", Bold]",
+    ] {
+      let plain = width_of(&format!("Grid[{{{{{cell}}}}}]"));
+      let text = width_of(&format!("Text@Grid[{{{{{cell}}}}}]"));
+      let in_row = width_of(&format!("Text@Row[{{Grid[{{{{{cell}}}}}]}}]"));
+      assert!(text < plain, "{cell}: {plain} vs {text}");
+      assert_eq!(in_row, text, "{cell}");
+    }
+    // A row cell sets as wide as the plain string of its joined text (plus
+    // a little for the bold digit).
+    let row =
+      width_of("Text@Grid[{{Row[{\"  \", Style[1, Bold], \": 12\"}]}}]");
+    let joined = width_of("Text@Grid[{{\"  1: 12\"}}]");
+    assert!(row >= joined && row <= joined + 2.0, "{row} vs {joined}");
+    // Narrow glyphs make a narrower row cell than wide ones.
+    let narrow = width_of("Text@Grid[{{Row[{\"iiii\", \"iiii\"}]}}]");
+    let wide = width_of("Text@Grid[{{Row[{\"MMMM\", \"MMMM\"}]}}]");
+    assert!(narrow * 2.0 < wide, "{narrow} vs {wide}");
+  }
 }
 
 mod column_item_style_and_size {

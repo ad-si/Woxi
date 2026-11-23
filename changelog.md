@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
+    `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
+    `Normal` of a series returns one flat sum, so `Part` picks its terms
+    (`Normal[Series[Cos[x], {x, 0, 6}]][[2 ;; 3]]`).
+- `HorizontalGauge`/`VerticalGauge` draw `GaugeMarkers -> "BarMarker"` as
+    thin bars, fill a rounded face panel for `GaugeFaceStyle` (a named face
+    such as `"GlassRectangle"` or a color) and show a `GaugeLabels` title
+    (`Placed[label, Top | Bottom]`).
+- A Manipulate `Animator` control over an unbounded range
+    (`{t, 0, Infinity, dt, Animator}`) plays its variable on forever with
+    play/pause and reset buttons instead of looping a 0..2π slider.
 - 3D scenes whose hidden faces cross one another no longer draw the faces
     of a solid before the hidden parts behind it: stacks of slabs poking
     out of a cube are drawn emerging from its faces instead of wholly over
