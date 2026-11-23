@@ -5378,6 +5378,35 @@ mod tests {
     assert!(state.graphics_handle.is_some(), "saved picture is shown");
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate puts a
+  /// `Locator` control over a `ListPlot`, with the marker given as a styled
+  /// glyph (`Appearance -> Style[glyph, color, Bold, size]`). Regression
+  /// check: the glyph, not the default crosshair, marks the point on the
+  /// plot. This is a self-authored, construct-equivalent example.
+  #[test]
+  fn locator_control_with_a_styled_glyph_appearance_marks_the_plot() {
+    let code = r#"Manipulate[
+      ListPlot[Table[{k, Sin[k + s]}, {k, 0, 6, 0.5}], Frame -> True],
+      {{s, 1}, 0, 3},
+      {{q, {2, 0}}, {0, -1}, {6, 1}, Locator,
+        Appearance -> Style["\[CircleTimes]", Blue, Bold, 16]}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the plot is drawn");
+    assert!(
+      svg.contains(">⊗</text>"),
+      "the glyph marks the point: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
+  }
+
   /// A saved locator position outside the range derived from its initial
   /// value stays reachable: the 2D slider's range grows to include it.
   #[test]

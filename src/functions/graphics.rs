@@ -4362,7 +4362,7 @@ fn collect_primitives(
         // drawn at the point's current position. A custom appearance
         // graphic keeps its own ImageSize in screen pixels.
         "Locator" if !args.is_empty() => {
-          parse_locator(args, prims);
+          parse_locator(args, style, prims, errors);
         }
         _ => {
           // An unrecognized head may be a user-defined helper (e.g. a
@@ -10836,20 +10836,46 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
 /// interactive front-ends). A custom appearance graphic is embedded at its
 /// own ImageSize in screen pixels, centered on the position — Wolfram
 /// treats the appearance as a screen-space icon, not data-space geometry.
-fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
-  for (x, y, svg, w, h) in locator_markers(args) {
-    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+fn parse_locator(
+  args: &[Expr],
+  style: &mut StyleState,
+  prims: &mut Vec<Primitive>,
+  errors: &mut Vec<String>,
+) {
+  for mark in locator_markers(args) {
+    match mark {
+      LocatorMark::Picture { x, y, svg, w, h } => {
+        prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+      }
+      LocatorMark::Inset(inset) => {
+        collect_primitives(&inset, &mut style.clone(), prims, errors);
+      }
+    }
   }
 }
 
-/// The markers `Locator[pos, appearance]` draws, as `(x, y, svg, width,
-/// height)`: one per point at `pos` (a point or a list of points), each the
-/// appearance graphic at its own size or Wolfram's default crosshair, and
-/// none for `Appearance -> None`. Shared by `Graphics` and plot overlays
-/// (`Epilog`).
-pub(crate) fn locator_markers(
-  args: &[Expr],
-) -> Vec<(f64, f64, String, f64, f64)> {
+/// One marker a `Locator` draws (see [`locator_markers`]).
+pub(crate) enum LocatorMark {
+  /// A picture (the appearance graphic or Wolfram's default crosshair)
+  /// centered on `(x, y)` at its own `w`×`h` screen size.
+  Picture {
+    x: f64,
+    y: f64,
+    svg: String,
+    w: f64,
+    h: f64,
+  },
+  /// An appearance that is not a graphic — a string, a `Style[…]`d glyph,
+  /// a number — placed at the point like `Inset[appearance, {x, y}]`.
+  Inset(Expr),
+}
+
+/// The markers `Locator[pos, appearance]` draws: one per point at `pos` (a
+/// point or a list of points), each the appearance graphic at its own size,
+/// the appearance expression inset at the point, or Wolfram's default
+/// crosshair, and none for `Appearance -> None`. Shared by `Graphics` and
+/// plot overlays (`Epilog`).
+pub(crate) fn locator_markers(args: &[Expr]) -> Vec<LocatorMark> {
   let mut markers = Vec::new();
   if args.is_empty() {
     return markers;
@@ -10886,7 +10912,13 @@ pub(crate) fn locator_markers(
     crate::truncate_captured_graphics(captured);
     return markers;
   }
-  let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
+  // The appearance as a picture pre-rendered at its own ImageSize, or (for
+  // a string, a styled glyph, …) as the expression to inset at each point.
+  enum Appearance {
+    Picture(String, f64, f64),
+    Inset(Expr),
+  }
+  let marker: Option<Appearance> = appearance.and_then(|a| {
     // Render the appearance to a graphic. A held `Graphics[…]` call is
     // rendered directly (Graphics evaluates lazily at display time);
     // anything else is evaluated first.
@@ -10901,7 +10933,7 @@ pub(crate) fn locator_markers(
           Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
             graphics_ast(&gargs.iter().cloned().collect::<Vec<_>>()).ok()
           }
-          _ => None,
+          _ => return Some(Appearance::Inset(ev)),
         },
         Err(_) => None,
       },
@@ -10909,7 +10941,7 @@ pub(crate) fn locator_markers(
     if let Some(Expr::Graphics { svg, .. }) = &rendered {
       let (w, h) = parse_svg_wh(svg);
       if w > 0.0 && h > 0.0 {
-        return Some((svg.clone(), w, h));
+        return Some(Appearance::Picture(svg.clone(), w, h));
       }
       return None;
     }
@@ -10921,13 +10953,32 @@ pub(crate) fn locator_markers(
   crate::truncate_captured_graphics(captured);
 
   for (x, y) in points {
-    let (svg, w, h) = if let Some((svg, w, h)) = &marker {
-      (svg.clone(), *w, *h)
-    } else {
-      let (svg, size) = default_locator_marker_svg();
-      (svg, size, size)
-    };
-    markers.push((x, y, svg, w, h));
+    markers.push(match &marker {
+      Some(Appearance::Picture(svg, w, h)) => LocatorMark::Picture {
+        x,
+        y,
+        svg: svg.clone(),
+        w: *w,
+        h: *h,
+      },
+      Some(Appearance::Inset(obj)) => LocatorMark::Inset(call(
+        "Inset",
+        vec![
+          obj.clone(),
+          Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+        ],
+      )),
+      None => {
+        let (svg, size) = default_locator_marker_svg();
+        LocatorMark::Picture {
+          x,
+          y,
+          svg,
+          w: size,
+          h: size,
+        }
+      }
+    });
   }
   markers
 }
