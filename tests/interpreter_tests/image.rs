@@ -8606,6 +8606,55 @@ mod image_filter_and_color_space {
 mod color_data_gradients {
   use super::*;
 
+  /// `ColorData["Indexed"]` lists the cataloged indexed schemes, 1–112,
+  /// so it can be joined with `ColorData["Gradients"]` into one list of
+  /// color-scheme choices.
+  #[test]
+  fn color_data_indexed_collection() {
+    clear_state();
+    assert_eq!(
+      woxi::interpret("ColorData[\"Indexed\"] === Range[112]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "Length[ColorData[\"Indexed\"] ~Join~ ColorData[\"Gradients\"]] \
+         == 112 + Length[ColorData[\"Gradients\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `ColorData[n, "Image"]` for an indexed scheme is a swatch strip of
+  /// its colors: one raster cell per color of `"ColorList"`, in order.
+  #[test]
+  fn color_data_indexed_image() {
+    clear_state();
+    assert_eq!(
+      woxi::interpret("Head[ColorData[52, \"Image\"]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "cells = Cases[ColorData[52, \"Image\"], Raster[d_, ___] :> \
+         d[[1]], Infinity][[1]]; {Length[cells], \
+         cells == (List @@@ ColorData[52, \"ColorList\"])}"
+      )
+      .unwrap(),
+      "{10, True}"
+    );
+    // A generated (non-cycling) scheme shows its first 15 colors.
+    assert_eq!(
+      woxi::interpret(
+        "Length[Cases[ColorData[1, \"Image\"], Raster[d_, ___] :> d[[1]], \
+         Infinity][[1]]]"
+      )
+      .unwrap(),
+      "15"
+    );
+  }
+
   /// Indexed scheme 30, the muted earth tones a puzzle Demonstration paints
   /// its board with. Like schemes 2 and 3 it is a fixed nine-color palette
   /// that cycles, index 0 landing on the last color. Every value is
@@ -11449,6 +11498,23 @@ mod gabor {
       interpret("ExportString[Show[Image[Table[0.5, {40}, {60}]]], \"SVG\"]")
         .unwrap();
     assert!(natural.contains("width='60' height='40'"), "{natural}");
+  }
+
+  // A one-element `ImageSize -> {w}` is the width `w`, as for graphics.
+  #[test]
+  fn show_image_honors_single_element_image_size_list() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Show[Image[Table[0.5, {40}, {60}]], \
+       ImageSize -> {240}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width='240' height='160'"), "{svg}");
+    let direct = interpret(
+      "ExportString[Image[Table[0.5, {40}, {60}], ImageSize -> {90}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(direct.contains("width='90' height='60'"), "{direct}");
   }
 }
 

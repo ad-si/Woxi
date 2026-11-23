@@ -3511,6 +3511,7 @@ fn field_plot_structure(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   pin_range: bool,
+  padding: f64,
 ) -> Expr {
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
@@ -3574,7 +3575,7 @@ fn field_plot_structure(
     .any(|o| name_of(o) == Some("PlotRangePadding"))
   {
     let side = || {
-      let s = call("Scaled", vec![Expr::Real(FIELD_RANGE_PADDING)]);
+      let s = call("Scaled", vec![Expr::Real(padding)]);
       Expr::List(vec![s.clone(), s].into())
     };
     structure_args.push(rule_expr(
@@ -3762,6 +3763,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     true,
+    FIELD_RANGE_PADDING,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
   // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
@@ -4261,6 +4263,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     true,
+    FIELD_RANGE_PADDING,
   );
 
   // Use plotters for axes
@@ -6227,7 +6230,14 @@ fn render_sampled_vector_plot(
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
     svg,
-    call1("Graphics", Expr::List(primitives.into())),
+    field_plot_structure(
+      primitives,
+      args,
+      (x_min, x_max),
+      (y_min, y_max),
+      true,
+      opts.range_padding,
+    ),
   ))
 }
 
@@ -6498,7 +6508,14 @@ fn render_stream_plot(
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
     svg,
-    call1("Graphics", Expr::List(primitives.into())),
+    field_plot_structure(
+      primitives,
+      args,
+      (x_min, x_max),
+      (y_min, y_max),
+      true,
+      opts.range_padding,
+    ),
   ))
 }
 
@@ -6874,7 +6891,14 @@ pub fn stream_density_plot_ast(
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
     svg,
-    call1("Graphics", Expr::List(primitives.into())),
+    field_plot_structure(
+      primitives,
+      args,
+      (x_min, x_max),
+      (y_min, y_max),
+      true,
+      density_opts.range_padding,
+    ),
   ))
 }
 
@@ -6965,7 +6989,14 @@ pub fn vector_density_plot_ast(
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
     svg,
-    call1("Graphics", Expr::List(primitives.into())),
+    field_plot_structure(
+      primitives,
+      args,
+      (x_min, x_max),
+      (y_min, y_max),
+      true,
+      density_opts.range_padding,
+    ),
   ))
 }
 
@@ -8207,6 +8238,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     false,
+    FIELD_RANGE_PADDING,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
   Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
@@ -8278,6 +8310,41 @@ pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
     }
     _ => None,
   }
+}
+
+/// `ColorFunction -> n` with an integer `n` names indexed color scheme `n`
+/// (`ColorData[n]`); a plot shades with it as a gradient through the
+/// scheme's colors (`ColorData[n, "ColorList"]`) over the scaled value.
+/// Returns those colors as RGB triples, ready for
+/// `chart::gradient_color_at`, or `None` when `val` is not such a scheme.
+pub(crate) fn indexed_color_function_rgb(
+  val: &Expr,
+) -> Option<Vec<(f64, f64, f64)>> {
+  let Expr::Integer(n) = val else {
+    return None;
+  };
+  let list = crate::evaluator::evaluate_function_call_ast(
+    "ColorData",
+    &[Expr::Integer(*n), Expr::String("ColorList".to_string())],
+  )
+  .ok()?;
+  let Expr::List(colors) = &list else {
+    return None;
+  };
+  let rgb = colors
+    .iter()
+    .map(|color| {
+      let converted = crate::evaluator::evaluate_function_call_ast(
+        "ColorConvert",
+        &[color.clone(), Expr::String("RGB".to_string())],
+      )
+      .ok()?;
+      let (r, g, b, _) =
+        crate::functions::image_ast::color_directive_to_rgb(&converted)?;
+      Some((r, g, b))
+    })
+    .collect::<Option<Vec<_>>>()?;
+  (!rgb.is_empty()).then_some(rgb)
 }
 
 /// Apply a named color function (gradient) to a normalized value t in [0,1].
