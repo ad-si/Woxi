@@ -40035,11 +40035,20 @@ fn column_layout_svg(
     "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
+  // A column that also stacks laid-out items (a plot, a `TableForm`, a
+  // `Row`) sets its text lines flush with their edge, as Wolfram aligns
+  // every item of a column to the same left (or right) edge; only a column
+  // of text alone keeps the text inset from the edge.
+  let text_edge = if cells.iter().any(|c| matches!(c, Cell::Svg { .. })) {
+    frame_padding
+  } else {
+    edge_pad
+  };
   // Compute text x-coordinate based on alignment
   let text_x: f64 = match alignment {
     "middle" => total_width / 2.0,
-    "end" => total_width - edge_pad,
-    _ => edge_pad, // "start"
+    "end" => total_width - text_edge,
+    _ => text_edge, // "start"
   };
 
   let text_fill = theme().text_primary;

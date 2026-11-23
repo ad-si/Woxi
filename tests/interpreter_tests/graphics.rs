@@ -37912,6 +37912,51 @@ mod graphics_grid {
     }
   }
 
+  /// A text item of a `Column` that also stacks laid-out items (a
+  /// `TableForm`, a plot) shares their left edge: the number was inset by
+  /// the padding of a text-only column while the table and plot below it
+  /// sat flush, so the lines didn't line up. A column of text alone keeps
+  /// its inset.
+  #[test]
+  fn column_text_lines_up_with_laid_out_items() {
+    let text_x = |svg: &str, content: &str| -> f64 {
+      let end = svg
+        .find(&format!(">{content}</text>"))
+        .unwrap_or_else(|| panic!("no {content} label: {svg}"));
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+      x.parse().unwrap()
+    };
+    let item_x = |svg: &str| -> f64 {
+      let tag = &svg[svg.find("<svg x=\"").expect("nested item")..];
+      let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+      x.parse().unwrap()
+    };
+    for item in [
+      "TableForm[{{1, 2}, {3, 4}}]",
+      "Row[{1, 2}]",
+      "ArrayPlot[{{1, 0}, {0, 1}}]",
+      "Graphics[Disk[]]",
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(&format!("Column[{{77, {item}}}]"))
+        .unwrap()
+        .graphics
+        .unwrap();
+      assert_eq!(
+        text_x(&svg, "77"),
+        item_x(&svg),
+        "77 must line up with {item}: {svg}"
+      );
+    }
+    clear_state();
+    let svg = interpret_with_stdout("Column[{77, 88}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(text_x(&svg, "77") > 0.0, "text-only column keeps its inset");
+  }
+
   /// A styled `Row` in a `Column` keeps its monospace cells apart: the
   /// pass that pulls labels back inside the canvas measured the `%` in the
   /// wider proportional face, decided it overran the row's right edge, and
