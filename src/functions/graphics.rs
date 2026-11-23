@@ -55830,7 +55830,21 @@ fn parse_manipulate_control(
   // fixed duration" pattern). When this variable already has a visible row
   // from an earlier spec (a plain slider on the same `t`), the Trigger
   // still gets its own row; both rows share the one binding.
-  if control_type.as_deref() == Some("Trigger") {
+  // An `Animator` over an unbounded range (`{t, 0, Infinity, dt,
+  // Animator}`) has no slider to drag: Wolfram draws only its play/pause,
+  // reset and step buttons and lets the variable run on forever, which is
+  // exactly this Trigger control (running unless `AnimationRunning ->
+  // False`) rather than a slider looping over a finite stand-in window.
+  let unbounded_animator = control_type.as_deref() == Some("Animator")
+    && bounds
+      .first()
+      .and_then(|e| eval_manipulate_bound(e))
+      .is_some_and(|(v, _)| v.is_finite())
+    && bounds
+      .get(1)
+      .and_then(|e| eval_manipulate_bound(e))
+      .is_some_and(|(v, _)| v == f64::INFINITY);
+  if control_type.as_deref() == Some("Trigger") || unbounded_animator {
     let (min, min_dynamic) = bounds
       .first()
       .and_then(|e| eval_manipulate_bound(e))
@@ -55871,16 +55885,27 @@ fn parse_manipulate_control(
       .and_then(crate::functions::math_ast::try_eval_to_f64)
       .unwrap_or(min);
     // Wolfram's Trigger sits paused until pressed; only an explicit
-    // `AnimationRunning -> True` starts it sweeping immediately.
-    let running = items.iter().any(|it| {
-      matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
-            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-      )
+    // `AnimationRunning -> True` starts it sweeping immediately. An
+    // Animator is the other way round: it runs unless told
+    // `AnimationRunning -> False`.
+    let running_option = items.iter().find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning") => {
+        match replacement.as_ref() {
+          Expr::Identifier(s) if s == "True" => Some(true),
+          Expr::Identifier(s) if s == "False" => Some(false),
+          _ => None,
+        }
+      }
+      _ => None,
     });
+    let running = running_option.unwrap_or(unbounded_animator);
     let repetitions = items.iter().find_map(|it| match it {
       Expr::Rule {
         pattern,
