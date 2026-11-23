@@ -3030,6 +3030,81 @@ mod perforated_faces {
   }
 }
 
+mod coincident_lines {
+  use super::*;
+
+  /// For every on-screen line position drawn in both colors, the color
+  /// of the stroke that ends up on top. A position is a segment of a
+  /// `<line>` or between consecutive points of a `<polyline>`.
+  fn top_colors(svg: &str) -> Vec<String> {
+    let mut last: std::collections::HashMap<String, (String, bool)> =
+      std::collections::HashMap::new();
+    let attr = |el: &str, name: &str| -> Option<String> {
+      el.split(&format!(" {name}=\""))
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .map(str::to_string)
+    };
+    for el in svg.lines() {
+      let Some(color) = attr(el, "stroke") else {
+        continue;
+      };
+      if color != "rgb(0,0,255)" && color != "rgb(255,0,0)" {
+        continue;
+      }
+      let segments: Vec<String> = if el.starts_with("<line ") {
+        let c: Vec<String> = ["x1", "y1", "x2", "y2"]
+          .iter()
+          .map(|a| attr(el, a).unwrap_or_default())
+          .collect();
+        vec![format!("{},{} {},{}", c[0], c[1], c[2], c[3])]
+      } else if el.starts_with("<polyline ") {
+        let pts: Vec<&str> = el["<polyline points=\"".len()..]
+          .split('"')
+          .next()
+          .unwrap()
+          .split(' ')
+          .collect();
+        pts.windows(2).map(|w| format!("{} {}", w[0], w[1])).collect()
+      } else {
+        continue;
+      };
+      for key in segments {
+        let entry = last.entry(key).or_insert((color.clone(), false));
+        if entry.0 != color {
+          entry.1 = true;
+        }
+        entry.0 = color.clone();
+      }
+    }
+    last
+      .into_values()
+      .filter(|(_, both)| *both)
+      .map(|(c, _)| c)
+      .collect()
+  }
+
+  #[test]
+  fn later_line_covers_an_earlier_one_at_the_same_depth() {
+    // The second curve wobbles around the first by far less than a
+    // pixel, so a strict depth sort would interleave the two; as with a
+    // depth buffer, the later primitive must stay on top throughout.
+    let out = svg(
+      "Graphics3D[{Blue, Line[Table[{Cos[t], Sin[t], t/5}, {t, 0, 12, 0.1}]], \
+       Red, Line[Table[{Cos[t], Sin[t], t/5} + (-1)^Round[10 t] 10^-9, \
+       {t, 0, 12, 0.1}]]}, Boxed -> False]",
+    );
+    let tops = top_colors(&out);
+    assert!(tops.len() > 50, "too few shared positions: {}", tops.len());
+    assert!(
+      tops.iter().all(|c| c == "rgb(255,0,0)"),
+      "blue drawn over red at {} of {} positions",
+      tops.iter().filter(|c| *c == "rgb(0,0,255)").count(),
+      tops.len()
+    );
+  }
+}
+
 mod plot_label {
   use super::*;
 
