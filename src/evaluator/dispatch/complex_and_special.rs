@@ -7864,6 +7864,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   if let Some(boxed) = root_approximation_box(name, args) {
     return boxed;
   }
+  // A number format around a `Style` or `Text` typesets as that wrapper
+  // around the formatted number, keeping its color and weight.
+  if let Some(hoisted) =
+    crate::functions::graphics::hoist_style_out_of_number_form(
+      &Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      },
+    )
+  {
+    return tf(&hoisted);
+  }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     // `DisplayForm[boxes]` shows its boxes typeset, just like `RawBoxes`:
@@ -7959,6 +7971,26 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       padded_form_box(name, args).unwrap()
     }
+    // A number-display form whose digit specification is no digit count
+    // (`PaddedForm[1, Text[3]]`, what mapping a styling function over
+    // `PaddedForm[1, 3]` makes) cannot format its number, so it typesets
+    // just the number.
+    "NumberForm" | "ScientificForm" | "EngineeringForm" | "PaddedForm"
+    | "AccountingForm"
+      if args.len() >= 2
+        && is_number_expr(&args[0])
+        && !matches!(
+          &args[1],
+          Expr::Integer(_)
+            | Expr::List(_)
+            | Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+        )
+        && !matches!(&args[1], Expr::Identifier(s)
+          if matches!(s.as_str(), "Infinity" | "Automatic")) =>
+    {
+      tf(&args[0])
+    }
     // A number-display form around another one (`NumberForm[NumberForm[x, 3],
     // {3, 2}]`, what a helper `nf[n_] := NumberForm[n, {3, 2}]` makes of an
     // already formatted number) typesets as the text the formatter yields.
@@ -7992,6 +8024,32 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
       call("TagBox", vec![tf(&formatted), id_expr(name)])
+    }
+    // `PolynomialForm[p, TraditionalOrder -> False]` (the default) sets the
+    // sums of `p` in their standard, ascending order instead of the
+    // descending one TraditionalForm uses; `TraditionalOrder -> True`
+    // keeps that descending order.
+    "PolynomialForm"
+      if !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      let traditional = args[1..].iter().any(|opt| {
+        matches!(opt, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
+      });
+      if traditional {
+        tf(&args[0])
+      } else {
+        struct Reset(bool);
+        impl Drop for Reset {
+          fn drop(&mut self) {
+            TF_HELD.set(self.0);
+          }
+        }
+        let _reset = Reset(TF_HELD.replace(true));
+        tf(&args[0])
+      }
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.

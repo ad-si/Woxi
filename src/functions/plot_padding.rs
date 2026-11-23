@@ -1075,15 +1075,18 @@ pub(crate) fn plot_decorations(
   }
   // A `Style[label, size]` label is set at its own size.
   let font_of = |t: &str| markup_font_size(t).unwrap_or(label_font);
+  // A stacked-fraction label is a picture of its own size.
+  let picture = crate::functions::graphics::axes_label_picture_size;
   let text_label = |t: &Option<String>| {
-    t.as_ref()
-      .filter(|t| !t.is_empty())
-      .map(|t| block_height(label_lines(t), font_of(t)))
+    t.as_ref().filter(|t| !t.is_empty()).map(|t| {
+      picture(t)
+        .map_or_else(|| block_height(label_lines(t), font_of(t)), |(_, h)| h)
+    })
   };
   let label_length = |t: &Option<String>| {
-    t.as_ref()
-      .filter(|t| !t.is_empty())
-      .map_or(0.0, |t| label_width(t, font_of(t)))
+    t.as_ref().filter(|t| !t.is_empty()).map_or(0.0, |t| {
+      picture(t).map_or_else(|| label_width(t, font_of(t)), |(w, _)| w)
+    })
   };
   d.frame_labels = [
     text_label(&opts.frame_label_bottom).map(|h| {

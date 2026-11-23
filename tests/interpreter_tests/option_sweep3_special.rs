@@ -98,3 +98,40 @@ mod circle_through_center {
     );
   }
 }
+
+/// `N[BesselJ[ν, z], p]` and `N[BesselI[ν, z], p]` at a complex or negative
+/// real argument stayed unevaluated; they now agree with the machine values
+/// and carry the requested precision. A purely imaginary argument (whose
+/// series has an exactly zero part) used to never stop summing.
+mod complex_bessel_arbitrary_precision {
+  use super::*;
+
+  #[test]
+  fn agrees_with_machine_values() {
+    for (exact, machine) in [
+      ("BesselJ[1/3, 2 I]", "BesselJ[1/3, 2. I]"),
+      (
+        "BesselJ[-11/15, 1/10 + I/5]",
+        "BesselJ[-11/15, 0.1 + 0.2 I]",
+      ),
+      ("BesselJ[4/15, -3]", "BesselJ[4/15, -3.]"),
+      ("BesselJ[-2, 3/2 - 5 I]", "BesselJ[-2, 1.5 - 5. I]"),
+      ("BesselI[2/3, -1 + 2 I]", "BesselI[2/3, -1. + 2. I]"),
+      ("BesselI[1/4, -7/2]", "BesselI[1/4, -3.5]"),
+    ] {
+      let code = format!(
+        "v = N[{exact}, 30]; {{Precision[v] >= 29, \
+         Abs[v - {machine}] < 10^-12}}"
+      );
+      assert_eq!(interpret(&code).unwrap(), "{True, True}", "{code}");
+    }
+  }
+
+  #[test]
+  fn purely_imaginary_argument() {
+    assert_eq!(
+      interpret("N[BesselJ[1, I/10], 20]").unwrap(),
+      interpret("N[I BesselI[1, 1/10], 20]").unwrap()
+    );
+  }
+}

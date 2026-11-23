@@ -194,13 +194,6 @@ woxi eval 'ToString[NumberForm[123456789.]]'            # 123457000.
 Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 (WL `1.5 × 10^-8`). In-range reals — roughly `10^-5 ≤ |x| < 10^6` — agree.
 
-### `NumberForm[x, {n, f}]` with an `ExponentFunction`
-
-`NumberForm[x, {n, f}]` now switches to scientific notation outside
-`10^-5 ≤ |x| < 10^6` (`1.000 × 10^-7`), but the 3-argument form with an
-`ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
-prints `0.1 × 10^-6` without padding.
-
 ### A `NumberForm` nested in a list or call shows its head
 
 At the top level a number-display form prints as its formatted number, but
@@ -5486,9 +5479,6 @@ the caller's options and appends only `AspectRatio -> Automatic` and
 notebooks take apart with `[[1, 3]]` — are identical; only
 `InputForm[plot]`'s option tail differs.
 
-Loading the package also prints `General::obspkg` in wolframscript; Woxi
-loads it silently.
-
 ### `Graphics` with `Axes` clips its edge tick labels
 
 `Graphics[…, Axes -> True, ImageSize -> {400, 400}]` lays its plotting area out
@@ -5663,7 +5653,9 @@ reproduce wolframscript's primitive tree:
   last digits with the marker position in wolframscript, and the series
   colors from the third series on drift in the last digit. The colors
   are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
-  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
+  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. `ImageSize` and
+  `Background` are honored; `LabelStyle` and `TicksStyle` are ignored, so
+  the scale keeps its default gray 10-point labels. The renderer
   draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
   scale's tick marks have no length.
 
@@ -5936,9 +5928,13 @@ would match that snapshot, but the widened span matches the other
 snapshots listed under "Sphere framing of an unboxed box at a fixed
 `ImageSize`" better, so the framing is
 unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
-(a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
-uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
-radius is unknown.
+(a curve 24 units long) is drawn with a radius of about 0.11, about 0.0035
+of the scene box's 31.7-unit diagonal. A second Demonstration's tube
+icosahedron (separate radius-less two-point tubes in a scene about 11 units
+across) measures the same fraction, so Woxi now sizes a radius-less `Tube`
+as 0.0035 of the diagonal of the scene's box. Whether that is Wolfram's
+exact rule (rather than, say, a fraction of the picture) is unverified with
+wolframscript.
 
 ### 3D tick step on an exact unit `PlotRange`
 
@@ -6021,8 +6017,11 @@ overlays clickable areas on them.)
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
 - A `TabView` in a `Manipulate` body (or any rendered layout) is drawn as
-  just its selected pane: the row of tab labels and the tab frame around the
-  pane are not drawn.
+  its row of tab labels above the selected pane's rounded gray panel, but
+  the labels sit just above the panel rather than overlapping its top edge,
+  and they are not clickable in the picture (the tab is switched from the
+  control panel instead). The exact front-end colors and margins are
+  approximated.
 - One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
@@ -6204,6 +6203,23 @@ Still different:
   where WL writes `0.010, 0.100, 1, 10`.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
+
+### Automatic histogram bins are too narrow for large samples
+
+`HistogramList`/`Histogram` without a bin spec take the Freedman–Diaconis
+width `2 IQR / n^(1/3)` rounded to 1, 2 or 5 times a power of ten. That
+matches Wolfram for small and medium samples (all the `HistogramList` unit
+tests, and samples of 10 to a few hundred skewed means, where Wolfram uses
+widths of 0.2, 0.1, 0.05 and 0.02). For a sample of 10,000 reals from
+`SkewNormalDistribution[0, 1, 8]`, Wolfram (14.1, from a stored notebook
+snapshot) draws bins of width 0.2. Its own bin counts put the IQR at about
+0.835, so the Freedman–Diaconis estimate is 0.078, which Woxi rounds to 0.1.
+Wolfram's widths are about twice as wide here, so for large `n` it is not
+using plain Freedman–Diaconis. Two rules fit all of these observations: one
+caps the `n` in the estimate somewhere between about 400 and 1,300, and the
+other switches to Sturges' rule for large samples. Without a `wolframscript`
+run on deterministic large data, there is not enough evidence to choose
+between them.
 
 ### Curve meshes: remaining differences
 
@@ -7232,6 +7248,18 @@ for the *same* value depending on how many evaluation passes each side saw.
 `[13C]`-style isotope atoms get a WL `UnpairedElectronCount` property Woxi
 omits, and the no-carbon Hill ordering diverges — WL writes ammonium as `NH4`
 (N before H) where Woxi keeps strict alphabetical order.
+
+### `MoleculePlot` options and `MoleculePlot3D`
+
+`MoleculePlot` honors `ImageSize`, `PlotTheme -> "AllAtom"` (every hydrogen
+drawn), `PlotTheme -> "Monochrome"` (labels in the bond color) and
+`AtomLabels` rules whose value is `"AtomIndex"`; the index is drawn as a
+small number beside the atom, while WL's exact placement and styling are
+unverified. `AtomLabels -> None` keeps the heteroatom symbols, and other
+themes (`"Aromatic"`, …) and frame options such as `ImagePadding` are
+accepted but change nothing. `MoleculePlot3D` builds its own ball-and-stick
+`Graphics3D` (CPK colors, covalent-radius bond lengths, a deterministic
+force-field conformer) instead of WL's conformer and primitive tree.
 
 ### `SpherePoints` and `ShiftRegisterSequence`
 
@@ -9370,6 +9398,10 @@ has no magnification slot). `ImageSize -> Small` (a named size) is not kept.
 and `HorizontalGauge`) return WL's internal styled gauge Graphics
 (`LightDarkSwitched`, nested `Style`, `Scaled` ticks); Woxi draws its own
 primitives, so their Graphics expressions and `Cases` over them differ.
+The linear gauges' `GaugeMarkers -> "BarMarker"` (parallel bars from the
+start of the scale, one strip per value) and `GaugeLabels` placement (a
+text beside the scale, `Placed[label, side]` picking the side) approximate
+WL's look rather than reproduce its geometry.
 `GraphPlot` and `LayeredGraphPlot` coordinates come from WL's
 spring-electrical and layered layouts and are **not reproducible** point
 for point.
@@ -10725,3 +10757,12 @@ rule, so it draws the line under the last row. A saved snapshot shows
 Wolfram leaving the bottom open and drawing the far-right column line
 (position 5) instead, over the first three rows only. How Wolfram maps the
 extra entries has not been checked against wolframscript.
+
+### Default 3D edge color of thick outlines
+
+Woxi draws the default `Graphics3D` face outline in a flat dark gray
+(`rgb(64,64,64)`), whatever its width. In a saved snapshot of a white
+`Cuboid` under `EdgeForm[AbsoluteThickness[6]]` (no edge color given), the
+core of Wolfram's outline is pure black, so the dark gray of thin default
+edges may come from anti-aliasing a black hairline rather than from the
+edge color itself. Not yet checked against wolframscript.
