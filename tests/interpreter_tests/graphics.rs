@@ -35312,6 +35312,59 @@ mod graphics_list {
     assert!(svg.contains(">30</text>"));
   }
 
+  /// Pull the `y` of the `<text>` element whose first line reads `label`.
+  fn text_y(svg: &str, label: &str) -> f64 {
+    svg
+      .lines()
+      .find(|l| {
+        l.starts_with("<text ")
+          && (l.contains(&format!(">{label}</text>"))
+            || l.contains(&format!("central\">{label}</tspan>")))
+      })
+      .and_then(|l| l.split(" y=\"").nth(1))
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|v| v.parse().ok())
+      .unwrap_or_else(|| panic!("no <text> for {label} in {svg}"))
+  }
+
+  #[test]
+  fn multiline_heading_shares_first_line_baseline() {
+    // Grid rows default to `Baseline` alignment: a text item broken over
+    // several lines lines up on its first line with its neighbors instead
+    // of being centered on the row.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "TableForm[{{1, 2, 3}}, TableHeadings -> {None, {\"p\", \"q\", \"r\\n\"}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let (p, r) = (text_y(&svg, "p"), text_y(&svg, "r"));
+    assert!((p - r).abs() < 0.05, "p at {p}, r at {r}: {svg}");
+
+    clear_state();
+    let svg = interpret_with_stdout("Grid[{{\"a\", \"b\\nc\\nd\"}}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    let (a, b) = (text_y(&svg, "a"), text_y(&svg, "b"));
+    assert!((a - b).abs() < 0.05, "a at {a}, b at {b}: {svg}");
+  }
+
+  #[test]
+  fn multiline_item_stays_centered_with_center_alignment() {
+    // An explicit vertical `Center` still centers the block on the row.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{\"a\", \"b\\nc\\nd\"}}, Alignment -> {Center, Center}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let (a, b) = (text_y(&svg, "a"), text_y(&svg, "b"));
+    assert!(a - b > 10.0, "a at {a}, b at {b}: {svg}");
+  }
+
   #[test]
   fn tableform_with_table_headings() {
     clear_state();

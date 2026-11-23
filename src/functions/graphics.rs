@@ -31630,17 +31630,30 @@ enum VAlign {
   Top,
   Center,
   Bottom,
+  /// Wolfram's default: items share a baseline, which for a text item
+  /// broken over several lines is the baseline of its first line.
+  Baseline,
 }
 
-/// The vertical part of an `Alignment` spec: `Top`, `Bottom`, or one of the
-/// centering values (`Center`, `Baseline`, `Axis`). Per-row lists are not
+/// Whether a `Grid` item is text broken over several lines (a stacked
+/// fraction is laid out on its own and does not count).
+fn is_multiline_text_cell(cell: &Expr) -> bool {
+  if grid_cell_graphic(cell).is_some() || has_fraction(cell) {
+    return false;
+  }
+  expr_to_svg_markup(extract_cell_style(cell).content).contains('\n')
+}
+
+/// The vertical part of an `Alignment` spec: `Top`, `Bottom`, `Baseline`,
+/// or one of the centering values (`Center`, `Axis`). Per-row lists are not
 /// read here.
 fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
       "Top" => Some(VAlign::Top),
       "Bottom" => Some(VAlign::Bottom),
-      "Center" | "Baseline" | "Axis" => Some(VAlign::Center),
+      "Baseline" => Some(VAlign::Baseline),
+      "Center" | "Axis" => Some(VAlign::Center),
       _ => None,
     },
     _ => None,
@@ -33722,6 +33735,14 @@ fn grid_svg_styled_internal_reporting(
     }
     row_heights.push(max_h);
   }
+  // Rows holding a text item broken over several lines. Under the default
+  // `Baseline` alignment their text items line up on their first lines
+  // (`TableHeadings -> {None, {"a", "b\n"}}` keeps "b" level with "a")
+  // rather than being centered on the row.
+  let row_multiline: Vec<bool> = rows
+    .iter()
+    .map(|row| row.iter().any(is_multiline_text_cell))
+    .collect();
   let row_anchors: Vec<Option<f64>> = rows
     .iter()
     .enumerate()
@@ -34087,12 +34108,25 @@ fn grid_svg_styled_internal_reporting(
         .find(|(pos, _)| *pos == (i, j))
         .map(|(_, a)| *a)
         .or_else(|| row_valigns.get(i).copied().flatten())
-        .unwrap_or(VAlign::Center);
+        .unwrap_or(VAlign::Baseline);
+      // A shared baseline only moves text off center in a row with a
+      // multi-line text item: every text item then starts at the top, so
+      // the first lines (and their baselines) coincide. Graphics keep
+      // their own baseline handling (`row_anchors`).
+      let v_align = match v_align {
+        VAlign::Baseline
+          if row_multiline[i] && grid_cell_graphic(cell).is_none() =>
+        {
+          VAlign::Top
+        }
+        VAlign::Baseline => VAlign::Center,
+        other => other,
+      };
       let content_top = content_y_starts[i];
       let content_bottom = content_y_starts[last_row] + row_heights[last_row];
       let aligned_top = |h: f64| -> Option<f64> {
         match v_align {
-          VAlign::Center => None,
+          VAlign::Center | VAlign::Baseline => None,
           VAlign::Top => Some(content_top + pad_y / 2.0),
           VAlign::Bottom => Some(content_bottom - pad_y / 2.0 - h),
         }
