@@ -275,9 +275,9 @@ pub enum ControlState {
     /// slider overwrites it with `Hue[<position>]`.
     current: String,
     /// The slider handle's on-screen position in `0.0..=1.0` (the hue
-    /// fraction it was last dragged to). Purely cosmetic — defaults to
-    /// `0.0`, since the spec's initial color is usually not on the
-    /// gradient at all, without affecting `current`.
+    /// fraction it was last dragged to). Purely cosmetic — starts at the
+    /// hue of the spec's initial color (`0.0` for grays), without
+    /// affecting `current`.
     position: f64,
   },
 }
@@ -3441,7 +3441,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label: label.clone(),
         label_runs: label_runs.clone(),
         current: initial.clone(),
-        position: 0.0,
+        position: woxi::functions::graphics::manipulate_color_hue(initial),
       },
     })
     .collect()
