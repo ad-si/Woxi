@@ -6417,7 +6417,7 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
     Expr::FunctionCall { name, args }
       if name == "Graphics" && !args.is_empty() =>
     {
-      let opts = args[1..]
+      let opts: Vec<Expr> = args[1..]
         .iter()
         .flat_map(|o| match o {
           Expr::List(items) => items.to_vec(),
