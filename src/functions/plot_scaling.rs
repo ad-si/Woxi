@@ -406,18 +406,27 @@ fn range(a: f64, b: f64, step: f64) -> Vec<f64> {
   (0..=count as usize).map(|k| a + k as f64 * step).collect()
 }
 
+/// Whether two tick values are the same up to rounding, relative to their
+/// size: a log axis spanning many decades below 1 has distinct ticks far
+/// closer together than any fixed absolute tolerance.
+fn close(a: f64, b: f64) -> bool {
+  (a - b).abs() <= 1e-12 * a.abs().max(b.abs())
+}
+
 /// `Union`: sorted, without (numerically) repeated values.
 fn union(mut v: Vec<f64>) -> Vec<f64> {
   v.retain(|x| x.is_finite());
   v.sort_by(f64::total_cmp);
-  v.dedup_by(|a, b| (*a - *b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1.0));
+  v.dedup_by(|a, b| close(*a, *b));
   v
 }
 
 fn in_range(v: f64, min: f64, max: f64) -> bool {
   // Each end with its own relative tolerance: a range over 20 decades
   // must not let the tolerance of its top swallow the values at its bottom.
-  v >= min - 1e-12 * min.abs() - 1e-15 && v <= max + 1e-12 * max.abs() + 1e-15
+  // Only a bound of exactly 0 gets an absolute slack, for rounding noise.
+  let slack = |b: f64| if b == 0.0 { 1e-15 } else { 1e-12 * b.abs() };
+  v >= min - slack(min) && v <= max + slack(max)
 }
 
 /// `linearDistanceQ` of the tick finder: whether `min..max` is close enough
@@ -536,7 +545,7 @@ fn smooth(v: &[f64], width: f64, n: i32, flag: bool) -> f64 {
   } else {
     0.0
   };
-  let refs: Vec<f64> = if flag || width.abs() < EPS {
+  let refs: Vec<f64> = if flag || width == 0.0 {
     let p = 10f64.powi(n - 1);
     std::iter::once(0.0)
       .chain(v.iter().copied())
@@ -890,10 +899,7 @@ fn extend_ends(linear: bool, l: Vec<f64>) -> Vec<f64> {
   }
   let mut seen: Vec<f64> = Vec::new();
   for v in out {
-    if !seen
-      .iter()
-      .any(|s| (s - v).abs() <= 1e-12 * v.abs().max(1.0))
-    {
+    if !seen.iter().any(|&s| close(s, v)) {
       seen.push(v);
     }
   }
@@ -932,7 +938,7 @@ fn down_sample_plain(list: &[f64], lenmin: usize, lenmax: usize) -> Vec<f64> {
   };
   let pos = list
     .iter()
-    .position(|&x| (x - last).abs() <= 1e-12 * x.abs().max(1.0))
+    .position(|&x| close(x, last))
     .map_or(n, |p| p + 1);
   if n - pos > step / 3 && lenmin != lenmax {
     down_sample_plain(list, lenmin + 1, lenmax)
@@ -1126,10 +1132,7 @@ fn divisions(
   }
   let mut kept: Vec<f64> = Vec::new();
   for v in major.into_iter().filter(|&v| in_range(v, min, max)) {
-    if !kept
-      .iter()
-      .any(|k| (k - v).abs() <= 1e-12 * v.abs().max(1.0))
-    {
+    if !kept.iter().any(|&k| close(k, v)) {
       kept.push(v);
     }
   }
@@ -1150,11 +1153,7 @@ fn scaled_ticks(s: &dyn ScalePair, min: f64, max: f64, n: usize) -> AxisTicks {
   major.sort_by(f64::total_cmp);
   let minor: Vec<f64> = union(minor.into_iter().flatten().collect())
     .into_iter()
-    .filter(|m| {
-      !major
-        .iter()
-        .any(|v| (v - m).abs() <= 1e-12 * m.abs().max(1.0))
-    })
+    .filter(|m| !major.iter().any(|&v| close(v, *m)))
     .collect();
   let identity = s.identity();
   let labels = simple_padding(
@@ -1495,6 +1494,44 @@ mod tests {
 
   fn labels(t: &AxisTicks) -> Vec<String> {
     t.majors.iter().map(|(_, l)| l.clone()).collect()
+  }
+
+  /// The decade exponents of the major ticks of a log axis over
+  /// `min..max`, keeping only those inside the range.
+  fn log_decades(min: f64, max: f64) -> Vec<i32> {
+    log_axis_ticks(min, max)
+      .majors
+      .iter()
+      .map(|(p, _)| p.log10())
+      .filter(|e| (min.log10() - 1e-9..=max.log10() + 1e-9).contains(e))
+      .map(|e| e.round() as i32)
+      .collect()
+  }
+
+  #[test]
+  fn log_ticks_reach_tiny_values() {
+    // Many decades below 1: tick candidates under 10^-10 used to be
+    // snapped to 0, and ticks under 10^-12 merged as duplicates, so
+    // the lower part of the axis went unlabeled.
+    assert_eq!(log_decades(1e-30, 1e-5), [-30, -25, -20, -15, -10, -5]);
+    assert_eq!(log_decades(1e-24, 1e3), [-24, -20, -16, -12, -8, -4, 0]);
+    assert_eq!(
+      log_decades(1e-26, 1.0),
+      [-25, -22, -19, -16, -13, -10, -7, -4, -1]
+    );
+    // A range within one decade far below 1 gets its own ticks too.
+    let t = log_axis_ticks(1e-15, 3e-15);
+    assert_eq!(t.majors.len(), 5);
+    assert!(t.minors.len() > 10);
+  }
+
+  #[test]
+  fn tick_dedup_is_relative() {
+    assert!(close(1e-20, 1e-20 * (1.0 + 1e-14)));
+    assert!(!close(1e-20, 2e-20));
+    assert!(!in_range(1e-27, 1e-26, 1.0));
+    assert!(in_range(-1e-17, 0.0, 1.0));
+    assert_eq!(union(vec![1e-25, 1e-21, 1e-25]), [1e-25, 1e-21]);
   }
 
   #[test]

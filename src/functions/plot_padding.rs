@@ -154,6 +154,10 @@ pub(crate) fn atkinson_width_em(c: char) -> f64 {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
     '\u{00D7}' => 0.532,
+    // The prime marks a derivative typesets (`f′`, `T″`) are narrow ticks,
+    // far slimmer than the generic fallback advance.
+    '\u{2032}' => 0.219,
+    '\u{2033}' | '\u{2034}' => 0.417,
     _ => char_width_em(c),
   }
 }
@@ -1071,15 +1075,18 @@ pub(crate) fn plot_decorations(
   }
   // A `Style[label, size]` label is set at its own size.
   let font_of = |t: &str| markup_font_size(t).unwrap_or(label_font);
+  // A stacked-fraction label is a picture of its own size.
+  let picture = crate::functions::graphics::axes_label_picture_size;
   let text_label = |t: &Option<String>| {
-    t.as_ref()
-      .filter(|t| !t.is_empty())
-      .map(|t| block_height(label_lines(t), font_of(t)))
+    t.as_ref().filter(|t| !t.is_empty()).map(|t| {
+      picture(t)
+        .map_or_else(|| block_height(label_lines(t), font_of(t)), |(_, h)| h)
+    })
   };
   let label_length = |t: &Option<String>| {
-    t.as_ref()
-      .filter(|t| !t.is_empty())
-      .map_or(0.0, |t| label_width(t, font_of(t)))
+    t.as_ref().filter(|t| !t.is_empty()).map_or(0.0, |t| {
+      picture(t).map_or_else(|| label_width(t, font_of(t)), |(w, _)| w)
+    })
   };
   d.frame_labels = [
     text_label(&opts.frame_label_bottom).map(|h| {

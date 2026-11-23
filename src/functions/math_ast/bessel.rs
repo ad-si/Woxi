@@ -2000,6 +2000,32 @@ fn bessel_complex_value(kind: char, nu: f64, z: Cx) -> Cx {
   }
 }
 
+thread_local! {
+  static IN_ARBITRARY_BESSEL: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// The lowest precision of the arbitrary-precision reals in `exprs`, or
+/// `None` when there are none or a machine real is among them.
+fn arbitrary_precision_of(exprs: &[&Expr]) -> Option<f64> {
+  fn walk(e: &Expr, min: &mut Option<f64>, machine: &mut bool) {
+    match e {
+      Expr::Real(_) => *machine = true,
+      Expr::BigFloat(_, p) => *min = Some(min.map_or(*p, |m: f64| m.min(*p))),
+      _ => {
+        for child in crate::syntax::expr_children(e) {
+          walk(child, min, machine);
+        }
+      }
+    }
+  }
+  let (mut min, mut machine) = (None, false);
+  for e in exprs {
+    walk(e, &mut min, &mut machine);
+  }
+  if machine { None } else { min }
+}
+
 /// Numeric BesselJ/I/Y/K for an inexact complex argument, or a negative real
 /// argument where the real-line evaluators have no value (Y, K, and J, I at
 /// non-integer order). Returns `None` when the arguments don't qualify.
@@ -2020,6 +2046,30 @@ fn bessel_complex_numeric(
   let needs_branch = matches!(kind, 'Y' | 'K') || nu != nu.floor();
   if im == 0.0 && !(negative_real && needs_branch) {
     return None;
+  }
+  // Arbitrary-precision arguments keep their precision: J and I have an
+  // arbitrary-precision complex series, evaluated at the lowest precision
+  // among the arguments (machine reals make the result machine).
+  if matches!(kind, 'J' | 'I')
+    && !IN_ARBITRARY_BESSEL.with(std::cell::Cell::get)
+    && let Some(precision) = arbitrary_precision_of(&[n_expr, z_expr])
+  {
+    let name = if kind == 'J' { "BesselJ" } else { "BesselI" };
+    let call = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![n_expr.clone(), z_expr.clone()].into(),
+    };
+    // `n_eval_arbitrary` can fall back to evaluating the call itself;
+    // the guard keeps that from coming back here.
+    IN_ARBITRARY_BESSEL.with(|flag| flag.set(true));
+    let value =
+      crate::functions::math_ast::numerical::n_eval_arbitrary(&call, precision);
+    IN_ARBITRARY_BESSEL.with(|flag| flag.set(false));
+    if let Ok(value) = value
+      && !matches!(&value, Expr::FunctionCall { name: n, .. } if n == name)
+    {
+      return Some(value);
+    }
   }
   let (r, i) = bessel_complex_value(kind, nu, (re, im));
   Some(build_complex_float_expr(r, i))
