@@ -4789,6 +4789,63 @@ mod graphics {
       assert_eq!(raster, raster_box);
     }
 
+    /// Regression: a `Spacer` line in a `Column` label dropped the
+    /// italics of every other line, as the label's styled runs (a blank
+    /// run for the spacer) no longer lined up with its text (an empty
+    /// line).
+    #[test]
+    fn column_spacer_line_keeps_other_lines_styled() {
+      let svg = export_svg(
+        "Graphics[Text[Style[Column[{\"a\", Spacer[0], \
+          Row[{Style[\"L\", Italic], \"/\", Style[\"V\", Italic], \" = \", \
+          100}]}, Center], 17], {0, 0}]]",
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">L</tspan>/\
+           <tspan font-style=\"italic\">V</tspan> = 100"
+        ),
+        "{svg}"
+      );
+    }
+
+    /// Under `ImageSize -> {w, h}` with `AspectRatio -> Full`, labels
+    /// overhanging the automatic horizontal range take image padding: the
+    /// range stays as the primitives span it, relative sizes (`Thickness`,
+    /// `Arrowheads`) are fractions of the narrower drawing, and the labels
+    /// spill into the padding rather than being clipped.
+    #[test]
+    fn full_aspect_picture_pads_for_overhanging_labels() {
+      let svg = export_svg(
+        "Graphics[{EdgeForm[Thickness[0.05]], FaceForm[None], \
+          Rectangle[{0, 1}, {1, 2}], Arrowheads[0.2], \
+          Arrow[{{0.5, 3}, {0.5, 2}}], \
+          Text[\"a long left label\", {0, 3}, {1, 0}], \
+          Text[\"a long right label\", {1, 3}, {-1, 0}]}, \
+          ImageSize -> {230, 350}, AspectRatio -> Full, \
+          PlotRange -> {0, 4}, PlotLabel -> \"title\"]",
+      );
+      let num = |s: &str, key: &str| -> f64 {
+        let start =
+          s.find(key).unwrap_or_else(|| panic!("{key}: {s}")) + key.len();
+        s[start..].split('"').next().unwrap().parse().unwrap()
+      };
+      // The drawing is what the labels leave of the 230 points.
+      let clip = &svg[svg.find("<clipPath").unwrap()..];
+      let drawing_w = num(clip, "width=\"");
+      assert!(drawing_w > 25.0 && drawing_w < 60.0, "{svg}");
+      // The rectangle spans (almost) the whole drawing width …
+      let rect = &svg[svg.find("<rect x=\"0.").unwrap()..];
+      let rect_w = num(rect, "width=\"");
+      assert!(rect_w > 0.9 * drawing_w, "{svg}");
+      // … and its edge is 5% of that width, not of the whole picture.
+      let stroke = num(rect, "stroke-width=\"");
+      assert!((stroke - 0.05 * drawing_w).abs() < 0.05, "{svg}");
+      // The labels are not cut off at the drawing's edge.
+      assert!(!svg.contains("clip-path=\"url(#plotClip"), "{svg}");
+      assert!(svg.contains(">a long left label</text>"), "{svg}");
+    }
+
     /// A `Spacer[n]` separator in a `Row` is a gap, not its own text.
     #[test]
     fn row_spacer_separator_is_a_gap() {
@@ -14970,6 +15027,27 @@ mod plot3d {
           && svg.contains("fill=\"rgb(255,0,0)\""),
         "each nested item keeps its own Style color: {svg}"
       );
+    }
+
+    /// Regression: `Column[items, Center]` (alignment given positionally,
+    /// not as an `Alignment` option) set its lines flush left in a plot's
+    /// `Epilog`, so the block sat left of its anchor.
+    #[test]
+    fn plot_epilog_positionally_centered_column_centers_lines() {
+      let label = |alignment: &str| {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, Epilog -> {{Text[Style[Column[{{\"a long \
+           heading\", \"b\"}}{alignment}], 17], {{0.5, 0.5}}]}}]"
+        ));
+        let end = svg.find("a long heading").unwrap();
+        let start = svg[..end].rfind("<text").unwrap();
+        svg[start..end].to_string()
+      };
+      assert!(label(", Center").contains("text-anchor=\"middle\""));
+      assert!(
+        label(", Alignment -> Center").contains("text-anchor=\"middle\"")
+      );
+      assert!(label("").contains("text-anchor=\"start\""));
     }
 
     /// An Epilog may pin its overlay with `Scaled[{sx, sy}]` — a fraction

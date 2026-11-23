@@ -15064,11 +15064,17 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let mut pos = 0;
   for r in &runs {
     let run: Vec<char> = r.text.chars().collect();
+    let blank = !run.is_empty() && run.iter().all(|&c| c == ' ');
     let mut end = pos + run.len();
     if end > chars.len() || chars[pos..end] != run[..] {
+      // A `Spacer` line of a `Column` is a blank run but an empty line of
+      // the text (see `graphics_text_content`).
+      if blank && chars.get(pos).is_none_or(|&c| c == '\n') {
+        continue;
+      }
       return Vec::new();
     }
-    if !run.is_empty() && run.iter().all(|&c| c == ' ') {
+    if blank {
       while end < chars.len() && chars[end] == ' ' {
         end += 1;
       }
@@ -18262,7 +18268,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       text_overflow_padding(&primitives, &bb, svg_width as f64, r)
     }
+    // `AspectRatio -> Full` under `ImageSize -> {w, h}` stretches the
+    // drawing over whatever the labels leave of the picture: the automatic
+    // horizontal range stays as the primitives span it and the labels
+    // overhanging it sideways take image padding instead (the vertical
+    // range grows for its labels as usual). Relative sizes (`Thickness`,
+    // `Arrowheads`) are then fractions of that narrower drawing.
+    None
+      if aspect_ratio_full
+        && size_names_height
+        && plot_range_x.is_none()
+        && image_padding.is_none()
+        && !axes.0
+        && !axes.1
+        && !frame_edges.iter().any(|&e| e) =>
+    {
+      text_overflow_padding(
+        &primitives,
+        &bb,
+        svg_width as f64,
+        svg_height as f64 / svg_width as f64,
+      )
+      .map(|[l, r, _, _]| [l, r, 0.0, 0.0])
+      .filter(|&[l, r, _, _]| l > 0.0 || r > 0.0)
+    }
     _ => None,
+  };
+  // Whether the label room above only covers the sides, leaving the
+  // vertical range to grow for labels as usual.
+  let text_overflow_sideways =
+    text_overflow.is_some() && aspect_ratio.is_none();
+  // The width the drawing keeps once labels took their room beside it.
+  let drawing_w = match text_overflow {
+    Some([l, r, _, _]) => (svg_width as f64 - l - r).max(1.0),
+    None => svg_width as f64,
   };
   let (plot_w, plot_h, slack_x, slack_y) = match aspect_ratio {
     Some(r) if size_names_height => {
@@ -18270,7 +18309,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (pw, ph) = if w * r <= h { (w, w * r) } else { (h / r, h) };
       (pw, ph, (w - pw) / 2.0, (h - ph) / 2.0)
     }
-    _ => (svg_width as f64, svg_height as f64, 0.0, 0.0),
+    _ => (drawing_w, svg_height as f64, 0.0, 0.0),
   };
   // Widening the range shrinks the scale, which makes every label take a
   // larger share of the range again: iterate until the range settles (the
@@ -18368,7 +18407,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if norm <= 0.0 || !norm.is_finite() {
             continue;
           }
-          let len = size.abs() * svg_width as f64;
+          let len = size.abs() * plot_w;
           let (ux, uy) = (dx / norm * size.signum(), dy / norm * size.signum());
           for (along, across) in [(1.0, 0.28), (1.0, -0.28)] {
             let px = -ux * len * along - uy * len * across;
@@ -18453,7 +18492,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       };
       // A horizontal baseline (`{1, 0}`) takes room like an unrotated one.
-      if text_overflow.is_some()
+      if (text_overflow.is_some() && !text_overflow_sideways)
         || direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0)
       {
         continue;
@@ -18478,7 +18517,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // primitive onto one point. Such a label overflows instead.
       let (half_w, half_h) = (text_w / 2.0 / kx, text_h / 2.0 / ky);
       let (room_x, room_y) = (slack_x / kx, slack_y / ky);
-      if plot_range_x.is_none() && text_w < svg_width as f64 {
+      if plot_range_x.is_none()
+        && text_overflow.is_none()
+        && text_w < svg_width as f64
+      {
         grown.x_min = grown.x_min.min(cx - half_w + room_x);
         grown.x_max = grown.x_max.max(cx + half_w - room_x);
       }
@@ -18751,6 +18793,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `PlotLabel` sits above it.
       // Labels past the drawing take their own room (at least the bare
       // picture's one point on the right and bottom).
+      // Sideways label room keeps the usual room above and below (a
+      // `PlotLabel`'s).
+      None if text_overflow_sideways => {
+        let [left, right, _, _] = text_overflow.unwrap_or_default();
+        let (bottom, top) = if pad.title == 0.0 {
+          (1.0, 0.0)
+        } else {
+          (pad.bottom, pad.above())
+        };
+        (left, right.max(1.0), bottom, top)
+      }
       None if text_overflow.is_some() => text_overflow.map_or(
         (0.0, 1.0, 1.0, 0.0),
         |[left, right, bottom, top]| {
@@ -19148,13 +19201,18 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // edge) must spill past the box rather than be cut off.
   let has_explicit_range = plot_range_x.is_some() || plot_range_y.is_some();
   // Wolfram's default (`PlotRangeClipping -> False`) cuts primitives off
-  // only at the image's edge: past a frame or axes, or into an explicit
-  // `ImagePadding`, they spill into the margins.
+  // only at the image's edge: past a frame or axes, into an explicit
+  // `ImagePadding` or into the room labels took beside the drawing, they
+  // spill into the margins.
   let has_explicit_padding =
     image_padding.is_some_and(|p| p.iter().any(|&m| m > 0.0));
   let clip_primitives = clip_primitives
     && (clipping_requested
-      || !(frame || axes.0 || axes.1 || has_explicit_padding))
+      || !(frame
+        || axes.0
+        || axes.1
+        || has_explicit_padding
+        || text_overflow.is_some()))
     && (has_explicit_range
       || !primitives
         .iter()
