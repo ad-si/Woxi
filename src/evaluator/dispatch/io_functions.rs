@@ -6549,12 +6549,12 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
           Expr::List(items) => items.to_vec(),
           other => vec![other.clone()],
         })
-        .find_map(|o| match o {
+        .find_map(|o| match &o {
           Expr::Rule {
             pattern,
             replacement,
           } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "AspectRatio") => {
-            crate::functions::math_ast::try_eval_to_f64(&replacement)
+            crate::functions::math_ast::try_eval_to_f64(replacement)
           }
           _ => None,
         }),
