@@ -517,6 +517,33 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
       "DotDashed" => style.dashing = Some(vec![0.002, 0.01, 0.02, 0.01]),
       _ => return false,
     },
+    // A style given as an option rule inside a primitive list
+    // (`{PointSize -> Large, Point[…]}`) acts like the directive of the
+    // same name, as it does in a plain `Graphics` primitive list.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match pattern.as_ref() {
+      Expr::Identifier(k)
+        if matches!(
+          k.as_str(),
+          "Thickness"
+            | "AbsoluteThickness"
+            | "PointSize"
+            | "AbsolutePointSize"
+            | "Opacity"
+        ) =>
+      {
+        return apply_directive(
+          &Expr::FunctionCall {
+            name: k.clone(),
+            args: vec![replacement.as_ref().clone()].into(),
+          },
+          style,
+        );
+      }
+      _ => return false,
+    },
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
         for a in args {
