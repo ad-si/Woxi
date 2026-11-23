@@ -10748,6 +10748,16 @@ through on its default mesh: in a saved snapshot of such a reactor model
 the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
 gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.
 
+### `Grid` `Dividers` given as a flat list of three or more rules
+
+`Dividers -> {xspec, yspec}` is handled, but a longer flat list such as
+`Dividers -> {2 -> Black, 2 -> Black, 5 -> Black}` on a four-row,
+four-column grid is not. Woxi treats every entry after the first as a row
+rule, so it draws the line under the last row. A saved snapshot shows
+Wolfram leaving the bottom open and drawing the far-right column line
+(position 5) instead, over the first three rows only. How Wolfram maps the
+extra entries has not been checked against wolframscript.
+
 ### Default 3D edge color of thick outlines
 
 Woxi draws the default `Graphics3D` face outline in a flat dark gray
