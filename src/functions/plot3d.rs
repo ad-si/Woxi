@@ -432,14 +432,16 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
 /// (corners `verts`, already back to front): the index just past the last
 /// triangle that covers the piece's midpoint on screen without lying in
 /// front of it. Drawn there, the piece shows over every face behind it
-/// and under every face in front of it.
+/// and under every face in front of it. `dots[k]` marks a piece that is a
+/// `Point` dot rather than a line (missing entries are lines).
 fn line_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
+  dots: &[bool],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, None)
+  line_draw_bounds(verts, tris, segs, dots, camera, None)
     .into_iter()
     .map(|(slot, _)| slot)
     .collect()
@@ -459,7 +461,7 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, Some(owners))
+  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners))
     .into_iter()
     .zip(owners)
     .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
@@ -524,6 +526,7 @@ fn line_draw_bounds(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
+  dots: &[bool],
   camera: &Camera,
   owners: Option<&[usize]>,
 ) -> Vec<(usize, usize)> {
@@ -590,6 +593,7 @@ fn line_draw_bounds(
       // A piece can cross several small faces: it is sampled along its
       // length.
       let floor = owners.map(|o| o[n] + 1);
+      let is_dot = dots.get(n).copied().unwrap_or(false);
       let mut slot = floor.unwrap_or(0);
       let mut first_front = usize::MAX;
       // Faces the piece runs along (or crosses in front of) lift it over
@@ -638,6 +642,19 @@ fn line_draw_bounds(
             })
             .fold(0.0, f64::max);
           let d = v_dot(n, [m.x - v[0].x, m.y - v[0].y, m.z - v[0].z]);
+          // A dot (a `Point`, whose piece has coinciding ends) on the
+          // rim of a face that lies wholly in front of it, such as the
+          // corner of a solid turned away from the viewer, is hidden by
+          // that face: the face covers the part of the dot's disc it
+          // overlaps and is nearer than the dot everywhere there. Only a
+          // face the dot lies inside of (with a corner on each side of
+          // the dot's depth) is drawn under it.
+          if is_dot
+            && d.abs() <= 1e-6 * size.max(1e-300)
+            && face_in_front_of(v, m, &toward_viewer, size)
+          {
+            continue;
+          }
           // A line on a curved surface lies a little behind the planes
           // of the faces next to the ones it runs along.
           if d >= -1e-2 * size.max(1e-300) {
@@ -663,6 +680,26 @@ fn line_draw_bounds(
       (slot.max(end_slot.min(cap)), first_front)
     })
     .collect()
+}
+
+/// Whether the face `v` lies wholly in front of the point `p` on its
+/// rim: no corner is farther from the viewer than `p`, and some corner is
+/// nearer (a face seen edge-on, all at the depth of `p`, is not in front).
+fn face_in_front_of(
+  v: &[Point3D; 3],
+  p: Point3D,
+  toward_viewer: &impl Fn(Point3D) -> [f64; 3],
+  size: f64,
+) -> bool {
+  let view = toward_viewer(p);
+  let len = v_len(view);
+  if len <= 0.0 || !len.is_finite() {
+    return false;
+  }
+  let nearer =
+    |c: &Point3D| v_dot(view, [c.x - p.x, c.y - p.y, c.z - p.z]) / len;
+  let tol = 1e-6 * size.max(1e-300);
+  v.iter().all(|c| nearer(c) >= -tol) && v.iter().any(|c| nearer(c) > tol)
 }
 
 /// Whether two triangles lie in one plane.
@@ -4064,7 +4101,7 @@ fn generate_svg(
   let mesh_slots = worlds.map(|worlds| {
     let endpoints: Vec<_> =
       sorted_mesh.iter().map(|line| line.endpoints).collect();
-    line_draw_slots(worlds, triangles, &endpoints, camera)
+    line_draw_slots(worlds, triangles, &endpoints, &[], camera)
   });
   let mut ordered_slots: Vec<_> = sorted_mesh.drain(..).enumerate().collect();
   ordered_slots.sort_by(|(a, x), (b, y)| match &mesh_slots {
@@ -15926,6 +15963,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &triangle_vertices,
       &all_triangles,
       &sorted_edges.iter().map(|e| e.endpoints).collect::<Vec<_>>(),
+      &sorted_edges
+        .iter()
+        .map(|e| e.dot_radius.is_some())
+        .collect::<Vec<_>>(),
       &camera,
     );
     let mut by_slot: Vec<usize> = (0..sorted_edges.len()).collect();
