@@ -11365,8 +11365,8 @@ enum NCond {
   Const(bool),
   Cmp {
     op: ComparisonOp,
-    lhs: NExpr,
-    rhs: NExpr,
+    lhs: Box<NExpr>,
+    rhs: Box<NExpr>,
   },
   All(Vec<Self>),
   Any(Vec<Self>),
@@ -11400,7 +11400,7 @@ impl NCond {
   fn exprs(&self) -> Vec<&NExpr> {
     match self {
       Self::Const(_) => Vec::new(),
-      Self::Cmp { lhs, rhs, .. } => vec![lhs, rhs],
+      Self::Cmp { lhs, rhs, .. } => vec![lhs.as_ref(), rhs.as_ref()],
       Self::All(items) | Self::Any(items) => {
         items.iter().flat_map(Self::exprs).collect()
       }
@@ -11422,8 +11422,8 @@ fn compile_condition(expr: &Expr, var_names: &[String]) -> Option<NCond> {
     for (i, op) in operators.iter().enumerate() {
       cmps.push(NCond::Cmp {
         op: *op,
-        lhs: comp(&operands[i])?,
-        rhs: comp(&operands[i + 1])?,
+        lhs: Box::new(comp(&operands[i])?),
+        rhs: Box::new(comp(&operands[i + 1])?),
       });
     }
     Some(if cmps.len() == 1 {
