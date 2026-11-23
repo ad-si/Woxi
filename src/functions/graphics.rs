@@ -20725,7 +20725,7 @@ fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
 
 /// Lines of boxes stacked top to bottom, each centered on the widest; the
 /// block's baseline is its first line's.
-fn stack_box_lines_centered(lines: Vec<BoxLayout>) -> BoxLayout {
+fn stack_box_lines_centered(lines: &[BoxLayout]) -> BoxLayout {
   let width = lines.iter().map(|l| l.width).fold(0.0_f64, f64::max);
   let mut elements = String::new();
   let mut y = 0.0;
@@ -20871,7 +20871,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               layout_box(&call1("RowBox", Expr::List(line.into())), font_size)
             })
             .collect();
-          return stack_box_lines_centered(laid);
+          return stack_box_lines_centered(&laid);
         }
         let mut children: Vec<BoxLayout> =
           items.iter().map(|e| layout_box(e, font_size)).collect();
