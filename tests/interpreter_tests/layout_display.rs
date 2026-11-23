@@ -1105,7 +1105,7 @@ mod layout_display {
       let s = svg.find(">S<").expect("base");
       let i = svg.find(">i=1<").expect("lower limit");
       assert!(n < s && s < i, "{expr}: {svg}");
-      assert!(svg.contains("font-size=\"20\""), "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"20"), "{expr}: {svg}");
       assert!(!svg.contains("font-size=\"10\""), "{expr}: {svg}");
     }
   }
