@@ -5056,6 +5056,81 @@ mod graphics {
     }
 
     #[test]
+    fn text_row_of_columns_sets_columns_side_by_side() {
+      // Regression: `Text[Row[{Column[labels], Column[values]}], pos]` in a
+      // `Graphics` was flattened into lines of text, running the last label
+      // of one column into the first value of the next (`cdef: 1.0`).
+      let svg = export_svg(
+        "Graphics[Text[Row[{Column[{Style[\"ab: \", Red, 12], \
+         Style[\"cdef: \", 12]}, Alignment -> Right], \
+         Column[{Style[\"1.0\", 12], Style[\"22.5\", 12]}, \
+         Alignment -> Right]}], {0, 0}]]",
+      );
+      assert!(!svg.contains("<tspan"), "{svg}");
+      for label in [">ab: <", ">cdef: <", ">1.0<", ">22.5<"] {
+        assert!(svg.contains(label), "missing {label}: {svg}");
+      }
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      // Each column keeps its right alignment.
+      assert_eq!(svg.matches("text-anchor=\"end\"").count(), 4, "{svg}");
+      // The values sit to the right of the labels, on the same lines.
+      let x_of = |label: &str| -> (f64, f64) {
+        let at = svg.find(label).unwrap();
+        let tag = &svg[svg[..at].rfind("<svg x=\"").unwrap()..at];
+        let x: f64 = tag[8..tag[8..].find('"').unwrap() + 8].parse().unwrap();
+        let text = &svg[svg[..at].rfind("<text").unwrap()..at];
+        let y_at = text.find(" y=\"").unwrap() + 4;
+        let y: f64 = text[y_at..y_at + text[y_at..].find('"').unwrap()]
+          .parse()
+          .unwrap();
+        (x, y)
+      };
+      let (label_col, label_y) = x_of(">cdef: <");
+      let (value_col, value_y) = x_of(">22.5<");
+      assert!(value_col > label_col, "{svg}");
+      assert!((label_y - value_y).abs() < 0.01, "{svg}");
+    }
+
+    #[test]
+    fn text_face_column_lines_take_text_line_pitch() {
+      // The lines of a `Column` in the text face of a `Text[…]` display
+      // are about 1.28 font sizes apart (12 pt labels stack 15.36 pt
+      // apart), not the monospace typeset face's padded box.
+      let svg = export_svg(
+        "Text[Row[{Column[{Style[\"a\", 12], Style[\"b\", 12]}], \
+         Column[{\"x\", \"y\"}]}]]",
+      );
+      let ys: Vec<f64> = svg
+        .split("<text ")
+        .skip(1)
+        .take(2)
+        .map(|t| {
+          let at = t.find(" y=\"").unwrap() + 4;
+          t[at..at + t[at..].find('"').unwrap()].parse().unwrap()
+        })
+        .collect();
+      assert!((ys[1] - ys[0] - 15.36).abs() < 0.2, "{ys:?}: {svg}");
+    }
+
+    #[test]
+    fn text_face_column_measures_glyph_widths() {
+      // A `Column` item in the text face is as wide as its glyphs, not an
+      // average sans-serif advance per character: a run of narrow letters
+      // makes a narrow column.
+      let narrow = export_svg(
+        "Text[Row[{Column[{\"illicit lilies\", \"i\"}], Column[{\"x\", \"y\"}]}]]",
+      );
+      let wide = export_svg(
+        "Text[Row[{Column[{\"MWMWMWMWMWMWMW\", \"i\"}], Column[{\"x\", \"y\"}]}]]",
+      );
+      let width = |svg: &str| -> f64 {
+        let at = svg.find("width=\"").unwrap() + 7;
+        svg[at..at + svg[at..].find('"').unwrap()].parse().unwrap()
+      };
+      assert!(width(&narrow) * 1.8 < width(&wide), "{narrow}\n{wide}");
+    }
+
+    #[test]
     fn text_grid_keeps_base_style_and_cell_styles() {
       // Regression: `Text[Grid[…, BaseStyle -> {20}]]` and a grid of
       // `Style[…, color]` cells were flattened to one line of 14pt black
