@@ -23490,6 +23490,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           );
           with_single_letter_italics(|| boxes_to_svg(&boxes))
         }
+        // A string carrying inline `\!\(\*…\)` box code typesets that code in
+        // `TraditionalForm`: its single-letter symbols are set in italics
+        // (`"\!\(\*SuperscriptBox[\(d\), \(2\)]\)"` shows an italic d²),
+        // while its plain text runs stay upright.
+        "TraditionalForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::String(s)
+              if inline_box_string_to_box_expr(s).is_some()) =>
+        {
+          let Expr::String(s) = &args[0] else {
+            unreachable!()
+          };
+          traditional_box_string_to_svg(s)
+        }
 
         // Presentation wrappers display their content only.
         "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
