@@ -28,9 +28,15 @@ pub struct LabelIcon {
 
 /// An iced `svg` handle for an SVG Woxi rendered. iced draws it with its own
 /// usvg options, whose default family is a serif face, so text that names no
-/// family first gets the sans-serif face Wolfram sets graphics text in.
+/// family first gets the sans-serif face Wolfram sets graphics text in. Text
+/// that names only the generic `sans-serif` family gets that same face (as
+/// in an exported SVG) rather than whichever system face iced picks for it.
 pub fn text_svg_handle(svg: &str) -> svg::Handle {
-  svg::Handle::from_memory(woxi::with_default_text_family(svg).into_bytes())
+  let svg = svg.replace(
+    "font-family=\"sans-serif\"",
+    "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+  );
+  svg::Handle::from_memory(woxi::with_default_text_family(&svg).into_bytes())
 }
 
 impl LabelIcon {
@@ -1440,18 +1446,11 @@ impl ManipulateState {
       .collect();
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
     // (a static text row has no variable, so it is filed under its label).
-    let control_visible: Vec<Option<String>> = spec
-      .controls
-      .iter()
-      .map(|raw| {
-        let key = raw.visibility_key();
-        spec
-          .control_visible
-          .iter()
-          .find(|(n, _)| *n == key)
-          .map(|(_, cond)| cond.clone())
-      })
-      .collect();
+    let control_visible: Vec<Option<String>> =
+      woxi::functions::graphics::control_visibility_conditions(
+        &spec.controls,
+        &spec.control_visible,
+      );
     let control_is_visible = vec![true; controls.len()];
     // The studio installs control values as globals (see
     // `with_scoped_globals`), not lexically like Wolfram, so a rule in the
@@ -2816,6 +2815,9 @@ impl ManipulateState {
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
     self.self_refreshing = false;
+    // Whether the body moved one of its own tracked controls to a new
+    // value (`T = 450` in a branch that pins the temperature).
+    let mut moved_tracked_control = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
         if slot.1 != value
@@ -2834,9 +2836,17 @@ impl ManipulateState {
       // `{{var, default}, None}` spec alongside the row that already
       // controls it) — sync both, so the widget's own selection never
       // drifts from the value the body actually bound.
+      let tracked = self
+        .tracked_symbols
+        .as_ref()
+        .is_none_or(|t| t.iter().any(|n| *n == name));
       for ctrl in &mut self.controls {
         if ctrl.name() == name {
+          let before = ctrl.current_code();
           ctrl.set_current_from_code(&value);
+          if tracked && ctrl.binds_variable() && ctrl.current_code() != before {
+            moved_tracked_control = true;
+          }
         }
       }
     }
@@ -2849,6 +2859,14 @@ impl ManipulateState {
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
+      self.reevaluate_inner(false);
+      return;
+    }
+    // The front end re-runs a body that changed a variable it tracks, so
+    // the frame shows the values the body settled on: everything computed
+    // before the body's own `T = 450` is computed again for 450. A single
+    // extra pass settles a body that pins a control to a fixed value.
+    if allow_retry && moved_tracked_control {
       self.reevaluate_inner(false);
       return;
     }
@@ -3602,6 +3620,39 @@ mod tests {
       );
     }
     assert_eq!(runs(), runs_before, "the body itself must not re-run");
+  }
+
+  /// A body that assigns one of its own tracked controls (a mode that pins
+  /// the slider to a fixed value) runs again, so what it computed before
+  /// the assignment is computed for the pinned value too — the front end
+  /// re-evaluates a `Dynamic` whose tracked variable changed.
+  #[test]
+  fn body_assigning_tracked_control_reruns_for_new_value() {
+    let code = r#"Manipulate[
+      Module[{shown = t}, If[mode == 2, t = 7]; 100 + shown],
+      {{mode, 1}, {1, 2}}, {{t, 3}, 0, 10, 1},
+      TrackedSymbols :> {mode, t}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let shown = |s: &ManipulateState| match s.check_render() {
+      Ok(r) => r.result,
+      Err(e) => panic!("render failed: {e}"),
+    };
+    assert_eq!(shown(&state), "103");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("mode control");
+    assert!(state.select_discrete(idx, "2"));
+    state.apply_tracking(idx);
+    if state.request_reeval(idx) {
+      state.run_scheduled_reeval();
+    }
+    let t = state.controls.iter().find(|c| c.name() == "t").unwrap();
+    assert_eq!(t.current_code(), "7");
+    assert_eq!(shown(&state), "107");
   }
 
   /// A Manipulate graphic's labels (`Text[Style["A", 20, "Label"], …]`)
@@ -4683,6 +4734,30 @@ mod tests {
     );
   }
 
+  /// A body `Pane[…; Grid[{{fraction}, {picture}}], {w, h}, Alignment ->
+  /// {Center}]` shows the table of pictures in the pane's whole `w` x `h`
+  /// box, not shrunk to the table's own size.
+  #[test]
+  fn grid_of_pictures_in_fixed_size_pane_keeps_its_box() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[If[a > b, a = b]; Grid[{
+        {Text@Style[a/b, 20, Bold]},
+        {Graphics[Rectangle[{0, 0}, {1, a/b}], ImageSize -> {100, 100}]}}],
+        {500, 200}, Alignment -> {Center}],
+      {{a, 1}, 0, 10, 1}, {{b, 4}, 1, 10, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    state.reevaluate();
+    let svg = state.current_svg().expect("the table is drawn").to_string();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg:.200}"
+    );
+  }
+
   /// A body that computes its table inside a scoping construct and only
   /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
   /// footer rows included — not just a nested framed table measured while
@@ -5330,6 +5405,28 @@ mod tests {
     assert_eq!((*x, *y), (-30.0, 50.0));
     assert!(*x_min <= -30.0 && *x_max >= 1.0);
     assert!(*y_min <= 0.0 && *y_max >= 50.0);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate draws
+  /// a plot with arrows in its `Epilog` next to a `Locator` control.
+  /// Regression check: the locator markers are added to the plot's own
+  /// `Epilog` instead of replacing it, so the arrows stay drawn. This is a
+  /// self-authored, construct-equivalent example.
+  #[test]
+  fn locator_markers_keep_a_plots_own_epilog() {
+    let code = r#"Manipulate[
+      Plot[Sin[k x], {x, 0, 3}, Epilog -> {Red, Arrowheads[0.1],
+        Table[Arrow[{{s, 0}, {s, 0.5}}], {s, 1, 2}]}],
+      {k, 1, 2},
+      {{p, {1, 0}}, Locator}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let svg = state.current_svg().expect("the plot is drawn");
+    // One filled head per arrow.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -6554,6 +6651,55 @@ mod tests {
     }
   }
 
+  /// A setter switching between two `PaneSelector` panes of placed sliders,
+  /// each pane headed by the same bold captions ("size", "speed"): only the
+  /// selected pane's captions are on screen. Regression: a caption repeated
+  /// across panes was filed under one key whose condition covered every
+  /// pane, so the hidden pane's captions stayed visible.
+  #[test]
+  fn repeated_captions_of_hidden_pane_are_hidden() {
+    for (side, shown) in [
+      (1, [true, true, false, false]),
+      (2, [false, false, true, true]),
+    ] {
+      let code = format!(
+        r#"Manipulate[
+          Text[{{a, b, c, d}}],
+          {{{{side, {side}, ""}}, {{1 -> "first", 2 -> "second"}}}},
+          PaneSelector[{{
+            1 -> Column[{{Style["size", Bold], Manipulate`Place[1], Style["speed", Bold], Manipulate`Place[2]}}],
+            2 -> Column[{{Style["size", Bold], Manipulate`Place[3], Style["speed", Bold], Manipulate`Place[4]}}]
+          }}, Dynamic[side]],
+          {{{{a, 1}}, 0, 5, ControlPlacement -> 1}},
+          {{{{b, 2}}, 0, 5, ControlPlacement -> 2}},
+          {{{{c, 3}}, 0, 5, ControlPlacement -> 3}},
+          {{{{d, 4}}, 0, 5, ControlPlacement -> 4}}
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let state = ManipulateState::from_expr(&expr)
+        .expect("the paned controls should build a ManipulateState");
+      assert_eq!(state.error, None, "body must evaluate cleanly");
+      let headings: Vec<bool> = state
+        .controls
+        .iter()
+        .zip(&state.control_is_visible)
+        .filter(|(c, _)| matches!(c, ControlState::Heading { .. }))
+        .map(|(_, v)| *v)
+        .collect();
+      assert_eq!(headings, shown, "caption visibility with side = {side}");
+      for (name, pane) in [("a", 1), ("b", 1), ("c", 2), ("d", 2)] {
+        let i = state
+          .controls
+          .iter()
+          .position(|c| c.name() == name)
+          .unwrap_or_else(|| panic!("`{name}` must be a control"));
+        assert_eq!(state.control_is_visible[i], pane == side, "`{name}`");
+      }
+    }
+  }
+
   /// A `Dynamic@Column` control area whose second row is a nested
   /// `If[mode == 1, Control[…], If[mode == 2, d = 2.5; Control[…],
   /// d = 1; Control[…]]]`: each mode brings its own slider, and the
@@ -7759,6 +7905,23 @@ mod tests {
     assert!(!dump.contains('^'), "{dump}");
     assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
+  /// A setter choice captioned with a plain typeset fraction
+  /// (`\!\(\*FractionBox[\(1\), \(x\)]\)`) reads `1/x` as written, not
+  /// the OutputForm of the reciprocal `x^(-1)`; a compound side is
+  /// parenthesized.
+  #[test]
+  fn setter_label_keeps_plain_reciprocal_fraction() {
+    let code = r#"Manipulate[r, {{r, p, "pick"}, {p -> "f(\!\(\*FractionBox[\(1\), \(x\)]\))", q -> "\!\(\*FractionBox[\(a + b\), \(c\)]\)", s -> "\!\(\*FractionBox[\(x\), \(y\)]\)"}, ControlType -> SetterBar}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(
+      dump.contains(r#"value_labels: ["f(1/x)", "(a + b)/c", "x/y"]"#),
+      "{dump}"
+    );
   }
 
   /// A caption can apply a compound head to an argument —
@@ -9677,6 +9840,61 @@ mod bare_tabview_tests {
     assert_eq!(state.error, None);
     assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
   }
+
+  /// A `TabView[panes, Dynamic[view]]` at the end of a `Module` body whose
+  /// `view` no Manipulate specification declares is driven only by the
+  /// front end's own tab strip. Studio has none, so it now gets a visible
+  /// selector of the tab labels starting on the first pane, and picking
+  /// the second tab switches the displayed pane.
+  /// Self-authored, construct-equivalent example.
+  #[test]
+  fn undeclared_tabview_selector_gets_a_tab_selector() {
+    let code = r#"Manipulate[
+      Module[{g}, g = k + 1;
+        TabView[{"curve" -> Plot[g x, {x, 0, 1}],
+                 "table" -> Grid[{{g, g^2}}]}, Dynamic[view],
+          LabelStyle -> {Bold}]],
+      {{k, 2, "k"}, 1, 5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "view")
+      .expect("a tab selector control");
+    match &state.controls[idx] {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2"]);
+        assert_eq!(value_labels, &["curve", "table"]);
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+    assert!(state.graphics_handle.is_some(), "first tab is the plot");
+    let render = |view: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 2; view = {view};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    assert_ne!(render(1), render(2), "the tabs must draw different panes");
+    if let ControlState::Discrete { current_index, .. } =
+      &mut state.controls[idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
+  }
 }
 
 /// The output `render` re-laid out for a content area `width` wide
@@ -9695,7 +9913,9 @@ pub fn flow_to_content_width(
     render.expr.as_ref()?,
     width,
   )?;
-  woxi::interpret_with_stdout(&woxi::syntax::expr_to_input_form(&flowed))
+  // Read back as source, so a `TraditionalForm` layout stays one rather
+  // than turning into the box text InputForm shows it as.
+  woxi::interpret_with_stdout(&woxi::syntax::expr_to_source_form(&flowed))
     .ok()
     .filter(|r| r.graphics.is_some())
 }
@@ -9853,6 +10073,74 @@ mod repeated_option_tests {
     assert!(svg.contains(", 79, 80}}<"), "{svg}");
     let lines = svg.matches("<text").count();
     assert!(lines > 2, "the nested list spans {lines} lines: {svg}");
+  }
+
+  /// Evaluate the body of the Manipulate `code` at its initial values and
+  /// re-flow it to its `ContentSize` width, checking that it was too wide
+  /// before. Returns the re-flowed SVG and the content width.
+  fn flowed_content_svg(code: &str) -> (String, f64) {
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let width = state.content_width.expect("a ContentSize width");
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the output is a picture"),
+    )
+    .0;
+    assert!(wide > width, "the unbroken output is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, width).expect("the output is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed output is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= width + 0.5, "the re-flowed output is {w} wide: {svg}");
+    (svg, width)
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (ideals of a matrix
+  /// and their Gröbner bases). Its output is a `Column` in
+  /// `TraditionalForm` whose last line is `Row[{list, "."}]` holding a
+  /// long list of polynomials. The FrontEnd breaks that row at the
+  /// `ContentSize` width; it used to run off in one very long line,
+  /// because neither the `TraditionalForm` wrapper nor a `Row` around the
+  /// list was looked through.
+  #[test]
+  fn content_size_width_breaks_a_traditional_form_row_holding_a_list() {
+    let (svg, _) = flowed_content_svg(
+      "Manipulate[\
+         Text[TraditionalForm[Column[{\"Basis\", \
+           Style[Row[{Table[x^k + y^k, {k, 1, n}], \".\"}], 10]}]]], \
+         {{n, 30}, 1, 40, 1}, ContentSize -> {300, 200}]",
+    );
+    // The heading is kept, the list spans several lines, and the period
+    // after the list still ends the last one.
+    assert!(svg.contains(">Basis<"), "{svg}");
+    let lines = svg.matches("<svg").count();
+    assert!(lines > 3, "the row spans too few lines: {svg}");
+    let last_brace = svg.rfind('}').expect("the list closes");
+    assert!(svg[last_brace..].contains('.'), "{svg}");
+    // Typeset in TraditionalForm: the highest power comes first.
+    assert!(svg.contains(">30<"), "{svg}");
+  }
+
+  /// A single polynomial too long for the content area breaks between its
+  /// terms (after a `+` or `-`), as the FrontEnd breaks a long sum,
+  /// rather than overflowing the area when there is no comma to break at.
+  #[test]
+  fn content_size_width_breaks_a_long_sum_between_terms() {
+    let (svg, width) = flowed_content_svg(
+      "Manipulate[\
+         Text[Column[{Style[{Sum[k x^k, {k, 1, n}]}, 10]}]], \
+         {{n, 40}, 1, 50, 1}, ContentSize -> {250, 200}]",
+    );
+    assert_eq!(width, 250.0);
+    // Each broken line ends in the operator before the next term.
+    assert!(svg.contains("+<") || svg.contains("+ <"), "{svg}");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
