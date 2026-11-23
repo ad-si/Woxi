@@ -55,6 +55,15 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = crate::functions::interval_ast::abs_interval(&args[0]) {
     return Ok(result);
   }
+  // An arbitrary-precision complex number keeps its precision.
+  if let Some(value) =
+    super::numerical::fold_complex_bigfloat(&Expr::FunctionCall {
+      name: "Abs".to_string(),
+      args: args.to_vec().into(),
+    })
+  {
+    return Ok(value);
+  }
   // Handle any expression containing Infinity → Infinity
   if contains_infinity(&args[0]) {
     return Ok(id_expr("Infinity"));
