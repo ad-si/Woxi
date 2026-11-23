@@ -5663,7 +5663,9 @@ reproduce wolframscript's primitive tree:
   last digits with the marker position in wolframscript, and the series
   colors from the third series on drift in the last digit. The colors
   are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
-  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
+  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. `ImageSize` and
+  `Background` are honored; `LabelStyle` and `TicksStyle` are ignored, so
+  the scale keeps its default gray 10-point labels. The renderer
   draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
   scale's tick marks have no length.
 
@@ -7232,6 +7234,18 @@ for the *same* value depending on how many evaluation passes each side saw.
 `[13C]`-style isotope atoms get a WL `UnpairedElectronCount` property Woxi
 omits, and the no-carbon Hill ordering diverges — WL writes ammonium as `NH4`
 (N before H) where Woxi keeps strict alphabetical order.
+
+### `MoleculePlot` options and `MoleculePlot3D`
+
+`MoleculePlot` honors `ImageSize`, `PlotTheme -> "AllAtom"` (every hydrogen
+drawn), `PlotTheme -> "Monochrome"` (labels in the bond color) and
+`AtomLabels` rules whose value is `"AtomIndex"`; the index is drawn as a
+small number beside the atom, while WL's exact placement and styling are
+unverified. `AtomLabels -> None` keeps the heteroatom symbols, and other
+themes (`"Aromatic"`, …) and frame options such as `ImagePadding` are
+accepted but change nothing. `MoleculePlot3D` builds its own ball-and-stick
+`Graphics3D` (CPK colors, covalent-radius bond lengths, a deterministic
+force-field conformer) instead of WL's conformer and primitive tree.
 
 ### `SpherePoints` and `ShiftRegisterSequence`
 
