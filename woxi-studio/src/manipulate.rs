@@ -1255,6 +1255,15 @@ pub struct ManipulateState {
   /// re-evaluation from `control_enabled` against the live bindings. Parallel
   /// to `controls`; a control indexes in with its position.
   pub control_is_enabled: Vec<bool>,
+  /// Per-control `Background -> color` code (InputForm), parallel to
+  /// `controls`; `None` keeps the default face. See
+  /// `woxi::functions::graphics::ManipulateSpec::control_backgrounds`.
+  control_background: Vec<Option<String>>,
+  /// The face color each control currently shows, recomputed on every
+  /// re-evaluation from `control_background` against the live bindings (a
+  /// `Setter` painted `Background -> Dynamic[If[ready, LightGreen, None]]`
+  /// turns plain once `ready` is cleared). Parallel to `controls`.
+  pub control_face: Vec<Option<(f64, f64, f64)>>,
   /// Per-control visibility condition (InputForm code), parallel to
   /// `controls`. A control that belongs to a `PaneSelector` pane is on
   /// screen only while the selector holds that pane's value. `None` means
@@ -1436,6 +1445,17 @@ impl ManipulateState {
       })
       .collect();
     let control_is_enabled = vec![true; controls.len()];
+    let control_background: Vec<Option<String>> = controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_backgrounds
+          .iter()
+          .find(|(n, _)| !c.name().is_empty() && n == c.name())
+          .map(|(_, code)| code.clone())
+      })
+      .collect();
+    let control_face = vec![None; controls.len()];
     let control_label_code: Vec<Option<String>> = spec
       .controls
       .iter()
@@ -1517,6 +1537,8 @@ impl ManipulateState {
       control_enabled,
       control_label_code,
       control_is_enabled,
+      control_background,
+      control_face,
       control_visible,
       list_elements: spec.list_elements,
       bookmarks: spec.bookmarks,
@@ -2598,6 +2620,7 @@ impl ManipulateState {
     // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
+    let control_background = self.control_background.clone();
     let control_visible = self.control_visible.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
@@ -2618,7 +2641,7 @@ impl ManipulateState {
       (render, raw_render),
       updated_bindings,
       display_trees,
-      enabled,
+      (enabled, faces),
       visible,
       resolved_bounds,
       resolved_values,
@@ -2732,6 +2755,14 @@ impl ManipulateState {
           None => true,
         })
         .collect();
+      // The face color of each control painted with a `Background`.
+      let faces: Vec<Option<(f64, f64, f64)>> = control_background
+        .iter()
+        .map(|c| {
+          c.as_deref()
+            .and_then(woxi::functions::graphics::manipulate_eval_background)
+        })
+        .collect();
       // Which `PaneSelector` pane is on screen, resolved the same way.
       let visible: Vec<bool> = control_visible
         .iter()
@@ -2791,7 +2822,7 @@ impl ManipulateState {
         (render, raw_render),
         updated_bindings,
         trees,
-        enabled,
+        (enabled, faces),
         visible,
         resolved,
         values,
@@ -2852,6 +2883,7 @@ impl ManipulateState {
     }
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
+    self.control_face = faces;
     self.control_is_visible = visible;
     self.apply_dynamic_bounds(&resolved_bounds);
     self.apply_dynamic_labels(resolved_labels);
@@ -6364,6 +6396,72 @@ mod tests {
       "the builder call must stay a live display, got {:?}",
       state.displays
     );
+  }
+
+  /// A `Setter` control styled `Background -> Dynamic[If[flag, color,
+  /// None]]` paints its face only while `flag` holds, and a plain
+  /// `Background -> color` always paints it. Here the body clears `ready`
+  /// once `go` is pressed, so the green face must switch off (and the
+  /// control disable itself) while the static pink one stays. Self-authored
+  /// and construct-equivalent to a Demonstration whose "run"/"reset" setters
+  /// light up only while they can be pressed.
+  #[test]
+  fn setter_background_follows_its_dynamic_condition() {
+    let code = r#"Manipulate[
+      If[go, ready = False; go = False; runs++];
+      If[again, ready = True; again = False];
+      runs,
+      {{runs, 0}, ControlType -> None},
+      {{ready, True}, ControlType -> None},
+      {{go, False, ""}, {True -> "run"}, ControlType -> Setter,
+        Enabled -> Dynamic[ready],
+        Background -> Dynamic[If[ready, LightGreen, None]]},
+      {{again, False, ""}, {True -> "reset"}, ControlType -> Setter,
+        Background -> Pink},
+      {{n, 1, "n"}, {1, 2, 3}, Background -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = |name: &str| {
+      state
+        .controls
+        .iter()
+        .position(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("no {name} control: {:?}", state.controls))
+    };
+    let (go, again, n) = (idx("go"), idx("again"), idx("n"));
+    let close = |got: Option<(f64, f64, f64)>, want: (f64, f64, f64)| {
+      got.is_some_and(|(r, g, b)| {
+        (r - want.0).abs() < 1e-9
+          && (g - want.1).abs() < 1e-9
+          && (b - want.2).abs() < 1e-9
+      })
+    };
+    // LightGreen is RGBColor[0.88, 1, 0.88]; Pink is RGBColor[1, 0.5, 0.5].
+    assert!(
+      close(state.control_face[go], (0.88, 1.0, 0.88)),
+      "the enabled setter must show its green face, got {:?}",
+      state.control_face
+    );
+    assert!(close(state.control_face[again], (1.0, 0.5, 0.5)));
+    assert_eq!(state.control_face[n], None, "Background -> None is plain");
+
+    // Press "run": the body clears `ready`, so the face goes plain.
+    assert!(state.select_discrete_index(go, 0));
+    state.reevaluate();
+    assert_eq!(
+      state.control_face[go], None,
+      "the face must switch off once its condition yields None"
+    );
+    assert!(!state.control_is_enabled[go]);
+    assert!(close(state.control_face[again], (1.0, 0.5, 0.5)));
+
+    // Press "reset": `ready` comes back and so does the green face.
+    assert!(state.select_discrete_index(again, 0));
+    state.reevaluate();
+    assert!(close(state.control_face[go], (0.88, 1.0, 0.88)));
+    assert!(state.control_is_enabled[go]);
   }
 
   #[test]

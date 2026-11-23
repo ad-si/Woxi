@@ -45772,6 +45772,13 @@ pub struct ManipulateSpec {
   /// against the live bindings after every change (see
   /// [`manipulate_eval_label_code`]).
   pub dynamic_labels: Vec<(String, String)>,
+  /// Per-control `Background -> color` faces, as `(control name, color
+  /// code)`. A `Setter` control styled `Background -> Dynamic[If[ready,
+  /// LightGreen, None]]` lights up only while it can be pressed, so the
+  /// frontend re-evaluates the code against the live bindings after every
+  /// change (see [`manipulate_eval_background`]). A static color is kept
+  /// here too; controls without the option do not appear.
+  pub control_backgrounds: Vec<(String, String)>,
   /// Per-control `ControlPlacement -> Top | Bottom | Left | Right`, as
   /// `(control name, side)`: `{{n, 3, "sides"}, {3, 4, 5}, ControlPlacement
   /// -> Left}` moves just that control beside the output while the rest of
@@ -46784,6 +46791,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut body_expr_kept: Option<Expr> = None;
   let mut dynamic_labels: Vec<(String, String)> =
     inner.as_ref().map_or_default(|i| i.dynamic_labels.clone());
+  let mut control_backgrounds: Vec<(String, String)> = inner
+    .as_ref()
+    .map_or_default(|i| i.control_backgrounds.clone());
   let mut control_placements: Vec<(String, ControlPlacement)> = inner
     .as_ref()
     .map_or_default(|i| i.control_placements.clone());
@@ -47759,6 +47769,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = dynamic_label_code(&spec) {
           dynamic_labels.push((c.name().to_string(), code));
         }
+        if let Expr::List(items) = &spec
+          && !c.name().is_empty()
+          && let Some(code) = control_background_code(items)
+        {
+          control_backgrounds.push((c.name().to_string(), code));
+        }
         if let Some(side) = per_control_placement(&spec) {
           control_placements.push((c.name().to_string(), side));
         }
@@ -48410,7 +48426,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         rewrite(code);
       }
     }
-    for (_, code) in dynamic_values.iter_mut().chain(dynamic_labels.iter_mut())
+    for (_, code) in dynamic_values
+      .iter_mut()
+      .chain(dynamic_labels.iter_mut())
+      .chain(control_backgrounds.iter_mut())
     {
       rewrite(code);
     }
@@ -48486,6 +48505,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds,
     dynamic_values,
     dynamic_labels,
+    control_backgrounds,
     control_placements,
     row_joined_controls,
     dynamic_locator_defaults,
@@ -53928,6 +53948,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -54012,6 +54033,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -54110,6 +54132,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -54376,6 +54399,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -54442,6 +54466,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -54518,6 +54543,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
@@ -61921,14 +61947,6 @@ fn setterbar_node(
 /// extraction the standalone `ControlType -> PopupMenu` control uses, so
 /// the two never drift apart. Returns `None` when the arguments don't have
 /// that shape (the caller falls back to a static rendering).
-/// Extract a trailing `Enabled -> cond` / `Enabled :> cond` option's live
-/// condition from a control or display spec's trailing items. `Dynamic[expr]`
-/// unwraps to its live condition `expr`; a plain value is used as-is. The
-/// default `Enabled -> True` needs no gating and yields `None`, the same as
-/// no `Enabled` option at all — both leave the control unconditionally
-/// enabled. Shared by top-level control specs (`parse_manipulate_control`),
-/// an embedded `PopupMenu[…, Enabled -> …]` (`popup_node`), and one such
-/// `PopupMenu` promoted out of a Manipulate body (`collect_body_popup_menus`).
 /// The face color of a `Background -> color` option among a `Button`'s
 /// (or `ButtonBar`'s) options, as an `(r, g, b)` triple in `0.0..=1.0`.
 /// The color is evaluated first, so a computed one (`Lighter[Red]`) works
@@ -61953,6 +61971,58 @@ fn extract_button_background(items: &[Expr]) -> Option<(f64, f64, f64)> {
   })
 }
 
+/// The code of a control spec's `Background -> color` option, for
+/// [`ManipulateSpec::control_backgrounds`]. `Dynamic[expr]` unwraps to the
+/// live expression (re-evaluated by the frontend on every change, so a
+/// `Setter` can light up only while it is enabled); a plain color is kept
+/// as-is. `None` and `Automatic` ask for the default look and yield `None`.
+fn control_background_code(items: &[Expr]) -> Option<String> {
+  items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Background") =>
+    {
+      let code = match replacement.as_ref() {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic" && args.len() == 1 =>
+        {
+          &args[0]
+        }
+        other => other,
+      };
+      if matches!(code, Expr::Identifier(s) if s == "None" || s == "Automatic")
+      {
+        None
+      } else {
+        Some(crate::syntax::expr_to_source_form(code))
+      }
+    }
+    _ => None,
+  })
+}
+
+/// Evaluate a [`ManipulateSpec::control_backgrounds`] entry against the
+/// current bindings: the face color as an `(r, g, b)` triple in
+/// `0.0..=1.0`, or `None` when it evaluates to anything that is not a color
+/// (`None` switches the face back to the default look).
+pub fn manipulate_eval_background(code: &str) -> Option<(f64, f64, f64)> {
+  let color = crate::interpret_to_expr(code).ok()?;
+  parse_color(&color).map(|c| (c.r, c.g, c.b))
+}
+
+/// Extract a trailing `Enabled -> cond` / `Enabled :> cond` option's live
+/// condition from a control or display spec's trailing items. `Dynamic[expr]`
+/// unwraps to its live condition `expr`; a plain value is used as-is. The
+/// default `Enabled -> True` needs no gating and yields `None`, the same as
+/// no `Enabled` option at all — both leave the control unconditionally
+/// enabled. Shared by top-level control specs (`parse_manipulate_control`),
+/// an embedded `PopupMenu[…, Enabled -> …]` (`popup_node`), and one such
+/// `PopupMenu` promoted out of a Manipulate body (`collect_body_popup_menus`).
 fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
   items.iter().find_map(|it| match it {
     Expr::Rule {

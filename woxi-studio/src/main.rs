@@ -5115,6 +5115,10 @@ fn render_manipulate_widget<'a>(
           ) && !*popup)
         {
           let is_vertical = *is_vertical;
+          // A `Background -> color` option paints the faces the way it
+          // paints a `Button`'s (a selected segment keeps the accent so the
+          // current choice still reads as selected).
+          let face = state.control_face.get(ctrl_idx).copied().flatten();
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = !has_overflow && i == *current_index;
@@ -5138,8 +5142,16 @@ fn render_manipulate_widget<'a>(
                 },
               };
             let mut btn = button(btn_content).padding([3, 10]).style(
-              move |theme: &Theme, status| {
-                setter_button_style(
+              move |theme: &Theme, status| match face {
+                Some(rgb) if !is_selected => colored_button_style(
+                  rgb,
+                  if enabled {
+                    status
+                  } else {
+                    button::Status::Active
+                  },
+                ),
+                _ => setter_button_style(
                   theme,
                   status,
                   is_selected,
@@ -5147,7 +5159,7 @@ fn render_manipulate_widget<'a>(
                   count,
                   enabled,
                   is_vertical,
-                )
+                ),
               },
             );
             if enabled {
