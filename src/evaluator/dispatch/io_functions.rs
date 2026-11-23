@@ -8537,18 +8537,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           {
             Some(vec![(label, position)])
           }
+          // A single `{side, align}` position (`{Top, Left}`).
+          (label, Some(position @ Expr::List(_))) => {
+            Some(vec![(label, position)])
+          }
           _ => None,
         };
       if let Some(side_labels) = side_labels {
-        let mut sides: [Vec<String>; 4] = Default::default();
+        let mut sides: [Vec<(String, f64)>; 4] = Default::default();
         for (label, position) in side_labels {
-          let side = match position {
-            Expr::Identifier(p) if p == "Top" => 0,
-            Expr::Identifier(p) if p == "Left" => 1,
-            Expr::Identifier(p) if p == "Right" => 2,
-            _ => 3,
-          };
-          sides[side].push(expr_to_svg(&unquoted_display_string(label)));
+          let (side, align) =
+            crate::functions::graphics::labeled_position(position);
+          sides[side]
+            .push((expr_to_svg(&unquoted_display_string(label)), align));
         }
         return crate::functions::graphics::labeled_sides_svg(
           &content, &sides, rotate,

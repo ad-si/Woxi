@@ -4252,36 +4252,19 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         }
         _ => return expr,
       };
-      let placements: Vec<(syntax::Expr, String)> =
+      let bottom_position = syntax::Expr::Identifier("Bottom".to_string());
+      let placements: Vec<(syntax::Expr, &syntax::Expr)> =
         match (&args[1], args.get(2)) {
           (syntax::Expr::List(labels), Some(syntax::Expr::List(positions)))
             if labels.len() == positions.len() =>
           {
-            labels
-              .iter()
-              .cloned()
-              .zip(positions.iter().map(|p| match p {
-                syntax::Expr::Identifier(s) => s.clone(),
-                _ => "Bottom".to_string(),
-              }))
-              .collect()
+            labels.iter().cloned().zip(positions.iter()).collect()
           }
           _ => {
-            let position = match args.get(2) {
-              Some(syntax::Expr::Identifier(p)) => p.clone(),
-              Some(syntax::Expr::List(ps)) => match ps.first() {
-                Some(syntax::Expr::Identifier(p)) => p.clone(),
-                _ => "Bottom".to_string(),
-              },
-              _ => "Bottom".to_string(),
-            };
-            vec![(args[1].clone(), position)]
+            vec![(args[1].clone(), args.get(2).unwrap_or(&bottom_position))]
           }
         };
-      let mut top = Vec::new();
-      let mut bottom = Vec::new();
-      let mut left = Vec::new();
-      let mut right = Vec::new();
+      let mut sides: [Vec<(String, f64)>; 4] = Default::default();
       for (label, position) in &placements {
         let label_grid = syntax::Expr::FunctionCall {
           name: "Grid".to_string(),
@@ -4298,12 +4281,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           }
           _ => return expr,
         };
-        match position.as_str() {
-          "Top" => top.push(label_svg.clone()),
-          "Left" => left.push(label_svg.clone()),
-          "Right" => right.push(label_svg.clone()),
-          _ => bottom.push(label_svg.clone()),
-        }
+        let (side, align) = functions::graphics::labeled_position(position);
+        sides[side].push((label_svg.clone(), align));
       }
       // `RotateLabel -> True` turns the left and right captions.
       let rotate = args[2..].iter().any(|opt| {
@@ -4313,7 +4292,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       });
       match functions::graphics::labeled_sides_svg(
         &content_svg,
-        &[top, left, right, bottom],
+        &sides,
         rotate,
       ) {
         Some(svg) => graphics_result(svg),

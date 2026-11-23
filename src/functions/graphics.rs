@@ -36239,16 +36239,43 @@ pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
   combine_svgs_grid(rows, &default_layout_options())
 }
 
+/// A `Labeled` position — a side (`Top`, `Left`, …) or a `{side, align}`
+/// pair such as `{Top, Left}` — as the index of its side in the order
+/// [`labeled_sides_svg`] takes them (top, left, right, bottom) and the
+/// label's alignment along that side: 0 at the left (or top) end of the
+/// content, 1 at the right (or bottom) end, 0.5 centered (the default).
+/// Anything unrecognized is the default bottom, centered.
+pub fn labeled_position(position: &Expr) -> (usize, f64) {
+  let (side, align) = match position {
+    Expr::List(items) => (items.first(), items.get(1)),
+    other => (Some(other), None),
+  };
+  let side = match side {
+    Some(Expr::Identifier(p)) if p == "Top" => 0,
+    Some(Expr::Identifier(p)) if p == "Left" => 1,
+    Some(Expr::Identifier(p)) if p == "Right" => 2,
+    _ => 3,
+  };
+  let align = match align {
+    Some(Expr::Identifier(a)) if a == "Left" || a == "Top" => 0.0,
+    Some(Expr::Identifier(a)) if a == "Right" || a == "Bottom" => 1.0,
+    _ => 0.5,
+  };
+  (side, align)
+}
+
 /// `Labeled[content, labels, sides]` laid out as the front end sets it: the
 /// content in the middle, each side's labels (`sides` = top, left, right,
-/// bottom, already rendered) beside it and centered on it. Labels on the
+/// bottom, already rendered, each with its alignment from
+/// [`labeled_position`]) beside it, placed along the side by that
+/// alignment (0.5 centers it on the content). Labels on the
 /// same side stack outward from the content. With `rotate`
 /// (`RotateLabel -> True`) a left label turns to read upward and a right
 /// one downward. An empty `content` leaves its spot blank; `None` when
 /// nothing is drawn at all.
 pub fn labeled_sides_svg(
   content: &str,
-  sides: &[Vec<String>; 4],
+  sides: &[Vec<(String, f64)>; 4],
   rotate: bool,
 ) -> Option<String> {
   // The front end's gaps between a label and its content, in pixels.
@@ -36261,6 +36288,8 @@ pub fn labeled_sides_svg(
     h: f64,
     /// Quarter turn: -1 counterclockwise, 1 clockwise, 0 upright.
     turn: i8,
+    /// Where along its side the label sits (see [`labeled_position`]).
+    align: f64,
   }
   impl Item {
     /// The width and height the item takes up once turned.
@@ -36296,19 +36325,20 @@ pub fn labeled_sides_svg(
       }
     }
   }
-  let parse = |svg: &str, turn: i8| {
+  let parse = |svg: &str, turn: i8, align: f64| {
     parse_svg_dimensions(svg).map(|p| Item {
       view_box: p.view_box,
       inner: p.inner_content,
       w: p.nat_w,
       h: p.nat_h,
       turn,
+      align,
     })
   };
   let content = if content.is_empty() {
     None
   } else {
-    Some(parse(content, 0)?)
+    Some(parse(content, 0, 0.5)?)
   };
   let side_items: Vec<Vec<Item>> = sides
     .iter()
@@ -36319,7 +36349,10 @@ pub fn labeled_sides_svg(
         (true, 2) => 1,
         _ => 0,
       };
-      svgs.iter().filter_map(|svg| parse(svg, turn)).collect()
+      svgs
+        .iter()
+        .filter_map(|(svg, align)| parse(svg, turn, *align))
+        .collect()
     })
     .collect();
   // A side's extent: top and bottom labels stack vertically, left and
@@ -36368,7 +36401,7 @@ pub fn labeled_sides_svg(
   for item in &side_items[0] {
     let (iw, ih) = item.placed();
     y -= ih;
-    item.write(&mut out, center_x + (center_w - iw) / 2.0, y);
+    item.write(&mut out, center_x + (center_w - iw) * item.align, y);
     y -= V_GAP;
   }
   if let Some(item) = &content {
@@ -36381,7 +36414,7 @@ pub fn labeled_sides_svg(
   let mut y = bottom_y;
   for item in &side_items[3] {
     let (iw, ih) = item.placed();
-    item.write(&mut out, center_x + (center_w - iw) / 2.0, y);
+    item.write(&mut out, center_x + (center_w - iw) * item.align, y);
     y += ih + V_GAP;
   }
   // Left labels line up leftward from the content, right ones rightward.
@@ -36389,13 +36422,13 @@ pub fn labeled_sides_svg(
   for item in &side_items[1] {
     let (iw, ih) = item.placed();
     x -= iw;
-    item.write(&mut out, x, middle_y + (middle_h - ih) / 2.0);
+    item.write(&mut out, x, middle_y + (middle_h - ih) * item.align);
     x -= H_GAP;
   }
   let mut x = right_x;
   for item in &side_items[2] {
     let (iw, ih) = item.placed();
-    item.write(&mut out, x, middle_y + (middle_h - ih) / 2.0);
+    item.write(&mut out, x, middle_y + (middle_h - ih) * item.align);
     x += iw + H_GAP;
   }
   out.push_str("</svg>");
