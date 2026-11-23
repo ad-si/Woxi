@@ -71684,3 +71684,52 @@ mod held_graphics_display {
     );
   }
 }
+
+// A reversed iterator range samples like the increasing one. Sampling
+// `{u, 2 Pi, 0.9}` downward used to flip the winding of every facet, so a
+// two-sided `FaceForm[front, back]` painted the outside of a cylinder with
+// the front color where Wolfram shows the back color.
+mod reversed_3d_plot_ranges {
+  use super::*;
+
+  #[test]
+  fn parametric_surface_samples_reversed_range_increasingly() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ParametricPlot3D[{Cos[u], 2 v, Sin[u]}, {u, 2 Pi, 0.9}, {v, 1, 0}, \
+         PlotStyle -> FaceForm[Black, Blue]] === \
+         ParametricPlot3D[{Cos[u], 2 v, Sin[u]}, {u, 0.9, 2 Pi}, {v, 0, 1}, \
+         PlotStyle -> FaceForm[Black, Blue]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn parametric_curve_samples_reversed_range_increasingly() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 3, -1}] === \
+         ParametricPlot3D[{Cos[t], Sin[t], t}, {t, -1, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn plot3d_samples_reversed_ranges_increasingly() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Plot3D[x^2 - y, {x, 2, -1}, {y, 1, 0}, PlotRange -> {{0, 1}, All, All}] === \
+         Plot3D[x^2 - y, {x, -1, 2}, {y, 0, 1}, PlotRange -> {{0, 1}, All, All}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
