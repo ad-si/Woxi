@@ -31483,17 +31483,16 @@ fn decimal_split_width(cell: &Expr, ch: char) -> Option<(f64, f64)> {
 }
 
 /// Parse a divider entry: a color expression means "draw with this color",
-/// False/None means "don't draw".
+/// False/None means "don't draw". An entry that names no color (`True`,
+/// `Thick`, `Dashed`, …) is drawn in the grid's default stroke, which
+/// `FrameStyle` sets.
 fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
   let color = match expr {
     Expr::Identifier(n) if n == "False" || n == "None" => return None,
     Expr::FunctionCall { name, .. } if name == "False" || name == "None" => {
       return None;
     }
-    Expr::Identifier(n) if n == "True" || n == "All" => {
-      // True means draw with default color — use a sentinel black
-      Color::new(0.0, 0.0, 0.0)
-    }
+    Expr::Identifier(n) if n == "True" || n == "All" => None,
     // A line-style directive (`Thin`, `Thick`, `Dashed`, …) says how to draw
     // the divider, not whether to, so it rules in the default color.
     Expr::FunctionCall { name, .. }
@@ -31502,7 +31501,7 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
         "Thickness" | "AbsoluteThickness" | "Dashing" | "AbsoluteDashing"
       ) =>
     {
-      Color::new(0.0, 0.0, 0.0)
+      None
     }
     Expr::Identifier(n)
       if matches!(
@@ -31510,16 +31509,16 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
         "Thick" | "Thin" | "Dashed" | "Dotted" | "DotDashed"
       ) =>
     {
-      Color::new(0.0, 0.0, 0.0)
+      None
     }
     // `Directive[Red, Thick]` or `{Red, Thick}`: the color if there is one.
     Expr::FunctionCall { name, args } if name == "Directive" => {
-      first_divider_color(args)
+      args.iter().find_map(parse_color)
     }
     Expr::List(items) if !items.is_empty() => {
-      parse_color(expr).unwrap_or_else(|| first_divider_color(items))
+      parse_color(expr).or_else(|| items.iter().find_map(parse_color))
     }
-    _ => parse_color(expr)?,
+    _ => Some(parse_color(expr)?),
   };
   // The thickness and dashing the style asks for.
   let style = crate::functions::plot::parse_style_directives(expr);
@@ -31535,18 +31534,11 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
   Some(DividerLine { color, width, dash })
 }
 
-/// The first color among style directives, black when none names one.
-fn first_divider_color(items: &[Expr]) -> Color {
-  items
-    .iter()
-    .find_map(parse_color)
-    .unwrap_or_else(|| Color::new(0.0, 0.0, 0.0))
-}
-
 /// How one `Grid` divider line is drawn.
 #[derive(Clone, Copy, Debug)]
 struct DividerLine {
-  color: Color,
+  /// `None` draws in the grid's default stroke (`FrameStyle`, else black).
+  color: Option<Color>,
   /// Stroke width in points.
   width: f64,
   /// `(on, off)` dash lengths, in `dash_len` units; `None` is solid.
@@ -33968,7 +33960,13 @@ fn grid_svg_styled_internal_reporting(
       let plain = " stroke-width=\"1\"".to_string();
       let (should_draw, stroke, line_attrs) = if has_row_div {
         if let Some(Some(line)) = row_dividers.get(i) {
-          (true, line.color.to_svg_rgb(), line.stroke_attrs(grid_width))
+          (
+            true,
+            line
+              .color
+              .map_or_else(|| default_stroke.clone(), Color::to_svg_rgb),
+            line.stroke_attrs(grid_width),
+          )
         } else if is_border && draw_outer_h {
           (true, default_stroke.clone(), plain)
         } else {
@@ -34027,7 +34025,13 @@ fn grid_svg_styled_internal_reporting(
       let plain = " stroke-width=\"1\"".to_string();
       let (should_draw, stroke, line_attrs) = if has_col_div {
         if let Some(Some(line)) = col_dividers.get(j) {
-          (true, line.color.to_svg_rgb(), line.stroke_attrs(grid_width))
+          (
+            true,
+            line
+              .color
+              .map_or_else(|| default_stroke.clone(), Color::to_svg_rgb),
+            line.stroke_attrs(grid_width),
+          )
         } else if is_border && draw_outer_v {
           (true, default_stroke.clone(), plain)
         } else {

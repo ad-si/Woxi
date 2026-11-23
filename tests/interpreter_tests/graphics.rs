@@ -39001,6 +39001,24 @@ mod grid_frame_and_background {
     assert_eq!(horizontal, 1, "middle only: {svg}");
   }
 
+  /// A position spec that names no color (`2 -> True`, `3 -> Thick`) draws
+  /// its line in the `FrameStyle` color, like the frame itself; an explicit
+  /// color still wins. Regression: such lines were always drawn black.
+  #[test]
+  fn dividers_without_color_follow_frame_style() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b", "c"}, {"d", "e", "f"}}, Dividers -> {{2 -> True, 3 -> Thick}, {2 -> Red}}, Frame -> True, FrameStyle -> Purple]"#,
+    );
+    let purple = svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && l.contains("rgb(128,0,128)"))
+      .count();
+    // Four frame edges plus the two vertical dividers.
+    assert_eq!(purple, 6, "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+    assert!(!svg.contains("rgb(0,0,0)"), "{svg}");
+  }
+
   /// `Directive[color, style]` rules the line in that color.
   #[test]
   fn dividers_directive_keeps_its_color() {
