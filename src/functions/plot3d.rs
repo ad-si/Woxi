@@ -8298,6 +8298,16 @@ fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
         vec![val]
       }
     }
+    // With a single object, a list made only of nested lists is still one
+    // style list per object (`PlotStyle -> {{Thick, Red}, {Thick, Blue}}`),
+    // so the lone object takes the first one rather than merging them all
+    // (which would let the last entry's color win).
+    Expr::List(list_items)
+      if !list_items.is_empty()
+        && list_items.iter().all(|item| matches!(item, Expr::List(_))) =>
+    {
+      vec![list_items[0].clone()]
+    }
     _ => vec![val],
   }
 }
@@ -24623,6 +24633,11 @@ fn parametric_plot3d_curve_ast(
       0.5
     }
   };
+  // `ColorFunction -> n`: indexed scheme n as a gradient, by height like a
+  // named gradient.
+  let indexed_colors = color_function
+    .as_ref()
+    .and_then(crate::functions::field_plot::indexed_color_function_rgb);
   let segment_color = |p: [f64; 3], t: f64| -> Option<Expr> {
     let cf = color_function.as_ref()?;
     let t_scaled = if color_scaling && t_max > t_min {
@@ -24635,6 +24650,13 @@ fn parametric_plot3d_curve_ast(
       scale(p[1], color_bounds[1]),
       scale(p[2], color_bounds[2]),
     );
+    if let Some(colors) = &indexed_colors {
+      let (r, g, b) = crate::functions::chart::gradient_color_at(colors, z);
+      return Some(call(
+        "RGBColor",
+        vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+      ));
+    }
     if let Some(name) =
       crate::functions::field_plot::color_function_scheme_name(cf)
     {
@@ -25323,6 +25345,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ColorFunctionScaling` (the default) x, y and z arrive rescaled to 0..1
   // over the plotted region and u, v over their parameter intervals.
   let mut surface_color_fn: Option<Expr> = None;
+  // `ColorFunction -> "name"` (or `ColorData["name"]`): the named gradient
+  // that colors the surface by its scaled height, as `Plot3D`'s does.
+  let mut surface_color_scheme: Option<String> = None;
   let mut color_scaling = true;
   // `TextureCoordinateFunction -> f`: the point `f[x, y, z, u, v]` of a
   // `Texture` image painted at each surface point (by default the
@@ -25361,7 +25386,26 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
-          surface_color_fn = Some(replacement.as_ref().clone());
+          // The value may still be a computation (`Which[…]` choosing a
+          // gradient), so it is evaluated before it is classified.
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          surface_color_scheme = None;
+          surface_color_fn = if is_function_value(&value) {
+            Some(value)
+          } else if let Some(f) = height_color_head(&value) {
+            Some(f)
+          } else if let Some(scheme) =
+            crate::functions::field_plot::color_function_scheme_name(&value)
+          {
+            surface_color_scheme = Some(scheme);
+            None
+          } else if matches!(&value, Expr::Identifier(n) if n == "None" || n == "Automatic")
+          {
+            None
+          } else {
+            Some(value)
+          };
         }
         Expr::Identifier(name) if name == "ColorFunctionScaling" => {
           color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
@@ -25708,7 +25752,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|i| {
           (0..grid_v)
             .map(|j| {
-              let cf = surface_color_fn.as_ref()?;
+              if surface_color_fn.is_none() && surface_color_scheme.is_none() {
+                return None;
+              }
               let pts: Vec<(f64, f64, f64)> =
                 [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
                   .iter()
@@ -25721,6 +25767,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let x = pts.iter().map(|p| p.0).sum::<f64>() / n;
               let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
               let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
+              if let Some(scheme) = &surface_color_scheme {
+                let t = if (gz_max - gz_min).abs() < 1e-15 {
+                  0.5
+                } else {
+                  (z - gz_min) / (gz_max - gz_min)
+                };
+                return Some(
+                  crate::functions::field_plot::apply_named_color_function(
+                    scheme, t,
+                  ),
+                );
+              }
+              let cf = surface_color_fn.as_ref()?;
               let u = u_min + (i as f64 + 0.5) * u_step;
               let v = v_ranges[i].0 + (j as f64 + 0.5) * v_step_at(i);
               let args = if color_scaling {
@@ -25874,7 +25933,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         content.extend(surface_style_directives(
           surface_idx,
           plot_style_for_surface(&plot_styles, surface_idx),
-          surface_color_fn.is_some(),
+          surface_color_fn.is_some() || surface_color_scheme.is_some(),
           &scene,
         ));
         for i in 0..grid_u {

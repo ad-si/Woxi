@@ -5482,6 +5482,77 @@ mod graphics {
       }
     }
 
+    /// Regression: a `Row` label's own `Frame -> True`, `FrameStyle` and
+    /// `Background` options were dropped, so the label was drawn as bare
+    /// text with neither its border nor its panel.
+    #[test]
+    fn a_row_label_draws_its_own_frame_and_background() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"x \", Style[\"h\", Italic], \" = 1\"}, \
+         Frame -> True, FrameStyle -> Red, Background -> Yellow], {0, 0}]}]",
+      );
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(
+        drawn.contains("fill=\"rgb(255,255,0)\" stroke=\"rgb(255,0,0)\""),
+        "the Row's options style its box: {drawn}"
+      );
+      assert!(drawn.contains("font-style=\"italic\">h<"), "{drawn}");
+      assert!(!drawn.contains("Frame"), "{drawn}");
+
+      // A `Background` without a frame paints only the panel.
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"a\", \"b\"}, Background -> Yellow], {0, 0}]}]",
+      );
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(drawn.contains("fill=\"rgb(255,255,0)\""), "{drawn}");
+      assert!(!drawn.contains("stroke=\"rgb(0,0,0)\""), "{drawn}");
+    }
+
+    /// Regression: an unframed multi-column `Grid` label ran each row
+    /// together as one line, so its columns did not line up; each cell is
+    /// now set in its own column, `Alignment -> Left` sets the cells flush
+    /// left and `Spacings -> {w, h}` sets the column gap to `w` ems.
+    #[test]
+    fn an_unframed_grid_label_lines_up_its_columns() {
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{\"a\", \"b\"}, {\"cccccccc\", \"d\"}}, \
+         Alignment -> Left, Spacings -> {2, 0}], {0, 0}]}]",
+      );
+      let x_of = |cell: &str| -> f64 {
+        let tag = svg
+          .split("<text ")
+          .find(|t| t.contains(&format!(">{cell}</text>")))
+          .unwrap_or_else(|| panic!("no cell {cell}: {svg}"));
+        let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+        x.parse().unwrap()
+      };
+      assert!(!svg.contains("a  b"), "rows must not run together: {svg}");
+      // Flush-left columns: both rows start each column at the same x.
+      assert_eq!(x_of("a"), x_of("cccccccc"), "{svg}");
+      assert_eq!(x_of("b"), x_of("d"), "{svg}");
+      assert!(x_of("b") > x_of("cccccccc"), "{svg}");
+      // No border is drawn around an unframed grid.
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      assert!(!drawn.contains("stroke=\"rgb(0,0,0)\""), "{drawn}");
+
+      // A wider `Spacings` widens the gap between the columns.
+      let narrow = export_svg(
+        "Graphics[{Text[Grid[{{\"a\", \"b\"}, {\"cccccccc\", \"d\"}}, \
+         Alignment -> Left, Spacings -> {0.5, 0}], {0, 0}]}]",
+      );
+      let gap = |s: &str| -> f64 {
+        let xs: Vec<f64> = s
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| {
+            t.split("x=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .collect();
+        xs[1] - xs[0]
+      };
+      assert!(gap(&svg) > gap(&narrow), "{svg}\n{narrow}");
+    }
+
     /// Regression: a styled rational was printed as the flat text `31/10`
     /// instead of a stacked fraction set in the styled font.
     #[test]
@@ -7852,6 +7923,53 @@ mod plot3d {
     assert!(white * 10 < fills.len(), "{white} of {} white", fills.len());
   }
 
+  /// A named gradient `ColorFunction` colors a `ParametricPlot3D` surface by
+  /// its scaled height, also when it is chosen by a computation (`Which`),
+  /// and the colors are baked into the primitives, so a copy of `p[[1]]`
+  /// moved into another `Graphics3D` keeps them.
+  #[test]
+  fn parametric_plot3d_named_color_function_colors_by_height() {
+    let plot = |cf: &str| {
+      format!(
+        "ParametricPlot3D[{{r Cos[t], r Sin[t], r^2}}, {{r, 0, 1}}, \
+         {{t, 0, 2 Pi}}, Mesh -> None, ColorFunction -> {cf}]"
+      )
+    };
+    let fills = |svg: &str| -> Vec<(u8, u8, u8)> {
+      svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|s| {
+          let mut it = s.split(')').next()?.split(',').map(|v| v.parse().ok());
+          Some((it.next()??, it.next()??, it.next()??))
+        })
+        .collect()
+    };
+    let named = export_svg(&plot("\"BlueGreenYellow\""));
+    assert_eq!(named, export_svg(&plot("ColorData[\"BlueGreenYellow\"]")));
+    let mode = "m = \"color\"; ";
+    assert_eq!(
+      named,
+      export_svg(&format!(
+        "{mode}{}",
+        plot("Which[m == \"color\", \"BlueGreenYellow\", True, None]")
+      ))
+    );
+    for svg in [
+      named,
+      export_svg(&format!(
+        "p = {}; Show[Graphics3D[Translate[p[[1]], {{0, 0, 2}}]]]",
+        plot("\"BlueGreenYellow\"")
+      )),
+    ] {
+      let fills = fills(&svg);
+      // The bottom takes the gradient's dark blue end, the rim its
+      // yellow end.
+      assert!(fills.iter().any(|&(r, g, b)| b > 100 && r < 80 && g < 80));
+      assert!(fills.iter().any(|&(r, g, b)| r > 180 && g > 180 && b < 140));
+    }
+  }
+
   /// A translucent `PlotStyle` surface must stay translucent when `Show`
   /// re-renders it from its symbolic form together with other graphics,
   /// for every surface plot that carries one.
@@ -9580,6 +9698,24 @@ mod plot3d {
       )
       .unwrap();
       assert_eq!(result, "True");
+    }
+
+    /// `ColorFunction -> n` names indexed color scheme n: the curve is
+    /// shaded through that scheme's colors by height, from its first color
+    /// at the bottom to its last at the top. It used to be applied as the
+    /// literal head `n[x, y, z, t]`, which drew the curve black.
+    #[test]
+    fn parametric_curve_indexed_color_function() {
+      clear_state();
+      let result = interpret(
+        "cols = Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, \
+         ColorFunction -> 52], _RGBColor, Infinity]; \
+         {Length[DeleteDuplicates[cols]] > 10, \
+          Max[Abs[List @@ cols[[1]] - List @@ ColorData[52, 1]]] < 0.02, \
+          Max[Abs[List @@ cols[[-1]] - List @@ ColorData[52, 10]]] < 0.02}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True, True}");
     }
 
     /// Regression: `ParametricPlot3D` surfaces ignored `RegionFunction`, so
@@ -38935,6 +39071,51 @@ mod graphics_grid {
     }
   }
 
+  /// A text item of a `Column` that also stacks laid-out items (a
+  /// `TableForm`, a plot) shares their left edge: the number was inset by
+  /// the padding of a text-only column while the table and plot below it
+  /// sat flush, so the lines didn't line up. A column of text alone keeps
+  /// its inset.
+  #[test]
+  fn column_text_lines_up_with_laid_out_items() {
+    let text_x = |svg: &str, content: &str| -> f64 {
+      let end = svg
+        .find(&format!(">{content}</text>"))
+        .unwrap_or_else(|| panic!("no {content} label: {svg}"));
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+      x.parse().unwrap()
+    };
+    let item_x = |svg: &str| -> f64 {
+      let tag = &svg[svg.find("<svg x=\"").expect("nested item")..];
+      let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+      x.parse().unwrap()
+    };
+    for item in [
+      "TableForm[{{1, 2}, {3, 4}}]",
+      "Row[{1, 2}]",
+      "ArrayPlot[{{1, 0}, {0, 1}}]",
+      "Graphics[Disk[]]",
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(&format!("Column[{{77, {item}}}]"))
+        .unwrap()
+        .graphics
+        .unwrap();
+      assert_eq!(
+        text_x(&svg, "77"),
+        item_x(&svg),
+        "77 must line up with {item}: {svg}"
+      );
+    }
+    clear_state();
+    let svg = interpret_with_stdout("Column[{77, 88}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(text_x(&svg, "77") > 0.0, "text-only column keeps its inset");
+  }
+
   /// A styled `Row` in a `Column` keeps its monospace cells apart: the
   /// pass that pulls labels back inside the canvas measured the `%` in the
   /// wider proportional face, decided it overran the row's right edge, and
@@ -46420,6 +46601,38 @@ mod manipulate {
     }
   }
 
+  // A choice quotient with a special-function factor
+  // (`(-1)^k BesselJ[1, k Pi]/k`, `Sin[k]/k`) is typeset as a stacked
+  // fraction like any other arithmetic choice; it used to fall back to its
+  // flat InputForm because the function call was not an accepted operand.
+  // A call to a non-numeric head inside a quotient stays text.
+  #[test]
+  fn setter_choices_with_special_function_factors_are_typeset() {
+    let expr = interpret_to_expr(
+      r#"Manipulate[c, {c, {(-1)^k BesselJ[1, k Pi]/k, Sin[k]/k,
+        Gamma[k + 1]/k^2, g[k]/k, StringLength[k]/k}}]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let ManipulateControl::Discrete {
+      value_label_svgs, ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control, got {:?}", spec.controls[0]);
+    };
+    for i in [0, 1, 2] {
+      let svg = value_label_svgs[i].as_deref().unwrap_or_default();
+      assert!(svg.starts_with("<svg"), "choice {i}: {svg:?}");
+      assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
+    }
+    // Labels are typeset in TraditionalForm: `BesselJ[1, k Pi]` is `J₁(π k)`.
+    let bessel = value_label_svgs[0].as_deref().unwrap();
+    assert!(bessel.contains(">J</text>"), "{bessel}");
+    for i in [3, 4] {
+      assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
+    }
+  }
+
   // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
   // `Dynamic[…]` (a keypad of buttons, one per allowed digit) is held until
   // the display runs with `n` bound. Extracting the spec used to evaluate
@@ -48056,6 +48269,30 @@ mod manipulate {
       spec.displays.is_empty(),
       "span markers are layout, not displays: {:?}",
       spec.displays
+    );
+  }
+
+  /// A `Grid` control panel whose rows are built with `Transpose` (labels
+  /// over controls, written column by column) still declares every
+  /// control: the variables used to stay unbound, so the body drew nothing
+  /// and the controls never showed.
+  #[test]
+  fn spec_grid_transposed_rows_keep_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[x + y, Grid[Transpose[{{\"left\", \
+       Control[{{x, 1, \"\"}, Range[3]}]}, {\"right\", \
+       Control[{{y, 2, \"\"}, Range[3]}]}}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert!(
+      names.contains(&"x") && names.contains(&"y"),
+      "both transposed controls must be declared: {names:?}"
     );
   }
 
@@ -73586,7 +73823,7 @@ mod show_bar_chart_layout {
       .unwrap();
     assert!(
       // The axis padding takes a few points off the golden-ratio height.
-      (height - 400.0 / 1.618_033_988_749_895).abs() < 10.0,
+      (height - 400.0 / std::f64::consts::GOLDEN_RATIO).abs() < 10.0,
       "height {height}: {svg}"
     );
     assert!(

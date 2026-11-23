@@ -8312,6 +8312,41 @@ pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   }
 }
 
+/// `ColorFunction -> n` with an integer `n` names indexed color scheme `n`
+/// (`ColorData[n]`); a plot shades with it as a gradient through the
+/// scheme's colors (`ColorData[n, "ColorList"]`) over the scaled value.
+/// Returns those colors as RGB triples, ready for
+/// `chart::gradient_color_at`, or `None` when `val` is not such a scheme.
+pub(crate) fn indexed_color_function_rgb(
+  val: &Expr,
+) -> Option<Vec<(f64, f64, f64)>> {
+  let Expr::Integer(n) = val else {
+    return None;
+  };
+  let list = crate::evaluator::evaluate_function_call_ast(
+    "ColorData",
+    &[Expr::Integer(*n), Expr::String("ColorList".to_string())],
+  )
+  .ok()?;
+  let Expr::List(colors) = &list else {
+    return None;
+  };
+  let rgb = colors
+    .iter()
+    .map(|color| {
+      let converted = crate::evaluator::evaluate_function_call_ast(
+        "ColorConvert",
+        &[color.clone(), Expr::String("RGB".to_string())],
+      )
+      .ok()?;
+      let (r, g, b, _) =
+        crate::functions::image_ast::color_directive_to_rgb(&converted)?;
+      Some((r, g, b))
+    })
+    .collect::<Option<Vec<_>>>()?;
+  (!rgb.is_empty()).then_some(rgb)
+}
+
 /// Apply a named color function (gradient) to a normalized value t in [0,1].
 /// Schemes with stored `ColorData` control points (see
 /// `chart::sample_named_gradient`) interpolate those — matching
