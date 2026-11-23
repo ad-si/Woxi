@@ -604,8 +604,9 @@ fn row_coefficients(f: &NumFn, n_inputs: usize, fixed: &[f64]) -> Vec<f64> {
 /// on a symmetric domain lands right on a grid point, where reading the
 /// coefficient gives a value many times that of both neighbors and wrecks
 /// the solution. `at[g]` holds the coefficients at point `g`; a point is
-/// singular when one of them is non-finite or more than 50 times both
-/// neighbors' there (finite ones). Such points take the cell average of the
+/// singular when one of them is more than 50 times both neighbors' there
+/// (all finite). An exact pole (`1/r` at `r == 0`) is a removable
+/// singularity that takes its limit instead, so it is left alone. Such points take the cell average of the
 /// coefficients, as the quadrature of a finite element method would.
 fn spiking_points(at: &[Vec<f64>]) -> Vec<bool> {
   let mut flags = vec![false; at.len()];
@@ -614,7 +615,8 @@ fn spiking_points(at: &[Vec<f64>]) -> Vec<bool> {
       let (c, l, r) = (at[g][i], at[g - 1][i], at[g + 1][i]);
       l.is_finite()
         && r.is_finite()
-        && (!c.is_finite() || c.abs() > 50.0 * l.abs().max(r.abs()).max(1e-300))
+        && c.is_finite()
+        && c.abs() > 50.0 * l.abs().max(r.abs()).max(1e-300)
     });
   }
   flags

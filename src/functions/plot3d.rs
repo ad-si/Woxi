@@ -1249,7 +1249,6 @@ fn painter_order(
   }
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
-  let mut indegree = vec![0usize; n];
   for_each_overlapping_pair(projected, |i, j| {
     // Faces lying in one plane (two boxes sharing a face) have no depth
     // order; the one given later is drawn on top, as in Wolfram. Wolfram
@@ -1284,50 +1283,171 @@ fn painter_order(
         })
     };
     match i_behind {
-      Some(true) => {
-        after[i].push(j);
-        indegree[j] += 1;
-      }
-      Some(false) => {
-        after[j].push(i);
-        indegree[i] += 1;
-      }
+      Some(true) => after[i].push(j),
+      Some(false) => after[j].push(i),
       None => {}
     }
   });
-  let mut order = Vec::with_capacity(n);
-  let mut done = vec![false; n];
-  // Ready triangles, keyed by their far-to-near rank in `by_depth` so the
-  // farthest one is drawn first (`Reverse` turns the max-heap into a min-heap).
   let mut rank = vec![0usize; n];
   for (r, &k) in by_depth.iter().enumerate() {
     rank[k] = r;
   }
-  let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<usize>> = (0
-    ..n)
-    .filter(|&k| indegree[k] == 0)
-    .map(|k| std::cmp::Reverse(rank[k]))
-    .collect();
-  // First possibly-undrawn entry of `by_depth`, for breaking cycles.
-  let mut cursor = 0;
-  while order.len() < n {
-    let pick = if let Some(std::cmp::Reverse(r)) = ready.pop() {
-      by_depth[r]
-    } else {
-      while done[by_depth[cursor]] {
-        cursor += 1;
-      }
-      by_depth[cursor]
-    };
-    if done[pick] {
+  topological_order_breaking_cycles(&after, &rank)
+}
+
+/// Strongly connected components of the graph whose edges run from `k` to
+/// each of `after[k]` (Tarjan's algorithm, iterative). Returns each node's
+/// component id and the number of components.
+fn strongly_connected_components(after: &[Vec<usize>]) -> (Vec<usize>, usize) {
+  let n = after.len();
+  const UNSEEN: usize = usize::MAX;
+  let mut index = vec![UNSEEN; n];
+  let mut low = vec![0usize; n];
+  let mut on_stack = vec![false; n];
+  let mut stack = Vec::new();
+  let mut component = vec![UNSEEN; n];
+  let mut components = 0;
+  let mut next_index = 0;
+  // Depth-first frames: a node and how many of its edges were followed.
+  let mut frames: Vec<(usize, usize)> = Vec::new();
+  for root in 0..n {
+    if index[root] != UNSEEN {
       continue;
     }
-    done[pick] = true;
-    order.push(pick);
-    for &k in &after[pick] {
-      indegree[k] = indegree[k].saturating_sub(1);
-      if indegree[k] == 0 && !done[k] {
-        ready.push(std::cmp::Reverse(rank[k]));
+    frames.push((root, 0));
+    index[root] = next_index;
+    low[root] = next_index;
+    next_index += 1;
+    stack.push(root);
+    on_stack[root] = true;
+    while let Some(frame) = frames.last_mut() {
+      let (v, edge) = *frame;
+      if let Some(&w) = after[v].get(edge) {
+        frame.1 += 1;
+        if index[w] == UNSEEN {
+          index[w] = next_index;
+          low[w] = next_index;
+          next_index += 1;
+          stack.push(w);
+          on_stack[w] = true;
+          frames.push((w, 0));
+        } else if on_stack[w] {
+          low[v] = low[v].min(index[w]);
+        }
+        continue;
+      }
+      frames.pop();
+      if let Some(&(parent, _)) = frames.last() {
+        low[parent] = low[parent].min(low[v]);
+      }
+      if low[v] == index[v] {
+        while let Some(w) = stack.pop() {
+          on_stack[w] = false;
+          component[w] = components;
+          if w == v {
+            break;
+          }
+        }
+        components += 1;
+      }
+    }
+  }
+  (component, components)
+}
+
+/// Orders the nodes so every edge `k -> after[k]` runs forward, drawing the
+/// lowest `rank` first among the nodes free to go. Where the edges form
+/// cycles, only the nodes of a cycle are reordered among themselves (lowest
+/// rank first): a node merely waiting behind a cycle still keeps all its
+/// edges. Breaking a cycle by drawing the farthest waiting node anywhere
+/// in the scene drew the face of a solid before the hidden slabs behind it
+/// whose own faces happened to cross one another.
+fn topological_order_breaking_cycles(
+  after: &[Vec<usize>],
+  rank: &[usize],
+) -> Vec<usize> {
+  use std::cmp::Reverse;
+  use std::collections::BinaryHeap;
+  let n = after.len();
+  let (component, count) = strongly_connected_components(after);
+  let mut members: Vec<Vec<usize>> = vec![Vec::new(); count];
+  for k in 0..n {
+    members[component[k]].push(k);
+  }
+  // Edges between components, and within each component.
+  let mut comp_indegree = vec![0usize; count];
+  let mut indegree = vec![0usize; n];
+  for k in 0..n {
+    for &j in &after[k] {
+      if component[j] == component[k] {
+        indegree[j] += 1;
+      } else {
+        comp_indegree[component[j]] += 1;
+      }
+    }
+  }
+  // A component goes as early as its farthest member would.
+  let comp_rank: Vec<usize> = members
+    .iter()
+    .map(|m| m.iter().map(|&k| rank[k]).min().unwrap_or(usize::MAX))
+    .collect();
+  let mut ready: BinaryHeap<Reverse<(usize, usize)>> = (0..count)
+    .filter(|&c| comp_indegree[c] == 0)
+    .map(|c| Reverse((comp_rank[c], c)))
+    .collect();
+  let mut order = Vec::with_capacity(n);
+  let mut done = vec![false; n];
+  while let Some(Reverse((_, c))) = ready.pop() {
+    let group = &members[c];
+    if group.len() == 1 {
+      order.push(group[0]);
+      done[group[0]] = true;
+    } else {
+      // Within a cycle, follow its own edges as far as they go and, when
+      // they go round, draw the farthest member that is left.
+      let mut by_rank = group.clone();
+      by_rank.sort_unstable_by_key(|&k| rank[k]);
+      let mut local: BinaryHeap<Reverse<(usize, usize)>> = group
+        .iter()
+        .filter(|&&k| indegree[k] == 0)
+        .map(|&k| Reverse((rank[k], k)))
+        .collect();
+      let mut cursor = 0;
+      let mut left = group.len();
+      while left > 0 {
+        let pick = if let Some(Reverse((_, k))) = local.pop() {
+          k
+        } else {
+          while done[by_rank[cursor]] {
+            cursor += 1;
+          }
+          by_rank[cursor]
+        };
+        if done[pick] {
+          continue;
+        }
+        done[pick] = true;
+        left -= 1;
+        order.push(pick);
+        for &k in &after[pick] {
+          if component[k] == c && !done[k] {
+            indegree[k] = indegree[k].saturating_sub(1);
+            if indegree[k] == 0 {
+              local.push(Reverse((rank[k], k)));
+            }
+          }
+        }
+      }
+    }
+    for &k in group {
+      for &j in &after[k] {
+        let cj = component[j];
+        if cj != c {
+          comp_indegree[cj] -= 1;
+          if comp_indegree[cj] == 0 {
+            ready.push(Reverse((comp_rank[cj], cj)));
+          }
+        }
       }
     }
   }
@@ -15496,6 +15616,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    // Shortest on-screen length (in pixels) worth a piece of its own.
+    const LINE_PIECE_PX: f64 = 8.0;
     let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
@@ -15523,9 +15645,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (apx, apy) = to_svg(project(a, &camera).0, project(a, &camera).1);
           let (bpx, bpy) = to_svg(project(b, &camera).0, project(b, &camera).1);
           let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
-          for s in 0..LINE_SUBDIVISIONS {
-            let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+          // Pieces only need to be short enough on screen to be ordered
+          // against the faces around them: a finely sampled curve whose
+          // segments are a pixel long is not cut any further.
+          let pieces = ((total_px / LINE_PIECE_PX).ceil() as usize)
+            .clamp(1, LINE_SUBDIVISIONS);
+          for s in 0..pieces {
+            let t0 = s as f64 / pieces as f64;
+            let t1 = (s + 1) as f64 / pieces as f64;
             let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
@@ -15654,10 +15781,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
-    // Emit the line pieces of one draw slot. Translucent pieces cut from
-    // one polyline are joined into a single `<polyline>`: drawn as
-    // separate elements, every joint between two pieces shows as an
-    // anti-aliasing notch where the background bleeds through.
+    // Emit the line pieces of one draw slot. The pieces cut from one
+    // polyline are joined into a single `<polyline>`: drawn as separate
+    // elements, translucent pieces show an anti-aliasing notch at every
+    // joint where the background bleeds through, and the overlapping
+    // round caps of a finely sampled opaque curve pile up their
+    // anti-aliased edges until a thin line looks bold.
     let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
       let mut done = vec![false; run.len()];
       for i in 0..run.len() {
@@ -15665,16 +15794,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           continue;
         }
         let edge = run[i];
-        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
-        else {
+        let Some((line_id, _)) = edge.piece_of else {
           emit_edge(svg, edge);
           continue;
         };
         let mut pieces: Vec<usize> = (i..run.len())
           .filter(|&k| {
-            !done[k]
-              && run[k].opacity < 1.0
-              && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
+            !done[k] && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
           })
           .collect();
         pieces.sort_by_key(|&k| run[k].piece_of.map(|(_, n)| n));
@@ -15713,12 +15839,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             svg_width as f64,
             first.dash_offset,
           );
+          // Translucent lines keep the butt caps of their pieces (see
+          // `emit_edge`); opaque ones the round caps.
+          let (cap, opacity_attr) = if first.opacity < 1.0 {
+            ("butt", format!(" opacity=\"{}\"", first.opacity))
+          } else {
+            ("round", String::new())
+          };
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"butt\" stroke-linejoin=\"round\" opacity=\"{}\"{}/>\n",
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"round\"{opacity_attr}{}/>\n",
             points.join(" "),
             first.color,
             first.width,
-            first.opacity,
             dash_attr
           ));
         }
@@ -26411,6 +26543,27 @@ mod painter_order_tests {
       split_interpenetrating(&mut verts, &mut tris, &camera);
       assert_eq!(verts.len() > 4, split, "half-size {s}");
     }
+  }
+
+  /// A triangle that merely waits behind a cycle (it must be drawn after a
+  /// member of it) keeps its own order: only the cycle's members are
+  /// reordered among themselves. Regression: breaking the cycle by drawing
+  /// the farthest waiting triangle drew a cube's face before the hidden
+  /// slabs behind it.
+  #[test]
+  fn triangle_behind_a_cycle_keeps_its_order() {
+    // 1 and 2 must each be drawn after the other; 0 after 2. 0 is the
+    // farthest, 3 (unconstrained) the nearest.
+    let after = vec![vec![], vec![2], vec![1, 0], vec![]];
+    let rank = vec![0, 1, 2, 3];
+    let order = topological_order_breaking_cycles(&after, &rank);
+    assert_eq!(order, vec![1, 2, 0, 3]);
+    // Without cycles every edge is kept, farthest first among the free.
+    let after = vec![vec![], vec![0], vec![1], vec![]];
+    assert_eq!(
+      topological_order_breaking_cycles(&after, &rank),
+      vec![2, 1, 0, 3]
+    );
   }
 
   /// Triangles that never cross are left untouched.

@@ -1208,6 +1208,61 @@ mod outlines {
     assert_eq!(s.matches("<polyline ").count(), 2, "{s}");
   }
 
+  // An opaque line is joined back into one stroke as well: drawn as many
+  // pieces, the overlapping round caps of a finely sampled curve pile up
+  // their anti-aliased edges until a thin line looks bold.
+  #[test]
+  fn opaque_line_is_one_stroke() {
+    for line in [
+      "Line[{{0, 0, 0}, {1, 1, 1}}]",
+      "Line[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}}]",
+      "Line[Table[{Cos[t], Sin[t], t/10}, {t, 0, 2 Pi, Pi/100}]]",
+    ] {
+      for directives in ["", "Red, Thickness[0.01], "] {
+        let s = svg(&format!(
+          "Graphics3D[{{{directives}{line}}}, Boxed -> False]"
+        ));
+        assert_eq!(s.matches("<polyline ").count(), 1, "{line}: {s}");
+        assert_eq!(s.matches("<line ").count(), 0, "{line}: {s}");
+        assert!(s.contains("stroke-linecap=\"round\""), "{line}: {s}");
+        assert!(!s.contains(" opacity="), "{line}: {s}");
+      }
+    }
+  }
+
+  // Segments that are already short on screen are not cut into further
+  // depth-sorting pieces, so a densely sampled curve keeps about one
+  // vertex per sample instead of eight.
+  #[test]
+  fn dense_line_is_not_subdivided() {
+    let samples = 2001;
+    let s = svg(&format!(
+      "Graphics3D[Line[Table[{{Cos[t], Sin[t], t/10}}, \
+       {{t, 0, 2 Pi, 2 Pi/{}}}]], Boxed -> False]",
+      samples - 1
+    ));
+    let points = s
+      .split("points=\"")
+      .nth(1)
+      .and_then(|p| p.split('"').next())
+      .map_or(0, |p| p.split_whitespace().count());
+    assert!(
+      (samples..=samples + 64).contains(&points),
+      "{points} vertices for {samples} samples"
+    );
+    // A long segment is still cut, so faces can be ordered against it.
+    let s = svg(
+      "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}], \
+       Polygon[{{0, 1, 0}, {1, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    );
+    let points = s
+      .split("<polyline points=\"")
+      .skip(1)
+      .map(|p| p.split('"').next().unwrap_or("").split_whitespace().count())
+      .sum::<usize>();
+    assert!(points > 2, "{s}");
+  }
+
   // The triangles a translucent polygon is cut into are filled as one
   // path, so no light seam runs along the cut.
   #[test]
@@ -1352,7 +1407,10 @@ mod ticks {
   fn black_line_widths(svg: &str) -> Vec<f64> {
     svg
       .lines()
-      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter(|l| {
+        (l.starts_with("<line") || l.starts_with("<polyline"))
+          && l.contains("stroke=\"rgb(0,0,0)\"")
+      })
       .filter_map(|l| {
         l.split("stroke-width=\"")
           .nth(1)

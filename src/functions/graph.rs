@@ -12986,6 +12986,7 @@ const GRAPH_PLOT_ONLY_OPTIONS: &[&str] = &[
   "Method",
   "MultiedgeStyle",
   "PackingMethod",
+  "PlotStyle",
   "SelfLoopStyle",
   "VertexCoordinateRules",
   "VertexLabeling",

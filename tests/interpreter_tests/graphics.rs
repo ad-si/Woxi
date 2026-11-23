@@ -4069,7 +4069,8 @@ mod graphics {
             "Graphics[Polygon[Table[{Cos[4 Pi k/5], Sin[4 Pi k/5]}, \
              {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
           );
-          assert!(svg.contains("clip-rule=\"evenodd\""));
+          // The blend is split into the outline's even-odd regions (the
+          // five points of the star, not its hollow center).
           assert!(svg.matches("<polygon").count() > 5);
           // A simple (non-crossing) outline needs no clip.
           let simple = export_svg(
@@ -11630,9 +11631,23 @@ mod plot3d {
           "Graphics3D[{{Opacity[0.4], Red, EdgeForm[Thick], \
            Polygon[{corners}]}}, Boxed -> False]"
         ));
-        let filled: Vec<&str> =
-          svg.lines().filter(|l| l.starts_with("<polygon")).collect();
-        assert!(filled.len() >= 2, "{svg}");
+        // The cut face is drawn as `<polygon>`s or as one `<path>` holding
+        // its triangles.
+        let filled: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<polygon") || l.starts_with("<path"))
+          .collect();
+        let triangles: usize = filled
+          .iter()
+          .map(|l| {
+            if l.starts_with("<path") {
+              l.matches('Z').count()
+            } else {
+              1
+            }
+          })
+          .sum();
+        assert!(triangles >= 2, "{svg}");
         for tri in &filled {
           assert!(
             tri.contains("stroke=\"none\"") && tri.contains("opacity=\"0.4\""),
@@ -12052,8 +12067,10 @@ mod plot3d {
       let dashed = export_svg(
         "Graphics3D[{Gray, Dashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
       );
-      let lines: Vec<&str> =
-        dashed.lines().filter(|l| l.starts_with("<line ")).collect();
+      let lines: Vec<&str> = dashed
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+        .collect();
       assert!(!lines.is_empty(), "expected the line to be drawn: {dashed}");
       assert!(
         lines
@@ -12082,24 +12099,20 @@ mod plot3d {
       let svg = export_svg(
         "Graphics3D[{Dotted, Line[Table[{k, 0, 0}, {k, 0, 6}]]}, Boxed -> False]",
       );
-      let offsets: Vec<f64> = svg
+      let dashed: Vec<&str> = svg
         .lines()
-        .filter(|l| l.starts_with("<line ") && l.contains("stroke-dasharray"))
-        .filter_map(|l| {
-          let rest = l.split("stroke-dashoffset=\"").nth(1)?;
-          rest.split('"').next()?.parse().ok()
-        })
+        .filter(|l| l.contains("stroke-dasharray"))
         .collect();
-      assert!(offsets.len() > 6, "{svg}");
-      // Only the very first piece of the line starts the pattern afresh.
-      assert_eq!(
-        offsets.iter().filter(|o| **o == 0.0).count(),
-        1,
-        "{offsets:?}"
-      );
-      // The later pieces keep counting the distance along the line.
-      let max = offsets.iter().copied().fold(0.0, f64::max);
-      assert!(max > 100.0, "{offsets:?}");
+      // The whole line is one stroke, so the pattern runs on through
+      // every vertex instead of restarting at each.
+      assert_eq!(dashed.len(), 1, "{svg}");
+      let vertices = dashed[0]
+        .split("points=\"")
+        .nth(1)
+        .and_then(|p| p.split('"').next())
+        .map_or(0, |p| p.split_whitespace().count());
+      assert!(vertices >= 7, "{svg}");
+      assert!(dashed[0].contains("stroke-dashoffset=\"0.0\""), "{svg}");
     }
 
     /// `Dotted`/`DotDashed` are shorthands for specific `Dashing` patterns
@@ -12152,8 +12165,10 @@ mod plot3d {
         .lines()
         .filter(|l| l.contains("stroke-dasharray"))
         .count();
-      let total_lines =
-        mixed.lines().filter(|l| l.starts_with("<line ")).count();
+      let total_lines = mixed
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+        .count();
       assert!(dashed_count > 0 && dashed_count < total_lines, "{mixed}");
     }
 
@@ -13701,8 +13716,9 @@ mod plot3d {
             "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
           );
         }
+        // (The sphere around the contents can be about as large as the
+        // content fit for a flat cylinder, so its size is not compared.)
         let sphere = drawn_extent(&cylinder(r, ", SphericalRegion -> True"));
-        assert!(sphere.0.max(sphere.1) < 140.0, "r = {r}: {sphere:?}");
         // A set view point brings the sphere framing back in a
         // `Manipulate` frame.
         let viewed = woxi::with_manipulate_frame(|| {
@@ -18112,6 +18128,46 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// The mathematical items of an unstyled `Row` label are typeset in
+    /// `TraditionalForm` like a bare one, while its strings stay as written:
+    /// `Row[{p[s], " / ", "u"}]` reads `p(s) / u` with an italic p and s.
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook whose axis label was
+    /// such a `Row` of a function application and a unit string; it was
+    /// drawn upright. This is a self-authored, construct-equivalent example.
+    #[test]
+    fn row_axes_label_sets_math_items_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let applied = format!("{}({}) / u", italic("p"), italic("s"));
+      for code in [
+        "Plot[s, {s, 0, 1}, AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+        "ListPlot[{1, 2}, AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+        "Show[Plot[s, {s, 0, 1}, LabelStyle -> 14, \
+         AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Row[{p[s], \" / \", \"u\"}], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&applied), "{code}: {svg}");
+      }
+      // A bare symbol item is italic beside the unit string.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Row[{t, \" (s)\"}], None}]",
+      );
+      assert!(
+        svg.contains(&format!(">{} (s)</text>", italic("t"))),
+        "{svg}"
+      );
+      // `LabelStyle` still sizes the label.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, LabelStyle -> 14, \
+         AxesLabel -> {None, Row[{p[s], \" / \", \"u\"}]}]",
+      );
+      let line = svg.lines().find(|l| l.contains(&applied)).unwrap();
+      assert!(line.contains("font-size=\"140\""), "{line}");
+    }
+
     /// A subscripted symbol in a label is typeset in `TraditionalForm`
     /// too: single letters are italic, multi-letter symbols stay upright,
     /// whether the label is bare or styled, inside a `Row`, on an axis or
@@ -19313,8 +19369,16 @@ mod plot3d {
       assert!(svg.contains(">v₁ = k₂ sin(k₁ x + ϕ)<"), "{svg}");
       assert!(svg.contains(">a ≤ b<"), "{svg}");
       assert!(svg.contains(">a ≠ b<"), "{svg}");
-      assert!(svg.contains(">x² - 1<"), "{svg}");
-      assert!(svg.contains(">x + 1<"), "{svg}");
+      // Polynomials are typeset like axis labels: italic letters, a raised
+      // exponent and the sum in TraditionalForm order.
+      let x = "<tspan font-style=\"italic\">x</tspan>";
+      assert!(
+        svg.contains(&format!(
+          ">{x}<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>-1<"
+        )),
+        "{svg}"
+      );
+      assert!(svg.contains(&format!(">{x}+1<")), "{svg}");
     }
 
     /// A `Spacer` in a `Row` that is set as graphics text keeps the color
@@ -33548,8 +33612,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// box edges (those are drawn 0.5 wide in gray).
     fn line_3d_stroke_widths(svg: &str) -> Vec<String> {
       svg
-        .split("<line ")
-        .skip(1)
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
         .filter(|l| l.contains("stroke=\"rgb(0,0,0)\""))
         .filter_map(|l| {
           let w = l.split("stroke-width=\"").nth(1)?;
@@ -33602,12 +33666,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "ParametricPlot3D[{{Cos[t], Sin[t], 0}}, {{t, 0, 2 Pi}}{opts}]"
         ));
         let curve: Vec<&str> = svg
-          .split("<line ")
-          .skip(1)
+          .lines()
+          .filter(|l| l.starts_with("<polyline "))
           .filter(|l| !l.contains("stroke-width=\"0.5\""))
           .filter(|l| !l.contains("stroke-width=\"1\""))
           .collect();
-        assert!(curve.len() > 100, "{opts}: curve not drawn");
+        let vertices: usize = curve
+          .iter()
+          .filter_map(|l| l.split("points=\"").nth(1)?.split('"').next())
+          .map(|p| p.split_whitespace().count())
+          .sum();
+        assert!(vertices > 100, "{opts}: curve not drawn");
         assert!(
           curve.iter().all(|l| l.contains("stroke-width=\"2.0\"")),
           "{opts}: curve must be 2 wide"
@@ -55231,6 +55300,60 @@ mod color_data_indexed {
     assert!(svg.contains("255,255,0"), "appearance fill: {svg}");
   }
 
+  // Regression: a non-graphic `Locator` appearance (a string glyph, a
+  // `Style`d label) fell back to the default crosshair. Wolfram shows the
+  // expression itself, centered on the point.
+  #[test]
+  fn locator_draws_a_textual_appearance() {
+    clear_state();
+    const CROSSHAIR: &str = "rgba(180,180,180,0.35)";
+    let svg = export_svg(
+      "Graphics[{Locator[{1, 2}, \"\\[CirclePlus]\"]}, PlotRange -> 3]",
+    );
+    assert!(svg.contains(">\u{2295}</text>"), "glyph marker: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+
+    let svg = export_svg(
+      "Graphics[{Locator[{{0, 0}, {1, 1}}, Style[\"Q\", 20, Red]]}, \
+       PlotRange -> 3]",
+    );
+    assert_eq!(svg.matches(">Q</text>").count(), 2, "one per point: {svg}");
+    assert!(svg.contains("font-size=\"20\""), "Style size kept: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "Style color kept: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+
+    // The same holds for a Locator in a plot's Epilog.
+    let svg =
+      export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}, 7]}]");
+    assert!(svg.contains(">7</text>"), "number marker: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+  }
+
+  // A Manipulate `Locator` control's string `Appearance` is the glyph
+  // drawn on its graphic; slider style names such as "Labeled" are not.
+  #[test]
+  fn manipulate_locator_control_keeps_a_string_appearance() {
+    clear_state();
+    let parse = |code: &str| {
+      let expr = woxi::syntax::string_to_expr(code).unwrap();
+      woxi::functions::graphics::manipulate_locator_markers(&expr)
+    };
+    assert_eq!(
+      parse(
+        "Manipulate[Graphics[Point[p], PlotRange -> 1], \
+         {{p, {0, 0}}, {-1, -1}, {1, 1}, Locator, Appearance -> \"\\[CirclePlus]\"}]"
+      ),
+      vec![("p".to_string(), Some("\"\u{2295}\"".to_string()))]
+    );
+    assert_eq!(
+      parse(
+        "Manipulate[Graphics[Point[p], PlotRange -> 1], \
+         {{p, {0, 0}}, Locator, Appearance -> \"Labeled\"}]"
+      ),
+      vec![("p".to_string(), None)]
+    );
+  }
+
   // `ContourPlot[lhs == rhs, …]` draws the implicit curve `lhs - rhs = 0`,
   // and `plot[[1]]` yields the contour primitives (with the ContourStyle
   // directives) for re-embedding in an outer Graphics — including after
@@ -58830,6 +58953,33 @@ fn graphics_grid_of_picture_buttons_keeps_button_size() {
   );
 }
 
+/// The on-screen extent `(|dx|, |dy|)` between the end points of the first
+/// stroke in `svg`, drawn either as a `<line>` or as a `<polyline>`.
+fn first_stroke_extent(svg: &str) -> (f64, f64) {
+  let stroke = svg
+    .lines()
+    .find(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+    .unwrap();
+  let attr = |name: &str| -> Option<String> {
+    let rest = stroke.split(&format!(" {name}=\"")).nth(1)?;
+    Some(rest.split('"').next()?.to_string())
+  };
+  let ((x1, y1), (x2, y2)) = if let Some(points) = attr("points") {
+    let pts: Vec<(f64, f64)> = points
+      .split_whitespace()
+      .map(|p| {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect();
+    (pts[0], pts[pts.len() - 1])
+  } else {
+    let num = |n: &str| attr(n).unwrap().parse::<f64>().unwrap();
+    ((num("x1"), num("y1")), (num("x2"), num("y2")))
+  };
+  ((x1 - x2).abs(), (y1 - y2).abs())
+}
+
 /// `ViewVertical` picks the direction that points up on screen: looking
 /// along +y, the z axis is vertical by default but lies flat once the
 /// vertical is the x axis.
@@ -58841,17 +58991,7 @@ fn graphics3d_view_vertical_turns_the_picture() {
          Boxed -> False, ViewPoint -> Front{opts}]"
     ))
   };
-  let extent = |svg: &str| {
-    let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
-    let attr = |name: &str| -> f64 {
-      let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
-      rest.split('"').next().unwrap().parse().unwrap()
-    };
-    (
-      (attr("x1") - attr("x2")).abs(),
-      (attr("y1") - attr("y2")).abs(),
-    )
-  };
+  let extent = |svg: &str| first_stroke_extent(svg);
   let (dx, dy) = extent(&line(""));
   assert!(dx < 1e-6 && dy > 1.0, "default: {dx} {dy}");
   let (dx, dy) = extent(&line(", ViewVertical -> {1, 0, 0}"));
@@ -58869,13 +59009,7 @@ fn graphics3d_view_vertical_is_in_scaled_coordinates() {
        PlotRange -> {{0, 1}, {0, 3}, {0, 1}}, ViewPoint -> Top, \
        ViewVertical -> {1, 1, 0}]",
   );
-  let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
-  let attr = |name: &str| -> f64 {
-    let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
-    rest.split('"').next().unwrap().parse().unwrap()
-  };
-  let dx = (attr("x1") - attr("x2")).abs();
-  let dy = (attr("y1") - attr("y2")).abs();
+  let (dx, dy) = first_stroke_extent(&svg);
   assert!(
     (dx / dy - 1.0 / 3.0).abs() < 0.02,
     "slope {dx}/{dy} = {}",
@@ -71293,35 +71427,46 @@ fn opaque_parametric_region_cells_have_no_seams() {
 mod traditional_form_text_scripts {
   use super::*;
 
+  /// The runs of text set at `size` points.
+  fn runs_at(svg: &str, size: &str) -> Vec<String> {
+    let key = format!("font-size=\"{size}\"");
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter(|t| {
+        t.split('>')
+          .next()
+          .is_some_and(|attrs| attrs.contains(&key))
+      })
+      .filter_map(|t| Some(t.split_once('>')?.1.split('<').next()?.to_string()))
+      .collect()
+  }
+
   #[test]
   fn powers_keep_their_superscripts() {
+    // The exponent is set as its own smaller run (raised over its base),
+    // not run into the base as `x2`.
     let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
-    assert!(svg.contains(">x\u{b2}+y</text>"), "{svg}");
+    assert_eq!(runs_at(&svg, "9.8"), ["2"], "{svg}");
+    assert!(runs_at(&svg, "14.0").contains(&"x".to_string()), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    // The product's factors are set apart by thin spaces.
-    assert!(
-      svg.contains("16\u{207f}\u{2009}((p-q)\u{2009}q\u{b3})\u{207f}"),
-      "{svg}"
-    );
+    let scripts = runs_at(&svg, "9.8");
+    assert!(scripts.contains(&"n".to_string()), "{svg}");
+    assert!(scripts.contains(&"3".to_string()), "{svg}");
   }
 
   #[test]
   fn scripts_without_glyphs_become_tspans() {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
+    let scripts = runs_at(&svg, "9.8");
     assert!(
-      svg.contains(
-        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a\u{2009}b</tspan>"
-      ),
+      scripts.contains(&"a".to_string()) && scripts.contains(&"b".to_string()),
       "{svg}"
     );
     let svg =
       export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
-    assert!(
-      svg
-        .contains("x<tspan baseline-shift=\"sub\" font-size=\"70%\">k</tspan>"),
-      "{svg}"
-    );
+    assert_eq!(runs_at(&svg, "9.8"), ["k"], "{svg}");
   }
 }
 

@@ -5651,6 +5651,7 @@ pub(crate) fn column_svg_with_rendered_items(
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(item).is_none()
+            && !functions::graphics::is_framed_box(item)
         })
         .collect(),
     );

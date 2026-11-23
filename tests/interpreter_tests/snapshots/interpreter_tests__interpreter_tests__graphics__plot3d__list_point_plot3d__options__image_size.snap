@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6907
 expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
@@ -187,12 +186,12 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 <line x1="165.1" y1="60.4" x2="170.0" y2="61.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="174.5" y1="66.6" x2="174.8" y2="64.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="55.0" y1="63.1" x2="58.0" y2="60.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="103.7" cy="100.1" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="103.7" cy="100.1" r="1.28" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="170.0" y1="61.7" x2="175.0" y2="63.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="174.8" y1="64.8" x2="175.0" y2="63.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="157.5" y1="116.1" x2="159.5" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="37.1" y1="116.2" x2="40.3" y2="113.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="175.0" cy="63.0" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="175.0" cy="63.0" r="1.28" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="173.2" y1="65.4" x2="175.0" y2="63.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="52.0" y1="65.6" x2="55.0" y2="63.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="155.5" y1="119.1" x2="157.5" y2="116.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -201,7 +200,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 <line x1="48.9" y1="68.1" x2="52.0" y2="65.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="153.5" y1="122.1" x2="155.5" y2="119.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="30.5" y1="122.3" x2="33.9" y2="119.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="30.5" cy="122.3" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="30.5" cy="122.3" r="1.28" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="169.5" y1="70.5" x2="171.4" y2="67.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="45.7" y1="70.6" x2="48.9" y2="68.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="30.5" y1="122.3" x2="30.3" y2="120.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
