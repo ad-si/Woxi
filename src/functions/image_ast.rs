@@ -360,6 +360,11 @@ pub(crate) fn image_size_option(
     }
     _ => None,
   })?;
+  // `{w}` is the same as `w` (as for graphics, see `parse_image_size`).
+  let value = match value {
+    Expr::List(dims) if dims.len() == 1 => &dims[0],
+    other => other,
+  };
   let scale = match value {
     // `Automatic` leaves that side of the bounding box unconstrained, so
     // `{w, Automatic}` fixes the width and `{Automatic, h}` the height.

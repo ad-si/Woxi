@@ -390,6 +390,13 @@ pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // The legacy `PlotLegends`` package's `PlotLegend` option, once loaded.
+  if crate::packages_list().iter().any(|p| p == "PlotLegends`")
+    && let Some(result) =
+      crate::functions::plot_legends_package::plot_with_legend(name, args)
+  {
+    return Some(result);
+  }
   if (name.ends_with("Plot") || name.ends_with("Plot3D"))
     && args.len() >= 2
     && let Some(spliced) = with_spliced_option_lists(args)

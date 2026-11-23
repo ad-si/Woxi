@@ -79,3 +79,20 @@ fn bullet_gauge_draws_its_scale_labels() {
     assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
   }
 }
+
+// `ImageSize` and `Background` replace the defaults in the options.
+#[test]
+fn bullet_gauge_image_size_and_background() {
+  assert_eq!(
+    interpret(
+      "g = BulletGauge[5, 7, {0, 10}, ImageSize -> 0.7 {550, 150}, Background -> White]; {ImageSize, Background} /. Options[g]"
+    )
+    .unwrap(),
+    "{{385., 105.}, GrayLevel[1]}"
+  );
+  assert_eq!(
+    interpret("{ImageSize, Background} /. Options[BulletGauge[5, 7, {0, 10}]]")
+      .unwrap(),
+    "{Small, None}"
+  );
+}
