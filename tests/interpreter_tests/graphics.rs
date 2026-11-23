@@ -49572,7 +49572,36 @@ mod manipulate {
        \"word\" -> \"zeta\"}, Dynamic[sel]]], 7}], \"SVG\"]",
     );
     assert!(svg.contains("zeta"), "the selected pane shows: {svg}");
-    assert!(!svg.contains("codes"), "{svg}");
+    assert!(!svg.contains(">11<"), "only the selected pane shows: {svg}");
+  }
+
+  /// A `TabView` nested in a layout draws the row of tab labels above the
+  /// selected pane, which sits in a rounded, light gray panel, as the front
+  /// end does. Regression: only the selected pane's content was drawn, with
+  /// neither the tab labels nor the panel around it.
+  #[test]
+  fn tab_view_in_layout_draws_tab_labels_and_panel() {
+    clear_state();
+    let svg = woxi::interpret(
+      "sel = 2; ExportString[Column[{TabView[{\"first\" -> \"alpha\", \
+       \"second\" -> \"beta\", \"third\" -> \"gamma\"}, Dynamic[sel]], 7}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    for label in ["first", "second", "third"] {
+      assert!(svg.contains(&format!(">{label}<")), "tab {label}: {svg}");
+    }
+    assert!(svg.contains(">beta<"), "selected pane: {svg}");
+    assert!(
+      !svg.contains(">alpha<") && !svg.contains(">gamma<"),
+      "only the selected pane shows: {svg}"
+    );
+    // The tabs and the panel are rounded boxes.
+    assert!(svg.matches(" rx=").count() >= 4, "rounded frames: {svg}");
+    // The labels are set in the proportional face, like other UI text.
+    let first = svg.find(">first<").unwrap();
+    let tag = &svg[svg[..first].rfind("<text").unwrap()..first];
+    assert!(!tag.contains("monospace"), "label face: {tag}");
   }
 
   /// A string with C0 control characters (e.g. the output of

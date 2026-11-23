@@ -1699,12 +1699,105 @@ pub(crate) fn tabview_selected_content(
   args: &[syntax::Expr],
 ) -> Option<syntax::Expr> {
   let items = args.first().and_then(functions::graphics::tabview_panes)?;
-  let selected = args
-    .get(1)
-    .and_then(|sel| selected_tabview_pane(&items, sel))
-    .or(items.first())?;
-  let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+  let index = tabview_selected_index(&items, args.get(1))?;
+  let (_, _, content) = functions::graphics::tabview_pane_parts(&items[index]);
   Some(content.clone())
+}
+
+/// The position of the pane a `TabView` shows: the one its selector names,
+/// or the first pane absent a usable selector. `None` for no panes.
+fn tabview_selected_index(
+  items: &[syntax::Expr],
+  sel: Option<&syntax::Expr>,
+) -> Option<usize> {
+  if items.is_empty() {
+    return None;
+  }
+  let selected = sel.and_then(|sel| selected_tabview_pane(items, sel));
+  Some(selected.map_or(0, |pane| {
+    items
+      .iter()
+      .position(|item| std::ptr::eq(item, pane))
+      .unwrap_or(0)
+  }))
+}
+
+/// A `TabView[{…}, sel]` nested in a layout, as the layout the front end
+/// draws for it: the row of tab labels (each in a rounded box, the selected
+/// one on white, the others on gray) centered above the selected pane,
+/// which sits in a light gray rounded panel.
+pub(crate) fn tabview_drawn_layout(
+  args: &[syntax::Expr],
+) -> Option<syntax::Expr> {
+  use syntax::Expr;
+  let items = args.first().and_then(functions::graphics::tabview_panes)?;
+  let index = tabview_selected_index(&items, args.get(1))?;
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let rule = |key: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(key.to_string())),
+    replacement: Box::new(value),
+  };
+  let gray = |level: f64| call("GrayLevel", vec![Expr::Real(level)]);
+  let pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let tabs: Vec<Expr> = items
+    .iter()
+    .enumerate()
+    .map(|(i, pane)| {
+      let (_, label, _) = functions::graphics::tabview_pane_parts(pane);
+      let selected = i == index;
+      call(
+        "Framed",
+        vec![
+          label.clone(),
+          rule("RoundingRadius", Expr::Integer(4)),
+          rule("FrameStyle", gray(if selected { 0.7 } else { 0.8 })),
+          rule(
+            "Background",
+            if selected {
+              Expr::Identifier("White".to_string())
+            } else {
+              gray(0.93)
+            },
+          ),
+          rule(
+            "FrameMargins",
+            Expr::List(vec![pair(5, 5), pair(1, 1)].into()),
+          ),
+        ],
+      )
+    })
+    .collect();
+  let (_, _, content) = functions::graphics::tabview_pane_parts(&items[index]);
+  let tab_row = call(
+    "Text",
+    vec![call(
+      "Row",
+      vec![Expr::List(tabs.into()), Expr::String(" ".to_string())],
+    )],
+  );
+  let panel = call(
+    "Framed",
+    vec![
+      content.clone(),
+      rule("Background", gray(0.96)),
+      rule("FrameStyle", gray(0.85)),
+      rule("RoundingRadius", Expr::Integer(5)),
+      rule("FrameMargins", Expr::Integer(8)),
+    ],
+  );
+  Some(call(
+    "Column",
+    vec![
+      Expr::List(vec![tab_row, panel].into()),
+      Expr::Identifier("Center".to_string()),
+      Expr::Integer(0),
+    ],
+  ))
 }
 
 /// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
