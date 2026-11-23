@@ -2251,7 +2251,16 @@ fn parse_iterator(
           "Plot3D: cannot evaluate {label} iterator max to a number"
         ))
       })?;
-      Ok((var, min_val, max_val))
+      // Wolfram samples a reversed range `{u, 2 Pi, 0.9}` exactly like
+      // `{u, 0.9, 2 Pi}`. Keeping the given order would flip the winding
+      // of every surface facet, which swaps the sides that a two-sided
+      // `FaceForm[front, back]` paints, and it breaks code below that
+      // clips a `min <= max` interval against `PlotRange`.
+      Ok(if min_val <= max_val {
+        (var, min_val, max_val)
+      } else {
+        (var, max_val, min_val)
+      })
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Plot3D: {label} iterator must be {{var, min, max}}"
