@@ -25972,13 +25972,27 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
   // The styling stays on the outside while the expressions it wraps are
   // set in traditional notation, like an unstyled label: `Style[θ[ξ], 14]`
   // reads `θ(ξ)`.
-  if contains_visible_style(e) {
+  // So is a label stacking a script over its base (`A ⟶ B` with a `k` over
+  // the arrow), which plain label text cannot hold.
+  if contains_visible_style(e) || contains_overscript(e) {
     return Some(format!(
       "{STYLED_LABEL_MARKER}{}",
       expr_to_svg_markup(&traditionalize_styled_label(e))
     ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether `e` holds an `Overscript[base, script]` anywhere.
+fn contains_overscript(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      (name == "Overscript" && args.len() == 2)
+        || args.iter().any(contains_overscript)
+    }
+    Expr::List(items) => items.iter().any(contains_overscript),
+    _ => false,
+  }
 }
 
 /// Whether an axis label is a plain mathematical expression that
