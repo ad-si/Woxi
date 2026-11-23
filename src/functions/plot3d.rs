@@ -15486,15 +15486,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Depths closer than this fraction of the scene size cannot be told
+  // apart on screen.
+  let depth_quantum = ((x3_max - x3_min).powi(2)
+    + (y3_max - y3_min).powi(2)
+    + (z3_max - z3_min).powi(2))
+  .sqrt()
+    * 1e-3;
   {
     // Lines sit exactly on the surfaces they outline, so nudge them
     // toward the viewer by a fraction of the scene size: a face's own
     // outline stays visible while lines behind other faces are hidden.
-    let diag = ((x3_max - x3_min).powi(2)
-      + (y3_max - y3_min).powi(2)
-      + (z3_max - z3_min).powi(2))
-    .sqrt();
-    let bias = diag * 1e-3;
+    let bias = depth_quantum;
     const LINE_SUBDIVISIONS: usize = 8;
     let mut polyline_id = 0usize;
     for prim in &prims {
@@ -15577,11 +15580,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  sorted_edges.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  // Far-to-near. Pieces at indistinguishable depths (two curves that
+  // coincide, like a synchronized pair of trajectories) keep their
+  // primitive order, so the later primitive is drawn on top as with a
+  // depth buffer, instead of the two interleaving piece by piece.
+  if depth_quantum > 0.0 && depth_quantum.is_finite() {
+    sorted_edges.sort_by_cached_key(|e| {
+      std::cmp::Reverse((e.depth / depth_quantum).round() as i64)
+    });
+  } else {
+    sorted_edges.sort_by(|a, b| {
+      b.depth
+        .partial_cmp(&a.depth)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+  }
 
   let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
   if full_width {

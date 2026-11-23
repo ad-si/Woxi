@@ -2587,3 +2587,69 @@ mod perforated_faces {
     assert!(polygon_count(&holed) > polygon_count(&solid));
   }
 }
+
+mod coincident_lines {
+  use super::*;
+
+  /// For every on-screen line position drawn in both colors, the color
+  /// of the stroke that ends up on top.
+  fn top_colors(svg: &str) -> Vec<String> {
+    let mut last: std::collections::HashMap<String, (String, bool)> =
+      std::collections::HashMap::new();
+    for line in svg.split("<line ").skip(1) {
+      let line = line.split("/>").next().unwrap();
+      let Some(color) = line
+        .split("stroke=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+      else {
+        continue;
+      };
+      if color != "rgb(0,0,255)" && color != "rgb(255,0,0)" {
+        continue;
+      }
+      let coords: String = ["x1", "y1", "x2", "y2"]
+        .iter()
+        .map(|a| {
+          line
+            .split(&format!(" {a}=\""))
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .unwrap_or("")
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+      let entry = last.entry(coords).or_insert((color.to_string(), false));
+      if entry.0 != color {
+        entry.1 = true;
+      }
+      entry.0 = color.to_string();
+    }
+    last
+      .into_values()
+      .filter(|(_, both)| *both)
+      .map(|(c, _)| c)
+      .collect()
+  }
+
+  #[test]
+  fn later_line_covers_an_earlier_one_at_the_same_depth() {
+    // The second curve wobbles around the first by far less than a
+    // pixel, so a strict depth sort would interleave the two; as with a
+    // depth buffer, the later primitive must stay on top throughout.
+    let out = svg(
+      "Graphics3D[{Blue, Line[Table[{Cos[t], Sin[t], t/5}, {t, 0, 12, 0.1}]], \
+       Red, Line[Table[{Cos[t], Sin[t], t/5} + (-1)^Round[10 t] 10^-9, \
+       {t, 0, 12, 0.1}]]}, Boxed -> False]",
+    );
+    let tops = top_colors(&out);
+    assert!(tops.len() > 50, "too few shared positions: {}", tops.len());
+    assert!(
+      tops.iter().all(|c| c == "rgb(255,0,0)"),
+      "blue drawn over red at {} of {} positions",
+      tops.iter().filter(|c| *c == "rgb(0,0,255)").count(),
+      tops.len()
+    );
+  }
+}

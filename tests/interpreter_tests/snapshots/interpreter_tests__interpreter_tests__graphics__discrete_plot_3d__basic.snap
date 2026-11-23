@@ -6,42 +6,42 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <rect width="360" height="283" fill="rgb(255,255,255)"/>
 <line x1="157.3" y1="73.2" x2="157.2" y2="69.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="157.3" y1="73.2" x2="166.0" y2="75.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="157.2" y1="69.8" x2="157.1" y2="66.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="152.1" y1="77.9" x2="157.3" y2="73.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="157.2" y1="69.8" x2="157.1" y2="66.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="166.0" y1="75.8" x2="174.7" y2="78.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="157.1" y1="66.3" x2="157.0" y2="62.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="157.5,41.0 157.6,45.3 157.7,49.6 157.9,53.9 158.0,58.1 158.2,62.3 158.3,66.4 158.5,70.6 158.6,74.7" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="157.0" y1="62.9" x2="156.8" y2="59.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="174.7" y1="78.4" x2="183.5" y2="81.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="156.8" y1="59.4" x2="156.7" y2="56.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="146.8" y1="82.8" x2="152.1" y2="77.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="156.8" y1="59.4" x2="156.7" y2="56.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="156.7" y1="56.0" x2="156.6" y2="52.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="183.5" y1="81.1" x2="192.4" y2="83.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="156.6" y1="52.5" x2="156.5" y2="48.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="192.4" y1="83.8" x2="201.4" y2="86.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="156.5" y1="48.9" x2="156.3" y2="45.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="141.4" y1="87.8" x2="146.8" y2="82.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="156.5" y1="48.9" x2="156.3" y2="45.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="156.3" y1="45.4" x2="156.2" y2="41.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="201.4" y1="86.5" x2="210.5" y2="89.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="192.4,43.9 192.4,49.2 192.4,54.4 192.5,59.6 192.5,64.8 192.5,69.9 192.5,75.0 192.6,80.0 192.6,85.0" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="156.2" y1="41.8" x2="156.1" y2="38.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="156.1" y1="38.3" x2="156.0" y2="34.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="135.9" y1="92.9" x2="141.4" y2="87.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="156.1" y1="38.3" x2="156.0" y2="34.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="210.5" y1="89.2" x2="219.7" y2="92.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="156.0" y1="34.6" x2="155.8" y2="31.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="157.5" cy="41.0" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="219.7" y1="92.0" x2="229.0" y2="94.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.8" y1="31.0" x2="155.7" y2="27.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="155.7" y1="27.4" x2="155.6" y2="23.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="130.2" y1="98.0" x2="135.9" y2="92.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="155.7" y1="27.4" x2="155.6" y2="23.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="229.0" y1="94.8" x2="238.3" y2="97.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="136.4,66.5 136.6,70.0 136.8,73.4 137.0,76.9 137.2,80.3 137.4,83.7 137.5,87.1 137.7,90.5 137.9,93.8" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="155.6" y1="23.7" x2="155.4" y2="20.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.4" y1="20.0" x2="155.3" y2="16.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="238.3" y1="97.6" x2="247.8" y2="100.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="229.3,46.9 229.1,53.2 228.9,59.5 228.7,65.7 228.6,71.8 228.4,77.9 228.2,83.9 228.1,89.8 227.9,95.7" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
-<line x1="155.3" y1="16.3" x2="155.2" y2="12.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="124.5" y1="103.3" x2="130.2" y2="98.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="155.3" y1="16.3" x2="155.2" y2="12.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="247.8" y1="100.5" x2="257.4" y2="103.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.2" y1="12.5" x2="155.0" y2="8.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.0" y1="8.7" x2="154.9" y2="4.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -50,8 +50,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="118.7" y1="108.6" x2="124.5" y2="103.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="192.4" cy="43.9" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="267.0" y1="106.3" x2="276.8" y2="109.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="171.9,70.1 172.0,74.6 172.1,79.0 172.2,83.4 172.3,87.8 172.4,92.1 172.5,96.4 172.6,100.6 172.7,104.9" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="154.8" y1="1.1" x2="164.0" y2="3.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="171.9,70.1 172.0,74.6 172.1,79.0 172.2,83.4 172.3,87.8 172.4,92.1 172.5,96.4 172.6,100.6 172.7,104.9" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="149.2" y1="5.5" x2="154.8" y2="1.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="136.4" cy="66.5" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="276.8" y1="109.3" x2="286.7" y2="112.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -67,8 +67,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <polyline points="114.1,93.6 114.3,96.2 114.5,98.9 114.7,101.5 114.8,104.1 115.0,106.7 115.2,109.2 115.4,111.8 115.6,114.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="306.7" y1="118.3" x2="316.9" y2="121.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="209.4,74.0 209.3,79.5 209.3,84.9 209.2,90.3 209.2,95.6 209.1,100.9 209.1,106.1 209.0,111.3 208.9,116.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
-<line x1="192.1" y1="10.9" x2="201.7" y2="13.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="137.7" y1="14.6" x2="143.5" y2="10.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="192.1" y1="10.9" x2="201.7" y2="13.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="229.3" cy="46.9" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="100.4" y1="125.4" x2="106.6" y2="119.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="309.3,53.4 308.5,62.0 307.6,70.4 306.8,78.7 306.0,86.9 305.2,94.9 304.5,102.9 303.7,110.7 302.9,118.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
@@ -87,8 +87,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="125.7" y1="24.0" x2="131.8" y2="19.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="249.0,78.1 248.7,84.6 248.4,91.1 248.1,97.5 247.9,103.8 247.6,110.1 247.3,116.2 247.0,122.3 246.7,128.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="231.1" y1="21.1" x2="241.1" y2="23.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="348.7" y1="127.3" x2="349.2" y2="123.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="344.3" y1="136.8" x2="348.2" y2="130.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="348.7" y1="127.3" x2="349.2" y2="123.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="87.7" y1="137.1" x2="94.1" y2="131.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="352.9,57.0 351.5,66.7 350.2,76.3 348.9,85.7 347.7,95.0 346.4,104.1 345.2,113.0 344.0,121.8 342.8,130.5" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="349.2" y1="123.7" x2="349.7" y2="120.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -98,8 +98,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <circle cx="268.2" cy="50.1" r="3.50" fill="rgb(55,138,184)"/>
 <polyline points="90.2,122.5 90.4,124.3 90.6,126.0 90.7,127.8 90.9,129.6 91.1,131.3 91.3,133.0 91.4,134.8 91.6,136.5" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="251.2" y1="26.3" x2="261.5" y2="29.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="350.2" y1="116.4" x2="350.8" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="340.4" y1="142.8" x2="344.3" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="350.2" y1="116.4" x2="350.8" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="81.1" y1="143.1" x2="87.7" y2="137.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="209.4" cy="74.0" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="350.8" y1="112.7" x2="351.3" y2="109.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -109,17 +109,17 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <circle cx="150.1" cy="98.1" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="113.3" y1="33.9" x2="119.6" y2="28.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="291.0,82.4 290.4,90.1 289.8,97.6 289.1,105.1 288.5,112.4 287.9,119.7 287.3,126.9 286.7,133.9 286.1,140.9" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
-<line x1="351.8" y1="105.3" x2="352.3" y2="101.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="336.4" y1="149.0" x2="340.4" y2="142.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="271.8" y1="31.7" x2="282.3" y2="34.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="351.8" y1="105.3" x2="352.3" y2="101.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="74.4" y1="149.3" x2="81.1" y2="143.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="271.8" y1="31.7" x2="282.3" y2="34.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="90.2" cy="122.5" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="352.3" y1="101.6" x2="352.9" y2="97.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="282.3" y1="34.4" x2="292.9" y2="37.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="352.9" y1="97.8" x2="353.4" y2="94.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="106.9" y1="38.9" x2="113.3" y2="33.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="353.4" y1="94.0" x2="354.0" y2="90.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="332.3" y1="155.2" x2="336.4" y2="149.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="353.4" y1="94.0" x2="354.0" y2="90.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="67.5" y1="155.6" x2="74.4" y2="149.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="126.8,128.0 127.0,130.8 127.1,133.5 127.3,136.1 127.5,138.8 127.7,141.5 127.8,144.1 128.0,146.8 128.2,149.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="292.9" y1="37.2" x2="303.6" y2="40.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -127,13 +127,13 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <circle cx="309.3" cy="53.4" r="3.50" fill="rgb(55,138,184)"/>
 <polyline points="228.6,108.0 228.4,113.7 228.3,119.3 228.1,124.8 228.0,130.3 227.8,135.7 227.6,141.1 227.5,146.4 227.3,151.7" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="354.5" y1="86.3" x2="355.0" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="303.6" y1="40.0" x2="314.4" y2="42.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="100.3" y1="44.1" x2="106.9" y2="38.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="303.6" y1="40.0" x2="314.4" y2="42.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="249.0" cy="78.1" r="3.50" fill="rgb(55,138,184)"/>
-<line x1="355.0" y1="82.4" x2="355.6" y2="78.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="328.1" y1="161.7" x2="332.3" y2="155.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="335.6,87.0 334.5,95.8 333.4,104.5 332.3,113.1 331.3,121.5 330.3,129.8 329.2,138.0 328.2,146.0 327.3,154.0" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
+<line x1="355.0" y1="82.4" x2="355.6" y2="78.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="60.5" y1="162.0" x2="67.5" y2="155.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="335.6,87.0 334.5,95.8 333.4,104.5 332.3,113.1 331.3,121.5 330.3,129.8 329.2,138.0 328.2,146.0 327.3,154.0" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="314.4" y1="42.8" x2="325.4" y2="45.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="355.6" y1="78.5" x2="356.2" y2="74.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="188.2" cy="102.9" r="3.50" fill="rgb(55,138,184)"/>
@@ -142,12 +142,12 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <polyline points="64.7,153.4 64.9,154.3 65.0,155.2 65.1,156.1 65.2,156.9 65.3,157.8 65.4,158.7 65.5,159.6 65.6,160.5" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="325.4" y1="45.7" x2="336.4" y2="48.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="126.8" cy="128.0" r="3.50" fill="rgb(55,138,184)"/>
-<line x1="356.7" y1="70.6" x2="357.3" y2="66.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="323.8" y1="168.2" x2="328.1" y2="161.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="356.7" y1="70.6" x2="357.3" y2="66.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="53.4" y1="168.6" x2="60.5" y2="162.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="165.5,133.9 165.6,137.6 165.7,141.3 165.9,144.9 166.0,148.6 166.1,152.2 166.2,155.8 166.3,159.3 166.4,162.8" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
-<line x1="357.3" y1="66.6" x2="357.9" y2="62.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="336.4" y1="48.6" x2="347.7" y2="51.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="357.3" y1="66.6" x2="357.9" y2="62.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="64.7" cy="153.4" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="357.9" y1="62.6" x2="358.4" y2="58.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="86.8" y1="54.8" x2="93.6" y2="49.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -158,15 +158,15 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="46.1" y1="175.3" x2="53.4" y2="168.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="352.9" cy="57.0" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="355.0" y1="60.0" x2="359.0" y2="54.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<circle cx="291.0" cy="82.4" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="79.8" y1="60.3" x2="86.8" y2="54.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<circle cx="291.0" cy="82.4" r="3.50" fill="rgb(55,138,184)"/>
 <polyline points="101.8,160.1 102.0,161.9 102.2,163.7 102.3,165.5 102.5,167.3 102.7,169.1 102.8,170.9 103.0,172.7 103.1,174.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="314.9" y1="181.8" x2="319.4" y2="174.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="38.6" y1="182.1" x2="46.1" y2="175.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="228.6" cy="108.0" r="3.50" fill="rgb(55,138,184)"/>
 <polyline points="206.7,140.1 206.6,144.9 206.6,149.6 206.6,154.2 206.5,158.8 206.5,163.4 206.4,168.0 206.4,172.5 206.3,176.9" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
-<circle cx="165.5" cy="133.9" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="350.9" y1="65.6" x2="355.0" y2="60.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<circle cx="165.5" cy="133.9" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="72.6" y1="65.9" x2="79.8" y2="60.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="317.1,119.1 316.2,127.1 315.3,134.9 314.5,142.6 313.6,150.1 312.8,157.6 312.0,165.0 311.2,172.3 310.4,179.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="310.3" y1="188.7" x2="314.9" y2="181.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -179,8 +179,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="31.0" y1="189.1" x2="30.4" y2="185.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="31.0" y1="189.1" x2="40.8" y2="193.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="305.7" y1="195.9" x2="310.3" y2="188.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="141.2,167.1 141.4,169.9 141.5,172.7 141.7,175.5 141.8,178.2 142.0,180.9 142.1,183.7 142.2,186.4 142.4,189.0" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="30.4" y1="185.4" x2="29.8" y2="181.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="141.2,167.1 141.4,169.9 141.5,172.7 141.7,175.5 141.8,178.2 142.0,180.9 142.1,183.7 142.2,186.4 142.4,189.0" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="40.8" y1="193.0" x2="50.7" y2="197.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="29.8" y1="181.7" x2="29.1" y2="177.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="335.6" cy="87.0" r="3.50" fill="rgb(55,138,184)"/>
@@ -188,17 +188,17 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="342.3" y1="77.3" x2="346.6" y2="71.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="57.8" y1="77.6" x2="65.3" y2="71.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="29.1" y1="177.9" x2="28.5" y2="174.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<circle cx="271.5" cy="113.4" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="50.7" y1="197.0" x2="60.7" y2="201.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<circle cx="271.5" cy="113.4" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="300.9" y1="203.2" x2="305.7" y2="195.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="28.5" y1="174.1" x2="27.9" y2="170.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<circle cx="206.7" cy="140.1" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="27.9" y1="170.2" x2="27.3" y2="166.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<circle cx="206.7" cy="140.1" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="60.7" y1="201.0" x2="70.9" y2="205.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="337.9" y1="83.3" x2="342.3" y2="77.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="75.0,194.4 75.2,195.3 75.3,196.2 75.4,197.1 75.5,198.0 75.6,198.9 75.7,199.9 75.8,200.8 75.9,201.7" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="50.2" y1="83.6" x2="57.8" y2="77.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="27.3" y1="166.4" x2="26.6" y2="162.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="75.0,194.4 75.2,195.3 75.3,196.2 75.4,197.1 75.5,198.0 75.6,198.9 75.7,199.9 75.8,200.8 75.9,201.7" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <circle cx="141.2" cy="167.1" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="296.0" y1="210.7" x2="300.9" y2="203.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="70.9" y1="205.0" x2="81.2" y2="209.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -215,9 +215,9 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="24.7" y1="150.7" x2="24.0" y2="146.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="91.6" y1="213.2" x2="102.1" y2="217.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="24.0" y1="146.6" x2="23.3" y2="142.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="102.1" y1="217.4" x2="112.8" y2="221.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="328.8" y1="95.7" x2="333.4" y2="89.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="317.1" cy="119.1" r="3.50" fill="rgb(55,138,184)"/>
-<line x1="102.1" y1="217.4" x2="112.8" y2="221.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="34.4" y1="96.1" x2="42.4" y2="89.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="23.3" y1="142.6" x2="22.7" y2="138.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polyline points="115.1,202.8 115.2,204.7 115.4,206.6 115.5,208.4 115.7,210.3 115.8,212.1 116.0,213.9 116.1,215.8 116.3,217.6" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
@@ -233,8 +233,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="21.3" y1="130.3" x2="20.6" y2="126.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="123.6" y1="226.0" x2="134.6" y2="230.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="280.6" y1="234.2" x2="285.9" y2="226.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<circle cx="115.1" cy="202.8" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="20.6" y1="126.1" x2="19.9" y2="121.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<circle cx="115.1" cy="202.8" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="134.6" y1="230.4" x2="145.7" y2="234.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="19.9" y1="121.9" x2="19.2" y2="117.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="319.3" y1="108.8" x2="324.1" y2="102.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -245,8 +245,8 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="275.2" y1="242.4" x2="280.6" y2="234.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="18.5" y1="113.4" x2="17.8" y2="109.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="156.9" y1="239.3" x2="168.3" y2="243.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="275.5,191.2 275.1,197.2 274.6,203.2 274.2,209.0 273.7,214.8 273.3,220.5 272.8,226.2 272.4,231.8 272.0,237.3" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="17.8" y1="109.1" x2="28.3" y2="112.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="275.5,191.2 275.1,197.2 274.6,203.2 274.2,209.0 273.7,214.8 273.3,220.5 272.8,226.2 272.4,231.8 272.0,237.3" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="314.3" y1="115.5" x2="319.3" y2="108.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="297.1" cy="153.8" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="168.3" y1="243.8" x2="179.9" y2="248.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -267,14 +267,14 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="258.3" y1="268.2" x2="264.1" y2="259.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="215.4" y1="262.5" x2="227.6" y2="267.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="71.7" y1="128.0" x2="82.9" y2="132.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="298.8" y1="136.8" x2="304.1" y2="129.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="227.6" y1="267.4" x2="239.9" y2="272.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="298.8" y1="136.8" x2="304.1" y2="129.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="82.9" y1="132.0" x2="94.3" y2="136.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="252.4" y1="277.3" x2="258.3" y2="268.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <circle cx="275.5" cy="191.2" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="239.9" y1="272.3" x2="252.4" y2="277.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polyline points="252.2,231.8 251.9,236.8 251.6,241.7 251.3,246.6 251.1,251.5 250.8,256.3 250.5,261.0 250.3,265.7 250.0,270.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <line x1="94.3" y1="136.0" x2="105.8" y2="140.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<polyline points="252.2,231.8 251.9,236.8 251.6,241.7 251.3,246.6 251.1,251.5 250.8,256.3 250.5,261.0 250.3,265.7 250.0,270.4" fill="none" stroke="rgb(55,138,184)" stroke-width="0.5" stroke-linecap="butt" stroke-linejoin="round" opacity="0.5"/>
 <circle cx="203.3" cy="221.5" r="3.50" fill="rgb(55,138,184)"/>
 <line x1="293.3" y1="144.3" x2="298.8" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="252.4" y1="277.3" x2="252.7" y2="273.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
