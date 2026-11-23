@@ -27491,6 +27491,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// A `Style[label, color]` chart label keeps its own color in every
+    /// placement (centered, below, rotated), instead of the default text
+    /// color.
+    #[test]
+    fn bar_chart_labels_keep_style_color() {
+      for spec in [
+        r#"Placed[{Style["p", Yellow, 9], Style["q", Blue]}, Center]"#,
+        r#"Placed[{Style["p", Yellow, 9], Style["q", Blue]}, Above]"#,
+        r#"{Style["p", Yellow], Rotate[Style["q", Blue], Pi/2]}"#,
+      ] {
+        let svg =
+          export_svg(&format!("BarChart[{{1, 2}}, ChartLabels -> {spec}]"));
+        let label_fill = |text: &str| {
+          let end = svg.find(&format!(">{text}</text>")).unwrap();
+          let start = svg[..end].rfind("<text").unwrap();
+          let tag = &svg[start..end];
+          let f = tag.find("fill=\"").unwrap() + 6;
+          tag[f..f + tag[f..].find('"').unwrap()].to_string()
+        };
+        assert_eq!(label_fill("p"), "rgb(255,255,0)", "{spec}");
+        assert_eq!(label_fill("q"), "rgb(0,0,255)", "{spec}");
+      }
+    }
+
     #[test]
     fn bar_chart_labels_placed_below_is_default() {
       let svg_placed = export_svg(
@@ -31641,6 +31665,42 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !single.starts_with("<svg width=\"100\" height=\"100\""),
         "{single}"
       );
+    }
+
+    /// An `ImageSize -> {w, h}` box holds the whole picture: the frame
+    /// ticks and a `PlotLabel` (text or a graphic) take room inside it,
+    /// shrinking the cells, instead of growing the picture past the box.
+    #[test]
+    fn array_plot_image_size_pair_holds_ticks_and_label() {
+      let outer = |code: &str| -> String {
+        export_svg(code).lines().next().unwrap_or("").to_string()
+      };
+      for code in [
+        "MatrixPlot[IdentityMatrix[6], ImageSize -> {400, 300}]",
+        "MatrixPlot[IdentityMatrix[6], ImageSize -> {400, 300}, PlotLabel -> \"title\"]",
+        "MatrixPlot[IdentityMatrix[6], ImageSize -> {400, 300}, \
+         PlotLabel -> BarChart[{1, 2}, ImageSize -> {200, 80}]]",
+        "ArrayPlot[{{1, 0, 1, 1}}, ImageSize -> {300, 200}, Frame -> True, \
+         FrameTicks -> All]",
+      ] {
+        let header = outer(code);
+        let size = |name: &str| -> f64 {
+          let start =
+            header.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          header[start..start + header[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        let (w, h) = if code.contains("{300, 200}") {
+          (300.0, 200.0)
+        } else {
+          (400.0, 300.0)
+        };
+        assert!(
+          (size("width") - w).abs() <= 1.0 && (size("height") - h).abs() <= 1.0,
+          "{code}: {header}"
+        );
+      }
     }
 
     #[test]
