@@ -33592,24 +33592,6 @@ fn grid_svg_styled_internal_reporting(
         }
       }
       *cell = resolve_display_item(cell);
-      eprintln!(
-        "BEFORE {}",
-        crate::syntax::expr_to_string(cell)
-          .chars()
-          .take(80)
-          .collect::<String>()
-      );
-      if let Expr::Graphics { svg, .. } = &*cell {
-        eprintln!("AFTER {}", &svg[..60.min(svg.len())]);
-      } else {
-        eprintln!(
-          "AFTER {}",
-          crate::syntax::expr_to_string(cell)
-            .chars()
-            .take(80)
-            .collect::<String>()
-        );
-      }
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
       *cell = nested_grid_cell_in_grid_style(cell, default_style);
