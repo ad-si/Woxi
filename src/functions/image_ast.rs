@@ -5512,7 +5512,7 @@ fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
 }
 
 /// RGB → HSB/HSV, each component in [0, 1].
-fn rgb_to_hsv(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+pub(crate) fn rgb_to_hsv(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
   let max = r.max(g).max(b);
   let min = r.min(g).min(b);
   let delta = max - min;

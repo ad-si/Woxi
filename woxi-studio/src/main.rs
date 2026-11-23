@@ -11553,7 +11553,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         assert_eq!(current, "RGBColor[0, 0, 0]");
         assert_eq!(
           *position, 0.0,
-          "the handle defaults to position 0 even though black isn't on the gradient"
+          "black has no hue, so its handle sits at the start of the gradient"
         );
       }
       other => panic!("expected a Color control, got {other:?}"),
@@ -11587,6 +11587,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         assert_eq!(current, "RGBColor[1, 0, 0]");
       }
       other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// A color control's handle starts at the hue of its initial color, so
+  /// the handle of a green `ColorSetter` sits a third of the way along the
+  /// rainbow bar rather than at its red start, while the bound variable
+  /// keeps the spec's literal color. Grays have no hue and start at 0.
+  /// Regression: every handle started at position 0 whatever its color.
+  #[test]
+  fn color_control_handle_starts_at_the_initial_hue() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[{a, b, c, d, e}, {{a, Green, "a"}, Green, ControlType -> ColorSetter}, {{b, Blue, "b"}, ColorSlider}, {{c, RGBColor[1, 0.5, 0], "c"}, ColorSetter}, {{d, GrayLevel[0], "d"}, GrayLevel[0], ControlType -> ColorSetter}, {{e, Hue[0.8, 0.5, 0.5], "e"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("color controls should build a ManipulateState");
+    let handles: Vec<(String, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Color {
+          current, position, ..
+        } => (current.clone(), *position),
+        other => panic!("expected a Color control, got {other:?}"),
+      })
+      .collect();
+    let expected = [
+      ("RGBColor[0, 1, 0]", 1.0 / 3.0),
+      ("RGBColor[0, 0, 1]", 2.0 / 3.0),
+      ("RGBColor[1, 0.5, 0]", 1.0 / 12.0),
+      ("GrayLevel[0]", 0.0),
+      ("Hue[0.8, 0.5, 0.5]", 0.8),
+    ];
+    assert_eq!(handles.len(), expected.len());
+    for ((current, position), (want_current, want_position)) in
+      handles.iter().zip(expected)
+    {
+      assert_eq!(current, want_current);
+      assert!(
+        (position - want_position).abs() < 1e-9,
+        "{current}: handle at {position}, expected {want_position}"
+      );
     }
   }
 

@@ -241,6 +241,16 @@ pub fn manipulate_color_to_rgb(code: &str) -> (f64, f64, f64) {
   }
 }
 
+/// The hue (`0.0..=1.0`) of a color expression's InputForm code, as
+/// `ColorConvert[c, "HSB"]` would give it; `0.0` for achromatic colors
+/// (grays, black, white) and anything that isn't a recognized color. Used
+/// by a frontend to place a Manipulate ColorSlider/ColorSetter handle at
+/// its initial color on the hue gradient.
+pub fn manipulate_color_hue(code: &str) -> f64 {
+  let (r, g, b) = manipulate_color_to_rgb(code);
+  crate::functions::image_ast::rgb_to_hsv(r, g, b).0
+}
+
 // ── Theme colors for light/dark mode ────────────────────────────────────
 
 pub struct ThemeColors {

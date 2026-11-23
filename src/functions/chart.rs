@@ -5651,7 +5651,11 @@ fn glass_sector_gradient(
   (r_in, r_out): (f64, f64),
 ) -> (String, String) {
   use std::hash::{Hash, Hasher};
-  let (h, s, v) = rgb_to_hsb(r, g, b);
+  let (h, s, v) = crate::functions::image_ast::rgb_to_hsv(
+    r as f64 / 255.0,
+    g as f64 / 255.0,
+    b as f64 / 255.0,
+  );
   let mut stops = String::new();
   for (k, (sf, bf)) in GLASS_SECTOR_SATURATION
     .iter()
@@ -5683,25 +5687,6 @@ fn glass_sector_gradient(
     ),
     id,
   )
-}
-
-/// An 8-bit RGB color as hue, saturation and brightness in `0..=1`.
-fn rgb_to_hsb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
-  let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
-  let max = r.max(g).max(b);
-  let min = r.min(g).min(b);
-  let d = max - min;
-  let h = if d == 0.0 {
-    0.0
-  } else if max == r {
-    ((g - b) / d).rem_euclid(6.0) / 6.0
-  } else if max == g {
-    ((b - r) / d + 2.0) / 6.0
-  } else {
-    ((r - g) / d + 4.0) / 6.0
-  };
-  let s = if max == 0.0 { 0.0 } else { d / max };
-  (h, s, max)
 }
 
 /// Hue, saturation and brightness in `0..=1` as an 8-bit RGB color.
