@@ -6578,6 +6578,15 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&traditionalize_layout_items(&args[0]))
     }
+    // A string is its own text in any form: `TraditionalForm["ab"]` shows
+    // `ab`, not the `FormBox` source it serializes to.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(args[0], Expr::String(_)) =>
+    {
+      graphics_text_content(&args[0])
+    }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
