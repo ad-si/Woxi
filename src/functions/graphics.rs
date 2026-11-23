@@ -38051,6 +38051,13 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
     current = call1("TraditionalForm", current);
+  } else if traditional
+    && matches!(&current, Expr::String(s)
+      if inline_box_string_to_box_expr(s).is_some())
+  {
+    // Its box code is still set traditionally — the single-letter symbols
+    // in italics — so the form stays on for the renderer.
+    current = call1("TraditionalForm", current);
   } else if traditional {
     current = traditionalize_layout_items(&current);
   } else if standard
