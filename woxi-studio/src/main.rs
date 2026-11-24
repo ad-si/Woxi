@@ -20055,7 +20055,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: false,
+      unit: manipulate::SliderUnit::Plain,
       reversed: false,
     };
     let empty = manipulate::ControlState::Continuous {
@@ -20069,11 +20069,32 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: false,
+      unit: manipulate::SliderUnit::Plain,
       reversed: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
+  }
+
+  // A slider counting degrees substitutes its position as the exact angle
+  // (`96*Degree`), the way Wolfram binds a `Degree`-stepped slider.
+  #[test]
+  fn degree_slider_binds_exact_angle_current_code() {
+    let c = manipulate::ControlState::Continuous {
+      name: "a".to_string(),
+      label: "a".to_string(),
+      label_runs: vec![],
+      min: 40.0,
+      max: 170.0,
+      step: 1.0,
+      current: 96.0,
+      is_real: false,
+      exact_value: None,
+      orientation: manipulate::ControlOrientation::Horizontal,
+      unit: manipulate::SliderUnit::Degree,
+      reversed: false,
+    };
+    assert_eq!(c.current_code(), "96*Degree");
   }
 
   // A slider along the imaginary axis substitutes its value as a complex
@@ -20091,12 +20112,12 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: true,
+      unit: manipulate::SliderUnit::Imaginary,
       reversed: false,
     };
     assert_eq!(c.current_code(), "Complex[0, 1]");
-    if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {
-      *imaginary = false;
+    if let manipulate::ControlState::Continuous { unit, .. } = &mut c {
+      *unit = manipulate::SliderUnit::Plain;
     }
     assert_eq!(c.current_code(), "1");
   }
