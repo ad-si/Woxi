@@ -1316,6 +1316,33 @@ mod elliptic_k {
   use super::*;
 
   #[test]
+  fn series_at_zero() {
+    // The derivatives have an apparent 1/m singularity at m == 0, which
+    // used to turn the constant term into Indeterminate.
+    assert_eq!(
+      interpret("Series[EllipticK[m], {m, 0, 4}]").unwrap(),
+      "SeriesData[m, 0, {Pi/2, Pi/8, (9*Pi)/128, (25*Pi)/512, \
+       (1225*Pi)/32768}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_normal_with_factor() {
+    assert_eq!(
+      interpret("Normal[Series[-(2/Pi) EllipticK[a] p, {a, 0, 2}]]").unwrap(),
+      "-p - (a*p)/4 - (9*a^2*p)/64"
+    );
+  }
+
+  #[test]
+  fn series_of_polynomial_argument() {
+    assert_eq!(
+      interpret("Series[EllipticK[x + x^2], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {Pi/2, Pi/8, (25*Pi)/128, (97*Pi)/512}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
   fn zero_arg() {
     assert_eq!(interpret("EllipticK[0]").unwrap(), "Pi/2");
   }
@@ -1373,6 +1400,23 @@ mod elliptic_k {
 
 mod elliptic_e {
   use super::*;
+
+  #[test]
+  fn series_at_zero() {
+    assert_eq!(
+      interpret("Series[EllipticE[m], {m, 0, 4}]").unwrap(),
+      "SeriesData[m, 0, {Pi/2, -1/8*Pi, (-3*Pi)/128, (-5*Pi)/512, \
+       (-175*Pi)/32768}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_laurent_at_zero() {
+    assert_eq!(
+      interpret("Series[EllipticE[x]/x, {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {Pi/2, -1/8*Pi, (-3*Pi)/128}, -1, 2, 1]"
+    );
+  }
 
   #[test]
   fn at_zero() {

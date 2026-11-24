@@ -142,6 +142,36 @@ mod date_string_time_zone {
       "{09:00:00, 1900, 2, 4, 4}"
     );
   }
+
+  // A format list mixing elements with literal separators and no date
+  // formats the current date, also when it is shifted by `TimeZone -> tz`.
+  #[test]
+  fn date_string_format_list_with_separators_formats_now() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Block[{$TimeZone = 0}, With[{\
+         t = DateString[{\"Hour\", \":\", \"Minute\", \":\", \"Second\"}], \
+         z = DateString[{\"Hour12Short\", \" \", \"AMPM\"}, TimeZone -> \"Asia/Tokyo\"]}, \
+         {StringLength[t], StringTake[t, {3}], StringTake[t, {6}], \
+          StringMatchQ[z, DigitCharacter .. ~~ \" \" ~~ (\"AM\" | \"PM\")], \
+          DateString[{\"Year\", \"/\", \"Quarter\"}] === \
+           DateString[Now, {\"Year\", \"/\", \"Quarter\"}]}]]"
+      )
+      .unwrap(),
+      "{8, :, :, True, True}"
+    );
+  }
+
+  // A list of strings without any format element is not a format.
+  #[test]
+  fn date_string_list_without_format_elements_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("DateString[{\"a\", \":\"}]").unwrap(),
+      "DateString[{a, :}]"
+    );
+  }
 }
 
 mod date_list {
