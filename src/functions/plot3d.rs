@@ -15691,12 +15691,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
-    // A non-planar polygon has no single normal: each of its fan
-    // triangles is lit by its own.
+    // A polygon is lit as one face with its Newell normal, even when its
+    // corners do not share a plane: Wolfram fills a non-planar polygon
+    // (a closed path over several faces of a box) in a single shade
+    // rather than lighting each of its fan triangles by its own normal.
     let polygon_normal = match prim {
-      Primitive3D::Polygon3D { points, .. }
-        if points.len() > 3 && is_planar_polygon3d(points) =>
-      {
+      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
         let mut normal = [0.0; 3];
         for i in 0..points.len() {
           let (a, b) = (points[i], points[(i + 1) % points.len()]);

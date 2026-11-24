@@ -35247,10 +35247,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     // A polygon whose corners do not lie in one plane (a closed path over
     // three faces of a cube) has no plane to be flattened onto. Woxi used
-    // to squash it onto one plane and light it with a single normal, so a
-    // box drawn as one such polygon came out as a flat panel. It is drawn
-    // as a fan from its first corner instead, each triangle lit by its own
-    // normal.
+    // to squash it onto one plane, so a box drawn as one such polygon came
+    // out as a flat panel. It is drawn as a fan from its first corner
+    // instead. Like wolframscript, the whole fan is lit with the polygon's
+    // one Newell normal, so every triangle has the same shade.
     #[test]
     fn a_non_planar_polygon_is_a_lit_fan() {
       let svg = export_svg(
@@ -35285,7 +35285,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let mut fills: Vec<&String> = triangles.iter().map(|t| &t.1).collect();
       fills.sort();
       fills.dedup();
-      assert_eq!(fills.len(), 4, "each triangle has its own shade: {svg}");
+      assert_eq!(fills.len(), 1, "the fan is lit as one face: {svg}");
     }
 
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
