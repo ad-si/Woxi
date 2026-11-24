@@ -5968,6 +5968,32 @@ fit that Woxi applies (398 px). Unlike the tall building, this box is
 nearly as wide as it is tall, and the picture is square. Unverified with
 wolframscript.
 
+A second square picture agrees. A Demonstration's `Manipulate` shows an
+unboxed `Graphics3D` of polygons at `ImageSize -> {400, 400}`, from the
+default camera and with no `PlotRange`. The polygons form a triangular
+prism cut into tetrahedra and prisms, in a 1.2 × 1.2 × 1 box. Its
+snapshot draws the scene about 314 × 276 pt. That is the sphere-framed
+size (Woxi with `SphericalRegion -> True`: 314 × 279). The outline fit
+draws it 398 × 354, so the scene touches the picture's edges. Fitting the
+scene's box outline instead of its contents (as a `Boxed -> True` picture
+does) gives 350 × 311, which does not match either. Three rules were tried
+and each contradicts an earlier snapshot:
+
+- Sphere-framing every square unboxed picture in a `Manipulate` breaks the
+  fixed-volume cylinders at `ImageSize -> {150, 150}` (see
+  `an_unboxed_scene_without_a_set_view_fills_a_pinned_picture`). They fill
+  95–98 % of the frame, but sphere framing draws the thin one at 84 %.
+- Sphere-framing every unboxed picture no taller than wide also breaks the
+  stepped stack of cuboids at `ImageSize -> {400, 300}`, which keeps the
+  outline fit.
+- A rule based on how compact the box is breaks the 8 × 8 × 7 cylinder. It
+  also fills its frame.
+
+The two sphere-framed scenes are built from `Polygon`s (and an `Arrow`).
+The outline-fitted ones are `Cylinder`s and `Cuboid`s. It is not known
+whether that difference matters. None of these cases has been checked with
+wolframscript.
+
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
