@@ -8808,7 +8808,7 @@ mod cases {
           found.push((at, name));
         }
       }
-      found.sort();
+      found.sort_unstable();
       found.into_iter().map(|(_, n)| n).collect::<Vec<_>>()
     };
     assert_eq!(order("2/(x - 1) + 3/(x + 2)"), ["x+2", "x-1"]);
