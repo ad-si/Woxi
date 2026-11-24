@@ -16343,7 +16343,7 @@ mod plot3d {
     #[test]
     fn frame_tick_labels_keep_their_style() {
       let graphics = export_svg(
-        r#"Graphics[Point[{{0, 0}, {2, 3}}], Frame -> True,
+        r#"Graphics[Point[{{0, 0}, {3, 3}}], Frame -> True,
           FrameTicks -> {{{{0, "O"}, {2, Style["l", Italic]}}, None},
                          {{{0, "O"}, {3, Style["s", Bold]}}, None}}]"#,
       );
