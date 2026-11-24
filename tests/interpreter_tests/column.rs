@@ -460,8 +460,10 @@ mod column_visual_mode {
       assert!(!svg.contains("Grid["), "{svg}");
       // The 2x2 grid's frame: three horizontal and three vertical rules.
       assert_eq!(svg.matches("<line").count(), 6, "{svg}");
-      // The grid's four cells take the style's size.
-      assert_eq!(svg.matches("font-size=\"10").count(), 4, "{svg}");
+      // The grid's cells take the style's size; only the heading keeps
+      // the default one.
+      assert!(svg.contains("font-size=\"10"), "{svg}");
+      assert_eq!(svg.matches("font-size=\"14").count(), 1, "{svg}");
     }
   }
 
