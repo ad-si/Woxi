@@ -1,3 +1,4 @@
+mod cylindrical_decomposition;
 mod grammar;
 mod integer_curated_corpus;
 mod presburger_semantics;

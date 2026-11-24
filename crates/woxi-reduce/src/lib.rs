@@ -6,6 +6,7 @@
 //! their surface representation.
 
 pub mod affine;
+pub mod cad;
 pub mod exact;
 pub mod formula;
 pub mod presburger;

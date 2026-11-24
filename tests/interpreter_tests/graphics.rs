@@ -4592,6 +4592,25 @@ mod graphics {
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
 
+    /// A `Framed`/`Panel` of `Text[…]` laid out in a grid cell's `Row` or
+    /// `Column` (which wraps it in the cell's font `Style`) draws the text,
+    /// or the table it holds, instead of printing `Text[…]` as source.
+    /// The same holds for a `TabView` pane in a grid with `ItemSize`.
+    #[test]
+    fn framed_text_in_a_grid_cell_layout() {
+      for code in [
+        "Grid[{{Row[{Framed[Text[\"q\"]]}]}}]",
+        "Grid[{{Row[{Panel[Text[\"q\"]]}]}}]",
+        "Grid[{{Column[{\"a\", Framed[Text[Grid[{{\"q\", 2}}]]]}]}}]",
+        "Grid[{{TabView[{\"t\" -> Text[Grid[{{\"q\", 2}}]]}]}}, \
+         ItemSize -> {24, 1}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(">q</text>"), "{code}: {svg}");
+        assert!(!svg.contains(">Text</text>"), "{code}: {svg}");
+      }
+    }
+
     /// A number in scientific notation inside a label sets its exponent as a
     /// superscript digit on one line, not stacked on a second text line.
     #[test]

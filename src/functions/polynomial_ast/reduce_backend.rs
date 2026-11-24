@@ -269,3 +269,37 @@ fn rational_expr(value: &Rational) -> Expr {
     )
   }
 }
+
+/// `CylindricalDecomposition[expr, vars]`: a cylindrical algebraic
+/// decomposition of the real solution set of `expr`, with the variables
+/// eliminated in the given order. The exact affine engine produces the
+/// cylindrical form directly; other real formulas go through `Reduce` over
+/// the reals, whose output is cylindrical as well. A formula neither route
+/// can decompose stays unevaluated.
+pub fn cylindrical_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || call("CylindricalDecomposition", args.to_vec());
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let reduce_args = [args[0].clone(), args[1].clone(), id_expr("Reals")];
+  if let Some(request) = lower::request_from_args(&reduce_args) {
+    let formula = if request.formula.contains_quantifier() {
+      woxi_reduce::rational_qe::eliminate_quantifiers(request.formula)
+    } else {
+      Some(request.formula)
+    };
+    if let Some(cells) = formula.and_then(|formula| {
+      woxi_reduce::cad::cylindrical_cells(&formula, &request.targets)
+    }) {
+      let result = emit::cylindrical_cells_expr(&cells, &request.targets);
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
+  let result = reduce_ast(&reduce_args)?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Reduce") {
+    return Ok(unevaluated());
+  }
+  Ok(result)
+}

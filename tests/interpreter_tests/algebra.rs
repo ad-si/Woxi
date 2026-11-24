@@ -17496,6 +17496,52 @@ mod find_instance {
   }
 
   #[test]
+  fn inequality_chain_with_symbolic_bounds() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cs = Inequality[a - 3, Less, b, LessEqual, a + 4] && c == b + 2; \
+         s = FindInstance[cs, {a, b, c}, Reals, 5]; \
+         {Length[s], Length[Union[s]], And @@ (cs /. s)}"
+      )
+      .unwrap(),
+      "{5, 5, True}"
+    );
+  }
+
+  #[test]
+  fn unbounded_region_gives_requested_count() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = FindInstance[x == 1 && y > 2 x, {x, y}, Reals, 4]; \
+         {Length[s], Length[Union[s]], And @@ (x == 1 && y > 2 x /. s)}"
+      )
+      .unwrap(),
+      "{4, 4, True}"
+    );
+  }
+
+  #[test]
+  fn disjunction_of_linear_systems() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cs = (a < -5 && b == 2) || (a > 1 && (b > a || b < -a)); \
+         s = FindInstance[cs, {a, b}, Reals, 5]; \
+         {Length[s], Length[Union[s]], And @@ (cs /. s)}"
+      )
+      .unwrap(),
+      "{5, 5, True}"
+    );
+    assert_eq!(
+      interpret("FindInstance[(x > 1 && x < 0) || (x > 5 && x < 4), x, Reals]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
   fn infeasible_linear_system_has_no_instance() {
     assert_eq!(interpret("FindInstance[x > 1 && x < 1, x]").unwrap(), "{}");
     assert_eq!(

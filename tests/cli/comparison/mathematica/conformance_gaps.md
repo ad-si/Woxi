@@ -9656,6 +9656,16 @@ sorts the distinct roots.
 `FindInstance[x < -1000, x]` is `{{x -> -1075}}` in wolframscript (an
 internal heuristic); Woxi gives the nearest integers `1001` and `-1001`.
 
+## `CylindricalDecomposition` cell boundaries (unverified against wolframscript)
+
+Linear formulas are decomposed exactly, but where two bounds of a variable
+tie (`y > x && y > -x` at `x == 0`) the tie goes to the cell of the bound
+listed later (`(x < 0 && y > -x) || (x >= 0 && y > x)`), and cells from
+different disjuncts are merged only when they are adjacent pieces of the
+same cell. Wolfram may attach the boundary to the other side, split it
+into a cell of its own, or merge cells differently. Nonlinear formulas go
+through `Reduce` over the reals and stay unevaluated where it does.
+
 ## `NDSolve` accuracy and step control
 
 Several assertions about `NDSolve`, `NDEigensystem` and `NDEigenvalues`
