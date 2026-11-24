@@ -63020,6 +63020,46 @@ fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
 }
 
 #[test]
+fn plot_legend_stays_outside_the_explicit_image_padding_clip() {
+  // Regression: with an explicit `ImagePadding`, the legend placed below
+  // (or beside) the plot was drawn inside the clip that cuts the plot at
+  // its image boundary, so it was cut off and never visible.
+  for (plot, placement) in [
+    ("ParametricPlot[{Sin[t], Cos[2 t]}, {t, 0, 6}", "Bottom"),
+    ("Plot[{Sin[x], Cos[x]}, {x, 0, 6}", "Right"),
+    ("Plot[{Sin[x], Cos[x]}, {x, 0, 6}", "Top"),
+  ] {
+    let code = format!(
+      "{plot}, Frame -> True, PlotLegends -> Placed[{{\"legA\", \"legB\"}}, \
+       {placement}], ImagePadding -> {{{{40, 10}}, {{40, 10}}}}, \
+       ImageSize -> 270]"
+    );
+    let svg = export_svg(&code);
+    // The clip group (with its nested groups) closes before the legend.
+    let clip_open = svg
+      .find("<g clip-path=\"url(#imageClip_")
+      .unwrap_or_else(|| panic!("{svg}"));
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, _) in svg[clip_open..].match_indices('<') {
+      let rest = &svg[clip_open + i..];
+      if rest.starts_with("<g ") || rest.starts_with("<g>") {
+        depth += 1;
+      } else if rest.starts_with("</g>") {
+        depth -= 1;
+        if depth == 0 {
+          close = Some(clip_open + i);
+          break;
+        }
+      }
+    }
+    let close = close.unwrap_or_else(|| panic!("{svg}"));
+    let label = svg.find(">legA").unwrap_or_else(|| panic!("{svg}"));
+    assert!(label > close, "{code}: legend inside the image clip\n{svg}");
+  }
+}
+
+#[test]
 fn lone_text_label_is_not_clipped_to_its_picture() {
   // Regression: a `Text` label wider than its picture (its extent does not
   // count toward an automatic plot range) was cut off at the picture's
