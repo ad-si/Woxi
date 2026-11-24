@@ -8455,17 +8455,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(&applied)
     }
-    // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
-    // (an outer label size around an inner color) takes both: merge them
-    // into one `Style`, the inner directives after (so overriding) the
-    // outer ones.
+    // `Style[Style[MatrixForm[m], Red], 17]` — a grid (or a typeset
+    // `TraditionalForm` formula) styled at two levels (an outer label size
+    // around an inner color) takes both: merge them into one `Style`, the
+    // inner directives after (so overriding) the outer ones.
     Expr::FunctionCall { name, args }
       if name == "Style"
         && args.len() >= 2
         && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
           if inner == "Style"
             && inner_args.len() >= 2
-            && styled_table_core(&inner_args[0])) =>
+            && (styled_table_core(&inner_args[0])
+              || matches!(&inner_args[0], Expr::FunctionCall { name: tf, args: tf_args }
+                if tf == "TraditionalForm" && tf_args.len() == 1))) =>
     {
       let Expr::FunctionCall {
         args: inner_args, ..

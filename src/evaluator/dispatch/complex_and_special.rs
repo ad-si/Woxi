@@ -7693,6 +7693,7 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "Dot" => ".",
     "PlusMinus" => "\u{00B1}",
     "MinusPlus" => "\u{2213}",
+    "Congruent" => "\u{2261}",
     _ => return None,
   })
 }
@@ -8934,6 +8935,21 @@ fn tf(expr: &Expr) -> Expr {
       pattern,
       replacement,
     } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
+    // `Function[x, body]` is written as the map `x ↦ body`, and
+    // `Function[{x, y}, body]` as `{x, y} ↦ body`.
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let params_box = match params.as_slice() {
+        [single] if !bracketed => tf_string(&tf_symbol(single)),
+        _ => {
+          tf_enclosed("{", params.iter().map(|p| tf_string(&tf_symbol(p))), "}")
+        }
+      };
+      tf_row(vec![params_box, tf_string("\u{21A6}"), tf(body)])
+    }
     // A replacement left unevaluated (its rules were no rules) has no
     // traditional notation: like any other built-in function without one it
     // keeps its name and brackets, `ReplaceAll[f(a), {g(x)}]`.

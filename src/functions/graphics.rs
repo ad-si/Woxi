@@ -20181,8 +20181,10 @@ fn operator_space(s: &str) -> f64 {
     | "\u{F523}" | "\u{29E6}" | "\u{2208}" | "\u{2209}" | "\u{220B}"
     | "\u{2282}" | "\u{2283}" | "\u{2286}" | "\u{2287}" | "\u{2284}"
     | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
-    "\u{2192}" | "\u{29F4}" => 0.60,
+    "\u{2192}" | "\u{29F4}" | "\u{21A6}" => 0.60,
     "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.44,
+    // The word operator of `x mod 2`.
+    "mod" => 0.34,
     // An infix bar (`X | A`); the delimiters of `|x|` are never infix.
     "|" => 0.34,
     "\u{2227}" | "\u{2228}" | "\u{22C5}" | "\u{222A}" | "\u{2229}"
@@ -25423,6 +25425,7 @@ pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
       | "\u{2265}"
       | "\u{2192}"
       | "\u{29F4}"
+      | "\u{21A6}"
       | "\u{F522}"
       | "\u{F51F}"
       | "mod"
@@ -40092,6 +40095,8 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// is still set in the proportional text face rather than the monospace
 /// one of a bare string.
 fn resolve_display_item_face(expr: &Expr) -> (Expr, bool) {
+  let merged = merged_nested_styles(expr);
+  let expr = &merged;
   let (resolved, shows_text) = resolve_display_item_content(expr);
   // A `Text[Row[…]]`, `Text[Column[…]]` or `Text[TraditionalForm[…]]` item
   // (any of them possibly under `Style`), once its `Dynamic` parts show their values, is set in
@@ -40113,6 +40118,58 @@ fn resolve_display_item_face(expr: &Expr) -> (Expr, bool) {
     return (in_text_face(&resolved), shows_text);
   }
   (resolved, shows_text)
+}
+
+/// `Style[Style[TraditionalForm[x], inner…], outer…]` (also under `Text`)
+/// as the one `Style[TraditionalForm[x], outer…, inner…]` it amounts to,
+/// the nearer directives last so they win: the typeset formula then reads
+/// the same as under a single `Style`.
+fn merged_nested_styles(expr: &Expr) -> Expr {
+  let mut core = expr;
+  while let Expr::FunctionCall { name, args } = core
+    && matches!(name.as_str(), "Text" | "Style")
+    && let Some(first) = args.first()
+  {
+    core = first;
+  }
+  if !matches!(core, Expr::FunctionCall { name, args }
+    if name == "TraditionalForm" && args.len() == 1)
+  {
+    return expr.clone();
+  }
+  merged_style_layers(expr)
+}
+
+fn merged_style_layers(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      call1("Text", merged_style_layers(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let content = merged_style_layers(&args[0]);
+      match &content {
+        Expr::FunctionCall {
+          name: inner_name,
+          args: inner,
+        } if inner_name == "Style" && !inner.is_empty() => call(
+          "Style",
+          std::iter::once(inner[0].clone())
+            .chain(args[1..].iter().cloned())
+            .chain(inner[1..].iter().cloned())
+            .collect(),
+        ),
+        _ => call(
+          "Style",
+          std::iter::once(content)
+            .chain(args[1..].iter().cloned())
+            .collect(),
+        ),
+      }
+    }
+    other => other.clone(),
+  }
 }
 
 fn resolve_display_item_content(expr: &Expr) -> (Expr, bool) {

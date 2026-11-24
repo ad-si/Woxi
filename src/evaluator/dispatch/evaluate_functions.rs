@@ -3285,6 +3285,44 @@ fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(rules.into()));
   }
 
+  // AbsoluteOptions[graph, opt] — the effective option values of a graph.
+  // `VertexCoordinates` reports the layout the graph is drawn with; any
+  // other option reports the value it was given.
+  if name == "AbsoluteOptions"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && ga.len() >= 2)
+  {
+    let names: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let given = evaluate_function_call_ast("Options", &[args[0].clone()]).ok();
+    let mut rules = Vec::new();
+    for opt in names {
+      if matches!(&opt, Expr::Identifier(n) if n == "VertexCoordinates") {
+        let coordinates =
+          evaluate_function_call_ast("GraphEmbedding", &[args[0].clone()])?;
+        if matches!(coordinates, Expr::List(_)) {
+          rules.push(Expr::Rule {
+            pattern: Box::new(opt),
+            replacement: Box::new(coordinates),
+          });
+        }
+        continue;
+      }
+      if let Some(Expr::List(given)) = &given
+        && let Some(rule) = given.iter().find(|r| {
+          matches!(r, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if crate::syntax::expr_to_string(pattern) == crate::syntax::expr_to_string(&opt))
+        })
+      {
+        rules.push(rule.clone());
+      }
+    }
+    return Ok(Expr::List(rules.into()));
+  }
+
   // ToColor[color, head] — the color converted to the space `head` names.
   if name == "ToColor"
     && args.len() == 2
@@ -6826,9 +6864,16 @@ fn evaluate_function_call_ast_inner(
     } = &args[0]
       && gname == "Graph"
       && gargs.len() >= 2
-      && let Expr::List(_) = &gargs[0]
+      && let Expr::List(vertices) = &gargs[0]
     {
-      return Ok(gargs[0].clone());
+      // `Style[v, …]`, `Tooltip[v, tip]` and `Labeled[v, label]` only
+      // annotate a vertex; the vertex itself is `v`.
+      return Ok(Expr::List(
+        vertices
+          .iter()
+          .map(|v| crate::functions::graph::bare_vertex(v).clone())
+          .collect(),
+      ));
     }
     return Ok(unevaluated(name, args));
   }
