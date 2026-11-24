@@ -2323,6 +2323,58 @@ mod arrows_and_box {
     pieces
   }
 
+  // An explicit `PlotRange` cuts a 3D arrow off at the box like a `Line`:
+  // the shaft stops at the box's faces and a head whose tip falls outside
+  // the box is not drawn, while a head inside it keeps its place and size.
+  #[test]
+  fn plot_range_clips_3d_arrow() {
+    let scene = |prims: &str| {
+      svg(&format!(
+        "Graphics3D[{{Red, Arrowheads[{{-0.1, 0.1}}], {prims}}}, \
+         PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{-1, 1}}}}]"
+      ))
+    };
+    let extent = |s: &str| {
+      let xs: Vec<f64> = line_pieces(s, "rgb(255,0,0)")
+        .into_iter()
+        .map(|(_, (x, _))| x)
+        .collect();
+      assert!(!xs.is_empty(), "{s}");
+      let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      (lo, hi)
+    };
+
+    // Both ends outside: no heads, and the shaft spans just the box.
+    let through = scene("Arrow[{{-3, 0, 0}, {3, 0, 0}}]");
+    assert!(head_tips(&through).is_empty(), "{through}");
+    let line = scene("Line[{{-1, 0, 0}, {1, 0, 0}}]");
+    let (a, b) = (extent(&through), extent(&line));
+    assert!(
+      (a.0 - b.0).abs() < 2.0 && (a.1 - b.1).abs() < 2.0,
+      "{a:?} vs {b:?}"
+    );
+
+    // Tail outside, tip inside: only the head at the tip remains, exactly
+    // where the arrow cut at the box puts it.
+    let half = scene("Arrow[{{0, 0, -3}, {0, 0, 0.5}}]");
+    let cut = scene("Arrow[{{0, 0, -1}, {0, 0, 0.5}}]");
+    let tips = head_tips(&half);
+    assert_eq!(tips.len(), 1, "{half}");
+    let expected = head_tips(&cut)
+      .into_iter()
+      .min_by(|p, q| p.1.total_cmp(&q.1))
+      .unwrap();
+    assert!(
+      (tips[0].0 - expected.0).abs() < 0.5
+        && (tips[0].1 - expected.1).abs() < 0.5,
+      "{tips:?} vs {expected:?}"
+    );
+    let tip_only = scene("Arrowheads[0.1], Arrow[{{0, 0, -1}, {0, 0, 0.5}}]");
+    let (got, want) = (head_area(&half), head_area(&tip_only));
+    assert!((got - want).abs() < 0.05 * want, "{got} vs {want}");
+  }
+
   // An opaque solid hides the part of a 3D arrow inside or behind it: the
   // shaft is cut into depth-sorted pieces like a `Line`, so the sphere's
   // front faces are painted over the pieces they cover.

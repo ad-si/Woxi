@@ -7018,6 +7018,63 @@ fn clip_polyline_to_box(
   out
 }
 
+/// The parts of a 3D `Arrow` inside the box an explicit `PlotRange` pins:
+/// its shaft is cut like a `Line`, and each head is kept only when its tip
+/// lies inside the box. A kept head becomes an arrow of its own along a
+/// vanishingly short stretch ending at the tip, so it is sized and aimed
+/// exactly as it was on the whole arrow.
+fn clip_arrow3d_to_box(
+  points: &[Point3D],
+  style: &StyleState3D,
+  bounds: &[(f64, f64); 3],
+) -> Vec<Primitive3D> {
+  let mut out = Vec::new();
+  let mut shaft_style = style.clone();
+  shaft_style.arrowheads = None;
+  let segments = clip_polyline_to_box(points, bounds);
+  if !segments.is_empty() {
+    out.push(Primitive3D::Line3D {
+      segments,
+      style: shaft_style,
+    });
+  }
+  let default_head = [(ArrowheadSize3D::DEFAULT_FRACTION, false, 1.0)];
+  let heads = style.arrowheads.as_deref().map_or(&default_head[..], |h| h);
+  let diag = v_len([
+    bounds[0].1 - bounds[0].0,
+    bounds[1].1 - bounds[1].0,
+    bounds[2].1 - bounds[2].0,
+  ]);
+  for &(size, absolute, pos) in heads {
+    // Only the direction (the sign of the size) matters for the anchor.
+    let anchors =
+      arrow3d_head_anchors(points, Some(&[(size.signum(), pos)][..]));
+    let Some(([tail, tip], _)) = anchors.into_iter().next() else {
+      continue;
+    };
+    if !point_in_box(&tip, bounds) {
+      continue;
+    }
+    // `tail` lies one unit back from the tip; pull it in to a negligible
+    // stub so no shaft is drawn beyond the clipped one.
+    let k = 1e-6 * diag.max(1e-12);
+    let stub = Point3D {
+      x: tip.x + (tail.x - tip.x) * k,
+      y: tip.y + (tail.y - tip.y) * k,
+      z: tip.z + (tail.z - tip.z) * k,
+    };
+    let mut head_style = style.clone();
+    head_style.arrowheads =
+      Some(std::sync::Arc::new(vec![(size.abs(), absolute, 1.0)]));
+    out.push(Primitive3D::Arrow3D {
+      points: vec![stub, tip],
+      setback: (0.0, 0.0),
+      style: head_style,
+    });
+  }
+  out
+}
+
 /// The setback of `Arrow[pts, spec]`: `s` sets both ends back by `s`,
 /// `{s1, s2}` the tail by `s1` and the tip by `s2`.
 fn arrow_setback_3d(spec: Option<&Expr>) -> (f64, f64) {
@@ -14632,6 +14689,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(|p| {
       !matches!(p, Primitive3D::Line3D { segments, .. } if segments.is_empty())
     });
+
+    // An arrow crossing the box keeps only the part of its shaft inside
+    // it, and only the heads whose tips lie inside.
+    let arrows: Vec<usize> = (0..prims.len())
+      .filter(|&i| {
+        matches!(&prims[i], Primitive3D::Arrow3D { points, .. }
+          if points.iter().any(|p| !point_in_box(p, &bounds)))
+      })
+      .collect();
+    for i in arrows.into_iter().rev() {
+      let Primitive3D::Arrow3D { points, style, .. } = prims.remove(i) else {
+        continue;
+      };
+      prims.splice(i..i, clip_arrow3d_to_box(&points, &style, &bounds));
+    }
 
     // Likewise a polygon is cut down to the part inside the box, and
     // dropped when nothing of it is left (a large translucent plane shown
