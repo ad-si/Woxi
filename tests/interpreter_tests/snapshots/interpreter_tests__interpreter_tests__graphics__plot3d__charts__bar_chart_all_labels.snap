@@ -61,5 +61,5 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 <text x="2531.9" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Sven</text>
 <text x="2849.0" y="1999.7" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Person</text>
 <text x="185.0" y="258.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Fruits</text>
-<text x="1455.0" y="160.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#333">Fruit Consumption</text>
+<text x="1455.0" y="160.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#666666">Fruit Consumption</text>
 </svg>

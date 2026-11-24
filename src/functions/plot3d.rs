@@ -17470,10 +17470,14 @@ fn with_plot_label(
       "width=\"{width}\" height=\"{total}\" viewBox=\"0 0 {width} {total}\""
     )
   };
-  let fill = styled
-    .color
-    .as_ref()
-    .map_or_else(|| "#333333".to_string(), |c| c.to_svg_rgb());
+  let fill = styled.color.as_ref().map_or_else(
+    || {
+      crate::functions::graphics::theme()
+        .plot_label_fill
+        .to_string()
+    },
+    |c| c.to_svg_rgb(),
+  );
   let mut style_attrs = String::new();
   if styled.bold {
     style_attrs.push_str(" font-weight=\"bold\"");

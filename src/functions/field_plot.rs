@@ -256,7 +256,8 @@ fn inject_field_plot_label(
     let y = y_last - (first - i as f64) * line_h;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{fill}\">{label}</text>\n",
+      fill = crate::functions::graphics::theme().plot_label_fill,
     ));
   }
 }
@@ -1987,7 +1988,7 @@ fn push_frame_labels(
     (area.y_min, area.y_max),
     opts,
   );
-  let (.., label_fill, title_fill) = plot_theme();
+  let (.., label_fill, _) = plot_theme();
   let mut plot_opts = crate::functions::plot::PlotOptions::default();
   let non_empty = |s: &String| (!s.is_empty()).then(|| s.clone());
   plot_opts.frame_label_bottom = non_empty(&frame_labels.bottom);
@@ -2005,7 +2006,6 @@ fn push_frame_labels(
     },
     RESOLUTION_SCALE as f64,
     label_fill,
-    title_fill,
     f64::INFINITY,
   ));
 }
@@ -10073,7 +10073,7 @@ fn with_plot_label_above(svg: &str, label: &FieldPlotLabel) -> String {
   let extra = (lines.len() - 1) as f64 * line_h;
   let gutter = font * 1.8 + extra;
   let total_h = h + gutter;
-  let fill = crate::functions::graphics::theme().text_primary;
+  let fill = crate::functions::graphics::theme().plot_label_fill;
   let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{total_h:.0}\" \
      viewBox=\"0 0 {w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
