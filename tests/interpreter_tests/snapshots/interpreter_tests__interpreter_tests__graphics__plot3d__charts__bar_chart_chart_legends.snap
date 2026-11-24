@@ -25,15 +25,15 @@ expression: svg
 <line x1="141.0" y1="133.4" x2="165.0" y2="133.4" stroke="#666666" stroke-width="2"/>
 <line x1="141.0" y1="24.5" x2="165.0" y2="24.5" stroke="#666666" stroke-width="2"/>
 <line x1="141.0" y1="2095.0" x2="181.0" y2="2095.0" stroke="#666666" stroke-width="2"/>
-<text x="122.4" y="2129.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
+<text x="122.4" y="2129.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
 <line x1="141.0" y1="1659.1" x2="181.0" y2="1659.1" stroke="#666666" stroke-width="2"/>
-<text x="122.4" y="1693.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
+<text x="122.4" y="1693.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">20</text>
 <line x1="141.0" y1="1223.2" x2="181.0" y2="1223.2" stroke="#666666" stroke-width="2"/>
-<text x="122.4" y="1257.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">40</text>
+<text x="122.4" y="1257.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">40</text>
 <line x1="141.0" y1="787.3" x2="181.0" y2="787.3" stroke="#666666" stroke-width="2"/>
-<text x="122.4" y="822.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">60</text>
+<text x="122.4" y="822.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">60</text>
 <line x1="141.0" y1="351.4" x2="181.0" y2="351.4" stroke="#666666" stroke-width="2"/>
-<text x="122.4" y="386.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">80</text>
+<text x="122.4" y="386.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">80</text>
 <line x1="3518.0" y1="2095.0" x2="3585.5" y2="2095.0" stroke="#666666" stroke-width="5"/>
 <line x1="207.2" y1="2095.0" x2="207.2" y2="2155.0" stroke="#666666" stroke-width="5"/>
 <line x1="3518.0" y1="2095.0" x2="3518.0" y2="2155.0" stroke="#666666" stroke-width="5"/>

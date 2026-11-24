@@ -657,14 +657,14 @@ expression: "export_svg(\"StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]\")"
 <line x1="3585.0" y1="331.5" x2="3561.0" y2="331.5" stroke="#666666" stroke-width="5.0"/>
 <line x1="3585.0" y1="22.2" x2="3561.0" y2="22.2" stroke="#666666" stroke-width="5.0"/>
 <rect x="148.6" y="5.0" width="3436.4" height="3436.4" fill="none" stroke="#666666" stroke-width="5.0"/>
-<text x="320.4" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="1093.6" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="2640.0" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="3413.2" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
-<text x="118.6" y="3304.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="118.6" y="2531.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="118.6" y="985.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="118.6" y="211.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="320.4" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="1093.6" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="2640.0" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="3413.2" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
+<text x="118.6" y="3304.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="118.6" y="2531.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="118.6" y="985.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="118.6" y="211.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
 </svg>

@@ -67696,7 +67696,7 @@ mod list_plot_wl15_ranges {
       "{svg}"
     );
     // Simple ticks write 0 as "0", and the grid is GrayLevel[0, 0.2].
-    assert!(svg.contains("fill=\"rgb(102,102,102)\">0</text>"), "{svg}");
+    assert!(svg.contains("fill=\"rgb(64,64,64)\">0</text>"), "{svg}");
     assert!(svg.contains("opacity=\"0.2\" stroke=\"#000000\""), "{svg}");
   }
 
@@ -68630,7 +68630,7 @@ mod frame_ticks_per_edge {
     let marks = lines(&svg);
     assert_eq!(marks.iter().filter(|l| l.4 == "rgb(255,0,0)").count(), 1);
     assert_eq!(marks.iter().filter(|l| l.4 == "rgb(0,0,255)").count(), 1);
-    assert_eq!(attr(texts(&svg, "a")[0], "fill"), "rgb(102,102,102)");
+    assert_eq!(attr(texts(&svg, "a")[0], "fill"), "rgb(64,64,64)");
   }
 
   #[test]
@@ -68665,7 +68665,7 @@ mod frame_ticks_per_edge {
     assert!(y.contains(&"rgb(0,0,255)".to_string()), "{y:?}");
     let x = fills("350");
     assert!(x.contains(&"rgb(255,0,0)".to_string()), "{x:?}");
-    assert!(x.contains(&"#666666".to_string()), "{x:?}");
+    assert!(x.contains(&"#404040".to_string()), "{x:?}");
     // The bottom marks are thick.
     let marks = lines(&svg);
     assert!(
@@ -75361,10 +75361,11 @@ mod plot_label_default_color {
     head[start..end].to_string()
   }
 
-  /// Wolfram draws a `PlotLabel` in `GrayLevel[0.4]` unless a color is
-  /// given, across `Graphics`, `Graphics3D` and the plotting functions.
+  /// Wolfram's SVG export sets a `PlotLabel` in `GrayLevel[0.25]` unless a
+  /// color is given, across `Graphics`, `Graphics3D` and the plotting
+  /// functions.
   #[test]
-  fn plot_labels_default_to_gray_level_0_4() {
+  fn plot_labels_default_to_gray_level_0_25() {
     for expr in [
       "Graphics[Circle[], PlotLabel -> \"title\"]",
       "Graphics[Circle[], PlotLabel -> Grid[{{\"title\", 1}}]]",
@@ -75383,7 +75384,7 @@ mod plot_label_default_color {
       "BubbleChart[{{1, 2, 3}, {2, 3, 1}}, PlotLabel -> \"title\"]",
     ] {
       let svg = export_svg(expr);
-      assert_eq!(label_fill(&svg, "title"), "#666666", "{expr}");
+      assert_eq!(label_fill(&svg, "title"), "#404040", "{expr}");
     }
   }
 

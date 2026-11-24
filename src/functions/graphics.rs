@@ -259,9 +259,12 @@ pub struct ThemeColors {
   pub text_muted: &'static str,
   pub stroke_default: &'static str,
   pub axis_stroke: &'static str,
+  /// Default tick label text. Wolfram's SVG export sets every label of a
+  /// plot (ticks, `PlotLabel`, `AxesLabel`, `FrameLabel`, chart labels) in
+  /// `GrayLevel[0.25]`, a shade darker than the `GrayLevel[0.4]` axes.
   pub tick_label_fill: &'static str,
-  /// Default `PlotLabel` text: Wolfram draws plot titles in
-  /// `GrayLevel[0.4]` unless `LabelStyle` or the label sets a color.
+  /// Default `PlotLabel` text, `GrayLevel[0.25]` unless `LabelStyle` or
+  /// the label sets a color.
   pub plot_label_fill: &'static str,
   pub table_header_bg: &'static str,
   pub table_row_num_bg: &'static str,
@@ -278,8 +281,8 @@ const LIGHT_THEME: ThemeColors = ThemeColors {
   text_muted: "#888",
   stroke_default: "black",
   axis_stroke: "#666666",
-  tick_label_fill: "#555555",
-  plot_label_fill: "#666666",
+  tick_label_fill: "#404040",
+  plot_label_fill: "#404040",
   table_header_bg: "#f0f0f0",
   table_row_num_bg: "#eef2f7",
   table_row_num_header_bg: "#dde4ed",
@@ -1893,7 +1896,7 @@ pub(crate) fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
 // ── Color parsing ────────────────────────────────────────────────────────
 
 /// Parse a hex color string like "#RRGGBB" or "#RGB" into a Color.
-fn parse_hex_color(s: &str) -> Option<Color> {
+pub(crate) fn parse_hex_color(s: &str) -> Option<Color> {
   let s = s.strip_prefix('#')?;
   match s.len() {
     6 => {
