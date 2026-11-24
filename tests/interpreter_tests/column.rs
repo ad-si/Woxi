@@ -440,6 +440,31 @@ mod column_visual_mode {
     assert_eq!(svg.matches("font-size=\"20\"").count(), 2, "{svg}");
   }
 
+  /// Regression: in a `Text[Column[…]]`, an item styled as
+  /// `Style[TraditionalForm[Grid[…, Frame -> All]], 10]` took the text face
+  /// as a second `Style` around its own, which hid the grid from the layout
+  /// renderer, so it was written out as the one-line `Grid[{{…}}]` source.
+  #[test]
+  fn text_column_lays_out_a_styled_traditional_form_grid() {
+    clear_state();
+    for item in [
+      "Style[TraditionalForm[Grid[{{1, x + 1}, {2, 3}}, Frame -> All]], 10]",
+      "Style[StandardForm[Grid[{{1, x + 1}, {2, 3}}, Frame -> All]], 10]",
+    ] {
+      let result = interpret_with_stdout(&format!(
+        "Text[Column[{{\"head\", {item}}}, Alignment -> {{Center}}]]"
+      ))
+      .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(!svg.contains("Grid["), "{svg}");
+      // The 2x2 grid's frame: three horizontal and three vertical rules.
+      assert_eq!(svg.matches("<line").count(), 6, "{svg}");
+      // The grid's four cells take the style's size.
+      assert_eq!(svg.matches("font-size=\"10").count(), 4, "{svg}");
+    }
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (Euclidean Algorithm:
   /// GCD and LCM) whose `Manipulate` body styles a `Column` holding

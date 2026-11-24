@@ -31847,6 +31847,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_pixel_constrained_symbolic_form_keeps_its_size() {
+      // Regression: the symbolic form a layout or `Show` redraws carried
+      // the requested `ImageSize -> 220`, so a redrawn 19x51 grid filled the
+      // whole 220-point box instead of 4 pixels per cell (204x76).
+      clear_state();
+      let plot = "ArrayPlot[Table[Mod[i + j, 4], {i, 19}, {j, 51}], \
+                  PixelConstrained -> True, ImageSize -> 220]";
+      assert_eq!(
+        interpret(&format!("Options[{plot}, ImageSize]")).unwrap(),
+        "{ImageSize -> {204, 76}}"
+      );
+      let shown = export_svg(&format!("Show[{plot}]"));
+      assert!(
+        shown.starts_with("<svg width=\"204\" height=\"76\""),
+        "unexpected header: {}",
+        shown.lines().next().unwrap_or("")
+      );
+    }
+
+    #[test]
     fn array_plot_frame_is_half_a_point_wide() {
       // WL draws the frame as a 0.5 pt GrayLevel[0.4] line, centered half a
       // point inside the edge (5 render units at the 10x scale).
