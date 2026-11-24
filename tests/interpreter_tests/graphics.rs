@@ -48026,7 +48026,7 @@ mod manipulate {
     }
     match &spec.controls[1] {
       ManipulateControl::Continuous { unit, .. } => {
-        assert_eq!(*unit, SliderUnit::Plain)
+        assert_eq!(*unit, SliderUnit::Plain);
       }
       other => panic!("expected Continuous, got {other:?}"),
     }
