@@ -2471,6 +2471,53 @@ mod graphics {
       ));
     }
 
+    /// `Inset[obj, pos, opos]` with `opos` given as `ImageScaled[…]` or
+    /// `Offset[{dx, dy}, ImageScaled[…]]` names a point of the object's own
+    /// picture, not of the enclosing one: a drop shadow is the same picture
+    /// inset with its center moved by a few printer's points.
+    #[test]
+    fn an_image_scaled_or_offset_opos_names_a_point_of_the_object() {
+      let inset = |opos: &str, size: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[Graphics[{{Disk[]}}, ImageSize -> 40], {{5, 5}}, \
+           {opos}{size}]}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+           ImageSize -> 200]"
+        ))
+      };
+      // The object's center on the anchor, as with no `opos`.
+      assert!(inset("ImageScaled[{0.5, 0.5}]", "").contains(
+        "<svg x=\"79.50\" y=\"79.50\" width=\"40.00\" height=\"40.00\""
+      ));
+      // Its lower-left corner on the anchor: the disk fills the upper right
+      // quarter of an 80px pad centered there.
+      assert!(inset("ImageScaled[{0, 0}]", "").contains(
+        "<svg x=\"59.50\" y=\"59.50\" width=\"80.00\" height=\"80.00\""
+      ));
+      // The point 10pt right of its center on the anchor moves the object
+      // 10pt left; 10pt up moves it 10pt down.
+      assert!(
+        inset("Offset[{10, 0}, ImageScaled[{0.5, 0.5}]]", "").contains(
+          "<svg x=\"69.50\" y=\"79.50\" width=\"60.00\" height=\"40.00\""
+        )
+      );
+      assert!(
+        inset("Offset[{0, 10}, ImageScaled[{0.5, 0.5}]]", "").contains(
+          "<svg x=\"79.50\" y=\"69.50\" width=\"40.00\" height=\"60.00\""
+        )
+      );
+      // Shown twice as large (`Scaled[{0.4, 0.4}]` of a 199px area), the
+      // offset is still 10 printer's points on screen, not 20.
+      assert!(
+        inset(
+          "Offset[{10, 0}, ImageScaled[{0.5, 0.5}]]",
+          ", Scaled[{0.4, 0.4}]"
+        )
+        .contains(
+          "<svg x=\"49.70\" y=\"59.70\" width=\"99.60\" height=\"79.60\""
+        )
+      );
+    }
+
     /// `Inset[image, pos, {0, 0}, size]` puts the image's own lower-left
     /// pixel corner on `pos` (an image is measured in pixels), not its
     /// center; `{w, h}` names its upper-right corner.
@@ -4646,6 +4693,25 @@ mod graphics {
       assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
       assert!(!svg.contains("Framed["), "{svg}");
       assert!(!svg.contains("FrameStyle"), "{svg}");
+    }
+
+    /// A `Framed`/`Panel` of `Text[…]` laid out in a grid cell's `Row` or
+    /// `Column` (which wraps it in the cell's font `Style`) draws the text,
+    /// or the table it holds, instead of printing `Text[…]` as source.
+    /// The same holds for a `TabView` pane in a grid with `ItemSize`.
+    #[test]
+    fn framed_text_in_a_grid_cell_layout() {
+      for code in [
+        "Grid[{{Row[{Framed[Text[\"q\"]]}]}}]",
+        "Grid[{{Row[{Panel[Text[\"q\"]]}]}}]",
+        "Grid[{{Column[{\"a\", Framed[Text[Grid[{{\"q\", 2}}]]]}]}}]",
+        "Grid[{{TabView[{\"t\" -> Text[Grid[{{\"q\", 2}}]]}]}}, \
+         ItemSize -> {24, 1}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(">q</text>"), "{code}: {svg}");
+        assert!(!svg.contains(">Text</text>"), "{code}: {svg}");
+      }
     }
 
     /// A number in scientific notation inside a label sets its exponent as a
@@ -29352,6 +29418,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A one-function list `ContourPlot[{f}, …]` with explicit `Contours`
+    /// is shaded like the bare function `f` (without them it draws only the
+    /// zero contour, see `contour_plot_function_list_draws_zero_contours`).
+    #[test]
+    fn contour_plot_single_function_list_is_shaded() {
+      for (f, opts) in [
+        (
+          "x + y",
+          ", Contours -> 5, ColorFunction -> \"TemperatureMap\"",
+        ),
+        ("Sin[x] Cos[y]", ", Contours -> 12"),
+      ] {
+        let filled = |body: String| {
+          interpret(&format!(
+            "Count[ContourPlot[{body}, {{x, 0, 3}}, {{y, 0, 3}}{opts}], \
+             _Polygon | _FilledCurve, Infinity]"
+          ))
+          .unwrap()
+        };
+        let listed = filled(format!("{{{f}}}"));
+        assert_ne!(listed, "0", "{f}");
+        assert_eq!(listed, filled(f.to_string()), "{f}");
+      }
+    }
+
+    /// `Contours -> n` spaces its levels, and the band colors, over every
+    /// sampled value: a field that saturates over most of the domain
+    /// (`1 - E^(-20 x)`) keeps the low levels of its steep ramp next to
+    /// `x == 0` and shades each of its `n + 1` bands in its own color,
+    /// where the automatic outlier fence (its quartiles bunch next to 1)
+    /// dropped them.
+    #[test]
+    fn contour_plot_contour_count_spans_a_saturating_field() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[1 - Exp[-20 x], {x, 0, 1}, {y, 0, 1}, \
+           Contours -> 9]; xs = Flatten[Cases[Normal[g], Line[p_] :> \
+           p[[All, 1]], Infinity]]; {Length[Cases[Normal[g], _Line, \
+           Infinity]], Min[xs] < 0.02, Length[DeleteDuplicates[Cases[g,            _RGBColor | _Hue, Infinity]]]}"
+        )
+        .unwrap(),
+        "{9, True, 10}"
+      );
+    }
+
     /// A nested function list counts as its flattened functions, and a
     /// function list with `Contours -> n` gets `n` levels for each
     /// function; both used to yield an opaque, primitive-less plot.
@@ -36414,6 +36525,25 @@ mod graphics_list {
       interpret("ToString[MathMLForm[42]]").unwrap(),
       "<math>\n <mn>42</mn>\n</math>"
     );
+  }
+
+  /// `DisplayForm` of an expression with boxes inside it shows the boxes as
+  /// boxes and typesets the expression around them, rather than printing
+  /// either as source text.
+  #[test]
+  fn display_form_typesets_an_expression_around_its_boxes() {
+    clear_state();
+    for code in [
+      "ExportString[DisplayForm[Row[{x^2, FractionBox[\"a\", \"b\"]}]], \"SVG\"]",
+      "ExportString[TraditionalForm[DisplayForm[Row[{x^2, \
+         FractionBox[\"a\", \"b\"]}]]], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(!svg.contains(">x^2<"), "x^2 printed as source: {svg}");
+      assert!(!svg.contains("FractionBox"), "box printed as source: {svg}");
+      assert!(svg.contains(">2</text>"), "missing exponent: {svg}");
+      assert!(svg.contains("<line"), "missing fraction bar: {svg}");
+    }
   }
 
   #[test]
@@ -63073,6 +63203,46 @@ fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
     "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]",
   );
   assert!(!auto.contains("imageClip_"), "{auto}");
+}
+
+#[test]
+fn plot_legend_stays_outside_the_explicit_image_padding_clip() {
+  // Regression: with an explicit `ImagePadding`, the legend placed below
+  // (or beside) the plot was drawn inside the clip that cuts the plot at
+  // its image boundary, so it was cut off and never visible.
+  for (plot, placement) in [
+    ("ParametricPlot[{Sin[t], Cos[2 t]}, {t, 0, 6}", "Bottom"),
+    ("Plot[{Sin[x], Cos[x]}, {x, 0, 6}", "Right"),
+    ("Plot[{Sin[x], Cos[x]}, {x, 0, 6}", "Top"),
+  ] {
+    let code = format!(
+      "{plot}, Frame -> True, PlotLegends -> Placed[{{\"legA\", \"legB\"}}, \
+       {placement}], ImagePadding -> {{{{40, 10}}, {{40, 10}}}}, \
+       ImageSize -> 270]"
+    );
+    let svg = export_svg(&code);
+    // The clip group (with its nested groups) closes before the legend.
+    let clip_open = svg
+      .find("<g clip-path=\"url(#imageClip_")
+      .unwrap_or_else(|| panic!("{svg}"));
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, _) in svg[clip_open..].match_indices('<') {
+      let rest = &svg[clip_open + i..];
+      if rest.starts_with("<g ") || rest.starts_with("<g>") {
+        depth += 1;
+      } else if rest.starts_with("</g>") {
+        depth -= 1;
+        if depth == 0 {
+          close = Some(clip_open + i);
+          break;
+        }
+      }
+    }
+    let close = close.unwrap_or_else(|| panic!("{svg}"));
+    let label = svg.find(">legA").unwrap_or_else(|| panic!("{svg}"));
+    assert!(label > close, "{code}: legend inside the image clip\n{svg}");
+  }
 }
 
 #[test]

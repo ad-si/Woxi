@@ -784,7 +784,7 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(terms) = plus_terms
     && terms.iter().any(|t| {
       let (_, d) = super::together::extract_num_den(t);
-      !matches!(&d, Expr::Integer(1))
+      !matches!(&d, Expr::Integer(1)) || expr_has_negative_var_power(t)
     })
   {
     let combined = super::together::together_expr(&args[0]);
@@ -960,10 +960,10 @@ fn expr_has_negative_var_power(expr: &Expr) -> bool {
         }
       )
   }
+  // Any non-numeric base counts, also one without a symbol in it
+  // (`Subscript["s", 1]`).
   fn base_has_var(base: &Expr) -> bool {
-    let mut vars = std::collections::HashSet::new();
-    collect_variables(base, &mut vars);
-    !vars.is_empty()
+    !crate::functions::predicate_ast::is_numeric_q(base)
   }
   match expr {
     Expr::BinaryOp {

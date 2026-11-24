@@ -3388,6 +3388,46 @@ pub fn dispatch_list_operations(
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::permutations_ast(args));
     }
+    // `Combinatorica\`Cofactor[m, {i, j}]`: the signed minor
+    // (-1)^(i + j) Det[m without row i and column j].
+    "Combinatorica`Cofactor" if args.len() == 2 => {
+      let uneval = || Ok(unevaluated(name, args));
+      let (Expr::List(ij), true) = (
+        &args[1],
+        matches!(
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "MatrixQ".to_string(),
+            args: vec![args[0].clone()].into(),
+          }),
+          Ok(Expr::Identifier(ref t)) if t == "True"
+        ),
+      ) else {
+        return Some(uneval());
+      };
+      let [Expr::Integer(i), Expr::Integer(j)] = ij.as_slice() else {
+        return Some(uneval());
+      };
+      let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.into(),
+      };
+      let minor = call(
+        "Det",
+        vec![call(
+          "Drop",
+          vec![
+            args[0].clone(),
+            Expr::List(vec![Expr::Integer(*i)].into()),
+            Expr::List(vec![Expr::Integer(*j)].into()),
+          ],
+        )],
+      );
+      let sign = if (i + j) % 2 == 0 { 1 } else { -1 };
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(sign), minor],
+      )));
+    }
     "Combinatorica`UnrankPermutation" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_unrank_permutation_ast(
         args,
@@ -3490,6 +3530,7 @@ pub fn dispatch_list_operations(
     | "Combinatorica`ShowGraph"
     | "Combinatorica`ShowLabeledGraph"
     | "Combinatorica`ToAdjacencyMatrix"
+    | "Combinatorica`IncidenceMatrix"
     | "Combinatorica`Edges"
     | "Combinatorica`M" => {
       return Some(

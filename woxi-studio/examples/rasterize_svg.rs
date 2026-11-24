@@ -16,6 +16,9 @@ fn main() {
     &fontdb,
   )
   .into_owned();
+  let data =
+    woxi::functions::image_ast::widen_hairline_strokes(&data, scale as f64)
+      .into_owned();
   let opts =
     woxi::functions::image_ast::svg_render_options(std::sync::Arc::new(fontdb));
   let tree = resvg::usvg::Tree::from_str(&data, &opts).expect("parse svg");
