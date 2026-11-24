@@ -10675,6 +10675,51 @@ mod dynamic_feedback_tests {
     state.reevaluate();
     assert_eq!(var(&state, "t"), resting);
   }
+
+  /// A body that frames a captioned `Grid` of two 3D scenes under `Text`
+  /// (`Text@Module[…; Framed@Labeled[Grid[{{Show[…], scene}}], label,
+  /// Bottom]]`) shows the frame's border, and its scenes — unboxed, pinned
+  /// to a `PlotRange` and seen from above at a fixed `ImageSize` — fill
+  /// their cells by the box outline. Regression: the border was dropped and
+  /// the scenes were framed by their sphere, at about 0.7× that size.
+  #[test]
+  fn framed_captioned_grid_of_3d_scenes_keeps_frame_and_outline_fit() {
+    let code = r#"Manipulate[
+      Text@Module[{g},
+        g = Graphics3D[{Line[{{-12, 0, 0}, {n, 0, 0}}]}, Boxed -> False,
+          PlotRange -> {{-12, 12}, {-12, 12}, {-5, 5}},
+          ViewPoint -> {0, 0, 6}, ImageSize -> {200, 200}];
+        Framed@Labeled[Grid[{{Show[g, g], g}}],
+          Style[Row[{n, " units"}], 16, Blue], Bottom]],
+      {{n, 12, "reach"}, 2, 12, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      svg.contains(r#"fill="none" stroke="black" stroke-width="1""#),
+      "the frame's border: {svg:.600}"
+    );
+    assert!(svg.contains("12 units"), "the caption: {svg:.600}");
+    // Each line runs from x = -12 to x = 12, the whole width of the range,
+    // so it spans most of its 200 px cell (sphere framing: about 135 px).
+    let spans: Vec<f64> = svg
+      .split("<polyline points=\"")
+      .skip(1)
+      .filter_map(|rest| rest.split('"').next())
+      .map(|points| {
+        let xs: Vec<f64> = points
+          .split_whitespace()
+          .filter_map(|pair| pair.split(',').next()?.parse().ok())
+          .collect();
+        xs.iter().copied().fold(f64::MIN, f64::max)
+          - xs.iter().copied().fold(f64::MAX, f64::min)
+      })
+      .collect();
+    assert!(spans.len() >= 2, "{spans:?}");
+    assert!(spans.iter().all(|w| *w > 180.0), "{spans:?}");
+  }
 }
 
 /// Which axes (`[x, y]`) of a 2D control (`Slider2D`, a `Locator` point) the

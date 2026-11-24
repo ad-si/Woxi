@@ -3457,3 +3457,41 @@ mod arrow_setback_3d {
     assert!((length(a) - length(b)).abs() < 1.0, "{a:?} vs {b:?}");
   }
 }
+
+mod tube_spline_radius {
+  use super::*;
+
+  /// Regression: a single radius written as the spline's second argument
+  /// (`Tube[BSplineCurve[pts, r]]`) is the tube's radius, as a radius list
+  /// there already was; Woxi drew such a tube at the thin default radius.
+  #[test]
+  fn radius_in_the_curve_sets_the_tube_radius() {
+    let scene = |tube: &str| {
+      svg(&format!(
+        "Graphics3D[{{{tube}}}, PlotRange -> {{{{-3, 3}}, {{-3, 3}},          {{-3, 3}}}}]"
+      ))
+    };
+    let pts = "{{-2, 0, 0}, {-1, 1, 0}, {1, -1, 1}, {2, 0, 0}}";
+    for radius in ["0.5", "1/4", "0.1"] {
+      let inside = scene(&format!("Tube[BSplineCurve[{pts}, {radius}]]"));
+      let outside = scene(&format!("Tube[BSplineCurve[{pts}], {radius}]"));
+      assert_eq!(inside, outside, "{radius}");
+    }
+    assert_ne!(
+      scene(&format!("Tube[BSplineCurve[{pts}, 0.5]]")),
+      scene(&format!("Tube[BSplineCurve[{pts}]]"))
+    );
+    // The tube's own radius wins over one in the curve.
+    assert_eq!(
+      scene(&format!("Tube[BSplineCurve[{pts}, 0.5], 0.2]")),
+      scene(&format!("Tube[BSplineCurve[{pts}], 0.2]"))
+    );
+    // An option after the points is not a radius.
+    assert_ne!(
+      scene(&format!("Tube[BSplineCurve[{pts}, SplineDegree -> 2]]")),
+      scene(&format!(
+        "Tube[BSplineCurve[{pts}, SplineDegree -> 2], 0.5]"
+      ))
+    );
+  }
+}

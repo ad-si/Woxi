@@ -8064,7 +8064,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // Inside a list, `Grid`, `Row`, … an automatically sized picture is
     // drawn again at the container's reduced size.
     Expr::Graphics { svg: svg_data, .. } => {
-      crate::functions::container_layout::resized_graphic_svg(expr)
+      crate::functions::container_layout::cell_graphic_svg(expr)
         .unwrap_or_else(|| svg_data.clone())
     }
     // `Button[label, action, …]` draws as its button, not its source.

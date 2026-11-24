@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- A `Framed` around a captioned picture (`Framed[Labeled[graphic, …]]`) or,
+    under `Text`, around a table (`Text[Framed[Grid[…]]]`) keeps its border
+    in notebook output instead of showing the bare content.
+- An unboxed `Graphics3D` of fixed `ImageSize` with a pinned `PlotRange` or
+    explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or list
+    fills its cell by the box outline instead of being framed by its
+    sphere (about 0.7× the size).
+- `Tube[BSplineCurve[pts, r]]` takes a single radius written as the
+    curve's second argument as the tube's radius.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms

@@ -11112,10 +11112,22 @@ fn collect_3d_primitives_styled(
               },
             },
           };
+          // Likewise a single radius written as the curve's second argument
+          // (`Tube[BSplineCurve[pts, r]]`) is the tube's radius.
+          let radius_spec = args.get(1).or_else(|| match &args[0] {
+            Expr::FunctionCall { name, args: inner }
+              if name == "BSplineCurve" =>
+            {
+              inner.get(1).filter(|a| {
+                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+              })
+            }
+            _ => None,
+          });
           for pts in curves {
             let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
               rs
-            } else if let Some(spec) = args.get(1) {
+            } else if let Some(spec) = radius_spec {
               let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
               match &spec {
                 Expr::List(items) if items.len() == pts.len() => items
@@ -15021,21 +15033,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // default size, pinned to a 100 × 100 × 20 `PlotRange` and seen from
   // `ViewPoint -> {0, 0, 1}`, spans about 110 units of the picture, as the
   // outline fit does (sphere framing would span 204).
+  // A scene that is one cell of a `Grid`, `Row`, `Column` or list rather
+  // than a picture of its own keeps the outline fit: Wolfram's snapshot of
+  // a Demonstration's `Grid` of two unboxed scenes pinned to a 24 × 24 × 10
+  // `PlotRange` at `ImageSize -> {290, 290}`, seen from `ViewPoint ->
+  // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
+  // below their `PlotLabel` does (sphere framing would span 180). The
+  // layout draws such a cell again (see `outline_fitted_cell_svg`).
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
-  let spherical_region = spherical_region
-    || (!spherical_region_off
-      && manipulate_frame
-      && explicitly_framed
-      && explicit_height
-      && aspect_ratio.is_none())
-    || (!spherical_region_off
-      && explicitly_framed
-      && !show_box
-      && explicit_height
-      && !full_width
-      && !aspect_full
-      && aspect_ratio.is_none()
-      && view_angle.is_none());
+  let automatic_sphere = !spherical_region
+    && !spherical_region_off
+    && !OUTLINE_FIT_CELL.get()
+    && explicitly_framed
+    && explicit_height
+    && aspect_ratio.is_none()
+    && (manipulate_frame
+      || (!show_box && !full_width && !aspect_full && view_angle.is_none()));
+  let spherical_region = spherical_region || automatic_sphere;
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
@@ -17193,7 +17207,79 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be a `Rule` (`Graphics3D[a -> b]` draws nothing but is legal) and must
   // not be read as one.
   let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  let result = crate::graphics3d_result_with_structure(svg, structure);
+  if automatic_sphere && let Expr::Graphics { svg, .. } = &result {
+    AUTOMATIC_SPHERE_FRAMED.with_borrow_mut(|keys| {
+      if keys.len() >= AUTOMATIC_SPHERE_MEMORY {
+        keys.pop_front();
+      }
+      keys.push_back(svg_hash(svg));
+    });
+  }
+  Ok(result)
+}
+
+/// How many automatically sphere-framed scenes are remembered; the oldest
+/// are forgotten first.
+const AUTOMATIC_SPHERE_MEMORY: usize = 64;
+
+thread_local! {
+  /// Set while a layout draws one of its cells again by the box outline
+  /// (see [`outline_fitted_cell_svg`]).
+  static OUTLINE_FIT_CELL: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+  /// The pictures `graphics3d_ast` framed by their sphere under the default
+  /// `SphericalRegion -> Automatic` (rather than an explicit `True`), by the
+  /// hash of their SVG.
+  static AUTOMATIC_SPHERE_FRAMED: std::cell::RefCell<std::collections::VecDeque<u64>> =
+    const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn svg_hash(svg: &str) -> u64 {
+  use std::hash::{Hash, Hasher};
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  svg.hash(&mut hasher);
+  hasher.finish()
+}
+
+/// A rendered `Graphics3D` that the default `SphericalRegion -> Automatic`
+/// framed by its sphere, drawn again by its box outline — the way it is
+/// shown as a cell of a `Grid`, `Row`, `Column` or list (see the framing
+/// rules in [`graphics3d_ast`]). `None` for any other picture.
+pub fn outline_fitted_cell_svg(expr: &Expr) -> Option<String> {
+  let Expr::Graphics {
+    svg,
+    is_3d: true,
+    structure: Some(structure),
+    ..
+  } = expr
+  else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = structure.as_ref() else {
+    return None;
+  };
+  if name != "Graphics3D"
+    || args.is_empty()
+    || !AUTOMATIC_SPHERE_FRAMED
+      .with_borrow(|keys| keys.contains(&svg_hash(svg)))
+  {
+    return None;
+  }
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      OUTLINE_FIT_CELL.set(self.0);
+    }
+  }
+  let _restore = Restore(OUTLINE_FIT_CELL.replace(true));
+  let captured = crate::captured_graphics_count();
+  let redrawn = graphics3d_ast(args);
+  crate::truncate_captured_graphics(captured);
+  match redrawn {
+    Ok(Expr::Graphics { ref svg, .. }) => Some(svg.clone()),
+    _ => None,
+  }
 }
 
 /// `Prolog -> g` / `Epilog -> g` on a `Graphics3D`: 2-D primitives drawn
