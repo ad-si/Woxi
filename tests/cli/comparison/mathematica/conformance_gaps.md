@@ -277,6 +277,14 @@ woxi eval 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'            # 3 cos(x) +
 More samples of the order: `a + b + Sin[a]` is `a+sin(a)+b`, `3 + a + Cos[b]`
 is `a+cos(b)+3`, and `Cos[x] + Sin[x] + Tan[x]` is `sin(x)+cos(x)+tan(x)`.
 
+Terms that tie in `TraditionalFormDump`ordplus` (the same variables to the
+same powers) keep the order of the older typesetting, which is only known
+from samples: partial fractions read `1/x`, `1/(x + 2)`, `1/(x - 1)`
+(stored Demonstration output). Woxi sorts tied terms of equal power by the
+canonical order of their boxes less the numeric coefficient, which
+reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
+`Sin[x] + Sin[2 x]`) are unverified.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
