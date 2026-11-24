@@ -3513,6 +3513,44 @@ mod graphics {
       assert!(!svg.contains("italic\">value"), "{svg}");
     }
 
+    /// A `PlotLabel` row whose inline box code stacks (a radical or a
+    /// fraction) is laid out as a picture: one-letter strings in it — the
+    /// text after the box code and a separate `"q"` item — stay upright
+    /// literal text, while the single-letter symbols of the box code and
+    /// the row's symbol items are set in italics.
+    #[test]
+    fn stacked_plot_label_row_keeps_one_letter_strings_upright() {
+      for code in [
+        "Graphics[{}, PlotLabel -> Row[{\"\\!\\(\\*SqrtBox[\\(2\\)]\\)d\", \"q\", x}]]",
+        "Graphics[{}, PlotLabel -> Row[{\"\\!\\(\\*FractionBox[\\(e\\), \\(2\\)]\\)d\", \"q\", x}]]",
+      ] {
+        let svg = export_svg(code);
+        for upright in ["d", "q"] {
+          assert!(
+            svg.contains(&format!("xml:space=\"preserve\">{upright}</text>")),
+            "{code}: {svg}"
+          );
+          assert!(
+            !svg.contains(&format!(
+              "font-style=\"italic\" xml:space=\"preserve\">{upright}</text>"
+            )),
+            "{code}: {svg}"
+          );
+        }
+        assert!(
+          svg.contains("font-style=\"italic\" xml:space=\"preserve\">x</text>"),
+          "{code}: {svg}"
+        );
+      }
+      let svg = export_svg(
+        "Graphics[{}, PlotLabel -> Row[{\"\\!\\(\\*FractionBox[\\(e\\), \\(2\\)]\\)d\"}]]",
+      );
+      assert!(
+        svg.contains("font-style=\"italic\" xml:space=\"preserve\">e</text>"),
+        "{svg}"
+      );
+    }
+
     /// A graphics label `Text[TraditionalForm["…"]]` shows the string's
     /// text, not the `FormBox` source it serializes to.
     #[test]
