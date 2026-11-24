@@ -3362,7 +3362,7 @@ mod arrow_setback_3d {
     assert!((half / full - 0.5).abs() < 0.05, "{half} vs {full}");
     assert!((tip_only / full - 0.5).abs() < 0.05, "{tip_only} vs {full}");
     // A setback longer than the arrow leaves nothing to draw.
-    assert!(shafts(&arrow(", 3")).is_empty());
+    assert_eq!(shafts(&arrow(", 3")), Vec::new());
   }
 
   // A negative setback lengthens the arrow past both of its end points.
