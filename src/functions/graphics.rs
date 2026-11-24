@@ -20878,6 +20878,70 @@ fn spacer_size(e: &Expr) -> Option<f64> {
   }
 }
 
+/// The lines of a `RowBox`'s items, split at each line break inside a
+/// string item; `None` when no string of the row holds a line break.
+fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+  if !items
+    .iter()
+    .any(|item| matches!(item, Expr::String(s) if s.contains('\n')))
+  {
+    return None;
+  }
+  let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+  for item in items {
+    match item {
+      Expr::String(s) if s.contains('\n') => {
+        let quoted = s.len() >= 2 && s.starts_with('"') && s.ends_with('"');
+        let text = if quoted {
+          &s[1..s.len() - 1]
+        } else {
+          s.as_str()
+        };
+        for (i, piece) in text.split('\n').enumerate() {
+          if i > 0 {
+            lines.push(Vec::new());
+          }
+          if !piece.is_empty() {
+            let piece = if quoted {
+              format!("\"{piece}\"")
+            } else {
+              piece.to_string()
+            };
+            lines
+              .last_mut()
+              .expect("never empty")
+              .push(Expr::String(piece));
+          }
+        }
+      }
+      other => lines.last_mut().expect("never empty").push(other.clone()),
+    }
+  }
+  Some(lines)
+}
+
+/// Lines of boxes stacked top to bottom, each centered on the widest; the
+/// block's baseline is its first line's.
+fn stack_box_lines_centered(lines: &[BoxLayout]) -> BoxLayout {
+  let width = lines.iter().map(|l| l.width).fold(0.0_f64, f64::max);
+  let mut elements = String::new();
+  let mut y = 0.0;
+  let mut baseline = 0.0;
+  for (i, line) in lines.iter().enumerate() {
+    if i == 0 {
+      baseline = line.baseline;
+    }
+    elements.push_str(&line.translate((width - line.width) / 2.0, y));
+    y += line.height;
+  }
+  BoxLayout {
+    width,
+    height: y,
+    baseline,
+    elements,
+  }
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -20994,6 +21058,17 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         };
         if items.is_empty() {
           return BoxLayout::text("", font_size);
+        }
+        // A line break inside a string of the row (`Row[{"a\nb", x}]`)
+        // ends the line there: the row's lines stack, each centered.
+        if let Some(lines) = row_box_lines(items) {
+          let laid: Vec<BoxLayout> = lines
+            .into_iter()
+            .map(|line| {
+              layout_box(&call1("RowBox", Expr::List(line.into())), font_size)
+            })
+            .collect();
+          return stack_box_lines_centered(&laid);
         }
         let mut children: Vec<BoxLayout> =
           items.iter().map(|e| layout_box(e, font_size)).collect();
@@ -21444,6 +21519,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let h = inner_h + margin * 2.0;
         // `FrameStyle -> color` and `RoundingRadius -> r` options.
         let mut stroke = "currentColor".to_string();
+        let mut fill = "none".to_string();
         let mut radius = 0.0;
         for opt in &args[1..] {
           if let Expr::Rule {
@@ -21458,6 +21534,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
                   stroke = color.to_svg_rgb();
                 }
               }
+              // `Background -> color` fills the panel behind the content.
+              "Background" => {
+                if let Some(color) = parse_color(replacement) {
+                  fill = color.to_svg_rgb();
+                }
+              }
               "RoundingRadius" => {
                 if let Some(r) = try_eval_to_f64(replacement) {
                   radius = r.max(0.0);
@@ -21468,7 +21550,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           }
         }
         let elements = format!(
-          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" rx=\"{radius:.1}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w}\"/>\
+          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" rx=\"{radius:.1}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{stroke_w}\"/>\
            {}",
           content.translate(margin + pad, margin + pad),
         );
@@ -26219,6 +26301,43 @@ pub(crate) fn plot_label_picture_svg(
     .or_else(|| plot_label_layout_svg(expr))
     .or_else(|| plot_label_grid_svg(expr))
     .or_else(|| plot_label_structured_svg(expr))
+    .or_else(|| plot_label_inline_frame_svg(expr))
+}
+
+/// A `PlotLabel` running text with `Framed` boxes inside it — `Row[{"walk
+/// number ", Framed[n, Background -> Yellow]}]`, the boxed value standing
+/// out from the words around it — typeset as a picture, so each frame is
+/// drawn (with its background and frame color) around its part of the
+/// line instead of being dropped from the text.
+fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  fn holds_frame(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        (name == "Framed" && !args.is_empty()) || args.iter().any(holds_frame)
+      }
+      Expr::List(items) => items.iter().any(holds_frame),
+      _ => false,
+    }
+  }
+  let body = peel_style_wrapper(expr);
+  let Expr::FunctionCall { name, args } = body else {
+    return None;
+  };
+  if name != "Row" || !args.iter().any(holds_frame) {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  // The words are set in the graphic's own (sans-serif) text face.
+  let layout =
+    with_box_font_family(Some("sans-serif"), || layout_box(&boxes, TITLE_FONT));
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  let svg = layout_to_svg(&layout, "currentColor");
+  let (w, h) = svg_natural_size(&svg)?;
+  Some((svg, w, h))
 }
 
 /// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or

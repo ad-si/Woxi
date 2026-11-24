@@ -4365,6 +4365,34 @@ mod graphics {
       assert!(!upright.contains("rotate("), "{upright}");
     }
 
+    /// A `PlotLabel` row with `Framed` values inside its text draws each
+    /// frame (its `Background` and `FrameStyle` included) around its value,
+    /// and a line break in one of the row's strings starts a second line.
+    #[test]
+    fn plot_label_row_draws_inline_frames() {
+      let label = |sep: &str| {
+        export_svg(&format!(
+          "Graphics[Line[{{{{0, 0}}, {{1, 1}}}}], PlotLabel -> Style[Row[{{\"first \", \
+           Framed[12, FrameStyle -> Red, Background -> Yellow], \"{sep}second \", \
+           Framed[34, Background -> Green]}}], 14]]"
+        ))
+      };
+      let svg = label("\\n");
+      assert!(!svg.contains("Framed"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,255,0)\""), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,255,0)\""), "{svg}");
+      assert!(svg.contains(">first"), "{svg}");
+      assert!(svg.contains(">second"), "{svg}");
+      let height = |svg: &str| {
+        let start = svg.find("height=\"").unwrap() + 8;
+        let end = start + svg[start..].find('"').unwrap();
+        svg[start..end].parse::<f64>().unwrap()
+      };
+      // The line break stacks the label's two lines.
+      assert!(height(&svg) > height(&label(" ")) + 10.0, "{svg}");
+    }
+
     /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
     /// On a `Graphics` (including a `Show` of several) it still takes up the
     /// title's line, unlike `None`.
