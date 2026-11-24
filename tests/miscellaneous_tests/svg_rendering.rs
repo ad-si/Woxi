@@ -2817,16 +2817,15 @@ mod tests {
     #[test]
     fn string_letters_in_a_fraction_stay_upright() {
       // A string is literal text: its single letters are not math
-      // variables, so they stay upright in a typeset fraction, while a
-      // one-letter symbol is still set in italics.
+      // variables, so they stay upright in a typeset fraction. Exported to
+      // SVG on its own (not inside a picture), a one-letter symbol is
+      // upright as well, as in Wolfram's SVG export.
       let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
       assert!(svg.contains(">a</text>"), "{svg}");
       assert!(!svg.contains("italic"), "string letters upright: {svg}");
       let svg = svg_of("Grid[{{a/b}}]");
-      assert!(
-        svg.contains("font-style=\"italic\""),
-        "symbols italic: {svg}"
-      );
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "exported symbols upright: {svg}");
       // Inline subscript boxes inside a string are literal text too.
       let svg = svg_of(
         "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
