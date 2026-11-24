@@ -5845,13 +5845,13 @@ pub(crate) fn column_svg_with_rendered_items(
       .unwrap_or_else(|| args.to_vec());
   // Which items are text rather than pictures, told before drawing them
   // turns every one into a picture.
-  let mut text_items: Option<Vec<bool>> = None;
+  let mut text_items: Option<Vec<functions::graphics::ColumnItemKind>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
     text_items = Some(
       items
         .iter()
-        .map(|item| {
-          !matches!(
+        .map(|item| functions::graphics::ColumnItemKind {
+          text: !matches!(
             item,
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
@@ -5859,7 +5859,8 @@ pub(crate) fn column_svg_with_rendered_items(
             // A `Framed` box is drawn edge to edge — its frame is its
             // outline, with no blank line margin around it to take out
             // of an explicit spacing.
-            && !functions::graphics::is_framed_box(item)
+            && !functions::graphics::is_framed_box(item),
+          text_line: functions::graphics::one_line_text_row(item),
         })
         .collect(),
     );

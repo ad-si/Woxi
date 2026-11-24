@@ -1463,12 +1463,69 @@ mod typeset_row_items_in_text_face {
     };
     let wrapped = interpret(&grid(7)).unwrap();
     let single = interpret(&grid(20)).unwrap();
+    // The label's line adds about one text line pitch (scaled down with
+    // the matrix to the column's width) to the cell's height.
     assert!(
-      root_height(&wrapped) > root_height(&single) + 14.0,
+      root_height(&wrapped) > root_height(&single) + 12.0,
       "wrapped: {wrapped}\nsingle: {single}"
     );
     // The label and the matrix are each still drawn once.
     assert_eq!(wrapped.matches(">q<").count(), 1, "{wrapped}");
     assert_eq!(wrapped.matches(">-1<").count(), 1, "{wrapped}");
+  }
+
+  /// A `Row` of plain text is one line of text: a column of such rows
+  /// stacks at the pitch of the same lines written as single strings,
+  /// in the monospace typeset face and in the `Text[…]` face alike,
+  /// instead of setting each row apart like a picture.
+  #[test]
+  fn one_line_text_rows_stack_like_text_lines() {
+    clear_state();
+    for wrap in ["", "Text@"] {
+      let rows = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{Row[{{"Width = ", 12}}], Row[{{"Depth = ", x}}], Row[{{Style["Height", Italic], " = ", 2.5}}]}}], "SVG"]"#
+      ))
+      .unwrap();
+      let lines = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{"Width = 12", "Depth = x", "Height = 2.5"}}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(root_height(&rows), root_height(&lines), "{wrap}: {rows}");
+    }
+  }
+
+  /// A text `Row` under a picture sits as close to it as a line of text
+  /// does, with no picture gap in between.
+  #[test]
+  fn one_line_text_row_under_a_graphic_has_no_picture_gap() {
+    clear_state();
+    let column = |last: &str| {
+      interpret(&format!(
+        r#"ExportString[Text@Column[{{Graphics[Disk[], ImageSize -> 50], {last}}}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      root_height(&column(r#"Row[{"Area = ", 3}]"#)),
+      root_height(&column(r#""Area = 3""#))
+    );
+  }
+
+  /// A `Row` holding a picture is still set apart from its neighbors as
+  /// a picture.
+  #[test]
+  fn rows_holding_a_picture_keep_the_picture_gap() {
+    clear_state();
+    let row = r#"Row[{"m = ", Graphics[Disk[], ImageSize -> 14]}]"#;
+    let height = |items: String| {
+      root_height(
+        &interpret(&format!(r#"ExportString[Column[{{{items}}}], "SVG"]"#))
+          .unwrap(),
+      )
+    };
+    assert_eq!(
+      height(format!("{row}, {row}")),
+      2.0 * height(row.to_string()) + 6.0
+    );
   }
 }
