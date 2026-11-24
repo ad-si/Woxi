@@ -995,9 +995,9 @@ fn resolve_steep_crossings(
   let mut added: Vec<(f64, f64)> = Vec::new();
   for pair in points.windows(2) {
     let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
-    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite())
-      || !is_pole_jump(y0, y1, lo, hi)
-    {
+    let all_finite =
+      x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite();
+    if !all_finite || !is_pole_jump(y0, y1, lo, hi) {
       continue;
     }
     // The edge the curve enters the window through, then the one it
