@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Cylinder` or `Cone` cut open by the `PlotRange` of a 3D scene keeps
+    the outline of its end circles inside the box. 3D axes crossing at an
+    `AxesOrigin` carry their `AxesLabel`s at their far ends instead of
+    piled up on the crossing point.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms

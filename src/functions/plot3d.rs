@@ -5044,8 +5044,8 @@ fn draw_axes_on_box_with_ticks(
     extent.add(sx0, sy0);
     extent.add(sx1, sy1);
 
-    // The axis label sits centered on the axis, clear of the tick labels
-    // already sitting there — where Wolfram puts it.
+    // The label of an axis on a box edge sits centered on the axis, clear
+    // of the tick labels already sitting there — where Wolfram puts it.
     if let Some(label) = axes_labels[ai].as_deref().filter(|l| !l.is_empty()) {
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
       let len = (dx * dx + dy * dy).sqrt();
@@ -5091,8 +5091,21 @@ fn draw_axes_on_box_with_ticks(
           + block_shift
           + font_size as f64 * 0.5;
         let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
-        let (lx, ly) =
-          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let (lx, ly) = if crossing.is_some() {
+          // Axes crossing at an `AxesOrigin` are labeled at their end
+          // farther from the viewer, on the side of the tick marks —
+          // across the axis from the tick labels.
+          let (far_x, far_y) =
+            if depth(end, camera) > depth(axis_origin, camera) {
+              (sx1, sy1)
+            } else {
+              (sx0, sy0)
+            };
+          let reach = font_size as f64 * 1.2 + block_shift;
+          (far_x - perpx * reach * sign, far_y - perpy * reach * sign)
+        } else {
+          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign)
+        };
         let content = if lines.len() == 1 {
           lines[0].clone()
         } else {
@@ -7354,6 +7367,79 @@ fn clip_triangles_to_box(
   out
 }
 
+/// The outlined end circles of a `Cylinder` or `Cone` that the box `bounds`
+/// cuts open, as the line pieces left inside the box. `tris` is the
+/// primitive's tessellation from `tessellate_for_transform`. `None` when the
+/// primitive has no outlined rim (another primitive, `EdgeForm[]`) or none
+/// of it is inside the box.
+fn clipped_rim_lines(
+  prim: &Primitive3D,
+  tris: &[(Point3D, Point3D, Point3D)],
+  bounds: &[(f64, f64); 3],
+) -> Option<Primitive3D> {
+  let (flags, style) = match prim {
+    Primitive3D::Cylinder {
+      p1,
+      p2,
+      radius,
+      style,
+    } if style.edges => {
+      let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
+      let steps = cylinder_side_steps(len, *radius, MAX_SIDE_SUBDIVISIONS);
+      (cylinder_edge_flags(steps, CYLINDER_SIDES), style)
+    }
+    Primitive3D::Cone { style, .. } if style.edges => {
+      (cone_edge_flags(CONE_SIDES), style)
+    }
+    _ => return None,
+  };
+  // Every rim edge borders a side facet and a cap facet; it is drawn once,
+  // and consecutive edges are joined into one polyline so a dash pattern
+  // runs along the whole circle.
+  let key = |p: &Point3D| [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+  let mut seen = std::collections::HashSet::new();
+  let mut chains: Vec<Vec<Point3D>> = Vec::new();
+  for ((a, b, c), on_rim) in tris.iter().zip(&flags) {
+    let corners = [a, b, c];
+    for (e, _) in on_rim.iter().enumerate().filter(|(_, on)| **on) {
+      let (from, to) = (corners[e], corners[(e + 1) % 3]);
+      let (kf, kt) = (key(from), key(to));
+      if !seen.insert(if kf <= kt { (kf, kt) } else { (kt, kf) }) {
+        continue;
+      }
+      match chains.last_mut() {
+        Some(chain) if chain.last().map(key) == Some(kf) => chain.push(*to),
+        Some(chain) if chain.last().map(key) == Some(kt) => chain.push(*from),
+        _ => chains.push(vec![*from, *to]),
+      }
+    }
+  }
+  let segments: Vec<Vec<Point3D>> = chains
+    .iter()
+    .flat_map(|chain| clip_polyline_to_box(chain, bounds))
+    // A circle merely touching the box leaves a piece of no length.
+    .filter(|piece| {
+      piece.windows(2).any(|w| {
+        v_len([w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z]) > 1e-9
+      })
+    })
+    .collect();
+  if segments.is_empty() {
+    return None;
+  }
+  // The outline keeps the look the unclipped primitive's rim has: the
+  // `EdgeForm` color, width and dashing, opaque whatever the faces are.
+  let mut line_style = style.clone();
+  line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
+  line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
+  line_style.dashing = style.edge_dashing.clone();
+  line_style.opacity = 1.0;
+  Some(Primitive3D::Line3D {
+    segments,
+    style: line_style,
+  })
+}
+
 /// The convex polygon a plane through `p` spanned by `u` and `w` cuts out of
 /// the box. `bound` optionally adds the half plane's own edge as one more
 /// half space, so `HalfPlane` stops at its boundary line.
@@ -7770,6 +7856,9 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 /// no thickness: Wolfram draws those as hairlines, as thin as the edges
 /// of the bounding box, far thinner than the curves of a plot.
 const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
+
+/// The outline color of a face under the default `EdgeForm`.
+const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
 
 /// The absolute width a thickness symbol names in 3D (`Thick`,
 /// `Thickness[Large]`, …): the same widths as in 2D graphics.
@@ -14900,6 +14989,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // A curved solid that crosses the box is cut open along it: its
     // facets are clipped like polygons (Wolfram does not cap the cut).
+    // The end circles its `EdgeForm` outlines are kept as far as they lie
+    // inside the box.
+    let mut cut_rims: Vec<Primitive3D> = Vec::new();
     for prim in &mut prims {
       let curved = matches!(
         prim,
@@ -14921,6 +15013,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let clipped = clip_triangles_to_box(&tris, &bounds);
+      if let Some(rims) = clipped_rim_lines(prim, &tris, &bounds) {
+        cut_rims.push(rims);
+      }
       let style = primitive_style(prim).clone();
       let smooth = match prim {
         Primitive3D::Surface3D { smooth, .. } => *smooth,
@@ -14935,6 +15030,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(
       |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
     );
+    prims.extend(cut_rims);
 
     // Points, and text anchored at a point, outside the box are not drawn
     // (e.g. a label placed above a plot whose range `Show` inherits).
@@ -16850,10 +16946,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tri.opacity,
           &mut texture_ids,
         ) {
-          let edge_stroke = match tri.edge_color {
-            Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-            None => "rgb(64,64,64)".to_string(),
-          };
+          let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+          let edge_stroke = format!("rgb({er},{eg},{eb})");
           let edge_width = tri.edge_width.unwrap_or(1.0);
           for (e, on_outline) in tri.boundary.iter().enumerate() {
             if !on_outline {
@@ -16885,10 +16979,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // the default `EdgeForm`, which stays opaque — so the outline of a
       // transparent face still shows. That is what makes
       // `{Opacity[0], Cuboid[…]}` a wireframe box.
-      let edge_stroke = match tri.edge_color {
-        Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-        None => "rgb(64,64,64)".to_string(),
-      };
+      let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+      let edge_stroke = format!("rgb({er},{eg},{eb})");
       let edge_width = tri.edge_width.unwrap_or(1.0);
       let fill_opacity_attr = if tri.opacity < 1.0 {
         format!(" fill-opacity=\"{}\"", tri.opacity)
