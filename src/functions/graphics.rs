@@ -34299,6 +34299,25 @@ fn grid_svg_styled_internal_reporting(
       *width = w * ITEM_SIZE_EM * font_size + col_pad(j) / 2.0;
     }
   }
+  // A graphic wider than the column its `ItemSize` fixes is shrunk to the
+  // column's width, keeping its shape, as the front end resizes graphics to
+  // fit their container rather than cropping them.
+  let fixed_content_w: Vec<Option<f64>> = (0..num_cols)
+    .map(|j| {
+      item_size_at(&item_size_w, j, num_cols)
+        .map(|w| w * ITEM_SIZE_EM * font_size)
+    })
+    .collect();
+  let shown_graphic =
+    |row: &[Expr], j: usize, cell: &Expr| -> Option<(String, f64, f64)> {
+      let (svg, w, h) = grid_cell_graphic(cell)?;
+      match fixed_content_w.get(j).copied().flatten() {
+        Some(avail) if span_width(row, j) == 1 && avail > 0.0 && w > avail => {
+          Some((svg, avail, h * avail / w))
+        }
+        _ => Some((svg, w, h)),
+      }
+    };
 
   // Compute per-row heights (taller for fractions or images). Cells that
   // span several rows are held back the way column spans are: the rows are
@@ -34343,8 +34362,8 @@ fn grid_svg_styled_internal_reporting(
           }
         }
       }
-      // A graphic cell keeps its own height.
-      if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
+      // A graphic cell keeps its own (possibly shrunk) height.
+      if let Some((_, _, nat_h)) = shown_graphic(row, j, cell) {
         cell_h = cell_h.max(nat_h + pad_y);
       }
       // An Image cell keeps the size it is shown at on its own.
@@ -34374,7 +34393,10 @@ fn grid_svg_styled_internal_reporting(
     .map(|(i, row)| {
       let graphics: Vec<_> = row
         .iter()
-        .filter_map(|cell| grid_cell_graphic(cell).map(|(_, _, h)| (cell, h)))
+        .enumerate()
+        .filter_map(|(j, cell)| {
+          shown_graphic(row, j, cell).map(|(_, _, h)| (cell, h))
+        })
         .collect();
       if !graphics.iter().any(|(cell, h)| {
         (graphic_content_anchor(cell, *h) - h / 2.0).abs() > 1e-9
@@ -34759,7 +34781,7 @@ fn grid_svg_styled_internal_reporting(
 
       // A graphic cell is drawn as a nested <svg> at its own size,
       // centered in the cell.
-      if let Some((cell_svg, nat_w, nat_h)) = grid_cell_graphic(cell)
+      if let Some((cell_svg, nat_w, nat_h)) = shown_graphic(row, j, cell)
         && let Some(parsed) = parse_svg_dimensions(&cell_svg)
       {
         // Placed by the column's alignment, like a text cell.
