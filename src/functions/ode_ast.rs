@@ -4761,18 +4761,17 @@ fn restore_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
 // a small numeric closure tree (`NExpr`) for speed, with a fall-back to
 // full symbolic evaluation for operations the compiler doesn't know.
 
-/// The event specification of `Method -> {"EventLocator", "Event" -> g,
-/// "EventAction" :> action}`: the (still symbolic) event function and the
-/// held action.
-struct EventSpec {
-  event: Expr,
-  action: Option<Expr>,
-}
-
-/// Extract an `EventLocator` event from NDSolve's option rules. Returns
-/// `None` when no such method is given (any other `Method` is ignored —
-/// the integrator itself stays the same).
-fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
+/// Extract an `EventLocator` event from NDSolve's option rules, as the
+/// state event it is equivalent to. Returns `None` when no such method is
+/// given (any other `Method` is ignored — the integrator itself stays the
+/// same).
+///
+/// A real-valued event function fires where it crosses zero, and so does a
+/// simple comparison (`y[t] < 0.5`, where its two sides cross); any other
+/// logical event fires where it turns True. Without an `EventAction` the
+/// integration stops at the event, like the method's default
+/// `Throw[Null, "StopIntegration"]`.
+fn parse_event_locator_option(opts: &[Expr]) -> Option<RawStateEvent> {
   for opt in opts {
     let (Expr::Rule {
       pattern,
@@ -4820,8 +4819,11 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
         }
       }
     }
-    // A condition (`y[t] < 0`) fires where its two sides cross.
-    let event = event.map(|e| match &e {
+    let equation = |lhs: Expr, rhs: Expr| Expr::Comparison {
+      operands: vec![lhs, rhs],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let condition = event.map(|e| match &e {
       Expr::Comparison {
         operands,
         operators,
@@ -4834,15 +4836,51 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
             | ComparisonOp::GreaterEqual
         ) =>
       {
-        minus2(operands[0].clone(), operands[1].clone())
+        equation(operands[0].clone(), operands[1].clone())
       }
-      _ => e,
+      _ if is_logical_event(&e) => e,
+      _ => equation(e, Expr::Integer(0)),
     });
-    if let Some(event) = event {
-      return Some(EventSpec { event, action });
+    if let Some(condition) = condition {
+      return Some(RawStateEvent {
+        condition,
+        action: action
+          .unwrap_or_else(|| Expr::String("StopIntegration".to_string())),
+      });
     }
   }
   None
+}
+
+/// Whether an event is a logical condition (a comparison, a connective or
+/// a truth value) rather than a real-valued function.
+fn is_logical_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::Identifier(s) => s == "True" || s == "False",
+    Expr::BinaryOp { op, .. } => {
+      matches!(op, BinaryOperator::And | BinaryOperator::Or)
+    }
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Not,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "And"
+        | "Or"
+        | "Not"
+        | "Xor"
+        | "Nand"
+        | "Nor"
+        | "Implies"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "LessEqual"
+        | "Greater"
+        | "GreaterEqual"
+        | "TrueQ"
+    ),
+    _ => false,
+  }
 }
 
 /// One dependent function of the system.
@@ -6183,7 +6221,7 @@ fn reduce_index(
 
 fn ndsolve_system(
   args: &[Expr],
-  event: Option<&EventSpec>,
+  event: Option<&RawStateEvent>,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Domain {x, xmin, xmax}, or the shorthand {x, xmax} that integrates
   // from the initial conditions' x-value out to xmax — the x_min side is
@@ -6323,6 +6361,12 @@ fn ndsolve_system(
     }
   }
   let eq_items = eq_items_no_events;
+  if let Some(ev) = event {
+    raw_state_events.push(RawStateEvent {
+      condition: ev.condition.clone(),
+      action: ev.action.clone(),
+    });
+  }
   let time_events_empty =
     raw_time_events.is_empty() && raw_state_events.is_empty();
   let mut odes: Vec<Expr> = Vec::new();
@@ -6899,14 +6943,6 @@ fn ndsolve_system(
       });
     });
   }
-  let event_fn = match event {
-    Some(spec) => {
-      let rewritten = substitute_function_values(&spec.event, &funcs, x_name);
-      Some(NumFn::new(rewritten, &var_names))
-    }
-    None => None,
-  };
-
   let time_events: Vec<TimeEvent> = raw_time_events
     .into_iter()
     .map(|ev| TimeEvent {
@@ -7105,8 +7141,6 @@ fn ndsolve_system(
             x0,
             x_min,
             -h_back,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             &time_events,
             event_ctx,
             x_name,
@@ -7130,8 +7164,6 @@ fn ndsolve_system(
             x0,
             x_max_resolved,
             h,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             &time_events,
             event_ctx,
             x_name,
@@ -7144,8 +7176,6 @@ fn ndsolve_system(
             &state_offset,
             &init_state,
             x0,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             event_ctx,
             x_name,
             cached_mass_matrix.as_ref(),
@@ -7583,7 +7613,7 @@ const MAX_UNBOUNDED_DOUBLINGS: u32 = 40;
 /// `NDSolve[…, {t, t0, Infinity}, Method -> {"EventLocator", …}]`. There's
 /// no domain length to size a step from, so the unknown span is searched
 /// geometrically — windows of 1, 2, 4, … units past `x0`, each with its
-/// own 1000-step grid — until `event_fn` fires inside one of them. Gives
+/// own 1000-step grid — until an event stops the integration inside one of them. Gives
 /// up after [`MAX_UNBOUNDED_DOUBLINGS`] windows and reports the last
 /// (event-less) one, the way wolframscript's `NDSolve::mxst` reports a
 /// truncated solution after an ordinary step-count overrun.
@@ -7594,8 +7624,6 @@ fn integrate_leg_until_event(
   state_offset: &[usize],
   init_state: &[f64],
   x0: f64,
-  event_fn: Option<&NumFn>,
-  event_action: Option<&Expr>,
   state_events: StateEventCtx,
   x_name: &str,
   cached_m: Option<&MassLu>,
@@ -7612,8 +7640,6 @@ fn integrate_leg_until_event(
       x0,
       x_to,
       h,
-      event_fn,
-      event_action,
       &[],
       state_events,
       x_name,
@@ -7872,8 +7898,6 @@ fn solve_bvp_shooting_from(
               from,
               target,
               step,
-              None,
-              None,
               &[],
               StateEventCtx::none(),
               x_name,
@@ -8576,8 +8600,6 @@ fn integrate_leg(
   x_from: f64,
   x_to: f64,
   h: f64,
-  event_fn: Option<&NumFn>,
-  event_action: Option<&Expr>,
   time_events: &[TimeEvent],
   state_events: StateEventCtx,
   x_name: &str,
@@ -8585,11 +8607,7 @@ fn integrate_leg(
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   // A delay equation's leg is cut at the breakpoints where its solution's
   // derivatives jump, so that no RK4 step straddles one.
-  if dde_active()
-    && event_fn.is_none()
-    && time_events.is_empty()
-    && state_events.events.is_empty()
-  {
+  if dde_active() && time_events.is_empty() && state_events.events.is_empty() {
     let breaks = dde_breaks_between(x_from, x_to);
     if !breaks.is_empty() {
       let mut out: Vec<(f64, Vec<f64>)> = Vec::new();
@@ -8604,8 +8622,6 @@ fn integrate_leg(
           start_x,
           end,
           h,
-          None,
-          None,
           &[],
           state_events,
           x_name,
@@ -8660,20 +8676,24 @@ fn integrate_leg(
     dde_record(&points);
   }
 
-  let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
-    event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
-  };
-  // An event function that starts at zero (to within roundoff — a bounce
-  // restarted on the surface it bounced off) has no side yet, so the
-  // first step cannot cross it; its sign is taken after that step.
-  let mut prev_event = eval_event(x, &state).filter(|g| g.abs() > 1e-8);
   let state_value = |ev: &StateEvent, x: f64, state: &[f64]| {
     ev.value(x, state, funcs, state_events.var_names)
   };
   let mut prev_state_values: Vec<Option<f64>> = state_events
     .events
     .iter()
-    .map(|ev| state_value(ev, x, &state))
+    .map(|ev| {
+      // A crossing that starts at zero (to within roundoff — a bounce
+      // restarted on the surface it bounced off) has no side yet, so the
+      // first step cannot cross it; its sign is taken after that step.
+      let g = state_value(ev, x, &state);
+      match ev.trigger {
+        StateTrigger::Crossing(_) => {
+          g.map(|g| if g.abs() > 1e-8 { g } else { 0.0 })
+        }
+        StateTrigger::Condition(_) => g,
+      }
+    })
     .collect();
 
   // A stiff system or a transient faster than the grid makes RK4
@@ -8684,8 +8704,7 @@ fn integrate_leg(
   // singular point prohibitively slow: such a leg only gets a bounded
   // number of stiff steps, and otherwise stops where RK4 did.
   let costly = residuals.iter().any(NumFn::is_costly);
-  let can_go_adaptive =
-    event_fn.is_none() && time_events.is_empty() && !dde_active();
+  let can_go_adaptive = time_events.is_empty() && !dde_active();
   let rhs = |xv: f64, s: &[f64]| {
     Ok(system_derivative(
       residuals,
@@ -8759,7 +8778,9 @@ fn integrate_leg(
   // shorter steps once an adaptive leg failed too, so an event just before
   // it — a `WhenEvent` that stops the integration as a tank runs empty —
   // still fires.
-  let creeps = event_fn.is_some() || !state_events.events.is_empty();
+  let creeps = !state_events.events.is_empty();
+  // Whether a state event has fired on this leg so far.
+  let mut event_fired = false;
   let mut adaptive_tried = false;
   // A DAE whose constraints are solved by Newton iteration at every
   // evaluation (a distillation column's stage temperatures) is stiff as a
@@ -8884,15 +8905,24 @@ fn integrate_leg(
     // The step failed even after refinement, or its refinement stalled
     // with an error estimate that no bisection reduced. A stiff system or a
     // transient faster than the grid makes RK4 diverge: the leg is
-    // integrated again with adaptive steps (the whole leg without events to
-    // locate; with state events from here, finding them afterwards on the
-    // adaptive points). A diverging step the adaptive methods cannot take
-    // either is kept as RK4 took it.
+    // integrated again with adaptive steps — the whole leg while no event
+    // has fired yet (its events then located on the adaptive points), and
+    // from here once one has, since its action may have changed the state.
+    // Going on from where the grid diverged would keep the grid's error up
+    // to there, which a chaotic orbit amplifies. A diverging step the
+    // adaptive methods cannot take either is kept as RK4 took it.
     if (stepped.is_none() || diverging) && can_go_adaptive && !adaptive_tried {
       adaptive_tried = true;
       if state_events.events.is_empty() {
         if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
           return Ok(Some(leg));
+        }
+      } else if !event_fired {
+        let mut start = vec![points[0].clone()];
+        if let Some(done) =
+          adaptive_with_events(&mut start, &points[0].1, x_from)?
+        {
+          return Ok(Some(done));
         }
       } else if let Some(done) = adaptive_with_events(&mut points, &state, x)? {
         return Ok(Some(done));
@@ -9032,6 +9062,7 @@ fn integrate_leg(
         }
       }
       if let Some((te, state_at, ei)) = earliest {
+        event_fired = true;
         let dir = h.signum();
         points.extend(refined.drain(..).filter(|(xr, _)| dir * *xr < dir * te));
         let outcome = state_events.events[ei].run(
@@ -9136,59 +9167,6 @@ fn integrate_leg(
           return Ok(Some(points));
         }
       }
-    }
-
-    if let Some(prev_g) = prev_event
-      && let Some(new_g) = eval_event(new_x, &new_state)
-    {
-      if prev_g.signum() != new_g.signum() && prev_g.is_finite() {
-        // Event crossing inside this step: locate it by linear
-        // interpolation of the event function, then take a partial RK4
-        // step to land on it.
-        let frac = if (prev_g - new_g).abs() > f64::EPSILON {
-          (prev_g / (prev_g - new_g)).clamp(0.0, 1.0)
-        } else {
-          1.0
-        };
-        let h_star = h * frac;
-        let (x_ev, state_ev) = if h_star.abs() > f64::EPSILON {
-          match rk4_system_step(
-            residuals,
-            funcs,
-            state_offset,
-            &state,
-            x,
-            h_star,
-            cached_m,
-          )? {
-            Some(s) => (x + h_star, s),
-            None => (new_x, new_state.clone()),
-          }
-        } else {
-          (x, state.clone())
-        };
-        points.push((x_ev, state_ev));
-        if let Some(action) = event_action {
-          let action = crate::syntax::substitute_variable(
-            action,
-            x_name,
-            &Expr::Real(x_ev),
-          );
-          match crate::evaluator::evaluate_expr_to_expr(&action) {
-            Ok(_) => {}
-            Err(InterpreterError::ThrowValue(_, tag))
-              if matches!(
-                tag.as_deref(),
-                Some(Expr::String(s)) if s == "StopIntegration"
-              ) => {}
-            Err(e) => return Err(e),
-          }
-        }
-        return Ok(Some(points));
-      }
-      prev_event = Some(new_g);
-    } else {
-      prev_event = eval_event(new_x, &new_state);
     }
 
     state = new_state;

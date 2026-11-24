@@ -11687,6 +11687,62 @@ mod ndsolve {
   }
 
   #[test]
+  fn event_locator_keeps_close_encounter_accuracy() {
+    // A restricted three-body orbit swinging close past a primary makes
+    // the fixed-step grid diverge. An `EventLocator` that never fires must
+    // not change the solution: the whole leg is integrated again with
+    // adaptive steps, as without the event, instead of going on from
+    // where the grid diverged (whose error the chaotic orbit amplified
+    // into an escape to x ≈ -2·10^5).
+    let eqs = "m = 0.4; r1 = (x[t] + 1 - m)^2 + y[t]^2; \
+       r2 = (x[t] - m)^2 + y[t]^2; \
+       eqs = {x''[t] == 2 y'[t] + x[t] - m (x[t] + 1 - m)/r1^(3/2) - \
+       (1 - m) (x[t] - m)/r2^(3/2), \
+       y''[t] == -2 x'[t] + y[t] - m y[t]/r1^(3/2) - (1 - m) y[t]/r2^(3/2), \
+       x[0] == -0.8, y[0] == -0.35, x'[0] == -0.5, y'[0] == 0.3};";
+    for method in [
+      "",
+      ", Method -> {\"EventLocator\", \"Event\" :> x[t]^2 + y[t]^2 - 10^4}",
+      ", Method -> {EventLocator, Event :> Abs[x[t]] > 100 || Abs[y[t]] > 100}",
+    ] {
+      clear_state();
+      let result = interpret(&format!(
+        "{eqs} s = NDSolve[eqs, {{x[t], y[t]}}, {{t, 0, 40}}{method}]; \
+         Round[1000 ({{x[t], y[t]}} /. First[s] /. t -> 40)]"
+      ))
+      .unwrap();
+      assert_eq!(result, "{-223, -124}", "{method}");
+    }
+  }
+
+  #[test]
+  fn event_locator_action_without_stop_continues() {
+    // An `EventAction` that does not throw "StopIntegration" runs at each
+    // event and the integration goes on to the end of the domain.
+    let result = interpret(
+      "r = Reap[NDSolve[{y''[t] == -y[t], y[0] == 1, y'[0] == 0}, y, \
+       {t, 0, 10}, Method -> {\"EventLocator\", \"Event\" -> y[t], \
+       \"EventAction\" :> Sow[t]}]]; \
+       {Round[1000 r[[2, 1]]], y[\"Domain\"] /. r[[1, 1]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{1571, 4712, 7854}, {{0., 10.}}}");
+  }
+
+  #[test]
+  fn event_locator_logical_event_stops_where_it_turns_true() {
+    // A logical event (here a disjunction) fires where it turns True and,
+    // with no `EventAction`, stops the integration there.
+    let result = interpret(
+      "s = NDSolve[{x''[t] == 1, x[0] == 0, x'[0] == 0}, x, {t, 0, 10}, \
+       Method -> {\"EventLocator\", \"Event\" :> x[t] > 2 || x[t] < -1}]; \
+       Round[1000 x[\"Domain\"] /. First[s]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{{0, 2000}}");
+  }
+
+  #[test]
   fn interpolating_function_domain_matches_domain_property() {
     // `InterpolatingFunctionDomain[if]`, from the
     // `DifferentialEquations`InterpolatingFunctionAnatomy`` package, reports

@@ -1734,6 +1734,24 @@ Woxi's integrator carries a real state vector, so a complex system is
 solved as the real system of its parts (`ComplexExpand` of each equation)
 and recombined. The values agree; the shape of the solution does not.
 
+### NDSolve's default steps lose a long chaotic orbit sooner than WL's
+
+```sh
+# Restricted three-body orbit, μ = 0.028, from (1.16, -0.16) with
+# velocity (0.02, -0.36), integrated over {t, 0, 100}
+# wolframscript: stays inside x ∈ [-0.93, 1.21], y ∈ [-0.88, 0.94]
+# woxi:          leaves that region (x down to -1.18, y up to 1.46)
+```
+
+A smooth problem first runs on a grid of 1000 RK4 steps, each bisected only
+until a step-doubling estimate is below `1e-7` relative. Over a hundred time
+units its Jacobi constant drifts by ~1e-4 where WL's adaptive steps keep it
+to ~1e-8, and a chaotic orbit amplifies the difference until it reaches a
+different region. Simply tightening the grid's tolerance stops the grid
+from noticing the close encounters it hands to the adaptive Dormand–Prince
+method, which made other orbits worse; the fix is to give the grid's step
+control the error per unit step of the adaptive method.
+
 ### `$MinNumber`, `$MaxNumber` and exponents past 32 bits
 
 ```sh
