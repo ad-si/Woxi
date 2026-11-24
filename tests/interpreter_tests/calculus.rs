@@ -12235,6 +12235,26 @@ mod ndsolve {
     }
   }
 
+  /// A stationary radial operator `-(1/r) ∂r(r ∂r u)` on a range symmetric
+  /// about the axis puts a grid point on `r == 0`, where the row is `0/0`;
+  /// it takes its limit there (`u_r / r → u_rr`), so the quadratic exact
+  /// solution `1/4 - r^2 + x` is reproduced, whichever variable is first.
+  #[test]
+  fn ndsolve_stationary_removable_axis_singularity() {
+    for doms in ["{x, 0, 1}, {r, -1/2, 1/2}", "{r, -1/2, 1/2}, {x, 0, 1}"] {
+      let code = format!(
+        "f = NDSolveValue[{{-(1/r) D[r D[u[x, r], r], r] - \
+         D[u[x, r], x, x] == 4 + NeumannValue[1, x == 1] + \
+         DirichletCondition[u[x, r] == x, r == -1/2] + \
+         DirichletCondition[u[x, r] == x, r == 1/2] + \
+         DirichletCondition[u[x, r] == 1/4 - r^2, x == 0]}}, u, {doms}]; \
+         Max[Abs[Flatten[Table[f[x, r] - (1/4 - r^2 + x), \
+         {{x, {{0.3, 0.7, 1.}}}}, {{r, {{-0.2, 0., 0.35}}}}]]]] < 10^-6"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{doms}");
+    }
+  }
+
   /// `NeumannValue[g, x == x0]` on the right-hand side is the natural
   /// boundary condition `n·(c ∇u) = g` (outward normal `n`), so a constant
   /// inflow `g` at one end of a diffusing bar with an insulated other end
