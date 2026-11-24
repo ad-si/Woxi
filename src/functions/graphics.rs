@@ -55964,24 +55964,25 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `StringForm["template", args…]` — a control's choice label such as
       // `5 -> StringForm["1``", Style[1/2, Tiny]]` shows the template with
       // each slot filled by its argument's label text, not the call's source.
+      // Each slot keeps its own styled runs, so a
+      // `StringForm["see ``", Subscript[Style["P", Italic], 2]]` label keeps
+      // its slanted `P` instead of flattening to plain text.
       "StringForm" if matches!(args.first(), Some(Expr::String(_))) => {
         let Some(Expr::String(template)) = args.first() else {
           unreachable!()
         };
-        let text = crate::functions::string_ast::format_string_form_with(
-          template,
-          &args[1..],
-          |a| flatten_label_runs(&manipulate_label_runs(a, italic)),
-        );
-        if text.is_empty() {
-          vec![]
-        } else {
-          vec![LabelRun {
-            text,
-            italic,
-            ..Default::default()
-          }]
-        }
+        crate::functions::string_ast::string_form_parts(template, &args[1..])
+          .iter()
+          .flat_map(|part| match part {
+            Expr::String(t) => vec![LabelRun {
+              text: t.clone(),
+              italic,
+              ..Default::default()
+            }],
+            other => manipulate_label_runs(other, italic),
+          })
+          .filter(|r| !r.text.is_empty())
+          .collect()
       }
       // `Invisible[expr]` keeps the room `expr` takes but draws nothing, so a
       // label such as `Row[{"a", Invisible[1/2]}]` reads as `a` followed by
@@ -57306,7 +57307,26 @@ fn script_runs(
   // Each script keeps its own styled runs, so a `Style["B", Italic]`
   // subscript stays slanted; how the script is set (Unicode script glyphs,
   // a lowered marker, or a caret) is decided from its whole text.
-  for a in args.iter().skip(1) {
+  // `Subscript[x, i, j]` sets its indices as one comma-separated script
+  // (`x` sub `i,j`), the way the front end typesets the `RowBox` of them.
+  let joined;
+  let scripts: &[Expr] = if args.len() > 2 && !superscript {
+    let mut parts = Vec::with_capacity(2 * args.len() - 3);
+    for (k, a) in args[1..].iter().enumerate() {
+      if k > 0 {
+        parts.push(Expr::String(",".to_string()));
+      }
+      parts.push(unquote_box_string(a));
+    }
+    joined = [Expr::FunctionCall {
+      name: "Row".to_string(),
+      args: vec![Expr::List(parts.into())].into(),
+    }];
+    &joined
+  } else {
+    &args[1.min(args.len())..]
+  };
+  for a in scripts {
     let script_runs = manipulate_label_runs(&unquote_box_string(a), false);
     let text = flatten_label_runs(&script_runs);
     let restyle = |runs: &mut Vec<LabelRun>, f: &dyn Fn(&str) -> String| {
@@ -63902,6 +63922,39 @@ mod manipulate_label_tests {
     let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
     let label = call1("Text", subscript);
     assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
+  }
+
+  /// `Subscript[x, i, j]` typesets its indices as one script separated by
+  /// a comma (`x` sub `1,0`), not run together as `x₁₀`.
+  #[test]
+  fn multi_index_subscript_separates_indices_with_comma() {
+    let styled = call("Style", vec![str_expr("P"), id_expr("Italic")]);
+    let label = call(
+      "Subscript",
+      vec![styled, Expr::Integer(1), Expr::Integer(0)],
+    );
+    let got = runs(&label);
+    assert_eq!(got[0], run("P", true));
+    let script: String = got[1..].iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(script, "1,0");
+    assert!(got[1..].iter().all(|r| r.subscript && !r.italic));
+  }
+
+  /// A `StringForm` label keeps each slot's styling, so an italic base in
+  /// a filled-in `Subscript` stays slanted next to the template's text.
+  #[test]
+  fn string_form_label_keeps_slot_styles() {
+    let styled = call("Style", vec![str_expr("P"), id_expr("Italic")]);
+    let slot = call("Subscript", vec![styled, Expr::Integer(4)]);
+    let label = call("StringForm", vec![str_expr("see point ``"), slot]);
+    assert_eq!(
+      runs(&label),
+      vec![
+        run("see point ", false),
+        run("P", true),
+        run("\u{2084}", false)
+      ]
+    );
   }
 
   #[test]
