@@ -1428,17 +1428,26 @@ fn plot_range_requests_all_y(value: &Expr) -> bool {
 
 /// Which axes a `PlotRange` value asks to show the whole extent of, outliers
 /// included: both for `All`, one for `All` in its slot of `{xrange, yrange}`.
+/// An `All` end of a `{min, All}` pair reaches out to the whole extent of
+/// its axis too: `PlotRange -> {0, All}` keeps the y outliers, and
+/// `{{0, All}, {0, 1}}` the x ones.
 pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  // `All`, or a `{min, max}` pair with an `All` end.
+  let reaches_all = |e: &Expr| {
+    is_all(e)
+      || matches!(e, Expr::List(ends) if ends.len() == 2
+        && is_y_only_pair(ends) && ends.iter().any(is_all))
+  };
   match &val {
     e if is_all(e) => (true, true),
-    // `{ymin, All}` opens only an end of the y range.
+    // `{ymin, All}` opens an end of the y range only.
     Expr::List(items) if items.len() == 2 && is_y_only_pair(items) => {
-      (false, false)
+      (false, items.iter().any(is_all))
     }
     Expr::List(items) if items.len() == 2 => {
-      (is_all(&items[0]), is_all(&items[1]))
+      (reaches_all(&items[0]), reaches_all(&items[1]))
     }
     _ => (false, false),
   }
