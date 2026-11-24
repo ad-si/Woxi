@@ -47721,6 +47721,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }) {
     animation_running = false;
   }
+  // The same evaluated `Animate` moves `AnimationRate -> r` into its
+  // control specifications. It paces the first one that states it; an
+  // explicit `Animator`/`Trigger` spec's own rate (read below) wins.
+  let spec_animation_rate = args[1..]
+    .iter()
+    .filter(|spec| matches!(spec, Expr::List(_)))
+    .find_map(control_spec_animation_rate);
   for spec in &args[1..] {
     // `ExpressionCell[content, …]` is the front end's wrapper around a
     // control row saved with the notebook (Demonstrations store their
@@ -48001,6 +48008,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
       {
         animation_running = false;
+      }
+      // `Animate[…, AnimationRate -> r]`: the pace of the whole animation,
+      // unless the animated control's own spec sets one.
+      if animation_rate.is_none() {
+        animation_rate =
+          control_spec_animation_rate(&Expr::List(vec![spec.clone()].into()));
       }
       // `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
       // each holding the code that jumps the controls to that preset (the
@@ -49190,6 +49203,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         control_placements.push((name.to_string(), side));
       }
     }
+  }
+  // An `Animate` without an explicit `Animator`/`Trigger` spec takes the
+  // rate its evaluated form moved into a plain control spec.
+  if animated && animation_var.is_none() && animation_rate.is_none() {
+    animation_rate = spec_animation_rate;
   }
 
   Some(ManipulateSpec {
@@ -65591,6 +65609,46 @@ mod manipulate_control_placement_tests {
       )
       .animation_running
     );
+  }
+
+  /// `AnimationRate -> r` paces the animation in units per second: an
+  /// `Animator` spec carries its own rate, an `Animate` states it as an
+  /// option (or, evaluated, inside its control spec), and a non-numeric or
+  /// non-positive rate leaves the default pace.
+  #[test]
+  fn animation_rate_is_recorded() {
+    let rate = |code: &str| {
+      extract_manipulate_spec(&crate::parse_to_expr(code).expect("parse"))
+        .expect("extract spec")
+        .animation_rate
+    };
+    assert_eq!(
+      rate(
+        "Manipulate[t, {{t, 0, \"time\"}, 0, 10, Animator, \
+         AnimationRunning -> False, AnimationRate -> .25}]"
+      ),
+      Some(0.25)
+    );
+    assert_eq!(
+      rate("Animate[a, {a, 0, 5}, AnimationRate -> 3/2]"),
+      Some(1.5)
+    );
+    assert_eq!(rate("Animate[a, {a, 0, 5, AnimationRate -> 2}]"), Some(2.0));
+    // Only the animated control's rate counts.
+    assert_eq!(
+      rate(
+        "Manipulate[a + b, {a, 0, 1, AnimationRate -> 5}, \
+         {b, 0, 1, Animator, AnimationRate -> 0.5}]"
+      ),
+      Some(0.5)
+    );
+    assert_eq!(
+      rate("Animate[a, {a, 0, 5}, AnimationRate -> Automatic]"),
+      None
+    );
+    assert_eq!(rate("Animate[a, {a, 0, 5}, AnimationRate -> -1]"), None);
+    assert_eq!(rate("Animate[a, {a, 0, 5}]"), None);
+    assert_eq!(rate("Manipulate[a, {a, 0, 5, AnimationRate -> 2}]"), None);
   }
 
   /// A list of more than one side places successive controls rather than
