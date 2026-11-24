@@ -5107,8 +5107,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
-/// If `expr` is `TraditionalForm[{…}]`, render the list as a parenthesized matrix
-/// (same visual treatment as MatrixForm).
+/// If `expr` is `TraditionalForm[{{…}, …}]` (a list of lists), render it as
+/// a parenthesized matrix (same visual treatment as MatrixForm). A flat list
+/// stays a braced list.
 pub(crate) fn render_traditionalform_list_if_needed(
   expr: syntax::Expr,
 ) -> syntax::Expr {
@@ -5136,19 +5137,9 @@ pub(crate) fn render_traditionalform_list_if_needed(
             Err(_) => expr,
           }
         }
-        // 1D list: column vector with parentheses
-        syntax::Expr::List(items) if !items.is_empty() => {
-          let grid_data = syntax::Expr::List(
-            items
-              .iter()
-              .map(|e| syntax::Expr::List(vec![e.clone()].into()))
-              .collect(),
-          );
-          match functions::graphics::grid_ast_with_parens(&[grid_data]) {
-            Ok(result) => result,
-            Err(_) => expr,
-          }
-        }
+        // A flat list is not a matrix: the front end writes it on one
+        // line between braces (`{x₁ = 1, x₂ = 0}`), typeset like any other
+        // expression, so it is left to the box layout.
         _ => expr,
       }
     }
