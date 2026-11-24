@@ -6230,6 +6230,23 @@ cylinder (`{x, -3, 3}, {y, -2, 2}`) has 17 at its upstream edge. Its seeding
 algorithm is not recoverable from the output, so Woxi's default sits between
 the two, and `StreamPoints` settings keep Wolfram's proportions to it.
 
+### `StreamPlot3D` picks different extra seeds past the coarse lattice
+
+`StreamPlot3D[…, StreamPoints -> n]` seeds a `k`×`k`×`k` lattice over the
+middle 80 % of each side (`k³ ≤ n`, both sides agree) and tops it up with
+points of a finer lattice. Which finer points come first differs: for
+`k = 2` (`n = 9 … 16`) wolframscript takes the eight `(±r, ±r, ±r)` points
+(`r = 0.267` on `{-1, 1}`) in the order `(-,-,+), (-,+,-), (-,+,+), (+,-,-),
+(+,-,+), (+,+,-), (+,+,+), (-,-,-)`, Woxi nearest-the-center-first in
+lattice order starting at `(-,-,-)`. So `StreamPlot3D[{-y, x, 0.2}, …,
+StreamPoints -> 10]` draws its two inner helices through different seeds
+(a different phase offset between them). The finer lattice is not
+consistent either: for `k = 3` the extras are `(±0.4, ±0.4, ±0.4)` and for
+`k = 4` `(±0.48, ±0.48, ±0.48)`, in yet other orders (probed with the
+fields `{1, 0, 0}` and `{0, 0, 1}`, whose lines show the seeds' `(y, z)` and
+`(x, y)`). Sorting by a floating-point distance to the center, by
+`Nearest`, or by lattice order reproduces none of the observed orders.
+
 ### Plot argument forms from the reference pages that are still missing
 
 Found by the round-4 parameter sweep of the plot reference pages; the
