@@ -56625,6 +56625,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Plus" if contains_presentation_head(expr) => {
         joined_label_runs(args, " + ", false, italic)
       }
+      // `Cross[a, b]` typesets as the infix `a×b`, which is what a label's
+      // `\[Cross]` between two box atoms reads back as
+      // (`9\[Cross]\*SuperscriptBox[\(10\), \(9\)]` is `9×10⁹`).
+      "Cross" if args.len() >= 2 => {
+        joined_label_runs(args, "\u{00D7}", true, italic)
+      }
       _ => output_run(italic),
     },
     Expr::BinaryOp {
@@ -57093,7 +57099,7 @@ fn label_is_compound(expr: &Expr) -> bool {
       "Row" | "Column" | "GraphicsRow" | "GraphicsColumn" => {
         matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
       }
-      "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
+      "Plus" | "Subtract" | "Times" | "Divide" | "Cross" => args.len() > 1,
       _ => false,
     },
     _ => false,
