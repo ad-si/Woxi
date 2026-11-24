@@ -5882,9 +5882,16 @@ framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
 cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
 (532/550).
 
-`Show` keeps only its first graphic's options, so the `Show` snapshot has
-no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
-building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+`Show` keeps only its first graphic's options, so a `Show` led by a
+`Graphics3D` has no `PlotRange` and its explicit `ViewPoint` is what sets it
+apart from the building. A `ParametricPlot3D` result, as in wolframscript,
+carries the extent of its surface as an explicit `PlotRange`, so a `Show` led
+by one is framed by the sphere around that box. A Demonstration's
+`Manipulate` of two such `Show`s at `ImageSize -> {290, 290}` from
+`ViewPoint -> {0, -2, 0.5}` draws a unit sphere (led by a `Graphics3D`) at
+about 0.90 of the width and an inner half torus of a 4 × 4 × 2 box (led by
+a `ParametricPlot3D`) at about 0.57. Woxi draws them at 0.93 and 0.64; with
+the contents sphere for both, the torus came out at 0.83. Whether `PlotRange` and `ViewPoint` are really the triggers, or
 merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit

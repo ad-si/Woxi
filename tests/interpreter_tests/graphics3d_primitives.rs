@@ -1941,6 +1941,67 @@ mod plot3d_family {
     assert!(count(&meshed) > 200, "{}", count(&meshed));
     assert_eq!(count(&bare), 0);
   }
+
+  // The symbolic result carries the same mesh the plot draws (15 lines of
+  // each parameter by default, `n` with `Mesh -> n`, plus the edges), so a
+  // `Show` of the plot keeps it.
+  #[test]
+  fn parametric_surface_result_carries_its_mesh() {
+    let surface = "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}";
+    let lines = |opts: &str| {
+      interpret(&format!(
+        "Map[Length, Cases[{surface}{opts}], Line[l_] :> l, Infinity]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(lines(""), "{34}");
+    assert_eq!(lines(", Mesh -> 3"), "{10}");
+    assert_eq!(lines(", Mesh -> {2, 4}"), "{10}");
+    assert_eq!(lines(", Mesh -> None"), "{}");
+    assert_eq!(lines(", MeshStyle -> None"), "{}");
+  }
+
+  #[test]
+  fn show_of_parametric_surface_keeps_its_mesh() {
+    let surface = "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}";
+    let mesh_lines = |s: &str| {
+      s.split("<line ")
+        .skip(1)
+        .filter(|rest| {
+          let tag = &rest[..rest.find('>').unwrap()];
+          tag.contains("stroke=\"rgb(0,0,0)\"") && tag.contains("opacity=")
+        })
+        .count()
+    };
+    let meshed = svg(&format!("Show[{surface}], ViewPoint -> {{0, -2, 1}}]"));
+    let bare = svg(&format!(
+      "Show[{surface}, Mesh -> None], ViewPoint -> {{0, -2, 1}}]"
+    ));
+    assert!(mesh_lines(&meshed) > 200, "{}", mesh_lines(&meshed));
+    assert_eq!(mesh_lines(&bare), 0);
+  }
+
+  // Like wolframscript, the result pins its range to the sampled surface's
+  // extent; an explicit `PlotRange` is kept as given.
+  #[test]
+  fn parametric_surface_result_pins_its_plot_range() {
+    assert_eq!(
+      interpret(
+        "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 2}]]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {0., 2.}, {0., 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 2}, PlotRange -> {0, 1}]]"
+      )
+      .unwrap(),
+      "{0, 1}"
+    );
+  }
 }
 
 mod level_surfaces {

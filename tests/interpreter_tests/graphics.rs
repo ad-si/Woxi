@@ -9751,7 +9751,7 @@ mod plot3d {
       for (n, points) in [("4", 16), ("7", 49), ("{5, 5}", 25)] {
         let result = interpret(&format!(
           "Length[ParametricPlot3D[{{u, v, u v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
-           PlotPoints -> {n}][[1, 1]]]"
+           PlotPoints -> {n}, Mesh -> None][[1, 1]]]"
         ))
         .unwrap();
         assert_eq!(result, points.to_string(), "PlotPoints -> {n}");
@@ -9915,7 +9915,9 @@ mod plot3d {
          {_AbsoluteThickness, c_, Line[segs_]} :> {c, Length[segs]}]",
       )
       .unwrap();
-      assert_eq!(lines, "{{RGBColor[0, 0, 1], 6}, {RGBColor[1, 0, 0], 3}}");
+      // Two lines of constant v and one of constant u, each plus the two
+      // edges, as the plot draws them.
+      assert_eq!(lines, "{{RGBColor[0, 0, 1], 4}, {RGBColor[1, 0, 0], 3}}");
       let shown = export_svg(
         "Show[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
          PlotPoints -> 5, Mesh -> {2, 2}, MeshStyle -> RGBColor[0.2, 0.4, 0.6]], \
@@ -44927,23 +44929,24 @@ mod parametric_plot3d {
   #[test]
   fn integer_mesh_draws_that_many_lines_per_direction() {
     clear_state();
-    // n interior lines in each of the two parameter directions, each a
-    // chain of GRID_N segments.
+    // n interior lines in each of the two parameter directions plus the
+    // surface's two edges, each one polyline, as the plot draws them.
     assert_eq!(
       interpret(
         "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
          {v, 0, 1}, Mesh -> 3][[1]], Line[l_] :> l, Infinity]]"
       )
       .unwrap(),
-      "{300}"
+      "{10}"
     );
+    // `Mesh -> 0` leaves only the edges.
     assert_eq!(
       interpret(
-        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
-         Mesh -> 0][[1]], _Line, Infinity]"
+        "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 1}, Mesh -> 0][[1]], Line[l_] :> l, Infinity]]"
       )
       .unwrap(),
-      "{}"
+      "{4}"
     );
   }
 
@@ -63471,8 +63474,8 @@ mod surface_vertex_colors {
     // Scaled arguments stay in 0..1, so every facet's red channel is too.
     let r = interpret(
       "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, \
-       ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3]; \
-       Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 \
+       ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3, \
+       Mesh -> None]; Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 \
        && 0 <= b <= 1, Infinity] // Length",
     )
     .unwrap();
