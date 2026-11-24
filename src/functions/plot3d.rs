@@ -2042,19 +2042,41 @@ fn clip_surface_triangle(
   surface_at: &dyn Fn(f64, f64) -> Option<[f64; 3]>,
   inside: &dyn Fn(&[f64; 3]) -> bool,
 ) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
-  let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-    let (mut lo, mut hi) = (a, b); // lo inside, hi outside
-    for _ in 0..12 {
-      let mx = f64::midpoint(lo[0], hi[0]);
-      let my = f64::midpoint(lo[1], hi[1]);
-      match surface_at(mx, my) {
-        Some(m) if inside(&m) => lo = m,
-        Some(m) => hi = m,
-        None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
-      }
+  clip_triangle_with(tri, ins, &mut |a, b| {
+    bisect_region_edge(a, b, surface_at, inside)
+  })
+}
+
+/// The point where the segment from `lo` (inside a region) to `hi`
+/// (outside) leaves the region, found by bisecting along the surface
+/// (`surface_at`) in its first two coordinates.
+fn bisect_region_edge(
+  lo: [f64; 3],
+  hi: [f64; 3],
+  surface_at: &dyn Fn(f64, f64) -> Option<[f64; 3]>,
+  inside: &dyn Fn(&[f64; 3]) -> bool,
+) -> [f64; 3] {
+  let (mut lo, mut hi) = (lo, hi);
+  for _ in 0..12 {
+    let mx = f64::midpoint(lo[0], hi[0]);
+    let my = f64::midpoint(lo[1], hi[1]);
+    match surface_at(mx, my) {
+      Some(m) if inside(&m) => lo = m,
+      Some(m) => hi = m,
+      None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
     }
-    lo
-  };
+  }
+  lo
+}
+
+/// Clips the triangle `tri` to the corners `ins` marks as inside, cutting
+/// each edge that runs from an inside corner `a` to an outside one `b` at
+/// `cross(a, b)`. Returns the clipped polygon and the cut points.
+fn clip_triangle_with(
+  tri: [[f64; 3]; 3],
+  ins: [bool; 3],
+  cross: &mut dyn FnMut([f64; 3], [f64; 3]) -> [f64; 3],
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
   let mut poly: Vec<[f64; 3]> = Vec::new();
   let mut cut: Vec<[f64; 3]> = Vec::new();
   for e in 0..3 {
@@ -25220,6 +25242,119 @@ fn evaluate_parametric_at_uv(
   }
 }
 
+/// A part of a parametric surface's sampling cell that a `RegionFunction`
+/// keeps although not all of the cell's corners lie in the region.
+struct RegionPiece {
+  /// The sampling cell `(i, j)` the piece belongs to.
+  cell: (usize, usize),
+  /// The piece's outline on the surface.
+  points: Vec<(f64, f64, f64)>,
+  /// The parameters `(u, v)` of each outline point.
+  params: Vec<(f64, f64)>,
+}
+
+/// Whether all four corners of the sampling cell `(i, j)` are present.
+fn whole_cell<T>(grid: &[Vec<Option<T>>], i: usize, j: usize) -> bool {
+  [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
+    .iter()
+    .all(|&(a, b)| grid[a][b].is_some())
+}
+
+/// Clips the sampling cells of a parametric surface that a `RegionFunction`
+/// keeps only in part, the way Wolfram does: each cell is split into the
+/// same two triangles the surface is drawn with, and an edge running from
+/// a kept corner to a rejected one is cut where bisection in parameter
+/// space finds the region's edge. `sampled` holds every finite sample,
+/// `kept` the ones inside the region; `column(i)` gives the `u` of grid
+/// column `i` with the start and step of its `v` samples. Returns the
+/// pieces inside the region (whole triangles of partly kept cells
+/// included) and the segments along the region's edge.
+fn clip_parametric_cells(
+  sampled: &[Vec<Option<(f64, f64, f64)>>],
+  kept: &[Vec<Option<(f64, f64, f64)>>],
+  column: &dyn Fn(usize) -> (f64, f64, f64),
+  surface_at: &dyn Fn(f64, f64) -> Option<(f64, f64, f64)>,
+  inside: &dyn Fn((f64, f64, f64), f64, f64) -> bool,
+) -> (Vec<RegionPiece>, Vec<[(f64, f64, f64); 2]>) {
+  let mut pieces = Vec::new();
+  let mut cuts = Vec::new();
+  let grid_u = sampled.len().saturating_sub(1);
+  let grid_v = sampled.first().map_or(0, |row| row.len().saturating_sub(1));
+  // Parameter points travel through the bisection as `[u, v, 1]` inside
+  // the region and `[u, v, 0]` outside, so each step evaluates the surface
+  // and the region once.
+  let param_point = |u: f64, v: f64| {
+    surface_at(u, v).map(|s| [u, v, if inside(s, u, v) { 1.0 } else { 0.0 }])
+  };
+  let param_inside = |p: &[f64; 3]| p[2] > 0.5;
+  // An edge is shared by two triangles; bisect it only once.
+  let mut crossings: std::collections::HashMap<[u64; 4], [f64; 3]> =
+    std::collections::HashMap::new();
+  let mut cross = |a: [f64; 3], b: [f64; 3]| {
+    let key = [a[0], a[1], b[0], b[1]].map(f64::to_bits);
+    *crossings.entry(key).or_insert_with(|| {
+      bisect_region_edge(
+        [a[0], a[1], 1.0],
+        [b[0], b[1], 0.0],
+        &param_point,
+        &param_inside,
+      )
+    })
+  };
+  // The surface point at each outline point, evaluated once.
+  let mut on_surface: std::collections::HashMap<
+    [u64; 2],
+    Option<(f64, f64, f64)>,
+  > = std::collections::HashMap::new();
+  let param_of = |(a, b): (usize, usize)| {
+    let (u, v0, dv) = column(a);
+    [u, v0 + b as f64 * dv, 0.0]
+  };
+  for i in 0..grid_u {
+    for j in 0..grid_v {
+      if whole_cell(kept, i, j) {
+        continue;
+      }
+      for corners in [
+        [(i, j), (i + 1, j), (i, j + 1)],
+        [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+      ] {
+        if corners.iter().any(|&(a, b)| sampled[a][b].is_none()) {
+          continue;
+        }
+        let ins = corners.map(|(a, b)| kept[a][b].is_some());
+        if !ins.iter().any(|b| *b) {
+          continue;
+        }
+        let tri = corners.map(param_of);
+        let (poly, cut) = clip_triangle_with(tri, ins, &mut cross);
+        let mut at = |p: &[f64; 3]| {
+          *on_surface
+            .entry([p[0].to_bits(), p[1].to_bits()])
+            .or_insert_with(|| surface_at(p[0], p[1]))
+        };
+        let (points, params): (Vec<_>, Vec<_>) = poly
+          .iter()
+          .filter_map(|p| at(p).map(|s| (s, (p[0], p[1]))))
+          .unzip();
+        if points.len() >= 3 {
+          pieces.push(RegionPiece {
+            cell: (i, j),
+            points,
+            params,
+          });
+        }
+        if let [a, b] = cut[..]
+          && let (Some(a), Some(b)) = (at(&a), at(&b))
+        {
+          cuts.push([a, b]);
+        }
+      }
+    }
+  }
+  (pieces, cuts)
+}
+
 /// The grid steps along the four sides of a `[0, nu] x [0, nv]` sampling
 /// grid: the outline of a parametric surface's domain.
 fn parameter_domain_edges(
@@ -25427,6 +25562,27 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ..StyleState3D::default()
               };
               apply_3d_directive(&other, &mut style);
+              // A style naming no color (`AbsoluteThickness[3]`) draws the
+              // outline black, in the extracted complex too — otherwise it
+              // would take on the surface's color there.
+              let mut probe = StyleState3D::default();
+              apply_3d_directive(&other, &mut probe);
+              let other = if probe.color.is_some() {
+                other
+              } else {
+                let black = call1("GrayLevel", Expr::Integer(0));
+                match &other {
+                  Expr::FunctionCall { name, args } if name == "Directive" => {
+                    call(
+                      "Directive",
+                      std::iter::once(black)
+                        .chain(args.iter().cloned())
+                        .collect(),
+                    )
+                  }
+                  _ => call("Directive", vec![black, other]),
+                }
+              };
               Some((other, style))
             }
           };
@@ -25660,8 +25816,32 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut gz_min = f64::INFINITY;
   let mut gz_max = f64::NEG_INFINITY;
 
+  // The parts of the cells a `RegionFunction` cuts that lie inside the
+  // region, and the segments along which it cut them, per surface.
+  let mut all_region_pieces: Vec<Vec<RegionPiece>> = Vec::new();
+  let mut all_region_cuts: Vec<Vec<[(f64, f64, f64); 2]>> = Vec::new();
+  let region_allows = |region: &Expr, p: (f64, f64, f64), u: f64, v: f64| {
+    let call = Expr::CurriedCall {
+      func: Box::new(region.clone()),
+      args: vec![
+        Expr::Real(p.0),
+        Expr::Real(p.1),
+        Expr::Real(p.2),
+        Expr::Real(u),
+        Expr::Real(v),
+      ],
+    };
+    matches!(
+      evaluate_expr_to_expr(&call),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  };
+
   for surface in &surfaces {
     let mut points = vec![vec![None; grid_v + 1]; grid_u + 1];
+    // Every finite sample, whether the region keeps it or not: the cells
+    // the region's edge runs through are clipped between them.
+    let mut sampled = vec![vec![None; grid_v + 1]; grid_u + 1];
     let (fx, fy, fz) = (
       crate::functions::plot::PlotBody2::new(&surface.fx, &uvar, &vvar),
       crate::functions::plot::PlotBody2::new(&surface.fy, &uvar, &vvar),
@@ -25674,36 +25854,42 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some((x, y, z)) =
           evaluate_parametric_at_uv(&fx, &fy, &fz, uval, vval)
         {
-          if let Some(region) = &region_fn {
-            let call = Expr::CurriedCall {
-              func: Box::new(region.clone()),
-              args: vec![
-                Expr::Real(x),
-                Expr::Real(y),
-                Expr::Real(z),
-                Expr::Real(uval),
-                Expr::Real(vval),
-              ],
-            };
-            let inside = matches!(
-              evaluate_expr_to_expr(&call),
-              Ok(Expr::Identifier(ref s)) if s == "True"
-            );
-            if !inside {
-              continue;
-            }
+          sampled[i][j] = Some((x, y, z));
+          if let Some(region) = &region_fn
+            && !region_allows(region, (x, y, z), uval, vval)
+          {
+            continue;
           }
           points[i][j] = Some((x, y, z));
-          gx_min = gx_min.min(x);
-          gx_max = gx_max.max(x);
-          gy_min = gy_min.min(y);
-          gy_max = gy_max.max(y);
-          gz_min = gz_min.min(z);
-          gz_max = gz_max.max(z);
         }
       }
     }
+    let (pieces, cuts) = match &region_fn {
+      Some(region) => clip_parametric_cells(
+        &sampled,
+        &points,
+        &|i| (u_min + i as f64 * u_step, v_ranges[i].0, v_step_at(i)),
+        &|u, v| evaluate_parametric_at_uv(&fx, &fy, &fz, u, v),
+        &|p, u, v| region_allows(region, p, u, v),
+      ),
+      None => (Vec::new(), Vec::new()),
+    };
+    for &(x, y, z) in points
+      .iter()
+      .flatten()
+      .flatten()
+      .chain(pieces.iter().flat_map(|piece| piece.points.iter()))
+    {
+      gx_min = gx_min.min(x);
+      gx_max = gx_max.max(x);
+      gy_min = gy_min.min(y);
+      gy_max = gy_max.max(y);
+      gz_min = gz_min.min(z);
+      gz_max = gz_max.max(z);
+    }
     all_surface_points.push(points);
+    all_region_pieces.push(pieces);
+    all_region_cuts.push(cuts);
   }
 
   if !gx_min.is_finite() || !gy_min.is_finite() || !gz_min.is_finite() {
@@ -25936,6 +26122,79 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           surface_color_fn.is_some() || surface_color_scheme.is_some(),
           &scene,
         ));
+        // The face directive of the cell `(i, j)`'s polygons. Only an
+        // explicit color (`PlotStyle`, `MeshShading`, `ColorFunction`) is
+        // baked into a facet. Facets of the default look carry none, like
+        // wolframscript's `ParametricPlot3D[…][[1]]`, so a color directive
+        // placed before the extracted complex still applies.
+        let cell_face = |i: usize, j: usize| -> Option<Expr> {
+          let corners: Vec<(f64, f64, f64)> =
+            [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
+              .into_iter()
+              .flatten()
+              .collect();
+          let mesh_color = mesh_shading_active.then(|| {
+            let n = corners.len().max(1) as f64;
+            let avg = |f: fn(&(f64, f64, f64)) -> f64| {
+              corners.iter().map(f).sum::<f64>() / n
+            };
+            eval_mesh_function(
+              mesh_function.as_ref().expect("mesh_shading_active"),
+              avg(|p| p.0),
+              avg(|p| p.1),
+              avg(|p| p.2),
+            )
+            .and_then(|val| {
+              let region = mesh_breaks.iter().filter(|&&b| b <= val).count();
+              // More regions than colors: cycle, the same convention
+              // `PlotStyle`'s per-surface colors already use.
+              mesh_shading
+                .get(region % mesh_shading.len())
+                .copied()
+                .flatten()
+            })
+          });
+          let surface_style = plot_style_for_surface(&plot_styles, surface_idx);
+          let front =
+            facet_colors[surface_idx][i][j].or_else(
+              || match surface_style {
+                Some(style) => style.color,
+                None => mesh_color.flatten(),
+              },
+            )?;
+          // A `PlotStyle -> FaceForm[front, back]` facet keeps both
+          // sides' colors, so its back stays `back` once extracted.
+          let back = facet_colors[surface_idx][i][j]
+            .is_none()
+            .then(|| surface_style.and_then(|s| s.back_color))
+            .flatten();
+          let rgb = |(r, g, b): (u8, u8, u8)| {
+            call(
+              "RGBColor",
+              vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ],
+            )
+          };
+          Some(match back {
+            Some(back) => call("FaceForm", vec![rgb(front), rgb(back)]),
+            None => rgb(front),
+          })
+        };
+        let indices = |ks: &[usize]| {
+          Expr::List(
+            ks.iter()
+              .map(|&k| Expr::Integer(k as i128 + 1))
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        };
+        let mut push_polygon = |polygon: Expr, face: Option<Expr>| match face {
+          Some(face) => content.push(Expr::List(vec![face, polygon].into())),
+          None => content.push(polygon),
+        };
         for i in 0..grid_u {
           for j in 0..grid_v {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -25945,65 +26204,6 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               index_of[i][j + 1],
             ) else {
               continue;
-            };
-            let corners =
-              [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]];
-            let avg_z = corners
-              .iter()
-              .filter_map(|p| p.map(|(_, _, z)| z))
-              .sum::<f64>()
-              / 4.0;
-            let mesh_color = mesh_shading_active.then(|| {
-              let avg_x = corners
-                .iter()
-                .filter_map(|p| p.map(|(x, _, _)| x))
-                .sum::<f64>()
-                / 4.0;
-              let avg_y = corners
-                .iter()
-                .filter_map(|p| p.map(|(_, y, _)| y))
-                .sum::<f64>()
-                / 4.0;
-              eval_mesh_function(
-                mesh_function.as_ref().expect("mesh_shading_active"),
-                avg_x,
-                avg_y,
-                avg_z,
-              )
-              .and_then(|val| {
-                let region = mesh_breaks.iter().filter(|&&b| b <= val).count();
-                // More regions than colors: cycle, the same convention
-                // `PlotStyle`'s per-surface colors already use.
-                mesh_shading
-                  .get(region % mesh_shading.len())
-                  .copied()
-                  .flatten()
-              })
-            });
-            // Only an explicit color (`PlotStyle`, `MeshShading`) is baked
-            // into a facet. Facets of the default look carry none, like
-            // wolframscript's `ParametricPlot3D[…][[1]]`, so a color
-            // directive placed before the extracted complex still applies.
-            let surface_style =
-              plot_style_for_surface(&plot_styles, surface_idx);
-            let explicit =
-              facet_colors[surface_idx][i][j].or_else(|| match surface_style {
-                Some(style) => style.color,
-                None => mesh_color.flatten(),
-              });
-            // A `PlotStyle -> FaceForm[front, back]` facet keeps both
-            // sides' colors, so its back stays `back` once extracted.
-            let back = facet_colors[surface_idx][i][j]
-              .is_none()
-              .then(|| surface_style.and_then(|s| s.back_color))
-              .flatten();
-            let indices = |ks: &[usize]| {
-              Expr::List(
-                ks.iter()
-                  .map(|&k| Expr::Integer(k as i128 + 1))
-                  .collect::<Vec<_>>()
-                  .into(),
-              )
             };
             // A textured cell is split into two triangles, each of which
             // carries the image affinely.
@@ -26017,39 +26217,58 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               call1("Polygon", indices(&[a, b, c, d]))
             };
-            let Some(front) = explicit else {
-              content.push(polygon);
-              continue;
-            };
-            let rgb = |(r, g, b): (u8, u8, u8)| {
-              call(
-                "RGBColor",
-                vec![
-                  Expr::Real(r as f64 / 255.0),
-                  Expr::Real(g as f64 / 255.0),
-                  Expr::Real(b as f64 / 255.0),
-                ],
-              )
-            };
-            let face = match back {
-              Some(back) => call("FaceForm", vec![rgb(front), rgb(back)]),
-              None => rgb(front),
-            };
-            content.push(Expr::List(vec![face, polygon].into()));
+            push_polygon(polygon, cell_face(i, j));
           }
         }
+        // The parts of the cells a `RegionFunction` cuts that lie inside
+        // the region, their outline points appended to the shared points.
+        let mut push_point =
+          |(x, y, z): (f64, f64, f64), (u, v): (f64, f64)| -> usize {
+            if textured {
+              let (tu, tv) = texture_uv((x, y, z), u, v);
+              point_uvs
+                .push(Expr::List(vec![Expr::Real(tu), Expr::Real(tv)].into()));
+            }
+            point_exprs.push(Expr::List(
+              vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+            ));
+            point_exprs.len() - 1
+          };
+        for piece in &all_region_pieces[surface_idx] {
+          let ks: Vec<usize> = piece
+            .points
+            .iter()
+            .zip(&piece.params)
+            .map(|(&p, &uv)| push_point(p, uv))
+            .collect();
+          let polygon = if textured {
+            call1(
+              "Polygon",
+              Expr::List(
+                (1..ks.len() - 1)
+                  .map(|k| indices(&[ks[0], ks[k], ks[k + 1]]))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            )
+          } else {
+            call1("Polygon", indices(&ks))
+          };
+          let (i, j) = piece.cell;
+          push_polygon(polygon, cell_face(i, j));
+        }
         if let Some((style_expr, _)) = &boundary_style {
-          let segments: Vec<Expr> = parameter_domain_edges(grid_u, grid_v)
+          let mut segments: Vec<Expr> = parameter_domain_edges(grid_u, grid_v)
             .filter_map(|((i0, j0), (i1, j1))| {
-              Some(Expr::List(
-                vec![
-                  Expr::Integer(index_of[i0][j0]? as i128 + 1),
-                  Expr::Integer(index_of[i1][j1]? as i128 + 1),
-                ]
-                .into(),
-              ))
+              Some(indices(&[index_of[i0][j0]?, index_of[i1][j1]?]))
             })
             .collect();
+          // The edge along which a `RegionFunction` cut the surface.
+          for [a, b] in &all_region_cuts[surface_idx] {
+            let ka = push_point(*a, (0.0, 0.0));
+            let kb = push_point(*b, (0.0, 0.0));
+            segments.push(indices(&[ka, kb]));
+          }
           if !segments.is_empty() {
             content.push(Expr::List(
               vec![
@@ -26061,6 +26280,15 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // `Mesh -> Automatic` keeps the default 15 lines of constant first
+        // and of constant second parameter in the extracted complex, so a
+        // surface drawn by `Show` is meshed as it is on its own.
+        let mesh_count = mesh_count.or_else(|| {
+          (mesh_mode == MeshMode::Default
+            && !mesh_style_none
+            && !mesh_shading_active)
+            .then_some([15, 15])
+        });
         if let Some([nu, nv]) = mesh_count.filter(|n| n.iter().any(|&c| c > 0))
         {
           // Segments of the lines of constant first (`[0]`) and of
@@ -26179,159 +26407,124 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
     let mut facets: Vec<SmoothFacet> = Vec::new();
+    let normalize = |p: (f64, f64, f64)| -> Point3D {
+      Point3D {
+        x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
+        y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
+        z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
+      }
+    };
+
+    // `MeshFunctions`/`Mesh`/`MeshShading`: override a facet's default
+    // default color with the region color its average `(x, y,
+    // z)` falls in — only when there is no `PlotStyle` for this surface,
+    // matching Phase 1's `content` coloring above.
+    let mesh_facet_color = |a: (f64, f64, f64),
+                            b: (f64, f64, f64),
+                            c: (f64, f64, f64)|
+     -> Option<(u8, u8, u8)> {
+      if style.is_some() || !mesh_shading_active {
+        return None;
+      }
+      let avg_x = (a.0 + b.0 + c.0) / 3.0;
+      let avg_y = (a.1 + b.1 + c.1) / 3.0;
+      let avg_z = (a.2 + b.2 + c.2) / 3.0;
+      let val = eval_mesh_function(
+        mesh_function.as_ref().expect("mesh_shading_active"),
+        avg_x,
+        avg_y,
+        avg_z,
+      )?;
+      let region = mesh_breaks.iter().filter(|&&br| br <= val).count();
+      // More regions than colors: cycle, the same convention
+      // `PlotStyle`'s per-surface colors already use.
+      mesh_shading
+        .get(region % mesh_shading.len())
+        .copied()
+        .flatten()
+    };
+
+    // One triangle `(a, b, c)` of the cell `(i, j)`.
+    let mut push_triangle =
+      |a: (f64, f64, f64),
+       b: (f64, f64, f64),
+       c: (f64, f64, f64),
+       (i, j): (usize, usize)| {
+        let v0 = normalize(a);
+        let v1 = normalize(b);
+        let v2 = normalize(c);
+        // A `ColorFunction` color is lit like WL's, under neutral
+        // lights; a `MeshShading` color like a `PlotStyle` one.
+        let cf_style = facet_colors[surface_idx][i][j].map(|c| StyleState3D {
+          color: Some(c),
+          ..StyleState3D::default()
+        });
+        let shaded_style = mesh_facet_color(a, b, c).map(|c| {
+          let mut st = style.cloned().unwrap_or_default();
+          st.color = Some(c);
+          st
+        });
+        let normal = triangle_normal(v0, v1, v2);
+        let (color, opacity) = shade_facet(
+          SurfaceDefault::Theme(surface_idx),
+          cf_style.as_ref(),
+          shaded_style.as_ref().or(style),
+          normal,
+          tri_center(v0, v1, v2),
+          &scene,
+        );
+        facets.push(SmoothFacet {
+          index: all_triangles.len(),
+          world: [v0, v1, v2],
+          style: cf_style,
+          plot_style: shaded_style.or_else(|| style.cloned()),
+        });
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all_triangles.push(Triangle {
+          boundary: [true; 3],
+          edge_color: None,
+          edge_width: None,
+          edge_dashing: None,
+          projected: [
+            project(v0, &camera),
+            project(v1, &camera),
+            project(v2, &camera),
+          ],
+          depth: depth(center, &camera),
+          color,
+          opacity,
+          texture: None,
+          vertex_colors: None,
+        });
+      };
+
     for i in 0..grid_u {
       for j in 0..grid_v {
+        // The cells a `RegionFunction` keeps only in part are drawn from
+        // their clipped pieces below.
+        if region_fn.is_some() && !whole_cell(sg, i, j) {
+          continue;
+        }
         let p00 = sg[i][j];
         let p10 = sg[i + 1][j];
         let p01 = sg[i][j + 1];
         let p11 = sg[i + 1][j + 1];
-
-        let normalize = |p: (f64, f64, f64)| -> Point3D {
-          Point3D {
-            x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
-            y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
-            z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
-          }
-        };
-
-        // `MeshFunctions`/`Mesh`/`MeshShading`: override a facet's default
-        // default color with the region color its average `(x, y,
-        // z)` falls in — only when there is no `PlotStyle` for this surface,
-        // matching Phase 1's `content` coloring above.
-        let mesh_facet_color = |a: (f64, f64, f64),
-                                b: (f64, f64, f64),
-                                c: (f64, f64, f64)|
-         -> Option<(u8, u8, u8)> {
-          if style.is_some() || !mesh_shading_active {
-            return None;
-          }
-          let avg_x = (a.0 + b.0 + c.0) / 3.0;
-          let avg_y = (a.1 + b.1 + c.1) / 3.0;
-          let avg_z = (a.2 + b.2 + c.2) / 3.0;
-          let val = eval_mesh_function(
-            mesh_function.as_ref().expect("mesh_shading_active"),
-            avg_x,
-            avg_y,
-            avg_z,
-          )?;
-          let region = mesh_breaks.iter().filter(|&&br| br <= val).count();
-          // More regions than colors: cycle, the same convention
-          // `PlotStyle`'s per-surface colors already use.
-          mesh_shading
-            .get(region % mesh_shading.len())
-            .copied()
-            .flatten()
-        };
-
-        // Triangle 1
         if let (Some(a), Some(b), Some(c)) = (p00, p10, p01) {
-          let v0 = normalize(a);
-          let v1 = normalize(b);
-          let v2 = normalize(c);
-          // A `ColorFunction` color is lit like WL's, under neutral
-          // lights; a `MeshShading` color like a `PlotStyle` one.
-          let cf_style =
-            facet_colors[surface_idx][i][j].map(|c| StyleState3D {
-              color: Some(c),
-              ..StyleState3D::default()
-            });
-          let shaded_style = mesh_facet_color(a, b, c).map(|c| {
-            let mut st = style.cloned().unwrap_or_default();
-            st.color = Some(c);
-            st
-          });
-          let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(surface_idx),
-            cf_style.as_ref(),
-            shaded_style.as_ref().or(style),
-            normal,
-            tri_center(v0, v1, v2),
-            &scene,
-          );
-          facets.push(SmoothFacet {
-            index: all_triangles.len(),
-            world: [v0, v1, v2],
-            style: cf_style,
-            plot_style: shaded_style.or_else(|| style.cloned()),
-          });
-          let center = Point3D {
-            x: (v0.x + v1.x + v2.x) / 3.0,
-            y: (v0.y + v1.y + v2.y) / 3.0,
-            z: (v0.z + v1.z + v2.z) / 3.0,
-          };
-          all_triangles.push(Triangle {
-            boundary: [true; 3],
-            edge_color: None,
-            edge_width: None,
-            edge_dashing: None,
-            projected: [
-              project(v0, &camera),
-              project(v1, &camera),
-              project(v2, &camera),
-            ],
-            depth: depth(center, &camera),
-            color,
-            opacity,
-            texture: None,
-            vertex_colors: None,
-          });
+          push_triangle(a, b, c, (i, j));
         }
-
-        // Triangle 2
         if let (Some(a), Some(b), Some(c)) = (p11, p01, p10) {
-          let v0 = normalize(a);
-          let v1 = normalize(b);
-          let v2 = normalize(c);
-          // A `ColorFunction` color is lit like WL's, under neutral
-          // lights; a `MeshShading` color like a `PlotStyle` one.
-          let cf_style =
-            facet_colors[surface_idx][i][j].map(|c| StyleState3D {
-              color: Some(c),
-              ..StyleState3D::default()
-            });
-          let shaded_style = mesh_facet_color(a, b, c).map(|c| {
-            let mut st = style.cloned().unwrap_or_default();
-            st.color = Some(c);
-            st
-          });
-          let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(surface_idx),
-            cf_style.as_ref(),
-            shaded_style.as_ref().or(style),
-            normal,
-            tri_center(v0, v1, v2),
-            &scene,
-          );
-          facets.push(SmoothFacet {
-            index: all_triangles.len(),
-            world: [v0, v1, v2],
-            style: cf_style,
-            plot_style: shaded_style.or_else(|| style.cloned()),
-          });
-          let center = Point3D {
-            x: (v0.x + v1.x + v2.x) / 3.0,
-            y: (v0.y + v1.y + v2.y) / 3.0,
-            z: (v0.z + v1.z + v2.z) / 3.0,
-          };
-          all_triangles.push(Triangle {
-            boundary: [true; 3],
-            edge_color: None,
-            edge_width: None,
-            edge_dashing: None,
-            projected: [
-              project(v0, &camera),
-              project(v1, &camera),
-              project(v2, &camera),
-            ],
-            depth: depth(center, &camera),
-            color,
-            opacity,
-            texture: None,
-            vertex_colors: None,
-          });
+          push_triangle(a, b, c, (i, j));
         }
+      }
+    }
+    for piece in &all_region_pieces[surface_idx] {
+      let p = &piece.points;
+      for k in 1..p.len() - 1 {
+        push_triangle(p[0], p[k], p[k + 1], piece.cell);
       }
     }
     shade_smoothly(
@@ -26411,17 +26604,18 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
       }
     };
-    for sg in &all_surface_points {
-      for ((i0, j0), (i1, j1)) in parameter_domain_edges(grid_u, grid_v) {
-        if let (Some(a), Some(b)) = (sg[i0][j0], sg[i1][j1]) {
-          mesh_lines.push(styled_mesh_segment(
-            normalize(a),
-            normalize(b),
-            &camera,
-            Some(style),
-            ("rgb(0,0,0)", SURFACE_BOUNDARY_THICKNESS),
-          ));
-        }
+    for (sg, cuts) in all_surface_points.iter().zip(&all_region_cuts) {
+      let domain_edges = parameter_domain_edges(grid_u, grid_v)
+        .filter_map(|((i0, j0), (i1, j1))| Some([sg[i0][j0]?, sg[i1][j1]?]));
+      // The edge along which a `RegionFunction` cut the surface too.
+      for [a, b] in domain_edges.chain(cuts.iter().copied()) {
+        mesh_lines.push(styled_mesh_segment(
+          normalize(a),
+          normalize(b),
+          &camera,
+          Some(style),
+          ("rgb(0,0,0)", SURFACE_BOUNDARY_THICKNESS),
+        ));
       }
     }
   }
