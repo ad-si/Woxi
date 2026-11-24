@@ -23256,8 +23256,8 @@ mod plot3d {
                   {10^5, 0.8}, {10^6, 0.9}, {2 10^7, 0.99}}";
       assert_eq!(
         interpret(&format!(
-          "Last[First[Last[AbsoluteOptions[ListPlot[{data}, \
-           PlotRange -> {{{{0, All}}, {{0, 1}}}}], PlotRange]]]] > 2 10^7"
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, All}}, {{0, 1}}}}], PlotRange])[[1, 2]] > 2 10^7"
         ))
         .unwrap(),
         "True"
@@ -23265,8 +23265,8 @@ mod plot3d {
       // An `Automatic` end still clips them.
       assert_eq!(
         interpret(&format!(
-          "Last[First[Last[AbsoluteOptions[ListPlot[{data}, \
-           PlotRange -> {{{{0, Automatic}}, {{0, 1}}}}], PlotRange]]]] < 10^7"
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, Automatic}}, {{0, 1}}}}], PlotRange])[[1, 2]] < 10^7"
         ))
         .unwrap(),
         "True"
@@ -23274,8 +23274,8 @@ mod plot3d {
       // `{ymin, All}` keeps the y outliers.
       assert_eq!(
         interpret(
-          "Last[Last[Last[AbsoluteOptions[ListPlot[{1, 2, 1, 2, 1, 2, 1, 2, \
-           100}, PlotRange -> {0, All}], PlotRange]]]] >= 100"
+          "(PlotRange /. AbsoluteOptions[ListPlot[{1, 2, 1, 2, 1, 2, 1, 2, \
+           100}, PlotRange -> {0, All}], PlotRange])[[2, 2]] >= 100"
         )
         .unwrap(),
         "True"

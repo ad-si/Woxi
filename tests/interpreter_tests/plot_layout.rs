@@ -197,7 +197,11 @@ mod image_size {
       assert!(key.contains("font-size=\"17\""), "{edge}: {key}");
       let hot = text_tag("hot");
       assert!(hot.contains("fill=\"rgb(255,0,0)\""), "{edge}: {hot}");
-      assert!(svg.contains("font-style=\"italic\">t"), "{edge}");
+      let italic = svg.match_indices("\">t<").any(|(end, _)| {
+        let start = svg[..end].rfind("<text").unwrap();
+        svg[start..end].contains("font-style=\"italic\"")
+      });
+      assert!(italic, "{edge}");
     }
   }
 
