@@ -1051,10 +1051,8 @@ mod layout_display {
       "PointLegend[{Red, Blue}, {\"a\", \"b\"}, \
        LegendMarkers -> {\"\\[FilledSquare]\", \"\\[FilledUpTriangle]\"}]",
     );
-    assert!(
-      svg.contains("\u{25A0}") && svg.contains("\u{25B2}"),
-      "{svg}"
-    );
+    // Geometric glyphs are drawn as shapes of their size.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
     let svg = svg_of(
       "SwatchLegend[{Red, Blue}, {\"a\", \"b\"}, LegendLabel -> \"Colors\"]",
     );

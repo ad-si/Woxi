@@ -2541,6 +2541,73 @@ pub(crate) fn point_legend_svg(args: &[Expr]) -> Option<String> {
   marker_legend_svg(args, true)
 }
 
+/// A geometric marker glyph — filled or empty circle, square, up/down
+/// triangle or diamond — drawn as a shape centered on `(cx, cy)`, at the
+/// size the glyph has in Wolfram's font at font size `em`. The fallback
+/// fonts that carry these glyphs draw them at very different sizes (a
+/// bullet-sized `●`), so a marker drawn as text would not match.
+/// `None` for any other glyph.
+fn geometric_glyph_svg(
+  glyph: &str,
+  cx: f64,
+  cy: f64,
+  em: f64,
+  color: &str,
+) -> Option<String> {
+  let mut chars = glyph.chars();
+  let (Some(ch), None) = (chars.next(), chars.next()) else {
+    return None;
+  };
+  let (filled, shape) = match ch {
+    '\u{25CF}' => (true, 'o'),
+    '\u{25CB}' => (false, 'o'),
+    '\u{25A0}' => (true, 's'),
+    '\u{25A1}' => (false, 's'),
+    '\u{25B2}' => (true, '^'),
+    '\u{25B3}' => (false, '^'),
+    '\u{25BC}' => (true, 'v'),
+    '\u{25BD}' => (false, 'v'),
+    '\u{25C6}' => (true, 'd'),
+    '\u{25C7}' => (false, 'd'),
+    _ => return None,
+  };
+  let paint = if filled {
+    format!("fill=\"{color}\"")
+  } else {
+    format!(
+      "fill=\"none\" stroke=\"{color}\" stroke-width=\"{:.3}\"",
+      em * 0.06
+    )
+  };
+  let polygon = |pts: &[(f64, f64)]| {
+    let pts: Vec<String> = pts
+      .iter()
+      .map(|(x, y)| format!("{:.3},{:.3}", cx + x * em, cy + y * em))
+      .collect();
+    format!("<polygon points=\"{}\" {paint}/>", pts.join(" "))
+  };
+  // Half extents in ems, as measured from Wolfram's glyphs.
+  Some(match shape {
+    'o' => format!(
+      "<circle cx=\"{cx:.3}\" cy=\"{cy:.3}\" r=\"{:.3}\" {paint}/>",
+      0.305 * em
+    ),
+    's' => polygon(&[
+      (-0.206, -0.206),
+      (0.206, -0.206),
+      (0.206, 0.206),
+      (-0.206, 0.206),
+    ]),
+    '^' => polygon(&[(0.0, -0.263), (0.264, 0.263), (-0.264, 0.263)]),
+    'v' => polygon(&[(0.0, 0.263), (0.264, -0.263), (-0.264, -0.263)]),
+    _ => polygon(&[(0.0, -0.28), (0.28, 0.0), (0.0, 0.28), (-0.28, 0.0)]),
+  })
+}
+
+/// The height (in printer's points) of a `PointLegend` marker sample, and
+/// the font size of a glyph marker drawn in it.
+const POINT_LEGEND_MARKER_SIZE: f64 = 12.5;
+
 /// A legend column of color markers (squares, or disks when `round`)
 /// beside their labels.
 fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
@@ -2615,26 +2682,39 @@ fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
       }
       _ => None,
     };
-    let marker = if let Some(glyph) = glyph {
-      format!(
-        "<text x=\"{c}\" y=\"{c}\" font-size=\"10\" fill=\"{color}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>",
-        svg_escape(&glyph),
-        c = swatch / 2.0,
-      )
+    // Wolfram's point-legend samples are 12.5 points high: a glyph marker
+    // is that size of text centered in a 20-point-wide box, the default
+    // marker a `PointSize[0.5]` disk in a 10-point-wide one.
+    let (w, h, marker) = if let Some(glyph) = glyph {
+      let (w, h) = (20.0, POINT_LEGEND_MARKER_SIZE);
+      let marker = geometric_glyph_svg(&glyph, w / 2.0, h / 2.0, h, &color)
+        .unwrap_or_else(|| {
+          format!(
+            "<text x=\"{cx}\" y=\"{cy}\" font-size=\"{h}\" fill=\"{color}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>",
+            svg_escape(&glyph),
+            cx = w / 2.0,
+            cy = h / 2.0,
+          )
+        });
+      (w, h, marker)
     } else if round {
-      format!(
-        "<circle cx=\"{c}\" cy=\"{c}\" r=\"{r}\" fill=\"{color}\"{fill_opacity}/>",
-        c = swatch / 2.0,
-        r = swatch / 4.0,
-      )
+      let (w, h) = (10.0, POINT_LEGEND_MARKER_SIZE);
+      let marker = format!(
+        "<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"{color}\"{fill_opacity}/>",
+        cx = w / 2.0,
+        cy = h / 2.0,
+        r = w / 4.0,
+      );
+      (w, h, marker)
     } else {
       // Wolfram's swatch: an 8-point square edged in translucent black.
-      format!(
+      let marker = format!(
         "<rect x=\"3\" y=\"3\" width=\"8\" height=\"8\" fill=\"{color}\"{fill_opacity} {edge} stroke-width=\"1\"/>",
-      )
+      );
+      (swatch, swatch, marker)
     };
     let swatch_svg = format!(
-      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\">{marker}</svg>",
+      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">{marker}</svg>",
     );
     let swatch_item = Expr::Graphics {
       svg: swatch_svg,
@@ -20374,6 +20454,54 @@ fn large_operator_scale(s: &str) -> Option<f64> {
   }
 }
 
+/// An integral sign `∫ ∬ ∭ ∮` drawn inside a `w` × `h` box (font size
+/// `fs`): one slanted stem with hooked ends per integral, the contour
+/// integral's ring around the middle. `None` for any other string.
+fn integral_sign_path(s: &str, w: f64, h: f64, fs: f64) -> Option<String> {
+  let (count, ring) = match s {
+    "\u{222B}" => (1, false),
+    "\u{222C}" => (2, false),
+    "\u{222D}" => (3, false),
+    "\u{222E}" => (1, true),
+    _ => return None,
+  };
+  let sw = (fs * 0.06).max(0.6);
+  // The stems share the box: each one narrower when there are several.
+  let stem_w = w / (1.0 + 0.45 * (count - 1) as f64);
+  let step = stem_w * 0.45;
+  let mut d = String::new();
+  for k in 0..count {
+    let x0 = k as f64 * step;
+    let p = |u: f64, v: f64| format!("{:.2} {:.2}", x0 + u * stem_w, v * h);
+    d.push_str(&format!(
+      "M {} C {} {} {} L {} C {} {} {} ",
+      p(0.86, 0.09),
+      p(0.80, 0.01),
+      p(0.62, 0.0),
+      p(0.57, 0.12),
+      p(0.43, 0.88),
+      p(0.38, 1.0),
+      p(0.20, 0.99),
+      p(0.14, 0.91),
+    ));
+  }
+  let mut out = format!(
+    "<path d=\"{}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linecap=\"round\"/>",
+    d.trim_end()
+  );
+  if ring {
+    out.push_str(&format!(
+      "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{:.2}\"/>",
+      w / 2.0,
+      h / 2.0,
+      w * 0.3,
+      h * 0.13,
+      sw * 0.8,
+    ));
+  }
+  Some(out)
+}
+
 /// True if `s` is a single Latin letter, which TraditionalForm renders as an
 /// italic math variable.
 fn is_math_italic_atom(s: &str) -> bool {
@@ -20447,7 +20575,9 @@ fn operator_space(s: &str) -> f64 {
     | "\u{F523}" | "\u{29E6}" | "\u{2208}" | "\u{2209}" | "\u{220B}"
     | "\u{2282}" | "\u{2283}" | "\u{2286}" | "\u{2287}" | "\u{2284}"
     | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
-    "\u{2192}" | "\u{29F4}" | "\u{21A6}" => 0.60,
+    // Rule and function arrows, whether a box holds the drawn `→`/`⧴`/`↦`
+    // or the private-use `\[Rule]`/`\[RuleDelayed]` StandardForm writes.
+    "\u{2192}" | "\u{29F4}" | "\u{21A6}" | "\u{F522}" | "\u{F51F}" => 0.60,
     "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.44,
     // The word operator of `x mod 2`.
     "mod" => 0.34,
@@ -20787,6 +20917,19 @@ impl BoxLayout {
       let glyph_ascent = fs * 0.72;
       let glyph_descent = fs * 0.28;
       let w = fs * 0.62;
+      // Integral signs are drawn as paths: no embedded font has them, and
+      // the system fonts that do draw them far taller than this box (a
+      // glyph overhanging the top of the picture is cut off).
+      if let Some(path) =
+        integral_sign_path(s, w, glyph_ascent + glyph_descent, fs)
+      {
+        return Self {
+          width: w,
+          height: glyph_ascent + glyph_descent,
+          baseline: glyph_ascent,
+          elements: path,
+        };
+      }
       let escaped = svg_escape(s);
       return Self {
         width: w,

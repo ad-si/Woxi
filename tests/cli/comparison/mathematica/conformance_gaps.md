@@ -16,6 +16,15 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### StandardForm boxes of `Piecewise` are its plain call
+
+`ToBoxes[Piecewise[{{a, b}, {c, d}}, 0]]` is
+`RowBox[{"Piecewise", "[", …, "]"}]` in Woxi. wolframscript builds the same
+braced `GridBox` (tagged `"Piecewise"`, the default in a
+`TagBox["True", "PiecewiseDefault", …]` row, shown even when it is `0`) as
+in TraditionalForm, and wraps a held one in `TagBox[…, HoldForm]`. Only the
+TraditionalForm boxes are implemented.
+
 ### `DownValues` shows a named list pattern as `name_List`
 
 A definition such as `h[g : {__}, n_] := …` matches exactly like Wolfram's
@@ -9877,6 +9886,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   operators, `1/(2 Pi I) S f[z]/(z - a) d z`, parenthesizes the left group
   (`(∮γ f(z)) ⅆz`): wolframscript reads it as one flat `Times`. Woxi's held
   tree cannot tell that chain from an explicitly parenthesized `(a b/c) d`.
+  The root cause is the parser: in Wolfram `/` binds tighter than `*` and
+  implicit multiplication (`Hold[a b/c]` and `Hold[a*b/c]` are
+  `Times[a, Times[b, Power[c, -1]]]`, `Hold[a/b c]` is
+  `Times[Times[a, Power[b, -1]], c]`), while Woxi parses `a b/c` as
+  `Times[Times[a, b], Power[c, -1]]`. Wolfram's TraditionalForm then merges
+  a nested `Times` holding a reciprocal into the fraction instead of
+  parenthesizing it.
 - `PlotLabel -> Binomial[15, k]` is drawn as the one-line text
   `Binomial(15, k)`; wolframscript typesets the stacked binomial. Plot labels
   are drawn as text markup, which has no 2D boxes except fractions.

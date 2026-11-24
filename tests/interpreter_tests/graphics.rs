@@ -38476,6 +38476,31 @@ mod tree_form_graphics {
     );
   }
 
+  /// Wolfram packs each subtree as far left as the nodes already on its
+  /// layers allow: in `f[x, g[a, b, c, d, e]]` the shallow `x` sits one
+  /// step left of `g` (above `b`), not after all five leaves.
+  #[test]
+  fn tree_form_packs_shallow_siblings() {
+    clear_state();
+    let svg =
+      interpret("ExportString[TreeForm[f[x, g[a, b, c, d, e]]], \"SVG\"]")
+        .unwrap();
+    let x_of = |label: &str| -> f64 {
+      let at = svg.find(&format!(">{label}<")).expect(label);
+      let start = svg[..at].rfind("<text").unwrap();
+      let tag = &svg[start..at];
+      let i = tag.find(" x=\"").unwrap() + 4;
+      tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+    };
+    let step = x_of("b") - x_of("a");
+    assert!(step > 0.0, "{svg}");
+    let near = |p: f64, q: f64| (p - q).abs() < 0.5;
+    assert!(near(x_of("c") - x_of("b"), step), "{svg}");
+    assert!(near(x_of("x"), x_of("b")), "{svg}");
+    assert!(near(x_of("g"), x_of("c")), "{svg}");
+    assert!(near(x_of("f"), (x_of("x") + x_of("g")) / 2.0), "{svg}");
+  }
+
   #[test]
   fn tree_form_nested() {
     clear_state();
@@ -67233,6 +67258,94 @@ mod wl_table_layout {
     assert!(svg.contains("<path"), "{svg}");
   }
 
+  /// Regression: `PointLegend` glyph markers are Wolfram's 12.5-point
+  /// glyphs, drawn as shapes of the glyph's size rather than as text a
+  /// fallback font draws bullet-sized.
+  #[test]
+  fn point_legend_glyph_markers_are_shapes() {
+    let svg = interpret(
+      "ExportString[PointLegend[{Red, Blue, Green}, {\"a\", \"b\", \"c\"}, \
+       LegendMarkers -> {\"\\[FilledCircle]\", \"\\[FilledSquare]\", \
+       \"\\[EmptyUpTriangle]\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains('\u{25CF}') && !svg.contains('\u{25B3}'),
+      "{svg}"
+    );
+    // A 0.61 em disk, a 0.41 em square, an outlined triangle.
+    assert!(svg.contains("r=\"3.812\""), "{svg}");
+    assert!(
+      svg.contains("points=\"7.425,3.675 12.575,3.675 12.575,8.825"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("fill=\"none\" stroke=\"rgb(0,255,0)\""),
+      "{svg}"
+    );
+    assert!(svg.contains("viewBox=\"0 0 20 12.5\""), "{svg}");
+  }
+
+  /// Regression: integral signs are drawn as paths inside their box; the
+  /// fallback fonts' far taller `∫` glyph overhung the top of the picture
+  /// and was cut off.
+  #[test]
+  fn traditional_form_integral_signs_are_paths() {
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Integrate[f[x], {x, 0, 1}]]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains('\u{222B}'), "{svg}");
+    assert!(svg.contains("stroke-linecap=\"round\""), "{svg}");
+    // The contour integral carries its ring.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Subscript[\"\\[ContourIntegral]\", \
+       g] f[z]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains('\u{222E}'), "{svg}");
+    assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
+  /// Regression: the `\[Rule]` arrow StandardForm writes into the boxes
+  /// gets the same room on either side as a drawn `→`.
+  #[test]
+  fn standard_form_rule_arrow_is_spaced() {
+    let width = |code: &str| -> f64 {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+    };
+    // `<|a → 1|>` is 13 points wider than `{a, 1}` with a bare arrow; the
+    // arrow's spaces (0.6 of a character on each side) add 10 more.
+    let extra = width("<|\"a\" -> 1|>") - width("{\"a\", 1}");
+    assert!(extra > 20.0, "rule arrow is not spaced: {extra}");
+  }
+
+  #[test]
+  fn traditional_form_piecewise_leaves_a_zero_default_implicit() {
+    // Under two or more cases Wolfram leaves an exact `0` default out;
+    // a single case, a nonzero default and an inexact `0.` keep their
+    // `True` row.
+    let has_default_row = |code: &str| {
+      interpret(&format!(
+        "StringContainsQ[ToString[ToBoxes[TraditionalForm[HoldForm[{code}]]], \
+         InputForm], \"PiecewiseDefault\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 0]"), "False");
+    assert_eq!(
+      has_default_row("f[x] == Piecewise[{{a, b}, {c, d}, {e, g}}, 0]"),
+      "False"
+    );
+    assert_eq!(has_default_row("Piecewise[{{a, b}}, 0]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 5]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 0.]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}]"), "False");
+  }
+
   #[test]
   fn traditional_form_held_exp_is_a_function_call() {
     // A held `Exp[…]` typesets as `exp(…)`, like `sin(…)`; only `E^x` is
@@ -70209,8 +70322,9 @@ mod review_regressions {
 
   #[test]
   fn inactive_operators_keep_notation_without_evaluation() {
+    // The integral sign is drawn as a path, the other operators as glyphs.
     for (op, body, glyph) in [
-      ("Integrate", "Exp[-x^2]", "∫"),
+      ("Integrate", "Exp[-x^2]", "stroke-linecap=\"round\""),
       ("Sum", "1/x^2", "∑"),
       ("Product", "1-z^2/x^2", "∏"),
     ] {
