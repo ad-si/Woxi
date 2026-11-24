@@ -10961,3 +10961,58 @@ mod graph_is_atomic {
     );
   }
 }
+
+mod vertex_coordinate_rules_drawing {
+  use super::*;
+
+  // `VertexCoordinates -> {v -> {x, y}, …}` places each named vertex in
+  // the drawing, in any order, exactly like the positional list form.
+  #[test]
+  fn rules_draw_like_the_positional_list() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExportString[Graph[{a -> b, b -> c}, VertexCoordinates -> \
+         {c -> {1, -2}, a -> {0, 0}, b -> {1, 0}}], \"SVG\"] === \
+         ExportString[Graph[{a -> b, b -> c}, VertexCoordinates -> \
+         {{0, 0}, {1, 0}, {1, -2}}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A `VertexShapeFunction` receives the position the rules give.
+  #[test]
+  fn shape_function_gets_the_rule_positions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3}, VertexCoordinates -> \
+         {3 -> {1, -2}, 2 -> {1, 0}, 1 -> {0, 0}}, \
+         VertexShapeFunction -> (Text[#2, #1] &)]; \
+         Cases[Show[g], Text[__], Infinity]"
+      )
+      .unwrap(),
+      "{Text[1, {0., 0.}], Text[2, {1., 0.}], Text[3, {1., -2.}]}"
+    );
+  }
+
+  // Vertices a partial rule list leaves out keep their layout position,
+  // matching `GraphEmbedding`.
+  #[test]
+  fn partial_rules_keep_the_layout_for_the_rest() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3}, VertexCoordinates -> \
+         {3 -> {1, -2}, 1 -> {0, 0}}, \
+         VertexShapeFunction -> (Point[#1] &)]; \
+         Cases[Show[g], Point[p_] :> p, Infinity] == \
+         N[GraphEmbedding[g]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
