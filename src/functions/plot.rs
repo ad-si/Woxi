@@ -938,6 +938,89 @@ fn adaptive_sample(
     });
   }
 
+  if let Some((lo, hi)) = visible_y
+    && lo.is_finite()
+    && hi.is_finite()
+    && lo < hi
+  {
+    points = resolve_steep_crossings(points, lo, hi, &sample);
+  }
+
+  points
+}
+
+/// Where two neighboring samples lie far past opposite edges of the
+/// visible window `[lo, hi]` of an explicit `PlotRange`, the curve either
+/// has a pole between them or runs steeply but continuously through the
+/// window (`10^12 (x - n)` draws a vertical line at `n`). Bisecting the
+/// gap tells the two apart: the values of a continuous, monotone stretch
+/// stay between those of its ends, a pole's do not. A crossing gets
+/// samples where the curve enters and leaves the window, so it is drawn
+/// rather than taken for a pole.
+fn resolve_steep_crossings(
+  mut points: Vec<(f64, f64)>,
+  lo: f64,
+  hi: f64,
+  sample: &dyn Fn(f64) -> f64,
+) -> Vec<(f64, f64)> {
+  // Bisect `[a, b]` for the x where the curve passes `level`, returning
+  // the sample on the side of `level` that faces the window, or `None`
+  // when a value leaves the span of its ends (a pole, not a crossing).
+  let bisect = |(mut a, mut ya): (f64, f64),
+                (mut b, mut yb): (f64, f64),
+                level: f64,
+                inside_is_above: bool|
+   -> Option<(f64, f64)> {
+    let a_below = ya < level;
+    loop {
+      let m = f64::midpoint(a, b);
+      if m <= a.min(b) || m >= a.max(b) {
+        break;
+      }
+      let ym = sample(m);
+      if !ym.is_finite() || ym < ya.min(yb) || ym > ya.max(yb) {
+        return None;
+      }
+      if (ym < level) == a_below {
+        (a, ya) = (m, ym);
+      } else {
+        (b, yb) = (m, ym);
+      }
+    }
+    // `a` stays on its starting side of `level`, `b` on the other.
+    let a_inside = if inside_is_above { !a_below } else { a_below };
+    Some(if a_inside { (a, ya) } else { (b, yb) })
+  };
+
+  let mut added: Vec<(f64, f64)> = Vec::new();
+  for pair in points.windows(2) {
+    let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite())
+      || !is_pole_jump(y0, y1, lo, hi)
+    {
+      continue;
+    }
+    // The edge the curve enters the window through, then the one it
+    // leaves it through.
+    let (enter, leave) = if y0 < y1 { (lo, hi) } else { (hi, lo) };
+    let Some(first) = bisect((x0, y0), (x1, y1), enter, y0 < y1) else {
+      continue;
+    };
+    added.push(first);
+    if first.1 >= lo
+      && first.1 <= hi
+      && let Some(second) = bisect(first, (x1, y1), leave, y0 > y1)
+    {
+      added.push(second);
+    }
+  }
+  if !added.is_empty() {
+    points.extend(added);
+    points.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    points.dedup_by(|a, b| a.0 == b.0);
+  }
   points
 }
 

@@ -6353,13 +6353,14 @@ mod grid_item_style_tests {
       r#"ExportString[Style[Style["u", Italic, Blue], Red], "SVG"]"#,
     )
     .unwrap();
-    assert_eq!(svg.matches("<tspan").count(), 1, "{svg}");
-    assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\" fill=\"rgb(0,0,255)\">u</tspan>"
-      ),
-      "{svg}"
-    );
+    // Set directly on the `<text>`, the merged run needs no span at all.
+    assert!(svg.matches("<tspan").count() <= 1, "{svg}");
+    let text = svg.split("<text").nth(1).expect("text element");
+    let text = &text[..text.find("</text>").unwrap()];
+    assert!(text.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+    assert!(text.contains("font-style=\"italic\""), "{svg}");
+    assert!(!text.contains("rgb(255,0,0)"), "{svg}");
+    assert!(text.ends_with(">u"), "{svg}");
   }
 
   #[test]

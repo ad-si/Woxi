@@ -41838,6 +41838,32 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(new_args)
 }
 
+/// The SVG `text-anchor` a `TextAlignment -> Left | Center | Right` option
+/// of a `Style` around a text item (under any `Text` wrappers) asks for.
+fn text_alignment_anchor(item: &Expr) -> Option<&'static str> {
+  let Expr::FunctionCall { name, args } = item else {
+    return None;
+  };
+  match name.as_str() {
+    "Text" if args.len() == 1 => text_alignment_anchor(&args[0]),
+    _ if is_style_wrapper(name) && !args.is_empty() => args[1..]
+      .iter()
+      .filter_map(option_kv)
+      .find(|(k, _)| *k == "TextAlignment")
+      .and_then(|(_, v)| match v {
+        Expr::Identifier(s) | Expr::String(s) => match s.as_str() {
+          "Left" => Some("start"),
+          "Center" => Some("middle"),
+          "Right" => Some("end"),
+          _ => None,
+        },
+        _ => None,
+      })
+      .or_else(|| text_alignment_anchor(&args[0])),
+    _ => None,
+  }
+}
+
 /// The box a `Pane[content, {w, h}]` with a numeric width and height
 /// draws: exactly `w`×`h`, the content aligned inside it. `None` for any
 /// other expression (an unsized pane only shows its content).
@@ -42254,6 +42280,19 @@ fn column_layout_svg(
     let h = row_heights[i];
     match cell {
       Cell::Text(expr, plain) => {
+        // `Style[text, TextAlignment -> a]` aligns its text within the
+        // column's width, whatever the column's own alignment.
+        let (alignment, text_x) = match text_alignment_anchor(expr) {
+          Some(own) if own != alignment => (
+            own,
+            match own {
+              "middle" => total_width / 2.0,
+              "end" => total_width - text_edge,
+              _ => text_edge,
+            },
+          ),
+          _ => (alignment, text_x),
+        };
         let cy = y_cursor + h / 2.0;
         let (style, fs) = text_style(expr, font_size);
         let (fw, fst) = (style.font_weight, style.font_style);
@@ -42978,7 +43017,10 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         }
       }
     };
-    if let Expr::FunctionCall { name, args: sargs } = item
+    // Nested wrappers (`Text[Row[{Style[s, 18]}]]` reaches here as
+    // `Style[Style[s, 18], FontFamily -> …]`) all apply, the inner ones
+    // last, so the cell is measured at the size its text is drawn at.
+    while let Expr::FunctionCall { name, args: sargs } = text_item
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
