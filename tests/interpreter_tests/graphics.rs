@@ -71453,14 +71453,15 @@ mod styled_math_typesetting {
 
   #[test]
   fn nested_style_runs_keep_the_line_baseline() {
-    // resvg resets the baseline of a doubly nested tspan, so the inner
-    // italic run carries the text's central baseline itself. (The outer
-    // size is set on the `<text>`; the color is the span the run nests in.)
+    // resvg resets the baseline of a doubly nested tspan. Both `Style`
+    // layers go onto the `<text>` itself (size and color), so the italic
+    // run is a single span directly inside it, on the line's baseline.
     let svg = export_svg("Style[Style[2 Style[m, Italic] + 1, Red], 18]");
+    let text = svg.split("<text").nth(1).expect("text element");
+    assert!(text.contains("font-size=\"18\""), "{svg}");
+    assert!(text.contains("fill=\"rgb(255,0,0)\""), "{svg}");
     assert!(
-      svg.contains(
-        "<tspan dominant-baseline=\"central\" font-style=\"italic\">m</tspan>"
-      ),
+      text.contains("1 + 2 <tspan font-style=\"italic\">m</tspan></text>"),
       "{svg}"
     );
   }
@@ -75001,5 +75002,173 @@ mod grid_item_trailing_line_break {
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\\n\"}, {\"b\"}}]")),
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\"}, {\"b\"}}]"))
     );
+  }
+}
+
+mod steep_crossings_and_chart_options {
+  use super::*;
+
+  fn polylines(svg: &str) -> Vec<&str> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|p| p.split("points=\"").nth(1)?.split('"').next())
+      .collect()
+  }
+
+  #[test]
+  fn steep_linear_curve_is_drawn_through_an_explicit_plot_range() {
+    clear_state();
+    // The samples beside the crossing lie far past both edges of the
+    // window, but the curve is continuous: it shows as a vertical line.
+    for body in ["10^12 (x - 1)", "-10^5 (x - 3)", "10^3 (x - 7)"] {
+      let svg = export_svg(&format!(
+        "Plot[{body}, {{x, 0, 10}}, PlotRange -> {{{{0, 10}}, {{0, 1}}}}]"
+      ));
+      let lines = polylines(&svg);
+      assert_eq!(lines.len(), 1, "{body}: {lines:?}");
+      let xs: Vec<f64> = lines[0]
+        .split_whitespace()
+        .filter_map(|p| p.split(',').next()?.parse().ok())
+        .collect();
+      let (lo, hi) = xs
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), &x| {
+          (l.min(x), h.max(x))
+        });
+      assert!(hi - lo < 10.0, "{body} should be vertical: {xs:?}");
+    }
+  }
+
+  #[test]
+  fn pole_stays_open_under_an_explicit_plot_range() {
+    clear_state();
+    // `1/(x - 1)` only reaches the window `{-1, 1}` left of 0 and right of
+    // 2: no line may bridge the pole at 1.
+    let svg = export_svg("Plot[1/(x - 1), {x, 0, 3}, PlotRange -> {-1, 1}]");
+    for line in polylines(&svg) {
+      let xs: Vec<f64> = line
+        .split_whitespace()
+        .filter_map(|p| p.split(',').next()?.parse().ok())
+        .collect();
+      let spans_pole = xs.windows(2).any(|w| (w[1] - w[0]).abs() < 1.0)
+        && xs.iter().any(|&x| x < 1300.0)
+        && xs.iter().any(|&x| x > 1300.0 && x < 2300.0);
+      assert!(!spans_pole, "{xs:?}");
+    }
+    let tan = export_svg("Plot[Tan[2 x], {x, 0, 3}, PlotRange -> {-1, 1}]");
+    // Poles at Pi/4 and 3 Pi/4: three separate branches.
+    assert_eq!(polylines(&tan).len(), 3, "{tan:.2000}");
+  }
+
+  #[test]
+  fn styled_text_in_a_text_row_is_measured_at_its_size() {
+    clear_state();
+    let width = |svg: &str| -> String {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .unwrap()
+        .to_string()
+    };
+    let s = "\"mass versus number of extractions\"";
+    assert_eq!(
+      width(&export_svg(&format!("Text[Row[{{Style[{s}, 18]}}]]"))),
+      width(&export_svg(&format!("Text[Style[{s}, 18]]")))
+    );
+    assert_eq!(
+      width(&export_svg(&format!(
+        "Row[{{Style[Style[{s}, 18], FontFamily -> \"sans-serif\"]}}]"
+      ))),
+      width(&export_svg(&format!(
+        "Row[{{Style[{s}, 18, FontFamily -> \"sans-serif\"]}}]"
+      )))
+    );
+  }
+
+  #[test]
+  fn column_item_text_alignment_centers_its_lines() {
+    clear_state();
+    let svg = export_svg(
+      "Column[{Style[\"a\", TextAlignment -> Center], \"bbbbbbbbbbbbbbbb\"}]",
+    );
+    let anchor = |text: &str| -> String {
+      let tag = svg
+        .split("<text")
+        .find(|t| t.contains(&format!(">{text}</text>")))
+        .unwrap();
+      tag.split("text-anchor=\"").nth(1).unwrap()[..6].to_string()
+    };
+    assert_eq!(anchor("a"), "middle");
+    assert_eq!(anchor("bbbbbbbbbbbbbbbb"), "start\"");
+    // The lines a pane re-flows keep the alignment of their `Style`.
+    let pane = export_svg(
+      "Pane[Text[Style[\"a\\nbbbbbbbbbb\", TextAlignment -> Center]], \
+       ImageSize -> {300, 100}]",
+    );
+    assert_eq!(pane.matches("text-anchor=\"middle\"").count(), 2, "{pane}");
+  }
+
+  #[test]
+  fn bar_labels_show_the_data_as_given() {
+    clear_state();
+    let svg = export_svg("BarChart[{85., 69, 3/2}, LabelingFunction -> Above]");
+    for label in [">85.</text>", ">69</text>"] {
+      assert!(svg.contains(label), "{label}: {svg:.3000}");
+    }
+    let rounded =
+      export_svg("BarChart[{12, 7.25}, LabelingFunction -> (Round[#, 0.1] &)]");
+    for label in [">12</text>", ">7.2</text>"] {
+      assert!(rounded.contains(label), "{label}: {rounded:.3000}");
+    }
+  }
+
+  #[test]
+  fn bar_chart_scalar_plot_range_starts_at_the_bar_origin() {
+    clear_state();
+    let positive = export_svg("BarChart[{85, 69}, PlotRange -> 100]");
+    assert!(positive.contains(">100</text>"), "{positive:.3000}");
+    assert!(!positive.contains(">-50</text>"), "{positive:.3000}");
+    let mixed = export_svg("BarChart[{85, -20}, PlotRange -> 100]");
+    assert!(mixed.contains(">-50</text>"), "{mixed:.3000}");
+  }
+
+  #[test]
+  fn bar_chart_detailed_theme_and_lone_frame_label() {
+    clear_state();
+    let svg = export_svg(
+      "BarChart[{5, 3}, PlotTheme -> \"Detailed\", FrameLabel -> \"value\"]",
+    );
+    assert!(svg.contains("stroke-dasharray"), "dotted grid: {svg:.3000}");
+    let label = svg
+      .split("<text")
+      .find(|t| t.contains(">value</text>"))
+      .expect("frame label");
+    assert!(label.contains("rotate(-90"), "{label}");
+    // A full frame: the right edge too.
+    let business = export_svg("BarChart[{5, 3}, PlotTheme -> \"Business\"]");
+    assert!(
+      svg.matches("<line").count() > business.matches("<line").count(),
+      "{svg:.3000}"
+    );
+  }
+
+  #[test]
+  fn named_bar_spacings() {
+    clear_state();
+    for (name, value) in [
+      ("None", "0"),
+      ("Tiny", "0.05"),
+      ("Small", "0.1"),
+      ("Medium", "0.25"),
+      ("Large", "0.5"),
+    ] {
+      assert_eq!(
+        export_svg(&format!("BarChart[{{3, 2, 4}}, BarSpacing -> {name}]")),
+        export_svg(&format!("BarChart[{{3, 2, 4}}, BarSpacing -> {value}]")),
+        "{name}"
+      );
+    }
   }
 }
