@@ -38783,6 +38783,33 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
+    // Without an `ImageSize` of the row's own, pictures that each set
+    // their own width keep it as long as they fit the automatic row width
+    // together: three panels of `ImageSize -> {130, 300}`,
+    // `{130, 300}` and `{270, 300}` stay 300 tall side by side instead of
+    // being stretched to a common cell width.
+    let own_widths: Option<Vec<f64>> = if opts.target_width.is_none() {
+      items.iter().map(own_image_width).collect()
+    } else {
+      None
+    };
+    if let Some(widths) = own_widths
+      && widths.iter().sum::<f64>() <= GRAPHICS_ROW_AUTO_WIDTH
+    {
+      let svgs: Vec<String> = items
+        .iter()
+        .zip(&widths)
+        .flat_map(|(item, w)| {
+          render_items_at_size(
+            std::slice::from_ref(item),
+            (w.round() as i128).max(1),
+            None,
+            true,
+          )
+        })
+        .collect();
+      return Ok(finish_graphics_row(svgs, &opts));
+    }
     let (mut per_cell_w, per_cell_h) =
       layout_cell_size(&opts, items.len(), 1, items.len());
     // Without an `ImageSize`, WL fits a row of several pictures, gaps
@@ -38814,22 +38841,56 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     extract_svgs_from_list(&items)
   };
+  Ok(finish_graphics_row(svgs, &opts))
+}
 
-  if svgs.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+/// The width an inline graphics call (`Plot[…, ImageSize -> {w, h}]`,
+/// `Show[…, ImageSize -> w]`) asks for through a positive numeric
+/// `ImageSize` of its own; `None` for anything else.
+fn own_image_width(item: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = item else {
+    return None;
+  };
+  if !is_graphics_producing_head(name) {
+    return None;
   }
+  let size = args.iter().rev().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let width = match size {
+    Expr::List(dims) if dims.len() == 2 || dims.len() == 1 => {
+      if dims.len() == 2 {
+        // Both sides must be numbers for the picture to have a fixed size.
+        try_eval_to_f64(&dims[1])?;
+      }
+      try_eval_to_f64(&dims[0])?
+    }
+    other => try_eval_to_f64(other)?,
+  };
+  (width > 0.0).then_some(width)
+}
 
-  let row = vec![svgs];
-  match combine_svgs_grid(&row, &opts) {
+/// Lay the rendered cells of a `GraphicsRow` out side by side.
+fn finish_graphics_row(svgs: Vec<String>, opts: &LayoutOptions) -> Expr {
+  let combined = if svgs.is_empty() {
+    None
+  } else {
+    combine_svgs_grid(&[svgs], opts)
+  };
+  match combined {
     Some(combined) => {
       crate::clear_captured_graphics();
-      Ok(crate::graphics_result(combined))
+      crate::graphics_result(combined)
     }
-    None => Ok(crate::graphics_result(
+    None => crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    )),
+    ),
   }
 }
 
