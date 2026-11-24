@@ -508,6 +508,28 @@ const ARROWHEAD_SHAPE: [(f64, f64); 13] = [
 /// sits — where Wolfram stops the shaft.
 const ARROWHEAD_NOTCH: f64 = 0.90770;
 
+/// The screen polygon of Wolfram's default arrowhead: its tip at `tip`,
+/// pointing along the unit vector `dir`, `head_len` pixels long. A 3D
+/// line `Arrow` draws this same flat head, turned to face the viewer.
+pub(crate) fn default_arrowhead_polygon(
+  tip: (f64, f64),
+  dir: (f64, f64),
+  head_len: f64,
+) -> Vec<(f64, f64)> {
+  let (hx, hy) = dir;
+  // `(px, py)` is the screen normal to the right of the direction.
+  let (px, py) = (-hy, hx);
+  std::iter::once((0.0, 0.0))
+    .chain(ARROWHEAD_SHAPE.iter().copied())
+    .map(|(along, side)| {
+      (
+        tip.0 + (hx * along + px * side) * head_len,
+        tip.1 + (hy * along + py * side) * head_len,
+      )
+    })
+    .collect()
+}
+
 /// Shorten a screen polyline by `start` pixels at its first end and `end`
 /// pixels at its last, measured along the path.
 fn trim_screen_path(
@@ -867,17 +889,11 @@ fn segment_arrowheads_svg(
     let t = h.position.clamp(0.0, 1.0);
     let (tip_x, tip_y) = (from.0 + t * dx, from.1 + t * dy);
     let dir = h.size.signum();
-    let (hx, hy) = (ux * dir, uy * dir);
-    // `(px, py)` is the screen normal to the right of the direction.
-    let (px, py) = (-hy, hx);
-    let pts: Vec<String> = std::iter::once((0.0, 0.0))
-      .chain(ARROWHEAD_SHAPE.iter().copied())
-      .map(|(along, side)| {
-        let x = tip_x + (hx * along + px * side) * head_len;
-        let y = tip_y + (hy * along + py * side) * head_len;
-        format!("{x:.2},{y:.2}")
-      })
-      .collect();
+    let pts: Vec<String> =
+      default_arrowhead_polygon((tip_x, tip_y), (ux * dir, uy * dir), head_len)
+        .into_iter()
+        .map(|(x, y)| format!("{x:.2},{y:.2}"))
+        .collect();
     out.push_str(&format!(
       "<polygon points=\"{}\" fill=\"{fill}\"{extra}/>\n",
       pts.join(" ")
@@ -16944,17 +16960,14 @@ fn render_primitive(
         let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
           continue;
         };
-        let (ux, uy) = (ux * dir, uy * dir);
-        // `(px, py)` is the screen normal to the right of the direction.
-        let (px, py) = (-uy, ux);
-        let pts: Vec<String> = std::iter::once((0.0, 0.0))
-          .chain(ARROWHEAD_SHAPE.iter().copied())
-          .map(|(along, side)| {
-            let x = tip_x + (ux * along + px * side) * head_len;
-            let y = tip_y + (uy * along + py * side) * head_len;
-            format!("{x:.2},{y:.2}")
-          })
-          .collect();
+        let pts: Vec<String> = default_arrowhead_polygon(
+          (tip_x, tip_y),
+          (ux * dir, uy * dir),
+          head_len,
+        )
+        .into_iter()
+        .map(|(x, y)| format!("{x:.2},{y:.2}"))
+        .collect();
         out.push_str(&format!(
           "<polygon points=\"{}\" fill=\"{}\"{}/>\n",
           pts.join(" "),

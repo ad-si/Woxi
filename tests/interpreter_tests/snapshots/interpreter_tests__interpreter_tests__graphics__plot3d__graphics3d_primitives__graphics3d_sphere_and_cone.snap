@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 35570
 expression: "export_svg(\"Graphics3D[{Sphere[], Cone[]}]\")"
 ---
 <svg width="360" height="389" viewBox="0 0 360 389" xmlns="http://www.w3.org/2000/svg">
@@ -456,8 +457,8 @@ expression: "export_svg(\"Graphics3D[{Sphere[], Cone[]}]\")"
 <polygon points="194.3,73.2 189.7,78.2 189.7,78.2 189.7,78.2 189.8,78.2 189.8,78.2 189.8,78.2 189.8,78.2 189.8,78.2" fill="url(#s008925244d)" stroke="url(#s008925244d)" stroke-width="0.5"/>
 <linearGradient id="s85b18ea623" gradientUnits="userSpaceOnUse" x1="191.4" y1="76.7" x2="191.0" y2="76.2"><stop stop-color="#ffdca9"/><stop offset="1" stop-color="#ffd6a0"/></linearGradient>
 <polygon points="194.3,73.2 194.0,72.8 189.7,77.4 189.7,78.2 189.7,78.2 189.7,78.2 189.7,78.2 189.8,78.2 189.8,78.2" fill="url(#s85b18ea623)" stroke="url(#s85b18ea623)" stroke-width="0.5"/>
-<linearGradient id="s9e06a928e8" gradientUnits="userSpaceOnUse" x1="257.1" y1="192.2" x2="256.5" y2="192.5"><stop stop-color="#babea9"/><stop offset="1" stop-color="#bec8ba"/></linearGradient>
-<polygon points="189.7,77.6 189.3,77.9 292.1,254.3 292.5,254.1 288.2,245.4 288.6,245.1 190.1,77.4" fill="url(#s9e06a928e8)" stroke="url(#s9e06a928e8)" stroke-width="0.5"/>
+<linearGradient id="s05aaa3354a" gradientUnits="userSpaceOnUse" x1="257.1" y1="192.2" x2="256.5" y2="192.5"><stop stop-color="#bbbeaa"/><stop offset="1" stop-color="#bec8ba"/></linearGradient>
+<polygon points="189.7,77.6 189.3,77.9 292.1,254.3 292.5,254.1 288.2,245.4 288.6,245.1 190.1,77.4" fill="url(#s05aaa3354a)" stroke="url(#s05aaa3354a)" stroke-width="0.5"/>
 <line x1="264.9" y1="217.5" x2="274.2" y2="220.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sf8d27e63f6" gradientUnits="userSpaceOnUse" x1="260.1" y1="197.8" x2="258.2" y2="198.9"><stop stop-color="#bec8ba"/><stop offset="1" stop-color="#c2d1ca"/></linearGradient>
 <polygon points="189.7,77.6 189.3,77.9 294.8,263.5 295.2,263.3 292.5,254.1 292.9,253.8 190.1,77.4" fill="url(#sf8d27e63f6)" stroke="url(#sf8d27e63f6)" stroke-width="0.5"/>

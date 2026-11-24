@@ -232,18 +232,25 @@ pub(crate) type ExactNormal<'a> =
 /// The lit color at each corner of the triangles of one smooth surface.
 /// `exact` gives the surface's true normals (an analytic primitive);
 /// otherwise normals are averaged from the faces. `shade(i, normal,
-/// point)` lights corner `point` of triangle `i`; `toward` points at the
-/// viewer.
+/// point)` lights corner `point` of triangle `i`; `toward(point)` points
+/// from a point at the viewer (for a perspective camera it differs across
+/// the scene: the eye sees past the rim of a sphere off to one side).
 pub(crate) fn corner_colors(
   tris: &[[Point3D; 3]],
   exact: Option<ExactNormal>,
-  toward: Vec3,
+  toward: &dyn Fn(Point3D) -> Vec3,
   mut shade: impl FnMut(usize, Vec3, Point3D) -> (u8, u8, u8),
 ) -> Vec<[(u8, u8, u8); 3]> {
+  let centroid = |t: &[Point3D; 3]| Point3D {
+    x: (t[0].x + t[1].x + t[2].x) / 3.0,
+    y: (t[0].y + t[1].y + t[2].y) / 3.0,
+    z: (t[0].z + t[1].z + t[2].z) / 3.0,
+  };
   let faces: Vec<Vec3> = tris
     .iter()
     .map(|t| {
-      normalize(cross(sub(t[1], t[0]), sub(t[2], t[0]))).unwrap_or(toward)
+      normalize(cross(sub(t[1], t[0]), sub(t[2], t[0])))
+        .unwrap_or_else(|| toward(centroid(t)))
     })
     .collect();
   let normals: Vec<[Vec3; 3]> = match exact {
@@ -268,8 +275,9 @@ pub(crate) fn corner_colors(
     .zip(faces)
     .enumerate()
     .map(|(i, ((t, n), face))| {
-      [0, 1, 2]
-        .map(|c| shade(i, orient_vertex_normal(n[c], face, toward), t[c]))
+      // Whether the triangle faces the eye is settled where it sits.
+      let view = toward(centroid(t));
+      [0, 1, 2].map(|c| shade(i, orient_vertex_normal(n[c], face, view), t[c]))
     })
     .collect()
 }
@@ -585,6 +593,25 @@ mod tests {
     let fit = fit_gradient(pts, colors).unwrap();
     assert!(fit.rms_error < 1e-9);
     assert!((fit.from.1 - fit.to.1).abs() < 1e-9);
+  }
+
+  /// A perspective eye sees past the rim of a sphere off to one side: a
+  /// triangle there faces the eye although it faces away from the view
+  /// direction at the center. Its corners are lit as seen from where it
+  /// sits, not turned to their back (which drew a dark sliver along the
+  /// rim).
+  #[test]
+  fn corners_face_the_eye_where_they_sit() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // In the plane x = 0, facing +x.
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 1.0, 0.0), p(0.0, 0.0, 1.0)]];
+    let mut lit = Vec::new();
+    corner_colors(&tris, None, &|_| [1.0, 0.0, 0.2], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert_eq!(lit.len(), 3);
+    assert!(lit.iter().all(|n| n[0] > 0.9), "{lit:?}");
   }
 
   #[test]

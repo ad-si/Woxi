@@ -149,6 +149,13 @@ impl Camera {
       size: 2.0,
       scale: [1.0; 3],
       offset: [0.0; 3],
+      eye: self.perspective.map(|eye| {
+        [
+          eye.center[0] + eye.distance * toward[0],
+          eye.center[1] + eye.distance * toward[1],
+          eye.center[2] + eye.distance * toward[2],
+        ]
+      }),
     }
   }
 }
@@ -256,6 +263,9 @@ pub(crate) struct Triangle {
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
+  /// The opacity of the outline edges: `EdgeForm[{…, Opacity[o]}]`
+  /// strokes them translucently. 1 by default.
+  pub edge_opacity: f64,
   /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
   /// drawn with. `None` keeps the default hairline.
   pub edge_width: Option<f64>,
@@ -1036,7 +1046,7 @@ fn shade_smoothly_with(
   let colors = crate::functions::smooth_shading::corner_colors(
     &worlds,
     exact,
-    toward,
+    &|_| toward,
     |i, n, p| shade(&facets[i], n, p),
   );
   for (facet, c) in facets.iter().zip(colors) {
@@ -3460,6 +3470,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [v0, v1, v2].map(|v| project(v, &camera)),
@@ -3623,6 +3634,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [false; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
@@ -3886,6 +3898,7 @@ pub(crate) fn translucent_face_run(
       && t.color == first.color
       && t.opacity == first.opacity
       && t.edge_color == first.edge_color
+      && t.edge_opacity == first.edge_opacity
       && t.edge_width == first.edge_width
       && t.edge_dashing == first.edge_dashing
       && tris[start..end].iter().any(|m| shares_edge(m, t));
@@ -4754,6 +4767,158 @@ fn automatic_axes_edges(
   out
 }
 
+/// Pixels per scene unit at `p` for a length lying across the line of
+/// sight (one that is not foreshortened): the root mean square of the
+/// screen lengths of the three unit axes, which for a projection onto the
+/// screen plane sum (squared) to twice the square of that scale.
+fn screen_scale_at(
+  p: Point3D,
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+  unit: f64,
+) -> f64 {
+  let at = |q: Point3D| {
+    let (x, y) = project(q, camera);
+    to_svg(x, y)
+  };
+  let (x0, y0) = at(p);
+  let h = if unit.is_finite() && unit > 0.0 {
+    unit
+  } else {
+    1.0
+  };
+  let mut sum = 0.0;
+  for d in 0..3 {
+    let mut q = [p.x, p.y, p.z];
+    q[d] += h;
+    let (x1, y1) = at(Point3D {
+      x: q[0],
+      y: q[1],
+      z: q[2],
+    });
+    sum += ((x1 - x0) / h).powi(2) + ((y1 - y0) / h).powi(2);
+  }
+  (sum / 2.0).sqrt()
+}
+
+/// The screen direction of the tick marks of each box-edge axis, scaled
+/// by how much the scene foreshortens it (1 across the line of sight).
+///
+/// Wolfram draws a 3D tick mark as a segment in the scene, perpendicular
+/// to its axis and pointing into the box along one of the two other
+/// coordinate directions:
+/// - the ticks of the vertical (z) axis run along the horizontal axis
+///   whose edge meets the z axis's edge (the longer one on screen when
+///   both or neither do);
+/// - the ticks of an x or y axis lie in the horizontal face of the box on
+///   the axis's edge when that face is turned away from the viewer (the
+///   floor seen from above), and run vertically otherwise.
+///
+/// Either choice falls back to the other direction when it is too
+/// foreshortened, or too nearly parallel to the axis on screen, to read.
+/// `None` for an axis that has no extent on screen.
+fn box_axis_tick_directions(
+  axes: &[(Point3D, Point3D, (f64, f64), bool); 3],
+  lo: [f64; 3],
+  hi: [f64; 3],
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+) -> [Option<(f64, f64)>; 3] {
+  let coords = |p: Point3D| [p.x, p.y, p.z];
+  let pt = |p: [f64; 3]| Point3D {
+    x: p[0],
+    y: p[1],
+    z: p[2],
+  };
+  let span = (0..3).map(|d| hi[d] - lo[d]).fold(0.0_f64, f64::max);
+  if !(span.is_finite() && span > 0.0) {
+    return [None, None, None];
+  }
+  let at = |q: [f64; 3]| {
+    let (x, y) = project(pt(q), camera);
+    to_svg(x, y)
+  };
+  // Whether a coordinate of an edge sits on the box's high face.
+  let on_high = |d: usize, v: f64| (v - hi[d]).abs() < (v - lo[d]).abs();
+  std::array::from_fn(|k| {
+    let (p0, p1, _, _) = axes[k];
+    let (a0, a1) = (coords(p0), coords(p1));
+    let mid: [f64; 3] = std::array::from_fn(|d| f64::midpoint(a0[d], a1[d]));
+    let scale = screen_scale_at(pt(mid), camera, to_svg, span * 1e-3);
+    let (sx0, sy0) = at(a0);
+    let (sx1, sy1) = at(a1);
+    let axis_len = (sx1 - sx0).hypot(sy1 - sy0);
+    if !(scale > 0.0 && axis_len > 1e-9) {
+      return None;
+    }
+    let (ax, ay) = ((sx1 - sx0) / axis_len, (sy1 - sy0) / axis_len);
+    // The screen vector of a unit step along dimension `d` into the box,
+    // relative to an unforeshortened unit, and its sine with the axis.
+    let candidate = |d: usize| {
+      let sign = if on_high(d, mid[d]) { -1.0 } else { 1.0 };
+      let h = span * 1e-3;
+      let mut q = mid;
+      q[d] += sign * h;
+      let (x0, y0) = at(mid);
+      let (x1, y1) = at(q);
+      let (vx, vy) = ((x1 - x0) / (h * scale), (y1 - y0) / (h * scale));
+      let len = vx.hypot(vy);
+      let sin = if len > 0.0 {
+        (ax * vy - ay * vx).abs() / len
+      } else {
+        0.0
+      };
+      ((vx, vy), len, sin)
+    };
+    let readable =
+      |c: &((f64, f64), f64, f64), min_len: f64| c.1 >= min_len && c.2 >= 0.3;
+    let (first, second, min_len) = if k == 2 {
+      // The horizontal axes' edges, to see which one meets this one.
+      let meets = |d: usize| {
+        let (q0, q1) = (coords(axes[d].0), coords(axes[d].1));
+        [a0, a1].iter().any(|e| {
+          [q0, q1]
+            .iter()
+            .any(|q| (0..3).all(|i| (e[i] - q[i]).abs() <= span * 1e-9))
+        })
+      };
+      let (cx, cy) = (candidate(0), candidate(1));
+      let x_first = match (meets(0), meets(1)) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => cx.1 >= cy.1,
+      };
+      if x_first {
+        (cx, cy, 0.0)
+      } else {
+        (cy, cx, 0.0)
+      }
+    } else {
+      let other = 1 - k;
+      let z_high = on_high(2, mid[2]);
+      let outward = if z_high { 1.0 } else { -1.0 };
+      let face = {
+        let mut c: [f64; 3] =
+          std::array::from_fn(|d| f64::midpoint(lo[d], hi[d]));
+        c[2] = if z_high { hi[2] } else { lo[2] };
+        c
+      };
+      let face_hidden = outward * camera.toward_viewer(pt(face))[2] <= 1e-9;
+      if face_hidden {
+        (candidate(other), candidate(2), 0.55)
+      } else {
+        (candidate(2), candidate(other), 0.78)
+      }
+    };
+    let chosen = if readable(&first, min_len) || second.1 <= first.1 {
+      first
+    } else {
+      second
+    };
+    Some(chosen.0)
+  })
+}
+
 /// `draw_axes_on_box` with per-axis explicit tick positions (`Ticks`).
 #[allow(clippy::too_many_arguments)]
 fn draw_axes_on_box_with_ticks(
@@ -4958,6 +5123,20 @@ fn draw_axes_on_box_with_ticks(
       }
     }
   }
+  // Axes along the box's edges draw their tick marks in the scene (see
+  // `box_axis_tick_directions`); axes crossing inside it at `AxesOrigin`
+  // keep marks perpendicular on screen.
+  let tick_dirs = if crossing.is_none() {
+    box_axis_tick_directions(
+      &axes,
+      [box_x_lo, box_y_lo, box_z_lo],
+      [box_x_hi, box_y_hi, box_z_hi],
+      camera,
+      to_svg,
+    )
+  } else {
+    [None, None, None]
+  };
 
   // Project the box center so we can orient tick labels outward
   let box_center = Point3D {
@@ -5120,6 +5299,22 @@ fn draw_axes_on_box_with_ticks(
       }
     }
 
+    // Where a tick mark of `length` (pixels, before foreshortening) drawn
+    // from `(x, y)` ends: along this axis's scene tick direction, else
+    // perpendicular to the axis on screen, into the box.
+    let tick_end = |x: f64, y: f64, length: f64| -> (f64, f64) {
+      if let Some((vx, vy)) = tick_dirs[ai] {
+        let length = length * SCENE_TICK_GAIN;
+        return (x + vx * length, y + vy * length);
+      }
+      let (dx, dy) = (sx1 - sx0, sy1 - sy0);
+      let len = dx.hypot(dy);
+      if len <= 1e-9 {
+        return (x, y);
+      }
+      let sign = outward_sign(sx0, sy0, sx1, sy1);
+      (x + dy / len * length * sign, y - dx / len * length * sign)
+    };
     if ticks[ai].is_none() {
       let majors = tick_values(val_min, val_max);
       if majors.len() >= 2 {
@@ -5145,7 +5340,8 @@ fn draw_axes_on_box_with_ticks(
             };
             let (x, y) = project(p, camera);
             let (x, y) = to_svg(x, y);
-            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
+            let (ex, ey) = tick_end(x, y, MINOR_TICK_PX);
+            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n"));
           }
         }
       }
@@ -5181,9 +5377,9 @@ fn draw_axes_on_box_with_ticks(
         // runs.
         let sign = outward_sign(sx0, sy0, sx1, sy1);
 
+        let (ex, ey) = tick_end(tx, ty, MAJOR_TICK_PX);
         svg.push_str(&format!(
-                    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                    tx, ty, tx - perpx * sign, ty - perpy * sign, tick_color
+                    "<line x1=\"{tx:.1}\" y1=\"{ty:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n"
                 ));
 
         // A label pushed sideways is aligned on its near end, so it grows
@@ -5505,6 +5701,16 @@ fn fit_3d_frame(
 /// How far from the axis line the tick labels are centered.
 const TICK_LABEL_OFFSET: f64 = 10.0;
 
+/// Screen lengths (pixels) of the major and minor tick marks of a 3D axis.
+const MAJOR_TICK_PX: f64 = 4.0;
+const MINOR_TICK_PX: f64 = 2.5;
+
+/// How much longer a tick mark drawn in the scene is than one drawn
+/// across the axis on screen, before its foreshortening: Wolfram's marks
+/// measure about 5 pixels across the line of sight and 4 at the default
+/// view's slant.
+const SCENE_TICK_GAIN: f64 = 1.25;
+
 /// The font size of 3D tick labels (Wolfram's are smaller than its
 /// axis labels).
 const TICK_FONT_SIZE: i32 = 10;
@@ -5537,7 +5743,7 @@ fn label_half_width(label: &str, font_size: i32) -> f64 {
 /// same ones the tick marks are drawn at. Like wolframscript, a 3D box axis
 /// steps by the smallest of 1, 2 and 5 × 10^k that leaves fewer than five
 /// intervals: -1..1 by 0.5, 0..1 by 0.5, -5..5 and 0..10 by 5, 0..3 by 1.
-fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
+pub(crate) fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
   let span = val_max - val_min;
   if !(span.is_finite() && span > 0.0) {
     return Vec::new();
@@ -5564,6 +5770,15 @@ fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
 
 /// Grid resolution for VectorPlot3D (N x N x N sample points).
 const VECTOR3D_GRID: usize = 7;
+
+/// The radius of `VectorPlot3D`'s arrow tubes as a fraction of the longest
+/// side of the plot range: wolframscript's `Arrow[Tube[…, 0.0225]]` in a
+/// range 2 wide.
+const VECTOR3D_TUBE_RADIUS: f64 = 0.01125;
+
+/// `VectorPlot3D`'s `Arrowheads[{{0.0675, 1.}}]`: the length of an arrow's
+/// cone head as a fraction of the diagonal of the box.
+const VECTOR3D_HEAD_FRACTION: f64 = 0.0675;
 
 /// `VectorStyle`'s per-field directives: the color to draw that field's
 /// arrows in, and the `Thickness`/`Arrowheads` sizes (fractions of the
@@ -5780,10 +5995,12 @@ fn vector_plot3d_solid(
   // measured on the box, then mapped back to data per axis.
   let cell = 1.0 / n as f64;
   let length_per = 0.7 * cell / m_hi;
-  let radius = 0.0082 * sides.iter().copied().fold(0.0_f64, f64::max);
+  let radius =
+    VECTOR3D_TUBE_RADIUS * sides.iter().copied().fold(0.0_f64, f64::max);
   let mut content = Vec::with_capacity(samples.len());
-  // What is drawn: each arrow as a hexagonal shaft and head (a light solid
-  // that keeps the picture small), in box units mapped back to the data.
+  // What is drawn: each arrow as a hexagonal shaft (a light solid that
+  // keeps the picture small) and a cone head, in box units mapped back to
+  // the data.
   let mut drawn = vec![call0("EdgeForm")];
   let to_data = |q: [f64; 3]| {
     [
@@ -5846,9 +6063,12 @@ fn vector_plot3d_solid(
           v_scale(c, 1.0 / v_len(c))
         };
         let e2 = v_cross(u, e1);
-        let shaft_r = 0.0082;
-        let head_len = (0.45 * len).min(0.05);
-        let head_r = 0.4 * head_len;
+        let shaft_r = VECTOR3D_TUBE_RADIUS;
+        // Wolfram's head is `Arrowheads[0.0675]` of the box diagonal (√3
+        // box units) long, as slim as any `Arrow[Tube[…]]` head, and keeps
+        // its size on an arrow shorter than itself.
+        let head_len = (VECTOR3D_HEAD_FRACTION * 3f64.sqrt()).min(len);
+        let head_r = 0.22 * head_len;
         let base = v_sub(ub, v_scale(u, head_len));
         let ring = |c: [f64; 3], rad: f64| -> Vec<[f64; 3]> {
           (0..6)
@@ -5873,21 +6093,32 @@ fn vector_plot3d_solid(
             ),
           )
         };
-        let (r0, r1, rh) =
-          (ring(ua, shaft_r), ring(base, shaft_r), ring(base, head_r));
+        let (r0, r1) = (ring(ua, shaft_r), ring(base, shaft_r));
         let mut parts = vec![color.clone()];
-        for k in 0..6 {
-          let k2 = (k + 1) % 6;
-          parts.push(poly(vec![r0[k], r0[k2], r1[k2], r1[k]]));
-          parts.push(poly(vec![rh[k], rh[k2], ub]));
+        if head_len < len {
+          for k in 0..6 {
+            let k2 = (k + 1) % 6;
+            parts.push(poly(vec![r0[k], r0[k2], r1[k2], r1[k]]));
+          }
+          parts.push(poly(r0.clone()));
         }
-        parts.push(poly(rh.clone()));
-        parts.push(poly(r0.clone()));
+        // The head is a smooth, shaded cone, as Wolfram draws it; the thin
+        // shaft stays a hexagonal prism, whose facets do not show.
+        let head_radius =
+          head_r * sides.iter().copied().fold(0.0_f64, f64::max);
+        parts.push(call(
+          "Cone",
+          vec![
+            Expr::List(vec![real3(to_data(base)), real3(to_data(ub))].into()),
+            Expr::Real(head_radius),
+          ],
+        ));
         drawn.push(Expr::List(parts.into()));
       }
     }
     content.push(Expr::List(
       vec![
+        call1("Arrowheads", Expr::Real(VECTOR3D_HEAD_FRACTION)),
         color,
         call1(
           "Arrow",
@@ -7805,6 +8036,10 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// The opacity of that outline (`EdgeForm[{Black, Opacity[0.1]}]`, the
+  /// faint outline of a 3D chart's bars): it is blended with what lies
+  /// behind it. 1 when no `Opacity` was given.
+  edge_opacity: f64,
   /// The outline width a thickness inside `EdgeForm[…]` asks for.
   edge_width: Option<f64>,
   /// `EdgeForm[Dashed]`: the outline's dash pattern.
@@ -7930,6 +8165,7 @@ impl Default for StyleState3D {
       edges: true,
       faces: true,
       edge_color: None,
+      edge_opacity: 1.0,
       edge_width: None,
       edge_dashing: None,
       specular: None,
@@ -8334,6 +8570,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         // EdgeForm[Dashed]` draws thick red dashes.
         let mut edge = StyleState3D {
           color: style.edge_color,
+          opacity: style.edge_opacity,
           thickness: style.edge_width,
           dashing: style.edge_dashing.clone(),
           ..StyleState3D::default()
@@ -8344,15 +8581,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
           }
         }
         // A translucent edge (`EdgeForm[{Black, Opacity[0.1]}]`, the faint
-        // outline of a 3D chart's bars) is drawn in its color faded
-        // toward the white page.
-        if edge.opacity < 1.0
-          && let Some((r, g, b)) = edge.color
-        {
-          let o = edge.opacity.clamp(0.0, 1.0);
-          let fade = |c: u8| (c as f64 * o + 255.0 * (1.0 - o)).round() as u8;
-          edge.color = Some((fade(r), fade(g), fade(b)));
-        }
+        // outline of a 3D chart's bars) is blended with the faces behind
+        // it rather than drawn opaque.
+        style.edge_opacity = edge.opacity.clamp(0.0, 1.0);
         style.edge_color = edge.color;
         style.edge_width = edge.thickness;
         style.edge_dashing = edge.dashing;
@@ -8443,6 +8674,48 @@ fn outline_edge_cap(dashing: Option<&Vec<f64>>) -> &'static str {
     ""
   } else {
     " stroke-linecap=\"round\""
+  }
+}
+
+/// The faces `Boxed -> {Left, Bottom, Back}` (or a single face name) asks
+/// the box to draw the edges of, in the order Left, Right, Front, Back,
+/// Bottom, Top. `None` when the value is not such a list.
+fn parse_boxed_faces(value: &Expr) -> Option<[bool; 6]> {
+  const NAMES: [&str; 6] = ["Left", "Right", "Front", "Back", "Bottom", "Top"];
+  let items: Vec<&Expr> = match value {
+    Expr::List(items) => items.iter().collect(),
+    single @ Expr::Identifier(_) => vec![single],
+    _ => return None,
+  };
+  let mut faces = [false; 6];
+  for item in items {
+    let Expr::Identifier(name) = item else {
+      return None;
+    };
+    let k = NAMES.iter().position(|n| n == name)?;
+    faces[k] = true;
+  }
+  Some(faces)
+}
+
+/// Whether the box edge between corners `i` and `j` (indexed by the bits
+/// x = 1, y = 2, z = 4 set for the high side) lies on one of `faces` (see
+/// [`parse_boxed_faces`]).
+fn box_edge_on_faces(i: usize, j: usize, faces: [bool; 6]) -> bool {
+  (0..6).any(|f| {
+    let (bit, high) = (1 << (f / 2), f % 2 == 1);
+    // Left/Right are x, Front/Back y, Bottom/Top z.
+    faces[f] && [i, j].iter().all(|&c| (c & bit != 0) == high)
+  })
+}
+
+/// The `stroke-opacity` of a face's outline edges drawn with
+/// `EdgeForm[{…, Opacity[o]}]`; empty for an opaque outline.
+fn edge_opacity_attr(opacity: f64) -> String {
+  if opacity < 1.0 {
+    format!(" stroke-opacity=\"{}\"", opacity.max(0.0))
+  } else {
+    String::new()
   }
 }
 
@@ -13158,14 +13431,14 @@ fn arrow3d_head_anchors(
     .collect()
 }
 
-/// The corners whose projected convex hull outlines the cone head of a
-/// line `Arrow` in 3D: the tip (the arrow's last point) followed by a ring
-/// of points around the cone's base. The cone is `len` long, points along
-/// the arrow's last segment and is as slim as the head of an
-/// `Arrow[Tube[…]]`. Like Wolfram's, the head keeps its size on an arrow
-/// shorter than itself. `None` when the last segment has no length.
-fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
-  const RING: usize = 24;
+/// The axis of the head of a line `Arrow` in 3D: from the back of the
+/// head to its tip (the arrow's last point), `len` long along the arrow's
+/// last segment. Wolfram draws that head as its flat 2D arrowhead turned
+/// to face the viewer (see `default_arrowhead_polygon`), as long on screen
+/// as `len` is across the line of sight, whatever the arrow's slant. Like
+/// Wolfram's, the head keeps its size on an arrow shorter than itself.
+/// `None` when the last segment has no length.
+fn arrow3d_head_axis(points: &[Point3D], len: f64) -> Option<[Point3D; 2]> {
   let n = points.len();
   if n < 2 || !(len.is_finite() && len > 0.0) {
     return None;
@@ -13177,38 +13450,13 @@ fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
   if !(seg > 0.0 && seg.is_finite()) {
     return None;
   }
-  let u = [d[0] / seg, d[1] / seg, d[2] / seg];
-  // Two unit vectors spanning the plane of the base.
-  let helper = if u[0].abs() < 0.9 {
-    [1.0, 0.0, 0.0]
-  } else {
-    [0.0, 1.0, 0.0]
+  let k = len / seg;
+  let back = Point3D {
+    x: tip.x - d[0] * k,
+    y: tip.y - d[1] * k,
+    z: tip.z - d[2] * k,
   };
-  let cross = |a: [f64; 3], b: [f64; 3]| {
-    [
-      a[1] * b[2] - a[2] * b[1],
-      a[2] * b[0] - a[0] * b[2],
-      a[0] * b[1] - a[1] * b[0],
-    ]
-  };
-  let e1 = cross(u, helper);
-  let l1 = v_len(e1);
-  let e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
-  let e2 = cross(u, e1);
-  let radius = 0.22 * len;
-  let base = [tip.x - u[0] * len, tip.y - u[1] * len, tip.z - u[2] * len];
-  let mut out = Vec::with_capacity(RING + 1);
-  out.push(tip);
-  for k in 0..RING {
-    let a = std::f64::consts::TAU * k as f64 / RING as f64;
-    let (s, c) = a.sin_cos();
-    out.push(Point3D {
-      x: base[0] + radius * (c * e1[0] + s * e2[0]),
-      y: base[1] + radius * (c * e1[1] + s * e2[1]),
-      z: base[2] + radius * (c * e1[2] + s * e2[2]),
-    });
-  }
-  Some(out)
+  Some([back, tip])
 }
 
 /// Default radius of a `Tube` given none, as a fraction of the diagonal of
@@ -14462,6 +14710,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_height = false;
   let mut full_width = false;
   let mut show_box = true;
+  // `Boxed -> {Left, Bottom, Back}`: only the edges of these faces of the
+  // box (Left, Right, Front, Back, Bottom, Top) are drawn.
+  let mut box_faces: Option<[bool; 6]> = None;
   let mut axes_edge: Option<AxesEdges> = None;
   let mut background: Option<(u8, u8, u8)> = None;
   let mut camera = Camera::default();
@@ -14568,7 +14819,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Boxed" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_box = false,
           Expr::Identifier(s) if s == "True" => show_box = true,
-          _ => {}
+          other => {
+            if let Some(faces) = parse_boxed_faces(other) {
+              show_box = true;
+              box_faces = Some(faces);
+            }
+          }
         },
         "ViewProjection" => {
           orthographic = matches!(replacement.as_ref(), Expr::String(s) if s == "Orthographic");
@@ -15348,6 +15604,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edges: true,
             faces: true,
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             specular: None,
@@ -15529,6 +15786,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary,
           edge_color: prim_style.edge_color,
+          edge_opacity: prim_style.edge_opacity,
           edge_width: prim_style.edge_width,
           edge_dashing: prim_style.edge_dashing.clone(),
           projected: [v0, v1, v2].map(|p| project(p, &camera)),
@@ -15603,7 +15861,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::smooth_shading::corner_colors(
           &corners,
           exact.as_deref(),
-          scene.frame.toward,
+          &|at| {
+            let t = camera.toward_viewer(at);
+            let len = v_len(t);
+            if len > 0.0 && len.is_finite() {
+              v_scale(t, 1.0 / len)
+            } else {
+              scene.frame.toward
+            }
+          },
           |_, normal, at| {
             shade_facet(
               SurfaceDefault::Plain(base_color),
@@ -15668,6 +15934,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
+        edge_opacity: prim_style.edge_opacity,
         edge_width: prim_style.edge_width,
         edge_dashing: prim_style.edge_dashing.clone(),
         projected: [p0, p1, p2],
@@ -15868,13 +16135,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Include box corners in the projected bounding box. Wolfram frames the
-  // picture by the bounding box whether or not it is drawn: with
-  // `Boxed -> False` the box is merely invisible, so a dome or a tall
-  // solid keeps the margins its box corners leave around it instead of
-  // being blown up to touch the edges. A pinned region is framed by its
-  // box alone: content reaching beyond it (a long axis cylinder, a big
-  // sphere) is cut off by the picture rather than shrinking it.
+  // Include box corners in the projected bounding box. A drawn box frames
+  // the picture. A pinned region is framed by its box alone: content
+  // reaching beyond it (a long axis cylinder, a big sphere) is cut off by
+  // the picture rather than shrinking it.
   if plot_range.is_some() {
     px_min = f64::INFINITY;
     px_max = f64::NEG_INFINITY;
@@ -15887,9 +16151,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // frame. A Demonstration's unboxed cylinder of fixed volume at
   // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
   // snapshots, whether it is tall and thin or short and wide. A picture
-  // given only a width keeps the box's margins.
+  // given only a width keeps the box's margins (wolframscript draws an
+  // unboxed lone triangle, unit cube or pair of cubes as large as boxed
+  // ones) unless the scene is made of round solids alone: an unboxed
+  // `Sphere[]` exports 360 × 363 (boxed: 360 × 391) and a cylinder of
+  // radius 1 and height 3 262 × 432 (boxed: 320 × 432).
+  let round_solids_only = !prims.is_empty()
+    && prims.iter().all(|p| {
+      matches!(
+        p,
+        Primitive3D::Sphere { .. }
+          | Primitive3D::Cylinder { .. }
+          | Primitive3D::Cone { .. }
+      )
+    });
   let fit_contents = !show_box
-    && explicit_height
+    && (explicit_height || round_solids_only)
     && !full_width
     && !aspect_full
     && !show_axes
@@ -16220,11 +16497,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// its position along it. Translucent pieces of one polyline drawn in
     /// a row are joined back into a single stroke (see `emit_edge_run`).
     piece_of: Option<(usize, usize)>,
-    /// The corners of a 3D `Arrow`'s cone head, filled flat in `color` as
-    /// their projected convex hull. Its `endpoints` run from the center of
-    /// the cone's base to the tip, which places the head in the same draw
-    /// order as a line piece, so an opaque surface in front of it hides it.
-    head_outline: Option<Vec<Point3D>>,
+    /// The head of a 3D line `Arrow` rather than a line piece: Wolfram's
+    /// flat 2D arrowhead filled in `color`, facing the viewer, along the
+    /// `endpoints` (the back of the head to its tip; see
+    /// [`arrow3d_head_axis`]). It takes the same draw order as a line
+    /// piece, so an opaque surface in front of it hides it.
+    arrow_head: bool,
     /// The part of the piece away from the ends of the segment it was cut
     /// from (see `line_draw_slots`); `[0, 1]` for a whole edge.
     end_zone: [f64; 2],
@@ -16252,6 +16530,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (3, 7),
     ];
     for &(i, j) in &edge_pairs {
+      if let Some(faces) = box_faces
+        && !box_edge_on_faces(i, j, faces)
+      {
+        continue;
+      }
       let a = box_corners[i];
       let b = box_corners[j];
       // On-screen length of the whole edge, so a dashed `BoxStyle` runs
@@ -16278,7 +16561,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: t0 * edge_px,
           dot_radius: None,
           piece_of: None,
-          head_outline: None,
+          arrow_head: false,
           end_zone: [0.0, 1.0],
         });
       }
@@ -16330,7 +16613,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: 0.0,
               dot_radius: None,
               piece_of: None,
-              head_outline: None,
+              arrow_head: false,
               end_zone: [0.0, 1.0],
             });
           }
@@ -16381,10 +16664,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       if let Primitive3D::Arrow3D { points, .. } = prim {
-        // Arrowhead: a cone in the scene, like the head of an
-        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
-        // length as a fraction of the diagonal of the scene's box, so it
-        // foreshortens with the view like the rest of the scene.
+        // Arrowhead: Wolfram's flat 2D head facing the viewer.
+        // `Arrowheads[s]` (default a twentieth) is its length as a
+        // fraction of the diagonal of the scene's box.
         for (segment, size) in arrow3d_head_anchors(
           points,
           arrowhead_fractions(
@@ -16393,25 +16675,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
           .as_deref(),
         ) {
-          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          let Some([back, tip]) =
+            arrow3d_head_axis(&segment, size * scene_diag)
           else {
             continue;
           };
-          let tip = head[0];
-          let ring = &head[1..];
-          let n = ring.len() as f64;
-          let base = Point3D {
-            x: ring.iter().map(|p| p.x).sum::<f64>() / n,
-            y: ring.iter().map(|p| p.y).sum::<f64>() / n,
-            z: ring.iter().map(|p| p.z).sum::<f64>() / n,
-          };
           let mid = Point3D {
-            x: f64::midpoint(base.x, tip.x),
-            y: f64::midpoint(base.y, tip.y),
-            z: f64::midpoint(base.z, tip.z),
+            x: f64::midpoint(back.x, tip.x),
+            y: f64::midpoint(back.y, tip.y),
+            z: f64::midpoint(back.z, tip.z),
           };
           sorted_edges.push(SceneEdge {
-            endpoints: [base, tip],
+            endpoints: [back, tip],
             depth: depth(mid, &camera) - bias,
             color: color.clone(),
             width,
@@ -16420,7 +16695,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dash_offset: 0.0,
             dot_radius: None,
             piece_of: None,
-            head_outline: Some(head),
+            arrow_head: true,
             end_zone: [0.0, 1.0],
           });
         }
@@ -16473,7 +16748,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
               piece_of: Some((polyline_id, piece_index)),
-              head_outline: None,
+              arrow_head: false,
               end_zone: [
                 (LINE_END_REACH - t0) / (t1 - t0),
                 (1.0 - LINE_END_REACH - t0) / (t1 - t0),
@@ -16505,7 +16780,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: 0.0,
           dot_radius: Some(radius),
           piece_of: None,
-          head_outline: None,
+          arrow_head: false,
           end_zone: [0.0, 1.0],
         });
       }
@@ -16580,21 +16855,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
-      if let Some(head) = &edge.head_outline {
-        let screen: Vec<(f64, f64, usize)> = head
-          .iter()
-          .enumerate()
-          .map(|(i, p)| {
-            let (px, py) = project(*p, &camera);
-            let (sx, sy) = to_svg(px, py);
-            (sx, sy, i)
-          })
-          .collect();
-        let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
-        if hull.len() >= 3 {
-          let pts: Vec<String> = hull
-            .iter()
-            .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+      if edge.arrow_head {
+        let [back, tip] = edge.endpoints;
+        let len3 = v_len([tip.x - back.x, tip.y - back.y, tip.z - back.z]);
+        let head_len = len3 * screen_scale_at(tip, &camera, &to_svg, len3);
+        let (dx, dy) = (ex1 - ex0, ey1 - ey0);
+        let d = dx.hypot(dy);
+        // An arrow pointing straight at the viewer has no direction on
+        // screen; its head is still drawn, pointing up.
+        let dir = if d > 1e-9 {
+          (dx / d, dy / d)
+        } else {
+          (0.0, -1.0)
+        };
+        if head_len.is_finite() && head_len > 0.0 {
+          let pts: Vec<String> =
+            crate::functions::graphics::default_arrowhead_polygon(
+              (ex1, ey1),
+              dir,
+              head_len,
+            )
+            .into_iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
             .collect();
           svg.push_str(&format!(
             "<polygon points=\"{}\" fill=\"{}\"{opacity_attr}/>\n",
@@ -16855,6 +17137,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             None => "rgb(64,64,64)".to_string(),
           };
           let edge_width = tri.edge_width.unwrap_or(1.0);
+          let edge_alpha = edge_opacity_attr(tri.edge_opacity);
           for (e, on_outline) in tri.boundary.iter().enumerate() {
             if !on_outline {
               continue;
@@ -16863,7 +17146,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let (bx, by) = corners[(e + 1) % 3];
             let cap = outline_edge_cap(None);
             svg.push_str(&format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}/>\n",
             ));
           }
           continue;
@@ -16890,10 +17173,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => "rgb(64,64,64)".to_string(),
       };
       let edge_width = tri.edge_width.unwrap_or(1.0);
+      let edge_alpha = edge_opacity_attr(tri.edge_opacity);
       let fill_opacity_attr = if tri.opacity < 1.0 {
-        format!(" fill-opacity=\"{}\"", tri.opacity)
+        format!(" fill-opacity=\"{}\"{edge_alpha}", tri.opacity)
       } else {
-        String::new()
+        edge_alpha.clone()
       };
       // The hairline stroke closes the anti-aliasing seam between
       // neighboring triangles. Where the seam is an internal cut of a
@@ -16989,7 +17273,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             outline_slot(k, e),
             outline_seq,
             format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
             ),
           )));
           outline_seq += 1;
@@ -18648,6 +18932,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       base.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: verts.map(|v| project(v, &camera)),
@@ -18799,6 +19084,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [p0, p1, p2],
@@ -18861,6 +19147,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [p0, p1, p2],
@@ -19729,6 +20016,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [proj0, proj1, proj2],
@@ -19769,6 +20057,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [proj0, proj1, proj2],
@@ -20592,6 +20881,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_opacity: 1.0,
               edge_width: None,
               edge_dashing: None,
               projected: [p0, p1, p2],
@@ -20617,6 +20907,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_opacity: 1.0,
               edge_width: None,
               edge_dashing: None,
               projected: [p0, p2, p3],
@@ -22159,6 +22450,7 @@ fn contour3d_render(
     all_triangles.push(Triangle {
       boundary: [mesh_all; 3],
       edge_color: style.and_then(|s| s.edge_color),
+      edge_opacity: style.map_or(1.0, |s| s.edge_opacity),
       edge_width: style.and_then(|s| s.edge_width),
       edge_dashing: style.and_then(|s| s.edge_dashing.clone()),
       projected: tri_norm.map(|p| project(p, &camera)),
@@ -27102,6 +27394,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -27547,6 +27840,7 @@ mod painter_order_tests {
       opacity: 1.0,
       boundary: [true; 3],
       edge_color: None,
+      edge_opacity: 1.0,
       edge_width: None,
       edge_dashing: None,
       texture: None,

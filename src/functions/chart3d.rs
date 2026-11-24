@@ -101,9 +101,7 @@ pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
       .map(|c| call("Directive", vec![call("Opacity", vec![real(0.1)]), c]))
       .collect(),
   );
-  let mut content =
-    vec![call("EdgeForm", vec![call("GrayLevel", vec![real(0.85)])])];
-  content.extend(FACES.iter().map(|face| {
+  let polygon = |face: &[usize; 4]| {
     call(
       "Polygon",
       vec![
@@ -132,7 +130,16 @@ pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
         rule("VertexColors", colors.clone()),
       ],
     )
-  }));
+  };
+  // Only the floor's faces are outlined; Wolfram draws the back wall with
+  // `EdgeForm[]`, so its beveled frame shows no inner border.
+  let (floor, wall) = FACES.split_at(6);
+  let mut floor_group =
+    vec![call("EdgeForm", vec![call("GrayLevel", vec![real(0.85)])])];
+  floor_group.extend(floor.iter().map(polygon));
+  let mut wall_group = vec![call("EdgeForm", vec![])];
+  wall_group.extend(wall.iter().map(polygon));
+  let content = vec![list(floor_group), list(wall_group)];
   call(
     "Style",
     vec![
@@ -321,7 +328,7 @@ pub(crate) fn bar_chart3d_options(
   x_extent: f64,
   y_extent: f64,
   z_axis_right: bool,
-  y_ticks_automatic: bool,
+  y_ticks_from_back: bool,
 ) -> Vec<Expr> {
   let tick = |&(at, len): &(f64, f64)| {
     list(vec![
@@ -373,8 +380,23 @@ pub(crate) fn bar_chart3d_options(
       "Ticks",
       list(vec![
         list(xt),
-        if y_ticks_automatic {
-          ident("Automatic")
+        if y_ticks_from_back {
+          // The blocks stand against the back of the box (y =
+          // `y_extent`), so Wolfram measures their depth from there: the
+          // automatic ticks of `0 … y_extent` placed at `y_extent - v`.
+          list(
+            crate::functions::plot3d::tick_values(0.0, y_extent)
+              .into_iter()
+              .map(|v| {
+                let label = if v.fract() == 0.0 && v.abs() < 1e15 {
+                  Expr::Integer(v as i128)
+                } else {
+                  real(v)
+                };
+                list(vec![real(y_extent - v), label])
+              })
+              .collect(),
+          )
         } else {
           list(
             [
@@ -495,13 +517,10 @@ pub fn bubble_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let r_max = 0.2 * extent;
   let mut content = Vec::new();
   for (k, set) in sets.iter().enumerate() {
-    let mut group = vec![
-      rgb(chart3d_color(k)),
-      call(
-        "Specularity",
-        vec![call("GrayLevel", vec![Expr::Integer(1)]), Expr::Integer(20)],
-      ),
-    ];
+    // Wolfram's bubbles carry `Specularity[White, 20]` only as the
+    // highlight of a hovered bubble (`Charting`DelayedMouseEffect`), so a
+    // static picture shows them matte.
+    let mut group = vec![rgb(chart3d_color(k))];
     for p in set {
       let r = if s_max > 0.0 {
         r_max * (p[3].abs() / s_max).cbrt()
@@ -531,6 +550,20 @@ pub fn bubble_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ]);
   let defaults = vec![
     rule("Axes", ident("True")),
+    // Both horizontal axes on the floor, the vertical one at the left.
+    rule(
+      "AxesEdge",
+      list(vec![
+        list(vec![Expr::Integer(-1), Expr::Integer(-1)]),
+        list(vec![Expr::Integer(1), Expr::Integer(-1)]),
+        list(vec![Expr::Integer(-1), Expr::Integer(-1)]),
+      ]),
+    ),
+    // Only the edges of the three back faces the grids are drawn on.
+    rule(
+      "Boxed",
+      list(vec![ident("Left"), ident("Bottom"), ident("Back")]),
+    ),
     rule("BoxRatios", list(vec![real(1.0), real(1.0), real(1.0)])),
     rule("FaceGrids", back_faces),
     rule("Lighting", Expr::String("Neutral".to_string())),

@@ -5930,8 +5930,12 @@ about 0.90 of the width and an inner half torus of a 4 × 4 × 2 box (led by
 a `ParametricPlot3D`) at about 0.57. Woxi draws them at 0.93 and 0.64; with
 the contents sphere for both, the torus came out at 0.83. Whether `PlotRange` and `ViewPoint` are really the triggers, or
 merely correlate with them in these four snapshots, is unverified. A
-`Boxed -> False` picture given only a width still fits the box outline, and
-`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+`Boxed -> False` picture given only a width still fits the box outline
+unless it is made of round solids alone (`Sphere`, `Cylinder`, `Cone`),
+which are fitted to their contents (wolframscript draws an unboxed
+`Sphere[]` 360 × 363, boxed 360 × 391); wolframscript's unboxed hemisphere
+of 100 small polygons is 360 × 354 against 360 × 305 boxed, which neither
+rule reproduces. `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
@@ -6028,6 +6032,23 @@ doesn't pin down either rule, so both stay as they are. (A Demonstration
 snapshot of a box 1.6 times as tall as it is deep does pin down one
 exception: the x axis, along the front face, stays on the bottom front edge
 although the top back one is nearer the viewer; Woxi follows that.)
+
+### Direction of 3D tick marks
+
+Wolfram draws a 3D tick mark in the scene along one of the two other
+coordinate directions, into the box. The rule Woxi uses was read off
+wolframscript renderings of a unit cube with long colored ticks from 23
+view points: the z axis's ticks run along the horizontal axis whose edge
+meets the z axis's edge; an x or y axis's ticks lie in the horizontal face
+on its edge when that face is turned away from the viewer, and run
+vertically otherwise; either falls back to the other direction when it is
+foreshortened below about 0.55 (horizontal) or 0.78 (vertical) of its
+length, or nearly parallel to the axis on screen. It reproduces all but
+three borderline views: `ViewPoint -> {3, -1, 2}` draws the y axis's ticks
+vertically where Woxi keeps them along x, `{2, -1, -2}` the z axis's along
+x where Woxi picks y, and `{-0.5, -1, 3}` the z axis's along y where Woxi
+picks x. The marks are about 5 pixels long across the line of sight,
+foreshortened with the scene.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -10040,14 +10061,12 @@ a unit sphere's by 0.5, as in wolframscript. What still differs:
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
-  are ignored. A translucent `EdgeForm` color is faded toward white
-  rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
-  Back}` (BubbleChart3D's partial box) draws the whole box.
+  are ignored.
 - 3D charts: the translucent backdrop panels wolframscript puts behind
   BarChart3D and RectangleChart3D (`Scaled` polygons with `VertexColors`)
   are not drawn; BubbleChart3D's largest bubble is a fifth of the data's
-  smallest extent (wolframscript's is up to 1% smaller) and its
-  `Specularity` highlight is brighter. BarChart3D with `ChartLabels` or
+  smallest extent (wolframscript's is up to 1% smaller). BarChart3D with
+  `ChartLabels` or
   `ChartLegends`, PieChart3D and SectorChart3D keep Woxi's own chart
   renderer (no axes, square framing). DensityPlot3D's volume is as listed
   above.

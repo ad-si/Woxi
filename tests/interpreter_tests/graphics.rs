@@ -75549,3 +75549,319 @@ mod steep_crossings_and_chart_options {
     }
   }
 }
+
+mod graphics3d_review_ticks_heads_framing {
+  use super::*;
+
+  /// The `(x1, y1, x2, y2)` of every `<line>` whose `stroke` is `color`.
+  fn lines_in(svg: &str, color: &str) -> Vec<[f64; 4]> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .map(|l| l.split('>').next().unwrap_or(""))
+      .filter(|l| l.contains(&format!("stroke=\"{color}\"")))
+      .map(line_coords)
+      .collect()
+  }
+
+  /// The `(x1, y1, x2, y2)` attributes of one `<line …>` tag body.
+  fn line_coords(tag: &str) -> [f64; 4] {
+    let attr = |name: &str| -> f64 {
+      tag
+        .split(&format!("{name}=\""))
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+  }
+
+  /// The sine of the angle between two screen segments.
+  fn sine(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let (ax, ay) = (a[2] - a[0], a[3] - a[1]);
+    let (bx, by) = (b[2] - b[0], b[3] - b[1]);
+    (ax * by - ay * bx).abs() / (ax.hypot(ay) * bx.hypot(by))
+  }
+
+  /// Wolfram draws a 3D tick mark in the scene, along another coordinate
+  /// direction into the box, not perpendicular to its axis on screen. From
+  /// the default `ViewPoint` the x axis's ticks run along y (in the
+  /// floor), the y axis's (on the top edge) down along z, and the z
+  /// axis's along the x axis that meets it — parallel on screen to that
+  /// axis's line.
+  #[test]
+  fn box_axis_ticks_run_along_a_scene_direction() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[Point[{0.5, 0.5, 0.5}], \
+       PlotRange -> {{0, 1}, {0, 1}, {0, 1}}, Axes -> True, \
+       Boxed -> False, Ticks -> {{0.5}, {0.5}, {0.5}}, \
+       TicksStyle -> {RGBColor[1, 0, 0], RGBColor[0, 1, 0], \
+       RGBColor[0, 0, 1]}]",
+    );
+    let x_ticks = lines_in(&svg, "rgb(255,0,0)");
+    let y_ticks = lines_in(&svg, "rgb(0,255,0)");
+    let z_ticks = lines_in(&svg, "rgb(0,0,255)");
+    assert_eq!(
+      (x_ticks.len(), y_ticks.len(), z_ticks.len()),
+      (1, 1, 1),
+      "{svg}"
+    );
+    // The axis lines, drawn in order x, y, z with width 1.
+    let axes: Vec<[f64; 4]> = svg
+      .split("<line ")
+      .skip(1)
+      .map(|l| l.split('>').next().unwrap_or(""))
+      .filter(|l| l.contains("stroke-width=\"1\""))
+      .take(3)
+      .map(line_coords)
+      .collect();
+    assert_eq!(axes.len(), 3, "{svg}");
+    // The z axis's tick is parallel to the x axis it meets.
+    assert!(sine(z_ticks[0], axes[0]) < 0.1, "{svg}");
+    // The y axis's tick is vertical (along z), parallel to the z axis.
+    assert!(sine(y_ticks[0], axes[2]) < 0.1, "{svg}");
+    // The x axis's tick runs along y, slanting up and to the right, not
+    // along the screen normal of the x axis.
+    let t = x_ticks[0];
+    assert!(t[2] > t[0] && t[3] < t[1], "{t:?}");
+    assert!(sine(t, axes[0]) < 0.99, "{t:?} {:?}", axes[0]);
+  }
+
+  /// A 3D line `Arrow` gets Wolfram's flat 2D arrowhead turned to face the
+  /// viewer — the notched dart, its tip and 13 outline points — rather
+  /// than the outline of a cone, and keeps that shape seen along the
+  /// arrow.
+  #[test]
+  fn line_arrow_head_in_3d_is_the_notched_2d_head() {
+    clear_state();
+    for view in ["{1.3, -2.4, 2}", "{-3, 0.2, 0.1}"] {
+      let svg = export_svg(&format!(
+        "Graphics3D[{{RGBColor[1, 0, 0], Arrow[{{{{0, 0, 0}}, {{1, 0, 0}}}}]}}, \
+         ViewPoint -> {view}]"
+      ));
+      let heads: Vec<usize> = svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .filter(|p| {
+          p.split('>')
+            .next()
+            .unwrap()
+            .contains("fill=\"rgb(255,0,0)\"")
+        })
+        .map(|p| p.split('"').next().unwrap().split_whitespace().count())
+        .collect();
+      assert_eq!(heads, vec![14], "{view}: {svg}");
+    }
+  }
+
+  /// `EdgeForm[{Black, Opacity[0.1]}]` (the outline of a 3D chart's bars)
+  /// strokes translucent black over the faces, not an opaque near-white
+  /// line.
+  #[test]
+  fn translucent_edge_form_strokes_with_stroke_opacity() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{EdgeForm[Directive[GrayLevel[0], Opacity[0.1]]], \
+       Cuboid[]}]",
+    );
+    assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    assert!(svg.contains("stroke-opacity=\"0.1\""), "{svg}");
+    assert!(!svg.contains("rgb(230,230,230)"), "{svg}");
+  }
+
+  /// `Boxed -> {Left, Bottom, Back}` draws only the 9 edges of those three
+  /// faces, three quarters of the whole box's 12.
+  #[test]
+  fn boxed_face_list_draws_only_those_faces_edges() {
+    clear_state();
+    let count = |boxed: &str| {
+      export_svg(&format!(
+        "Graphics3D[Point[{{0, 0, 0}}], PlotRange -> 1, Boxed -> {boxed}]"
+      ))
+      .matches("<line ")
+      .count()
+    };
+    let (all, some) = (count("True"), count("{Left, Bottom, Back}"));
+    assert!(all > 0);
+    assert_eq!(some * 12, all * 9, "{some} of {all}");
+  }
+
+  /// BubbleChart3D's `Specularity` is Wolfram's highlight of a hovered
+  /// bubble only; a static chart draws the bubbles matte, inside a box of
+  /// only its back faces with both horizontal axes on the floor.
+  #[test]
+  fn bubble_chart_3d_is_matte_with_a_partial_box() {
+    clear_state();
+    let g = "BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 3}}]";
+    assert_eq!(
+      interpret(&format!("FreeQ[{g}, Specularity]")).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("Boxed /. Options[{g}]")).unwrap(),
+      "{Left, Bottom, Back}"
+    );
+    assert_eq!(
+      interpret(&format!("AxesEdge /. Options[{g}]")).unwrap(),
+      "{{-1, -1}, {1, -1}, {-1, -1}}"
+    );
+  }
+
+  /// RectangleChart3D stands its blocks against the back of the box, so
+  /// its depth axis counts from there: 0 at the back, increasing toward
+  /// the viewer, as Wolfram labels it.
+  #[test]
+  fn rectangle_chart_3d_depth_ticks_count_from_the_back() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "(Ticks /. Options[RectangleChart3D[{{1, 2, 3}, {2, 1, 2}, \
+         {3, 3, 1}}]])[[2]]"
+      )
+      .unwrap(),
+      "{{3., 0}, {2., 1}, {1., 2}, {0., 3}}"
+    );
+  }
+
+  /// An unboxed scene of round solids without axes or a set range is
+  /// framed by its contents, as wolframscript does: `Sphere[]` exports
+  /// 360 × 363 (boxed: 360 × 391). Other unboxed scenes keep the box's
+  /// frame: a lone triangle or two cubes are drawn as large as boxed.
+  #[test]
+  fn unboxed_round_solids_are_framed_by_their_contents() {
+    clear_state();
+    let height = |code: &str| -> f64 {
+      let svg = export_svg(code);
+      svg
+        .split("height=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    let sphere = height("Graphics3D[Sphere[], Boxed -> False]");
+    assert!((355.0..=370.0).contains(&sphere), "{sphere}");
+    for scene in [
+      "Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]",
+      "{Cuboid[{0, 0, 1}], Cuboid[{1, 0, 0}]}",
+    ] {
+      let (unboxed, boxed) = (
+        height(&format!("Graphics3D[{scene}, Boxed -> False]")),
+        height(&format!("Graphics3D[{scene}]")),
+      );
+      assert!((unboxed - boxed).abs() <= 2.0, "{unboxed} vs {boxed}");
+    }
+  }
+  /// A perspective eye sees past the rim of a sphere off to one side of
+  /// the picture. That band faces the eye, so it is lit as the sphere's
+  /// front: the rim of the origin sphere toward the picture's center (its
+  /// upper right, where the lights are) stays light, as in Wolfram's
+  /// rendering, instead of a dark sliver lit as the sphere's back.
+  #[test]
+  fn sphere_rim_seen_past_in_perspective_is_lit_as_front() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 0.2], Sphere[{1, 1, 1}, 0.2]}]",
+    );
+    // Gradient id -> its stop colors.
+    let mut stops = std::collections::HashMap::new();
+    for g in svg.split("<linearGradient id=\"").skip(1) {
+      let id = g.split('"').next().unwrap().to_string();
+      let body = g.split("</linearGradient>").next().unwrap();
+      let colors: Vec<u32> = body
+        .split("stop-color=\"#")
+        .skip(1)
+        .map(|c| u32::from_str_radix(&c[..6], 16).unwrap())
+        .collect();
+      stops.insert(id, colors);
+    }
+    // The faces of the origin sphere: the lower-left of the picture.
+    let mut faces: Vec<(Vec<(f64, f64)>, String)> = Vec::new();
+    for p in svg.split("<polygon points=\"").skip(1) {
+      let pts: Vec<(f64, f64)> = p
+        .split('"')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .filter_map(|xy| {
+          let (x, y) = xy.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect();
+      let Some(id) = p
+        .split('>')
+        .next()
+        .unwrap()
+        .split("fill=\"url(#")
+        .nth(1)
+        .map(|r| r.split(')').next().unwrap().to_string())
+      else {
+        continue;
+      };
+      if pts.iter().all(|&(x, y)| x < 180.0 && y > 150.0) {
+        faces.push((pts, id));
+      }
+    }
+    assert!(faces.len() > 20, "{svg}");
+    let all: Vec<(f64, f64)> =
+      faces.iter().flat_map(|(p, _)| p.iter().copied()).collect();
+    let n = all.len() as f64;
+    let (cx, cy) = (
+      all.iter().map(|p| p.0).sum::<f64>() / n,
+      all.iter().map(|p| p.1).sum::<f64>() / n,
+    );
+    let radius = all
+      .iter()
+      .map(|&(x, y)| (x - cx).hypot(y - cy))
+      .fold(0.0_f64, f64::max);
+    // The outer band of the upper-right quarter.
+    let mut checked = 0;
+    for (pts, id) in &faces {
+      let rim = pts.iter().any(|&(x, y)| {
+        x > cx && y < cy && (x - cx).hypot(y - cy) > 0.85 * radius
+      });
+      if !rim {
+        continue;
+      }
+      checked += 1;
+      for &c in &stops[id] {
+        // The back-lit sliver was #663339; the lit rim is #989a8f or lighter.
+        let brightest = (c >> 16).max((c >> 8) & 0xff).max(c & 0xff);
+        assert!(brightest > 0x80, "dark rim stop #{c:06x} at {pts:?}");
+      }
+    }
+    assert!(checked > 3, "{checked}");
+  }
+  /// VectorPlot3D's arrows carry wolframscript's `Arrowheads[0.0675]`
+  /// and tube radius (0.0225 in a range 2 wide), and their heads are
+  /// drawn as smooth shaded cones: their faces are filled with gradients.
+  #[test]
+  fn vector_plot_3d_heads_are_shaded_cones() {
+    clear_state();
+    let g = "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+             VectorPoints -> 2]";
+    assert_eq!(
+      interpret(&format!("Union[Cases[{g}, Arrowheads[_], Infinity]]"))
+        .unwrap(),
+      "{Arrowheads[0.0675]}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "AllTrue[Cases[{g}, Tube[_, r_] :> r, Infinity], \
+         Abs[# - 0.0225] < 10^-9 &]"
+      ))
+      .unwrap(),
+      "True"
+    );
+    let svg = export_svg(g);
+    assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
+  }
+}

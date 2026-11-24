@@ -6850,6 +6850,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -7066,6 +7067,7 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -7667,6 +7669,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [
@@ -7711,6 +7714,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [
@@ -7835,6 +7839,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [

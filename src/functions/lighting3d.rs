@@ -455,6 +455,11 @@ pub(crate) struct ViewFrame {
   /// per axis (plots draw in a normalized box).
   pub scale: [f64; 3],
   pub offset: [f64; 3],
+  /// The eye of a perspective camera, in the renderer's coordinates. It
+  /// settles which side of a surface faces the viewer where the surface
+  /// sits: near the rim of a sphere off to one side, the eye sees past the
+  /// plane across the view direction. `None` for a camera at infinity.
+  pub eye: Option<[f64; 3]>,
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -513,7 +518,11 @@ pub(crate) fn shade(
   frame: &ViewFrame,
 ) -> (u8, u8, u8) {
   let mut n = normalize(normal).unwrap_or(frame.toward);
-  if dot(n, frame.toward) < 0.0 {
+  let view = frame
+    .eye
+    .and_then(|e| normalize(sub(e, position)))
+    .unwrap_or(frame.toward);
+  if dot(n, view) < 0.0 {
     n = [-n[0], -n[1], -n[2]];
   }
   let c = material.color;
@@ -620,6 +629,7 @@ mod tests {
       size: 1.0,
       scale: [1.0; 3],
       offset: [0.0; 3],
+      eye: None,
     }
   }
 

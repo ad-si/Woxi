@@ -1,6 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 7419
+assertion_line: 10581
 expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="140" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
@@ -3478,7 +3478,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <line x1="113.1" y1="60.7" x2="112.9" y2="60.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.7" y1="60.6" x2="110.4" y2="60.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="68.8,39.0 70.7,39.8 70.9,36.1" fill="rgb(255,186,25)" stroke="rgb(255,186,25)" stroke-width="0.5"/>
-<polygon points="109.8,62.3 109.4,62.0 110.0,62.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.8,62.3 109.4,62.0 110.0,62.4" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
 <line x1="111.6" y1="64.4" x2="111.5" y2="64.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="112.1,63.0 112.2,62.8 112.4,63.0" fill="rgb(89,46,4)" stroke="rgb(89,46,4)" stroke-width="0.5"/>
 <line x1="108.9" y1="57.3" x2="108.4" y2="56.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3504,7 +3504,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="104.9,57.5 105.7,58.1 105.1,57.0" fill="rgb(255,180,24)" stroke="rgb(255,180,24)" stroke-width="0.5"/>
 <polygon points="115.8,60.3 115.2,60.7 115.7,60.6" fill="rgb(128,67,6)" stroke="rgb(128,67,6)" stroke-width="0.5"/>
 <polygon points="115.8,60.3 116.4,59.8 115.8,60.0" fill="rgb(139,73,7)" stroke="rgb(139,73,7)" stroke-width="0.5"/>
-<polygon points="113.5,62.4 113.9,62.1 113.7,62.3" fill="rgb(94,48,4)" stroke="rgb(94,48,4)" stroke-width="0.5"/>
+<polygon points="113.5,62.4 113.9,62.1 113.7,62.3" fill="rgb(109,55,5)" stroke="rgb(109,55,5)" stroke-width="0.5"/>
 <line x1="112.4" y1="63.8" x2="112.6" y2="63.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="106.4,59.0 107.1,59.5 106.4,58.6" fill="rgb(255,163,20)" stroke="rgb(255,163,20)" stroke-width="0.5"/>
 <polygon points="150.8,40.5 152.8,39.7 148.9,37.8" fill="rgb(252,140,18)" stroke="rgb(252,140,18)" stroke-width="0.5"/>
@@ -3539,7 +3539,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="110.0,62.4 109.7,62.1 110.3,62.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="107.1,59.9 107.8,60.3 107.1,59.5" fill="rgb(255,148,17)" stroke="rgb(255,148,17)" stroke-width="0.5"/>
 <polygon points="117.9,58.1 117.1,58.6 117.9,58.5" fill="rgb(157,83,9)" stroke="rgb(157,83,9)" stroke-width="0.5"/>
-<polygon points="114.1,62.0 113.7,62.3 113.9,62.1" fill="rgb(94,48,4)" stroke="rgb(94,48,4)" stroke-width="0.5"/>
+<polygon points="114.1,62.0 113.7,62.3 113.9,62.1" fill="rgb(109,55,5)" stroke="rgb(109,55,5)" stroke-width="0.5"/>
 <polygon points="99.5,53.3 100.5,53.9 100.0,52.4" fill="rgb(255,194,27)" stroke="rgb(255,194,27)" stroke-width="0.5"/>
 <line x1="119.2" y1="53.1" x2="119.9" y2="52.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="118.6,57.5 119.5,57.0 118.5,57.0" fill="rgb(174,94,11)" stroke="rgb(174,94,11)" stroke-width="0.5"/>
@@ -3556,7 +3556,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <line x1="110.9" y1="63.2" x2="110.6" y2="62.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="108.4,61.0 107.9,60.6 108.6,61.2" fill="rgb(235,123,12)" stroke="rgb(235,123,12)" stroke-width="0.5"/>
 <polygon points="112.2,62.8 112.1,63.0 111.9,62.8" fill="rgb(86,44,4)" stroke="rgb(86,44,4)" stroke-width="0.5"/>
-<polygon points="109.7,62.1 110.0,62.4 109.4,62.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.7,62.1 110.0,62.4 109.4,62.0" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
 <polygon points="147.1,42.0 149.0,41.2 145.4,39.6" fill="rgb(250,138,18)" stroke="rgb(250,138,18)" stroke-width="0.5"/>
 <line x1="109.4" y1="58.5" x2="109.1" y2="58.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="111.6,62.8 111.7,63.0 111.3,62.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
@@ -3862,7 +3862,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="107.7,60.9 108.2,61.2 107.4,60.5" fill="rgb(224,116,11)" stroke="rgb(224,116,11)" stroke-width="0.5"/>
 <line x1="95.3" y1="47.4" x2="94.2" y2="48.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="110.3,62.3 110.5,62.5 109.9,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="109.3,61.9 108.8,61.6 109.6,62.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.3,61.9 108.8,61.6 109.6,62.1" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
 <polygon points="111.2,62.6 111.1,62.5 111.6,62.7" fill="rgb(72,37,3)" stroke="rgb(72,37,3)" stroke-width="0.5"/>
 <line x1="115.4" y1="59.7" x2="115.2" y2="59.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.4" y1="61.3" x2="108.9" y2="60.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3883,7 +3883,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="120.5,57.1 121.4,56.6 120.4,56.4" fill="rgb(175,94,11)" stroke="rgb(175,94,11)" stroke-width="0.5"/>
 <line x1="113.7" y1="62.0" x2="114.1" y2="61.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="128.7,50.6 127.5,51.3 129.2,51.9" fill="rgb(215,118,15)" stroke="rgb(215,118,15)" stroke-width="0.5"/>
-<polygon points="114.0,62.1 114.4,61.9 114.3,61.9" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
+<polygon points="114.0,62.1 114.4,61.9 114.3,61.9" fill="rgb(120,61,5)" stroke="rgb(120,61,5)" stroke-width="0.5"/>
 <polygon points="106.8,60.2 107.4,60.5 106.5,59.8" fill="rgb(245,129,13)" stroke="rgb(245,129,13)" stroke-width="0.5"/>
 <polygon points="113.3,62.3 113.0,62.5 112.9,62.4" fill="rgb(87,44,4)" stroke="rgb(87,44,4)" stroke-width="0.5"/>
 <polygon points="98.0,53.7 99.2,54.2 98.4,52.7" fill="rgb(255,184,25)" stroke="rgb(255,184,25)" stroke-width="0.5"/>
@@ -3906,7 +3906,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="130.0,50.0 128.7,50.6 130.5,51.3" fill="rgb(217,119,15)" stroke="rgb(217,119,15)" stroke-width="0.5"/>
 <polygon points="107.4,60.5 106.8,60.2 107.7,60.9" fill="rgb(229,119,12)" stroke="rgb(229,119,12)" stroke-width="0.5"/>
 <polygon points="111.1,62.5 111.2,62.6 110.7,62.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="114.7,61.6 114.3,61.9 114.4,61.9" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
+<polygon points="114.7,61.6 114.3,61.9 114.4,61.9" fill="rgb(120,61,5)" stroke="rgb(120,61,5)" stroke-width="0.5"/>
 <line x1="112.1" y1="63.5" x2="112.2" y2="63.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="115.9,60.9 115.3,61.1 115.6,61.2" fill="rgb(126,64,6)" stroke="rgb(126,64,6)" stroke-width="0.5"/>
 <line x1="98.7" y1="50.0" x2="97.9" y2="51.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3926,7 +3926,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="113.6,62.2 114.0,62.0 114.0,62.1" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <polygon points="118.7,58.6 117.9,59.0 118.5,59.1" fill="rgb(150,79,8)" stroke="rgb(150,79,8)" stroke-width="0.5"/>
 <line x1="108.9" y1="60.7" x2="108.4" y2="60.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.2,61.9 109.6,62.1 108.8,61.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.2,61.9 109.6,62.1 108.8,61.6" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
 <polygon points="93.5,50.0 92.2,49.3 93.0,51.3" fill="rgb(255,184,25)" stroke="rgb(255,184,25)" stroke-width="0.5"/>
 <line x1="101.8" y1="52.5" x2="101.1" y2="53.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="101.3,55.4 100.2,54.8 101.2,56.1" fill="rgb(255,173,22)" stroke="rgb(255,173,22)" stroke-width="0.5"/>
@@ -4042,7 +4042,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="116.5,60.6 117.2,60.3 116.8,60.2" fill="rgb(138,71,7)" stroke="rgb(138,71,7)" stroke-width="0.5"/>
 <polygon points="125.5,53.6 124.4,54.2 125.7,54.7" fill="rgb(194,105,13)" stroke="rgb(194,105,13)" stroke-width="0.5"/>
 <line x1="110.3" y1="62.6" x2="109.9" y2="62.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.2,61.9 108.8,61.7 109.6,62.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.2,61.9 108.8,61.7 109.6,62.0" fill="rgb(174,88,7)" stroke="rgb(174,88,7)" stroke-width="0.5"/>
 <polygon points="141.9,44.3 140.3,45.0 142.9,46.5" fill="rgb(235,129,16)" stroke="rgb(235,129,16)" stroke-width="0.5"/>
 <polygon points="117.5,59.9 116.8,60.2 117.2,60.3" fill="rgb(138,71,7)" stroke="rgb(138,71,7)" stroke-width="0.5"/>
 <polygon points="117.5,59.9 118.3,59.6 117.7,59.4" fill="rgb(146,76,7)" stroke="rgb(146,76,7)" stroke-width="0.5"/>
@@ -4061,7 +4061,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="102.2,56.6 101.2,56.1 102.2,57.3" fill="rgb(255,162,20)" stroke="rgb(255,162,20)" stroke-width="0.5"/>
 <line x1="104.0" y1="55.4" x2="103.6" y2="56.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="108.0,61.2 107.4,60.9 108.3,61.4" fill="rgb(202,103,9)" stroke="rgb(202,103,9)" stroke-width="0.5"/>
-<polygon points="114.0,62.0 114.3,61.9 114.4,61.9" fill="rgb(85,43,4)" stroke="rgb(85,43,4)" stroke-width="0.5"/>
+<polygon points="114.0,62.0 114.3,61.9 114.4,61.9" fill="rgb(126,63,5)" stroke="rgb(126,63,5)" stroke-width="0.5"/>
 <line x1="75.2" y1="38.2" x2="73.4" y2="40.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="112.5,62.4 112.4,62.5 112.0,62.4" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
 <line x1="113.1" y1="62.7" x2="113.3" y2="62.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4105,7 +4105,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="76.4,42.1 74.5,41.3 75.2,44.6" fill="rgb(255,181,24)" stroke="rgb(255,181,24)" stroke-width="0.5"/>
 <polygon points="158.8,37.3 156.8,38.1 160.5,40.7" fill="rgb(247,136,17)" stroke="rgb(247,136,17)" stroke-width="0.5"/>
 <polygon points="154.7,38.9 152.8,39.7 156.3,42.0" fill="rgb(245,135,17)" stroke="rgb(245,135,17)" stroke-width="0.5"/>
-<polygon points="114.8,61.7 114.4,61.9 114.3,61.9" fill="rgb(85,43,4)" stroke="rgb(85,43,4)" stroke-width="0.5"/>
+<polygon points="114.8,61.7 114.4,61.9 114.3,61.9" fill="rgb(126,63,5)" stroke="rgb(126,63,5)" stroke-width="0.5"/>
 <polygon points="156.8,38.1 154.7,38.9 158.4,41.3" fill="rgb(246,136,17)" stroke="rgb(246,136,17)" stroke-width="0.5"/>
 <polygon points="120.4,57.7 119.5,58.1 120.2,58.4" fill="rgb(159,84,9)" stroke="rgb(159,84,9)" stroke-width="0.5"/>
 <polygon points="126.7,53.1 125.5,53.6 126.9,54.2" fill="rgb(197,107,13)" stroke="rgb(197,107,13)" stroke-width="0.5"/>
@@ -4128,7 +4128,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="64.7,37.4 62.6,36.6 63.0,40.8" fill="rgb(255,179,24)" stroke="rgb(255,179,24)" stroke-width="0.5"/>
 <polygon points="124.5,55.1 125.7,54.7 124.4,54.2" fill="rgb(194,105,13)" stroke="rgb(194,105,13)" stroke-width="0.5"/>
 <polygon points="68.8,39.0 66.7,38.2 67.2,42.1" fill="rgb(255,180,24)" stroke="rgb(255,180,24)" stroke-width="0.5"/>
-<polygon points="109.3,61.9 109.6,62.0 108.8,61.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.3,61.9 109.6,62.0 108.8,61.7" fill="rgb(174,88,7)" stroke="rgb(174,88,7)" stroke-width="0.5"/>
 <polygon points="66.7,38.2 64.7,37.4 65.1,41.4" fill="rgb(255,180,24)" stroke="rgb(255,180,24)" stroke-width="0.5"/>
 <line x1="112.7" y1="62.9" x2="112.9" y2="62.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.7" y1="62.8" x2="110.9" y2="62.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4258,7 +4258,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="105.3,59.6 104.5,59.3 105.7,60.1" fill="rgb(242,127,13)" stroke="rgb(242,127,13)" stroke-width="0.5"/>
 <polygon points="115.2,61.5 114.8,61.7 114.7,61.8" fill="rgb(130,66,5)" stroke="rgb(130,66,5)" stroke-width="0.5"/>
 <polygon points="102.4,58.0 103.3,58.4 102.2,57.3" fill="rgb(255,150,18)" stroke="rgb(255,150,18)" stroke-width="0.5"/>
-<polygon points="109.3,61.9 108.9,61.8 109.8,62.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.3,61.9 108.9,61.8 109.8,62.1" fill="rgb(169,85,7)" stroke="rgb(169,85,7)" stroke-width="0.5"/>
 <polygon points="130.5,51.3 129.2,51.9 130.8,52.7" fill="rgb(207,113,14)" stroke="rgb(207,113,14)" stroke-width="0.5"/>
 <polygon points="102.2,57.3 101.2,56.9 102.4,58.0" fill="rgb(255,152,18)" stroke="rgb(255,152,18)" stroke-width="0.5"/>
 <polygon points="80.7,46.5 82.4,47.1 81.6,44.3" fill="rgb(255,182,24)" stroke="rgb(255,182,24)" stroke-width="0.5"/>
@@ -4270,7 +4270,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="142.9,46.5 144.6,45.8 141.9,44.3" fill="rgb(236,130,17)" stroke="rgb(236,130,17)" stroke-width="0.5"/>
 <line x1="116.4" y1="59.8" x2="117.1" y2="59.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.6" y1="62.7" x2="110.4" y2="62.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="113.8,62.1 114.1,62.0 114.3,61.9" fill="rgb(82,42,4)" stroke="rgb(82,42,4)" stroke-width="0.5"/>
+<polygon points="113.8,62.1 114.1,62.0 114.3,61.9" fill="rgb(131,66,5)" stroke="rgb(131,66,5)" stroke-width="0.5"/>
 <polygon points="108.9,61.8 109.3,61.9 108.3,61.5" fill="rgb(179,90,7)" stroke="rgb(179,90,7)" stroke-width="0.5"/>
 <line x1="128.5" y1="50.3" x2="129.8" y2="49.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.2" y1="43.0" x2="144.9" y2="42.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4307,7 +4307,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <line x1="112.4" y1="62.8" x2="112.6" y2="62.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="146.5,45.2 148.3,44.6 145.3,42.8" fill="rgb(239,132,17)" stroke="rgb(239,132,17)" stroke-width="0.5"/>
 <polygon points="131.9,50.7 130.5,51.3 132.2,52.2" fill="rgb(210,115,14)" stroke="rgb(210,115,14)" stroke-width="0.5"/>
-<polygon points="114.7,61.8 114.3,61.9 114.1,62.0" fill="rgb(82,42,4)" stroke="rgb(82,42,4)" stroke-width="0.5"/>
+<polygon points="114.7,61.8 114.3,61.9 114.1,62.0" fill="rgb(131,66,5)" stroke="rgb(131,66,5)" stroke-width="0.5"/>
 <polygon points="113.2,62.2 113.5,62.1 113.8,62.1" fill="rgb(80,41,4)" stroke="rgb(80,41,4)" stroke-width="0.5"/>
 <polygon points="115.2,61.5 115.7,61.4 115.7,61.2" fill="rgb(134,68,6)" stroke="rgb(134,68,6)" stroke-width="0.5"/>
 <line x1="117.6" y1="59.2" x2="117.6" y2="58.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4324,7 +4324,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="148.3,44.6 150.2,43.9 147.1,42.0" fill="rgb(241,133,17)" stroke="rgb(241,133,17)" stroke-width="0.5"/>
 <line x1="114.8" y1="61.4" x2="115.3" y2="61.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="114.8" y1="61.4" x2="115.3" y2="61.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.5,62.0 109.8,62.1 108.9,61.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.5,62.0 109.8,62.1 108.9,61.8" fill="rgb(169,85,7)" stroke="rgb(169,85,7)" stroke-width="0.5"/>
 <polygon points="110.3,62.2 110.1,62.1 110.9,62.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="103.3,58.4 102.4,58.0 103.7,59.0" fill="rgb(255,140,16)" stroke="rgb(255,140,16)" stroke-width="0.5"/>
 <polygon points="104.9,59.8 105.7,60.1 104.5,59.3" fill="rgb(242,127,13)" stroke="rgb(242,127,13)" stroke-width="0.5"/>
@@ -4434,7 +4434,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="115.7,61.4 116.3,61.3 116.3,61.1" fill="rgb(138,70,6)" stroke="rgb(138,70,6)" stroke-width="0.5"/>
 <line x1="111.5" y1="62.7" x2="111.4" y2="62.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="53.8,38.1 56.2,38.8 56.0,34.2" fill="rgb(255,178,24)" stroke="rgb(255,178,24)" stroke-width="0.5"/>
-<polygon points="109.5,62.0 109.1,61.9 110.1,62.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.5,62.0 109.1,61.9 110.1,62.1" fill="rgb(164,83,7)" stroke="rgb(164,83,7)" stroke-width="0.5"/>
 <line x1="114.2" y1="62.0" x2="114.5" y2="61.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.0" y1="61.8" x2="109.4" y2="62.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="101.3" y1="55.4" x2="100.2" y2="54.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4442,7 +4442,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="115.1,61.7 114.7,61.8 114.4,61.9" fill="rgb(135,68,6)" stroke="rgb(135,68,6)" stroke-width="0.5"/>
 <polygon points="132.2,52.2 133.6,51.7 131.9,50.7" fill="rgb(213,116,14)" stroke="rgb(213,116,14)" stroke-width="0.5"/>
 <polygon points="124.5,56.1 123.4,56.5 124.2,57.0" fill="rgb(173,92,10)" stroke="rgb(173,92,10)" stroke-width="0.5"/>
-<polygon points="113.5,62.1 113.7,62.1 114.1,62.0" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
+<polygon points="113.5,62.1 113.7,62.1 114.1,62.0" fill="rgb(137,69,6)" stroke="rgb(137,69,6)" stroke-width="0.5"/>
 <polygon points="122.1,57.7 121.1,58.0 121.7,58.4" fill="rgb(162,85,9)" stroke="rgb(162,85,9)" stroke-width="0.5"/>
 <polygon points="96.7,55.3 97.9,55.7 96.7,54.2" fill="rgb(255,165,21)" stroke="rgb(255,165,21)" stroke-width="0.5"/>
 <polygon points="116.9,60.9 116.3,61.1 116.3,61.3" fill="rgb(138,70,6)" stroke="rgb(138,70,6)" stroke-width="0.5"/>
@@ -4466,7 +4466,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="107.3,61.3 107.8,61.4 106.7,60.9" fill="rgb(199,102,9)" stroke="rgb(199,102,9)" stroke-width="0.5"/>
 <line x1="100.2" y1="54.9" x2="99.1" y2="54.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="123.1,57.4 124.2,57.0 123.4,56.5" fill="rgb(173,92,10)" stroke="rgb(173,92,10)" stroke-width="0.5"/>
-<polygon points="114.4,61.9 114.1,62.0 113.7,62.1" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
+<polygon points="114.4,61.9 114.1,62.0 113.7,62.1" fill="rgb(137,69,6)" stroke="rgb(137,69,6)" stroke-width="0.5"/>
 <polygon points="110.8,62.2 110.6,62.2 111.4,62.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="116.9,60.9 117.5,60.8 117.4,60.5" fill="rgb(143,73,7)" stroke="rgb(143,73,7)" stroke-width="0.5"/>
 <polygon points="112.1,62.3 112.2,62.2 112.8,62.2" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
@@ -4477,7 +4477,7 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="126.8,55.3 128.1,54.9 126.9,54.2" fill="rgb(192,104,12)" stroke="rgb(192,104,12)" stroke-width="0.5"/>
 <polygon points="129.4,53.2 128.1,53.7 129.4,54.5" fill="rgb(195,106,12)" stroke="rgb(195,106,12)" stroke-width="0.5"/>
 <line x1="106.1" y1="59.6" x2="106.3" y2="60.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.9,62.1 110.1,62.1 109.1,61.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.9,62.1 110.1,62.1 109.1,61.9" fill="rgb(164,83,7)" stroke="rgb(164,83,7)" stroke-width="0.5"/>
 <polygon points="120.8,58.7 119.9,59.0 120.3,59.4" fill="rgb(155,81,8)" stroke="rgb(155,81,8)" stroke-width="0.5"/>
 <polygon points="118.1,60.3 117.4,60.5 117.5,60.8" fill="rgb(143,73,7)" stroke="rgb(143,73,7)" stroke-width="0.5"/>
 <polygon points="85.7,48.4 84.0,47.8 85.3,50.3" fill="rgb(255,176,23)" stroke="rgb(255,176,23)" stroke-width="0.5"/>
@@ -4575,12 +4575,12 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="117.5,60.8 118.2,60.7 118.1,60.3" fill="rgb(147,76,7)" stroke="rgb(147,76,7)" stroke-width="0.5"/>
 <polygon points="106.8,61.2 107.3,61.3 106.1,60.8" fill="rgb(203,104,9)" stroke="rgb(203,104,9)" stroke-width="0.5"/>
 <polygon points="120.3,59.4 121.2,59.2 120.8,58.7" fill="rgb(158,83,8)" stroke="rgb(158,83,8)" stroke-width="0.5"/>
-<polygon points="109.9,62.1 109.6,62.0 110.6,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="109.9,62.1 109.6,62.0 110.6,62.2" fill="rgb(161,81,7)" stroke="rgb(161,81,7)" stroke-width="0.5"/>
 <polygon points="144.6,45.8 142.9,46.5 145.2,48.2" fill="rgb(228,125,16)" stroke="rgb(228,125,16)" stroke-width="0.5"/>
 <polygon points="107.3,61.3 106.8,61.2 108.0,61.6" fill="rgb(192,98,9)" stroke="rgb(192,98,9)" stroke-width="0.5"/>
 <polygon points="132.2,52.2 130.8,52.7 132.1,53.7" fill="rgb(202,109,13)" stroke="rgb(202,109,13)" stroke-width="0.5"/>
 <polygon points="118.9,60.1 118.1,60.3 118.2,60.7" fill="rgb(147,76,7)" stroke="rgb(147,76,7)" stroke-width="0.5"/>
-<polygon points="113.0,62.2 113.1,62.2 113.7,62.1" fill="rgb(74,38,3)" stroke="rgb(74,38,3)" stroke-width="0.5"/>
+<polygon points="113.0,62.2 113.1,62.2 113.7,62.1" fill="rgb(142,72,6)" stroke="rgb(142,72,6)" stroke-width="0.5"/>
 <line x1="140.1" y1="47.5" x2="139.3" y2="45.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="120.3,59.4 119.5,59.6 119.7,60.0" fill="rgb(152,79,8)" stroke="rgb(152,79,8)" stroke-width="0.5"/>
 <polygon points="118.9,60.1 119.7,60.0 119.5,59.6" fill="rgb(152,79,8)" stroke="rgb(152,79,8)" stroke-width="0.5"/>
@@ -4590,15 +4590,15 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="129.4,54.5 130.7,54.1 129.4,53.2" fill="rgb(199,107,13)" stroke="rgb(199,107,13)" stroke-width="0.5"/>
 <line x1="109.8" y1="62.1" x2="109.5" y2="62.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="124.2,57.0 123.1,57.4 123.8,57.9" fill="rgb(169,89,9)" stroke="rgb(169,89,9)" stroke-width="0.5"/>
-<polygon points="110.6,62.2 110.5,62.2 111.4,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="110.6,62.2 110.5,62.2 111.4,62.2" fill="rgb(153,77,6)" stroke="rgb(153,77,6)" stroke-width="0.5"/>
 <line x1="120.0" y1="58.5" x2="120.2" y2="57.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="95.6" y1="52.7" x2="94.3" y2="52.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="115.5,61.6 116.0,61.5 116.3,61.3" fill="rgb(142,72,6)" stroke="rgb(142,72,6)" stroke-width="0.5"/>
 <line x1="84.3" y1="45.5" x2="83.4" y2="47.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="112.2,62.2 112.2,62.2 113.0,62.2" fill="rgb(71,37,3)" stroke="rgb(71,37,3)" stroke-width="0.5"/>
+<polygon points="112.2,62.2 112.2,62.2 113.0,62.2" fill="rgb(145,73,6)" stroke="rgb(145,73,6)" stroke-width="0.5"/>
 <line x1="103.4" y1="57.9" x2="103.6" y2="58.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="109.6,62.0 109.9,62.1 108.8,61.9" fill="rgb(169,85,7)" stroke="rgb(169,85,7)" stroke-width="0.5"/>
-<polygon points="111.4,62.2 111.3,62.2 112.2,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="111.4,62.2 111.3,62.2 112.2,62.2" fill="rgb(148,75,6)" stroke="rgb(148,75,6)" stroke-width="0.5"/>
 <polygon points="78.9,45.9 77.1,45.3 78.4,48.3" fill="rgb(255,175,23)" stroke="rgb(255,175,23)" stroke-width="0.5"/>
 <polygon points="125.3,56.7 126.5,56.4 125.6,55.7" fill="rgb(181,97,11)" stroke="rgb(181,97,11)" stroke-width="0.5"/>
 <polygon points="146.5,45.2 144.6,45.8 147.1,47.7" fill="rgb(230,126,16)" stroke="rgb(230,126,16)" stroke-width="0.5"/>
@@ -4612,14 +4612,14 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <polygon points="116.8,61.2 116.3,61.3 116.0,61.5" fill="rgb(142,72,6)" stroke="rgb(142,72,6)" stroke-width="0.5"/>
 <line x1="106.6" y1="60.4" x2="107.0" y2="60.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="122.7,58.2 123.8,57.9 123.1,57.4" fill="rgb(169,89,9)" stroke="rgb(169,89,9)" stroke-width="0.5"/>
-<polygon points="114.0,62.0 113.7,62.1 113.1,62.2" fill="rgb(74,38,3)" stroke="rgb(74,38,3)" stroke-width="0.5"/>
+<polygon points="114.0,62.0 113.7,62.1 113.1,62.2" fill="rgb(142,72,6)" stroke="rgb(142,72,6)" stroke-width="0.5"/>
 <polygon points="91.4,52.2 89.9,51.8 91.5,53.7" fill="rgb(255,167,21)" stroke="rgb(255,167,21)" stroke-width="0.5"/>
 <line x1="96.9" y1="53.1" x2="96.7" y2="54.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="103.9,60.0 104.7,60.2 103.3,59.4" fill="rgb(234,123,13)" stroke="rgb(234,123,13)" stroke-width="0.5"/>
 <line x1="145.6" y1="45.5" x2="144.5" y2="43.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="121.4" y1="57.2" x2="122.3" y2="56.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="101.8,58.5 100.9,58.2 102.4,59.2" fill="rgb(253,135,15)" stroke="rgb(253,135,15)" stroke-width="0.5"/>
-<polygon points="110.5,62.2 110.6,62.2 109.6,62.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="110.5,62.2 110.6,62.2 109.6,62.0" fill="rgb(161,81,7)" stroke="rgb(161,81,7)" stroke-width="0.5"/>
 <polygon points="106.1,60.8 105.4,60.7 106.8,61.2" fill="rgb(206,106,10)" stroke="rgb(206,106,10)" stroke-width="0.5"/>
 <line x1="94.3" y1="52.1" x2="93.0" y2="51.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="139.9,49.7 141.6,49.2 139.5,47.7" fill="rgb(224,123,15)" stroke="rgb(224,123,15)" stroke-width="0.5"/>
@@ -4632,9 +4632,9 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <line x1="79.0" y1="43.2" x2="78.0" y2="45.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="107.6,61.5 108.0,61.6 106.8,61.2" fill="rgb(192,98,9)" stroke="rgb(192,98,9)" stroke-width="0.5"/>
 <polygon points="148.3,44.6 146.5,45.2 149.0,47.2" fill="rgb(231,127,16)" stroke="rgb(231,127,16)" stroke-width="0.5"/>
-<polygon points="113.1,62.2 113.0,62.2 112.2,62.2" fill="rgb(71,37,3)" stroke="rgb(71,37,3)" stroke-width="0.5"/>
-<polygon points="111.3,62.2 111.4,62.2 110.5,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="112.2,62.2 112.2,62.2 111.3,62.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
+<polygon points="113.1,62.2 113.0,62.2 112.2,62.2" fill="rgb(145,73,6)" stroke="rgb(145,73,6)" stroke-width="0.5"/>
+<polygon points="111.3,62.2 111.4,62.2 110.5,62.2" fill="rgb(153,77,6)" stroke="rgb(153,77,6)" stroke-width="0.5"/>
+<polygon points="112.2,62.2 112.2,62.2 111.3,62.2" fill="rgb(148,75,6)" stroke="rgb(148,75,6)" stroke-width="0.5"/>
 <line x1="111.3" y1="62.4" x2="111.3" y2="62.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="114.8,61.8 115.2,61.8 115.5,61.6" fill="rgb(143,73,6)" stroke="rgb(143,73,6)" stroke-width="0.5"/>
 <polygon points="99.8,58.0 100.9,58.2 99.4,57.1" fill="rgb(255,145,17)" stroke="rgb(255,145,17)" stroke-width="0.5"/>
@@ -6946,76 +6946,76 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200
 <line x1="134.5" y1="96.0" x2="141.2" y2="98.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="141.1" y1="99.8" x2="141.2" y2="98.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="139.7" y1="124.5" x2="27.7" y2="81.2" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="33.9" y1="83.6" x2="34.8" y2="81.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="40.2" y1="86.0" x2="41.1" y2="83.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="46.6" y1="88.5" x2="47.5" y2="86.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="59.7" y1="93.6" x2="60.6" y2="91.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="66.4" y1="96.2" x2="67.3" y2="93.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="73.2" y1="98.8" x2="74.1" y2="96.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="87.2" y1="104.2" x2="88.1" y2="101.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="94.3" y1="107.0" x2="95.2" y2="104.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="101.6" y1="109.8" x2="102.5" y2="107.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="116.4" y1="115.6" x2="117.3" y2="113.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="124.1" y1="118.5" x2="125.0" y2="116.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="131.8" y1="121.5" x2="132.7" y2="119.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="27.7" y1="81.2" x2="29.1" y2="77.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="33.9" y1="83.6" x2="35.5" y2="81.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="40.2" y1="86.0" x2="41.9" y2="84.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="46.6" y1="88.5" x2="48.3" y2="86.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="59.7" y1="93.6" x2="61.4" y2="91.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="66.4" y1="96.2" x2="68.1" y2="94.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="73.2" y1="98.8" x2="74.9" y2="97.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="87.2" y1="104.2" x2="88.9" y2="102.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="94.3" y1="107.0" x2="96.0" y2="105.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="101.6" y1="109.8" x2="103.2" y2="107.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="116.4" y1="115.6" x2="118.1" y2="113.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="124.1" y1="118.5" x2="125.7" y2="116.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="131.8" y1="121.5" x2="133.5" y2="119.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.7" y1="81.2" x2="30.3" y2="78.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="24.1" y="90.5" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-4</text>
-<line x1="53.1" y1="91.0" x2="54.6" y2="87.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="53.1" y1="91.0" x2="55.8" y2="88.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="49.5" y="100.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
-<line x1="80.2" y1="101.5" x2="81.6" y2="97.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="80.2" y1="101.5" x2="82.8" y2="98.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="76.6" y="110.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="109.0" y1="112.7" x2="110.4" y2="108.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="109.0" y1="112.7" x2="111.6" y2="109.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="105.3" y="122.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
-<line x1="139.7" y1="124.5" x2="141.1" y2="120.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="139.7" y1="124.5" x2="142.3" y2="121.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="136.1" y="133.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="139.7" y1="124.5" x2="188.4" y2="52.4" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="143.4" y1="119.0" x2="145.5" y2="120.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="147.0" y1="113.6" x2="149.1" y2="115.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="150.5" y1="108.4" x2="152.6" y2="109.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="157.3" y1="98.5" x2="159.4" y2="99.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="160.5" y1="93.7" x2="162.6" y2="95.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="163.6" y1="89.1" x2="165.7" y2="90.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="169.7" y1="80.1" x2="171.7" y2="81.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="172.6" y1="75.9" x2="174.6" y2="77.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="175.4" y1="71.7" x2="177.5" y2="73.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="180.8" y1="63.7" x2="182.9" y2="65.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="183.4" y1="59.8" x2="185.5" y2="61.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="186.0" y1="56.0" x2="188.0" y2="57.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="139.7" y1="124.5" x2="136.4" y2="122.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="143.4" y1="119.0" x2="140.5" y2="118.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="147.0" y1="113.6" x2="144.1" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="150.5" y1="108.4" x2="147.7" y2="107.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="157.3" y1="98.5" x2="154.4" y2="97.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="160.5" y1="93.7" x2="157.6" y2="92.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="163.6" y1="89.1" x2="160.8" y2="88.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="169.7" y1="80.1" x2="166.8" y2="79.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="172.6" y1="75.9" x2="169.7" y2="74.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="175.4" y1="71.7" x2="172.5" y2="70.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="180.8" y1="63.7" x2="177.9" y2="62.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="183.4" y1="59.8" x2="180.5" y2="58.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="186.0" y1="56.0" x2="183.1" y2="55.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="139.7" y1="124.5" x2="135.0" y2="123.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="144.6" y="127.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-4</text>
-<line x1="154.0" y1="103.4" x2="150.6" y2="101.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="154.0" y1="103.4" x2="149.3" y2="101.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="158.9" y="106.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
-<line x1="166.7" y1="84.5" x2="163.4" y2="82.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="166.7" y1="84.5" x2="162.1" y2="83.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="171.7" y="87.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="178.1" y1="67.6" x2="174.8" y2="65.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="178.1" y1="67.6" x2="173.5" y2="66.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="183.1" y="71.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
-<line x1="188.4" y1="52.4" x2="185.1" y2="50.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="188.4" y1="52.4" x2="183.8" y2="50.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="193.4" y="55.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="27.7" y1="81.2" x2="23.7" y2="56.3" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="27.5" y1="80.0" x2="29.9" y2="79.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="27.3" y1="78.8" x2="29.8" y2="78.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="27.1" y1="77.6" x2="29.6" y2="77.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="26.9" y1="76.4" x2="29.4" y2="76.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="26.5" y1="74.0" x2="29.0" y2="73.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="26.3" y1="72.7" x2="28.8" y2="72.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="26.1" y1="71.5" x2="28.6" y2="71.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="25.9" y1="70.3" x2="28.4" y2="69.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="25.5" y1="67.8" x2="28.0" y2="67.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="25.3" y1="66.5" x2="27.8" y2="66.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="25.1" y1="65.2" x2="27.6" y2="64.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="24.9" y1="64.0" x2="27.4" y2="63.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="24.5" y1="61.4" x2="27.0" y2="61.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="24.3" y1="60.1" x2="26.8" y2="59.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="24.1" y1="58.9" x2="26.6" y2="58.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="23.9" y1="57.6" x2="26.4" y2="57.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="27.7" y1="81.2" x2="31.6" y2="80.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.5" y1="80.0" x2="29.9" y2="80.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.3" y1="78.8" x2="29.7" y2="79.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.1" y1="77.6" x2="29.6" y2="78.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.9" y1="76.4" x2="29.4" y2="77.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.5" y1="74.0" x2="29.0" y2="74.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.3" y1="72.7" x2="28.8" y2="73.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.1" y1="71.5" x2="28.6" y2="72.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.9" y1="70.3" x2="28.4" y2="71.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.5" y1="67.8" x2="28.0" y2="68.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.3" y1="66.5" x2="27.8" y2="67.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.1" y1="65.2" x2="27.6" y2="66.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.9" y1="64.0" x2="27.4" y2="64.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.5" y1="61.4" x2="27.0" y2="62.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.3" y1="60.1" x2="26.8" y2="61.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.1" y1="58.9" x2="26.6" y2="59.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="23.9" y1="57.6" x2="26.4" y2="58.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.7" y1="81.2" x2="31.6" y2="82.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="21.7" y="82.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
-<line x1="26.7" y1="75.2" x2="30.7" y2="74.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.7" y1="75.2" x2="30.6" y2="76.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="20.8" y="76.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
-<line x1="25.7" y1="69.0" x2="29.7" y2="68.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.7" y1="69.0" x2="29.7" y2="70.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="19.8" y="69.9" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
-<line x1="24.7" y1="62.7" x2="28.7" y2="62.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.7" y1="62.7" x2="28.7" y2="64.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="18.8" y="63.6" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.5</text>
-<line x1="23.7" y1="56.3" x2="27.7" y2="55.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="23.7" y1="56.3" x2="27.7" y2="57.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="17.8" y="57.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.0</text>
 </svg>
