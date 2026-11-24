@@ -3845,18 +3845,44 @@ fn generate_svg(
     py_max = py_max.max(py);
   }
 
+  // `ImagePadding`: as in `Graphics3D`, the scene is fitted into the region
+  // inside the padding band and the picture keeps its full size around it.
+  let image_padding = options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(name) if name == "ImagePadding") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      Some(
+        crate::functions::plot::parse_image_padding(&value)
+          .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0)),
+      )
+    }
+    _ => None,
+  });
+  let image_padding = image_padding.flatten();
+
   // Sphere framing (see `plot_spherical_region`): the picture is fitted to
   // the circle the sphere around the box projects to, exactly as in
   // `Graphics3D` (see `spherical_region_span`), so its scale no longer
-  // follows the shape of the contents.
+  // follows the shape of the contents. With an explicit `ImagePadding` the
+  // circle fills the region inside the padding; with the automatic padding
+  // Wolfram leaves a margin around it, drawing the surface about
+  // 1 / AUTO_PADDED_SPHERE_SPAN as large (see `conformance_gaps.md`).
   let sphere_span = (plot_spherical_region(options)
     && view_angle_option(options).is_none())
   .then(|| {
     let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
-    spherical_region_span(
+    let span = spherical_region_span(
       radius,
       camera.perspective.as_ref().map(|p| p.distance),
-    )
+    );
+    if image_padding.is_some() {
+      span
+    } else {
+      span * AUTO_PADDED_SPHERE_SPAN
+    }
   })
   .filter(|span| *span > 0.0 && span.is_finite());
   // The box middle (the origin) projects to the sphere's center.
@@ -3938,23 +3964,6 @@ fn generate_svg(
       )
     })
   };
-  // `ImagePadding`: as in `Graphics3D`, the scene is fitted into the region
-  // inside the padding band and the picture keeps its full size around it.
-  let image_padding = options.iter().rev().find_map(|option| match option {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(&**pattern, Expr::Identifier(name) if name == "ImagePadding") => {
-      let value = evaluate_expr_to_expr(replacement)
-        .unwrap_or_else(|_| (**replacement).clone());
-      Some(
-        crate::functions::plot::parse_image_padding(&value)
-          .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0)),
-      )
-    }
-    _ => None,
-  });
-  let image_padding = image_padding.flatten();
   let [pad_left, pad_right, pad_bottom, pad_top] =
     image_padding.unwrap_or([0.0; 4]);
   let pad_w = (pad_left + pad_right).round() as u32;
@@ -14131,6 +14140,14 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
     widen((z3_min, z3_max)),
   ]
 }
+
+/// How much wider than the sphere's projected circle a sphere-framed
+/// surface plot's view is when its `ImagePadding` is automatic. Three
+/// snapshots of a `ParametricPlot3D` with `SphericalRegion -> True` at
+/// `ImageSize -> {400, 400}` (a bowl, a mushroom and a torus-like shape of
+/// one morphing surface) all draw it 0.90–0.91× as large as the bare circle
+/// fit, while one with `ImagePadding -> 20` fills the padded region.
+const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
 
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
