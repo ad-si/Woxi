@@ -2415,6 +2415,53 @@ mod graphics {
       ));
     }
 
+    /// `Inset[obj, pos, opos]` with `opos` given as `ImageScaled[…]` or
+    /// `Offset[{dx, dy}, ImageScaled[…]]` names a point of the object's own
+    /// picture, not of the enclosing one: a drop shadow is the same picture
+    /// inset with its center moved by a few printer's points.
+    #[test]
+    fn an_image_scaled_or_offset_opos_names_a_point_of_the_object() {
+      let inset = |opos: &str, size: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[Graphics[{{Disk[]}}, ImageSize -> 40], {{5, 5}}, \
+           {opos}{size}]}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+           ImageSize -> 200]"
+        ))
+      };
+      // The object's center on the anchor, as with no `opos`.
+      assert!(inset("ImageScaled[{0.5, 0.5}]", "").contains(
+        "<svg x=\"79.50\" y=\"79.50\" width=\"40.00\" height=\"40.00\""
+      ));
+      // Its lower-left corner on the anchor: the disk fills the upper right
+      // quarter of an 80px pad centered there.
+      assert!(inset("ImageScaled[{0, 0}]", "").contains(
+        "<svg x=\"59.50\" y=\"59.50\" width=\"80.00\" height=\"80.00\""
+      ));
+      // The point 10pt right of its center on the anchor moves the object
+      // 10pt left; 10pt up moves it 10pt down.
+      assert!(
+        inset("Offset[{10, 0}, ImageScaled[{0.5, 0.5}]]", "").contains(
+          "<svg x=\"69.50\" y=\"79.50\" width=\"60.00\" height=\"40.00\""
+        )
+      );
+      assert!(
+        inset("Offset[{0, 10}, ImageScaled[{0.5, 0.5}]]", "").contains(
+          "<svg x=\"79.50\" y=\"69.50\" width=\"40.00\" height=\"60.00\""
+        )
+      );
+      // Shown twice as large (`Scaled[{0.4, 0.4}]` of a 199px area), the
+      // offset is still 10 printer's points on screen, not 20.
+      assert!(
+        inset(
+          "Offset[{10, 0}, ImageScaled[{0.5, 0.5}]]",
+          ", Scaled[{0.4, 0.4}]"
+        )
+        .contains(
+          "<svg x=\"49.70\" y=\"59.70\" width=\"99.60\" height=\"79.60\""
+        )
+      );
+    }
+
     /// `Inset[image, pos, {0, 0}, size]` puts the image's own lower-left
     /// pixel corner on `pos` (an image is measured in pixels), not its
     /// center; `{w, h}` names its upper-right corner.
