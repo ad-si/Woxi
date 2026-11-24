@@ -9381,7 +9381,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         &args[0],
       ))
     }
-    // TraditionalForm[list] — render the list as a parenthesized matrix.
+    // TraditionalForm[matrix] — render a list of lists as a parenthesized
+    // matrix; a flat list falls back to its typeset braced form.
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -9595,13 +9596,15 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
   crate::functions::graphics::grid_svg_with_gaps(&grid_args, &gaps).ok()
 }
 
-/// `TraditionalForm[{…}]` typesets a list as a parenthesized matrix, the same
-/// drawing `MatrixForm` gets.
+/// `TraditionalForm[{{…}, …}]` typesets a list of lists as a parenthesized
+/// matrix, the same drawing `MatrixForm` gets. A flat list is no matrix: it
+/// stays a braced list on one line.
 fn is_traditional_matrix_form(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if name == "TraditionalForm"
       && args.len() == 1
-      && matches!(&args[0], Expr::List(_)))
+      && matches!(&args[0], Expr::List(rows)
+        if rows.iter().all(|r| matches!(r, Expr::List(_)))))
 }
 
 /// Render `Style[TableForm|MatrixForm[data], directives…]` to a styled grid

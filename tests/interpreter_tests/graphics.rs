@@ -36292,6 +36292,40 @@ mod matrix_form {
     );
   }
 
+  /// A flat list in `TraditionalForm` is not a matrix: the front end writes
+  /// it on one line between braces, its items typeset (`{x₁ = 1, x₂ = 0}`).
+  /// Regression: it was drawn as a parenthesized column vector whose cells
+  /// were plain text (`x1 = 1`, `x == 1`), also as an item of a `Column`.
+  #[test]
+  fn traditional_form_flat_list_keeps_braces_on_one_line() {
+    for code in [
+      "TraditionalForm[{HoldForm[Subscript[x, 1] = 1], \
+       HoldForm[Subscript[x, 2] = 0]}]",
+      "Text[TraditionalForm[Column[{{HoldForm[Subscript[x, 1] = 1], \
+       HoldForm[Subscript[x, 2] = 0]}, Row[{\"bound \", 4}]}]]]",
+      "Style[TraditionalForm[{HoldForm[Subscript[x, 1] = 1], \
+       HoldForm[Subscript[x, 2] = 0]}], 14]",
+    ] {
+      clear_state();
+      let svg = export_svg(code);
+      assert!(!svg.contains("<path"), "no parentheses expected: {svg}");
+      assert!(!svg.contains(">x1 = 1<"), "{svg}");
+      assert!(svg.contains(">{<") && svg.contains(">}<"), "{svg}");
+      assert!(svg.contains(">,<"), "{svg}");
+      // The subscript is set as its own smaller run.
+      assert!(svg.contains("font-size=\"9.8\""), "{svg}");
+    }
+    // Equations in a flat list read with the traditional `=`.
+    clear_state();
+    let svg = export_svg("Column[{TraditionalForm[{x == 1, y == 2}]}]");
+    assert!(!svg.contains("<path"), "{svg}");
+    assert!(!svg.contains("=="), "{svg}");
+    // A list of lists is still a parenthesized matrix.
+    clear_state();
+    let matrix = export_svg("TraditionalForm[{{a, b}, {c, d}}]");
+    assert_eq!(matrix.matches("<path").count(), 2, "{matrix}");
+  }
+
   #[test]
   fn styled_traditional_form_matrix_has_parentheses() {
     clear_state();
