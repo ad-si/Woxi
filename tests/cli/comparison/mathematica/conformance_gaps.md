@@ -5914,6 +5914,16 @@ projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
 
+A square picture without a `PlotRange` or `ViewPoint` contradicts the
+outline fit as well. A Demonstration's `Manipulate` shows a plain
+`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
+in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
+draw the plane about 323 px wide, with the origin at the center of the
+picture. That matches the sphere framing (Woxi: 320 px), not the outline
+fit that Woxi applies (398 px). Unlike the tall building, this box is
+nearly as wide as it is tall, and the picture is square. Unverified with
+wolframscript.
+
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`

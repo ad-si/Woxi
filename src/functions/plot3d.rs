@@ -6972,6 +6972,112 @@ fn clip_polyline_to_box(
   out
 }
 
+/// The setback of `Arrow[pts, spec]`: `s` sets both ends back by `s`,
+/// `{s1, s2}` the tail by `s1` and the tip by `s2`.
+fn arrow_setback_3d(spec: Option<&Expr>) -> (f64, f64) {
+  let num =
+    |e: &Expr| try_eval_to_f64(e).filter(|v| v.is_finite()).unwrap_or(0.0);
+  match spec {
+    Some(Expr::List(items)) if items.len() == 2 => {
+      (num(&items[0]), num(&items[1]))
+    }
+    Some(other) => {
+      let s = num(other);
+      (s, s)
+    }
+    None => (0.0, 0.0),
+  }
+}
+
+/// Move the start of a polyline by `s` along it: a positive `s` trims that
+/// much path length off, a negative one extends the first segment
+/// backwards. `None` when the trim consumes the whole path.
+fn shift_polyline_start(pts: &[Point3D], s: f64) -> Option<Vec<Point3D>> {
+  let dist = |a: &Point3D, b: &Point3D| {
+    ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+  };
+  let lerp = |a: &Point3D, b: &Point3D, t: f64| Point3D {
+    x: a.x + t * (b.x - a.x),
+    y: a.y + t * (b.y - a.y),
+    z: a.z + t * (b.z - a.z),
+  };
+  if s < 0.0 {
+    let mut out = pts.to_vec();
+    let d = dist(&pts[0], &pts[1]);
+    if d > 0.0 {
+      out[0] = lerp(&pts[0], &pts[1], s / d);
+    }
+    return Some(out);
+  }
+  let mut left = s;
+  for i in 0..pts.len() - 1 {
+    let d = dist(&pts[i], &pts[i + 1]);
+    if left < d {
+      let mut out = vec![lerp(&pts[i], &pts[i + 1], left / d)];
+      out.extend_from_slice(&pts[i + 1..]);
+      return Some(out);
+    }
+    left -= d;
+  }
+  None
+}
+
+/// Apply each 3D arrow's setback (see [`Primitive3D::Arrow3D`]). A
+/// lengthened arrow that reaches out of `bounds` is cut off at the box,
+/// and like any primitive cut by the box it loses its heads there: it is
+/// drawn as the plain line that is left inside.
+fn apply_arrow_setbacks_3d(
+  prims: &mut Vec<Primitive3D>,
+  bounds: &[(f64, f64); 3],
+) {
+  let mut out = Vec::with_capacity(prims.len());
+  for prim in prims.drain(..) {
+    let Primitive3D::Arrow3D {
+      points,
+      setback,
+      style,
+    } = prim
+    else {
+      out.push(prim);
+      continue;
+    };
+    if setback == (0.0, 0.0) || points.len() < 2 {
+      out.push(Primitive3D::Arrow3D {
+        points,
+        setback: (0.0, 0.0),
+        style,
+      });
+      continue;
+    }
+    let shifted = shift_polyline_start(&points, setback.0).and_then(|p| {
+      let mut rev: Vec<Point3D> = p.into_iter().rev().collect();
+      if rev.len() < 2 {
+        return None;
+      }
+      rev = shift_polyline_start(&rev, setback.1)?;
+      Some(rev.into_iter().rev().collect::<Vec<_>>())
+    });
+    // Trimmed away entirely: nothing is drawn.
+    let Some(shifted) = shifted.filter(|p| p.len() >= 2) else {
+      continue;
+    };
+    let extended = setback.0 < 0.0 || setback.1 < 0.0;
+    if !extended || shifted.iter().all(|p| point_in_box(p, bounds)) {
+      out.push(Primitive3D::Arrow3D {
+        points: shifted,
+        setback: (0.0, 0.0),
+        style,
+      });
+      continue;
+    }
+    let segments = clip_polyline_to_box(&shifted, bounds);
+    if !segments.is_empty() {
+      out.push(Primitive3D::Line3D { segments, style });
+    }
+  }
+  *prims = out;
+}
+
 /// Clip a convex polygon against the half space `n · x <= d`
 /// (Sutherland–Hodgman).
 fn clip_polygon_to_halfspace(
@@ -7528,6 +7634,65 @@ struct StyleState3D {
   /// a `Style[Text[…], Background -> color]` wrapper or the label's own
   /// option gives it. `None` draws the label straight on the scene.
   text_background: Option<(u8, u8, u8)>,
+  /// The `FaceForm[…]` in effect, if any. While it is, `color` and
+  /// `opacity` hold what faces are drawn with, and this keeps the plain
+  /// color and opacity that lines, points, arrows and labels still use:
+  /// `FaceForm` styles faces only.
+  face_form: Option<FaceFormOverride>,
+}
+
+/// What a `FaceForm[spec]` overrides for faces, and the plain color and
+/// opacity it leaves in place for everything that is not a face.
+#[derive(Clone, Debug)]
+struct FaceFormOverride {
+  /// The face color `spec` names. `None` lets faces keep the plain color.
+  color: Option<(u8, u8, u8)>,
+  /// The face opacity `spec` names. `None` lets faces keep the plain one.
+  opacity: Option<f64>,
+  /// The color set by plain directives, for non-face primitives.
+  base_color: Option<(u8, u8, u8)>,
+  /// The opacity set by plain directives, for non-face primitives.
+  base_opacity: f64,
+}
+
+impl StyleState3D {
+  /// The style a non-face primitive (a line, point, arrow or label) is
+  /// drawn with: the plain color and opacity, not the `FaceForm` ones.
+  fn without_face_form(&mut self) {
+    if let Some(fo) = self.face_form.take() {
+      self.color = fo.base_color;
+      self.opacity = fo.base_opacity;
+    }
+  }
+
+  /// A plain color directive. Under a `FaceForm` that names its own face
+  /// color it only recolors the non-face primitives.
+  fn set_plain_color(&mut self, rgb: (u8, u8, u8)) {
+    if let Some(fo) = &mut self.face_form {
+      fo.base_color = Some(rgb);
+      if fo.color.is_none() {
+        self.color = Some(rgb);
+        self.back_color = None;
+      }
+    } else {
+      self.color = Some(rgb);
+      self.back_color = None;
+    }
+  }
+
+  /// A plain opacity directive. Under a `FaceForm` that names its own face
+  /// opacity it only changes the non-face primitives.
+  fn set_plain_opacity(&mut self, opacity: f64) {
+    match &mut self.face_form {
+      Some(fo) => {
+        fo.base_opacity = opacity;
+        if fo.opacity.is_none() {
+          self.opacity = opacity;
+        }
+      }
+      None => self.opacity = opacity,
+    }
+  }
 }
 
 impl Default for StyleState3D {
@@ -7556,6 +7721,7 @@ impl Default for StyleState3D {
       font_size: None,
       font_face: (false, false),
       text_background: None,
+      face_form: None,
     }
   }
 }
@@ -7644,6 +7810,11 @@ enum Primitive3D {
   },
   Arrow3D {
     points: Vec<Point3D>,
+    /// `Arrow[pts, s]` / `Arrow[pts, {s1, s2}]`: how far the tail and the
+    /// tip are set back along the path, in scene coordinates. A negative
+    /// setback lengthens the arrow past its end point. Applied once the
+    /// scene's box is known (see [`apply_arrow_setbacks_3d`]).
+    setback: (f64, f64),
     style: StyleState3D,
   },
   Cylinder {
@@ -7716,10 +7887,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
-    style.color = Some((r, g, b));
-    style.back_color = None;
+    style.set_plain_color((r, g, b));
     if color.a < 1.0 {
-      style.opacity = color.a;
+      style.set_plain_opacity(color.a);
     }
     return true;
   }
@@ -7778,13 +7948,29 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       style.faces = false;
       return true;
     }
-    let mut front = StyleState3D::default();
+    // A NaN opacity marks "not given", so a `FaceForm` that names only a
+    // color keeps the plain opacity (and vice versa).
+    let mut front = StyleState3D {
+      opacity: f64::NAN,
+      ..StyleState3D::default()
+    };
     if !apply_3d_directive(&args[0], &mut front) {
       return true;
     }
+    let (base_color, base_opacity) = match style.face_form.take() {
+      Some(fo) => (fo.base_color, fo.base_opacity),
+      None => (style.color, style.opacity),
+    };
+    let face_opacity = (!front.opacity.is_nan()).then_some(front.opacity);
     style.faces = true;
-    style.color = front.color;
-    style.opacity = front.opacity;
+    style.color = front.color.or(base_color);
+    style.opacity = face_opacity.unwrap_or(base_opacity);
+    style.face_form = Some(FaceFormOverride {
+      color: front.color,
+      opacity: face_opacity,
+      base_color,
+      base_opacity,
+    });
     style.back_color = match args.get(1) {
       Some(back) => {
         let mut b = StyleState3D::default();
@@ -7829,14 +8015,14 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Opacity" if !args.is_empty() => {
         if let Some(o) = expr_to_f64(&args[0]) {
-          style.opacity = o.clamp(0.0, 1.0);
+          style.set_plain_opacity(o.clamp(0.0, 1.0));
           if args.len() >= 2
             && let Some(color) = parse_color(&args[1])
           {
             let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
             let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
             let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
-            style.color = Some((r, g, b));
+            style.set_plain_color((r, g, b));
           }
         }
         return true;
@@ -9910,6 +10096,7 @@ fn push_text3d_label(
     return;
   }
   let mut text_style = style.clone();
+  text_style.without_face_form();
   if let Some(c) = color {
     text_style.color = Some((
       (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -9950,6 +10137,28 @@ fn inset_graphics3d_content(expr: &Expr) -> Option<&Expr> {
 }
 
 fn collect_3d_primitives(
+  expr: &Expr,
+  style: &mut StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let start = prims.len();
+  collect_3d_primitives_styled(expr, style, prims);
+  // `FaceForm` styles faces only: the lines, points, arrows and labels
+  // added here keep the plain color and opacity.
+  for prim in &mut prims[start..] {
+    if let Primitive3D::Line3D { style, .. }
+    | Primitive3D::Point3DPrim { style, .. }
+    | Primitive3D::Arrow3D { style, .. }
+    | Primitive3D::Text3D { style, .. } = prim
+    {
+      style.without_face_form();
+    }
+  }
+}
+
+/// [`collect_3d_primitives`] before the non-face primitives drop the
+/// `FaceForm` part of their style.
+fn collect_3d_primitives_styled(
   expr: &Expr,
   style: &mut StyleState3D,
   prims: &mut Vec<Primitive3D>,
@@ -10214,6 +10423,7 @@ fn collect_3d_primitives(
             for (w, c) in pts.windows(2).zip(colors.windows(2)) {
               let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
               let mut seg_style = style.clone();
+              seg_style.without_face_form();
               seg_style.opacity *= alpha;
               seg_style.color = Some((
                 q(f64::midpoint(c[0].0, c[1].0)),
@@ -10373,9 +10583,11 @@ fn collect_3d_primitives(
           }
         }
         "Arrow" if !args.is_empty() => {
+          let setback = arrow_setback_3d(args.get(1));
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Arrow3D {
               points: pts,
+              setback,
               style: style.clone(),
             });
           } else if let Expr::List(paths) = &args[0] {
@@ -10385,6 +10597,7 @@ fn collect_3d_primitives(
               if let Some(pts) = parse_point3d_list(path) {
                 prims.push(Primitive3D::Arrow3D {
                   points: pts,
+                  setback,
                   style: style.clone(),
                 });
               }
@@ -13538,9 +13751,17 @@ fn perspective_warp(
           prims.push(Primitive3D::Point3DPrim { points, style });
         }
       }
-      Primitive3D::Arrow3D { points, style } => {
+      Primitive3D::Arrow3D {
+        points,
+        setback,
+        style,
+      } => {
         if let Some(points) = warp_all(&points) {
-          prims.push(Primitive3D::Arrow3D { points, style });
+          prims.push(Primitive3D::Arrow3D {
+            points,
+            setback,
+            style,
+          });
         }
       }
       Primitive3D::Cylinder {
@@ -14338,6 +14559,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   resolve_scaled_sphere_radii(&mut prims, plot_range);
 
+  // Arrow setbacks are applied against the box the arrows' own end points
+  // helped fix, so an arrow lengthened by a negative setback does not
+  // widen the range: what it reaches past the box is cut off.
+  let setback_bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+  apply_arrow_setbacks_3d(&mut prims, &setback_bounds);
+
   // An explicit `PlotRange` cuts off whatever of a line lies outside it.
   if let Some(bounds) = plot_range {
     for prim in &mut prims {
@@ -14837,6 +15064,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             font_size: None,
             font_face: (false, false),
             text_background: None,
+            face_form: None,
           },
         ),
       };
@@ -15828,7 +16056,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // so a surface or solid in front of it hides it as Wolfram does.
       let (segments, style): (&[Vec<Point3D>], _) = match prim {
         Primitive3D::Line3D { segments, style } => (segments, style),
-        Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
+        Primitive3D::Arrow3D { points, style, .. } if points.len() >= 2 => {
           (std::slice::from_ref(points), style)
         }
         _ => continue,
