@@ -244,10 +244,103 @@ fn parse_cell_list(input: &str) -> Result<Vec<CellEntry>, String> {
     if item.is_empty() {
       continue;
     }
-    entries.push(parse_cell_entry(item)?);
+    match split_prose_cell_at_inline_images(item) {
+      Some(cells) => entries.extend(cells.into_iter().map(CellEntry::Single)),
+      None => entries.push(parse_cell_entry(item)?),
+    }
   }
 
   Ok(entries)
+}
+
+/// The box form of a raster picture set inline in a prose run: an unstyled
+/// (or formula-styled) `Cell[BoxData[GraphicsBox[TagBox[RasterBox[…],
+/// BoxForm`ImageTag[…]], …]]]`, optionally under a `FormBox`. This is what
+/// the FrontEnd writes when a bitmap is pasted into a sentence.
+fn inline_raster_image_box(element: &str) -> Option<String> {
+  let rest = element.trim().strip_prefix("Cell[")?;
+  let (inner, after) = find_matching_bracket(rest).ok()?;
+  if !after.trim().is_empty() {
+    return None;
+  }
+  let content = split_top_level_commas(inner).first()?.trim();
+  let boxes = content.strip_prefix("BoxData[")?;
+  let (boxes, _) = find_matching_bracket(boxes).ok()?;
+  let boxes = match positional_box_args("FormBox", boxes) {
+    Some(args) => args.first()?.clone(),
+    None => boxes.trim().to_string(),
+  };
+  stored_raster_image_box(CellStyle::Output, &boxes)
+}
+
+/// Split a prose cell (`Text`, `Item`, `Subitem`) whose `TextData` run holds
+/// inline raster pictures into the prose before each picture, the picture
+/// as a stored `Output` cell (so it displays, like a snapshot), and the
+/// prose after it. A plain-text cell cannot show a bitmap in the middle of
+/// a sentence, and dropping it would leave a hole in the text ("Here is the
+/// logo: ."). Punctuation that only closes the sentence after a picture is
+/// left out rather than becoming a cell of its own.
+///
+/// `None` when `item` is not such a cell — the caller then parses it as an
+/// ordinary cell.
+fn split_prose_cell_at_inline_images(item: &str) -> Option<Vec<Cell>> {
+  let inner = item.trim().strip_prefix("Cell[")?.strip_suffix(']')?;
+  let parts = split_top_level_commas(inner);
+  let run = parts.first()?.trim().strip_prefix("TextData[")?;
+  let (run, after) = find_matching_bracket(run).ok()?;
+  if !after.trim().is_empty() {
+    return None;
+  }
+  let elements =
+    split_top_level_commas(run.trim().strip_prefix('{')?.strip_suffix('}')?);
+  if !elements
+    .iter()
+    .any(|e| inline_raster_image_box(e).is_some())
+  {
+    return None;
+  }
+  // Style and options, shared by every prose piece.
+  let tail = parts[1..].join(",");
+  let prose = |elements: &[&str]| {
+    parse_single_cell(&format!("TextData[{{{}}}],{tail}", elements.join(",")))
+  };
+  if !matches!(
+    prose(&[]).style,
+    CellStyle::Text | CellStyle::Item | CellStyle::Subitem
+  ) {
+    return None;
+  }
+
+  let mut cells: Vec<Cell> = Vec::new();
+  let mut pending: Vec<&str> = Vec::new();
+  let flush = |pending: &mut Vec<&str>, cells: &mut Vec<Cell>| {
+    let cell = prose(pending);
+    pending.clear();
+    let after_picture =
+      cells.last().is_some_and(|c| c.style == CellStyle::Output);
+    let has_words = cell.content.chars().any(char::is_alphanumeric);
+    if has_words || (!after_picture && !cell.content.trim().is_empty()) {
+      cells.push(Cell {
+        content: cell.content.trim().to_string(),
+        ..cell
+      });
+    }
+  };
+  for element in elements {
+    match inline_raster_image_box(element) {
+      Some(content) => {
+        flush(&mut pending, &mut cells);
+        cells.push(Cell {
+          style: CellStyle::Output,
+          content,
+          collapsed: false,
+        });
+      }
+      None => pending.push(element),
+    }
+  }
+  flush(&mut pending, &mut cells);
+  Some(cells)
 }
 
 /// Parse a single cell entry (Cell[...]).
@@ -298,6 +391,10 @@ fn parse_cell_group_body(s: &str) -> Result<CellEntry, String> {
   for item in cell_items {
     let item = item.trim();
     if item.is_empty() {
+      continue;
+    }
+    if let Some(split) = split_prose_cell_at_inline_images(item) {
+      cells.extend(split);
       continue;
     }
     match parse_cell_entry(item)? {
@@ -8299,6 +8396,95 @@ Cell["Chapter 2", "Chapter"]
     let text_data = format!("{{\"photo: \", {cell}}}");
     let rendered = extract_textdata(&text_data);
     assert_eq!(rendered, "photo: -Image-");
+  }
+
+  /// A raster pasted into a sentence — `Cell[TextData[{"…: ", Cell[BoxData[
+  /// GraphicsBox[TagBox[RasterBox[…], BoxForm`ImageTag[…]]]]], "."}],
+  /// "Text"]` — must stay visible. Regression: the unstyled inline cell was
+  /// dropped as chrome, so the sentence read "…: ." with no picture at all.
+  #[test]
+  fn test_prose_cell_splits_at_inline_raster_pictures() {
+    let payload = rgb_snapshot_payload(1, 2);
+    let picture = format!(
+      "Cell[BoxData[\n GraphicsBox[\n  TagBox[RasterBox[CompressedData[\"1:{payload}\"], \
+       {{{{0, 1}}, {{2, 0}}}}, {{0, 255}}], BoxForm`ImageTag[\"Byte\"]], \
+       ImageSize->{{2, 1}}]], ExpressionUUID->\"00000000-0000-0000-0000-000000000002\"]"
+    );
+    for (source, expected) in [
+      // Closing punctuation after the picture is not a cell of its own.
+      (
+        format!(
+          "Cell[TextData[{{\"The emblem: \", {picture}, \".\"}}], \"Text\", CellID->1]"
+        ),
+        vec![(CellStyle::Text, "The emblem:"), (CellStyle::Output, "")],
+      ),
+      // Prose on both sides, and two pictures in a row.
+      (
+        format!(
+          "Cell[TextData[{{\"Before \", {picture}, {picture}, \" and after.\"}}], \"Item\"]"
+        ),
+        vec![
+          (CellStyle::Item, "Before"),
+          (CellStyle::Output, ""),
+          (CellStyle::Output, ""),
+          (CellStyle::Item, "and after."),
+        ],
+      ),
+      // A picture that opens the cell.
+      (
+        format!("Cell[TextData[{{{picture}, \" shows it.\"}}], \"Text\"]"),
+        vec![(CellStyle::Output, ""), (CellStyle::Text, "shows it.")],
+      ),
+    ] {
+      // Both at the top level and inside a cell group.
+      for nb_source in [
+        format!("Notebook[{{{source}}}]"),
+        format!(
+          "Notebook[{{Cell[CellGroupData[{{Cell[\"Details\", \"Section\"], \
+           {source}}}, Open]]}}]"
+        ),
+      ] {
+        let nb = parse_notebook(&nb_source).unwrap();
+        let cells: Vec<&Cell> = nb
+          .flat_cells()
+          .into_iter()
+          .map(|(_, c)| c)
+          .filter(|c| c.style != CellStyle::Section)
+          .collect();
+        assert_eq!(cells.len(), expected.len(), "{nb_source}");
+        for (cell, (style, text)) in cells.iter().zip(&expected) {
+          assert_eq!(cell.style, *style);
+          if *style == CellStyle::Output {
+            let svg = stored_output_image_svg(&cell.content)
+              .expect("the picture cell decodes to an image");
+            assert!(svg.contains("data:image/png;base64,"), "{svg}");
+          } else {
+            assert_eq!(cell.content, *text);
+          }
+        }
+      }
+    }
+  }
+
+  /// Only prose cells holding a raster are split: a heading keeps its one
+  /// cell, and so does a sentence with an inline formula.
+  #[test]
+  fn test_cells_without_inline_raster_pictures_stay_whole() {
+    let payload = rgb_snapshot_payload(1, 1);
+    let picture = format!(
+      "Cell[BoxData[GraphicsBox[TagBox[RasterBox[CompressedData[\"1:{payload}\"], \
+       {{{{0, 1}}, {{1, 0}}}}, {{0, 255}}], BoxForm`ImageTag[\"Byte\"]]]]]"
+    );
+    let nb = parse_notebook(&format!(
+      "Notebook[{{Cell[TextData[{{\"Logo \", {picture}}}], \"Section\"], \
+       Cell[TextData[{{\"Let \", Cell[BoxData[FormBox[\"x\", TraditionalForm]], \
+       \"InlineMath\"], \" vary.\"}}], \"Text\"]}}]"
+    ))
+    .unwrap();
+    let cells = nb.flat_cells();
+    assert_eq!(cells.len(), 2);
+    assert_eq!(cells[0].1.style, CellStyle::Section);
+    assert_eq!(cells[1].1.content, "Let x vary.");
   }
 
   /// Same idea as `test_text_cell_inline_diagram_renders_as_graphics_placeholder`,
