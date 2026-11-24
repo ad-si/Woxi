@@ -2619,7 +2619,7 @@ DistributionParameterQ,"Tests whether the parameters of a distribution are valid
 PlanarAngle,"Planar angle at a vertex from the list form {q1 p q2} or the vertex-rule form p -> {q1 q2} (2-D only)",✅,pure,12.0,2617
 PrivateFontOptions,"",🚫,,3.0,2617
 StarGraph,"Star graph with n vertices",✅,1,8.0,2617
-Toggler,"Toggler control element (stays symbolic in script mode)",✅,unevaluated,6.0,2617
+Toggler,"Toggler control element cycling a variable through its states (stays symbolic in script mode)",✅,unevaluated,6.0,2617
 GraphDiameter,"Maximum shortest path distance",✅,1,8.0,2625
 ImageCorners,"",🚫,,9.0,2625
 Inpaint,"Fill masked image pixels from their surroundings by diffusion",✅,pure,8.0,2625
@@ -6390,9 +6390,12 @@ GraphUtilities`GraphCoordinates,"Vertex coordinates of a graph given as a list o
 GraphUtilities`GraphCoordinates3D,"Vertex coordinates of a graph given as a list of rules in a 3D force-directed layout",✅,pure,8.0,
 GraphUtilities`GraphPath,"Shortest path between two vertices of a graph given as a list of rules",✅,pure,8.0,
 GraphUtilities`HamiltonianCycles,"Up to n (or All) Hamiltonian cycles of a rule list or Graph or Combinatorica graph or adjacency matrix in the package search order",✅,pure,8.0,
+GraphUtilities`AdjacencyMatrix,"Adjacency matrix of a graph given as a list of (optionally labeled) rules",✅,pure,6.0,
 MultivariateStatistics`EllipsoidQuantile,"Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance]",✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,"Builds a Combinatorica graph with one edge per (sorted) vertex pair on a circular embedding",✅,pure,6.0,
 Combinatorica`FromOrderedPairs,"Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding",✅,pure,6.0,
+Combinatorica`IncidenceMatrix,"(0; 1) vertex-by-edge matrix of a Combinatorica graph; a directed edge marks the vertex it leaves",✅,pure,6.0,
+Combinatorica`Cofactor,"Signed minor (-1)^(i+j) Det of a matrix without row i and column j",✅,pure,6.0,
 Combinatorica`Cycle,"The n-cycle (or with Directed the directed n-cycle) as a Combinatorica graph on a circular embedding",✅,pure,6.0,
 Combinatorica`SetGraphOptions,"Sets options on vertices or edges or the whole of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`StableMarriage,"Man-optimal stable matching from men's and women's preference lists (Gale-Shapley)",✅,pure,6.0,

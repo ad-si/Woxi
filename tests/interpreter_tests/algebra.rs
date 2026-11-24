@@ -2198,6 +2198,31 @@ mod factor {
     );
   }
 
+  /// Fractions nested inside a sum's terms are put over one common
+  /// denominator too, also when the bases are subscripted strings with no
+  /// symbol in them.
+  #[test]
+  fn factor_combines_nested_fractions() {
+    assert_eq!(
+      interpret("Factor[a (1/b + 1/c) + 1]").unwrap(),
+      "(a*b + a*c + b*c)/(b*c)"
+    );
+    assert_eq!(
+      interpret(
+        "Factor[x (1/Subscript[\"s\", 1] + 1/Subscript[\"s\", 2]) + y]"
+      )
+      .unwrap(),
+      "(x*Subscript[s, 1] + x*Subscript[s, 2] + y*Subscript[s, 1]*Subscript[s, 2])/(Subscript[s, 1]*Subscript[s, 2])"
+    );
+    assert_eq!(
+      interpret(
+        "Denominator[Factor[x/(1/Subscript[\"s\", 1] + 1/Subscript[\"s\", 2]) + y]]"
+      )
+      .unwrap(),
+      "Subscript[s, 1] + Subscript[s, 2]"
+    );
+  }
+
   #[test]
   fn factor_threads_over_list() {
     // Factor is Listable — threads over list arguments.

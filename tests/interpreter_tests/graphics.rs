@@ -36424,6 +36424,25 @@ mod graphics_list {
     );
   }
 
+  /// `DisplayForm` of an expression with boxes inside it shows the boxes as
+  /// boxes and typesets the expression around them, rather than printing
+  /// either as source text.
+  #[test]
+  fn display_form_typesets_an_expression_around_its_boxes() {
+    clear_state();
+    for code in [
+      "ExportString[DisplayForm[Row[{x^2, FractionBox[\"a\", \"b\"]}]], \"SVG\"]",
+      "ExportString[TraditionalForm[DisplayForm[Row[{x^2, \
+         FractionBox[\"a\", \"b\"]}]]], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(!svg.contains(">x^2<"), "x^2 printed as source: {svg}");
+      assert!(!svg.contains("FractionBox"), "box printed as source: {svg}");
+      assert!(svg.contains(">2</text>"), "missing exponent: {svg}");
+      assert!(svg.contains("<line"), "missing fraction bar: {svg}");
+    }
+  }
+
   #[test]
   fn standard_form_produces_box_form() {
     clear_state();

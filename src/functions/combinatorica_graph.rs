@@ -1402,6 +1402,26 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
           .into(),
       ))
     }
+    // The (0, 1) vertex-by-edge matrix: a vertex is marked in an edge's
+    // column when it lies on the edge or, in a directed graph, when the
+    // edge leaves it.
+    ("Combinatorica`IncidenceMatrix", 1) => Some(Expr::List(
+      (0..g.n)
+        .map(|v| {
+          Expr::List(
+            g.edges
+              .iter()
+              .map(|&(a, b)| {
+                let on = if g.directed { a == v } else { a == v || b == v };
+                Expr::Integer(on as i128)
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )),
     ("Combinatorica`ToAdjacencyLists", 1) => Some(Expr::List(
       g.adjacency()
         .into_iter()
