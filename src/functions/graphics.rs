@@ -27392,7 +27392,7 @@ fn contains_visible_style(e: &Expr) -> bool {
 /// [`contains_visible_style`], a script that merely holds letters
 /// (`Subscript[R, x]`) does not count: such a label carries no styling of
 /// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
-fn has_explicit_style(e: &Expr) -> bool {
+pub(crate) fn has_explicit_style(e: &Expr) -> bool {
   // A power is a script too: a styled base or exponent keeps the whole
   // power as written.
   if let Some((base, exp)) = as_power(e) {
