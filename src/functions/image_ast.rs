@@ -13776,7 +13776,7 @@ pub fn widen_hairline_strokes(
   use resvg::usvg::roxmltree;
   use std::borrow::Cow;
 
-  if !svg.contains("stroke") || !(scale_factor > 0.0) {
+  if !svg.contains("stroke") || scale_factor.is_nan() || scale_factor <= 0.0 {
     return Cow::Borrowed(svg);
   }
   let options = roxmltree::ParsingOptions {
