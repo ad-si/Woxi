@@ -45885,6 +45885,50 @@ pub enum TriggerRepetitions {
   Variable(String),
 }
 
+/// Whether a control spec's `AppearanceElements` option (one name or a
+/// list of names) includes the `"PlayPauseButton"`.
+fn control_spec_has_play_pause_button(items: &[Expr]) -> bool {
+  items.iter().any(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AppearanceElements") => {
+      let is_play_pause =
+        |e: &Expr| matches!(e, Expr::String(s) if s == "PlayPauseButton");
+      match replacement.as_ref() {
+        Expr::List(elems) => elems.iter().any(is_play_pause),
+        other => is_play_pause(other),
+      }
+    }
+    _ => false,
+  })
+}
+
+/// The `AnimationRate -> r` of an animated control spec: how many units
+/// per second its variable moves while playing. `None` when the spec has
+/// no positive finite numeric rate.
+pub fn control_spec_animation_rate(spec: &Expr) -> Option<f64> {
+  let Expr::List(items) = spec else { return None };
+  items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRate") => {
+      crate::functions::math_ast::try_eval_to_f64(replacement)
+        .filter(|r| r.is_finite() && *r > 0.0)
+    }
+    _ => None,
+  })
+}
+
 /// The `AnimationRepetitions` value of a Trigger spec; `None` for
 /// `Infinity` (the default) or anything that isn't a count or a variable.
 fn trigger_repetitions_from_expr(e: &Expr) -> Option<TriggerRepetitions> {
@@ -46432,6 +46476,10 @@ pub struct ManipulateSpec {
   /// until the user drags a slider. Plain `Manipulate`/`Control` widgets leave
   /// this `false`.
   pub animated: bool,
+  /// `AnimationRate -> r` of the control driving `animation_var`: the units
+  /// per second its variable moves while playing. `None` steps it by its
+  /// own step size on every animation tick.
+  pub animation_rate: Option<f64>,
   /// Whether an animated widget starts playing. Wolfram's default is
   /// `AnimationRunning -> True`; `AnimationRunning -> False` builds the
   /// widget paused until the user presses play.
@@ -47414,6 +47462,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     .as_ref()
     .map_or_default(|i| i.control_placements.clone());
   let mut module_locals: Vec<String> = Vec::new();
+  let mut animation_rate: Option<f64> = None;
   let (
     body_code,
     mut controls,
@@ -47432,6 +47481,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   ) = if let Some(inner) = inner {
     animated = true;
     animation_running = inner.animation_running;
+    animation_rate = inner.animation_rate;
     (
       inner.body_code,
       inner.controls,
@@ -48329,6 +48379,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animated = true;
           animation_running = running;
           animation_var = Some(c.name().to_string());
+          animation_rate = control_spec_animation_rate(&spec);
         }
         // A second spec for an already-bound variable merges into the
         // earlier row — contributing only the enabled semantics captured
@@ -49127,6 +49178,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_locator_defaults,
     animation_var,
     animated,
+    animation_rate,
     animation_running,
     appearance_none,
     tracked_symbols,
@@ -54569,6 +54621,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
+    animation_rate: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -54654,6 +54707,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
+    animation_rate: None,
     animated: false,
     animation_running: false,
     appearance_none: false,
@@ -54753,6 +54807,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
+    animation_rate: None,
     animated: true,
     animation_running: true,
     appearance_none: false,
@@ -55020,6 +55075,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
+    animation_rate: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -55087,6 +55143,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
+    animation_rate: None,
     animated: false,
     animation_running: true,
     appearance_none: false,
@@ -55164,6 +55221,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
+    animation_rate: animate.and_then(|_| control_spec_animation_rate(&args[0])),
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
     appearance_none: false,
@@ -58979,9 +59037,21 @@ fn parse_manipulate_control(
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False"))
   });
+  // A plain slider (the default `Manipulator`) whose `AppearanceElements`
+  // ask for a `"PlayPauseButton"` draws that button beside its thumb: the
+  // variable can be played like an Animator's, but it sits paused until
+  // pressed (unless `AnimationRunning -> True` says otherwise).
+  let running = items.iter().any(|it| {
+    matches!(it, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
+  });
   let animate = match control_type.as_deref() {
     Some("Trigger") => Some(false),
     Some("Animator") => Some(!paused),
+    None | Some("Manipulator") if control_spec_has_play_pause_button(items) => {
+      Some(running)
+    }
     _ => None,
   };
   let orientation = if control_type.as_deref() == Some("VerticalSlider") {
