@@ -2128,6 +2128,17 @@ fn robust_value_range(values: &[f64]) -> (f64, f64) {
     .find(|&v| v <= fence_hi)
     .unwrap_or(vs[n - 1]);
 
+  // The fence only cuts off a blow-up: when the full range stays within
+  // ten times the span of the central 90% of the samples, the extremes are
+  // genuine values (a field saturating over most of the domain, like a
+  // temperature settling at the wall value, has its quartiles squeezed
+  // against one end) and the full range is kept.
+  let (full_lo, full_hi) = (vs[0], vs[n - 1]);
+  let central = vs[n - 1 - n / 20] - vs[n / 20];
+  if full_hi - full_lo <= 10.0 * central {
+    return (full_lo, full_hi);
+  }
+
   (v_min, v_max)
 }
 
@@ -10736,6 +10747,20 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&samples);
     assert_eq!(v_min, 0.0);
     assert_eq!(v_max, 9.9);
+  }
+
+  #[test]
+  fn robust_value_range_keeps_a_saturating_field() {
+    // Most samples settle just below the saturated value 1 and a minority
+    // ramps up from 0: the quartiles bunch near 1, so the IQR fence alone
+    // would drop the ramp, but it is genuine data, not a pole, so the range
+    // still starts at 0.
+    let mut samples: Vec<f64> =
+      (0..80).map(|i| 0.95 + i as f64 / 1600.0).collect();
+    samples.extend((0..20).map(|i| i as f64 / 40.0));
+    let (v_min, v_max) = robust_value_range(&samples);
+    assert_eq!(v_min, 0.0);
+    assert!((v_max - (0.95 + 79.0 / 1600.0)).abs() < 1e-12, "{v_max}");
   }
 
   #[test]
