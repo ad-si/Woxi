@@ -2278,8 +2278,8 @@ mod arrows_and_box {
         .map(|(_, (x, _))| x)
         .collect();
       assert!(!xs.is_empty(), "{s}");
-      let lo = xs.iter().cloned().fold(f64::INFINITY, f64::min);
-      let hi = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       (lo, hi)
     };
 
