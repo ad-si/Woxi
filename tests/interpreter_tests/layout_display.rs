@@ -588,6 +588,32 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// Regression: a `Text` under a `Style` inside `Framed`
+  /// (`Framed[Style[Text[Grid[…]], 24]]`, a score board) printed the
+  /// `Text[…]` call as source instead of drawing its content.
+  #[test]
+  fn framed_styled_text_draws_its_content() {
+    for (expr, shown) in [
+      ("Framed[Style[Text[Grid[{{a, b}}]], 24]]", "ab"),
+      (
+        "Framed[Style[Text[Grid[{{Row[{\"p: \", Style[1, Bold]}], c}}, \
+         ItemSize -> 8, Alignment -> Left]], 24]]",
+        "p:1c",
+      ),
+      ("Framed[Style[Text[Row[{a, b}]], Red, 20]]", "ab"),
+      ("Framed[Style[Text[\"ab\"], 24]]", "ab"),
+      ("Framed[Style[Text[x], 24]]", "x"),
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert_eq!(flat_text(&svg), shown, "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"2"), "{expr}: {svg}");
+    }
+    // The outer directives still reach the text under the peeled `Text`.
+    let svg = svg_of("Framed[Style[Text[Row[{a, b}]], Red, 20]]");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
   /// The `font-family` of the `<text>` element that draws `text`.
   fn text_family<'a>(svg: &'a str, text: &str) -> &'a str {
     let end = svg
