@@ -28944,8 +28944,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// A one-function list `ContourPlot[{f}, …]` is shaded like the bare
-    /// function `f`; only several functions draw bare level curves.
+    /// A one-function list `ContourPlot[{f}, …]` with explicit `Contours`
+    /// is shaded like the bare function `f` (without them it draws only the
+    /// zero contour, see `contour_plot_function_list_draws_zero_contours`).
     #[test]
     fn contour_plot_single_function_list_is_shaded() {
       for (f, opts) in [

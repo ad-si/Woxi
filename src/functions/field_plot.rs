@@ -4062,12 +4062,17 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   };
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  // A one-function list `{f}` is the function itself: shaded bands, as
-  // Wolfram draws it (only several functions draw bare level curves).
+  // A one-function list `{f}` given explicit `Contours` is the function
+  // itself, shaded between its levels as Wolfram draws it; without them it
+  // keeps the list's zero contour (below).
   if let Expr::List(items) = body
     && let [f] = items.as_slice()
     && !matches!(f, Expr::List(_))
     && equation_zero_body(f).is_none()
+    && !matches!(
+      parse_density_contour_options(args, 3).contours,
+      ContourSpec::Automatic
+    )
   {
     let mut unwrapped = args.to_vec();
     unwrapped[0] = f.clone();
