@@ -10818,6 +10818,52 @@ mod ndsolve {
     );
   }
 
+  /// Nodes spaced far below 1 are still told apart: a query between two
+  /// nodes is interpolated instead of snapping to the nearest node, at any
+  /// interpolation order (the grid-point match used to have a fixed
+  /// absolute tolerance of 10^-15).
+  #[test]
+  fn interpolation_on_a_tiny_scale_grid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "data = Table[{k 10^-17, k^2}, {k, 0, 6}]; \
+         f = Interpolation[data]; g = Interpolation[data, \
+         InterpolationOrder -> 1]; \
+         {Abs[f[2.5*^-17] - 6.25] < 10^-12, g[1.5*^-17], f[3*^-17], \
+         g[3.*^-17]}"
+      )
+      .unwrap(),
+      "{True, 2.5, 9, 9.}"
+    );
+  }
+
+  /// A time range shorter than 10^-9 keeps its end instead of collapsing
+  /// onto its start, and the solution over a femtosecond span follows the
+  /// exact solution between its steps, not only at them.
+  #[test]
+  fn ndsolve_solution_on_a_tiny_time_scale_is_smooth() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[(x /. First[NDSolve[{x'[t] == -x[t], x[0] == 1}, x, \
+         {t, 0, r}]])[\"Domain\"], {r, {10^-9, 5.*^-15}}]"
+      )
+      .unwrap(),
+      "{{{0., 1.*^-9}}, {{0., 5.*^-15}}}"
+    );
+    assert_eq!(
+      interpret(
+        "w = 3*^15; s = NDSolve[{x'[t] == u[t], u'[t] == -w^2 x[t], \
+         x[0] == 1, u[0] == 0}, {x, u}, {t, 0, 5*^-15}]; \
+         Max[Table[Abs[(x[t] /. s[[1]]) - Cos[w t]], \
+         {t, 0, 5*^-15, 1.3*^-17}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
   /// between two nodes it holds the value of the right node, at a node the
   /// node's own value, and its derivative is zero.
