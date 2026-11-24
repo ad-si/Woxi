@@ -70142,8 +70142,8 @@ mod styled_label_scripts {
       export_svg("Graphics[Text[Subscript[\"t\", Style[\"B\", Italic]]]]");
     assert!(
       svg.contains(
-        ">t<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
-         font-size=\"70%\">B</tspan></tspan></text>"
+        ">t<tspan font-style=\"italic\" baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan></text>"
       ),
       "{svg}"
     );
@@ -70168,8 +70168,8 @@ mod styled_label_scripts {
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\">c</tspan> \
-         <tspan font-style=\"italic\">t</tspan><tspan font-style=\"italic\">\
-         <tspan baseline-shift=\"sub\" font-size=\"70%\">A</tspan></tspan>"
+         <tspan font-style=\"italic\">t</tspan><tspan font-style=\"italic\" \
+         baseline-shift=\"sub\" font-size=\"70%\">A</tspan>"
       ),
       "{svg}"
     );
@@ -70188,8 +70188,8 @@ mod styled_label_scripts {
     );
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
-         font-size=\"70%\">B</tspan></tspan>"
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan>"
       ),
       "{svg}"
     );
@@ -74377,6 +74377,100 @@ mod reversed_3d_plot_ranges {
       )
       .unwrap(),
       "True"
+    );
+  }
+}
+
+/// A `Grid` lays out its automatically sized pictures at half their size,
+/// as the front end does for any list-like construct — also when the grid
+/// is styled (`Style[Grid[…], 17]`, a Demonstration's large readout), which
+/// is drawn by the styled-table renderer rather than the layout one.
+mod styled_grid_picture_size {
+  use super::*;
+
+  /// The `width` of the first nested `<svg x=…>` (a laid-out grid item).
+  fn first_item_width(svg: &str) -> f64 {
+    svg
+      .split("<svg x=")
+      .nth(1)
+      .and_then(|part| part.split("width=\"").nth(1))
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .unwrap_or_else(|| panic!("no grid item in {svg}"))
+  }
+
+  #[test]
+  fn styled_grid_halves_an_automatic_picture() {
+    clear_state();
+    for style in ["17", "Red", "FontSize -> 12, Bold"] {
+      let svg = export_svg(&format!(
+        "Style[Grid[{{{{Graphics[Disk[]]}}, {{\"a\"}}}}], {style}]"
+      ));
+      assert_eq!(first_item_width(&svg), 180.0, "{style}: {svg:.600}");
+    }
+  }
+
+  #[test]
+  fn styled_grid_keeps_an_explicit_image_size() {
+    clear_state();
+    let svg =
+      export_svg("Style[Grid[{{Graphics[Disk[], ImageSize -> 70]}}], 17]");
+    assert_eq!(first_item_width(&svg), 70.0, "{svg:.600}");
+  }
+
+  #[test]
+  fn styled_grid_halves_a_rendered_picture() {
+    clear_state();
+    let svg =
+      export_svg("g = Graphics[Disk[]]; Style[Grid[{{g}, {\"a\"}}], Red]");
+    assert_eq!(first_item_width(&svg), 180.0, "{svg:.600}");
+  }
+}
+
+/// A `Grid` item ending in a line break starts no further line: `"\n"` (a
+/// spacer row between two lines of text) is one empty line high, and
+/// `"x\n"` is set like `"x"`.
+mod grid_item_trailing_line_break {
+  use super::*;
+
+  fn height(svg: &str) -> f64 {
+    svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .unwrap_or_else(|| panic!("no height in {svg}"))
+  }
+
+  #[test]
+  fn newline_item_is_one_line_high() {
+    clear_state();
+    let one_line = export_svg("Grid[{{\"a\"}, {\"x\"}, {\"b\"}}]");
+    for item in ["\\n", "x\\n"] {
+      let svg =
+        export_svg(&format!("Grid[{{{{\"a\"}}, {{\"{item}\"}}, {{\"b\"}}}}]"));
+      assert_eq!(height(&svg), height(&one_line), "{item}: {svg:.600}");
+    }
+    // A break between two lines still makes two.
+    let two_lines = export_svg("Grid[{{\"a\"}, {\"x\\ny\"}, {\"b\"}}]");
+    assert!(height(&two_lines) > height(&one_line), "{two_lines:.600}");
+  }
+
+  #[test]
+  fn trailing_break_does_not_move_the_text() {
+    clear_state();
+    let text_y = |svg: &str| -> Vec<String> {
+      svg
+        .split("<text x=\"")
+        .skip(1)
+        .filter_map(|p| {
+          p.split("y=\"").nth(1)?.split('"').next().map(String::from)
+        })
+        .collect()
+    };
+    assert_eq!(
+      text_y(&export_svg("Grid[{{\"a\"}, {\"x\\n\"}, {\"b\"}}]")),
+      text_y(&export_svg("Grid[{{\"a\"}, {\"x\"}, {\"b\"}}]"))
     );
   }
 }

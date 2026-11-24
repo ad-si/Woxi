@@ -6327,10 +6327,9 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
 - Tick labels are sized for Arial (to reproduce WL 15's `ImagePadding`), but
   drawn in Atkinson Hyperlegible Next, whose digits are wider: a long left
   tick label such as `6000` loses part of its first glyph at the image edge.
-- A list of plots draws each at its full automatic size; Wolfram's front
-  end applies `ImageSizeMultipliers -> {0.5, 0.25}` to automatically sized
-  graphics inside list-like (`{…}`, `->`, `Grid`) and text-like (`f[…]`,
-  `a + g`) constructs.
+- Wolfram's front end also applies `ImageSizeMultipliers` to automatically
+  sized graphics inside text-like constructs (`f[g]` is drawn 360 wide in
+  Woxi); lists and layouts: see "Graphics inside lists and layouts".
 - TraditionalForm: `Binomial` and `HypergeometricPFQ` are written as calls,
   `Div`/`Grad`/`Laplacian` lose their variable subscript, and a product
   with a fraction factor is not merged into one fraction.

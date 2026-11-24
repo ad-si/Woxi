@@ -11412,6 +11412,60 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Graphics of translated/rotated pieces should render"
     );
   }
+  /// A body that sets a force diagram and a few lines of text in one
+  /// styled `Grid` inside a fixed-size `Pane`, with `"\n"` spacer rows
+  /// between the lines and an italic label whose subscript is written in
+  /// box notation. The automatically sized diagram is drawn at the half
+  /// size of a grid item (it filled the pane's whole width and pushed the
+  /// last lines out of the pane), each spacer row is one line high, and
+  /// the label's subscript stays one `tspan` deep so resvg shifts it.
+  /// Independently written, not copied from any specific Demonstration.
+  #[test]
+  fn manipulate_styled_grid_in_pane_fits_diagram_and_lines() {
+    let code = r#"Manipulate[
+      Pane[Style[Grid[{
+        {Graphics[{Rectangle[{0, 0}, {2, 1}], Red, Arrow[{{1, 0.5}, {1, 2}}],
+          Text[Row[{Style["\!\(\*SubscriptBox[\(P\), \(r\)]\)", Italic],
+            " = ", k}], {1, 2.3}]}, PlotRange -> {{-1, 3}, {-0.5, 2.6}}]},
+        {"\n"}, {Row[{"first ", k}]}, {"\n"}, {Row[{"second ", 2 k}]},
+        {"\n"}, {Row[{"third ", 3 k}]}}], 16], {380, 360},
+        Alignment -> {Center, Center}],
+      {{k, 2, "k"}, 0, 5, Appearance -> "Labeled"}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a slider row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let svg = state.current_svg().expect("the result is drawn");
+    // The diagram is the grid's first item, drawn 180 wide.
+    let item_width: f64 = svg
+      .split("<svg x=")
+      .nth(1)
+      .and_then(|part| part.split("width=\"").nth(1))
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("a laid-out grid item");
+    assert_eq!(item_width, 180.0, "{svg}");
+    // Every line of text lies inside the pane.
+    let ys: Vec<f64> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .filter(|p| {
+        p.contains("first") || p.contains("second") || p.contains("third")
+      })
+      .filter_map(|p| p.split("y=\"").nth(1)?.split('"').next()?.parse().ok())
+      .collect();
+    assert_eq!(ys.len(), 3, "{svg}");
+    assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
+    // The label's subscript is shifted within one `tspan`.
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
   /// `TraditionalForm` at a large size, in a fixed-size `Pane`. The widget
