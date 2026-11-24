@@ -310,21 +310,26 @@ pub fn mouse_position() -> Option<(f64, f64)> {
 }
 
 thread_local! {
-    static TIMED_REFRESH: std::cell::Cell<bool> =
-      const { std::cell::Cell::new(false) };
+    static TIMED_REFRESH: std::cell::Cell<Option<f64>> =
+      const { std::cell::Cell::new(None) };
 }
 
 /// Note that an evaluation ran `Refresh[expr, UpdateInterval -> t]` with a
 /// finite `t`: a front end re-evaluates the enclosing `Dynamic` every `t`
-/// seconds, even when none of its tracked symbols changed.
-pub fn request_timed_refresh() {
-  TIMED_REFRESH.with(|r| r.set(true));
+/// seconds, even when none of its tracked symbols changed. When several
+/// timed `Refresh`es ran, the shortest interval wins.
+pub fn request_timed_refresh(seconds: f64) {
+  TIMED_REFRESH.with(|r| {
+    let shortest = r.get().map_or(seconds, |s| s.min(seconds));
+    r.set(Some(shortest));
+  });
 }
 
-/// Whether a timed refresh was requested since the last call (see
-/// [`request_timed_refresh`]); clears the request.
-pub fn take_timed_refresh() -> bool {
-  TIMED_REFRESH.with(|r| r.replace(false))
+/// The shortest `UpdateInterval` (in seconds) of the timed refreshes
+/// requested since the last call (see [`request_timed_refresh`]), or `None`
+/// when none ran; clears the request.
+pub fn take_timed_refresh() -> Option<f64> {
+  TIMED_REFRESH.with(|r| r.replace(None))
 }
 
 /// Whether the interpreter is in visual (notebook-like) display mode, where

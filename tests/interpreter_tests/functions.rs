@@ -7580,13 +7580,29 @@ mod refresh_update_interval {
       interpret("Refresh[1 + 1, UpdateInterval -> 0]").unwrap(),
       "2"
     );
-    assert!(woxi::take_timed_refresh());
-    assert!(!woxi::take_timed_refresh(), "the request is cleared");
+    assert_eq!(woxi::take_timed_refresh(), Some(0.0));
+    assert_eq!(woxi::take_timed_refresh(), None, "the request is cleared");
     assert_eq!(
       interpret("dt = 1/2; Refresh[3, UpdateInterval :> dt]").unwrap(),
       "3"
     );
-    assert!(woxi::take_timed_refresh());
+    assert_eq!(woxi::take_timed_refresh(), Some(0.5));
+  }
+
+  /// Several timed refreshes in one evaluation report the shortest
+  /// interval, so the front end refreshes as often as the fastest asks.
+  #[test]
+  fn the_shortest_interval_wins() {
+    woxi::take_timed_refresh();
+    assert_eq!(
+      interpret(
+        "{Refresh[1, UpdateInterval -> 2], Refresh[2, UpdateInterval -> 1], \
+         Refresh[3, UpdateInterval -> 5]}"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(woxi::take_timed_refresh(), Some(1.0));
   }
 
   #[test]
@@ -7598,7 +7614,7 @@ mod refresh_update_interval {
       "3"
     );
     assert_eq!(interpret("Refresh[3, TrackedSymbols :> {x}]").unwrap(), "3");
-    assert!(!woxi::take_timed_refresh());
+    assert_eq!(woxi::take_timed_refresh(), None);
   }
 }
 
