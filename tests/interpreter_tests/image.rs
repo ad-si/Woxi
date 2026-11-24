@@ -11866,6 +11866,81 @@ mod synthetic_oblique_text {
   }
 }
 
+/// On screen the Wolfram front end draws no line thinner than a device
+/// pixel, so Woxi Studio widens hairlines (0.2 pt grid lines, mesh lines)
+/// to one device pixel before rasterizing.
+#[cfg(not(target_arch = "wasm32"))]
+mod widened_hairline_strokes {
+  use std::borrow::Cow;
+  use woxi::functions::image_ast::widen_hairline_strokes;
+
+  #[test]
+  fn sub_pixel_stroke_in_a_scaled_viewport_is_widened() {
+    // 10 user units per pixel: a 2-unit stroke is a fifth of a pixel.
+    let input = "<svg width=\"360\" height=\"224\" viewBox=\"0 0 3600 2240\" xmlns=\"http://www.w3.org/2000/svg\"><polyline fill=\"none\" stroke=\"#808080\" stroke-width=\"2\" points=\"0,5 3600,5\"/></svg>";
+    let out = widen_hairline_strokes(input, 1.0);
+    assert!(out.contains("stroke-width=\"10\""), "{out}");
+    // At twice the pixel density one device pixel is half as wide.
+    let out = widen_hairline_strokes(input, 2.0);
+    assert!(out.contains("stroke-width=\"5\""), "{out}");
+  }
+
+  #[test]
+  fn nested_viewports_and_transforms_are_scaled() {
+    let input = "<svg width=\"600\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"><svg x=\"300\" width=\"300\" height=\"200\" viewBox=\"0 0 3000 2000\"><g transform=\"scale(0.5)\"><line stroke=\"black\" stroke-width=\"4\" x1=\"0\" y1=\"0\" x2=\"9\" y2=\"0\"/></g></svg></svg>";
+    // One unit of the line is 0.05 px, so 4 units are 0.2 px.
+    let out = widen_hairline_strokes(input, 1.0);
+    assert!(out.contains("stroke-width=\"20\""), "{out}");
+  }
+
+  #[test]
+  fn inherited_and_styled_widths_are_widened() {
+    let input = "<svg width=\"10\" height=\"10\" viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><g stroke=\"red\" stroke-width=\"1\"><path d=\"M0 0L9 9\"/></g><path style=\"stroke: blue; stroke-width: 3\" d=\"M0 0L9 9\"/></svg>";
+    let out = widen_hairline_strokes(input, 1.0);
+    assert!(
+      out.contains("<path stroke-width=\"10\" d=\"M0 0L9 9\"/>"),
+      "{out}"
+    );
+    assert!(out.contains("stroke: blue; stroke-width: 10\""), "{out}");
+  }
+
+  #[test]
+  fn wide_missing_and_zero_strokes_are_left_alone() {
+    for body in [
+      // At least a pixel wide already.
+      "<line stroke=\"black\" stroke-width=\"10\" x2=\"5\"/>",
+      // stroke-width 0 draws no stroke.
+      "<polyline stroke=\"white\" stroke-width=\"0\" points=\"0,0 1,1\"/>",
+      // Not stroked at all.
+      "<path fill=\"red\" stroke-width=\"1\" d=\"M0 0L9 9\"/>",
+      "<path stroke=\"none\" stroke-width=\"1\" d=\"M0 0L9 9\"/>",
+      // Strokes in definitions are drawn in other coordinates.
+      "<defs><clipPath id=\"c\"><rect stroke=\"red\" stroke-width=\"1\" width=\"5\" height=\"5\"/></clipPath></defs>",
+    ] {
+      let input = format!(
+        "<svg width=\"10\" height=\"10\" viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">{body}</svg>"
+      );
+      let out = widen_hairline_strokes(&input, 1.0);
+      assert!(matches!(out, Cow::Borrowed(_)), "{body} became {out}");
+    }
+  }
+
+  #[test]
+  fn plot_grid_line_is_at_least_a_device_pixel_wide() {
+    // End to end: the default 0.2 pt grid line of a plot.
+    let svg = woxi::interpret(
+      "ExportString[ListLinePlot[{{0, 0.9}, {1, 0.97}}, Frame -> True, GridLines -> {{}, {0.95}}], \"SVG\"]",
+    )
+    .unwrap();
+    let out = widen_hairline_strokes(&svg, 1.0);
+    let grid = out
+      .split('<')
+      .find(|e| e.contains("stroke=\"#808080\""))
+      .expect("grid line");
+    assert!(grid.contains("stroke-width=\"10\""), "{grid}");
+  }
+}
+
 mod svg_default_font_family {
   use std::sync::Arc;
   use woxi::functions::image_ast::{
