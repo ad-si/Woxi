@@ -20982,11 +20982,31 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         .is_some() =>
     {
       let text = quoted_box_string_value(s);
-      let boxes =
-        inline_box_string_to_box_expr(&text).expect("checked by the guard");
-      if s.starts_with('"') {
+      if s.starts_with('"') && !SINGLE_LETTER_ITALICS.with(std::cell::Cell::get)
+      {
+        let boxes =
+          inline_box_string_to_box_expr(&text).expect("checked by the guard");
         with_box_upright_text(true, || layout_box(&boxes, font_size))
+      } else if s.starts_with('"') {
+        // A quoted string is literal text: its plain runs stay upright,
+        // while in `TraditionalForm` the box code it carries is typeset as
+        // boxes, so a one-letter symbol there (`\(z\)`) is a math variable
+        // — as `traditional_box_string_to_svg` sets it in a one-line label.
+        let norm = normalize_box_markers(&text);
+        let cs: Vec<char> = norm.chars().collect();
+        let units: Vec<Expr> = parse_box_units_tagged(&cs)
+          .into_iter()
+          .map(|(unit, is_box_code)| match &unit {
+            Expr::String(run) if !is_box_code => {
+              Expr::String(format!("\"{run}\""))
+            }
+            _ => unit,
+          })
+          .collect();
+        layout_box(&call1("RowBox", Expr::List(units.into())), font_size)
       } else {
+        let boxes =
+          inline_box_string_to_box_expr(&text).expect("checked by the guard");
         layout_box(&boxes, font_size)
       }
     }
@@ -26936,7 +26956,10 @@ fn structured_label_svg_impl(
   size: f64,
   script_level_one: bool,
 ) -> Option<String> {
-  let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
+  // Strings keep their quotes, so a one-letter string piece (the `"d"` of
+  // `Row[{"\!\(…\)d", …}]`) stays upright literal text instead of being
+  // mistaken for a single-letter symbol and set in italics.
+  let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional_quoted(expr);
   let source = crate::syntax::expr_to_string(&boxes);
   if ![
     "FractionBox[",
@@ -26953,11 +26976,14 @@ fn structured_label_svg_impl(
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
-  let layout = if script_level_one {
-    layout_box_at_script_level_one(&boxes, size)
-  } else {
-    layout_box(&boxes, size)
-  };
+  // A graphic's labels are set in `TraditionalForm`.
+  let layout = with_single_letter_italics(|| {
+    if script_level_one {
+      layout_box_at_script_level_one(&boxes, size)
+    } else {
+      layout_box(&boxes, size)
+    }
+  });
   Some(layout_to_svg(&layout, "currentColor"))
 }
 
