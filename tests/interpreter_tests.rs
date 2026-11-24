@@ -3906,11 +3906,11 @@ mod interpreter_tests {
       ))
       .unwrap();
       // The label is embedded as its own picture, after the plot's.
-      let picture = svg
+      let (start, _) = svg
         .match_indices("<svg x=\"")
         .last()
-        .map(|(start, _)| &svg[start..])
         .unwrap_or_else(|| panic!("{option} {label}: no picture: {svg}"));
+      let picture = &svg[start..];
       let picture = &picture[..picture.find("</svg>").unwrap()];
       assert!(
         picture.contains("<line"),
@@ -3939,11 +3939,11 @@ mod interpreter_tests {
          \"y = \", 1/x}}], Red], {{0.5, 0.5}}{offset}]}}], \"SVG\"]"
       ))
       .unwrap();
-      let label = svg
+      let (start, _) = svg
         .match_indices("<svg x=\"")
         .last()
-        .map(|(start, _)| &svg[start..])
         .unwrap_or_else(|| panic!("no embedded label: {svg}"));
+      let label = &svg[start..];
       assert!(
         label.contains("color=\"rgb(255,0,0)\""),
         "label not drawn in its Style color: {label}"
