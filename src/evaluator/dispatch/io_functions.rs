@@ -9339,7 +9339,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     } if (box_name == "DisplayForm" || box_name == "RawBoxes")
       && box_args.len() == 1 =>
     {
-      boxes_to_text_svg(&box_args[0])
+      boxes_to_text_svg(&crate::functions::graphics::box_display_content(
+        box_name, box_args,
+      ))
     }
     // QuestionObject[…] — render as a question panel (prompt, answer
     // choices / input field, Submit button).

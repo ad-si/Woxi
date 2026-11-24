@@ -7063,7 +7063,7 @@ fn generate_output_svg(expr: &syntax::Expr) {
   // RawBoxes[...] and DisplayForm[...] pass their contents directly as boxes.
   let boxes = if let syntax::Expr::FunctionCall { name, args } = expr {
     if (name == "RawBoxes" || name == "DisplayForm") && args.len() == 1 {
-      args[0].clone()
+      functions::graphics::box_display_content(name, args)
     } else if traditional {
       evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
         expr,

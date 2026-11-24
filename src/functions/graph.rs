@@ -1870,46 +1870,6 @@ fn graph_render(
     }
   }
 
-  // --- PlotLabel: centered title above the graph ---
-  if let Some(label_expr) = plot_label {
-    let (x_min, x_max, y_max) = positions.iter().fold(
-      (f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-      |(xmin, xmax, ymax), &(x, y)| (xmin.min(x), xmax.max(x), ymax.max(y)),
-    );
-    let cx = if positions.is_empty() {
-      0.0
-    } else {
-      f64::midpoint(x_min, x_max)
-    };
-    let label_y = y_max + vertex_radius + 0.2;
-
-    // If the user already provided a Style[...] wrapper, keep it so their
-    // directives (color, size, Bold/Italic) win. Otherwise wrap the label
-    // so it renders at a larger, bold font by default. Either way the label
-    // is kept as an expression (not pre-stringified) so structure such as
-    // `Subscript[…]` typesets instead of showing its literal head name.
-    let styled = match &label_expr {
-      Expr::FunctionCall { name, args }
-        if name == "Style" && !args.is_empty() =>
-      {
-        label_expr.clone()
-      }
-      _ => call(
-        "Style",
-        vec![label_expr.clone(), Expr::Integer(16), id_expr("Bold")],
-      ),
-    };
-
-    // Force black text regardless of any preceding directive (edges may
-    // have set a different color last).
-    primitives.push(call(
-      "RGBColor",
-      vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-    ));
-    let point = Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into());
-    primitives.push(call("Text", vec![styled, point]));
-  }
-
   // The graph is drawn on the internal scale and handed back in the
   // caller's coordinates, which Prolog / Epilog (and any graphics `Show`n
   // with it) are given in. `Scale` moves text without resizing its glyphs.
@@ -1947,6 +1907,11 @@ fn graph_render(
   );
 
   let mut graphics_args = vec![content, image_size_opt];
+  // The title is the picture's own `PlotLabel`, set above the plot area in
+  // the default label style, as `GraphPlot` returns it.
+  if let Some(label) = plot_label {
+    graphics_args.push(rule_expr(id_expr("PlotLabel"), label));
+  }
   if let Some(bg) = background {
     graphics_args.push(rule_expr(id_expr("Background"), bg));
   }

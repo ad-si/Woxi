@@ -2198,6 +2198,31 @@ mod factor {
     );
   }
 
+  /// Fractions nested inside a sum's terms are put over one common
+  /// denominator too, also when the bases are subscripted strings with no
+  /// symbol in them.
+  #[test]
+  fn factor_combines_nested_fractions() {
+    assert_eq!(
+      interpret("Factor[a (1/b + 1/c) + 1]").unwrap(),
+      "(a*b + a*c + b*c)/(b*c)"
+    );
+    assert_eq!(
+      interpret(
+        "Factor[x (1/Subscript[\"s\", 1] + 1/Subscript[\"s\", 2]) + y]"
+      )
+      .unwrap(),
+      "(x*Subscript[s, 1] + x*Subscript[s, 2] + y*Subscript[s, 1]*Subscript[s, 2])/(Subscript[s, 1]*Subscript[s, 2])"
+    );
+    assert_eq!(
+      interpret(
+        "Denominator[Factor[x/(1/Subscript[\"s\", 1] + 1/Subscript[\"s\", 2]) + y]]"
+      )
+      .unwrap(),
+      "Subscript[s, 1] + Subscript[s, 2]"
+    );
+  }
+
   #[test]
   fn factor_threads_over_list() {
     // Factor is Listable — threads over list arguments.
@@ -17492,6 +17517,52 @@ mod find_instance {
       )
       .unwrap(),
       "{3, True}"
+    );
+  }
+
+  #[test]
+  fn inequality_chain_with_symbolic_bounds() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cs = Inequality[a - 3, Less, b, LessEqual, a + 4] && c == b + 2; \
+         s = FindInstance[cs, {a, b, c}, Reals, 5]; \
+         {Length[s], Length[Union[s]], And @@ (cs /. s)}"
+      )
+      .unwrap(),
+      "{5, 5, True}"
+    );
+  }
+
+  #[test]
+  fn unbounded_region_gives_requested_count() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = FindInstance[x == 1 && y > 2 x, {x, y}, Reals, 4]; \
+         {Length[s], Length[Union[s]], And @@ (x == 1 && y > 2 x /. s)}"
+      )
+      .unwrap(),
+      "{4, 4, True}"
+    );
+  }
+
+  #[test]
+  fn disjunction_of_linear_systems() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cs = (a < -5 && b == 2) || (a > 1 && (b > a || b < -a)); \
+         s = FindInstance[cs, {a, b}, Reals, 5]; \
+         {Length[s], Length[Union[s]], And @@ (cs /. s)}"
+      )
+      .unwrap(),
+      "{5, 5, True}"
+    );
+    assert_eq!(
+      interpret("FindInstance[(x > 1 && x < 0) || (x > 5 && x < 4), x, Reals]")
+        .unwrap(),
+      "{}"
     );
   }
 

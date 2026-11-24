@@ -8118,6 +8118,16 @@ fn generate_svg_with_options(
     );
   }
 
+  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
+  // tick label that does not fit in the padding is cut off at the image
+  // boundary, also when the picture is nested in a layout (`Labeled`,
+  // `Grid`) whose cells let their content overflow. The clip covers only
+  // the plot image itself, so it is applied before a legend is placed
+  // beside it: the legend lies outside that image and stays visible.
+  if opts.image_padding.is_some() {
+    clip_to_image(&mut buf, render_width, render_height);
+  }
+
   // `"Placeholder"` (and a list plot's `Automatic`, whose series have no
   // names) numbers the series; a lone series gets no such legend.
   if opts.plot_legends.is_empty()
@@ -8160,13 +8170,6 @@ fn generate_svg_with_options(
     if let Some(end) = buf.rfind("</svg>") {
       buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
     }
-  }
-  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
-  // tick label that does not fit in the padding is cut off at the image
-  // boundary, also when the picture is nested in a layout (`Labeled`,
-  // `Grid`) whose cells let their content overflow.
-  if opts.image_padding.is_some() {
-    clip_to_image(&mut buf, render_width, render_height);
   }
   Ok(buf)
 }
