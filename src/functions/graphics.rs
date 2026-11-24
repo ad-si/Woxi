@@ -27177,6 +27177,10 @@ fn is_traditional_math_label(e: &Expr) -> bool {
             | "Times"
             | "Plus"
             | "Derivative"
+            // Postfix `n!` / `n!!`, which the label typesetter writes as
+            // TraditionalForm does.
+            | "Factorial"
+            | "Factorial2"
         )
           || crate::evaluator::dispatch::complex_and_special::tf_known_func(
             name,
