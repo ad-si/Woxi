@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Text` label in a plot's `Prolog` or `Epilog` whose `Row` holds a
+    quotient (`Text[Row[{"y = 1 + ", 1/x}], pos]`) stacks the numerator
+    over the denominator as it does in `Graphics`, instead of printing
+    `1/x` on one line.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms
