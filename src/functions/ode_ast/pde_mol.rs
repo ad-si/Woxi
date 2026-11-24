@@ -582,6 +582,65 @@ fn cell_gauss_offset(xs: &[f64], g: usize) -> f64 {
   h / (2.0 * 3.0_f64.sqrt())
 }
 
+/// A stationary field row that is not finite at grid point `i` (the
+/// `u_r / r` of a radial Laplacian `(1/r) ∂r(r ∂r u)` written on a domain
+/// symmetric about `r == 0`, with a grid point on the axis): the mean of the
+/// row at `±δ` along the first axis where that gives a finite value, the
+/// derivatives carried there by their Taylor expansion. The `1/δ` parts of
+/// the two sides cancel, so `u_r / r` tends to `u_rr` as it should. `vars`
+/// holds the derivatives `D{d0}x{d1}U{j}` at index `(d0 * 3 + d1) * n + j`
+/// followed by the two coordinates. A row singular along both axes stays
+/// non-finite.
+fn stationary_removable_limit(
+  f: &NumFn,
+  vars: &[f64],
+  n: usize,
+  coords: &[Vec<f64>; 2],
+  i: [usize; 2],
+) -> Result<f64, InterpreterError> {
+  let idx = |d0: usize, d1: usize, j: usize| (d0 * 3 + d1) * n + j;
+  let mut last = f64::NAN;
+  for axis in [1, 0] {
+    let xs = &coords[axis];
+    if xs.len() < 2 {
+      continue;
+    }
+    let g = i[axis];
+    let h = if g + 1 < xs.len() {
+      xs[g + 1] - xs[g]
+    } else {
+      xs[g] - xs[g - 1]
+    };
+    let delta = 1e-4 * h.abs();
+    let mut sum = 0.0;
+    for sign in [-1.0, 1.0] {
+      let d = sign * delta;
+      let mut shifted = vars.to_vec();
+      for d0 in 0..=2 {
+        for d1 in 0..=2 {
+          let next = if axis == 0 {
+            (d0 < 2).then(|| idx(d0 + 1, d1, 0))
+          } else {
+            (d1 < 2).then(|| idx(d0, d1 + 1, 0))
+          };
+          if let Some(next) = next {
+            for j in 0..n {
+              shifted[idx(d0, d1, j)] += d * vars[next + j];
+            }
+          }
+        }
+      }
+      shifted[9 * n + axis] = xs[g] + d;
+      sum += f.eval(&shifted)?;
+    }
+    last = sum / 2.0;
+    if last.is_finite() {
+      return Ok(last);
+    }
+  }
+  Ok(last)
+}
+
 /// The response of a compiled row to each of its first `n_inputs` inputs
 /// alone, the others zero: the coefficients of a linear row. `fixed` sets
 /// the remaining inputs (the coordinates).
@@ -2237,6 +2296,22 @@ fn solve_pde_stationary_inner(
       used[var_index(d0, d1, k)] = true;
     }
   }
+  // A removable singularity's limit (see [`stationary_removable_limit`])
+  // carries each derivative read to the shifted point by the next one.
+  for d0 in (0..=2).rev() {
+    for d1 in (0..=2).rev() {
+      for k in 0..n {
+        if used[var_index(d0, d1, k)] {
+          if d0 < 2 {
+            used[var_index(d0 + 1, d1, k)] = true;
+          }
+          if d1 < 2 {
+            used[var_index(d0, d1 + 1, k)] = true;
+          }
+        }
+      }
+    }
+  }
   let inner = usize::from(sizes[1] <= sizes[0]);
   let outer = 1 - inner;
   let pos = |i: [usize; 2]| (i[outer] * sizes[inner] + i[inner]) * n;
@@ -2328,9 +2403,16 @@ fn solve_pde_stationary_inner(
             vars[9 * n + 1] = coords[1][i[1]];
             sum / 4.0
           }
-          StationaryRow::Field(e) | StationaryRow::Boundary(e) => {
-            fns[e].as_ref().unwrap().eval(&vars)?
+          StationaryRow::Field(e) => {
+            let f = fns[e].as_ref().unwrap();
+            let v = f.eval(&vars)?;
+            if v.is_finite() {
+              v
+            } else {
+              stationary_removable_limit(f, &vars, n, &coords, i)?
+            }
           }
+          StationaryRow::Boundary(e) => fns[e].as_ref().unwrap().eval(&vars)?,
           StationaryRow::NaturalFlux(axis, j) => {
             natural[axis][j].as_ref().unwrap().eval(&vars)?
           }

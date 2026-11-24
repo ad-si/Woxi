@@ -29296,6 +29296,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A one-function list `ContourPlot[{f}, …]` with explicit `Contours`
+    /// is shaded like the bare function `f` (without them it draws only the
+    /// zero contour, see `contour_plot_function_list_draws_zero_contours`).
+    #[test]
+    fn contour_plot_single_function_list_is_shaded() {
+      for (f, opts) in [
+        (
+          "x + y",
+          ", Contours -> 5, ColorFunction -> \"TemperatureMap\"",
+        ),
+        ("Sin[x] Cos[y]", ", Contours -> 12"),
+      ] {
+        let filled = |body: String| {
+          interpret(&format!(
+            "Count[ContourPlot[{body}, {{x, 0, 3}}, {{y, 0, 3}}{opts}], \
+             _Polygon | _FilledCurve, Infinity]"
+          ))
+          .unwrap()
+        };
+        let listed = filled(format!("{{{f}}}"));
+        assert_ne!(listed, "0", "{f}");
+        assert_eq!(listed, filled(f.to_string()), "{f}");
+      }
+    }
+
+    /// `Contours -> n` spaces its levels, and the band colors, over every
+    /// sampled value: a field that saturates over most of the domain
+    /// (`1 - E^(-20 x)`) keeps the low levels of its steep ramp next to
+    /// `x == 0` and shades each of its `n + 1` bands in its own color,
+    /// where the automatic outlier fence (its quartiles bunch next to 1)
+    /// dropped them.
+    #[test]
+    fn contour_plot_contour_count_spans_a_saturating_field() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[1 - Exp[-20 x], {x, 0, 1}, {y, 0, 1}, \
+           Contours -> 9]; xs = Flatten[Cases[Normal[g], Line[p_] :> \
+           p[[All, 1]], Infinity]]; {Length[Cases[Normal[g], _Line, \
+           Infinity]], Min[xs] < 0.02, Length[DeleteDuplicates[Cases[g,            _RGBColor | _Hue, Infinity]]]}"
+        )
+        .unwrap(),
+        "{9, True, 10}"
+      );
+    }
+
     /// A nested function list counts as its flattened functions, and a
     /// function list with `Contours -> n` gets `n` levels for each
     /// function; both used to yield an opaque, primitive-less plot.
