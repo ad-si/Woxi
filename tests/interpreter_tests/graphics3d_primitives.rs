@@ -373,7 +373,7 @@ mod solids {
 
   /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
   /// is drawn as its combining mark on the base (`T̂`, `x̃`), not as a
-  /// superscript beside it; a non-accent overscript stays a superscript.
+  /// superscript beside it; a non-accent overscript is stacked above it.
   #[test]
   fn accent_overscript_text_label_is_a_combining_mark() {
     for (over, mark) in
@@ -390,7 +390,8 @@ mod solids {
       "Graphics3D[{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\(k\\)]\\)\", \
        {0, 0, 0}]}]",
     );
-    assert!(s.contains("baseline-shift=\"super\""), "got: {s}");
+    assert!(s.contains("data-stack=\"over\""), "got: {s}");
+    assert!(!s.contains("baseline-shift=\"super\""), "got: {s}");
   }
 
   /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or

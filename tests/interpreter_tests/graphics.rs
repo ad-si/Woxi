@@ -63287,6 +63287,32 @@ mod grid_repeating_decimal_alignment {
     );
   }
 
+  /// The open end of a half-open `PlotRange` is padded by 1/18 of the span
+  /// from the pinned value to the curve's far extreme (Wolfram's automatic
+  /// `Scaled[0.05]`), not of the curve's own extent: over `x` on `[0, 1]`,
+  /// `{-1, All}` draws like the explicit `{-1, 1 + 2/18}` and `{All, 2}`
+  /// like `{-1/9, 2}`.
+  #[test]
+  fn plot_half_open_plot_range_pads_from_pinned_end() {
+    let frame_ticks = |range: &str| -> Vec<String> {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, PlotRange -> {{{{0, 1}}, {range}}}, \
+         Frame -> True, Axes -> False]"
+      ));
+      svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s[..s.find('"').unwrap()].trim().to_string())
+        // The frame edges and tick marks are two-point lines.
+        .filter(|p| p.split(' ').count() == 2)
+        .collect()
+    };
+    assert_eq!(frame_ticks("{-1, All}"), frame_ticks("{-1, 1 + 2/18}"));
+    assert_ne!(frame_ticks("{-1, All}"), frame_ticks("{-1, 1 + 1/18}"));
+    assert_eq!(frame_ticks("{All, 2}"), frame_ticks("{-1/9, 2}"));
+    assert_ne!(frame_ticks("{All, 2}"), frame_ticks("{-1/18, 2}"));
+  }
+
   /// Layered by `Show`, a plot's curve stops at the pinned end of its
   /// half-open `PlotRange`, as in Wolfram (only the part the plot itself
   /// shows is drawn), and a leading graphic's half-open range clips the
@@ -65239,6 +65265,37 @@ mod stacked_text_and_scientific_form_labels {
     );
     assert!(!svg.contains("^(k"), "over-script was flattened: {svg}");
     assert!(svg.contains("<svg x="), "boxes were not embedded: {svg}");
+  }
+
+  /// An `Overscript` in a frame label (`A ⟶ B` with a `k` over the arrow)
+  /// is stacked above its base, centered on it, rather than set as a
+  /// superscript beside it: the script is raised and shifted right by half
+  /// the room the wider base has over it, and the base steps back under it.
+  #[test]
+  fn frame_label_overscript_is_stacked_over_its_base() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {None, None, \
+       Row[{\"A \", Overscript[\"\\[LongRightArrow]\", Style[\"k\", Italic]], \
+       \" B\"}]}]",
+    );
+    let start = svg.find("data-stack=\"over\"").expect("stacked script");
+    let open = svg[..start].rfind("<tspan").unwrap();
+    let tag = &svg[open..start];
+    let attr = |tag: &str, key: &str| -> f64 {
+      let i = tag.find(key).unwrap() + key.len();
+      let j = i + tag[i..].find("em\"").unwrap();
+      tag[i..j].parse().unwrap()
+    };
+    // The 0.35 em script sits over the 1.34 em arrow: 0.495 em in, i.e.
+    // 0.707 em at its own 70% size, and raised by 1 em of its own size.
+    assert!((attr(tag, "dx=\"") - 0.707).abs() < 1e-3, "{tag}");
+    assert!((attr(tag, "dy=\"") + 1.0).abs() < 1e-3, "{tag}");
+    let after = &svg[start..];
+    let base = &after[after.find("<tspan dx=").unwrap()..];
+    // The arrow steps back to where the script's lead began.
+    assert!((attr(base, "dx=\"") + 0.845).abs() < 1e-3, "{base}");
+    assert!(base.contains("\u{27F6}"), "{base}");
+    assert!(!svg.contains("baseline-shift=\"super\""), "{svg}");
   }
 
   /// `ToString[StandardForm[ScientificForm[x]]]` typesets `m × 10^e` in a
