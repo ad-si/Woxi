@@ -2311,8 +2311,9 @@ mod tests {
 
     #[test]
     fn frame_true_draws_thin_four_sided_border() {
-      // Frame -> True draws a single closed rectangle (5 points) at 1px
-      // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
+      // Frame -> True draws a single closed rectangle (5 points) half a
+      // point wide, as Wolfram does (stroke-width = RESOLUTION_SCALE / 2 =
+      // 5 in viewBox units).
       let svg = woxi::interpret(
         r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True], "SVG"]"#,
       )
@@ -2320,9 +2321,9 @@ mod tests {
       // Find the thick frame polyline and confirm it is a closed 5-point rect.
       let frame = svg
         .lines()
-        .find(|l| l.contains("stroke-width=\"10\"") && l.contains("points="))
+        .find(|l| l.contains("stroke-width=\"5\"") && l.contains("points="))
         .unwrap_or_else(|| {
-          panic!("no frame polyline at stroke-width 10: {svg}")
+          panic!("no frame polyline at stroke-width 5: {svg}")
         });
       let pts = frame
         .split("points=\"")

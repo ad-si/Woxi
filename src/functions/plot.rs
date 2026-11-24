@@ -16288,14 +16288,16 @@ pub(crate) fn frame_edge_paints(
     RGBColor(r, g, b)
   };
   let width = |t: f64| ((t * RESOLUTION_SCALE as f64).round() as u32).max(1);
+  // Wolfram strokes a plot's frame and its tick marks half a point wide
+  // (as the field plots' frames already are).
+  let default_width = RESOLUTION_SCALE / 2;
   std::array::from_fn(|edge| {
     let frame = opts.frame_styles[edge].as_ref();
     let ticks = opts.frame_ticks_styles[edge].as_ref();
     let frame_color = frame.and_then(|s| s.color);
     let tick_color = ticks.and_then(|s| s.color).or(frame_color);
-    let line_width = frame
-      .and_then(|s| s.thickness)
-      .map_or(RESOLUTION_SCALE, width);
+    let line_width =
+      frame.and_then(|s| s.thickness).map_or(default_width, width);
     FrameEdgePaint {
       line: frame_color.map_or(gray, rgb),
       line_width,
@@ -16303,7 +16305,7 @@ pub(crate) fn frame_edge_paints(
       mark_width: ticks
         .and_then(|s| s.thickness)
         .or(frame.and_then(|s| s.thickness))
-        .map_or(RESOLUTION_SCALE, width) as f64,
+        .map_or(default_width, width) as f64,
       label: tick_color
         .or(opts.label_style.and_then(|s| s.color))
         .map_or(gray, rgb),
