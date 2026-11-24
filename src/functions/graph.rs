@@ -766,6 +766,10 @@ fn graph_render(
   // `VertexCoordinates -> {{x, y}, …}`, one pair per vertex in order,
   // fixes the layout outright instead of computing one.
   let mut explicit_coordinates: Option<Vec<(f64, f64)>> = None;
+  // `VertexCoordinates -> {v -> {x, y}, …}`: the position of each vertex
+  // the rules name. Vertices they leave out keep the computed layout's
+  // position, as in `GraphEmbedding`.
+  let mut coordinate_rules: Option<Vec<Option<(f64, f64)>>> = None;
   // `PlotRange -> {{x0, x1}, {y0, y1}}`: the window of the coordinate
   // plane to show. Only honored together with `VertexCoordinates`, where
   // the caller decides what the coordinates mean.
@@ -926,12 +930,17 @@ fn graph_render(
         }
         "VertexCoordinates" => {
           if let Expr::List(items) = replacement {
-            let pts: Option<Vec<(f64, f64)>> =
-              items.iter().map(expr_to_point).collect();
-            if let Some(pts) = pts
-              && pts.len() == n
-            {
-              explicit_coordinates = Some(pts);
+            let (rules, rest) = split_style_rules(replacement);
+            if !rules.is_empty() && rest.is_empty() {
+              coordinate_rules = Some(vertex_rule_points(&vertices, &rules));
+            } else {
+              let pts: Option<Vec<(f64, f64)>> =
+                items.iter().map(expr_to_point).collect();
+              if let Some(pts) = pts
+                && pts.len() == n
+              {
+                explicit_coordinates = Some(pts);
+              }
             }
           }
         }
@@ -939,16 +948,8 @@ fn graph_render(
         // order. It only applies when every vertex is placed.
         "VertexCoordinateRules" => {
           let (rules, _) = split_style_rules(replacement);
-          let pts: Option<Vec<(f64, f64)>> = vertices
-            .iter()
-            .map(|v| {
-              let key = vertex_key(unwrap_vertex_style(v).0);
-              rules
-                .iter()
-                .find(|(k, _)| vertex_key(k) == key)
-                .and_then(|(_, pt)| expr_to_point(pt))
-            })
-            .collect();
+          let pts: Option<Vec<(f64, f64)>> =
+            vertex_rule_points(&vertices, &rules).into_iter().collect();
           if pts.is_some() {
             explicit_coordinates = pts;
           }
@@ -1058,6 +1059,24 @@ fn graph_render(
   let mut coord_scale = 1.0_f64;
   // Center of the caller's coordinates, mapped to the origin.
   let mut coord_center = (0.0_f64, 0.0_f64);
+  if explicit_coordinates.is_none()
+    && let Some(points) = coordinate_rules
+    && points.iter().any(Option::is_some)
+  {
+    explicit_coordinates = if points.iter().all(Option::is_some) {
+      points.into_iter().collect()
+    } else {
+      layout_choice.plain_lines = !draw_directed || legacy_plot == Some(false);
+      let computed = layout_choice.positions(&graph, &index_map);
+      Some(
+        points
+          .into_iter()
+          .zip(computed)
+          .map(|(given, auto)| given.unwrap_or(auto))
+          .collect(),
+      )
+    };
+  }
   let layout_is_computed = explicit_coordinates.is_none();
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
@@ -6912,6 +6931,24 @@ fn collect_directives(expr: &Expr) -> Vec<Expr> {
 /// per-part rules (`VertexStyle -> {1 -> Red, 2 -> Blue}`), and a mix of
 /// the two (`VertexStyle -> {Red, 1 -> Blue}`, where the plain directive
 /// is the default and the rules override it for the parts they name).
+/// The point each vertex is given by `{vertex -> {x, y}, …}` rules (in any
+/// order), or `None` for a vertex the rules leave out.
+fn vertex_rule_points(
+  vertices: &[Expr],
+  rules: &[(Expr, Expr)],
+) -> Vec<Option<(f64, f64)>> {
+  vertices
+    .iter()
+    .map(|v| {
+      let key = vertex_key(unwrap_vertex_style(v).0);
+      rules
+        .iter()
+        .find(|(k, _)| vertex_key(k) == key)
+        .and_then(|(_, pt)| expr_to_point(pt))
+    })
+    .collect()
+}
+
 fn split_style_rules(expr: &Expr) -> (Vec<(Expr, Expr)>, Vec<Expr>) {
   let items: Vec<Expr> = match expr {
     Expr::List(items) => items.to_vec(),
