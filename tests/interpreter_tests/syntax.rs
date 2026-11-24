@@ -7011,16 +7011,20 @@ mod grid {
     }
   }
 
+  /// A flat list is no matrix: the front end writes it on one line between
+  /// braces instead of drawing a parenthesized column vector.
   #[test]
-  fn traditional_form_1d_list_renders_as_column_vector() {
+  fn traditional_form_1d_list_stays_a_braced_list() {
     clear_state();
     let result = interpret_with_stdout("TraditionalForm[{a, b, c}]").unwrap();
-    assert_eq!(result.result, "-Graphics-");
-    let svg = result.graphics.unwrap();
-    for val in ["a", "b", "c"] {
+    assert_ne!(result.result, "-Graphics-");
+    let svg =
+      interpret("ExportString[TraditionalForm[{a, b, c}], \"SVG\"]").unwrap();
+    assert!(!svg.contains("<path"), "no parentheses expected: {svg}");
+    for glyph in ["{", "a", ",", "b", "c", "}"] {
       assert!(
-        svg.contains(&format!(">{val}</text>")),
-        "Missing value {val} in TraditionalForm column SVG"
+        svg.contains(&format!(">{glyph}<")),
+        "missing {glyph}: {svg}"
       );
     }
   }

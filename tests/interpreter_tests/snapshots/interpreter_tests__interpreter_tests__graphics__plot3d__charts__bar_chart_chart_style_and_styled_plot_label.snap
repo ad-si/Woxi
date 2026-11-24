@@ -51,5 +51,5 @@ expression: "export_svg(r##\"BarChart[{1, 2, 3}, ChartStyle -> {RGBColor[\"#2646
 <line x1="3519.0" y1="2215.0" x2="3586.0" y2="2215.0" stroke="#666666" stroke-width="5"/>
 <line x1="234.7" y1="2215.0" x2="234.7" y2="2275.0" stroke="#666666" stroke-width="5"/>
 <line x1="3519.0" y1="2215.0" x2="3519.0" y2="2275.0" stroke="#666666" stroke-width="5"/>
-<text x="1844.0" y="80.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#333" font-weight="bold" font-style="italic">My Chart</text>
+<text x="1844.0" y="80.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#666666" font-weight="bold" font-style="italic">My Chart</text>
 </svg>

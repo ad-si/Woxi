@@ -803,6 +803,57 @@ mod layout_display {
     assert!(svg.contains(">345<"), "{svg}");
   }
 
+  /// Regression: a graphic wider than the column a fixed `ItemSize` sets
+  /// was drawn at its full size, hanging past both sides of the column and
+  /// cropped by the grid (a plot legend lost its end tick labels). The front
+  /// end shrinks the graphic to the column's width, keeping its shape.
+  #[test]
+  fn grid_item_size_shrinks_a_wider_graphic_to_fit() {
+    let svg = svg_of(
+      "Grid[{{Graphics[Disk[], ImageSize -> 300]}, \
+       {Graphics[Rectangle[{0, 0}, {4, 1}], ImageSize -> 400]}, \
+       {Graphics[Circle[], ImageSize -> 50]}}, ItemSize -> {{10, 3}, Automatic}]",
+    );
+    let attr = |tag: &str, name: &str| -> f64 {
+      let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[j..j + tag[j..].find('"').unwrap()]
+        .trim_end_matches("px")
+        .parse()
+        .unwrap()
+    };
+    let tags: Vec<&str> = svg
+      .match_indices("<svg ")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect();
+    let grid_w = attr(tags[0], "width");
+    let cells: Vec<(f64, f64, f64)> = tags[1..]
+      .iter()
+      .filter(|t| t.contains(" x=\""))
+      .map(|t| (attr(t, "x"), attr(t, "width"), attr(t, "height")))
+      .collect();
+    assert_eq!(cells.len(), 3, "{svg}");
+    // The two wide graphics fill the same column width, inside the grid.
+    let (x1, w1, h1) = cells[0];
+    let (x2, w2, h2) = cells[1];
+    assert!(w1 < 300.0 && (w1 - w2).abs() < 0.5, "{cells:?}");
+    for (x, w) in [(x1, w1), (x2, w2)] {
+      assert!(x >= 0.0 && x + w <= grid_w + 0.5, "{cells:?} in {grid_w}");
+    }
+    // Each keeps its shape.
+    let natural_ratio = |tag: &str| -> f64 {
+      let j = tag.find(" viewBox=\"").unwrap() + 10;
+      let vb: Vec<f64> = tag[j..j + tag[j..].find('"').unwrap()]
+        .split_whitespace()
+        .map(|v| v.parse().unwrap())
+        .collect();
+      vb[3] / vb[2]
+    };
+    assert!((h1 - w1).abs() < 0.5, "{cells:?}");
+    assert!((h2 / w2 - natural_ratio(tags[2])).abs() < 0.01, "{cells:?}");
+    // A graphic narrower than the column keeps its own size.
+    assert!((cells[2].1 - 50.0).abs() < 0.5, "{cells:?}");
+  }
+
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
   /// as `{w, h}`: every column is `w` ems wide, not just the first one.
   #[test]

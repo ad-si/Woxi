@@ -1405,6 +1405,9 @@ pub(crate) struct ChartLabel {
   pub bold: bool,
   /// `Style[label, Italic]`.
   pub italic: bool,
+  /// The color a `Style[label, color]` wrapper gives the label; `None`
+  /// keeps the chart's default label color.
+  pub color: Option<Color>,
   /// The styles of a stacked (`Column[{…}]`) label's lines, one per
   /// `\n`-separated line of `text`; empty when the lines share the label's
   /// style.
@@ -2045,6 +2048,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       font_size,
       bold,
       italic,
+      color: label_color(&args[0]),
       line_styles: column_line_styles(&args[0]),
     });
   }
@@ -2061,9 +2065,33 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     font_size,
     bold,
     italic,
+    color: label_color(e),
     line_styles: column_line_styles(e),
     ..ChartLabel::default()
   })
+}
+
+/// The color the `Style[…]` wrappers around a label give it (looking
+/// through `Rotate`, `Text`, `Tooltip` and the like). An inner `Style` wins
+/// over an outer one, as it is the one applied to the text.
+pub(crate) fn label_color(e: &Expr) -> Option<Color> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let (_, _, color, _) = parse_style_directive_args(&args[1..]);
+      label_color(&args[0]).or(color)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Rotate" | "Text" | "Tooltip" | "Annotation" | "Pane" | "Placed"
+      ) && !args.is_empty() =>
+    {
+      label_color(&args[0])
+    }
+    _ => None,
+  }
 }
 
 /// A chart label's `text` broken into lines the way a fixed-width
@@ -6349,10 +6377,14 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let ty = top_margin - title_font_size * 0.5;
     let fs = sl.font_size.unwrap_or(title_font_size);
-    let fill = sl
-      .color
-      .as_ref()
-      .map_or_else(|| "black".to_string(), |c| c.to_svg_rgb());
+    let fill = sl.color.as_ref().map_or_else(
+      || {
+        crate::functions::graphics::theme()
+          .plot_label_fill
+          .to_string()
+      },
+      |c| c.to_svg_rgb(),
+    );
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");

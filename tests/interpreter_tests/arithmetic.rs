@@ -8326,6 +8326,42 @@ mod cases {
     );
   }
 
+  /// `HoldForm` draws as its content, so a held sum, product or power used
+  /// as a power base or a factor is parenthesized like the bare expression:
+  /// `HoldForm[a b/c]^2` sets as `(a b/c)²`, not as `a b/c` with only the
+  /// last part squared.
+  #[test]
+  fn held_compound_base_and_factor_are_parenthesized() {
+    assert_case(
+      r#"ToBoxes[HoldForm[a b/c]^2, TraditionalForm]"#,
+      r#"FormBox[SuperscriptBox[RowBox[{(, TagBox[FractionBox[RowBox[{a,  , b}], c], HoldForm], )}], 2], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes[HoldForm[x^2]^3, TraditionalForm]"#,
+      r#"FormBox[SuperscriptBox[RowBox[{(, TagBox[SuperscriptBox[x, 2], HoldForm], )}], 3], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes[c HoldForm[a + b], TraditionalForm]"#,
+      r#"FormBox[RowBox[{c,  , RowBox[{(, TagBox[RowBox[{a, +, b}], HoldForm], )}]}], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes[HoldForm[x]^2, TraditionalForm]"#,
+      r#"FormBox[SuperscriptBox[TagBox[x, HoldForm], 2], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes[HoldForm[a + b]^2]"#,
+      r#"SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], 2]"#,
+    );
+    assert_case(
+      r#"ToBoxes[HoldForm[a b]^2]"#,
+      r#"SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], 2]"#,
+    );
+    assert_case(
+      r#"ToBoxes[c HoldForm[a + b]]"#,
+      r#"RowBox[{c,  , RowBox[{(, RowBox[{a, +, b}], )}]}]"#,
+    );
+  }
+
   /// An indexed variable `Subscript[k, 1]` is ordered among a product's
   /// factors as its base symbol `k` is: ahead of later symbols and of
   /// function applications (`k₁ x`, `k₂ sin(k₁ x + ϕ)`), while a held

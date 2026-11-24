@@ -5630,6 +5630,7 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
   // a single Log when that reduces its digit-aware complexity measure.
   let assumed = try_merge_logs(&assumed).unwrap_or(assumed);
+  let assumed = try_double_angle_product(&assumed).unwrap_or(assumed);
   let assumed = try_radical_square_content(&assumed).unwrap_or(assumed);
   // Idempotence for And/Or of repeated predicates that BooleanMinimize leaves
   // opaque: Simplify[a > 2 && a > 2] -> a > 2, Simplify[a == 1 || a == 1] ->
@@ -5649,6 +5650,49 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&assumed).or(Ok(assumed));
   }
   Ok(assumed)
+}
+
+/// Fold each `Sin[u] Cos[u]` pair of a product into `Sin[2 u]/2` and keep
+/// the result when it has fewer leaves: `2 Cos[x] Sin[x]` → `Sin[2 x]`, and
+/// at rational multiples of Pi the doubled angle evaluates on, so
+/// `7 Cos[Pi/7] Sin[Pi/7]` → `7/2 Cos[3 Pi/14]`. A bare `Cos[x] Sin[x]`
+/// stays, since `Sin[2 x]/2` is larger.
+fn try_double_angle_product(expr: &Expr) -> Option<Expr> {
+  let mut factors = collect_times_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let arg_of = |e: &Expr, head: &str| match e {
+    Expr::FunctionCall { name, args } if name == head && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  };
+  let mut changed = false;
+  while let Some((si, ci, u)) =
+    factors.iter().enumerate().find_map(|(si, f)| {
+      let u = arg_of(f, "Sin")?;
+      let key = expr_to_string(&u);
+      let ci = factors.iter().position(|g| {
+        arg_of(g, "Cos").is_some_and(|v| expr_to_string(&v) == key)
+      })?;
+      Some((si, ci, u))
+    })
+  {
+    let (hi, lo) = if si > ci { (si, ci) } else { (ci, si) };
+    factors.remove(hi);
+    factors.remove(lo);
+    factors.push(make_rational(1, 2));
+    factors.push(call1("Sin", times2(Expr::Integer(2), u)));
+    changed = true;
+  }
+  if !changed {
+    return None;
+  }
+  let candidate =
+    crate::evaluator::evaluate_expr_to_expr(&build_times_product(factors))
+      .ok()?;
+  (leaf_count(&candidate) < leaf_count(expr)).then_some(candidate)
 }
 
 /// Flatten a nested And/Or chain into its leaf operands.
