@@ -9553,12 +9553,27 @@ fn array_plot_ast_inset(
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
-  for opt in &args[1..] {
-    if let Expr::Rule { pattern, .. } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n)
-        if n == "ImageSize" || n == "AspectRatio")
-    {
-      structure_args.push(opt.clone());
+  // `PixelConstrained` has already fixed that size to whole pixels per
+  // cell, which the requested `ImageSize` only bounds.
+  if pixel_constrained.is_some() {
+    structure_args.push(rule(
+      "ImageSize",
+      Expr::List(
+        vec![
+          Expr::Integer(svg_width as i128),
+          Expr::Integer(svg_height as i128),
+        ]
+        .into(),
+      ),
+    ));
+  } else {
+    for opt in &args[1..] {
+      if let Expr::Rule { pattern, .. } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n)
+          if n == "ImageSize" || n == "AspectRatio")
+      {
+        structure_args.push(opt.clone());
+      }
     }
   }
   let structure = call("Graphics", structure_args);
