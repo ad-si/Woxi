@@ -43196,14 +43196,29 @@ fn option_kv(expr: &Expr) -> Option<(&str, &Expr)> {
 
 /// Looks through `Pane`/`Item`/`Text`-style wrappers around a `Framed`
 /// layout, but keeps a `Style[layout, …]` on the layout itself so the font
-/// it sets still reaches the layout's cells.
+/// it sets still reaches the layout's cells. A wrapper peeled under a
+/// `Style` (`Style[Text[Grid[…]], 24]`) may come off as a `Style` of its
+/// own (the text face); the two merge into one `Style`, the inner
+/// directives last so they win as they would in the notebook.
 fn unwrap_framed_layout(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
-      let inner = unwrap_framed_layout(&args[0]);
-      let mut new_args = args.to_vec();
-      new_args[0] = inner;
-      call(name.as_str(), new_args)
+      match unwrap_framed_layout(&args[0]) {
+        Expr::FunctionCall {
+          ref name,
+          args: ref inner_args,
+        } if name == "Style" && inner_args.len() >= 2 => {
+          let mut new_args = vec![inner_args[0].clone()];
+          new_args.extend(args[1..].iter().cloned());
+          new_args.extend(inner_args[1..].iter().cloned());
+          call("Style", new_args)
+        }
+        inner => {
+          let mut new_args = args.to_vec();
+          new_args[0] = inner;
+          call("Style", new_args)
+        }
+      }
     }
     _ => unwrap_display_wrappers(expr),
   }
@@ -43620,7 +43635,9 @@ fn framed_box_to_svg(
   let (child_svg, content_w, content_h) = if let Some(svg) = inner_svg {
     (svg, inner_w, inner_h)
   } else {
-    let content = unwrap_display_wrappers(content);
+    // `unwrap_framed_layout` also peels a `Text` under a `Style`
+    // (`Framed[Style[Text[s], 24]]`), which would otherwise print as source.
+    let content = unwrap_framed_layout(content);
     let style = extract_cell_style(&content);
     let size = style.font_size.unwrap_or(14.0);
     let boxes =
