@@ -13754,6 +13754,217 @@ pub fn synthesize_oblique_text<'a>(
   Cow::Owned(out)
 }
 
+/// Widen every stroke of `svg` that would be drawn thinner than one device
+/// pixel to exactly one device pixel, the way the Wolfram front end draws
+/// hairlines.
+///
+/// Wolfram exports the default grid lines, mesh lines and framed-plot
+/// axes as 0.2 pt strokes, and Woxi writes them the same width, but on
+/// screen the front end never draws a line thinner than a pixel. Rasterized
+/// as is, such a stroke covers a fifth of a pixel, and a translucent one
+/// (`GridLines` are `GrayLevel[0.5, 0.4]`) all but vanishes.
+///
+/// `scale_factor` is the number of device pixels per CSS pixel the SVG is
+/// rasterized at. The scale of the `<svg>` viewports (`viewBox` onto
+/// `width`×`height`) and of `transform` attributes is tracked down the tree. A zero `stroke-width` (no stroke) and strokes in
+/// definitions (`<clipPath>`, `<marker>`, `<pattern>`, …) are left alone.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn widen_hairline_strokes(
+  svg: &str,
+  scale_factor: f64,
+) -> std::borrow::Cow<'_, str> {
+  use resvg::usvg::roxmltree;
+  use std::borrow::Cow;
+
+  if !svg.contains("stroke") || !(scale_factor > 0.0) {
+    return Cow::Borrowed(svg);
+  }
+  let options = roxmltree::ParsingOptions {
+    allow_dtd: true,
+    ..Default::default()
+  };
+  let Ok(doc) = roxmltree::Document::parse_with_options(svg, options) else {
+    return Cow::Borrowed(svg);
+  };
+
+  const SHAPES: [&str; 7] = [
+    "path", "line", "polyline", "polygon", "rect", "circle", "ellipse",
+  ];
+  const DEFINITIONS: [&str; 7] = [
+    "defs",
+    "clipPath",
+    "mask",
+    "marker",
+    "pattern",
+    "symbol",
+    "linearGradient",
+  ];
+
+  // (byte offset, text to insert or replace with, length replaced)
+  let mut edits: Vec<(usize, String, usize)> = Vec::new();
+  for node in doc
+    .descendants()
+    .filter(|n| n.is_element() && SHAPES.contains(&n.tag_name().name()))
+  {
+    if node
+      .ancestors()
+      .any(|a| DEFINITIONS.contains(&a.tag_name().name()))
+    {
+      continue;
+    }
+    let stroked = node
+      .ancestors()
+      .find_map(|a| own_svg_property(a, "stroke"))
+      .is_some_and(|s| s != "none" && s != "transparent");
+    if !stroked {
+      continue;
+    }
+    let width = match node
+      .ancestors()
+      .find_map(|a| own_svg_property(a, "stroke-width"))
+    {
+      None => 1.0,
+      Some(w) => match parse_svg_user_length(w) {
+        Some(w) => w,
+        None => continue,
+      },
+    };
+    if width <= 0.0 {
+      continue;
+    }
+    let scale = scale_factor * svg_user_scale(node);
+    if !(scale > 0.0 && scale.is_finite()) || width * scale >= 1.0 {
+      continue;
+    }
+    let widened = format!("{}", (1.0 / scale * 1e4).round() / 1e4);
+    let own_style_width = node.attribute_node("style").and_then(|style| {
+      let value = style.value();
+      let mut offset = 0;
+      for decl in value.split(';') {
+        if let Some((key, val)) = decl.split_once(':')
+          && key.trim() == "stroke-width"
+        {
+          let lead = val.len() - val.trim_start().len();
+          let start = style.range_value().start + offset + key.len() + 1 + lead;
+          return Some((start, val.trim().len()));
+        }
+        offset += decl.len() + 1;
+      }
+      None
+    });
+    if let Some((start, len)) = own_style_width {
+      edits.push((start, widened, len));
+    } else if let Some(attr) = node.attribute_node("stroke-width") {
+      let range = attr.range_value();
+      edits.push((range.start, widened, range.len()));
+    } else {
+      // Insert the attribute right after the element name.
+      let start = node.range().start + 1;
+      let name_len = svg[start..]
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(0);
+      edits.push((start + name_len, format!(" stroke-width=\"{widened}\""), 0));
+    }
+  }
+  if edits.is_empty() {
+    return Cow::Borrowed(svg);
+  }
+  edits.sort_by_key(|e| e.0);
+
+  let mut out = String::with_capacity(svg.len() + edits.len() * 24);
+  let mut pos = 0;
+  for (at, insert, replaced) in edits {
+    out.push_str(&svg[pos..at]);
+    out.push_str(&insert);
+    pos = at + replaced;
+  }
+  out.push_str(&svg[pos..]);
+  Cow::Owned(out)
+}
+
+/// A length in SVG user units (`"2"`, `"2px"`); `None` for relative units
+/// (`%`, `em`) whose size is not known here.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_svg_user_length(s: &str) -> Option<f64> {
+  let s = s.trim();
+  let s = s.strip_suffix("px").unwrap_or(s).trim_end();
+  s.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// How many CSS pixels one user unit of `node` spans: the product of the
+/// `transform` scales and `<svg>` viewBox scales from `node` up to the
+/// root.
+#[cfg(not(target_arch = "wasm32"))]
+fn svg_user_scale(node: resvg::usvg::roxmltree::Node<'_, '_>) -> f64 {
+  let mut scale = 1.0;
+  for a in node
+    .ancestors()
+    .filter(resvg::usvg::roxmltree::Node::is_element)
+  {
+    if let Some(t) = a.attribute("transform") {
+      scale *= svg_transform_scale(t);
+    }
+    if a.tag_name().name() == "svg" {
+      scale *= svg_viewbox_scale(a);
+    }
+  }
+  scale
+}
+
+/// The scale `transform` applies to lengths: the square root of the
+/// determinant of its linear part (rotations and skews keep areas).
+#[cfg(not(target_arch = "wasm32"))]
+fn svg_transform_scale(transform: &str) -> f64 {
+  let mut det = 1.0;
+  for part in transform.split(')') {
+    let Some((name, args)) = part.split_once('(') else {
+      continue;
+    };
+    let nums: Vec<f64> = args
+      .split(|c: char| c == ',' || c.is_whitespace())
+      .filter(|s| !s.is_empty())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    det *= match (name.trim(), nums.as_slice()) {
+      ("scale", [s]) => s * s,
+      ("scale", [sx, sy]) => sx * sy,
+      ("matrix", [a, b, c, d, _, _]) => a * d - b * c,
+      _ => 1.0,
+    };
+  }
+  det.abs().sqrt()
+}
+
+/// The scale an `<svg>` maps its `viewBox` onto its viewport with
+/// (`preserveAspectRatio` meet: the smaller of the two axis scales);
+/// 1 without a `viewBox` or a size.
+#[cfg(not(target_arch = "wasm32"))]
+fn svg_viewbox_scale(node: resvg::usvg::roxmltree::Node<'_, '_>) -> f64 {
+  let Some(vb) = node.attribute("viewBox") else {
+    return 1.0;
+  };
+  let vb: Vec<f64> = vb
+    .split(|c: char| c == ',' || c.is_whitespace())
+    .filter(|s| !s.is_empty())
+    .filter_map(|s| s.parse().ok())
+    .collect();
+  let [_, _, vw, vh] = vb.as_slice() else {
+    return 1.0;
+  };
+  let size = |name: &str, extent: f64| {
+    node
+      .attribute(name)
+      .and_then(parse_svg_user_length)
+      .filter(|_| extent > 0.0)
+      .map(|v| v / extent)
+  };
+  match (size("width", *vw), size("height", *vh)) {
+    (Some(sx), Some(sy)) => sx.min(sy),
+    (Some(s), None) | (None, Some(s)) => s,
+    (None, None) => 1.0,
+  }
+}
+
 /// The value of the presentation property `name` on `node` itself, from
 /// its `style` attribute (which takes precedence) or the plain attribute.
 #[cfg(not(target_arch = "wasm32"))]

@@ -6683,6 +6683,10 @@ fn rasterize_svg(
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let svg_str =
     &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
+  let svg_str = &woxi::functions::image_ast::widen_hairline_strokes(
+    svg_str,
+    scale_factor as f64,
+  );
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8673,11 +8677,13 @@ fn encode_svg_as_png(
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let scale: f32 = 2.0;
   let svg_str =
     &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
+  let svg_str =
+    &woxi::functions::image_ast::widen_hairline_strokes(svg_str, scale as f64);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
-  let scale: f32 = 2.0;
   let w = (size.width() * scale).ceil() as u32;
   let h = (size.height() * scale).ceil() as u32;
   if w == 0 || h == 0 {
