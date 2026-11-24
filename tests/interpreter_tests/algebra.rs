@@ -1685,6 +1685,35 @@ mod simplify {
     assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }
 
+  /// `Sin[u] Cos[u]` folds into `Sin[2 u]/2` when that is simpler.
+  #[test]
+  fn double_angle_product() {
+    assert_eq!(interpret("Simplify[2 Sin[x] Cos[x]]").unwrap(), "Sin[2*x]");
+    // The bare product is already the smaller form.
+    assert_eq!(
+      interpret("Simplify[Sin[x] Cos[x]]").unwrap(),
+      "Cos[x]*Sin[x]"
+    );
+  }
+
+  /// At a rational multiple of Pi the doubled angle evaluates on:
+  /// 7 Cos[Pi/7] Sin[Pi/7] = 7/2 Sin[2 Pi/7] = 7/2 Cos[3 Pi/14].
+  #[test]
+  fn double_angle_product_at_rational_pi_multiples() {
+    assert_eq!(
+      interpret("Simplify[7 Cos[Pi/7] Sqrt[Sin[Pi/7]^2]]").unwrap(),
+      "(7*Cos[(3*Pi)/14])/2"
+    );
+    assert_eq!(
+      interpret("Simplify[8 Cos[Pi/8] Sin[Pi/8]]").unwrap(),
+      "2*Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Simplify[9 Cos[Pi/9] Sin[Pi/9]]").unwrap(),
+      "(9*Sin[(2*Pi)/9])/2"
+    );
+  }
+
   #[test]
   fn pythagorean_with_coefficient() {
     assert_eq!(interpret("Simplify[2*Sin[x]^2 + 2*Cos[x]^2]").unwrap(), "2");
