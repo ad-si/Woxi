@@ -5115,6 +5115,10 @@ fn render_manipulate_widget<'a>(
           ) && !*popup)
         {
           let is_vertical = *is_vertical;
+          // A `Background -> color` option paints the faces the way it
+          // paints a `Button`'s (a selected segment keeps the accent so the
+          // current choice still reads as selected).
+          let face = state.control_face.get(ctrl_idx).copied().flatten();
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = !has_overflow && i == *current_index;
@@ -5138,8 +5142,16 @@ fn render_manipulate_widget<'a>(
                 },
               };
             let mut btn = button(btn_content).padding([3, 10]).style(
-              move |theme: &Theme, status| {
-                setter_button_style(
+              move |theme: &Theme, status| match face {
+                Some(rgb) if !is_selected => colored_button_style(
+                  rgb,
+                  if enabled {
+                    status
+                  } else {
+                    button::Status::Active
+                  },
+                ),
+                _ => setter_button_style(
                   theme,
                   status,
                   is_selected,
@@ -5147,7 +5159,7 @@ fn render_manipulate_widget<'a>(
                   count,
                   enabled,
                   is_vertical,
-                )
+                ),
               },
             );
             if enabled {
@@ -19479,6 +19491,40 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       enabled_flags,
       vec![true, true, false, false],
       "Enabled -> (# <= limit) must gate each popup by its own index"
+    );
+  }
+
+  #[test]
+  fn popup_menu_choice_labels_read_dynamic_lookups_in_hidden_state() {
+    use woxi::functions::graphics::DisplayNode;
+    // A display-area `PopupMenu[Dynamic[v], {k -> Dynamic[k /. names]}]`
+    // whose labels look each value up in a hidden `ControlType -> None`
+    // rule list must show the looked-up names, not the lookup's code.
+    let code = "Manipulate[{v, w}, \
+      Row[{PopupMenu[Dynamic[v], {0 -> Dynamic[0 /. names], \
+        1 -> Dynamic[1 /. names], None -> Dynamic[None /. names]}], \
+      PopupMenu[Dynamic[w], {2 -> Dynamic[names[[2, 2]]], \
+        3 -> Dynamic[StringJoin[\"x\", 3 /. names]]}]}], \
+      {{names, {None -> \"Rest\", 0 -> \"P\", 1 -> \"Q\", 2 -> \"R\", \
+        3 -> \"S\"}}, ControlType -> None}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("popup Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    let labels: Vec<Vec<String>> = collect_popups(&state.display_trees)
+      .iter()
+      .map(|p| {
+        let DisplayNode::Popup { choices, .. } = p else {
+          panic!("expected a Popup leaf, got {p:?}");
+        };
+        choices.iter().map(|(_, l)| l.clone()).collect()
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        vec!["P".to_string(), "Q".to_string(), "Rest".to_string()],
+        vec!["P".to_string(), "xS".to_string()],
+      ]
     );
   }
 

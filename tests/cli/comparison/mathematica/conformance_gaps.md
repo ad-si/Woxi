@@ -2765,6 +2765,19 @@ differences:
   default gives `T[1, 0.015] == 381.96`, its own converged value
   (`"MinPoints" -> 51` or more) is 374.75, and Woxi gives 374.75. The grid
   coordinates (`"Coordinates"`) never match WL's.
+- A steep initial profile of tiny amplitude that meets a flux condition
+  only in the continuum is not resolved by WL's coarse default grid, and
+  WL's solution keeps the *discrete* boundary flux of the initial profile
+  instead of the prescribed one. For `D[u[t, x], t] == D[u[t, x], x, x]`
+  with `Derivative[0, 1][u][t, 0] == -1`, `Derivative[0, 1][u][t, 1] == 0`
+  and `u[0, x] == Exp[-1000 x]/1000`, the exact solution grows like
+  `t + x^2/2 - x + 1/3` (Woxi: `u[25, 0.5] == 24.958`,
+  `u[100, 0.5] == 99.958`), while WL's grows about 18 times slower
+  (≈ 1.33 at `t == 25`, ≈ 5.44 at `t == 99.7`, read off the stored
+  snapshots of the TransientHeatConductionWithNoSteadyState
+  Demonstration, whose `PlotRange -> {0, 10}` therefore shows a curve in
+  WL and none in Woxi). Woxi instead makes the boundary values consistent
+  with the conditions before integrating.
 - `NeumannValue` problems are solved by the same finite differences, not
   WL's finite elements; values agree to 3–5 digits except in thin early
   boundary layers.
@@ -5791,7 +5804,13 @@ surface plots drawn through the shared surface renderer (`Plot3D`,
 own: a Demonstration's snapshot of a `ParametricPlot3D` at
 `ImageSize -> {450, 450}, ImagePadding -> 20` inside a `Manipulate` drew
 its box 351 px wide (Woxi: 348 px with the sphere framing, 405 px with the
-box-outline fit it used before).
+box-outline fit it used before). With the automatic `ImagePadding`, three
+snapshots of a morphing `ParametricPlot3D` surface (`SphericalRegion -> True`,
+`ImageSize -> {400, 400}`, a bowl, a torus-like ring and a mushroom shape)
+all draw it 0.90–0.91× as large as the bare sphere circle fills the picture,
+so Woxi widens the sphere-framed view by 1.1 there. Whether that margin is
+proportional or a fixed band of about 18 px (as an automatic padding would
+be) can't be told from snapshots of one size; unverified with wolframscript.
 
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
@@ -5882,9 +5901,16 @@ framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
 cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
 (532/550).
 
-`Show` keeps only its first graphic's options, so the `Show` snapshot has
-no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
-building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+`Show` keeps only its first graphic's options, so a `Show` led by a
+`Graphics3D` has no `PlotRange` and its explicit `ViewPoint` is what sets it
+apart from the building. A `ParametricPlot3D` result, as in wolframscript,
+carries the extent of its surface as an explicit `PlotRange`, so a `Show` led
+by one is framed by the sphere around that box. A Demonstration's
+`Manipulate` of two such `Show`s at `ImageSize -> {290, 290}` from
+`ViewPoint -> {0, -2, 0.5}` draws a unit sphere (led by a `Graphics3D`) at
+about 0.90 of the width and an inner half torus of a 4 × 4 × 2 box (led by
+a `ParametricPlot3D`) at about 0.57. Woxi draws them at 0.93 and 0.64; with
+the contents sphere for both, the torus came out at 0.83. Whether `PlotRange` and `ViewPoint` are really the triggers, or
 merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
@@ -5913,6 +5939,16 @@ only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
 projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
+
+A square picture without a `PlotRange` or `ViewPoint` contradicts the
+outline fit as well. A Demonstration's `Manipulate` shows a plain
+`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
+in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
+draw the plane about 323 px wide, with the origin at the center of the
+picture. That matches the sphere framing (Woxi: 320 px), not the outline
+fit that Woxi applies (398 px). Unlike the tall building, this box is
+nearly as wide as it is tall, and the picture is square. Unverified with
+wolframscript.
 
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
@@ -9764,6 +9800,20 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   space before each comma, uses non-stretchy braces and tighter boxes.
 - `Inset` of a nested `Graphics` with `Text`: the inner text does not scale
   with the inset.
+- `GraphicsGrid[{{g, plot}}]` where `g = Graphics[{Inset[photo, c], …},
+  PlotRange -> {{1, 34}, {-32, 1}}, ImageSize -> 250]` and `photo` is a
+  250 x 250 `Graphics[Raster[…], ImageSize -> 250]`: the notebook front end
+  shrinks the grid to 472 x 250 pt and draws the inset photo about 1.13
+  times the width of `g`'s cell, overflowing the plot range and cropped
+  only by the cell edge. Woxi lays the cell out 273 wide and keeps the inset
+  at 250, so it sits inside the plot range with a margin. Same undecoded
+  grid layout rule as the items above.
+- A plot label written as a product of a string and a number wrapper,
+  `PlotLabel -> "opacity =" NumberForm[x, {3, 2}]`, is drawn by the
+  notebook front end with the number first (`3.03 opacity =`); Woxi keeps
+  the canonical `Times` order and draws the string first. Not checked
+  against wolframscript, so whether `Times` or the label's TraditionalForm
+  formatting reorders it is unknown.
 - `PointSize[0.004]` points come out at r 0.43 instead of 0.5 pt.
 
 ## TraditionalForm typesetting leftovers (graphics comparison sweep, 2026-11)
@@ -10669,6 +10719,17 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 `TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
+
+### A one-letter string subscripted in a graphics label is drawn upright
+
+A saved snapshot of `Graphics[{…, Inset[Style[Column[{Row[{Subscript["ζ",
+1], " = ", val}], …}], 14], pos]}]` shows the subscripted one-letter
+strings (`ζ₁`, `ω₁`, `f₁`) in italics and the longer strings (`" = "`,
+`" Hz"`) upright. Woxi sets every quoted string upright whatever the form,
+so it draws `ζ₁` upright; only a one-letter *symbol* (`Subscript[f, 1]`) is
+italicized. Not verified against `wolframscript`; it is open whether the
+front end italicizes every one-letter string in a `TraditionalForm` label or
+only one that is a script's base.
 
 ### `SliceContourPlot3D` automatic contour levels on coarse slices
 
