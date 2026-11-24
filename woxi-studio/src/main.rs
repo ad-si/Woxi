@@ -27332,6 +27332,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = 
   }
 
   /// End-to-end regression for the shape of the "Leverage Ratios"
+  /// A Manipulate body `Pane[Labeled[table, caption, Top], {w, h},
+  /// Alignment -> {Center, Center}]` reserves the pane's whole box and
+  /// centers the captioned table in it; the table alone would shrink the
+  /// content area as the slider grows or shrinks the table.
+  #[test]
+  fn manipulate_fixed_pane_around_labeled_table_keeps_its_box() {
+    woxi::interpret(
+      "cells[k_] := Grid[Table[\" \", {k}, {k}], Frame -> All]; \
+       caption[k_] := Text[Row[Range[k], \"+\"]];",
+    )
+    .unwrap();
+    let code = "Manipulate[\
+      Pane[Labeled[cells[k], caption[k], Top], {420, 310}, \
+        Alignment -> {Center, Center}], \
+      {{k, 4, \"size\"}, 1, 9, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    for value in ["4", "7"] {
+      state.apply_saved_variables(&[("k".to_string(), value.to_string())]);
+      state.reevaluate();
+      let svg = state.check_render().unwrap().graphics.unwrap();
+      assert!(
+        svg.starts_with("<svg width=\"420\" height=\"310\""),
+        "k = {value}: {svg:.200}"
+      );
+    }
+  }
+
   /// Wolfram Demonstration: a `Setter` whose choice rules are
   /// `key -> Tooltip[displayValue, hoverText]` (so the button shows the
   /// tooltip's *first* argument, not the whole `Tooltip[…]` source), a

@@ -4347,8 +4347,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if inner == "Labeled" || inner == "Times"
         ) =>
     {
+      // A `Pane[…, {w, h}]` of fixed size still reserves its whole box,
+      // with the composition placed in it by the pane's `Alignment`.
       match render_grid_if_needed(args[0].clone()) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        graphics @ syntax::Expr::Graphics { .. } => {
+          keep_fixed_pane_box(&expr, graphics)
+        }
         _ => expr,
       }
     }

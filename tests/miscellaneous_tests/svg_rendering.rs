@@ -5386,6 +5386,39 @@ mod tests {
       );
     }
 
+    /// A captioned table in a fixed-size `Pane` takes up the pane's whole
+    /// box as well, placed in it by the pane's `Alignment`.
+    #[test]
+    fn a_labeled_table_in_a_fixed_pane_fills_the_box() {
+      let svg_for = |pane_args: &str| {
+        woxi::interpret_with_stdout(&format!(
+          r#"Pane[Labeled[Grid[{{{{"a", "b"}}, {{"c", "d"}}}}, Frame -> All], Text["cap"], Top]{pane_args}]"#
+        ))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the captioned table is a picture")
+      };
+      let bare = svg_for("");
+      assert!(!bare.starts_with("<svg width=\"420\""), "{bare:.200}");
+      for args in [
+        ", {420, 310}",
+        ", {420, 310}, Alignment -> {Center, Center}",
+        ", ImageSize -> {420, 310}",
+      ] {
+        let svg = svg_for(args);
+        assert!(
+          svg.starts_with("<svg width=\"420\" height=\"310\""),
+          "{args}: {svg:.200}"
+        );
+        assert!(svg.contains("cap"), "{args}: the caption is kept");
+      }
+      // The alignment moves the composition inside the box.
+      assert_ne!(
+        svg_for(", {420, 310}"),
+        svg_for(", {420, 310}, Alignment -> {Center, Center}")
+      );
+    }
+
     /// `Alignment -> {Center}` centers the content horizontally and keeps
     /// it at the top, like `Alignment -> {Center, Top}`.
     #[test]
