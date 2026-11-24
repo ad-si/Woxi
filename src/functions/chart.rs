@@ -9047,9 +9047,18 @@ fn date_list_plot_ast_impl(
       })
       .collect(),
   );
+  // An explicit `Axes -> Automatic` is the default resolved below.
+  let is_automatic_axes = |a: &Expr| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "Automatic"))
+  };
   let has_option = |name: &str| {
     args[1..].iter().any(|a| {
-      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      !is_automatic_axes(a)
+        && matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
     })
   };
@@ -9057,10 +9066,23 @@ fn date_list_plot_ast_impl(
   new_args.extend(
     args[1..]
       .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .filter(|a| {
+        matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          && !is_automatic_axes(a)
+      })
       .cloned(),
   );
-  for (name, value) in [("Frame", "True"), ("Joined", "True")] {
+  // `Axes -> Automatic` draws the axes only when there is no frame: the
+  // framed default has no line at y = 0, `Frame -> False` brings it back.
+  let frameless = args[1..].iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Frame")
+        && matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "False" || v == "None"))
+  });
+  let axes = if frameless { "True" } else { "False" };
+  for (name, value) in [("Frame", "True"), ("Joined", "True"), ("Axes", axes)] {
     if !has_option(name) {
       new_args.push(Expr::Rule {
         pattern: Box::new(Expr::Identifier(name.into())),
