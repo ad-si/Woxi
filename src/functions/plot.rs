@@ -77,13 +77,13 @@ pub(crate) const MAX_SVG_DIMENSION: u32 = 100_000;
 pub(crate) fn plot_theme()
 -> (RGBColor, RGBColor, RGBColor, &'static str, &'static str) {
   if crate::is_dark_mode() {
-    // (background, axis_gray, origin_line_gray, label_fill, title_default_fill)
+    // (background, axis_gray, origin_line_gray, label_fill, text_fill)
     (
       RGBColor(0x1a, 0x1a, 0x1a), // dark background
       RGBColor(0x99, 0x99, 0x99), // lighter axes for dark bg
       RGBColor(0x44, 0x44, 0x44), // subtle origin lines
       "#999",                     // axis label fill
-      "#e0e0e0",                  // default plot label fill
+      "#e0e0e0",                  // default text fill
     )
   } else {
     (
@@ -91,7 +91,7 @@ pub(crate) fn plot_theme()
       RGBColor(0x66, 0x66, 0x66), // dark gray axes
       RGBColor(0xCC, 0xCC, 0xCC), // light gray origin lines
       "#666",                     // axis label fill
-      "#333",                     // default plot label fill
+      "#333",                     // default text fill
     )
   }
 }
@@ -5076,7 +5076,6 @@ pub(crate) fn plot_labels_svg(
   layout: &plot_padding::LabelLayout,
   sf: f64,
   label_fill: &str,
-  title_default_fill: &str,
   canvas_width: f64,
 ) -> String {
   use plot_padding::{
@@ -5122,7 +5121,7 @@ pub(crate) fn plot_labels_svg(
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let title_default_fill = title_default_fill_owned
     .as_deref()
-    .unwrap_or(title_default_fill);
+    .unwrap_or(super::graphics::theme().plot_label_fill);
   let [room_bottom, room_left, room_top, room_right] =
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
@@ -6535,7 +6534,7 @@ fn generate_svg_with_options(
     }
   }
 
-  let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, theme_gray, _, label_fill, _) = plot_theme();
   // `FrameStyle` and `FrameTicksStyle` paint each frame edge, its tick
   // marks and its tick labels.
   let frame_paints = frame_edge_paints(opts, theme_gray);
@@ -8016,7 +8015,6 @@ fn generate_svg_with_options(
         &layout,
         sf,
         label_fill,
-        title_default_fill,
         render_width as f64,
       ));
 
@@ -10661,6 +10659,9 @@ pub(crate) fn generate_bar_svg(
   let label_fill: &str = label_style_fill.as_deref().unwrap_or(label_fill);
   let title_default_fill: &str =
     label_style_fill.as_deref().unwrap_or(title_default_fill);
+  let plot_label_fill: &str = label_style_fill
+    .as_deref()
+    .unwrap_or(super::graphics::theme().plot_label_fill);
 
   // Reserve extra right margin for chart legends
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
@@ -11502,7 +11503,7 @@ pub(crate) fn generate_bar_svg(
       let fill = sl
         .color
         .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+        .map_or_else(|| plot_label_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
       if sl.bold || label_bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -11696,7 +11697,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   };
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
-  let (bg, axis_gray, _light, label_fill, title_default_fill) = plot_theme();
+  let (bg, axis_gray, _light, label_fill, _) = plot_theme();
   let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
   let axis_stroke =
     format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
@@ -11951,10 +11952,10 @@ pub(crate) fn generate_horizontal_bar_svg(
     let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
     // A stacked title keeps its first line at the top and grows downwards
     // into the extra top margin reserved for it.
-    let fill = sl
-      .color
-      .as_ref()
-      .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+    let fill = sl.color.as_ref().map_or_else(
+      || super::graphics::theme().plot_label_fill.to_string(),
+      |c| c.to_svg_rgb(),
+    );
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
@@ -12224,8 +12225,7 @@ pub(crate) fn generate_bubble_chart_svg(
   let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 65 * RESOLUTION_SCALE;
 
-  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (bg_color, dark_gray, light_gray, label_fill, _) = plot_theme();
 
   // `ChartLegends` are set beside the finished image (see the end).
   let legend_margin_right = 10 * s as u32
@@ -12603,10 +12603,10 @@ pub(crate) fn generate_bubble_chart_svg(
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
       let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
-      let fill = sl
-        .color
-        .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+      let fill = sl.color.as_ref().map_or_else(
+        || super::graphics::theme().plot_label_fill.to_string(),
+        |c| c.to_svg_rgb(),
+      );
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -13718,8 +13718,7 @@ pub(crate) fn generate_histogram_svg(
     };
     (mix(r, bg.0), mix(g, bg.1), mix(b, bg.2))
   };
-  let (bg_color, _dark_gray, _light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (bg_color, _dark_gray, _light_gray, label_fill, _) = plot_theme();
 
   let side_margin = 2.0 * sf;
   let mut right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
@@ -14013,10 +14012,10 @@ pub(crate) fn generate_histogram_svg(
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
       let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
-      let fill = sl
-        .color
-        .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+      let fill = sl.color.as_ref().map_or_else(
+        || super::graphics::theme().plot_label_fill.to_string(),
+        |c| c.to_svg_rgb(),
+      );
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");

@@ -6349,10 +6349,14 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let ty = top_margin - title_font_size * 0.5;
     let fs = sl.font_size.unwrap_or(title_font_size);
-    let fill = sl
-      .color
-      .as_ref()
-      .map_or_else(|| "black".to_string(), |c| c.to_svg_rgb());
+    let fill = sl.color.as_ref().map_or_else(
+      || {
+        crate::functions::graphics::theme()
+          .plot_label_fill
+          .to_string()
+      },
+      |c| c.to_svg_rgb(),
+    );
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");

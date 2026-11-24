@@ -73936,3 +73936,58 @@ mod reversed_3d_plot_ranges {
     );
   }
 }
+
+mod plot_label_default_color {
+  use super::*;
+
+  /// The `fill` of the `<text>` holding `label` (or, for a label that is
+  /// laid out as an embedded picture, of the group wrapping it).
+  fn label_fill(svg: &str, label: &str) -> String {
+    let at = svg
+      .find(&format!(">{label}<"))
+      .unwrap_or_else(|| panic!("label {label} missing: {svg}"));
+    let head = &svg[..at];
+    let start = head.rfind("fill=\"").expect("a fill before the label") + 6;
+    let end = start + head[start..].find('"').unwrap();
+    head[start..end].to_string()
+  }
+
+  /// Wolfram draws a `PlotLabel` in `GrayLevel[0.4]` unless a color is
+  /// given, across `Graphics`, `Graphics3D` and the plotting functions.
+  #[test]
+  fn plot_labels_default_to_gray_level_0_4() {
+    for expr in [
+      "Graphics[Circle[], PlotLabel -> \"title\"]",
+      "Graphics[Circle[], PlotLabel -> Grid[{{\"title\", 1}}]]",
+      "Graphics[Circle[], Background -> Black, PlotLabel -> \"title\"]",
+      "Graphics3D[Sphere[], PlotLabel -> \"title\"]",
+      "Plot[x, {x, 0, 1}, PlotLabel -> \"title\"]",
+      "ListPlot[{1, 2, 3}, PlotLabel -> \"title\"]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> \"title\"]",
+      "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> \"title\"]",
+      "VectorPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, PlotLabel -> \"title\"]",
+      "ArrayPlot[{{1, 0}, {0, 1}}, PlotLabel -> \"title\"]",
+      "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> \"title\"]",
+      "BarChart[{1, 2}, PlotLabel -> \"title\"]",
+      "PieChart[{1, 2}, PlotLabel -> \"title\"]",
+      "Histogram[{1, 2, 2, 3}, PlotLabel -> \"title\"]",
+      "BubbleChart[{{1, 2, 3}, {2, 3, 1}}, PlotLabel -> \"title\"]",
+    ] {
+      let svg = export_svg(expr);
+      assert_eq!(label_fill(&svg, "title"), "#666666", "{expr}");
+    }
+  }
+
+  /// An explicit `LabelStyle` color or a `Style`d label still wins.
+  #[test]
+  fn explicit_label_colors_override_the_default() {
+    let svg =
+      export_svg("Plot[x, {x, 0, 1}, PlotLabel -> \"t\", LabelStyle -> Red]");
+    assert_eq!(label_fill(&svg, "t"), "rgb(255,0,0)");
+    let svg =
+      export_svg("Graphics[Circle[], PlotLabel -> \"t\", LabelStyle -> Blue]");
+    assert_eq!(label_fill(&svg, "t"), "rgb(0,0,255)");
+    let svg = export_svg("PieChart[{1, 2}, PlotLabel -> Style[\"t\", Red]]");
+    assert_eq!(label_fill(&svg, "t"), "rgb(255,0,0)");
+  }
+}

@@ -260,6 +260,9 @@ pub struct ThemeColors {
   pub stroke_default: &'static str,
   pub axis_stroke: &'static str,
   pub tick_label_fill: &'static str,
+  /// Default `PlotLabel` text: Wolfram draws plot titles in
+  /// `GrayLevel[0.4]` unless `LabelStyle` or the label sets a color.
+  pub plot_label_fill: &'static str,
   pub table_header_bg: &'static str,
   pub table_row_num_bg: &'static str,
   pub table_row_num_header_bg: &'static str,
@@ -276,6 +279,7 @@ const LIGHT_THEME: ThemeColors = ThemeColors {
   stroke_default: "black",
   axis_stroke: "#666666",
   tick_label_fill: "#555555",
+  plot_label_fill: "#666666",
   table_header_bg: "#f0f0f0",
   table_row_num_bg: "#eef2f7",
   table_row_num_header_bg: "#dde4ed",
@@ -293,6 +297,7 @@ const DARK_THEME: ThemeColors = ThemeColors {
   stroke_default: "#e0e0e0",
   axis_stroke: "#555",
   tick_label_fill: "#a0a0a0",
+  plot_label_fill: "#e0e0e0",
   table_header_bg: "#2a2a2a",
   table_row_num_bg: "#1e2830",
   table_row_num_header_bg: "#252d35",
@@ -19201,8 +19206,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let scale = ((total_width - 8.0) / w).clamp(0.0, 1.0);
     let (w, h) = (w * scale, h * scale);
     let band = block_height(lines.len(), TITLE_FONT);
-    let fill =
-      label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb);
+    let fill = label_color
+      .map_or_else(|| theme().plot_label_fill.to_string(), Color::to_svg_rgb);
     svg.push_str(&format!(
       "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
       embed_svg_centered(picture, cx, title_top + band / 2.0, w, h)
@@ -19252,7 +19257,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
        font-family=\"sans-serif\" font-size=\"{title_size}\"{title_attrs} \
        fill=\"{}\" xml:space=\"preserve\">",
       title_top + ascent(glyph_size),
-      label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb),
+      label_color
+        .map_or_else(|| theme().plot_label_fill.to_string(), Color::to_svg_rgb),
     ));
     for (i, line) in lines.iter().enumerate() {
       if i == 0 {
