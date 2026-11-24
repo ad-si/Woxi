@@ -21388,7 +21388,27 @@ fn march_tetra(
   };
   let (ci, co) = (centroid(&inside), centroid(&outside));
   let toward_high = [ci[0] - co[0], ci[1] - co[1], ci[2] - co[2]];
+  // A level that passes exactly through a corner of the tetrahedron
+  // collapses crossings onto that corner. The zero-area triangles this
+  // leaves are no part of the surface; drawn, they would show as stray
+  // strokes along their one remaining edge.
+  let size = (0..4)
+    .flat_map(|i| (i + 1..4).map(move |j| (i, j)))
+    .map(|(i, j)| {
+      let d = [
+        verts[i].x - verts[j].x,
+        verts[i].y - verts[j].y,
+        verts[i].z - verts[j].z,
+      ];
+      v_dot(d, d)
+    })
+    .fold(0.0f64, f64::max);
   let mut emit = |t: [Point3D; 3]| {
+    let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
+    let e2 = [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z];
+    if v_len(v_cross(e1, e2)) <= 1e-12 * size {
+      return;
+    }
     let n = triangle_normal(t[0], t[1], t[2]);
     let dot =
       n[0] * toward_high[0] + n[1] * toward_high[1] + n[2] * toward_high[2];

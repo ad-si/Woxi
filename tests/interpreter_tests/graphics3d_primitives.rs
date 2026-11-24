@@ -3525,4 +3525,24 @@ mod surface_outlines_and_meshes {
     let red = svg("Graphics3D[{EdgeForm[Red], Torus[]}, Boxed -> False]");
     assert!(!red.contains("rgb(255,0,0)"), "{red}");
   }
+
+  // A contour level passing exactly through a sample point collapsed the
+  // marching-tetrahedra crossings onto that point. The zero-area triangles
+  // left behind were drawn as stray strokes across the surface.
+  #[test]
+  fn contour_surfaces_have_no_degenerate_triangles() {
+    let s = svg(
+      "ListContourPlot3D[Table[x^2 + y^2 + z^2, {x, -1, 1, 0.25}, \
+       {y, -1, 1, 0.25}, {z, -1, 1, 0.25}], Contours -> {0.5}, Mesh -> None]",
+    );
+    let corners = polygon_corners(&s);
+    assert!(corners.len() > 100, "{s}");
+    let degenerate = corners
+      .iter()
+      .filter(|p| {
+        p.len() == 3 && (p[0] == p[1] || p[1] == p[2] || p[0] == p[2])
+      })
+      .count();
+    assert_eq!(degenerate, 0, "{s}");
+  }
 }

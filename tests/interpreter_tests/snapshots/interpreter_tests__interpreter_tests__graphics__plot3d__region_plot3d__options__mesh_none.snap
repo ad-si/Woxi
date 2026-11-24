@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 9634
 expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None]\")"
 ---
 <svg width="360" height="386" viewBox="0 0 360 386" xmlns="http://www.w3.org/2000/svg">
@@ -75,8 +74,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="197.9,169.9 198.5,176.8 201.0,168.5" fill="url(#s9b7ba4d022)" stroke="url(#s9b7ba4d022)" stroke-width="0.5"/>
 <linearGradient id="sb8f8da3b58" gradientUnits="userSpaceOnUse" x1="205.8" y1="180.0" x2="209.3" y2="180.7"><stop stop-color="#ffcd20"/><stop offset="1" stop-color="#ffb91d"/></linearGradient>
 <polygon points="204.2,187.1 210.1,177.0 207.6,176.8" fill="url(#sb8f8da3b58)" stroke="url(#sb8f8da3b58)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 207.6,176.8 204.2,187.1" fill="rgb(255,203,32)" stroke="rgb(255,203,32)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 199.8,183.2 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
 <linearGradient id="s7238a43213" gradientUnits="userSpaceOnUse" x1="194.0" y1="184.8" x2="199.7" y2="183.0"><stop stop-color="#ffd622"/><stop offset="1" stop-color="#ffcc20"/></linearGradient>
 <polygon points="194.8,187.3 199.8,183.2 197.1,180.8" fill="url(#s7238a43213)" stroke="url(#s7238a43213)" stroke-width="0.5"/>
 <linearGradient id="s6432c29c7e" gradientUnits="userSpaceOnUse" x1="199.3" y1="168.4" x2="200.3" y2="169.3"><stop stop-color="#ffc61f"/><stop offset="1" stop-color="#ffbd1e"/></linearGradient>
@@ -85,11 +82,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="191.1,182.8 197.1,180.8 195.5,179.2" fill="url(#s46a3ec481d)" stroke="url(#s46a3ec481d)" stroke-width="0.5"/>
 <linearGradient id="sa3b3513612" gradientUnits="userSpaceOnUse" x1="200.5" y1="168.0" x2="201.6" y2="167.6"><stop stop-color="#ffc31e"/><stop offset="1" stop-color="#ffad1b"/></linearGradient>
 <polygon points="200.4,167.9 201.0,168.5 201.4,167.1" fill="url(#sa3b3513612)" stroke="url(#sa3b3513612)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 204.2,187.1 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 204.2,187.1 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 204.2,187.1 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 204.2,187.1 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 204.2,187.1 204.2,187.1" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
 <linearGradient id="s89f38f4a73" gradientUnits="userSpaceOnUse" x1="204.6" y1="171.3" x2="210.1" y2="171.7"><stop stop-color="#ffbc1d"/><stop offset="1" stop-color="#ffaf1b"/></linearGradient>
 <polygon points="204.5,171.9 208.1,175.3 210.3,167.4" fill="url(#s89f38f4a73)" stroke="url(#s89f38f4a73)" stroke-width="0.5"/>
 <linearGradient id="s7d6a04b93c" gradientUnits="userSpaceOnUse" x1="195.2" y1="175.9" x2="193.3" y2="172.4"><stop stop-color="#ffce20"/><stop offset="1" stop-color="#ffc61f"/></linearGradient>
@@ -122,10 +114,8 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="197.9,169.9 199.7,167.1 191.8,167.4" fill="url(#s4f732a8814)" stroke="url(#s4f732a8814)" stroke-width="0.5"/>
 <linearGradient id="s56919b84c8" gradientUnits="userSpaceOnUse" x1="189.4" y1="180.2" x2="193.5" y2="177.4"><stop stop-color="#ffd722"/><stop offset="1" stop-color="#ffce20"/></linearGradient>
 <polygon points="191.1,182.8 193.3,177.0 188.7,177.3" fill="url(#s56919b84c8)" stroke="url(#s56919b84c8)" stroke-width="0.5"/>
-<polygon points="204.2,187.1 212.9,187.6 204.2,187.1" fill="rgb(255,200,31)" stroke="rgb(255,200,31)" stroke-width="0.5"/>
 <linearGradient id="s4306dee125" gradientUnits="userSpaceOnUse" x1="188.2" y1="175.9" x2="191.4" y2="174.8"><stop stop-color="#ffd522"/><stop offset="1" stop-color="#ffc91f"/></linearGradient>
 <polygon points="188.7,177.3 191.5,175.1 190.0,173.4" fill="url(#s4306dee125)" stroke="url(#s4306dee125)" stroke-width="0.5"/>
-<polygon points="193.2,191.3 204.2,187.1 204.2,187.1" fill="rgb(255,210,33)" stroke="rgb(255,210,33)" stroke-width="0.5"/>
 <linearGradient id="sf99b36a363" gradientUnits="userSpaceOnUse" x1="193.4" y1="173.3" x2="193.1" y2="167.4"><stop stop-color="#ffcc20"/><stop offset="1" stop-color="#ffc11e"/></linearGradient>
 <polygon points="197.9,169.9 191.8,167.4 190.0,173.4" fill="url(#sf99b36a363)" stroke="url(#sf99b36a363)" stroke-width="0.5"/>
 <linearGradient id="s4eac30c71d" gradientUnits="userSpaceOnUse" x1="207.7" y1="180.7" x2="213.5" y2="183.9"><stop stop-color="#ffcd20"/><stop offset="1" stop-color="#ffb91d"/></linearGradient>
@@ -144,7 +134,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="204.2,187.1 212.9,187.6 215.2,180.8" fill="url(#se3393c1763)" stroke="url(#se3393c1763)" stroke-width="0.5"/>
 <linearGradient id="s43829bea71" gradientUnits="userSpaceOnUse" x1="195.6" y1="168.3" x2="196.7" y2="163.5"><stop stop-color="#ffc11e"/><stop offset="1" stop-color="#ffb51c"/></linearGradient>
 <polygon points="191.8,167.4 199.7,167.1 196.8,163.5" fill="url(#s43829bea71)" stroke="url(#s43829bea71)" stroke-width="0.5"/>
-<polygon points="202.8,195.9 204.2,187.1 204.2,187.1" fill="rgb(255,206,32)" stroke="rgb(255,206,32)" stroke-width="0.5"/>
 <linearGradient id="s7d89cb0958" gradientUnits="userSpaceOnUse" x1="207.9" y1="189.7" x2="210.5" y2="186.0"><stop stop-color="#ffcd20"/><stop offset="1" stop-color="#ffbf1e"/></linearGradient>
 <polygon points="209.2,190.6 212.9,187.6 204.2,187.1" fill="url(#s7d89cb0958)" stroke="url(#s7d89cb0958)" stroke-width="0.5"/>
 <linearGradient id="sb7b0bcd79f" gradientUnits="userSpaceOnUse" x1="213.7" y1="179.9" x2="216.7" y2="178.5"><stop stop-color="#ffbf1e"/><stop offset="1" stop-color="#ffab1a"/></linearGradient>
@@ -803,7 +792,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="232.7,165.3 235.6,162.0 229.1,160.6" fill="url(#s992db92310)" stroke="url(#s992db92310)" stroke-width="0.5"/>
 <linearGradient id="s614ab8e0aa" gradientUnits="userSpaceOnUse" x1="185.5" y1="208.1" x2="188.8" y2="209.2"><stop stop-color="#ffe925"/><stop offset="1" stop-color="#ffe524"/></linearGradient>
 <polygon points="189.3,207.6 185.3,208.6 186.9,209.7" fill="url(#s614ab8e0aa)" stroke="url(#s614ab8e0aa)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 186.3,150.2 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
 <linearGradient id="s743cd8facd" gradientUnits="userSpaceOnUse" x1="200.6" y1="145.7" x2="203.6" y2="139.8"><stop stop-color="#fd9116"/><stop offset="1" stop-color="#e68313"/></linearGradient>
 <polygon points="200.9,145.9 206.8,141.4 198.4,141.4" fill="url(#s743cd8facd)" stroke="url(#s743cd8facd)" stroke-width="0.5"/>
 <linearGradient id="sd890e143e8" gradientUnits="userSpaceOnUse" x1="229.0" y1="196.8" x2="230.2" y2="198.2"><stop stop-color="#ffac1a"/><stop offset="1" stop-color="#ff9e18"/></linearGradient>
@@ -820,7 +808,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="189.3,207.6 186.9,209.7 190.1,212.2" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <linearGradient id="sbcbe57f0c5" gradientUnits="userSpaceOnUse" x1="193.7" y1="144.1" x2="193.1" y2="142.9"><stop stop-color="#ffa018"/><stop offset="1" stop-color="#ff9216"/></linearGradient>
 <polygon points="186.7,147.8 197.6,141.4 195.9,141.5" fill="url(#sbcbe57f0c5)" stroke="url(#sbcbe57f0c5)" stroke-width="0.5"/>
-<polygon points="173.3,160.7 175.6,151.5 175.6,151.5" fill="rgb(255,181,27)" stroke="rgb(255,181,27)" stroke-width="0.5"/>
 <linearGradient id="s5cb065abb7" gradientUnits="userSpaceOnUse" x1="167.4" y1="173.8" x2="166.5" y2="171.3"><stop stop-color="#ffd621"/><stop offset="1" stop-color="#ffd120"/></linearGradient>
 <polygon points="165.9,174.3 170.3,170.6 164.4,172.1" fill="url(#s5cb065abb7)" stroke="url(#s5cb065abb7)" stroke-width="0.5"/>
 <linearGradient id="s5dd5dbb418" gradientUnits="userSpaceOnUse" x1="222.4" y1="150.4" x2="224.1" y2="149.3"><stop stop-color="#e68313"/><stop offset="1" stop-color="#c87210"/></linearGradient>
@@ -885,11 +872,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s36c75beb2b" gradientUnits="userSpaceOnUse" x1="166.2" y1="181.7" x2="166.4" y2="186.6"><stop stop-color="#ffde23"/><stop offset="1" stop-color="#ffe324"/></linearGradient>
 <polygon points="169.1,186.5 166.0,181.7 163.8,186.6" fill="url(#s36c75beb2b)" stroke="url(#s36c75beb2b)" stroke-width="0.5"/>
 <polygon points="178.4,209.4 182.2,205.9 178.2,202.4" fill="rgb(255,234,37)" stroke="rgb(255,234,37)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
 <linearGradient id="s4644318795" gradientUnits="userSpaceOnUse" x1="190.3" y1="212.9" x2="193.6" y2="212.0"><stop stop-color="#ffe624"/><stop offset="1" stop-color="#ffe123"/></linearGradient>
 <polygon points="191.8,213.4 193.6,211.8 190.1,212.2" fill="url(#s4644318795)" stroke="url(#s4644318795)" stroke-width="0.5"/>
 <polygon points="168.1,195.1 171.0,195.2 169.7,193.7" fill="rgb(255,233,36)" stroke="rgb(255,233,36)" stroke-width="0.5"/>
@@ -933,7 +915,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s216865d1ea" gradientUnits="userSpaceOnUse" x1="196.0" y1="216.4" x2="200.6" y2="209.6"><stop stop-color="#ffde23"/><stop offset="1" stop-color="#ffd922"/></linearGradient>
 <polygon points="192.5,213.9 197.1,216.9 203.2,211.4" fill="url(#s216865d1ea)" stroke="url(#s216865d1ea)" stroke-width="0.5"/>
 <polygon points="182.7,213.6 186.9,209.7 185.3,208.6" fill="rgb(255,232,36)" stroke="rgb(255,232,36)" stroke-width="0.5"/>
-<polygon points="167.5,158.2 175.6,151.5 175.6,151.5" fill="rgb(255,179,27)" stroke="rgb(255,179,27)" stroke-width="0.5"/>
 <linearGradient id="sc855592dc4" gradientUnits="userSpaceOnUse" x1="210.1" y1="213.2" x2="211.2" y2="213.9"><stop stop-color="#ffd220"/><stop offset="1" stop-color="#ffc81f"/></linearGradient>
 <polygon points="209.6,214.0 210.7,214.7 211.9,212.1" fill="url(#sc855592dc4)" stroke="url(#sc855592dc4)" stroke-width="0.5"/>
 <linearGradient id="scaf3729902" gradientUnits="userSpaceOnUse" x1="227.7" y1="196.8" x2="234.2" y2="199.2"><stop stop-color="#ffa619"/><stop offset="1" stop-color="#ff9e17"/></linearGradient>
@@ -983,7 +964,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="se4fe6ebb57" gradientUnits="userSpaceOnUse" x1="220.6" y1="145.6" x2="224.1" y2="145.6"><stop stop-color="#dd7e12"/><stop offset="1" stop-color="#c87110"/></linearGradient>
 <polygon points="220.6,145.4 223.1,148.6 224.1,142.8" fill="url(#se4fe6ebb57)" stroke="url(#se4fe6ebb57)" stroke-width="0.5"/>
 <polygon points="168.1,195.1 168.0,201.0 171.0,195.2" fill="rgb(255,234,37)" stroke="rgb(255,234,37)" stroke-width="0.5"/>
-<polygon points="175.6,151.5 177.2,143.1 175.6,151.5" fill="rgb(255,169,25)" stroke="rgb(255,169,25)" stroke-width="0.5"/>
 <linearGradient id="sb431021581" gradientUnits="userSpaceOnUse" x1="209.0" y1="214.4" x2="210.0" y2="215.4"><stop stop-color="#ffd321"/><stop offset="1" stop-color="#ffc81f"/></linearGradient>
 <polygon points="207.8,215.7 210.7,214.7 209.6,214.0" fill="url(#sb431021581)" stroke="url(#sb431021581)" stroke-width="0.5"/>
 <polygon points="168.1,202.9 172.6,202.7 177.1,201.4" fill="rgb(255,235,37)" stroke="rgb(255,235,37)" stroke-width="0.5"/>
@@ -1009,7 +989,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="162.5,184.8 166.0,181.7 161.2,183.2" fill="url(#sfc0cefd2d6)" stroke="url(#sfc0cefd2d6)" stroke-width="0.5"/>
 <linearGradient id="s34964601ec" gradientUnits="userSpaceOnUse" x1="216.2" y1="214.0" x2="221.9" y2="209.5"><stop stop-color="#ffc41e"/><stop offset="1" stop-color="#ffb91c"/></linearGradient>
 <polygon points="215.2,212.6 220.0,213.5 221.8,209.4" fill="url(#s34964601ec)" stroke="url(#s34964601ec)" stroke-width="0.5"/>
-<polygon points="166.9,151.5 175.6,151.5 175.6,151.5" fill="rgb(255,173,26)" stroke="rgb(255,173,26)" stroke-width="0.5"/>
 <linearGradient id="s2f3207f9de" gradientUnits="userSpaceOnUse" x1="216.8" y1="142.2" x2="217.2" y2="140.7"><stop stop-color="#dc7d12"/><stop offset="1" stop-color="#c06c0f"/></linearGradient>
 <polygon points="215.6,141.9 218.1,142.2 217.2,140.8" fill="url(#s2f3207f9de)" stroke="url(#s2f3207f9de)" stroke-width="0.5"/>
 <linearGradient id="s49d9520ba4" gradientUnits="userSpaceOnUse" x1="195.6" y1="139.0" x2="197.6" y2="138.7"><stop stop-color="#ff9216"/><stop offset="1" stop-color="#e48213"/></linearGradient>
@@ -1351,12 +1330,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="se1ffa049cd" gradientUnits="userSpaceOnUse" x1="237.2" y1="205.1" x2="237.8" y2="203.7"><stop stop-color="#ffa118"/><stop offset="1" stop-color="#fd9015"/></linearGradient>
 <polygon points="238.9,205.7 240.3,204.7 233.4,202.8" fill="url(#se1ffa049cd)" stroke="url(#se1ffa049cd)" stroke-width="0.5"/>
 <polygon points="157.5,159.2 159.7,164.0 162.4,158.8" fill="rgb(255,188,28)" stroke="rgb(255,188,28)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="159.7,194.9 159.7,194.9 159.7,194.9" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
 <linearGradient id="sf8df9d648a" gradientUnits="userSpaceOnUse" x1="156.1" y1="174.5" x2="156.5" y2="175.0"><stop stop-color="#ffca1f"/><stop offset="1" stop-color="#ffd420"/></linearGradient>
 <polygon points="156.0,175.3 157.2,174.3 155.7,174.8" fill="url(#sf8df9d648a)" stroke="url(#sf8df9d648a)" stroke-width="0.5"/>
 <linearGradient id="sc1b0759990" gradientUnits="userSpaceOnUse" x1="183.2" y1="138.5" x2="185.9" y2="132.7"><stop stop-color="#fe9115"/><stop offset="1" stop-color="#e88413"/></linearGradient>
@@ -3374,13 +3347,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s90123fbd3d" gradientUnits="userSpaceOnUse" x1="218.7" y1="113.3" x2="220.0" y2="110.8"><stop stop-color="#7c4308"/><stop offset="1" stop-color="#6c3a07"/></linearGradient>
 <polygon points="220.0,110.7 217.4,112.5 220.6,112.9" fill="url(#s90123fbd3d)" stroke="url(#s90123fbd3d)" stroke-width="0.5"/>
 <polygon points="142.9,219.2 147.4,214.6 147.0,214.1" fill="rgb(255,211,31)" stroke="rgb(255,211,31)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="263.0,206.3 263.0,206.3 263.0,206.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
 <linearGradient id="s03de4485ff" gradientUnits="userSpaceOnUse" x1="144.6" y1="142.6" x2="143.6" y2="141.3"><stop stop-color="#ff9915"/><stop offset="1" stop-color="#fb8d13"/></linearGradient>
 <polygon points="146.2,139.2 142.7,142.1 143.0,143.9" fill="url(#s03de4485ff)" stroke="url(#s03de4485ff)" stroke-width="0.5"/>
 <linearGradient id="s2ad9edb116" gradientUnits="userSpaceOnUse" x1="259.7" y1="209.3" x2="261.6" y2="210.0"><stop stop-color="#cf740f"/><stop offset="1" stop-color="#b5640d"/></linearGradient>
@@ -3762,18 +3728,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="269.8,170.4 273.8,168.1 271.7,166.9" fill="url(#sce56d66e02)" stroke="url(#sce56d66e02)" stroke-width="0.5"/>
 <linearGradient id="s041625d172" gradientUnits="userSpaceOnUse" x1="130.1" y1="175.4" x2="131.3" y2="176.1"><stop stop-color="#ffaf18"/><stop offset="1" stop-color="#ffb81a"/></linearGradient>
 <polygon points="131.4,174.4 130.0,175.6 130.7,177.2" fill="url(#s041625d172)" stroke="url(#s041625d172)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="249.9,125.3 249.9,125.3 249.9,125.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <linearGradient id="sa1a697e5a2" gradientUnits="userSpaceOnUse" x1="271.5" y1="179.5" x2="273.0" y2="177.5"><stop stop-color="#884b09"/><stop offset="1" stop-color="#733d07"/></linearGradient>
 <polygon points="271.2,179.2 273.9,178.2 272.4,177.2" fill="url(#sa1a697e5a2)" stroke="url(#sa1a697e5a2)" stroke-width="0.5"/>
 <linearGradient id="s1ee5605dd6" gradientUnits="userSpaceOnUse" x1="191.7" y1="246.9" x2="192.2" y2="248.2"><stop stop-color="#ffc41c"/><stop offset="1" stop-color="#ffbc1b"/></linearGradient>
@@ -5524,18 +5478,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="190.8,261.7 201.5,260.1 194.4,257.2" fill="rgb(255,158,21)" stroke="rgb(255,158,21)" stroke-width="0.5"/>
 <linearGradient id="s6411192d82" gradientUnits="userSpaceOnUse" x1="140.3" y1="122.6" x2="139.8" y2="121.8"><stop stop-color="#c36b0d"/><stop offset="1" stop-color="#ae5e0b"/></linearGradient>
 <polygon points="138.3,123.3 140.8,122.3 140.9,121.1" fill="url(#s6411192d82)" stroke="url(#s6411192d82)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,260.1 201.5,260.1 201.5,260.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="sa2b6ff57f5" gradientUnits="userSpaceOnUse" x1="140.5" y1="235.1" x2="139.9" y2="230.0"><stop stop-color="#ffb718"/><stop offset="1" stop-color="#ffbd1a"/></linearGradient>
 <polygon points="141.2,229.8 138.6,232.8 140.8,235.1" fill="url(#sa2b6ff57f5)" stroke="url(#sa2b6ff57f5)" stroke-width="0.5"/>
 <linearGradient id="s19a1d95f34" gradientUnits="userSpaceOnUse" x1="206.1" y1="96.0" x2="210.0" y2="93.8"><stop stop-color="#663606"/><stop offset="1" stop-color="#623405"/></linearGradient>
@@ -6056,7 +5998,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="270.7,229.7 271.1,223.9 268.0,231.3" fill="url(#sbf57cda763)" stroke="url(#sbf57cda763)" stroke-width="0.5"/>
 <linearGradient id="se35f63be16" gradientUnits="userSpaceOnUse" x1="224.8" y1="257.6" x2="225.7" y2="261.3"><stop stop-color="#f38611"/><stop offset="1" stop-color="#e57c0f"/></linearGradient>
 <polygon points="224.5,257.7 222.8,259.6 228.3,260.6" fill="url(#se35f63be16)" stroke="url(#se35f63be16)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 171.4,101.2" fill="rgb(124,65,7)" stroke="rgb(124,65,7)" stroke-width="0.5"/>
 <polygon points="181.4,262.3 189.9,261.8 183.9,258.9" fill="rgb(255,161,20)" stroke="rgb(255,161,20)" stroke-width="0.5"/>
 <linearGradient id="s3648d01454" gradientUnits="userSpaceOnUse" x1="223.4" y1="95.1" x2="224.1" y2="94.7"><stop stop-color="#5c3005"/><stop offset="1" stop-color="#572d05"/></linearGradient>
 <polygon points="223.1,94.5 224.2,95.7 224.0,94.4" fill="url(#s3648d01454)" stroke="url(#s3648d01454)" stroke-width="0.5"/>
@@ -6199,7 +6140,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="270.7,229.7 268.0,231.3 268.3,232.0" fill="url(#s38e7d1a00d)" stroke="url(#s38e7d1a00d)" stroke-width="0.5"/>
 <linearGradient id="se5a51aac07" gradientUnits="userSpaceOnUse" x1="128.8" y1="133.9" x2="127.3" y2="132.2"><stop stop-color="#d2730e"/><stop offset="1" stop-color="#c56b0d"/></linearGradient>
 <polygon points="130.6,129.6 126.5,133.0 126.6,135.9" fill="url(#se5a51aac07)" stroke="url(#se5a51aac07)" stroke-width="0.5"/>
-<polygon points="183.4,94.9 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <linearGradient id="s486c63445d" gradientUnits="userSpaceOnUse" x1="129.8" y1="227.2" x2="133.2" y2="226.5"><stop stop-color="#ffac16"/><stop offset="1" stop-color="#ffb217"/></linearGradient>
 <polygon points="129.4,225.1 130.6,228.6 133.3,227.0" fill="url(#s486c63445d)" stroke="url(#s486c63445d)" stroke-width="0.5"/>
 <linearGradient id="sf9e0713d6a" gradientUnits="userSpaceOnUse" x1="132.3" y1="128.8" x2="131.1" y2="126.4"><stop stop-color="#c66c0d"/><stop offset="1" stop-color="#b7630c"/></linearGradient>
@@ -6382,11 +6322,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="137.3,120.3 141.5,115.3 136.3,117.3" fill="url(#s6fba44d2d4)" stroke="url(#s6fba44d2d4)" stroke-width="0.5"/>
 <linearGradient id="s255bad2ab5" gradientUnits="userSpaceOnUse" x1="277.5" y1="134.1" x2="276.5" y2="135.3"><stop stop-color="#4a2604"/><stop offset="1" stop-color="#4e2904"/></linearGradient>
 <polygon points="274.7,131.8 278.3,136.9 278.4,134.8" fill="url(#s255bad2ab5)" stroke="url(#s255bad2ab5)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 174.2,94.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <linearGradient id="s18ea4eca2f" gradientUnits="userSpaceOnUse" x1="283.4" y1="148.9" x2="284.2" y2="148.6"><stop stop-color="#562d04"/><stop offset="1" stop-color="#4f2904"/></linearGradient>
 <polygon points="283.3,148.6 283.9,149.5 284.1,148.2" fill="url(#s18ea4eca2f)" stroke="url(#s18ea4eca2f)" stroke-width="0.5"/>
 <linearGradient id="s60fc268f82" gradientUnits="userSpaceOnUse" x1="151.9" y1="106.5" x2="151.5" y2="105.5"><stop stop-color="#9c540a"/><stop offset="1" stop-color="#8a4908"/></linearGradient>
@@ -6508,7 +6443,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="120.1,200.8 116.1,203.2 116.7,204.2" fill="url(#s2a357c57ea)" stroke="url(#s2a357c57ea)" stroke-width="0.5"/>
 <linearGradient id="s184e043322" gradientUnits="userSpaceOnUse" x1="115.4" y1="200.3" x2="118.7" y2="199.5"><stop stop-color="#ff9d14"/><stop offset="1" stop-color="#ffa014"/></linearGradient>
 <polygon points="115.8,196.9 116.1,203.2 118.8,199.7" fill="url(#s184e043322)" stroke="url(#s184e043322)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 184.1,90.1 174.2,94.6" fill="rgb(114,60,7)" stroke="rgb(114,60,7)" stroke-width="0.5"/>
 <linearGradient id="se26ea67048" gradientUnits="userSpaceOnUse" x1="205.6" y1="89.3" x2="208.9" y2="90.5"><stop stop-color="#5f3205"/><stop offset="1" stop-color="#5b2f05"/></linearGradient>
 <polygon points="206.7,91.9 210.2,87.1 205.1,90.8" fill="url(#se26ea67048)" stroke="url(#se26ea67048)" stroke-width="0.5"/>
 <linearGradient id="s7fbbe57c6b" gradientUnits="userSpaceOnUse" x1="278.1" y1="136.6" x2="279.3" y2="135.6"><stop stop-color="#4e2904"/><stop offset="1" stop-color="#492604"/></linearGradient>
@@ -6529,7 +6463,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="280.0,214.3 276.2,222.4 279.4,221.2" fill="url(#s2706a77324)" stroke="url(#s2706a77324)" stroke-width="0.5"/>
 <linearGradient id="s656d656472" gradientUnits="userSpaceOnUse" x1="288.2" y1="179.6" x2="290.6" y2="177.9"><stop stop-color="#653505"/><stop offset="1" stop-color="#603205"/></linearGradient>
 <polygon points="289.2,175.8 287.8,179.1 290.6,181.8" fill="url(#s656d656472)" stroke="url(#s656d656472)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 174.2,94.6 163.3,96.6" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <polygon points="150.9,247.1 144.6,244.8 144.4,245.7" fill="rgb(255,175,23)" stroke="rgb(255,175,23)" stroke-width="0.5"/>
 <linearGradient id="sac38c3d0ea" gradientUnits="userSpaceOnUse" x1="282.1" y1="145.2" x2="284.1" y2="145.3"><stop stop-color="#522b04"/><stop offset="1" stop-color="#4f2904"/></linearGradient>
 <polygon points="284.3,141.1 282.0,146.9 283.5,147.8" fill="url(#sac38c3d0ea)" stroke="url(#sac38c3d0ea)" stroke-width="0.5"/>
@@ -6711,7 +6644,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="233.1,94.7 232.0,93.2 232.3,94.6" fill="url(#s3928fecf01)" stroke="url(#s3928fecf01)" stroke-width="0.5"/>
 <linearGradient id="s30db63a819" gradientUnits="userSpaceOnUse" x1="144.0" y1="245.5" x2="144.8" y2="245.2"><stop stop-color="#ffad16"/><stop offset="1" stop-color="#ffb017"/></linearGradient>
 <polygon points="144.0,245.6 144.4,245.7 144.6,244.8" fill="url(#s30db63a819)" stroke="url(#s30db63a819)" stroke-width="0.5"/>
-<polygon points="174.2,94.6 178.5,88.3 174.2,94.6" fill="rgb(114,60,7)" stroke="rgb(114,60,7)" stroke-width="0.5"/>
 <polygon points="261.5,111.6 257.0,107.3 257.2,109.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sf7a80e3f4f" gradientUnits="userSpaceOnUse" x1="144.3" y1="245.4" x2="144.1" y2="245.1"><stop stop-color="#ffad16"/><stop offset="1" stop-color="#ffb017"/></linearGradient>
 <polygon points="144.0,245.6 144.6,244.8 143.9,245.3" fill="url(#sf7a80e3f4f)" stroke="url(#sf7a80e3f4f)" stroke-width="0.5"/>
@@ -7869,7 +7801,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="176.0,85.7 178.5,88.3 181.5,84.9" fill="url(#s9da75c29d7)" stroke="url(#s9da75c29d7)" stroke-width="0.5"/>
 <linearGradient id="se8089f2af7" gradientUnits="userSpaceOnUse" x1="171.9" y1="267.3" x2="172.2" y2="266.0"><stop stop-color="#ff8d10"/><stop offset="1" stop-color="#ff9412"/></linearGradient>
 <polygon points="170.3,266.0 172.2,267.4 173.7,266.3" fill="url(#se8089f2af7)" stroke="url(#se8089f2af7)" stroke-width="0.5"/>
-<polygon points="291.0,191.3 296.5,189.3 296.5,189.3" fill="rgb(97,50,5)" stroke="rgb(97,50,5)" stroke-width="0.5"/>
 <linearGradient id="sc70d08e603" gradientUnits="userSpaceOnUse" x1="110.1" y1="154.6" x2="110.3" y2="154.7"><stop stop-color="#c86a0c"/><stop offset="1" stop-color="#dc760d"/></linearGradient>
 <polygon points="110.3,154.4 110.1,154.6 110.1,154.9" fill="url(#sc70d08e603)" stroke="url(#sc70d08e603)" stroke-width="0.5"/>
 <linearGradient id="s3fc35967a5" gradientUnits="userSpaceOnUse" x1="285.1" y1="218.7" x2="288.3" y2="217.6"><stop stop-color="#783f07"/><stop offset="1" stop-color="#6e3906"/></linearGradient>
@@ -7916,7 +7847,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="127.6,116.7 126.8,121.7 133.6,113.1" fill="url(#s2a9eca692f)" stroke="url(#s2a9eca692f)" stroke-width="0.5"/>
 <linearGradient id="s2882b95893" gradientUnits="userSpaceOnUse" x1="238.4" y1="91.1" x2="238.8" y2="90.4"><stop stop-color="#4c2704"/><stop offset="1" stop-color="#452403"/></linearGradient>
 <polygon points="238.6,91.2 239.3,90.7 237.9,90.5" fill="url(#s2882b95893)" stroke="url(#s2882b95893)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 291.0,194.7" fill="rgb(98,51,5)" stroke="rgb(98,51,5)" stroke-width="0.5"/>
 <linearGradient id="s69fe4aa59c" gradientUnits="userSpaceOnUse" x1="108.2" y1="192.0" x2="109.4" y2="191.9"><stop stop-color="#ff8a10"/><stop offset="1" stop-color="#ff8f11"/></linearGradient>
 <polygon points="108.4,196.2 109.3,189.7 108.1,189.9" fill="url(#s69fe4aa59c)" stroke="url(#s69fe4aa59c)" stroke-width="0.5"/>
 <polygon points="259.6,105.9 264.2,107.8 263.7,103.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -7974,8 +7904,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s92fcaffb03" gradientUnits="userSpaceOnUse" x1="292.0" y1="195.7" x2="297.9" y2="193.8"><stop stop-color="#663505"/><stop offset="1" stop-color="#5f3105"/></linearGradient>
 <polygon points="296.5,189.3 292.4,196.8 293.8,199.0" fill="url(#s92fcaffb03)" stroke="url(#s92fcaffb03)" stroke-width="0.5"/>
 <polygon points="259.6,105.9 263.7,103.6 258.0,101.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="129.0,234.9 123.4,232.1 123.4,232.1" fill="rgb(255,154,18)" stroke="rgb(255,154,18)" stroke-width="0.5"/>
-<polygon points="129.0,234.9 123.4,232.1 123.4,232.1" fill="rgb(255,154,18)" stroke="rgb(255,154,18)" stroke-width="0.5"/>
 <linearGradient id="sf219914036" gradientUnits="userSpaceOnUse" x1="286.7" y1="135.7" x2="286.2" y2="136.0"><stop stop-color="#442303"/><stop offset="1" stop-color="#472504"/></linearGradient>
 <polygon points="288.6,139.3 285.2,133.7 285.2,134.7" fill="url(#sf219914036)" stroke="url(#sf219914036)" stroke-width="0.5"/>
 <linearGradient id="s389aab15f8" gradientUnits="userSpaceOnUse" x1="114.3" y1="140.7" x2="114.7" y2="140.7"><stop stop-color="#b8620b"/><stop offset="1" stop-color="#bf660c"/></linearGradient>
@@ -8050,8 +7978,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="220.0,82.5 212.7,85.7 218.6,83.6" fill="url(#s856765cb36)" stroke="url(#s856765cb36)" stroke-width="0.5"/>
 <linearGradient id="s7fd66a479d" gradientUnits="userSpaceOnUse" x1="278.6" y1="230.8" x2="284.0" y2="227.0"><stop stop-color="#844507"/><stop offset="1" stop-color="#7a4007"/></linearGradient>
 <polygon points="279.3,231.8 284.0,226.9 278.9,229.3" fill="url(#s7fd66a479d)" stroke="url(#s7fd66a479d)" stroke-width="0.5"/>
-<polygon points="121.2,225.5 123.4,232.1 123.4,232.1" fill="rgb(255,152,18)" stroke="rgb(255,152,18)" stroke-width="0.5"/>
-<polygon points="121.2,225.5 123.4,232.1 123.4,232.1" fill="rgb(255,152,18)" stroke="rgb(255,152,18)" stroke-width="0.5"/>
 <linearGradient id="s5b41dae684" gradientUnits="userSpaceOnUse" x1="292.7" y1="151.9" x2="293.9" y2="155.3"><stop stop-color="#4c2704"/><stop offset="1" stop-color="#4f2904"/></linearGradient>
 <polygon points="291.7,152.3 293.4,155.5 294.2,151.4" fill="url(#s5b41dae684)" stroke="url(#s5b41dae684)" stroke-width="0.5"/>
 <linearGradient id="s74c917ae18" gradientUnits="userSpaceOnUse" x1="285.6" y1="219.2" x2="287.7" y2="219.5"><stop stop-color="#783f07"/><stop offset="1" stop-color="#6e3906"/></linearGradient>
@@ -8147,7 +8073,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="109.0,203.9 112.5,207.8 109.9,202.9" fill="url(#sda4e0c6efc)" stroke="url(#sda4e0c6efc)" stroke-width="0.5"/>
 <linearGradient id="s57962f0b03" gradientUnits="userSpaceOnUse" x1="135.6" y1="105.7" x2="137.8" y2="108.4"><stop stop-color="#874707"/><stop offset="1" stop-color="#8e4b08"/></linearGradient>
 <polygon points="138.9,107.5 137.0,104.6 135.3,110.4" fill="url(#s57962f0b03)" stroke="url(#s57962f0b03)" stroke-width="0.5"/>
-<polygon points="295.7,181.3 296.5,189.3 296.5,189.3" fill="rgb(94,49,5)" stroke="rgb(94,49,5)" stroke-width="0.5"/>
 <linearGradient id="sacac61fe02" gradientUnits="userSpaceOnUse" x1="144.7" y1="101.6" x2="144.1" y2="100.1"><stop stop-color="#8a4808"/><stop offset="1" stop-color="#7e4207"/></linearGradient>
 <polygon points="142.9,102.3 144.8,101.6 145.8,99.4" fill="url(#sacac61fe02)" stroke="url(#sacac61fe02)" stroke-width="0.5"/>
 <linearGradient id="s568bcb4e5d" gradientUnits="userSpaceOnUse" x1="111.6" y1="212.8" x2="114.4" y2="211.4"><stop stop-color="#ff9011"/><stop offset="1" stop-color="#ff9411"/></linearGradient>
@@ -8165,15 +8090,8 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="105.8,158.5 110.1,154.9 110.1,154.6" fill="url(#s1b27e8aa20)" stroke="url(#s1b27e8aa20)" stroke-width="0.5"/>
 <linearGradient id="s4802f72b44" gradientUnits="userSpaceOnUse" x1="240.2" y1="263.6" x2="241.9" y2="264.8"><stop stop-color="#c1670c"/><stop offset="1" stop-color="#b15e0a"/></linearGradient>
 <polygon points="238.3,267.2 244.0,261.7 240.4,263.3" fill="url(#s4802f72b44)" stroke="url(#s4802f72b44)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="123.4,232.1 123.4,232.1 123.4,232.1" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="s44194a3642" gradientUnits="userSpaceOnUse" x1="288.1" y1="212.7" x2="291.4" y2="212.8"><stop stop-color="#6e3906"/><stop offset="1" stop-color="#6a3705"/></linearGradient>
 <polygon points="288.0,216.7 291.4,211.9 290.5,209.6" fill="url(#s44194a3642)" stroke="url(#s44194a3642)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 293.8,199.0" fill="rgb(97,50,5)" stroke="rgb(97,50,5)" stroke-width="0.5"/>
 <linearGradient id="s52410c9d34" gradientUnits="userSpaceOnUse" x1="188.5" y1="270.7" x2="187.8" y2="272.8"><stop stop-color="#ff8b10"/><stop offset="1" stop-color="#f3820f"/></linearGradient>
 <polygon points="185.4,269.8 188.9,273.2 190.3,271.9" fill="url(#s52410c9d34)" stroke="url(#s52410c9d34)" stroke-width="0.5"/>
 <polygon points="176.0,85.7 181.5,84.9 180.6,83.6" fill="rgb(102,53,5)" stroke="rgb(102,53,5)" stroke-width="0.5"/>
@@ -8253,12 +8171,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <line x1="178.3" y1="15.1" x2="187.4" y2="17.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <linearGradient id="s1d7a5a77a2" gradientUnits="userSpaceOnUse" x1="166.2" y1="90.3" x2="165.5" y2="87.7"><stop stop-color="#6f3a06"/><stop offset="1" stop-color="#693705"/></linearGradient>
 <polygon points="161.0,89.9 167.0,90.1 169.5,86.6" fill="url(#s1d7a5a77a2)" stroke="url(#s1d7a5a77a2)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="296.5,189.3 296.5,189.3 296.5,189.3" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
 <linearGradient id="sa13a984d35" gradientUnits="userSpaceOnUse" x1="149.7" y1="256.5" x2="148.7" y2="258.3"><stop stop-color="#ff9b13"/><stop offset="1" stop-color="#ff9111"/></linearGradient>
 <polygon points="150.3,259.2 151.0,258.0 146.5,254.6" fill="url(#sa13a984d35)" stroke="url(#sa13a984d35)" stroke-width="0.5"/>
 <polygon points="272.4,112.6 271.6,113.0 272.7,113.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -8359,7 +8271,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="291.7,152.3 294.2,151.4 294.7,148.4" fill="url(#s9da15017fc)" stroke="url(#s9da15017fc)" stroke-width="0.5"/>
 <linearGradient id="sa65c3e3f37" gradientUnits="userSpaceOnUse" x1="197.0" y1="271.8" x2="197.6" y2="274.5"><stop stop-color="#f1810f"/><stop offset="1" stop-color="#eb7e0e"/></linearGradient>
 <polygon points="192.9,272.7 198.1,274.4 200.8,271.9" fill="url(#sa65c3e3f37)" stroke="url(#sa65c3e3f37)" stroke-width="0.5"/>
-<polygon points="295.6,198.5 296.5,189.3 296.5,189.3" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
 <linearGradient id="s7b7272b4dc" gradientUnits="userSpaceOnUse" x1="223.3" y1="269.0" x2="225.1" y2="271.6"><stop stop-color="#d4710d"/><stop offset="1" stop-color="#cc6d0c"/></linearGradient>
 <polygon points="227.3,268.6 220.3,271.0 225.2,271.6" fill="url(#s7b7272b4dc)" stroke="url(#s7b7272b4dc)" stroke-width="0.5"/>
 <linearGradient id="s18a49f8422" gradientUnits="userSpaceOnUse" x1="291.7" y1="146.0" x2="292.5" y2="144.8"><stop stop-color="#4b2704"/><stop offset="1" stop-color="#462403"/></linearGradient>
@@ -8547,8 +8458,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="201.3,275.1 200.8,271.9 198.1,274.4" fill="url(#sa238488ae2)" stroke="url(#sa238488ae2)" stroke-width="0.5"/>
 <linearGradient id="se2176523e8" gradientUnits="userSpaceOnUse" x1="163.0" y1="266.1" x2="163.2" y2="265.9"><stop stop-color="#fb860f"/><stop offset="1" stop-color="#ff9011"/></linearGradient>
 <polygon points="162.4,265.3 162.2,265.6 164.7,267.0" fill="url(#se2176523e8)" stroke="url(#se2176523e8)" stroke-width="0.5"/>
-<polygon points="121.2,235.1 123.4,232.1 123.4,232.1" fill="rgb(255,148,17)" stroke="rgb(255,148,17)" stroke-width="0.5"/>
-<polygon points="121.2,235.1 123.4,232.1 123.4,232.1" fill="rgb(255,148,17)" stroke="rgb(255,148,17)" stroke-width="0.5"/>
 <linearGradient id="sa4ced018f4" gradientUnits="userSpaceOnUse" x1="172.5" y1="86.7" x2="172.5" y2="83.8"><stop stop-color="#693705"/><stop offset="1" stop-color="#643405"/></linearGradient>
 <polygon points="176.0,85.7 171.9,83.8 169.5,86.6" fill="url(#sa4ced018f4)" stroke="url(#sa4ced018f4)" stroke-width="0.5"/>
 <linearGradient id="sd8ab8c8abe" gradientUnits="userSpaceOnUse" x1="115.8" y1="222.2" x2="116.0" y2="222.0"><stop stop-color="#ff880f"/><stop offset="1" stop-color="#ff9311"/></linearGradient>
@@ -8636,18 +8545,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="283.0,121.2 280.1,122.4 280.9,124.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sc1bb4aa537" gradientUnits="userSpaceOnUse" x1="110.5" y1="215.1" x2="114.3" y2="216.0"><stop stop-color="#ff890f"/><stop offset="1" stop-color="#ff9211"/></linearGradient>
 <polygon points="114.5,215.2 110.7,214.4 112.7,217.3" fill="url(#sc1bb4aa537)" stroke="url(#sc1bb4aa537)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="109.2,147.6 109.2,147.6 109.2,147.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <linearGradient id="sf8bd4af0ea" gradientUnits="userSpaceOnUse" x1="122.9" y1="122.9" x2="121.5" y2="121.5"><stop stop-color="#a65809"/><stop offset="1" stop-color="#9d5309"/></linearGradient>
 <polygon points="125.0,118.8 120.9,122.2 120.4,125.3" fill="url(#sf8bd4af0ea)" stroke="url(#sf8bd4af0ea)" stroke-width="0.5"/>
 <linearGradient id="s4667483012" gradientUnits="userSpaceOnUse" x1="294.5" y1="186.3" x2="300.0" y2="182.6"><stop stop-color="#5f3105"/><stop offset="1" stop-color="#592e04"/></linearGradient>
@@ -8659,7 +8556,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s0173b63a03" gradientUnits="userSpaceOnUse" x1="246.2" y1="261.7" x2="248.0" y2="264.1"><stop stop-color="#ab5b0a"/><stop offset="1" stop-color="#a85909"/></linearGradient>
 <polygon points="242.7,265.9 252.0,261.1 246.4,261.5" fill="url(#s0173b63a03)" stroke="url(#s0173b63a03)" stroke-width="0.5"/>
 <polygon points="254.5,95.3 253.2,96.0 255.5,96.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="300.4,188.4 296.5,189.3 296.5,189.3" fill="rgb(93,48,5)" stroke="rgb(93,48,5)" stroke-width="0.5"/>
 <linearGradient id="s707646ef58" gradientUnits="userSpaceOnUse" x1="198.1" y1="81.1" x2="198.3" y2="80.0"><stop stop-color="#5b2f04"/><stop offset="1" stop-color="#562c04"/></linearGradient>
 <polygon points="194.0,79.5 199.6,81.4 201.0,80.6" fill="url(#s707646ef58)" stroke="url(#s707646ef58)" stroke-width="0.5"/>
 <linearGradient id="s7f630e7b53" gradientUnits="userSpaceOnUse" x1="104.0" y1="167.8" x2="105.7" y2="168.9"><stop stop-color="#d3700c"/><stop offset="1" stop-color="#e47a0e"/></linearGradient>
@@ -8888,13 +8784,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="201.3,275.1 206.3,276.1 208.5,274.0" fill="url(#s62b2df1514)" stroke="url(#s62b2df1514)" stroke-width="0.5"/>
 <linearGradient id="sb0f49c409f" gradientUnits="userSpaceOnUse" x1="296.6" y1="190.5" x2="300.6" y2="189.9"><stop stop-color="#5f3105"/><stop offset="1" stop-color="#5a2e04"/></linearGradient>
 <polygon points="300.4,188.4 296.5,189.3 298.5,192.9" fill="url(#sb0f49c409f)" stroke="url(#sb0f49c409f)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="280.1,235.9 280.1,235.9 280.1,235.9" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
 <linearGradient id="s08bce6a1d2" gradientUnits="userSpaceOnUse" x1="133.6" y1="110.4" x2="132.4" y2="105.7"><stop stop-color="#8f4b08"/><stop offset="1" stop-color="#874707"/></linearGradient>
 <polygon points="131.0,111.1 137.0,104.6 130.8,107.4" fill="url(#s08bce6a1d2)" stroke="url(#s08bce6a1d2)" stroke-width="0.5"/>
 <linearGradient id="s8181685d64" gradientUnits="userSpaceOnUse" x1="103.8" y1="190.4" x2="105.0" y2="190.6"><stop stop-color="#e77a0d"/><stop offset="1" stop-color="#ef800e"/></linearGradient>
@@ -10978,7 +10867,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="199.6,281.7 204.8,282.4 200.0,281.4" fill="url(#s49081cd8b4)" stroke="url(#s49081cd8b4)" stroke-width="0.5"/>
 <linearGradient id="sd00940cd91" gradientUnits="userSpaceOnUse" x1="124.2" y1="109.0" x2="122.8" y2="106.0"><stop stop-color="#814306"/><stop offset="1" stop-color="#783e06"/></linearGradient>
 <polygon points="121.4,109.8 123.9,109.1 125.7,104.6" fill="url(#sd00940cd91)" stroke="url(#sd00940cd91)" stroke-width="0.5"/>
-<polygon points="199.8,75.2 204.5,71.8 204.5,71.8" fill="rgb(77,40,4)" stroke="rgb(77,40,4)" stroke-width="0.5"/>
 <linearGradient id="s70f6c88d97" gradientUnits="userSpaceOnUse" x1="116.4" y1="117.9" x2="115.4" y2="116.9"><stop stop-color="#8e4a07"/><stop offset="1" stop-color="#874606"/></linearGradient>
 <polygon points="114.4,119.5 116.6,117.8 117.2,115.1" fill="url(#s70f6c88d97)" stroke="url(#s70f6c88d97)" stroke-width="0.5"/>
 <linearGradient id="s99888b2f15" gradientUnits="userSpaceOnUse" x1="108.7" y1="227.8" x2="111.7" y2="228.6"><stop stop-color="#df740b"/><stop offset="1" stop-color="#ed7c0d"/></linearGradient>
@@ -11061,7 +10949,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="284.8,114.0 285.0,114.6 286.2,115.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s551ce61c47" gradientUnits="userSpaceOnUse" x1="100.5" y1="205.9" x2="101.2" y2="205.7"><stop stop-color="#d56f0b"/><stop offset="1" stop-color="#dd740c"/></linearGradient>
 <polygon points="100.4,204.9 100.6,206.0 101.5,206.5" fill="url(#s551ce61c47)" stroke="url(#s551ce61c47)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 196.7,74.6" fill="rgb(69,35,3)" stroke="rgb(69,35,3)" stroke-width="0.5"/>
 <linearGradient id="s39d0f1fd5e" gradientUnits="userSpaceOnUse" x1="184.8" y1="282.5" x2="187.2" y2="279.5"><stop stop-color="#d26d0b"/><stop offset="1" stop-color="#cf6c0b"/></linearGradient>
 <polygon points="180.9,279.4 188.3,281.9 189.3,281.2" fill="url(#s39d0f1fd5e)" stroke="url(#s39d0f1fd5e)" stroke-width="0.5"/>
 <polygon points="302.6,149.2 302.2,148.4 302.2,149.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -11188,7 +11075,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="105.6,216.8 103.9,214.9 103.4,218.6" fill="url(#s75acdab210)" stroke="url(#s75acdab210)" stroke-width="0.5"/>
 <linearGradient id="s302d5698bf" gradientUnits="userSpaceOnUse" x1="96.7" y1="187.8" x2="98.0" y2="187.8"><stop stop-color="#c5660a"/><stop offset="1" stop-color="#cb6a0a"/></linearGradient>
 <polygon points="96.8,191.5 98.0,186.8 96.6,185.1" fill="url(#s302d5698bf)" stroke="url(#s302d5698bf)" stroke-width="0.5"/>
-<polygon points="211.8,74.0 204.5,71.8 204.5,71.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <linearGradient id="sa418feb765" gradientUnits="userSpaceOnUse" x1="303.8" y1="162.5" x2="306.6" y2="161.6"><stop stop-color="#492603"/><stop offset="1" stop-color="#452403"/></linearGradient>
 <polygon points="304.1,163.6 307.0,162.9 304.7,159.6" fill="url(#sa418feb765)" stroke="url(#sa418feb765)" stroke-width="0.5"/>
 <linearGradient id="s165335cb06" gradientUnits="userSpaceOnUse" x1="126.0" y1="251.4" x2="126.7" y2="249.8"><stop stop-color="#e3760b"/><stop offset="1" stop-color="#ea7a0c"/></linearGradient>
@@ -11362,12 +11248,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s26bcd49eeb" gradientUnits="userSpaceOnUse" x1="110.8" y1="232.1" x2="111.9" y2="231.4"><stop stop-color="#dc720b"/><stop offset="1" stop-color="#e3760c"/></linearGradient>
 <polygon points="110.1,230.3 111.0,232.3 112.7,232.8" fill="url(#s26bcd49eeb)" stroke="url(#s26bcd49eeb)" stroke-width="0.5"/>
 <polygon points="250.3,84.4 251.8,84.8 251.3,83.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 204.5,71.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <linearGradient id="s16e95c231b" gradientUnits="userSpaceOnUse" x1="135.4" y1="260.7" x2="136.8" y2="259.6"><stop stop-color="#dd730b"/><stop offset="1" stop-color="#e2760b"/></linearGradient>
 <polygon points="135.0,260.3 137.9,261.6 135.8,258.3" fill="url(#s16e95c231b)" stroke="url(#s16e95c231b)" stroke-width="0.5"/>
 <linearGradient id="s6b7966152b" gradientUnits="userSpaceOnUse" x1="151.9" y1="270.4" x2="152.3" y2="270.5"><stop stop-color="#de730b"/><stop offset="1" stop-color="#d46d0a"/></linearGradient>
@@ -11384,7 +11264,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="157.3,82.2 161.0,80.2 159.9,79.7" fill="url(#s5cf9688506)" stroke="url(#s5cf9688506)" stroke-width="0.5"/>
 <linearGradient id="s0a9f7269c1" gradientUnits="userSpaceOnUse" x1="299.6" y1="213.9" x2="301.3" y2="214.5"><stop stop-color="#5f3104"/><stop offset="1" stop-color="#5b2f04"/></linearGradient>
 <polygon points="299.4,216.3 302.4,211.2 299.3,215.0" fill="url(#s0a9f7269c1)" stroke="url(#s0a9f7269c1)" stroke-width="0.5"/>
-<polygon points="204.5,71.8 204.5,71.8 194.0,72.0" fill="rgb(77,40,4)" stroke="rgb(77,40,4)" stroke-width="0.5"/>
 <polygon points="293.8,124.4 290.9,120.6 291.4,124.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s25a2db43ad" gradientUnits="userSpaceOnUse" x1="117.8" y1="114.5" x2="116.4" y2="113.2"><stop stop-color="#874606"/><stop offset="1" stop-color="#814206"/></linearGradient>
 <polygon points="115.7,116.2 117.2,115.1 118.8,110.6" fill="url(#s25a2db43ad)" stroke="url(#s25a2db43ad)" stroke-width="0.5"/>
@@ -11543,7 +11422,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="222.4,74.0 224.0,74.0 223.4,73.3" fill="rgb(69,35,3)" stroke="rgb(69,35,3)" stroke-width="0.5"/>
 <linearGradient id="s11051c7fa4" gradientUnits="userSpaceOnUse" x1="103.4" y1="136.6" x2="104.4" y2="137.6"><stop stop-color="#934b07"/><stop offset="1" stop-color="#9c5108"/></linearGradient>
 <polygon points="102.2,137.8 104.4,137.6 104.7,135.6" fill="url(#s11051c7fa4)" stroke="url(#s11051c7fa4)" stroke-width="0.5"/>
-<polygon points="195.5,71.0 204.5,71.8 204.5,71.8" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <polygon points="268.1,95.0 268.3,95.2 268.3,95.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="231.8,74.9 224.0,74.0 224.6,74.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="268.1,95.0 268.3,95.0 268.0,94.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -11721,7 +11599,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="113.1,236.6 116.6,242.3 116.0,239.1" fill="url(#s6faf1cdfb2)" stroke="url(#s6faf1cdfb2)" stroke-width="0.5"/>
 <linearGradient id="sbb48a7eb98" gradientUnits="userSpaceOnUse" x1="101.2" y1="214.9" x2="102.5" y2="214.6"><stop stop-color="#d06c0a"/><stop offset="1" stop-color="#d56f0b"/></linearGradient>
 <polygon points="102.0,212.1 100.8,213.5 103.4,218.6" fill="url(#sbb48a7eb98)" stroke="url(#sbb48a7eb98)" stroke-width="0.5"/>
-<polygon points="207.6,69.7 204.5,71.8 204.5,71.8" fill="rgb(75,38,4)" stroke="rgb(75,38,4)" stroke-width="0.5"/>
 <polygon points="264.2,90.5 259.5,88.1 260.4,90.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s1e3062ab74" gradientUnits="userSpaceOnUse" x1="137.0" y1="262.8" x2="138.1" y2="261.9"><stop stop-color="#dd730b"/><stop offset="1" stop-color="#e1750b"/></linearGradient>
 <polygon points="135.0,260.3 140.0,265.0 137.9,261.6" fill="url(#s1e3062ab74)" stroke="url(#s1e3062ab74)" stroke-width="0.5"/>
@@ -12982,13 +12859,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="102.4,221.3 101.9,222.1 103.9,225.7" fill="url(#s9f7e0598f0)" stroke="url(#s9f7e0598f0)" stroke-width="0.5"/>
 <polygon points="309.2,188.4 309.6,188.6 311.2,183.2" fill="rgb(74,38,3)" stroke="rgb(74,38,3)" stroke-width="0.5"/>
 <polygon points="270.5,94.3 274.5,96.9 273.4,94.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
-<polygon points="155.0,78.7 155.0,78.7 155.0,78.7" fill="rgb(91,46,4)" stroke="rgb(91,46,4)" stroke-width="0.5"/>
 <linearGradient id="s29e4418aab" gradientUnits="userSpaceOnUse" x1="131.0" y1="95.5" x2="129.9" y2="93.6"><stop stop-color="#673405"/><stop offset="1" stop-color="#633204"/></linearGradient>
 <polygon points="127.6,97.1 130.5,95.9 133.8,91.4" fill="url(#s29e4418aab)" stroke="url(#s29e4418aab)" stroke-width="0.5"/>
 <linearGradient id="s288d486e84" gradientUnits="userSpaceOnUse" x1="115.3" y1="111.3" x2="114.9" y2="110.9"><stop stop-color="#753c05"/><stop offset="1" stop-color="#723a05"/></linearGradient>
@@ -13580,8 +13450,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="107.9,234.4 110.5,239.5 111.3,240.1" fill="url(#s7b8dec70f4)" stroke="url(#s7b8dec70f4)" stroke-width="0.5"/>
 <linearGradient id="s61add327f9" gradientUnits="userSpaceOnUse" x1="230.6" y1="282.7" x2="230.9" y2="283.9"><stop stop-color="#914a06"/><stop offset="1" stop-color="#8b4606"/></linearGradient>
 <polygon points="226.3,284.0 232.3,283.4 233.6,282.4" fill="url(#s61add327f9)" stroke="url(#s61add327f9)" stroke-width="0.5"/>
-<polygon points="139.7,267.3 133.9,264.5 133.9,264.5" fill="rgb(195,99,8)" stroke="rgb(195,99,8)" stroke-width="0.5"/>
-<polygon points="139.7,267.3 133.9,264.5 133.9,264.5" fill="rgb(195,99,8)" stroke="rgb(195,99,8)" stroke-width="0.5"/>
 <polygon points="242.5,75.7 237.0,72.5 238.8,74.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="se44ea57dbf" gradientUnits="userSpaceOnUse" x1="167.2" y1="280.9" x2="167.0" y2="282.2"><stop stop-color="#b75d08"/><stop offset="1" stop-color="#b35b08"/></linearGradient>
 <polygon points="165.5,281.6 170.7,282.9 165.1,280.5" fill="url(#se44ea57dbf)" stroke="url(#se44ea57dbf)" stroke-width="0.5"/>
@@ -13638,8 +13506,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="115.6,244.7 111.9,241.4 112.6,243.0" fill="url(#sc2d1c830d7)" stroke="url(#sc2d1c830d7)" stroke-width="0.5"/>
 <linearGradient id="sab85ef49b6" gradientUnits="userSpaceOnUse" x1="103.8" y1="230.9" x2="108.6" y2="232.3"><stop stop-color="#be6008"/><stop offset="1" stop-color="#c26308"/></linearGradient>
 <polygon points="107.9,234.4 104.5,228.8 105.2,231.2" fill="url(#sab85ef49b6)" stroke="url(#sab85ef49b6)" stroke-width="0.5"/>
-<polygon points="129.0,259.4 133.9,264.5 133.9,264.5" fill="rgb(195,99,8)" stroke="rgb(195,99,8)" stroke-width="0.5"/>
-<polygon points="129.0,259.4 133.9,264.5 133.9,264.5" fill="rgb(195,99,8)" stroke="rgb(195,99,8)" stroke-width="0.5"/>
 <linearGradient id="s0a602e6d52" gradientUnits="userSpaceOnUse" x1="118.5" y1="249.8" x2="118.7" y2="249.6"><stop stop-color="#bf6108"/><stop offset="1" stop-color="#c86609"/></linearGradient>
 <polygon points="119.5,250.5 118.7,249.5 117.7,249.1" fill="url(#s0a602e6d52)" stroke="url(#s0a602e6d52)" stroke-width="0.5"/>
 <linearGradient id="s5cc45a9c9c" gradientUnits="userSpaceOnUse" x1="116.4" y1="244.8" x2="115.8" y2="248.8"><stop stop-color="#c86609"/><stop offset="1" stop-color="#bf6108"/></linearGradient>
@@ -13782,12 +13648,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="236.6,72.4 228.2,70.5 228.5,70.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sf892752eba" gradientUnits="userSpaceOnUse" x1="99.7" y1="220.5" x2="100.4" y2="220.2"><stop stop-color="#b55b08"/><stop offset="1" stop-color="#bb5f08"/></linearGradient>
 <polygon points="101.4,223.1 99.2,217.2 99.8,220.7" fill="url(#sf892752eba)" stroke="url(#sf892752eba)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(193,98,8)" stroke="rgb(193,98,8)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(193,98,8)" stroke="rgb(193,98,8)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(183,93,8)" stroke="rgb(183,93,8)" stroke-width="0.5"/>
-<polygon points="133.9,264.5 133.9,264.5 133.9,264.5" fill="rgb(193,98,8)" stroke="rgb(193,98,8)" stroke-width="0.5"/>
 <linearGradient id="s869a6d9d42" gradientUnits="userSpaceOnUse" x1="93.8" y1="152.2" x2="94.4" y2="152.8"><stop stop-color="#8e4806"/><stop offset="1" stop-color="#964c07"/></linearGradient>
 <polygon points="95.4,151.8 93.6,152.4 93.5,153.5" fill="url(#s869a6d9d42)" stroke="url(#s869a6d9d42)" stroke-width="0.5"/>
 <linearGradient id="s5c8fab7fa6" gradientUnits="userSpaceOnUse" x1="110.5" y1="115.5" x2="110.2" y2="115.3"><stop stop-color="#783d05"/><stop offset="1" stop-color="#713a05"/></linearGradient>
@@ -13918,8 +13778,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="298.1,124.2 299.1,126.9 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sf295239962" gradientUnits="userSpaceOnUse" x1="105.8" y1="233.5" x2="106.8" y2="232.8"><stop stop-color="#b85d08"/><stop offset="1" stop-color="#c26308"/></linearGradient>
 <polygon points="107.9,234.4 105.2,231.2 105.9,233.7" fill="url(#sf295239962)" stroke="url(#sf295239962)" stroke-width="0.5"/>
-<polygon points="299.9,130.1 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="299.9,130.1 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sab7b46a78b" gradientUnits="userSpaceOnUse" x1="151.3" y1="275.5" x2="151.2" y2="276.0"><stop stop-color="#c06208"/><stop offset="1" stop-color="#b65c08"/></linearGradient>
 <polygon points="151.7,276.1 151.5,275.5 150.6,275.5" fill="url(#sab7b46a78b)" stroke="url(#sab7b46a78b)" stroke-width="0.5"/>
 <linearGradient id="sc823b73899" gradientUnits="userSpaceOnUse" x1="91.1" y1="159.6" x2="94.2" y2="159.0"><stop stop-color="#954c06"/><stop offset="1" stop-color="#914a06"/></linearGradient>
@@ -14111,8 +13969,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="224.3,285.6 220.8,286.2 219.9,286.7" fill="url(#s2313afe28c)" stroke="url(#s2313afe28c)" stroke-width="0.5"/>
 <linearGradient id="sf98dd528f6" gradientUnits="userSpaceOnUse" x1="137.3" y1="267.1" x2="136.9" y2="267.6"><stop stop-color="#c16208"/><stop offset="1" stop-color="#b75d08"/></linearGradient>
 <polygon points="139.5,269.2 133.9,264.5 137.9,268.3" fill="url(#sf98dd528f6)" stroke="url(#sf98dd528f6)" stroke-width="0.5"/>
-<polygon points="134.2,266.0 133.9,264.5 133.9,264.5" fill="rgb(182,92,8)" stroke="rgb(182,92,8)" stroke-width="0.5"/>
-<polygon points="134.2,266.0 133.9,264.5 133.9,264.5" fill="rgb(182,92,8)" stroke="rgb(182,92,8)" stroke-width="0.5"/>
 <linearGradient id="s48e0f13b21" gradientUnits="userSpaceOnUse" x1="116.1" y1="248.1" x2="116.4" y2="247.7"><stop stop-color="#b95d08"/><stop offset="1" stop-color="#bf6108"/></linearGradient>
 <polygon points="115.0,246.5 116.1,248.1 117.7,249.1" fill="url(#s48e0f13b21)" stroke="url(#s48e0f13b21)" stroke-width="0.5"/>
 <linearGradient id="s8286ceeaa2" gradientUnits="userSpaceOnUse" x1="241.7" y1="279.7" x2="242.3" y2="280.9"><stop stop-color="#894606"/><stop offset="1" stop-color="#834205"/></linearGradient>
@@ -14250,12 +14106,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="136.1,87.8 137.5,87.2 139.7,85.1" fill="url(#s5c880852b0)" stroke="url(#s5c880852b0)" stroke-width="0.5"/>
 <linearGradient id="s3180add1e1" gradientUnits="userSpaceOnUse" x1="95.2" y1="147.9" x2="94.3" y2="147.5"><stop stop-color="#8e4806"/><stop offset="1" stop-color="#894506"/></linearGradient>
 <polygon points="96.7,142.5 94.1,148.2 93.6,152.4" fill="url(#s3180add1e1)" stroke="url(#s3180add1e1)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="302.0,130.2 302.0,130.2 302.0,130.2" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="283.6,102.8 285.9,106.1 287.9,107.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sf116cbc873" gradientUnits="userSpaceOnUse" x1="112.1" y1="113.2" x2="110.8" y2="111.9"><stop stop-color="#713a05"/><stop offset="1" stop-color="#6d3705"/></linearGradient>
 <polygon points="111.6,113.6 112.8,109.9 110.4,114.6" fill="url(#sf116cbc873)" stroke="url(#sf116cbc873)" stroke-width="0.5"/>
@@ -14355,8 +14205,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s8347444241" gradientUnits="userSpaceOnUse" x1="302.6" y1="222.8" x2="303.0" y2="222.9"><stop stop-color="#582d04"/><stop offset="1" stop-color="#552c04"/></linearGradient>
 <polygon points="302.6,222.8 302.7,223.8 303.2,221.9" fill="url(#s8347444241)" stroke="url(#s8347444241)" stroke-width="0.5"/>
 <polygon points="310.8,157.5 310.1,153.8 310.3,157.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="305.0,136.8 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="305.0,136.8 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sd9c929ce30" gradientUnits="userSpaceOnUse" x1="91.3" y1="164.7" x2="91.1" y2="164.7"><stop stop-color="#974d06"/><stop offset="1" stop-color="#8e4806"/></linearGradient>
 <polygon points="91.3,163.9 91.0,165.4 91.3,164.8" fill="url(#sd9c929ce30)" stroke="url(#sd9c929ce30)" stroke-width="0.5"/>
 <linearGradient id="sb5281bb61a" gradientUnits="userSpaceOnUse" x1="140.0" y1="269.2" x2="139.9" y2="270.0"><stop stop-color="#bc5f08"/><stop offset="1" stop-color="#b65c07"/></linearGradient>
@@ -14457,8 +14305,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <line x1="51.2" y1="257.0" x2="49.9" y2="248.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <linearGradient id="s35e1454b05" gradientUnits="userSpaceOnUse" x1="106.6" y1="235.0" x2="106.4" y2="235.1"><stop stop-color="#b85d08"/><stop offset="1" stop-color="#b45b07"/></linearGradient>
 <polygon points="107.2,236.1 105.9,233.7 106.5,235.3" fill="url(#s35e1454b05)" stroke="url(#s35e1454b05)" stroke-width="0.5"/>
-<polygon points="299.7,124.6 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="299.7,124.6 302.0,130.2 302.0,130.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="178.6,68.3 172.2,70.1 175.1,70.1" fill="rgb(77,40,4)" stroke="rgb(77,40,4)" stroke-width="0.5"/>
 <polygon points="93.6,204.8 95.7,211.4 95.6,210.0" fill="rgb(168,85,7)" stroke="rgb(168,85,7)" stroke-width="0.5"/>
 <polygon points="257.2,81.5 253.6,78.7 254.8,80.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -14516,8 +14362,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="308.8,150.0 308.1,144.5 307.5,143.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s0cbc495b03" gradientUnits="userSpaceOnUse" x1="225.2" y1="283.9" x2="229.6" y2="286.4"><stop stop-color="#8d4806"/><stop offset="1" stop-color="#894506"/></linearGradient>
 <polygon points="224.3,285.6 228.2,286.0 230.7,284.4" fill="url(#s0cbc495b03)" stroke="url(#s0cbc495b03)" stroke-width="0.5"/>
-<polygon points="104.1,229.8 100.6,224.8 100.6,224.8" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
-<polygon points="104.1,229.8 100.6,224.8 100.6,224.8" fill="rgb(180,91,7)" stroke="rgb(180,91,7)" stroke-width="0.5"/>
 <polygon points="295.9,118.5 296.4,119.6 297.5,120.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="352.0" y1="106.6" x2="353.3" y2="97.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="302.6,222.8 300.3,229.3 302.7,223.8" fill="rgb(87,45,4)" stroke="rgb(87,45,4)" stroke-width="0.5"/>
@@ -14605,8 +14449,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="263.9,85.0 262.6,84.2 263.3,85.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s8eb22c49e2" gradientUnits="userSpaceOnUse" x1="312.0" y1="190.1" x2="312.3" y2="190.1"><stop stop-color="#4a2603"/><stop offset="1" stop-color="#462403"/></linearGradient>
 <polygon points="312.0,190.8 312.2,190.0 312.2,189.4" fill="url(#s8eb22c49e2)" stroke="url(#s8eb22c49e2)" stroke-width="0.5"/>
-<polygon points="98.3,217.8 100.6,224.8 100.6,224.8" fill="rgb(177,90,7)" stroke="rgb(177,90,7)" stroke-width="0.5"/>
-<polygon points="98.3,217.8 100.6,224.8 100.6,224.8" fill="rgb(174,88,7)" stroke="rgb(174,88,7)" stroke-width="0.5"/>
 <linearGradient id="sa7ec9e51cf" gradientUnits="userSpaceOnUse" x1="92.0" y1="198.6" x2="92.5" y2="198.6"><stop stop-color="#9d4f06"/><stop offset="1" stop-color="#a45307"/></linearGradient>
 <polygon points="92.3,197.2 91.9,197.8 92.7,200.9" fill="url(#sa7ec9e51cf)" stroke="url(#sa7ec9e51cf)" stroke-width="0.5"/>
 <linearGradient id="s074b5af6ff" gradientUnits="userSpaceOnUse" x1="100.0" y1="131.8" x2="99.8" y2="131.7"><stop stop-color="#7e4005"/><stop offset="1" stop-color="#783d05"/></linearGradient>
@@ -14703,12 +14545,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="292.6,242.0 293.4,240.6 289.8,244.4" fill="rgb(93,47,4)" stroke="rgb(93,47,4)" stroke-width="0.5"/>
 <linearGradient id="s1ea4c576d9" gradientUnits="userSpaceOnUse" x1="116.6" y1="249.8" x2="117.2" y2="249.3"><stop stop-color="#b45b07"/><stop offset="1" stop-color="#b85d07"/></linearGradient>
 <polygon points="119.3,252.1 114.8,247.3 116.3,249.4" fill="url(#s1ea4c576d9)" stroke="url(#s1ea4c576d9)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(178,90,7)" stroke="rgb(178,90,7)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(178,90,7)" stroke="rgb(178,90,7)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(174,88,7)" stroke="rgb(174,88,7)" stroke-width="0.5"/>
-<polygon points="100.6,224.8 100.6,224.8 100.6,224.8" fill="rgb(178,90,7)" stroke="rgb(178,90,7)" stroke-width="0.5"/>
 <polygon points="307.4,212.6 310.3,202.5 308.7,206.5" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
 <linearGradient id="s4e528b4b86" gradientUnits="userSpaceOnUse" x1="265.8" y1="269.5" x2="265.5" y2="267.5"><stop stop-color="#743b05"/><stop offset="1" stop-color="#6c3705"/></linearGradient>
 <polygon points="263.5,269.8 266.2,268.5 267.2,267.3" fill="url(#s4e528b4b86)" stroke="url(#s4e528b4b86)" stroke-width="0.5"/>
@@ -15025,8 +14861,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="251.8,77.8 253.0,78.2 252.3,77.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="263.9,85.0 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="263.9,85.0 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="100.6,225.9 100.6,224.8 100.6,224.8" fill="rgb(170,86,7)" stroke="rgb(170,86,7)" stroke-width="0.5"/>
-<polygon points="100.6,225.9 100.6,224.8 100.6,224.8" fill="rgb(170,86,7)" stroke="rgb(170,86,7)" stroke-width="0.5"/>
 <polygon points="297.1,119.2 297.5,120.9 299.0,122.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s1c5d3a2786" gradientUnits="userSpaceOnUse" x1="102.3" y1="228.2" x2="101.9" y2="228.4"><stop stop-color="#ae5807"/><stop offset="1" stop-color="#a75407"/></linearGradient>
 <polygon points="103.7,231.2 100.6,224.8 102.1,228.8" fill="url(#s1c5d3a2786)" stroke="url(#s1c5d3a2786)" stroke-width="0.5"/>
@@ -15154,12 +14988,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="292.6,242.0 294.5,239.7 294.9,238.9" fill="url(#s7dbed5fd87)" stroke="url(#s7dbed5fd87)" stroke-width="0.5"/>
 <linearGradient id="se4c0771f52" gradientUnits="userSpaceOnUse" x1="310.3" y1="202.5" x2="310.5" y2="202.5"><stop stop-color="#4d2704"/><stop offset="1" stop-color="#492603"/></linearGradient>
 <polygon points="310.5,203.6 310.6,201.4 310.3,202.5" fill="url(#se4c0771f52)" stroke="url(#se4c0771f52)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="270.2,88.9 270.2,88.9 270.2,88.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="303.1,130.9 304.1,133.6 306.0,136.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s5fef750c10" gradientUnits="userSpaceOnUse" x1="171.5" y1="285.2" x2="171.6" y2="285.1"><stop stop-color="#a25106"/><stop offset="1" stop-color="#a65407"/></linearGradient>
 <polygon points="166.1,283.3 174.1,286.0 174.4,286.0" fill="url(#s5fef750c10)" stroke="url(#s5fef750c10)" stroke-width="0.5"/>
@@ -15567,7 +15395,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="93.1,206.1 93.4,207.1 93.2,205.8" fill="url(#sbc49adda79)" stroke="url(#sbc49adda79)" stroke-width="0.5"/>
 <linearGradient id="s5fdb82d643" gradientUnits="userSpaceOnUse" x1="89.7" y1="186.8" x2="90.0" y2="186.8"><stop stop-color="#8c4605"/><stop offset="1" stop-color="#944b06"/></linearGradient>
 <polygon points="90.6,190.5 89.5,184.4 89.5,185.5" fill="url(#s5fdb82d643)" stroke="url(#s5fdb82d643)" stroke-width="0.5"/>
-<polygon points="243.6,280.6 249.5,279.0 249.5,279.0" fill="rgb(118,59,5)" stroke="rgb(118,59,5)" stroke-width="0.5"/>
 <linearGradient id="s99cda1fc0e" gradientUnits="userSpaceOnUse" x1="214.9" y1="288.7" x2="215.0" y2="288.8"><stop stop-color="#8c4606"/><stop offset="1" stop-color="#844205"/></linearGradient>
 <polygon points="214.5,288.7 215.0,288.8 215.4,288.7" fill="url(#s99cda1fc0e)" stroke="url(#s99cda1fc0e)" stroke-width="0.5"/>
 <linearGradient id="s24f921ec01" gradientUnits="userSpaceOnUse" x1="90.2" y1="191.8" x2="90.8" y2="191.8"><stop stop-color="#8e4706"/><stop offset="1" stop-color="#984c06"/></linearGradient>
@@ -15706,7 +15533,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="110.8,243.6 111.5,244.4 110.8,243.5" fill="url(#sbb32084d9c)" stroke="url(#sbb32084d9c)" stroke-width="0.5"/>
 <linearGradient id="sa0eb12db8f" gradientUnits="userSpaceOnUse" x1="107.9" y1="115.8" x2="107.7" y2="115.7"><stop stop-color="#6f3805"/><stop offset="1" stop-color="#6b3604"/></linearGradient>
 <polygon points="106.7,117.6 108.6,114.5 108.0,115.2" fill="url(#sa0eb12db8f)" stroke="url(#sa0eb12db8f)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 257.1,274.6 249.5,279.0" fill="rgb(114,58,5)" stroke="rgb(114,58,5)" stroke-width="0.5"/>
 <polygon points="168.8,70.3 176.1,68.1 168.7,70.0" fill="rgb(76,39,3)" stroke="rgb(76,39,3)" stroke-width="0.5"/>
 <polygon points="312.5,192.8 313.5,186.7 313.5,183.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s35213aeebb" gradientUnits="userSpaceOnUse" x1="179.6" y1="67.4" x2="179.6" y2="67.2"><stop stop-color="#492503"/><stop offset="1" stop-color="#452403"/></linearGradient>
@@ -15800,7 +15626,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="294.1,113.9 293.5,113.4 295.2,115.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sb609b973db" gradientUnits="userSpaceOnUse" x1="175.1" y1="286.4" x2="175.2" y2="286.3"><stop stop-color="#984c06"/><stop offset="1" stop-color="#914906"/></linearGradient>
 <polygon points="176.8,286.8 174.9,286.3 173.8,286.0" fill="url(#sb609b973db)" stroke="url(#sb609b973db)" stroke-width="0.5"/>
-<polygon points="238.5,283.1 249.5,279.0 249.5,279.0" fill="rgb(118,59,5)" stroke="rgb(118,59,5)" stroke-width="0.5"/>
 <linearGradient id="saa153f1719" gradientUnits="userSpaceOnUse" x1="100.6" y1="129.0" x2="100.3" y2="128.8"><stop stop-color="#763b05"/><stop offset="1" stop-color="#713905"/></linearGradient>
 <polygon points="98.9,132.5 101.7,126.2 100.7,128.0" fill="url(#saa153f1719)" stroke="url(#saa153f1719)" stroke-width="0.5"/>
 <linearGradient id="s6fd9ad144a" gradientUnits="userSpaceOnUse" x1="105.9" y1="236.5" x2="106.4" y2="236.2"><stop stop-color="#9f5006"/><stop offset="1" stop-color="#a95507"/></linearGradient>
@@ -15926,11 +15751,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="289.6,246.9 291.7,244.5 290.6,245.6" fill="rgb(90,46,4)" stroke="rgb(90,46,4)" stroke-width="0.5"/>
 <linearGradient id="s91b37261dd" gradientUnits="userSpaceOnUse" x1="273.9" y1="261.9" x2="275.1" y2="262.9"><stop stop-color="#643304"/><stop offset="1" stop-color="#5f3004"/></linearGradient>
 <polygon points="271.0,265.5 275.4,262.1 277.5,259.9" fill="url(#s91b37261dd)" stroke="url(#s91b37261dd)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 249.5,279.0 249.5,279.0" fill="rgb(125,63,5)" stroke="rgb(125,63,5)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 249.5,279.0 249.5,279.0" fill="rgb(115,58,5)" stroke="rgb(115,58,5)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 249.5,279.0 249.5,279.0" fill="rgb(125,63,5)" stroke="rgb(125,63,5)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 249.5,279.0 249.5,279.0" fill="rgb(115,58,5)" stroke="rgb(115,58,5)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 249.5,279.0 249.5,279.0" fill="rgb(115,58,5)" stroke="rgb(115,58,5)" stroke-width="0.5"/>
 <linearGradient id="s4b2d728d74" gradientUnits="userSpaceOnUse" x1="128.1" y1="262.1" x2="128.0" y2="262.2"><stop stop-color="#a95407"/><stop offset="1" stop-color="#a25106"/></linearGradient>
 <polygon points="129.9,263.7 128.2,262.1 126.1,260.6" fill="url(#s4b2d728d74)" stroke="url(#s4b2d728d74)" stroke-width="0.5"/>
 <linearGradient id="se20a445f69" gradientUnits="userSpaceOnUse" x1="89.8" y1="167.7" x2="89.7" y2="167.7"><stop stop-color="#8c4606"/><stop offset="1" stop-color="#864305"/></linearGradient>
@@ -16105,7 +15925,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="307.0,138.9 306.5,137.7 307.7,140.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s99e255bb1b" gradientUnits="userSpaceOnUse" x1="89.8" y1="188.4" x2="89.9" y2="188.4"><stop stop-color="#894505"/><stop offset="1" stop-color="#8e4706"/></linearGradient>
 <polygon points="90.2,191.4 89.5,185.5 89.8,188.4" fill="url(#s99e255bb1b)" stroke="url(#s99e255bb1b)" stroke-width="0.5"/>
-<polygon points="240.3,282.9 249.5,279.0 249.5,279.0" fill="rgb(107,54,5)" stroke="rgb(107,54,5)" stroke-width="0.5"/>
 <polygon points="117.2,103.3 126.9,93.4 122.0,97.8" fill="rgb(94,47,4)" stroke="rgb(94,47,4)" stroke-width="0.5"/>
 <linearGradient id="s8129e24b6e" gradientUnits="userSpaceOnUse" x1="300.2" y1="230.9" x2="300.3" y2="230.9"><stop stop-color="#512a04"/><stop offset="1" stop-color="#8a4606"/></linearGradient>
 <polygon points="301.0,229.2 299.2,233.0 300.4,230.6" fill="url(#s8129e24b6e)" stroke="url(#s8129e24b6e)" stroke-width="0.5"/>
@@ -16301,7 +16120,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="sf6d2817ada" gradientUnits="userSpaceOnUse" x1="126.9" y1="261.3" x2="126.9" y2="261.2"><stop stop-color="#a15106"/><stop offset="1" stop-color="#a45206"/></linearGradient>
 <polygon points="129.9,263.7 126.1,260.6 124.7,259.5" fill="url(#sf6d2817ada)" stroke="url(#sf6d2817ada)" stroke-width="0.5"/>
 <polygon points="289.7,108.3 290.6,108.8 289.7,107.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="249.5,279.0 257.5,274.9 249.5,279.0" fill="rgb(108,55,5)" stroke="rgb(108,55,5)" stroke-width="0.5"/>
 <linearGradient id="s23bc4731c5" gradientUnits="userSpaceOnUse" x1="97.6" y1="134.9" x2="97.6" y2="134.9"><stop stop-color="#793d05"/><stop offset="1" stop-color="#743a05"/></linearGradient>
 <polygon points="98.2,133.2 96.3,138.3 98.2,133.1" fill="url(#s23bc4731c5)" stroke="url(#s23bc4731c5)" stroke-width="0.5"/>
 <linearGradient id="sdc43ec6cc0" gradientUnits="userSpaceOnUse" x1="237.7" y1="283.8" x2="237.7" y2="283.8"><stop stop-color="#7b3e05"/><stop offset="1" stop-color="#5a2e04"/></linearGradient>
@@ -17616,12 +17434,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="253.6,78.0 254.5,78.6 254.1,78.4" fill="url(#sc1c1a40a63)" stroke="url(#sc1c1a40a63)" stroke-width="0.5"/>
 <linearGradient id="sc3773aad90" gradientUnits="userSpaceOnUse" x1="270.9" y1="89.5" x2="271.1" y2="89.3"><stop stop-color="#e2760b"/><stop offset="1" stop-color="#dd730b"/></linearGradient>
 <polygon points="271.7,89.8 272.1,90.5 269.1,87.9" fill="url(#sc3773aad90)" stroke="url(#sc3773aad90)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
-<polygon points="198.3,289.6 198.3,289.6 198.3,289.6" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <polygon points="149.5,276.6 148.7,276.5 148.0,275.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s0c5860fe7e" gradientUnits="userSpaceOnUse" x1="297.4" y1="119.5" x2="297.6" y2="119.4"><stop stop-color="#e3760c"/><stop offset="1" stop-color="#dc720b"/></linearGradient>
 <polygon points="298.6,121.1 296.5,118.0 297.5,119.2" fill="url(#s0c5860fe7e)" stroke="url(#s0c5860fe7e)" stroke-width="0.5"/>
@@ -19715,7 +19527,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s7c0e2585fa" gradientUnits="userSpaceOnUse" x1="136.8" y1="86.5" x2="139.4" y2="87.9"><stop stop-color="#934d08"/><stop offset="1" stop-color="#9c5208"/></linearGradient>
 <polygon points="135.2,89.2 140.8,85.5 139.4,87.5" fill="url(#s7c0e2585fa)" stroke="url(#s7c0e2585fa)" stroke-width="0.5"/>
 <polygon points="155.3,276.3 153.0,276.8 151.8,275.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="109.3,115.6 113.8,112.0 113.8,112.0" fill="rgb(123,64,7)" stroke="rgb(123,64,7)" stroke-width="0.5"/>
 <linearGradient id="sc4803d7948" gradientUnits="userSpaceOnUse" x1="266.6" y1="88.5" x2="266.4" y2="88.9"><stop stop-color="#fa840e"/><stop offset="1" stop-color="#ff8d10"/></linearGradient>
 <polygon points="265.8,88.5 266.0,88.1 267.8,89.5" fill="url(#sc4803d7948)" stroke="url(#sc4803d7948)" stroke-width="0.5"/>
 <polygon points="119.2,250.7 124.4,255.4 124.6,255.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -19892,7 +19703,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s3ba5b998c6" gradientUnits="userSpaceOnUse" x1="245.8" y1="275.8" x2="252.5" y2="275.6"><stop stop-color="#683605"/><stop offset="1" stop-color="#6d3905"/></linearGradient>
 <polygon points="245.9,278.3 250.9,274.2 252.5,274.7" fill="url(#s3ba5b998c6)" stroke="url(#s3ba5b998c6)" stroke-width="0.5"/>
 <polygon points="99.4,213.9 98.8,217.6 98.2,214.2" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 119.0,104.1 113.8,112.0" fill="rgb(128,67,7)" stroke="rgb(128,67,7)" stroke-width="0.5"/>
 <linearGradient id="s49fb1b70af" gradientUnits="userSpaceOnUse" x1="278.7" y1="255.6" x2="278.2" y2="254.9"><stop stop-color="#864607"/><stop offset="1" stop-color="#8f4b08"/></linearGradient>
 <polygon points="273.8,258.8 281.8,252.3 279.8,254.8" fill="url(#s49fb1b70af)" stroke="url(#s49fb1b70af)" stroke-width="0.5"/>
 <linearGradient id="sbef303dda0" gradientUnits="userSpaceOnUse" x1="92.0" y1="187.5" x2="92.9" y2="187.5"><stop stop-color="#502904"/><stop offset="1" stop-color="#532b04"/></linearGradient>
@@ -20082,14 +19892,8 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="265.8,88.5 267.0,89.5 265.2,89.6" fill="url(#s82cde4703b)" stroke="url(#s82cde4703b)" stroke-width="0.5"/>
 <linearGradient id="sd540a0fd8a" gradientUnits="userSpaceOnUse" x1="292.6" y1="236.1" x2="293.5" y2="236.8"><stop stop-color="#a65809"/><stop offset="1" stop-color="#9c5208"/></linearGradient>
 <polygon points="295.2,234.7 291.6,239.0 292.8,235.9" fill="url(#sd540a0fd8a)" stroke="url(#sd540a0fd8a)" stroke-width="0.5"/>
-<polygon points="106.1,124.1 113.8,112.0 113.8,112.0" fill="rgb(121,63,7)" stroke="rgb(121,63,7)" stroke-width="0.5"/>
 <linearGradient id="s0055b285f0" gradientUnits="userSpaceOnUse" x1="309.5" y1="162.6" x2="310.2" y2="162.7"><stop stop-color="#ef800e"/><stop offset="1" stop-color="#e77a0d"/></linearGradient>
 <polygon points="309.6,161.6 310.2,163.3 309.6,163.1" fill="url(#s0055b285f0)" stroke="url(#s0055b285f0)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.8,112.0" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.8,112.0" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.8,112.0" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.8,112.0" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.8,112.0" fill="rgb(126,66,7)" stroke="rgb(126,66,7)" stroke-width="0.5"/>
 <linearGradient id="s1b987c6a2e" gradientUnits="userSpaceOnUse" x1="92.3" y1="163.0" x2="94.3" y2="163.0"><stop stop-color="#5a2e04"/><stop offset="1" stop-color="#5f3105"/></linearGradient>
 <polygon points="92.3,165.1 93.6,160.0 94.3,163.9" fill="url(#s1b987c6a2e)" stroke="url(#s1b987c6a2e)" stroke-width="0.5"/>
 <linearGradient id="sdb481a27e6" gradientUnits="userSpaceOnUse" x1="197.2" y1="67.7" x2="197.3" y2="68.9"><stop stop-color="#d8720c"/><stop offset="1" stop-color="#e0770d"/></linearGradient>
@@ -20313,12 +20117,10 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="310.4,187.5 308.5,189.2 310.2,185.4" fill="url(#s44308d4edf)" stroke="url(#s44308d4edf)" stroke-width="0.5"/>
 <linearGradient id="s5cbf334dfc" gradientUnits="userSpaceOnUse" x1="205.2" y1="286.2" x2="205.3" y2="285.6"><stop stop-color="#562c04"/><stop offset="1" stop-color="#5b2f04"/></linearGradient>
 <polygon points="209.9,286.3 202.2,286.0 203.7,285.5" fill="url(#s5cbf334dfc)" stroke="url(#s5cbf334dfc)" stroke-width="0.5"/>
-<polygon points="92.3,165.1 94.3,163.9 94.3,163.9" fill="rgb(93,48,5)" stroke="rgb(93,48,5)" stroke-width="0.5"/>
 <polygon points="142.4,269.1 140.9,267.6 143.4,268.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s5810aa40ed" gradientUnits="userSpaceOnUse" x1="149.9" y1="80.7" x2="151.0" y2="82.2"><stop stop-color="#a75809"/><stop offset="1" stop-color="#ab5b0a"/></linearGradient>
 <polygon points="155.5,78.5 150.9,82.3 145.2,83.8" fill="url(#s5810aa40ed)" stroke="url(#s5810aa40ed)" stroke-width="0.5"/>
 <polygon points="99.4,213.9 100.6,216.3 101.3,221.0" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 113.8,112.0 113.4,115.8" fill="rgb(128,67,7)" stroke="rgb(128,67,7)" stroke-width="0.5"/>
 <polygon points="121.7,250.3 120.7,250.5 117.6,246.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s2cf6dd4573" gradientUnits="userSpaceOnUse" x1="260.3" y1="269.6" x2="259.4" y2="267.7"><stop stop-color="#743c06"/><stop offset="1" stop-color="#7c4107"/></linearGradient>
 <polygon points="254.2,272.2 264.4,265.3 261.2,269.1" fill="url(#s2cf6dd4573)" stroke="url(#s2cf6dd4573)" stroke-width="0.5"/>
@@ -20326,18 +20128,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="92.3,172.4 94.3,163.9 92.8,174.0" fill="url(#s6986bfb2b3)" stroke="url(#s6986bfb2b3)" stroke-width="0.5"/>
 <linearGradient id="s50a709dc05" gradientUnits="userSpaceOnUse" x1="291.0" y1="239.7" x2="290.1" y2="238.9"><stop stop-color="#9d5309"/><stop offset="1" stop-color="#a65809"/></linearGradient>
 <polygon points="287.5,243.2 292.8,235.9 291.6,239.0" fill="url(#s50a709dc05)" stroke="url(#s50a709dc05)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="305.1,210.8 305.1,210.8 305.1,210.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <linearGradient id="s1dc3f3f74e" gradientUnits="userSpaceOnUse" x1="300.0" y1="134.5" x2="302.7" y2="134.4"><stop stop-color="#ff9211"/><stop offset="1" stop-color="#ff890f"/></linearGradient>
 <polygon points="300.0,134.5 300.9,132.7 302.8,136.1" fill="url(#s1dc3f3f74e)" stroke="url(#s1dc3f3f74e)" stroke-width="0.5"/>
 <polygon points="111.2,239.6 111.8,237.4 113.0,239.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -20462,7 +20252,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="300.0,134.5 298.1,127.6 300.9,132.7" fill="url(#s73a8c0a296)" stroke="url(#s73a8c0a296)" stroke-width="0.5"/>
 <linearGradient id="s945991b9e2" gradientUnits="userSpaceOnUse" x1="224.3" y1="70.6" x2="224.1" y2="72.3"><stop stop-color="#f3820e"/><stop offset="1" stop-color="#ff8b10"/></linearGradient>
 <polygon points="221.7,70.3 226.4,71.8 224.5,72.4" fill="url(#s945991b9e2)" stroke="url(#s945991b9e2)" stroke-width="0.5"/>
-<polygon points="113.8,112.0 121.5,107.0 113.8,112.0" fill="rgb(129,68,7)" stroke="rgb(129,68,7)" stroke-width="0.5"/>
 <linearGradient id="sde6496a714" gradientUnits="userSpaceOnUse" x1="201.6" y1="286.0" x2="201.7" y2="285.7"><stop stop-color="#542b04"/><stop offset="1" stop-color="#572d04"/></linearGradient>
 <polygon points="201.0,285.8 201.9,285.7 202.2,286.0" fill="url(#sde6496a714)" stroke="url(#sde6496a714)" stroke-width="0.5"/>
 <linearGradient id="s11b48348e1" gradientUnits="userSpaceOnUse" x1="297.7" y1="127.4" x2="298.0" y2="127.3"><stop stop-color="#ff9311"/><stop offset="1" stop-color="#ff8b10"/></linearGradient>
@@ -20613,7 +20402,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="99.4,213.9 99.1,212.1 100.2,213.6" fill="url(#s4c37630270)" stroke="url(#s4c37630270)" stroke-width="0.5"/>
 <linearGradient id="s1f7dce0fda" gradientUnits="userSpaceOnUse" x1="175.5" y1="71.6" x2="176.4" y2="73.5"><stop stop-color="#cc6d0c"/><stop offset="1" stop-color="#d4710d"/></linearGradient>
 <polygon points="172.4,74.1 175.0,71.9 180.3,71.6" fill="url(#s1f7dce0fda)" stroke="url(#s1f7dce0fda)" stroke-width="0.5"/>
-<polygon points="95.8,153.6 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
 <linearGradient id="s42d613c5ef" gradientUnits="userSpaceOnUse" x1="134.7" y1="96.3" x2="134.1" y2="90.6"><stop stop-color="#975008"/><stop offset="1" stop-color="#9d5309"/></linearGradient>
 <polygon points="128.6,96.9 137.5,90.3 137.0,91.4" fill="url(#s42d613c5ef)" stroke="url(#s42d613c5ef)" stroke-width="0.5"/>
 <linearGradient id="s281557e992" gradientUnits="userSpaceOnUse" x1="206.3" y1="68.6" x2="206.4" y2="70.3"><stop stop-color="#eb7e0e"/><stop offset="1" stop-color="#f1810f"/></linearGradient>
@@ -20718,12 +20506,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="121.7,250.3 121.2,249.4 122.3,250.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="sfb47e3cbcf" gradientUnits="userSpaceOnUse" x1="260.9" y1="86.6" x2="260.3" y2="87.6"><stop stop-color="#ff9111"/><stop offset="1" stop-color="#ff9b13"/></linearGradient>
 <polygon points="259.1,85.5 263.9,89.8 258.6,86.2" fill="url(#sfb47e3cbcf)" stroke="url(#sfb47e3cbcf)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 94.3,163.9 94.3,163.9" fill="rgb(95,49,5)" stroke="rgb(95,49,5)" stroke-width="0.5"/>
 <linearGradient id="s70d05222ff" gradientUnits="userSpaceOnUse" x1="242.1" y1="277.9" x2="241.6" y2="276.5"><stop stop-color="#693705"/><stop offset="1" stop-color="#6f3a06"/></linearGradient>
 <polygon points="247.1,275.7 237.6,279.5 240.9,276.7" fill="url(#s70d05222ff)" stroke="url(#s70d05222ff)" stroke-width="0.5"/>
 <line x1="217.3" y1="357.2" x2="227.9" y2="361.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -20803,15 +20585,8 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="230.3,281.0 225.1,282.9 224.3,282.2" fill="rgb(102,53,5)" stroke="rgb(102,53,5)" stroke-width="0.5"/>
 <linearGradient id="seea7123b7d" gradientUnits="userSpaceOnUse" x1="216.8" y1="70.0" x2="216.5" y2="71.4"><stop stop-color="#f3820f"/><stop offset="1" stop-color="#ff8b10"/></linearGradient>
 <polygon points="219.9,72.2 214.2,70.5 215.7,69.7" fill="url(#seea7123b7d)" stroke="url(#seea7123b7d)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 96.9,152.8 94.3,163.9" fill="rgb(97,50,5)" stroke="rgb(97,50,5)" stroke-width="0.5"/>
 <linearGradient id="sdc6282e22e" gradientUnits="userSpaceOnUse" x1="100.7" y1="137.2" x2="102.7" y2="137.6"><stop stop-color="#6a3705"/><stop offset="1" stop-color="#6e3906"/></linearGradient>
 <polygon points="100.4,138.5 103.6,132.8 100.6,140.8" fill="url(#sdc6282e22e)" stroke="url(#sdc6282e22e)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
-<polygon points="289.8,115.4 289.8,115.4 289.8,115.4" fill="rgb(255,151,18)" stroke="rgb(255,151,18)" stroke-width="0.5"/>
 <linearGradient id="s550565c2a3" gradientUnits="userSpaceOnUse" x1="306.4" y1="201.5" x2="306.5" y2="201.6"><stop stop-color="#dc760d"/><stop offset="1" stop-color="#c86a0c"/></linearGradient>
 <polygon points="308.5,198.5 305.5,203.2 305.5,202.9" fill="url(#s550565c2a3)" stroke="url(#s550565c2a3)" stroke-width="0.5"/>
 <linearGradient id="s2eaeede20e" gradientUnits="userSpaceOnUse" x1="149.3" y1="271.8" x2="151.4" y2="272.5"><stop stop-color="#442303"/><stop offset="1" stop-color="#472504"/></linearGradient>
@@ -20827,7 +20602,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="300.0,134.5 302.6,137.9 302.3,141.8" fill="url(#s18d0b97a56)" stroke="url(#s18d0b97a56)" stroke-width="0.5"/>
 <linearGradient id="sd3bbbf0f89" gradientUnits="userSpaceOnUse" x1="266.3" y1="264.0" x2="265.8" y2="263.3"><stop stop-color="#7c4107"/><stop offset="1" stop-color="#8a4808"/></linearGradient>
 <polygon points="264.4,265.3 265.8,263.3 267.8,262.2" fill="url(#sd3bbbf0f89)" stroke="url(#sd3bbbf0f89)" stroke-width="0.5"/>
-<polygon points="94.6,172.9 94.3,163.9 94.3,163.9" fill="rgb(94,49,5)" stroke="rgb(94,49,5)" stroke-width="0.5"/>
 <linearGradient id="s29356bddc1" gradientUnits="userSpaceOnUse" x1="279.1" y1="252.5" x2="278.7" y2="251.5"><stop stop-color="#8e4b08"/><stop offset="1" stop-color="#9b5209"/></linearGradient>
 <polygon points="276.9,253.4 279.4,251.2 280.6,251.7" fill="url(#s29356bddc1)" stroke="url(#s29356bddc1)" stroke-width="0.5"/>
 <linearGradient id="saa8ecb96fc" gradientUnits="userSpaceOnUse" x1="275.4" y1="257.5" x2="274.0" y2="255.8"><stop stop-color="#874707"/><stop offset="1" stop-color="#8e4b08"/></linearGradient>
@@ -21054,7 +20828,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="134.9,259.3 131.6,260.3 130.1,256.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s5801aee384" gradientUnits="userSpaceOnUse" x1="306.7" y1="160.9" x2="307.4" y2="160.8"><stop stop-color="#ff8f11"/><stop offset="1" stop-color="#ff8a10"/></linearGradient>
 <polygon points="306.9,156.1 307.6,163.1 306.9,163.2" fill="url(#s5801aee384)" stroke="url(#s5801aee384)" stroke-width="0.5"/>
-<polygon points="94.3,163.9 98.4,157.4 94.3,163.9" fill="rgb(98,51,5)" stroke="rgb(98,51,5)" stroke-width="0.5"/>
 <linearGradient id="sf047ec9e0e" gradientUnits="userSpaceOnUse" x1="159.2" y1="276.0" x2="159.5" y2="275.5"><stop stop-color="#452403"/><stop offset="1" stop-color="#4c2704"/></linearGradient>
 <polygon points="159.3,275.5 160.1,276.1 158.6,275.7" fill="url(#sf047ec9e0e)" stroke="url(#sf047ec9e0e)" stroke-width="0.5"/>
 <linearGradient id="sedcb15c641" gradientUnits="userSpaceOnUse" x1="143.3" y1="87.1" x2="143.9" y2="88.0"><stop stop-color="#ab5b0a"/><stop offset="1" stop-color="#af5e0a"/></linearGradient>
@@ -21101,7 +20874,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="103.6,132.8 106.0,129.2 106.1,130.4" fill="url(#s4229dbd0f2)" stroke="url(#s4229dbd0f2)" stroke-width="0.5"/>
 <linearGradient id="s820c665df1" gradientUnits="userSpaceOnUse" x1="305.5" y1="203.2" x2="305.4" y2="203.1"><stop stop-color="#c86a0c"/><stop offset="1" stop-color="#dc760d"/></linearGradient>
 <polygon points="305.3,203.5 305.5,202.9 305.5,203.2" fill="url(#s820c665df1)" stroke="url(#s820c665df1)" stroke-width="0.5"/>
-<polygon points="98.3,161.2 94.3,163.9 94.3,163.9" fill="rgb(97,50,5)" stroke="rgb(97,50,5)" stroke-width="0.5"/>
 <linearGradient id="s5cd0436e40" gradientUnits="userSpaceOnUse" x1="234.9" y1="76.3" x2="235.1" y2="75.4"><stop stop-color="#ff9412"/><stop offset="1" stop-color="#ff8d10"/></linearGradient>
 <polygon points="237.0,76.6 233.3,75.8 234.7,75.3" fill="url(#s5cd0436e40)" stroke="url(#s5cd0436e40)" stroke-width="0.5"/>
 <linearGradient id="s7aa676f822" gradientUnits="userSpaceOnUse" x1="227.6" y1="282.0" x2="227.4" y2="279.7"><stop stop-color="#653405"/><stop offset="1" stop-color="#6b3806"/></linearGradient>
@@ -22295,7 +22067,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="180.7,76.7 182.0,75.7 183.9,75.7" fill="url(#s562f0a1a28)" stroke="url(#s562f0a1a28)" stroke-width="0.5"/>
 <linearGradient id="s7bd78e06ef" gradientUnits="userSpaceOnUse" x1="261.0" y1="91.2" x2="261.3" y2="95.4"><stop stop-color="#ffa615"/><stop offset="1" stop-color="#ffaf17"/></linearGradient>
 <polygon points="261.0,95.5 259.9,91.2 262.6,93.4" fill="url(#s7bd78e06ef)" stroke="url(#s7bd78e06ef)" stroke-width="0.5"/>
-<polygon points="222.8,280.5 233.5,274.3 233.5,274.3" fill="rgb(114,60,7)" stroke="rgb(114,60,7)" stroke-width="0.5"/>
 <linearGradient id="sadfcfc6535" gradientUnits="userSpaceOnUse" x1="160.2" y1="83.9" x2="159.2" y2="82.9"><stop stop-color="#dd780f"/><stop offset="1" stop-color="#cf700d"/></linearGradient>
 <polygon points="159.7,84.5 157.3,85.0 161.7,80.4" fill="url(#sadfcfc6535)" stroke="url(#sadfcfc6535)" stroke-width="0.5"/>
 <linearGradient id="s48b502dc48" gradientUnits="userSpaceOnUse" x1="114.1" y1="234.0" x2="115.6" y2="230.9"><stop stop-color="#472504"/><stop offset="1" stop-color="#4a2704"/></linearGradient>
@@ -22338,7 +22109,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="304.5,196.8 300.9,201.5 300.8,199.9" fill="url(#s6ec0aece3b)" stroke="url(#s6ec0aece3b)" stroke-width="0.5"/>
 <linearGradient id="s9ed6079e56" gradientUnits="userSpaceOnUse" x1="256.3" y1="265.1" x2="255.8" y2="264.2"><stop stop-color="#824507"/><stop offset="1" stop-color="#8a4908"/></linearGradient>
 <polygon points="247.7,270.6 260.3,261.3 260.0,261.8" fill="url(#s9ed6079e56)" stroke="url(#s9ed6079e56)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 235.0,276.6 233.5,274.3" fill="rgb(116,61,7)" stroke="rgb(116,61,7)" stroke-width="0.5"/>
 <linearGradient id="s4178969e7c" gradientUnits="userSpaceOnUse" x1="237.6" y1="80.3" x2="236.8" y2="81.9"><stop stop-color="#ff9e14"/><stop offset="1" stop-color="#ffa816"/></linearGradient>
 <polygon points="234.9,79.0 239.3,81.5 237.7,82.4" fill="url(#s4178969e7c)" stroke="url(#s4178969e7c)" stroke-width="0.5"/>
 <polygon points="115.6,230.9 112.4,232.3 111.8,227.0" fill="rgb(73,38,4)" stroke="rgb(73,38,4)" stroke-width="0.5"/>
@@ -22446,7 +22216,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s697179ca13" gradientUnits="userSpaceOnUse" x1="105.4" y1="214.9" x2="107.1" y2="214.8"><stop stop-color="#4f2904"/><stop offset="1" stop-color="#522b04"/></linearGradient>
 <polygon points="105.8,219.3 105.5,212.0 106.9,213.3" fill="url(#s697179ca13)" stroke="url(#s697179ca13)" stroke-width="0.5"/>
 <polygon points="261.0,95.5 267.9,97.9 267.9,98.7" fill="rgb(255,175,23)" stroke="rgb(255,175,23)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 245.9,271.2 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <linearGradient id="sb155c3449b" gradientUnits="userSpaceOnUse" x1="97.8" y1="176.2" x2="100.1" y2="175.1"><stop stop-color="#603205"/><stop offset="1" stop-color="#653505"/></linearGradient>
 <polygon points="99.2,179.2 98.0,172.2 100.2,175.4" fill="url(#sb155c3449b)" stroke="url(#sb155c3449b)" stroke-width="0.5"/>
 <linearGradient id="sffa5b73566" gradientUnits="userSpaceOnUse" x1="110.6" y1="128.0" x2="112.6" y2="128.8"><stop stop-color="#814407"/><stop offset="1" stop-color="#8e4c08"/></linearGradient>
@@ -22588,11 +22357,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="258.6,261.9 260.9,259.9 260.3,261.3" fill="url(#s1e3b52f747)" stroke="url(#s1e3b52f747)" stroke-width="0.5"/>
 <linearGradient id="s86531ca6ce" gradientUnits="userSpaceOnUse" x1="104.8" y1="211.0" x2="105.5" y2="210.7"><stop stop-color="#4f2904"/><stop offset="1" stop-color="#562d04"/></linearGradient>
 <polygon points="105.6,211.1 105.0,211.5 105.0,210.0" fill="url(#s86531ca6ce)" stroke="url(#s86531ca6ce)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <linearGradient id="s6d7433fb68" gradientUnits="userSpaceOnUse" x1="113.5" y1="227.0" x2="112.6" y2="227.9"><stop stop-color="#4e2904"/><stop offset="1" stop-color="#4a2604"/></linearGradient>
 <polygon points="115.6,230.9 111.8,227.0 111.5,224.8" fill="url(#s6d7433fb68)" stroke="url(#s6d7433fb68)" stroke-width="0.5"/>
 <linearGradient id="s5a4463a487" gradientUnits="userSpaceOnUse" x1="276.1" y1="249.2" x2="274.9" y2="245.0"><stop stop-color="#a6590a"/><stop offset="1" stop-color="#af5e0b"/></linearGradient>
@@ -22774,7 +22538,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="285.0,233.6 284.5,236.7 281.9,238.6" fill="url(#s30efb255d1)" stroke="url(#s30efb255d1)" stroke-width="0.5"/>
 <linearGradient id="s524b6b2f7d" gradientUnits="userSpaceOnUse" x1="282.6" y1="119.7" x2="285.3" y2="118.8"><stop stop-color="#ffb217"/><stop offset="1" stop-color="#ffac16"/></linearGradient>
 <polygon points="286.1,121.4 282.3,118.6 284.4,117.4" fill="url(#s524b6b2f7d)" stroke="url(#s524b6b2f7d)" stroke-width="0.5"/>
-<polygon points="223.0,274.9 233.5,274.3 233.5,274.3" fill="rgb(118,62,7)" stroke="rgb(118,62,7)" stroke-width="0.5"/>
 <linearGradient id="scf4c5c62aa" gradientUnits="userSpaceOnUse" x1="288.6" y1="230.2" x2="287.2" y2="228.9"><stop stop-color="#c56b0d"/><stop offset="1" stop-color="#d2730e"/></linearGradient>
 <polygon points="285.0,233.6 289.8,226.2 289.4,229.3" fill="url(#scf4c5c62aa)" stroke="url(#scf4c5c62aa)" stroke-width="0.5"/>
 <linearGradient id="s9d4c75a30d" gradientUnits="userSpaceOnUse" x1="122.0" y1="114.2" x2="122.6" y2="114.6"><stop stop-color="#934e09"/><stop offset="1" stop-color="#9e550a"/></linearGradient>
@@ -22917,7 +22680,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s02a68377e3" gradientUnits="userSpaceOnUse" x1="175.0" y1="274.8" x2="175.6" y2="274.4"><stop stop-color="#572d05"/><stop offset="1" stop-color="#5c3005"/></linearGradient>
 <polygon points="176.1,275.0 175.1,275.0 174.7,273.8" fill="url(#s02a68377e3)" stroke="url(#s02a68377e3)" stroke-width="0.5"/>
 <polygon points="225.1,78.0 222.5,80.5 215.2,77.7" fill="rgb(255,161,20)" stroke="rgb(255,161,20)" stroke-width="0.5"/>
-<polygon points="233.5,274.3 237.5,268.3 233.5,274.3" fill="rgb(123,65,7)" stroke="rgb(123,65,7)" stroke-width="0.5"/>
 <linearGradient id="s022f93b236" gradientUnits="userSpaceOnUse" x1="173.2" y1="79.2" x2="174.0" y2="82.2"><stop stop-color="#e57c0f"/><stop offset="1" stop-color="#f38611"/></linearGradient>
 <polygon points="174.3,82.1 170.2,80.0 176.5,80.3" fill="url(#s022f93b236)" stroke="url(#s022f93b236)" stroke-width="0.5"/>
 <linearGradient id="s6e407ae361" gradientUnits="userSpaceOnUse" x1="120.0" y1="117.0" x2="121.6" y2="117.7"><stop stop-color="#934e09"/><stop offset="1" stop-color="#9e550a"/></linearGradient>
@@ -23443,18 +23205,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="274.0,114.4 273.5,108.9 276.1,111.7" fill="url(#s8b781d41cd)" stroke="url(#s8b781d41cd)" stroke-width="0.5"/>
 <linearGradient id="s608a94429e" gradientUnits="userSpaceOnUse" x1="199.6" y1="276.0" x2="207.7" y2="275.2"><stop stop-color="#663505"/><stop offset="1" stop-color="#6b3906"/></linearGradient>
 <polygon points="204.0,273.5 207.7,275.7 199.7,277.5" fill="url(#s608a94429e)" stroke="url(#s608a94429e)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="201.5,78.9 201.5,78.9 201.5,78.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="se7b87f5e44" gradientUnits="userSpaceOnUse" x1="275.1" y1="243.5" x2="274.6" y2="242.7"><stop stop-color="#ae5e0b"/><stop offset="1" stop-color="#c26a0d"/></linearGradient>
 <polygon points="273.7,244.3 274.0,243.1 276.7,241.6" fill="url(#se7b87f5e44)" stroke="url(#se7b87f5e44)" stroke-width="0.5"/>
 <polygon points="214.2,77.8 210.1,81.5 201.5,78.9" fill="rgb(255,158,21)" stroke="rgb(255,158,21)" stroke-width="0.5"/>
@@ -25206,18 +24956,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="211.7,90.5 214.7,90.0 213.5,91.5" fill="url(#sea5d813d04)" stroke="url(#sea5d813d04)" stroke-width="0.5"/>
 <linearGradient id="s42caa3a972" gradientUnits="userSpaceOnUse" x1="113.3" y1="177.0" x2="115.2" y2="175.0"><stop stop-color="#733d07"/><stop offset="1" stop-color="#894b09"/></linearGradient>
 <polygon points="114.0,177.6 112.6,176.4 115.3,175.0" fill="url(#s42caa3a972)" stroke="url(#s42caa3a972)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="141.8,241.6 141.8,241.6 141.8,241.6" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <linearGradient id="s8c63b09d05" gradientUnits="userSpaceOnUse" x1="288.3" y1="179.1" x2="289.6" y2="179.7"><stop stop-color="#ffb81a"/><stop offset="1" stop-color="#ffaf18"/></linearGradient>
 <polygon points="288.2,181.0 289.0,177.6 289.6,179.5" fill="url(#s8c63b09d05)" stroke="url(#s8c63b09d05)" stroke-width="0.5"/>
 <linearGradient id="s928135e9e2" gradientUnits="userSpaceOnUse" x1="112.8" y1="188.6" x2="117.2" y2="188.0"><stop stop-color="#6b3906"/><stop offset="1" stop-color="#794208"/></linearGradient>
@@ -25310,7 +25048,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="275.8,134.2 282.1,137.1 277.6,141.6" fill="url(#s4af9108ac9)" stroke="url(#s4af9108ac9)" stroke-width="0.5"/>
 <linearGradient id="s069ffdddc5" gradientUnits="userSpaceOnUse" x1="286.8" y1="187.5" x2="288.9" y2="187.9"><stop stop-color="#ffb41a"/><stop offset="1" stop-color="#ffaa18"/></linearGradient>
 <polygon points="288.2,181.0 288.5,190.0 285.9,191.9" fill="url(#s069ffdddc5)" stroke="url(#s069ffdddc5)" stroke-width="0.5"/>
-<polygon points="116.8,143.8 125.0,141.3 125.0,141.3" fill="rgb(171,94,12)" stroke="rgb(171,94,12)" stroke-width="0.5"/>
 <linearGradient id="s39c6b996c5" gradientUnits="userSpaceOnUse" x1="261.1" y1="115.4" x2="261.7" y2="113.1"><stop stop-color="#ffd61f"/><stop offset="1" stop-color="#ffd01e"/></linearGradient>
 <polygon points="262.9,115.9 259.5,115.0 261.6,113.1" fill="url(#s39c6b996c5)" stroke="url(#s39c6b996c5)" stroke-width="0.5"/>
 <linearGradient id="s6f5b903c69" gradientUnits="userSpaceOnUse" x1="181.8" y1="91.1" x2="183.7" y2="94.3"><stop stop-color="#ffa216"/><stop offset="1" stop-color="#ffa918"/></linearGradient>
@@ -25437,7 +25174,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="161.7,102.3 163.4,99.6 164.7,99.8" fill="url(#scc364ebccf)" stroke="url(#scc364ebccf)" stroke-width="0.5"/>
 <linearGradient id="sa93940e8bc" gradientUnits="userSpaceOnUse" x1="284.8" y1="161.3" x2="286.1" y2="161.7"><stop stop-color="#ffc61c"/><stop offset="1" stop-color="#ffc11b"/></linearGradient>
 <polygon points="284.7,165.7 284.8,161.6 287.3,157.3" fill="url(#sa93940e8bc)" stroke="url(#sa93940e8bc)" stroke-width="0.5"/>
-<polygon points="117.4,151.3 125.0,141.3 125.0,141.3" fill="rgb(172,95,12)" stroke="rgb(172,95,12)" stroke-width="0.5"/>
 <linearGradient id="sa877dc9a6a" gradientUnits="userSpaceOnUse" x1="280.6" y1="207.8" x2="283.9" y2="205.3"><stop stop-color="#ff9915"/><stop offset="1" stop-color="#ff9f16"/></linearGradient>
 <polygon points="281.2,206.4 283.2,204.4 281.7,209.3" fill="url(#sa877dc9a6a)" stroke="url(#sa877dc9a6a)" stroke-width="0.5"/>
 <linearGradient id="s61e5b47079" gradientUnits="userSpaceOnUse" x1="257.8" y1="244.0" x2="258.8" y2="238.5"><stop stop-color="#ce730f"/><stop offset="1" stop-color="#df7d11"/></linearGradient>
@@ -25528,7 +25264,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="116.9,186.0 114.6,178.1 119.0,181.1" fill="url(#s1afc8c9e1a)" stroke="url(#s1afc8c9e1a)" stroke-width="0.5"/>
 <linearGradient id="sc67db4ce22" gradientUnits="userSpaceOnUse" x1="128.5" y1="132.5" x2="130.7" y2="133.4"><stop stop-color="#b5640d"/><stop offset="1" stop-color="#d0740f"/></linearGradient>
 <polygon points="125.0,141.3 130.2,128.7 132.7,128.4" fill="url(#sc67db4ce22)" stroke="url(#sc67db4ce22)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 130.2,128.7 125.0,141.3" fill="rgb(182,101,13)" stroke="rgb(182,101,13)" stroke-width="0.5"/>
 <linearGradient id="s5bfb0194d2" gradientUnits="userSpaceOnUse" x1="253.1" y1="112.8" x2="256.6" y2="108.6"><stop stop-color="#ffd51f"/><stop offset="1" stop-color="#ffd01e"/></linearGradient>
 <polygon points="254.4,113.9 253.1,111.4 256.0,108.1" fill="url(#s5bfb0194d2)" stroke="url(#s5bfb0194d2)" stroke-width="0.5"/>
 <linearGradient id="s81883d0954" gradientUnits="userSpaceOnUse" x1="283.2" y1="177.3" x2="288.8" y2="178.5"><stop stop-color="#ffbe1b"/><stop offset="1" stop-color="#ffb81a"/></linearGradient>
@@ -25597,11 +25332,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="128.5,215.2 127.7,218.4 125.2,217.2" fill="url(#sdb63bcb846)" stroke="url(#sdb63bcb846)" stroke-width="0.5"/>
 <linearGradient id="s4454083545" gradientUnits="userSpaceOnUse" x1="273.5" y1="222.1" x2="272.4" y2="220.8"><stop stop-color="#fb8d13"/><stop offset="1" stop-color="#ff9915"/></linearGradient>
 <polygon points="270.5,224.8 274.4,219.0 274.6,221.1" fill="url(#s4454083545)" stroke="url(#s4454083545)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
 <polygon points="273.7,125.9 269.8,131.5 269.2,130.8" fill="rgb(255,211,31)" stroke="rgb(255,211,31)" stroke-width="0.5"/>
 <linearGradient id="s2c114d7a6a" gradientUnits="userSpaceOnUse" x1="178.7" y1="260.0" x2="180.1" y2="257.3"><stop stop-color="#6c3a07"/><stop offset="1" stop-color="#7c4408"/></linearGradient>
 <polygon points="178.7,259.9 177.8,257.7 181.7,258.2" fill="url(#s2c114d7a6a)" stroke="url(#s2c114d7a6a)" stroke-width="0.5"/>
@@ -25672,7 +25402,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="255.3,237.9 259.9,238.7 255.4,243.6" fill="url(#s380497295a)" stroke="url(#s380497295a)" stroke-width="0.5"/>
 <linearGradient id="s3b7918b031" gradientUnits="userSpaceOnUse" x1="121.8" y1="209.1" x2="125.5" y2="207.1"><stop stop-color="#6b3907"/><stop offset="1" stop-color="#784108"/></linearGradient>
 <polygon points="122.3,210.1 123.2,206.3 125.9,207.9" fill="url(#s3b7918b031)" stroke="url(#s3b7918b031)" stroke-width="0.5"/>
-<polygon points="123.0,152.7 125.0,141.3 125.0,141.3" fill="rgb(181,100,13)" stroke="rgb(181,100,13)" stroke-width="0.5"/>
 <linearGradient id="s1afd3f898f" gradientUnits="userSpaceOnUse" x1="282.8" y1="181.8" x2="286.4" y2="184.0"><stop stop-color="#ffba1b"/><stop offset="1" stop-color="#ffb319"/></linearGradient>
 <polygon points="288.2,181.0 283.8,185.9 282.5,182.3" fill="url(#s1afd3f898f)" stroke="url(#s1afd3f898f)" stroke-width="0.5"/>
 <polygon points="285.5,193.3 281.1,205.7 279.4,199.5" fill="rgb(255,170,24)" stroke="rgb(255,170,24)" stroke-width="0.5"/>
@@ -25846,7 +25575,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="145.8,117.1 144.9,116.5 158.1,108.0" fill="url(#s39215b32f3)" stroke="url(#s39215b32f3)" stroke-width="0.5"/>
 <linearGradient id="s4f6e492bc0" gradientUnits="userSpaceOnUse" x1="133.1" y1="224.1" x2="134.9" y2="224.2"><stop stop-color="#6d3b07"/><stop offset="1" stop-color="#753f07"/></linearGradient>
 <polygon points="133.9,229.4 133.2,221.2 135.0,221.9" fill="url(#s4f6e492bc0)" stroke="url(#s4f6e492bc0)" stroke-width="0.5"/>
-<polygon points="125.0,141.3 133.6,140.5 125.0,141.3" fill="rgb(191,106,14)" stroke="rgb(191,106,14)" stroke-width="0.5"/>
 <linearGradient id="sf84fc09d91" gradientUnits="userSpaceOnUse" x1="240.6" y1="104.8" x2="240.1" y2="105.4"><stop stop-color="#ffd11e"/><stop offset="1" stop-color="#ffd920"/></linearGradient>
 <polygon points="240.7,105.9 239.2,103.8 241.4,105.3" fill="url(#sf84fc09d91)" stroke="url(#sf84fc09d91)" stroke-width="0.5"/>
 <linearGradient id="s8451586c77" gradientUnits="userSpaceOnUse" x1="121.5" y1="193.4" x2="120.8" y2="194.4"><stop stop-color="#8e4e0a"/><stop offset="1" stop-color="#7c4308"/></linearGradient>
@@ -27472,7 +27200,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="181.4,116.4 183.8,117.5 180.1,124.3" fill="url(#s32af3a0952)" stroke="url(#s32af3a0952)" stroke-width="0.5"/>
 <linearGradient id="s616ae1469c" gradientUnits="userSpaceOnUse" x1="221.0" y1="239.5" x2="221.0" y2="232.8"><stop stop-color="#dd7d12"/><stop offset="1" stop-color="#ee8713"/></linearGradient>
 <polygon points="217.7,239.5 218.2,233.8 227.1,232.8" fill="url(#s616ae1469c)" stroke="url(#s616ae1469c)" stroke-width="0.5"/>
-<polygon points="264.2,156.7 255.9,154.6 255.9,154.6" fill="rgb(255,227,35)" stroke="rgb(255,227,35)" stroke-width="0.5"/>
 <linearGradient id="s0be252ba3f" gradientUnits="userSpaceOnUse" x1="137.7" y1="163.2" x2="146.4" y2="162.6"><stop stop-color="#d57811"/><stop offset="1" stop-color="#ea8513"/></linearGradient>
 <polygon points="137.8,165.2 146.1,156.2 142.6,167.4" fill="url(#s0be252ba3f)" stroke="url(#s0be252ba3f)" stroke-width="0.5"/>
 <polygon points="241.5,126.5 230.4,129.0 238.6,126.6" fill="rgb(255,233,36)" stroke="rgb(255,233,36)" stroke-width="0.5"/>
@@ -27519,7 +27246,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="211.6,121.8 209.1,114.6 215.5,118.5" fill="rgb(255,222,34)" stroke="rgb(255,222,34)" stroke-width="0.5"/>
 <linearGradient id="seced8c7438" gradientUnits="userSpaceOnUse" x1="151.7" y1="217.5" x2="161.1" y2="215.7"><stop stop-color="#a55c0c"/><stop offset="1" stop-color="#b8680e"/></linearGradient>
 <polygon points="160.4,212.3 156.7,219.4 151.8,218.1" fill="url(#seced8c7438)" stroke="url(#seced8c7438)" stroke-width="0.5"/>
-<polygon points="255.1,145.0 255.9,154.6 255.9,154.6" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <polygon points="256.6,193.4 261.1,180.7 264.0,186.5" fill="rgb(255,202,31)" stroke="rgb(255,202,31)" stroke-width="0.5"/>
 <polygon points="243.5,135.1 237.3,134.8 241.7,127.2" fill="rgb(255,234,36)" stroke="rgb(255,234,36)" stroke-width="0.5"/>
 <linearGradient id="s051ef5e3ee" gradientUnits="userSpaceOnUse" x1="149.6" y1="211.8" x2="153.6" y2="208.6"><stop stop-color="#a85e0d"/><stop offset="1" stop-color="#bf6c0f"/></linearGradient>
@@ -27610,12 +27336,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="259.3,181.4 260.7,180.0 261.1,180.7" fill="url(#s8dd4973f51)" stroke="url(#s8dd4973f51)" stroke-width="0.5"/>
 <linearGradient id="s35b4daeebf" gradientUnits="userSpaceOnUse" x1="171.7" y1="125.1" x2="180.1" y2="125.1"><stop stop-color="#ffb71b"/><stop offset="1" stop-color="#ffbe1d"/></linearGradient>
 <polygon points="171.7,128.6 174.2,122.3 180.1,124.3" fill="url(#s35b4daeebf)" stroke="url(#s35b4daeebf)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 255.9,154.6" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
 <linearGradient id="s08f961d051" gradientUnits="userSpaceOnUse" x1="154.3" y1="143.4" x2="155.5" y2="140.9"><stop stop-color="#ff9115"/><stop offset="1" stop-color="#ffa719"/></linearGradient>
 <polygon points="151.3,141.9 153.0,140.6 160.7,143.4" fill="url(#s08f961d051)" stroke="url(#s08f961d051)" stroke-width="0.5"/>
 <linearGradient id="s367b22cbe1" gradientUnits="userSpaceOnUse" x1="171.3" y1="232.6" x2="182.1" y2="228.4"><stop stop-color="#b1630e"/><stop offset="1" stop-color="#c06c0f"/></linearGradient>
@@ -27663,7 +27383,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <linearGradient id="s4fb1f4eafe" gradientUnits="userSpaceOnUse" x1="203.5" y1="122.1" x2="210.8" y2="119.5"><stop stop-color="#ffd821"/><stop offset="1" stop-color="#ffde22"/></linearGradient>
 <polygon points="211.6,121.8 204.0,123.5 208.2,116.1" fill="url(#s4fb1f4eafe)" stroke="url(#s4fb1f4eafe)" stroke-width="0.5"/>
 <polygon points="263.7,167.3 256.9,173.8 254.3,169.8" fill="rgb(255,218,34)" stroke="rgb(255,218,34)" stroke-width="0.5"/>
-<polygon points="254.7,165.8 255.9,154.6 255.9,154.6" fill="rgb(255,228,36)" stroke="rgb(255,228,36)" stroke-width="0.5"/>
 <linearGradient id="see49b2eb16" gradientUnits="userSpaceOnUse" x1="234.8" y1="228.1" x2="235.2" y2="220.9"><stop stop-color="#ff9516"/><stop offset="1" stop-color="#ffa018"/></linearGradient>
 <polygon points="232.4,228.0 233.4,222.2 239.3,221.1" fill="url(#see49b2eb16)" stroke="url(#see49b2eb16)" stroke-width="0.5"/>
 <linearGradient id="sa362bc5d16" gradientUnits="userSpaceOnUse" x1="153.0" y1="138.8" x2="165.8" y2="138.5"><stop stop-color="#ffa118"/><stop offset="1" stop-color="#ffab1a"/></linearGradient>
@@ -27733,7 +27452,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="141.0,173.1 145.2,168.4 151.4,170.7" fill="url(#s12670ac7c7)" stroke="url(#s12670ac7c7)" stroke-width="0.5"/>
 <linearGradient id="s629d84caf9" gradientUnits="userSpaceOnUse" x1="216.8" y1="121.8" x2="219.8" y2="125.4"><stop stop-color="#ffe223"/><stop offset="1" stop-color="#ffe524"/></linearGradient>
 <polygon points="215.5,128.9 218.5,120.4 222.2,123.0" fill="url(#s629d84caf9)" stroke="url(#s629d84caf9)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 251.1,165.2" fill="rgb(255,228,36)" stroke="rgb(255,228,36)" stroke-width="0.5"/>
 <linearGradient id="sda80847123" gradientUnits="userSpaceOnUse" x1="211.5" y1="122.8" x2="218.2" y2="123.4"><stop stop-color="#ffde22"/><stop offset="1" stop-color="#ffe223"/></linearGradient>
 <polygon points="211.6,121.8 218.5,120.4 214.7,127.0" fill="url(#sda80847123)" stroke="url(#sda80847123)" stroke-width="0.5"/>
 <linearGradient id="s75ffc30d05" gradientUnits="userSpaceOnUse" x1="167.7" y1="225.5" x2="171.1" y2="221.7"><stop stop-color="#b1640e"/><stop offset="1" stop-color="#c87110"/></linearGradient>
@@ -27742,7 +27460,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="165.6,132.0 171.7,128.6 177.3,130.0" fill="url(#s53c3bca0cc)" stroke="url(#s53c3bca0cc)" stroke-width="0.5"/>
 <linearGradient id="s9316e27464" gradientUnits="userSpaceOnUse" x1="149.2" y1="157.4" x2="150.1" y2="155.3"><stop stop-color="#ea8513"/><stop offset="1" stop-color="#ff9b17"/></linearGradient>
 <polygon points="146.1,156.2 147.6,154.7 155.4,157.6" fill="url(#s9316e27464)" stroke="url(#s9316e27464)" stroke-width="0.5"/>
-<polygon points="245.5,154.1 255.9,154.6 255.9,154.6" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <linearGradient id="sdf64237351" gradientUnits="userSpaceOnUse" x1="145.7" y1="163.4" x2="148.8" y2="165.7"><stop stop-color="#e07f12"/><stop offset="1" stop-color="#f28a14"/></linearGradient>
 <polygon points="145.2,168.4 142.6,167.4 154.5,158.3" fill="url(#sdf64237351)" stroke="url(#sdf64237351)" stroke-width="0.5"/>
 <linearGradient id="s92cbc1b5c4" gradientUnits="userSpaceOnUse" x1="148.3" y1="198.0" x2="149.3" y2="195.1"><stop stop-color="#ba690f"/><stop offset="1" stop-color="#d47811"/></linearGradient>
@@ -27778,7 +27495,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="179.9,233.3 181.0,225.4 182.5,227.9" fill="url(#s29501c4fbc)" stroke="url(#s29501c4fbc)" stroke-width="0.5"/>
 <linearGradient id="s25ce8b76b5" gradientUnits="userSpaceOnUse" x1="213.0" y1="232.9" x2="212.0" y2="230.4"><stop stop-color="#e18012"/><stop offset="1" stop-color="#f58c14"/></linearGradient>
 <polygon points="208.6,232.3 219.2,227.5 209.3,234.4" fill="url(#s25ce8b76b5)" stroke="url(#s25ce8b76b5)" stroke-width="0.5"/>
-<polygon points="255.9,154.6 255.9,154.6 245.5,158.2" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
 <polygon points="226.2,129.9 228.8,127.7 230.4,129.0" fill="rgb(255,233,36)" stroke="rgb(255,233,36)" stroke-width="0.5"/>
 <polygon points="215.5,128.9 222.2,123.0 227.9,127.0" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
 <linearGradient id="sc6eaf10be8" gradientUnits="userSpaceOnUse" x1="178.7" y1="126.1" x2="182.2" y2="127.3"><stop stop-color="#ffbc1d"/><stop offset="1" stop-color="#ffc61e"/></linearGradient>
@@ -27953,7 +27669,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="233.6,144.2 245.2,142.4 239.5,144.0" fill="rgb(255,236,37)" stroke="rgb(255,236,37)" stroke-width="0.5"/>
 <linearGradient id="s3100e9e44f" gradientUnits="userSpaceOnUse" x1="180.6" y1="225.1" x2="182.1" y2="223.3"><stop stop-color="#c06c0f"/><stop offset="1" stop-color="#dc7d12"/></linearGradient>
 <polygon points="181.0,225.4 179.8,223.6 183.0,224.0" fill="url(#s3100e9e44f)" stroke="url(#s3100e9e44f)" stroke-width="0.5"/>
-<polygon points="246.8,211.2 235.7,211.4 235.7,211.4" fill="rgb(255,173,26)" stroke="rgb(255,173,26)" stroke-width="0.5"/>
 <linearGradient id="sf0f8853714" gradientUnits="userSpaceOnUse" x1="175.4" y1="131.6" x2="183.4" y2="132.7"><stop stop-color="#ffba1c"/><stop offset="1" stop-color="#ffc41e"/></linearGradient>
 <polygon points="174.9,135.2 177.3,130.0 183.6,131.0" fill="url(#sf0f8853714)" stroke="url(#sf0f8853714)" stroke-width="0.5"/>
 <linearGradient id="s0e9bb95106" gradientUnits="userSpaceOnUse" x1="251.2" y1="168.7" x2="252.6" y2="170.9"><stop stop-color="#ffe023"/><stop offset="1" stop-color="#ffdb22"/></linearGradient>
@@ -27979,7 +27694,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="182.5,227.9 184.9,224.1 194.6,224.7" fill="url(#sdb466d08c6)" stroke="url(#sdb466d08c6)" stroke-width="0.5"/>
 <linearGradient id="sfb7ec63f5e" gradientUnits="userSpaceOnUse" x1="190.5" y1="127.4" x2="191.7" y2="128.6"><stop stop-color="#ffc91f"/><stop offset="1" stop-color="#ffd321"/></linearGradient>
 <polygon points="193.3,127.0 190.9,129.1 189.4,128.3" fill="url(#sfb7ec63f5e)" stroke="url(#sfb7ec63f5e)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 233.4,222.2" fill="rgb(255,169,25)" stroke="rgb(255,169,25)" stroke-width="0.5"/>
 <polygon points="245.5,154.1 241.7,153.9 245.4,146.4" fill="rgb(255,234,37)" stroke="rgb(255,234,37)" stroke-width="0.5"/>
 <linearGradient id="sef59b5e057" gradientUnits="userSpaceOnUse" x1="171.0" y1="220.5" x2="175.8" y2="218.2"><stop stop-color="#c87110"/><stop offset="1" stop-color="#dd7e12"/></linearGradient>
 <polygon points="172.0,222.6 173.0,215.3 176.4,219.5" fill="url(#sef59b5e057)" stroke="url(#sef59b5e057)" stroke-width="0.5"/>
@@ -28079,15 +27793,9 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="245.5,154.1 243.5,155.9 241.7,153.9" fill="rgb(255,233,36)" stroke="rgb(255,233,36)" stroke-width="0.5"/>
 <linearGradient id="s6080663e27" gradientUnits="userSpaceOnUse" x1="212.0" y1="131.7" x2="216.3" y2="130.6"><stop stop-color="#ffe123"/><stop offset="1" stop-color="#ffe624"/></linearGradient>
 <polygon points="212.0,131.9 214.4,129.9 216.6,131.5" fill="url(#s6080663e27)" stroke="url(#s6080663e27)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 235.7,211.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 235.7,211.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 235.7,211.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 235.7,211.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 235.7,211.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
 <polygon points="231.8,135.4 232.3,144.3 227.0,139.7" fill="rgb(255,234,37)" stroke="rgb(255,234,37)" stroke-width="0.5"/>
 <linearGradient id="s014b5e0851" gradientUnits="userSpaceOnUse" x1="247.8" y1="165.2" x2="248.0" y2="171.7"><stop stop-color="#ffe324"/><stop offset="1" stop-color="#ffde23"/></linearGradient>
 <polygon points="244.3,165.3 251.1,165.2 248.4,171.7" fill="url(#s014b5e0851)" stroke="url(#s014b5e0851)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 244.2,198.2 235.7,211.4" fill="rgb(255,180,27)" stroke="rgb(255,180,27)" stroke-width="0.5"/>
 <polygon points="252.0,178.2 248.5,181.4 246.1,177.6" fill="rgb(255,215,33)" stroke="rgb(255,215,33)" stroke-width="0.5"/>
 <linearGradient id="s97853918fa" gradientUnits="userSpaceOnUse" x1="205.8" y1="225.4" x2="206.5" y2="224.6"><stop stop-color="#e18012"/><stop offset="1" stop-color="#ff9817"/></linearGradient>
 <polygon points="205.9,225.4 205.6,224.8 206.8,224.8" fill="url(#s97853918fa)" stroke="url(#s97853918fa)" stroke-width="0.5"/>
@@ -28155,14 +27863,12 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="160.4,193.3 155.8,193.8 157.6,185.7" fill="url(#s2e7f7813bf)" stroke="url(#s2e7f7813bf)" stroke-width="0.5"/>
 <linearGradient id="s8bde34ad45" gradientUnits="userSpaceOnUse" x1="169.2" y1="211.6" x2="169.9" y2="209.4"><stop stop-color="#cf7611"/><stop offset="1" stop-color="#ed8814"/></linearGradient>
 <polygon points="165.6,208.6 173.8,210.6 169.3,211.6" fill="url(#s8bde34ad45)" stroke="url(#s8bde34ad45)" stroke-width="0.5"/>
-<polygon points="232.2,204.9 235.7,211.4 235.7,211.4" fill="rgb(255,177,27)" stroke="rgb(255,177,27)" stroke-width="0.5"/>
 <linearGradient id="sa4e3a9987b" gradientUnits="userSpaceOnUse" x1="164.5" y1="150.6" x2="165.2" y2="151.4"><stop stop-color="#ffa519"/><stop offset="1" stop-color="#ffae1a"/></linearGradient>
 <polygon points="156.0,157.7 168.6,147.3 169.6,147.6" fill="url(#sa4e3a9987b)" stroke="url(#sa4e3a9987b)" stroke-width="0.5"/>
 <linearGradient id="se363e37b34" gradientUnits="userSpaceOnUse" x1="200.6" y1="225.2" x2="201.2" y2="218.9"><stop stop-color="#e78413"/><stop offset="1" stop-color="#fe9216"/></linearGradient>
 <polygon points="194.6,224.7 202.3,219.0 205.6,224.8" fill="url(#se363e37b34)" stroke="url(#se363e37b34)" stroke-width="0.5"/>
 <linearGradient id="s432eb1f303" gradientUnits="userSpaceOnUse" x1="173.6" y1="217.4" x2="184.8" y2="214.2"><stop stop-color="#d87b12"/><stop offset="1" stop-color="#f38b15"/></linearGradient>
 <polygon points="173.0,215.3 184.6,213.6 176.4,219.5" fill="url(#s432eb1f303)" stroke="url(#s432eb1f303)" stroke-width="0.5"/>
-<polygon points="235.7,211.4 235.7,211.4 221.8,213.4" fill="rgb(255,175,26)" stroke="rgb(255,175,26)" stroke-width="0.5"/>
 <linearGradient id="se1b81550d0" gradientUnits="userSpaceOnUse" x1="212.2" y1="224.5" x2="211.6" y2="215.1"><stop stop-color="#ff9817"/><stop offset="1" stop-color="#ff9b17"/></linearGradient>
 <polygon points="208.9,224.7 206.8,224.8 220.2,214.6" fill="url(#se1b81550d0)" stroke="url(#se1b81550d0)" stroke-width="0.5"/>
 <linearGradient id="s311f4eaeb7" gradientUnits="userSpaceOnUse" x1="153.4" y1="181.2" x2="159.4" y2="179.7"><stop stop-color="#e38113"/><stop offset="1" stop-color="#ff9216"/></linearGradient>
@@ -28881,13 +28587,6 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 
 <polygon points="206.4,187.4 212.7,177.9 215.0,180.5" fill="url(#s4d9f383aed)" stroke="url(#s4d9f383aed)" stroke-width="0.5"/>
 <linearGradient id="sca8918ee01" gradientUnits="userSpaceOnUse" x1="188.6" y1="186.4" x2="197.3" y2="184.2"><stop stop-color="#ffae1b"/><stop offset="1" stop-color="#ffbb1d"/></linearGradient>
 <polygon points="189.7,190.8 192.7,180.1 197.5,184.7" fill="url(#sca8918ee01)" stroke="url(#sca8918ee01)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<polygon points="197.9,164.3 197.9,164.3 197.9,164.3" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
 <linearGradient id="s7eeb76ac27" gradientUnits="userSpaceOnUse" x1="201.4" y1="190.7" x2="202.9" y2="189.9"><stop stop-color="#ffad1b"/><stop offset="1" stop-color="#ffc31e"/></linearGradient>
 <polygon points="201.7,191.2 202.2,189.3 203.0,190.1" fill="url(#s7eeb76ac27)" stroke="url(#s7eeb76ac27)" stroke-width="0.5"/>
 <linearGradient id="sf37b277785" gradientUnits="userSpaceOnUse" x1="207.9" y1="171.5" x2="214.2" y2="173.7"><stop stop-color="#ffd021"/><stop offset="1" stop-color="#ffd722"/></linearGradient>

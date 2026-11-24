@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 44463
 expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\\n         {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="215" viewBox="0 0 200 215" xmlns="http://www.w3.org/2000/svg">
@@ -2333,7 +2332,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="90.9,80.3 88.8,82.0 88.4,78.3" fill="url(#se7767d921c)" stroke="url(#se7767d921c)" stroke-width="0.5"/>
 <linearGradient id="scf06d6c5b6" gradientUnits="userSpaceOnUse" x1="124.0" y1="74.6" x2="122.5" y2="76.0"><stop stop-color="#613406"/><stop offset="1" stop-color="#713d07"/></linearGradient>
 <polygon points="122.7,73.2 123.5,76.7 123.0,76.6" fill="url(#scf06d6c5b6)" stroke="url(#scf06d6c5b6)" stroke-width="0.5"/>
-<polygon points="128.0,77.8 128.0,77.8 127.7,82.1" fill="rgb(105,57,7)" stroke="rgb(105,57,7)" stroke-width="0.5"/>
 <line x1="110.6" y1="120.3" x2="109.4" y2="122.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.4" y1="122.3" x2="110.6" y2="120.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sf0637c947c" gradientUnits="userSpaceOnUse" x1="131.4" y1="84.2" x2="132.1" y2="83.8"><stop stop-color="#6d3b07"/><stop offset="1" stop-color="#683806"/></linearGradient>
@@ -2418,7 +2416,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="116.7,122.8 119.3,123.3 118.1,125.3" fill="url(#s1b120c9693)" stroke="url(#s1b120c9693)" stroke-width="0.5"/>
 <linearGradient id="s05d6e162f6" gradientUnits="userSpaceOnUse" x1="103.1" y1="126.2" x2="102.6" y2="123.5"><stop stop-color="#ffbe1b"/><stop offset="1" stop-color="#ffcb1e"/></linearGradient>
 <polygon points="101.9,126.4 102.7,123.5 103.9,124.1" fill="url(#s05d6e162f6)" stroke="url(#s05d6e162f6)" stroke-width="0.5"/>
-<polygon points="128.0,77.8 128.0,77.8 123.5,76.7" fill="rgb(103,55,6)" stroke="rgb(103,55,6)" stroke-width="0.5"/>
 <linearGradient id="s7fd13776df" gradientUnits="userSpaceOnUse" x1="128.6" y1="83.2" x2="132.4" y2="80.0"><stop stop-color="#764008"/><stop offset="1" stop-color="#592f05"/></linearGradient>
 <polygon points="132.0,79.5 131.5,83.4 127.7,82.1" fill="url(#s7fd13776df)" stroke="url(#s7fd13776df)" stroke-width="0.5"/>
 <line x1="131.3" y1="105.8" x2="131.5" y2="105.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -2568,8 +2565,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="87.1" y1="105.6" x2="85.4" y2="108.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="85.4" y1="108.0" x2="87.1" y2="105.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="92.0,120.4 92.8,120.5 92.2,120.9" fill="rgb(255,208,30)" stroke="rgb(255,208,30)" stroke-width="0.5"/>
-<polygon points="128.0,77.8 128.0,77.8 128.0,77.8" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="128.0,77.8 128.0,77.8 128.0,77.8" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <line x1="89.4" y1="112.9" x2="89.8" y2="113.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="89.4" y1="112.9" x2="89.8" y2="113.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sf9d466a198" gradientUnits="userSpaceOnUse" x1="101.4" y1="71.8" x2="101.6" y2="71.1"><stop stop-color="#9b550b"/><stop offset="1" stop-color="#94510a"/></linearGradient>
@@ -2723,7 +2718,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="86.5" y1="88.2" x2="87.0" y2="85.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="85.3" y1="88.7" x2="86.5" y2="88.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="85.3" y1="88.7" x2="86.5" y2="88.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="132.0,79.5 128.0,77.8 128.0,77.8" fill="rgb(96,51,6)" stroke="rgb(96,51,6)" stroke-width="0.5"/>
 <linearGradient id="sfa0c3f1941" gradientUnits="userSpaceOnUse" x1="106.2" y1="70.9" x2="106.6" y2="68.6"><stop stop-color="#874a09"/><stop offset="1" stop-color="#723d07"/></linearGradient>
 <polygon points="103.5,70.4 107.5,68.7 107.9,71.2" fill="url(#sfa0c3f1941)" stroke="url(#sfa0c3f1941)" stroke-width="0.5"/>
 <line x1="98.4" y1="120.7" x2="100.6" y2="122.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -2810,7 +2804,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="126.0,121.3 129.9,117.3 131.6,117.3" fill="url(#sad9b6604a5)" stroke="url(#sad9b6604a5)" stroke-width="0.5"/>
 <linearGradient id="s90990e8455" gradientUnits="userSpaceOnUse" x1="88.2" y1="78.4" x2="88.1" y2="78.1"><stop stop-color="#d4750f"/><stop offset="1" stop-color="#d1730f"/></linearGradient>
 <polygon points="87.7,78.6 88.4,78.0 88.4,78.3" fill="url(#s90990e8455)" stroke="url(#s90990e8455)" stroke-width="0.5"/>
-<polygon points="127.7,74.0 128.0,77.8 128.0,77.8" fill="rgb(94,50,6)" stroke="rgb(94,50,6)" stroke-width="0.5"/>
 <linearGradient id="s3e34c99a9d" gradientUnits="userSpaceOnUse" x1="94.8" y1="123.8" x2="95.1" y2="123.0"><stop stop-color="#ffc71c"/><stop offset="1" stop-color="#ffcb1d"/></linearGradient>
 <polygon points="94.2,123.5 94.8,122.8 95.9,123.7" fill="url(#s3e34c99a9d)" stroke="url(#s3e34c99a9d)" stroke-width="0.5"/>
 <linearGradient id="s4c92537a74" gradientUnits="userSpaceOnUse" x1="118.8" y1="123.9" x2="121.7" y2="125.3"><stop stop-color="#ff9a15"/><stop offset="1" stop-color="#fb8b13"/></linearGradient>
@@ -3002,7 +2995,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <linearGradient id="s5cdc070dd0" gradientUnits="userSpaceOnUse" x1="91.8" y1="123.7" x2="93.0" y2="121.3"><stop stop-color="#ffc11a"/><stop offset="1" stop-color="#ffcf1e"/></linearGradient>
 <polygon points="94.2,123.5 90.8,123.2 92.2,120.9" fill="url(#s5cdc070dd0)" stroke="url(#s5cdc070dd0)" stroke-width="0.5"/>
 <line x1="128.0" y1="77.8" x2="127.7" y2="82.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="128.0" y1="77.8" x2="127.7" y2="82.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="127.7" y1="82.1" x2="128.0" y2="77.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sbbfb4d6a25" gradientUnits="userSpaceOnUse" x1="83.4" y1="115.6" x2="85.9" y2="114.6"><stop stop-color="#ffc01a"/><stop offset="1" stop-color="#ffce1d"/></linearGradient>
 <polygon points="83.0,114.6 86.1,114.9 85.5,115.6" fill="url(#sbbfb4d6a25)" stroke="url(#sbbfb4d6a25)" stroke-width="0.5"/>
@@ -3118,7 +3110,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="86.4,116.0 83.9,117.8 85.5,115.6" fill="url(#s08f281ce36)" stroke="url(#s08f281ce36)" stroke-width="0.5"/>
 <linearGradient id="se6b6fa5864" gradientUnits="userSpaceOnUse" x1="82.2" y1="112.6" x2="83.3" y2="112.1"><stop stop-color="#ffc01a"/><stop offset="1" stop-color="#ffc61c"/></linearGradient>
 <polygon points="83.0,114.6 82.2,111.6 82.9,111.0" fill="url(#se6b6fa5864)" stroke="url(#se6b6fa5864)" stroke-width="0.5"/>
-<line x1="128.0" y1="77.8" x2="123.5" y2="76.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="128.0" y1="77.8" x2="123.5" y2="76.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="128.0" y1="77.8" x2="123.5" y2="76.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s48f94db7d6" gradientUnits="userSpaceOnUse" x1="102.7" y1="68.2" x2="102.0" y2="69.9"><stop stop-color="#7b4208"/><stop offset="1" stop-color="#874909"/></linearGradient>
@@ -3504,7 +3495,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="113.5,67.2 118.1,68.1 114.0,67.7" fill="url(#s759e0246be)" stroke="url(#s759e0246be)" stroke-width="0.5"/>
 <linearGradient id="s429c5f3475" gradientUnits="userSpaceOnUse" x1="137.1" y1="88.9" x2="139.2" y2="86.9"><stop stop-color="#5f3205"/><stop offset="1" stop-color="#562d04"/></linearGradient>
 <polygon points="137.2,89.0 137.9,86.5 139.8,87.6" fill="url(#s429c5f3475)" stroke="url(#s429c5f3475)" stroke-width="0.5"/>
-<polygon points="109.0,130.7 111.4,127.6 109.0,130.7" fill="rgb(255,161,21)" stroke="rgb(255,161,21)" stroke-width="0.5"/>
 <line x1="107.6" y1="126.0" x2="111.4" y2="127.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="111.4" y1="127.6" x2="107.6" y2="126.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="scb4342a36c" gradientUnits="userSpaceOnUse" x1="89.2" y1="123.0" x2="89.6" y2="122.6"><stop stop-color="#ffbd1a"/><stop offset="1" stop-color="#ffc01a"/></linearGradient>
@@ -3624,7 +3614,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="135.3,81.7 136.4,81.1 136.3,82.4" fill="url(#s278d9823e6)" stroke="url(#s278d9823e6)" stroke-width="0.5"/>
 <line x1="118.1" y1="125.3" x2="119.9" y2="125.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="119.9" y1="125.6" x2="118.1" y2="125.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="105.1,128.8 109.0,130.7 109.0,130.7" fill="rgb(255,163,21)" stroke="rgb(255,163,21)" stroke-width="0.5"/>
 <line x1="124.8" y1="122.0" x2="126.6" y2="122.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="124.8" y1="122.0" x2="126.6" y2="122.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s9c5db45b96" gradientUnits="userSpaceOnUse" x1="139.3" y1="104.5" x2="141.4" y2="103.9"><stop stop-color="#7b4208"/><stop offset="1" stop-color="#6e3a06"/></linearGradient>
@@ -3788,8 +3777,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="136.0" y1="85.4" x2="134.9" y2="84.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sd64569f364" gradientUnits="userSpaceOnUse" x1="78.8" y1="86.0" x2="79.7" y2="86.9"><stop stop-color="#e77e10"/><stop offset="1" stop-color="#f48711"/></linearGradient>
 <polygon points="77.2,87.6 80.1,85.0 80.2,86.4" fill="url(#sd64569f364)" stroke="url(#sd64569f364)" stroke-width="0.5"/>
-<polygon points="109.0,130.7 109.0,130.7 109.0,130.7" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.0,130.7 109.0,130.7 109.0,130.7" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="sbf326c5faf" gradientUnits="userSpaceOnUse" x1="115.9" y1="130.5" x2="115.1" y2="129.3"><stop stop-color="#fc8a11"/><stop offset="1" stop-color="#ff9413"/></linearGradient>
 <polygon points="114.0,131.8 115.8,128.9 116.5,129.0" fill="url(#sbf326c5faf)" stroke="url(#sbf326c5faf)" stroke-width="0.5"/>
 <line x1="79.2" y1="92.0" x2="81.3" y2="90.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3966,7 +3953,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="142.4,104.4 140.1,105.6 141.0,102.3" fill="url(#s4657bd379f)" stroke="url(#s4657bd379f)" stroke-width="0.5"/>
 <linearGradient id="s285b15671c" gradientUnits="userSpaceOnUse" x1="76.3" y1="105.4" x2="78.4" y2="105.4"><stop stop-color="#ffa315"/><stop offset="1" stop-color="#ffaf18"/></linearGradient>
 <polygon points="76.4,106.7 76.3,105.5 78.4,104.0" fill="url(#s285b15671c)" stroke="url(#s285b15671c)" stroke-width="0.5"/>
-<polygon points="109.0,130.7 113.4,132.0 109.0,130.7" fill="rgb(255,151,19)" stroke="rgb(255,151,19)" stroke-width="0.5"/>
 <linearGradient id="s9d6d6723b7" gradientUnits="userSpaceOnUse" x1="76.7" y1="88.6" x2="79.0" y2="90.1"><stop stop-color="#eb8010"/><stop offset="1" stop-color="#ff9113"/></linearGradient>
 <polygon points="78.6,90.8 76.7,88.6 77.3,88.2" fill="url(#s9d6d6723b7)" stroke="url(#s9d6d6723b7)" stroke-width="0.5"/>
 <linearGradient id="s1d387a9402" gradientUnits="userSpaceOnUse" x1="138.1" y1="82.0" x2="137.0" y2="83.4"><stop stop-color="#4d2804"/><stop offset="1" stop-color="#522b04"/></linearGradient>
@@ -4099,7 +4085,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="131.0,72.1 132.3,75.3 131.8,75.1" fill="url(#sa24f2c5a33)" stroke="url(#sa24f2c5a33)" stroke-width="0.5"/>
 <line x1="100.3" y1="126.5" x2="98.6" y2="128.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="98.6" y1="128.3" x2="100.3" y2="126.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="107.0,133.2 109.0,130.7 109.0,130.7" fill="rgb(255,153,19)" stroke="rgb(255,153,19)" stroke-width="0.5"/>
 <line x1="78.7" y1="104.7" x2="79.0" y2="104.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="79.0" y1="104.4" x2="78.7" y2="104.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s5c862b3426" gradientUnits="userSpaceOnUse" x1="140.1" y1="87.9" x2="140.8" y2="87.3"><stop stop-color="#562d04"/><stop offset="1" stop-color="#532b04"/></linearGradient>
@@ -5596,7 +5581,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="129.6,69.0 128.7,67.1 131.4,68.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="143.3" y1="90.2" x2="143.2" y2="91.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.2" y1="91.2" x2="143.3" y2="90.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="73.2,86.8 76.2,84.3 73.2,86.8" fill="rgb(196,104,12)" stroke="rgb(196,104,12)" stroke-width="0.5"/>
 <linearGradient id="s302328e5c7" gradientUnits="userSpaceOnUse" x1="78.9" y1="120.9" x2="80.2" y2="120.1"><stop stop-color="#ff9110"/><stop offset="1" stop-color="#ff9c13"/></linearGradient>
 <polygon points="79.3,118.8 80.3,121.1 79.2,121.5" fill="url(#s302328e5c7)" stroke="url(#s302328e5c7)" stroke-width="0.5"/>
 <line x1="143.0" y1="90.0" x2="143.3" y2="90.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5643,7 +5627,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="128.0,129.8 129.8,128.9 129.3,129.6" fill="url(#s1bb046251c)" stroke="url(#s1bb046251c)" stroke-width="0.5"/>
 <line x1="99.6" y1="63.9" x2="100.1" y2="64.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="100.1" y1="64.7" x2="99.6" y2="63.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="73.9,90.6 73.2,86.8 73.2,86.8" fill="rgb(203,108,12)" stroke="rgb(203,108,12)" stroke-width="0.5"/>
 <polygon points="140.9,79.0 141.1,79.8 140.3,79.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s6281dc6510" gradientUnits="userSpaceOnUse" x1="112.6" y1="62.1" x2="113.0" y2="61.3"><stop stop-color="#562c04"/><stop offset="1" stop-color="#532b04"/></linearGradient>
 <polygon points="114.9,62.4 110.8,61.1 112.9,61.3" fill="url(#s6281dc6510)" stroke="url(#s6281dc6510)" stroke-width="0.5"/>
@@ -5894,8 +5877,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="89.1,130.0 90.3,130.3 90.9,131.7" fill="url(#sccbfa08679)" stroke="url(#sccbfa08679)" stroke-width="0.5"/>
 <linearGradient id="s13aa0580ae" gradientUnits="userSpaceOnUse" x1="110.8" y1="61.1" x2="111.2" y2="60.5"><stop stop-color="#562c04"/><stop offset="1" stop-color="#532b04"/></linearGradient>
 <polygon points="111.5,60.7 110.8,61.1 110.6,60.7" fill="url(#s13aa0580ae)" stroke="url(#s13aa0580ae)" stroke-width="0.5"/>
-<polygon points="73.2,86.8 73.2,86.8 73.2,86.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="73.2,86.8 73.2,86.8 73.2,86.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <line x1="89.8" y1="129.0" x2="89.7" y2="128.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="89.7" y1="128.0" x2="89.8" y2="129.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s2f94672bf5" gradientUnits="userSpaceOnUse" x1="112.4" y1="134.6" x2="112.9" y2="136.2"><stop stop-color="#e87d0e"/><stop offset="1" stop-color="#d06e0c"/></linearGradient>
@@ -6161,7 +6142,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="70.6,103.2 72.2,105.6 72.1,106.0" fill="url(#sf926c48b56)" stroke="url(#sf926c48b56)" stroke-width="0.5"/>
 <line x1="136.2" y1="73.3" x2="136.3" y2="75.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="136.3" y1="75.0" x2="136.2" y2="73.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="73.2,86.8 73.2,82.6 73.2,86.8" fill="rgb(184,97,10)" stroke="rgb(184,97,10)" stroke-width="0.5"/>
 <linearGradient id="s7d7a51aaf5" gradientUnits="userSpaceOnUse" x1="75.3" y1="116.8" x2="76.2" y2="116.4"><stop stop-color="#fe870f"/><stop offset="1" stop-color="#ff9010"/></linearGradient>
 <polygon points="76.5,116.9 76.0,117.4 74.7,115.5" fill="url(#s7d7a51aaf5)" stroke="url(#s7d7a51aaf5)" stroke-width="0.5"/>
 <polygon points="132.1,67.7 132.6,68.5 131.4,68.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -6211,7 +6191,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="80.0,124.0 79.2,121.5 80.6,122.9" fill="url(#sdc930a944c)" stroke="url(#sdc930a944c)" stroke-width="0.5"/>
 <linearGradient id="sb48604210b" gradientUnits="userSpaceOnUse" x1="82.6" y1="126.5" x2="83.2" y2="125.9"><stop stop-color="#ff890f"/><stop offset="1" stop-color="#ff9110"/></linearGradient>
 <polygon points="83.0,125.8 83.3,126.2 82.6,126.5" fill="url(#sb48604210b)" stroke="url(#sb48604210b)" stroke-width="0.5"/>
-<polygon points="70.9,89.0 73.2,86.8 73.2,86.8" fill="rgb(189,100,11)" stroke="rgb(189,100,11)" stroke-width="0.5"/>
 <linearGradient id="se4f35a39b5" gradientUnits="userSpaceOnUse" x1="92.4" y1="64.9" x2="92.0" y2="63.3"><stop stop-color="#6f3a06"/><stop offset="1" stop-color="#683605"/></linearGradient>
 <polygon points="91.2,64.4 93.5,63.0 92.0,65.0" fill="url(#se4f35a39b5)" stroke="url(#se4f35a39b5)" stroke-width="0.5"/>
 <line x1="74.0" y1="109.3" x2="74.7" y2="110.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -14246,7 +14225,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="129.3" y1="134.9" x2="128.7" y2="134.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="145.0" y1="119.7" x2="143.1" y2="121.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.1" y1="121.8" x2="145.0" y2="119.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="149.4,108.2 147.6,110.8 147.6,110.8" fill="rgb(189,100,11)" stroke="rgb(189,100,11)" stroke-width="0.5"/>
 <linearGradient id="s39f8d49c6a" gradientUnits="userSpaceOnUse" x1="136.8" y1="68.6" x2="137.2" y2="68.2"><stop stop-color="#ff9110"/><stop offset="1" stop-color="#ff890f"/></linearGradient>
 <polygon points="137.0,68.8 137.2,68.3 136.6,68.3" fill="url(#s39f8d49c6a)" stroke="url(#s39f8d49c6a)" stroke-width="0.5"/>
 <linearGradient id="s5bcb8e26eb" gradientUnits="userSpaceOnUse" x1="140.5" y1="71.7" x2="140.0" y2="72.2"><stop stop-color="#fe870e"/><stop offset="1" stop-color="#ff9211"/></linearGradient>
@@ -14298,7 +14276,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="84.3,131.0 84.8,130.9 83.6,130.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s92ae1662be" gradientUnits="userSpaceOnUse" x1="144.4" y1="78.8" x2="145.1" y2="78.5"><stop stop-color="#ff9010"/><stop offset="1" stop-color="#fe870f"/></linearGradient>
 <polygon points="144.1,78.2 145.7,79.9 144.3,77.8" fill="url(#s92ae1662be)" stroke="url(#s92ae1662be)" stroke-width="0.5"/>
-<polygon points="147.6,110.8 147.6,110.8 147.0,115.0" fill="rgb(184,97,10)" stroke="rgb(184,97,10)" stroke-width="0.5"/>
 <line x1="118.6" y1="57.9" x2="116.8" y2="57.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.8" y1="57.3" x2="118.6" y2="57.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s418df9518b" gradientUnits="userSpaceOnUse" x1="148.8" y1="91.2" x2="149.8" y2="91.1"><stop stop-color="#f8850f"/><stop offset="1" stop-color="#e1770d"/></linearGradient>
@@ -14582,8 +14559,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="106.3,138.8 104.8,138.4 101.2,138.0" fill="url(#s068af3d6ce)" stroke="url(#s068af3d6ce)" stroke-width="0.5"/>
 <linearGradient id="s4c52aa4b45" gradientUnits="userSpaceOnUse" x1="104.9" y1="57.6" x2="105.1" y2="58.8"><stop stop-color="#d06e0c"/><stop offset="1" stop-color="#e87d0e"/></linearGradient>
 <polygon points="107.0,57.5 102.0,58.3 106.0,58.6" fill="url(#s4c52aa4b45)" stroke="url(#s4c52aa4b45)" stroke-width="0.5"/>
-<polygon points="147.6,110.8 147.6,110.8 147.6,110.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<polygon points="147.6,110.8 147.6,110.8 147.6,110.8" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <linearGradient id="s4c48d9b633" gradientUnits="userSpaceOnUse" x1="106.8" y1="139.0" x2="106.9" y2="138.5"><stop stop-color="#532b04"/><stop offset="1" stop-color="#562c04"/></linearGradient>
 <polygon points="106.3,138.8 107.3,138.8 107.0,138.6" fill="url(#s4c48d9b633)" stroke="url(#s4c48d9b633)" stroke-width="0.5"/>
 <linearGradient id="s02956b74bd" gradientUnits="userSpaceOnUse" x1="129.6" y1="63.1" x2="129.2" y2="63.6"><stop stop-color="#ff8c10"/><stop offset="1" stop-color="#ff9411"/></linearGradient>
@@ -14852,7 +14827,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <linearGradient id="sb2bcbe6cd3" gradientUnits="userSpaceOnUse" x1="104.7" y1="138.3" x2="105.0" y2="137.7"><stop stop-color="#532b04"/><stop offset="1" stop-color="#562c04"/></linearGradient>
 <polygon points="102.6,137.4 104.8,138.4 107.0,138.6" fill="url(#sb2bcbe6cd3)" stroke="url(#sb2bcbe6cd3)" stroke-width="0.5"/>
 <polygon points="74.5,119.2 75.0,119.0 74.2,118.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<polygon points="147.4,106.8 147.6,110.8 147.6,110.8" fill="rgb(203,108,12)" stroke="rgb(203,108,12)" stroke-width="0.5"/>
 <linearGradient id="s6886284422" gradientUnits="userSpaceOnUse" x1="87.0" y1="64.4" x2="87.6" y2="64.9"><stop stop-color="#a55709"/><stop offset="1" stop-color="#ac5c0a"/></linearGradient>
 <polygon points="86.4,65.1 88.3,64.1 87.0,64.4" fill="url(#s6886284422)" stroke="url(#s6886284422)" stroke-width="0.5"/>
 <linearGradient id="sc4094d79b4" gradientUnits="userSpaceOnUse" x1="130.2" y1="64.9" x2="130.6" y2="64.1"><stop stop-color="#ff9c13"/><stop offset="1" stop-color="#ff9111"/></linearGradient>
@@ -14893,7 +14867,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="141.4,75.9 141.0,73.3 140.2,73.5" fill="url(#s12b38b6a99)" stroke="url(#s12b38b6a99)" stroke-width="0.5"/>
 <line x1="95.8" y1="137.0" x2="91.2" y2="135.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="91.2" y1="135.7" x2="95.8" y2="137.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="147.6,110.8 147.6,110.8 145.0,113.6" fill="rgb(196,104,12)" stroke="rgb(196,104,12)" stroke-width="0.5"/>
 <polygon points="86.4,130.4 84.8,130.9 87.6,132.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="150.1" y1="95.4" x2="149.6" y2="93.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.6" y1="93.6" x2="150.1" y2="95.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -14965,7 +14938,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="71.4,111.7 71.2,111.4 71.2,111.8" fill="rgb(74,38,4)" stroke="rgb(74,38,4)" stroke-width="0.5"/>
 <linearGradient id="sda4d1daef4" gradientUnits="userSpaceOnUse" x1="114.0" y1="138.5" x2="114.2" y2="136.9"><stop stop-color="#5d3005"/><stop offset="1" stop-color="#643405"/></linearGradient>
 <polygon points="115.8,137.1 113.1,137.9 113.4,138.4" fill="url(#sda4d1daef4)" stroke="url(#sda4d1daef4)" stroke-width="0.5"/>
-<line x1="147.6" y1="110.8" x2="147.0" y2="115.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="147.6" y1="110.8" x2="147.0" y2="115.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="147.6" y1="110.8" x2="147.0" y2="115.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="82.3,128.1 81.3,126.5 79.5,125.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -15862,7 +15834,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="84.6,127.3 83.4,126.7 83.6,127.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="138.5,73.7 138.6,73.9 138.8,73.8" fill="rgb(255,168,21)" stroke="rgb(255,168,21)" stroke-width="0.5"/>
 <line x1="147.6" y1="110.8" x2="145.0" y2="113.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="147.6" y1="110.8" x2="145.0" y2="113.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="145.0" y1="113.6" x2="147.6" y2="110.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="138.5,73.7 138.2,73.2 138.2,73.5" fill="rgb(255,169,21)" stroke="rgb(255,169,21)" stroke-width="0.5"/>
 <line x1="69.1" y1="98.4" x2="69.2" y2="97.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -16394,7 +16365,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="71.6,107.0 73.8,104.3 72.4,102.9" fill="url(#s9b321d39fd)" stroke="url(#s9b321d39fd)" stroke-width="0.5"/>
 <linearGradient id="s7207c83303" gradientUnits="userSpaceOnUse" x1="73.5" y1="110.5" x2="74.2" y2="110.0"><stop stop-color="#532b04"/><stop offset="1" stop-color="#562d04"/></linearGradient>
 <polygon points="73.7,110.7 74.4,110.3 73.7,109.6" fill="url(#s7207c83303)" stroke="url(#s7207c83303)" stroke-width="0.5"/>
-<polygon points="111.2,59.8 109.0,62.0 109.0,62.0" fill="rgb(255,153,19)" stroke="rgb(255,153,19)" stroke-width="0.5"/>
 <linearGradient id="s7e541a3afd" gradientUnits="userSpaceOnUse" x1="83.9" y1="125.1" x2="83.4" y2="125.4"><stop stop-color="#492604"/><stop offset="1" stop-color="#442303"/></linearGradient>
 <polygon points="84.6,127.3 83.4,124.3 82.9,124.1" fill="url(#s7e541a3afd)" stroke="url(#s7e541a3afd)" stroke-width="0.5"/>
 <line x1="98.5" y1="61.3" x2="99.2" y2="60.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -16537,7 +16507,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="83.4" y1="126.7" x2="83.6" y2="127.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="130.4" y1="66.2" x2="129.4" y2="65.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="129.4" y1="65.5" x2="130.4" y2="66.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.0,62.0 109.0,62.0 104.1,60.9" fill="rgb(255,151,19)" stroke="rgb(255,151,19)" stroke-width="0.5"/>
 <linearGradient id="s9fb3fdf709" gradientUnits="userSpaceOnUse" x1="143.6" y1="90.4" x2="145.4" y2="90.3"><stop stop-color="#ffaf18"/><stop offset="1" stop-color="#ffa315"/></linearGradient>
 <polygon points="145.3,89.0 143.6,91.9 145.4,90.3" fill="url(#s9fb3fdf709)" stroke="url(#s9fb3fdf709)" stroke-width="0.5"/>
 <linearGradient id="s2e71e138d4" gradientUnits="userSpaceOnUse" x1="72.0" y1="92.1" x2="74.3" y2="91.5"><stop stop-color="#6b3806"/><stop offset="1" stop-color="#784007"/></linearGradient>
@@ -16740,8 +16709,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="91.7" y1="63.5" x2="89.3" y2="66.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="81.3" y1="72.5" x2="79.8" y2="73.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="79.8" y1="73.1" x2="81.3" y2="72.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.0,62.0 109.0,62.0 109.0,62.0" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<polygon points="109.0,62.0 109.0,62.0 109.0,62.0" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="sd4c3212223" gradientUnits="userSpaceOnUse" x1="142.0" y1="111.3" x2="142.8" y2="112.1"><stop stop-color="#f48711"/><stop offset="1" stop-color="#e77e10"/></linearGradient>
 <polygon points="144.4,110.2 141.5,111.8 141.5,113.2" fill="url(#sd4c3212223)" stroke="url(#sd4c3212223)" stroke-width="0.5"/>
 <line x1="116.0" y1="61.2" x2="111.7" y2="59.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -16893,7 +16860,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="122.9,66.5 126.5,66.8 124.0,65.3" fill="url(#scdf9039729)" stroke="url(#scdf9039729)" stroke-width="0.5"/>
 <linearGradient id="scd6482e5b2" gradientUnits="userSpaceOnUse" x1="72.7" y1="91.8" x2="74.7" y2="91.5"><stop stop-color="#6e3a06"/><stop offset="1" stop-color="#7b4208"/></linearGradient>
 <polygon points="73.1,93.8 74.6,90.9 74.0,90.1" fill="url(#scd6482e5b2)" stroke="url(#scd6482e5b2)" stroke-width="0.5"/>
-<polygon points="113.4,63.8 109.0,62.0 109.0,62.0" fill="rgb(255,163,21)" stroke="rgb(255,163,21)" stroke-width="0.5"/>
 <line x1="139.0" y1="121.8" x2="136.9" y2="123.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="136.9" y1="123.1" x2="139.0" y2="121.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s846dcfa4b4" gradientUnits="userSpaceOnUse" x1="78.2" y1="117.5" x2="78.8" y2="116.7"><stop stop-color="#4e2904"/><stop offset="1" stop-color="#512a04"/></linearGradient>
@@ -17025,7 +16991,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="130.8,70.4 131.1,70.9 131.5,70.6" fill="url(#s5ef481d119)" stroke="url(#s5ef481d119)" stroke-width="0.5"/>
 <line x1="83.4" y1="126.7" x2="82.9" y2="124.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="82.9" y1="124.1" x2="83.4" y2="126.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="109.0,62.0 109.0,62.0 106.3,64.9" fill="rgb(255,161,21)" stroke="rgb(255,161,21)" stroke-width="0.5"/>
 <linearGradient id="sa56e211d04" gradientUnits="userSpaceOnUse" x1="75.0" y1="111.0" x2="77.2" y2="109.2"><stop stop-color="#562d04"/><stop offset="1" stop-color="#5f3205"/></linearGradient>
 <polygon points="76.9,108.9 74.4,110.3 76.3,111.6" fill="url(#sa56e211d04)" stroke="url(#sa56e211d04)" stroke-width="0.5"/>
 <linearGradient id="s39f92775dc" gradientUnits="userSpaceOnUse" x1="101.4" y1="133.8" x2="102.3" y2="132.3"><stop stop-color="#5b3005"/><stop offset="1" stop-color="#633405"/></linearGradient>
@@ -17209,7 +17174,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="72.9,101.2 75.1,103.0 75.6,99.6" fill="url(#sb44f3f5c90)" stroke="url(#sb44f3f5c90)" stroke-width="0.5"/>
 <linearGradient id="sa6d137b04b" gradientUnits="userSpaceOnUse" x1="123.3" y1="131.0" x2="123.4" y2="128.2"><stop stop-color="#894a09"/><stop offset="1" stop-color="#a1580b"/></linearGradient>
 <polygon points="120.1,131.0 125.1,130.0 124.8,128.2" fill="url(#sa6d137b04b)" stroke="url(#sa6d137b04b)" stroke-width="0.5"/>
-<line x1="109.0" y1="62.0" x2="104.1" y2="60.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.0" y1="62.0" x2="104.1" y2="60.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="104.1" y1="60.9" x2="109.0" y2="62.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="146.2" y1="95.3" x2="145.5" y2="96.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -17724,7 +17688,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="93.0,70.1 98.5,67.4 96.5,67.2" fill="url(#s0b3bb790dd)" stroke="url(#s0b3bb790dd)" stroke-width="0.5"/>
 <linearGradient id="s6bcd2fdb03" gradientUnits="userSpaceOnUse" x1="124.9" y1="70.0" x2="125.2" y2="69.2"><stop stop-color="#ffcb1d"/><stop offset="1" stop-color="#ffc71c"/></linearGradient>
 <polygon points="125.9,69.5 123.9,69.2 125.3,70.2" fill="url(#s6bcd2fdb03)" stroke="url(#s6bcd2fdb03)" stroke-width="0.5"/>
-<polygon points="87.8,125.8 87.1,121.8 87.1,121.8" fill="rgb(94,50,6)" stroke="rgb(94,50,6)" stroke-width="0.5"/>
 <linearGradient id="sd8e05940f1" gradientUnits="userSpaceOnUse" x1="132.9" y1="121.4" x2="132.8" y2="121.1"><stop stop-color="#d1730f"/><stop offset="1" stop-color="#d4750f"/></linearGradient>
 <polygon points="132.5,121.5 133.3,120.9 132.6,121.2" fill="url(#sd8e05940f1)" stroke="url(#sd8e05940f1)" stroke-width="0.5"/>
 <line x1="81.2" y1="77.1" x2="80.6" y2="75.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -17807,7 +17770,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="130.4,123.3 132.6,121.2 131.1,121.7" fill="url(#s0be35cd6eb)" stroke="url(#s0be35cd6eb)" stroke-width="0.5"/>
 <linearGradient id="s9f063c4210" gradientUnits="userSpaceOnUse" x1="111.9" y1="132.2" x2="112.2" y2="129.8"><stop stop-color="#723d07"/><stop offset="1" stop-color="#874a09"/></linearGradient>
 <polygon points="115.3,130.2 110.3,129.6 110.7,132.0" fill="url(#s9f063c4210)" stroke="url(#s9f063c4210)" stroke-width="0.5"/>
-<polygon points="82.8,119.7 87.1,121.8 87.1,121.8" fill="rgb(96,51,6)" stroke="rgb(96,51,6)" stroke-width="0.5"/>
 <line x1="103.3" y1="132.9" x2="98.7" y2="132.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="98.7" y1="132.3" x2="103.3" y2="132.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="130.1" y1="69.5" x2="129.6" y2="70.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -17925,7 +17887,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="87.5" y1="126.0" x2="87.8" y2="126.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.0" y1="62.0" x2="106.3" y2="64.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="109.0" y1="62.0" x2="106.3" y2="64.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="109.0" y1="62.0" x2="106.3" y2="64.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="84.6" y1="74.0" x2="86.0" y2="71.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="84.6" y1="74.0" x2="86.0" y2="71.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sad740a889c" gradientUnits="userSpaceOnUse" x1="76.3" y1="100.2" x2="77.4" y2="99.9"><stop stop-color="#6f3b07"/><stop offset="1" stop-color="#784108"/></linearGradient>
@@ -17960,8 +17921,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="115.3,130.2 117.1,129.1 113.7,129.3" fill="url(#seddb4b8fd7)" stroke="url(#seddb4b8fd7)" stroke-width="0.5"/>
 <linearGradient id="scfea88c9d1" gradientUnits="userSpaceOnUse" x1="117.6" y1="129.6" x2="117.7" y2="128.8"><stop stop-color="#94510a"/><stop offset="1" stop-color="#9b550b"/></linearGradient>
 <polygon points="117.2,129.5 118.5,128.9 117.1,129.1" fill="url(#scfea88c9d1)" stroke="url(#scfea88c9d1)" stroke-width="0.5"/>
-<polygon points="87.1,121.8 87.1,121.8 87.1,121.8" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
-<polygon points="87.1,121.8 87.1,121.8 87.1,121.8" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <polygon points="128.6,72.9 128.2,72.3 127.7,72.7" fill="rgb(255,208,30)" stroke="rgb(255,208,30)" stroke-width="0.5"/>
 <line x1="143.3" y1="91.1" x2="143.1" y2="91.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.1" y1="91.3" x2="143.3" y2="91.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -18099,7 +18058,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="110.7" y1="132.0" x2="110.9" y2="133.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s7e762fc210" gradientUnits="userSpaceOnUse" x1="82.3" y1="119.2" x2="86.1" y2="116.0"><stop stop-color="#592f05"/><stop offset="1" stop-color="#764008"/></linearGradient>
 <polygon points="82.8,119.7 87.2,117.2 83.0,115.5" fill="url(#s7e762fc210)" stroke="url(#s7e762fc210)" stroke-width="0.5"/>
-<polygon points="87.1,121.8 92.2,123.4 87.1,121.8" fill="rgb(103,55,6)" stroke="rgb(103,55,6)" stroke-width="0.5"/>
 <linearGradient id="s6f15a617c7" gradientUnits="userSpaceOnUse" x1="116.2" y1="69.1" x2="115.9" y2="66.4"><stop stop-color="#ffcb1e"/><stop offset="1" stop-color="#ffbe1b"/></linearGradient>
 <polygon points="117.1,66.2 114.9,68.4 116.3,69.1" fill="url(#s6f15a617c7)" stroke="url(#s6f15a617c7)" stroke-width="0.5"/>
 <line x1="132.0" y1="125.4" x2="132.5" y2="121.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -18178,7 +18136,6 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <polygon points="83.2,114.8 82.5,114.4 82.5,115.3" fill="url(#s3ff9b4feab)" stroke="url(#s3ff9b4feab)" stroke-width="0.5"/>
 <line x1="82.8" y1="120.0" x2="82.5" y2="119.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="82.5" y1="119.9" x2="82.8" y2="120.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="87.1,121.8 87.2,117.2 87.1,121.8" fill="rgb(105,57,7)" stroke="rgb(105,57,7)" stroke-width="0.5"/>
 <linearGradient id="s1395c91ffe" gradientUnits="userSpaceOnUse" x1="93.3" y1="124.1" x2="91.8" y2="125.6"><stop stop-color="#713d07"/><stop offset="1" stop-color="#613406"/></linearGradient>
 <polygon points="93.3,127.1 92.7,123.5 92.2,123.4" fill="url(#s1395c91ffe)" stroke="url(#s1395c91ffe)" stroke-width="0.5"/>
 <linearGradient id="s1841818693" gradientUnits="userSpaceOnUse" x1="131.3" y1="117.5" x2="132.2" y2="121.3"><stop stop-color="#f58913"/><stop offset="1" stop-color="#d4750f"/></linearGradient>
