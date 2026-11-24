@@ -1244,3 +1244,88 @@ fn text_items_of_bold_row_are_plain() {
   );
   assert!(line.contains("font-size=\"18\""), "size lost: {line}");
 }
+
+// A row of typeset layouts in a sized `Pane` is measured by how wide its
+// items are drawn, not by the length of their expressions' text: three
+// continued fractions that fit side by side stay on one line.
+#[test]
+fn pane_row_of_typeset_layouts_measures_drawn_width() {
+  clear_state();
+  let item =
+    "TraditionalForm[Column[{1 + 1/(1 + 1/(1 + 1/(1 + 1/(1 + 1/x))))}]]";
+  let row = format!("Row[{{{item}, {item}, {item}}}, \"  \"]");
+  let size = |svg: &str, nth: usize| -> (String, String) {
+    let tag = svg.match_indices("<svg ").nth(nth).unwrap().0;
+    let attr = |name: &str| {
+      let start = svg[tag..].find(&format!(" {name}=\"")).unwrap() + tag;
+      let rest = &svg[start + name.len() + 3..];
+      rest[..rest.find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  };
+  let own = interpret(&format!("ExportString[{row}, \"SVG\"]")).unwrap();
+  let paned = interpret(&format!(
+    "ExportString[Pane[{row}, ImageSize -> {{600, 400}}], \"SVG\"]"
+  ))
+  .unwrap();
+  let (own_w, own_h) = size(&own, 0);
+  assert!(own_w.parse::<f64>().unwrap() < 600.0, "{own_w}");
+  assert_eq!(size(&paned, 1), (own_w, own_h));
+}
+
+/// The x coordinate of the first `<text>` element with `text-anchor="start"`.
+fn first_start_text_x(svg: &str) -> f64 {
+  svg
+    .split("text-anchor=\"start\"")
+    .next()
+    .and_then(|head| head.rsplit("<text x=\"").next())
+    .and_then(|t| t.split('"').next())
+    .and_then(|n| n.parse::<f64>().ok())
+    .unwrap_or_else(|| panic!("no left-aligned text: {svg}"))
+}
+
+#[test]
+fn graphics_row_image_size_label_is_flush_left_in_its_box() {
+  // Regression: an `Inset`/`Text` label `Row[{…}, ImageSize -> w]` had its
+  // lines centered on the anchor; Wolfram sets them flush left in a box
+  // `w` points wide that is centered on the anchor.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Graphics[{Inset[Style[Row[{\"ab cdef\\ngh\"}, \
+     ImageSize -> 200], 11], {0, 0}]}, PlotRange -> {{-5, 5}, {-5, 5}}, \
+     ImageSize -> 300], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains(">ab cdef</tspan>"), "first line: {svg}");
+  assert!(svg.contains(">gh</tspan>"), "second line: {svg}");
+  // The picture's center is at 149.5; the box's left edge 100 points left.
+  let x = first_start_text_x(&svg);
+  assert!((x - 49.5).abs() < 1.0, "left edge at {x}: {svg}");
+
+  // A single line hangs from the box's left edge too.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Graphics[{Text[Row[{\"one\"}, ImageSize -> 100], {0, 0}]}, \
+     PlotRange -> {{-5, 5}, {-5, 5}}, ImageSize -> 300], \"SVG\"]",
+  )
+  .unwrap();
+  let x = first_start_text_x(&svg);
+  assert!((x - 99.5).abs() < 1.0, "left edge at {x}: {svg}");
+  assert!(!svg.contains("ImageSize"), "option leaked: {svg}");
+}
+
+#[test]
+fn graphics_row_image_size_label_wraps_at_its_width() {
+  // Text longer than the row's width breaks at word boundaries.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Graphics[{Inset[Style[Row[{\"aaaa aaaa aaaa aaaa aaaa\"}, \
+     ImageSize -> 120], 20], {0, 0}]}, PlotRange -> {{-5, 5}, {-5, 5}}, \
+     ImageSize -> 400], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains(">aaaa aaaa</tspan>"), "not wrapped: {svg}");
+  assert!(!svg.contains("aaaa aaaa aaaa"), "wrapped too wide: {svg}");
+  let x = first_start_text_x(&svg);
+  assert!((x - 139.5).abs() < 1.0, "left edge at {x}: {svg}");
+}

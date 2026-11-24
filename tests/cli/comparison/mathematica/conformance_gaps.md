@@ -24,6 +24,17 @@ its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
 named list pattern is compiled into a `List` head plus an element condition,
 and the display rebuilds the pattern from the head alone.
 
+### `Show` of a 3D plot drops the default surface boundary
+
+Plot3D and ContourPlot3D outline where a surface meets the plot box in their
+own picture, but that default outline is not part of the extracted
+`Graphics3D` primitives (wolframscript keeps it implicit too, through
+`Method -> {"DefaultBoundaryStyle" -> …}`). Woxi's `Graphics3D` renderer
+does not reconstruct it, so `Show[ContourPlot3D[…], …]` draws a clipped
+isosurface without the dark rim wolframscript shows at the box walls. An
+explicit `BoundaryStyle -> style` is kept as `Line` primitives and survives
+`Show`.
+
 ### Displaying held `Graphics[…]` evaluates its primitives
 
 A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset
@@ -193,13 +204,6 @@ woxi eval 'ToString[NumberForm[123456789.]]'            # 123457000.
 
 Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 (WL `1.5 × 10^-8`). In-range reals — roughly `10^-5 ≤ |x| < 10^6` — agree.
-
-### `NumberForm[x, {n, f}]` with an `ExponentFunction`
-
-`NumberForm[x, {n, f}]` now switches to scientific notation outside
-`10^-5 ≤ |x| < 10^6` (`1.000 × 10^-7`), but the 3-argument form with an
-`ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
-prints `0.1 × 10^-6` without padding.
 
 ### A `NumberForm` nested in a list or call shows its head
 
@@ -5878,9 +5882,16 @@ framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
 cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
 (532/550).
 
-`Show` keeps only its first graphic's options, so the `Show` snapshot has
-no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
-building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+`Show` keeps only its first graphic's options, so a `Show` led by a
+`Graphics3D` has no `PlotRange` and its explicit `ViewPoint` is what sets it
+apart from the building. A `ParametricPlot3D` result, as in wolframscript,
+carries the extent of its surface as an explicit `PlotRange`, so a `Show` led
+by one is framed by the sphere around that box. A Demonstration's
+`Manipulate` of two such `Show`s at `ImageSize -> {290, 290}` from
+`ViewPoint -> {0, -2, 0.5}` draws a unit sphere (led by a `Graphics3D`) at
+about 0.90 of the width and an inner half torus of a 4 × 4 × 2 box (led by
+a `ParametricPlot3D`) at about 0.57. Woxi draws them at 0.93 and 0.64; with
+the contents sphere for both, the torus came out at 0.83. Whether `PlotRange` and `ViewPoint` are really the triggers, or
 merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
@@ -5910,6 +5921,16 @@ projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
 
+A square picture without a `PlotRange` or `ViewPoint` contradicts the
+outline fit as well. A Demonstration's `Manipulate` shows a plain
+`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
+in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
+draw the plane about 323 px wide, with the origin at the center of the
+picture. That matches the sphere framing (Woxi: 320 px), not the outline
+fit that Woxi applies (398 px). Unlike the tall building, this box is
+nearly as wide as it is tall, and the picture is square. Unverified with
+wolframscript.
+
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
@@ -5935,9 +5956,13 @@ would match that snapshot, but the widened span matches the other
 snapshots listed under "Sphere framing of an unboxed box at a fixed
 `ImageSize`" better, so the framing is
 unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
-(a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
-uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
-radius is unknown.
+(a curve 24 units long) is drawn with a radius of about 0.11, about 0.0035
+of the scene box's 31.7-unit diagonal. A second Demonstration's tube
+icosahedron (separate radius-less two-point tubes in a scene about 11 units
+across) measures the same fraction, so Woxi now sizes a radius-less `Tube`
+as 0.0035 of the diagonal of the scene's box. Whether that is Wolfram's
+exact rule (rather than, say, a fraction of the picture) is unverified with
+wolframscript.
 
 ### 3D tick step on an exact unit `PlotRange`
 
@@ -6020,8 +6045,11 @@ overlays clickable areas on them.)
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
 - A `TabView` in a `Manipulate` body (or any rendered layout) is drawn as
-  just its selected pane: the row of tab labels and the tab frame around the
-  pane are not drawn.
+  its row of tab labels above the selected pane's rounded gray panel, but
+  the labels sit just above the panel rather than overlapping its top edge,
+  and they are not clickable in the picture (the tab is switched from the
+  control panel instead). The exact front-end colors and margins are
+  approximated.
 - One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
@@ -7016,6 +7044,16 @@ internal hash order. Woxi keeps input order.
   WL's head graphics; `"CurvedArc"` is WL's quadratic Bézier. A curved
   edge is cut where it leaves the vertex along the line to its control
   point; WL cuts it where the curve crosses the vertex's disk.
+- **`MultiedgeStyle -> d`**: Woxi bends each of two parallel edges out by
+  about `d / 2` of their length (a quadratic Bézier with control points
+  `2 d` lengths apart), read off a Demonstration snapshot of
+  `MultiedgeStyle -> 0.3`; WL's exact curve has not been measured, nor how
+  it fans out three or more parallel edges. `Automatic` keeps Woxi's own
+  smaller spread.
+- **Vertex labels at the edge of a `GraphPlot`**: WL pads the plot so a
+  vertex label right of the rightmost vertex stays inside the image; Woxi
+  sizes the plot range from the vertices alone, so a long label there is
+  cut off at the image border.
 
 
 ## Knot data
@@ -9398,6 +9436,10 @@ has no magnification slot). `ImageSize -> Small` (a named size) is not kept.
 and `HorizontalGauge`) return WL's internal styled gauge Graphics
 (`LightDarkSwitched`, nested `Style`, `Scaled` ticks); Woxi draws its own
 primitives, so their Graphics expressions and `Cases` over them differ.
+The linear gauges' `GaugeMarkers -> "BarMarker"` (parallel bars from the
+start of the scale, one strip per value) and `GaugeLabels` placement (a
+text beside the scale, `Placed[label, side]` picking the side) approximate
+WL's look rather than reproduce its geometry.
 `GraphPlot` and `LayeredGraphPlot` coordinates come from WL's
 spring-electrical and layered layouts and are **not reproducible** point
 for point.
@@ -10565,19 +10607,6 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
-### Studio: Grid `ItemSize -> w` columns are wider than the front end's
-
-Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
-plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
-gives 68 px per column. A front-end snapshot of the same grid (text about
-14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
-27% narrower. A six-column grid like that inside a
-`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
-the pane in Woxi (409 px) and loses its right frame line and its centering,
-while Wolfram draws it about 297 px wide, centered. The front end's em unit
-for `ItemSize` and whether it includes the grid's `Spacings` have not been
-verified against `wolframscript`, so the width rule is left unchanged.
-
 ### `Plot` runs the cells of a multi-column `Grid` title together
 
 `PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
@@ -10743,6 +10772,16 @@ over mesh elements that straddle the jump, which lets noticeably more flux
 through on its default mesh: in a saved snapshot of such a reactor model
 the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
 gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.
+
+### `Grid` `Dividers` given as a flat list of three or more rules
+
+`Dividers -> {xspec, yspec}` is handled, but a longer flat list such as
+`Dividers -> {2 -> Black, 2 -> Black, 5 -> Black}` on a four-row,
+four-column grid is not. Woxi treats every entry after the first as a row
+rule, so it draws the line under the last row. A saved snapshot shows
+Wolfram leaving the bottom open and drawing the far-right column line
+(position 5) instead, over the first three rows only. How Wolfram maps the
+extra entries has not been checked against wolframscript.
 
 ### Default 3D edge color of thick outlines
 

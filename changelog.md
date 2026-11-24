@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
+    `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
+    `Normal` of a series returns one flat sum, so `Part` picks its terms
+    (`Normal[Series[Cos[x], {x, 0, 6}]][[2 ;; 3]]`).
 - `HorizontalGauge`/`VerticalGauge` draw `GaugeMarkers -> "BarMarker"` as
     thin bars, fill a rounded face panel for `GaugeFaceStyle` (a named face
     such as `"GlassRectangle"` or a color) and show a `GaugeLabels` title

@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 23619
 expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]\")"
 ---
 <svg width="360" height="386" viewBox="0 0 360 386" xmlns="http://www.w3.org/2000/svg">
@@ -14,8 +13,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="156.8" y1="187.5" x2="161.5" y2="182.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="189.4" y1="185.8" x2="197.3" y2="188.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="165.6" y1="163.5" x2="165.4" y2="156.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="197.3" y1="188.4" x2="205.3" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="152.1" y1="192.3" x2="156.8" y2="187.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="197.3" y1="188.4" x2="205.3" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="165.4" y1="156.1" x2="165.1" y2="148.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="205.3" y1="191.0" x2="213.4" y2="193.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="147.2" y1="197.2" x2="152.1" y2="192.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -38,13 +37,13 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="126.9" y1="217.6" x2="132.1" y2="212.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="163.8" y1="109.0" x2="163.5" y2="100.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="280.6" y1="215.9" x2="289.4" y2="218.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="289.4" y1="218.8" x2="298.3" y2="221.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="121.6" y1="223.0" x2="126.9" y2="217.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="289.4" y1="218.8" x2="298.3" y2="221.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="163.5" y1="100.8" x2="163.2" y2="92.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="298.3" y1="221.7" x2="307.3" y2="224.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.2" y1="228.4" x2="121.6" y2="223.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="163.2" y1="92.4" x2="162.9" y2="83.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="307.3" y1="224.6" x2="316.3" y2="227.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="163.2" y1="92.4" x2="162.9" y2="83.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="316.3" y1="227.6" x2="325.4" y2="230.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="162.9" y1="83.9" x2="162.6" y2="75.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.7" y1="234.0" x2="116.2" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -78,8 +77,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="160.4" y1="10.9" x2="169.3" y2="13.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.0" y1="14.7" x2="160.4" y2="10.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="342.2" y1="178.2" x2="343.4" y2="169.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="169.3" y1="13.0" x2="178.3" y2="15.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="308.6" y1="275.5" x2="312.6" y2="269.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="169.3" y1="13.0" x2="178.3" y2="15.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="69.2" y1="275.9" x2="75.5" y2="269.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="178.3" y1="15.1" x2="187.4" y2="17.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="343.4" y1="169.8" x2="344.6" y2="161.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -114,12 +113,12 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="126.2" y1="34.7" x2="132.2" y2="30.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="349.4" y1="125.5" x2="350.7" y2="116.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="254.0" y1="32.5" x2="264.0" y2="34.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="287.7" y1="309.1" x2="292.1" y2="302.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="91.4" y1="303.8" x2="100.4" y2="307.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="52.5" y1="265.2" x2="51.2" y2="257.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="287.7" y1="309.1" x2="292.1" y2="302.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="264.0" y1="34.8" x2="274.0" y2="37.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="350.7" y1="116.1" x2="352.0" y2="106.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="52.5" y1="265.2" x2="51.2" y2="257.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="100.4" y1="307.6" x2="109.5" y2="311.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="350.7" y1="116.1" x2="352.0" y2="106.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="120.1" y1="38.9" x2="126.2" y2="34.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="283.3" y1="316.3" x2="287.7" y2="309.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="274.0" y1="37.1" x2="284.2" y2="39.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -134,8 +133,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="49.9" y1="248.6" x2="48.5" y2="240.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="128.1" y1="319.4" x2="137.6" y2="323.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="353.3" y1="97.0" x2="354.7" y2="87.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="304.9" y1="44.2" x2="315.4" y2="46.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="107.4" y1="47.7" x2="113.8" y2="43.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="304.9" y1="44.2" x2="315.4" y2="46.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="137.6" y1="323.4" x2="147.1" y2="327.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="48.5" y1="240.2" x2="47.2" y2="231.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="274.1" y1="331.0" x2="278.7" y2="323.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -170,8 +169,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="41.5" y1="195.4" x2="40.0" y2="186.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="217.3" y1="357.2" x2="227.9" y2="361.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="346.9" y1="71.1" x2="351.0" y2="66.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="73.3" y1="71.4" x2="80.5" y2="66.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="227.9" y1="361.7" x2="238.5" y2="366.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="73.3" y1="71.4" x2="80.5" y2="66.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="40.0" y1="186.0" x2="38.5" y2="176.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="249.3" y1="370.8" x2="254.5" y2="362.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="238.5" y1="366.2" x2="249.3" y2="370.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -206,8 +205,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <line x1="37.2" y1="106.7" x2="47.5" y2="109.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="310.7" y1="115.0" x2="315.6" y2="109.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="253.7" y1="293.1" x2="254.3" y2="283.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="305.7" y1="121.1" x2="310.7" y2="115.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="68.6" y1="116.5" x2="79.4" y2="119.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="305.7" y1="121.1" x2="310.7" y2="115.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="300.5" y1="127.4" x2="305.7" y2="121.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="101.3" y1="126.7" x2="112.5" y2="130.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="295.2" y1="133.8" x2="300.5" y2="127.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>

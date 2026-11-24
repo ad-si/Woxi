@@ -15862,3 +15862,35 @@ fn prime_after_part_and_held_print_forms() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+mod postfix_input_form {
+  use super::*;
+
+  // `x // f` is written back as the call `f[x]`, its argument in InputForm:
+  // a `Row` inside it keeps its head instead of printing as juxtaposed
+  // text, which would read back as a product.
+  #[test]
+  fn postfix_argument_keeps_its_input_form() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[Hold[Row[{a, " = ", b}] // g], InputForm]"#)
+        .unwrap(),
+      r#"Hold[g[Row[{a, " = ", b}]]]"#
+    );
+  }
+
+  #[test]
+  fn postfix_source_form_reparses_to_the_same_expression() {
+    for (code, expected) in [
+      (
+        r#"Column[{Row[{a, " = ", b}]}] // TraditionalForm"#,
+        r#"TraditionalForm[Column[{Row[{a, " = ", b}]}]]"#,
+      ),
+      ("x // (#1 + 1 &)", "(#1 + 1 & )[x]"),
+      ("{a, b} // f[1]", "f[1][{a, b}]"),
+    ] {
+      let expr = woxi::syntax::string_to_expr(code).unwrap();
+      assert_eq!(woxi::syntax::expr_to_source_form(&expr), expected, "{code}");
+    }
+  }
+}

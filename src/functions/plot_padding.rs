@@ -70,6 +70,20 @@ pub(crate) fn descent(size: f64) -> f64 {
   line_height(size) - ascent(size)
 }
 
+/// The room a label needs above its line for an overscript stacked over a
+/// base (`Overscript[⟶, k]`, marked `data-stack="over"` in its markup):
+/// how far the script, at 70% and raised by
+/// [`STACKED_OVERSCRIPT_RAISE_EM`](crate::functions::graphics::STACKED_OVERSCRIPT_RAISE_EM),
+/// reaches past the line's own ascent.
+pub(crate) fn stacked_script_room(markup: &str, size: f64) -> f64 {
+  if markup.contains("data-stack=\"over\"") {
+    let raise = crate::functions::graphics::STACKED_OVERSCRIPT_RAISE_EM;
+    (raise + 0.7 * ASCENT_EM - ASCENT_EM).max(0.0) * size
+  } else {
+    0.0
+  }
+}
+
 /// Height of a block of `lines` lines at `size` points.
 pub(crate) fn block_height(lines: usize, size: f64) -> f64 {
   if lines == 0 {
@@ -125,6 +139,9 @@ pub(crate) fn char_width_em(c: char) -> f64 {
     '\u{200B}'..='\u{200D}' | '\u{2061}'..='\u{2063}' => 0.0,
     // The thin space between digit blocks (`10 000`).
     '\u{2009}' => DIGIT_BLOCK_GAP_EM,
+    // Arrows are an em wide, the long ones (`⟶`, `⟹`, …) a third more.
+    '\u{2190}'..='\u{21FF}' => 1.0,
+    '\u{27F5}'..='\u{27FF}' => 1.34,
     _ => 1139.0 / 2048.0,
   }
 }
@@ -154,6 +171,10 @@ pub(crate) fn atkinson_width_em(c: char) -> f64 {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
     '\u{00D7}' => 0.532,
+    // The prime marks a derivative typesets (`f′`, `T″`) are narrow ticks,
+    // far slimmer than the generic fallback advance.
+    '\u{2032}' => 0.219,
+    '\u{2033}' | '\u{2034}' => 0.417,
     _ => char_width_em(c),
   }
 }
@@ -949,7 +970,8 @@ pub(crate) fn plot_title_band(
       } else {
         0.0
       };
-      block_height(lines, plot_title_font(opts)) + frame
+      let size = plot_title_font(opts);
+      block_height(lines, size) + frame + stacked_script_room(&sl.text, size)
     }
     _ => 0.0,
   }
@@ -1075,8 +1097,13 @@ pub(crate) fn plot_decorations(
   let picture = crate::functions::graphics::axes_label_picture_size;
   let text_label = |t: &Option<String>| {
     t.as_ref().filter(|t| !t.is_empty()).map(|t| {
-      picture(t)
-        .map_or_else(|| block_height(label_lines(t), font_of(t)), |(_, h)| h)
+      picture(t).map_or_else(
+        || {
+          let size = font_of(t);
+          block_height(label_lines(t), size) + stacked_script_room(t, size)
+        },
+        |(_, h)| h,
+      )
     })
   };
   let label_length = |t: &Option<String>| {

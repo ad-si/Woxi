@@ -517,6 +517,33 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
       "DotDashed" => style.dashing = Some(vec![0.002, 0.01, 0.02, 0.01]),
       _ => return false,
     },
+    // A style given as an option rule inside a primitive list
+    // (`{PointSize -> Large, Point[…]}`) acts like the directive of the
+    // same name, as it does in a plain `Graphics` primitive list.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match pattern.as_ref() {
+      Expr::Identifier(k)
+        if matches!(
+          k.as_str(),
+          "Thickness"
+            | "AbsoluteThickness"
+            | "PointSize"
+            | "AbsolutePointSize"
+            | "Opacity"
+        ) =>
+      {
+        return apply_directive(
+          &Expr::FunctionCall {
+            name: k.clone(),
+            args: vec![replacement.as_ref().clone()].into(),
+          },
+          style,
+        );
+      }
+      _ => return false,
+    },
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
         for a in args {
@@ -1480,16 +1507,22 @@ fn render_item(
       // `Locator[pos, appearance]` draws its marker (Wolfram's crosshair or
       // the appearance graphic) at its own screen size, centered on `pos`.
       "Locator" if !args.is_empty() => {
-        for (x, y, svg, w, h) in
-          crate::functions::graphics::locator_markers(args)
-        {
-          out.push_str(&crate::functions::graphics::embed_svg_centered(
-            &svg,
-            area.px(x),
-            area.py(y),
-            w * area.scale,
-            h * area.scale,
-          ));
+        use crate::functions::graphics::LocatorMark;
+        for mark in crate::functions::graphics::locator_markers(args) {
+          match mark {
+            LocatorMark::Picture { x, y, svg, w, h } => {
+              out.push_str(&crate::functions::graphics::embed_svg_centered(
+                &svg,
+                area.px(x),
+                area.py(y),
+                w * area.scale,
+                h * area.scale,
+              ));
+            }
+            LocatorMark::Inset(inset) => {
+              render_item(&inset, &mut style.clone(), area, out);
+            }
+          }
         }
       }
       // `Style[prim, directives…]` styles just its own primitive.
@@ -1526,13 +1559,17 @@ fn render_item(
 }
 
 /// Whether a label is a `Column` whose lines are set flush left — the
-/// default, or an explicit `Alignment -> Left`.
+/// default, or an explicit `Alignment -> Left` (or the positional
+/// alignment of `Column[items, Left]`).
 fn is_left_aligned_column(label: &Expr) -> bool {
   match crate::functions::graphics::strip_style_wrappers(label) {
     Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      match option_value(&args[1..], "Alignment") {
+      let positional = args
+        .get(1)
+        .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+      match positional.or_else(|| option_value(&args[1..], "Alignment")) {
         None => true,
         Some(Expr::Identifier(a)) => a == "Left",
         Some(_) => false,
