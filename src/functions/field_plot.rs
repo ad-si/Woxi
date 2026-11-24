@@ -256,7 +256,8 @@ fn inject_field_plot_label(
     let y = y_last - (first - i as f64) * line_h;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{fill}\">{label}</text>\n",
+      fill = crate::functions::graphics::theme().plot_label_fill,
     ));
   }
 }
@@ -1987,7 +1988,7 @@ fn push_frame_labels(
     (area.y_min, area.y_max),
     opts,
   );
-  let (.., label_fill, title_fill) = plot_theme();
+  let (.., label_fill, _) = plot_theme();
   let mut plot_opts = crate::functions::plot::PlotOptions::default();
   let non_empty = |s: &String| (!s.is_empty()).then(|| s.clone());
   plot_opts.frame_label_bottom = non_empty(&frame_labels.bottom);
@@ -2005,7 +2006,6 @@ fn push_frame_labels(
     },
     RESOLUTION_SCALE as f64,
     label_fill,
-    title_fill,
     f64::INFINITY,
   ));
 }
@@ -8638,6 +8638,28 @@ impl ArrayMeshSpec {
 
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
+  // An explicit `ImageSize -> {w, h}` is the size of the whole picture,
+  // frame ticks and `PlotLabel` included. Their extent does not depend on
+  // the size of the cells, so a first layout measures it and, when the
+  // decorations stick out of the box, a second one shrinks the cells by
+  // exactly that much.
+  let mut overhead = (0, 0);
+  let result = array_plot_ast_inset(args, (0, 0), &mut overhead)?;
+  if overhead == (0, 0) {
+    return Ok(result);
+  }
+  array_plot_ast_inset(args, overhead, &mut (0, 0))
+}
+
+/// `ArrayPlot` with the cells fitted into the `ImageSize` box less `inset`
+/// (width, height) points. When the `ImageSize` is an explicit `{w, h}`
+/// box, `overhead` receives how far the frame ticks and plot label reach
+/// beyond the cells.
+fn array_plot_ast_inset(
+  args: &[Expr],
+  inset: (u32, u32),
+  overhead: &mut (u32, u32),
+) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let Some(rows) = array_plot_matrix(&data) else {
     return Ok(crate::helpers::unevaluated("ArrayPlot", args));
@@ -8916,6 +8938,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if image_size_is_single_width(args, 1) {
     svg_height = u32::MAX;
   }
+  let fixed_box =
+    pixel_constrained.is_none() && explicit_image_size_box(args, 1).is_some();
+  let (svg_width, svg_height) = if fixed_box {
+    (
+      svg_width.saturating_sub(inset.0).max(1),
+      svg_height.saturating_sub(inset.1).max(1),
+    )
+  } else {
+    (svg_width, svg_height)
+  };
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
   // Row boundaries (0 = top edge) and column boundaries (0 = left edge)
@@ -9281,6 +9313,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       frame_ticks.right = axis(n_rows, data_reversed);
     }
   }
+  let cells_size = (svg_width, svg_height);
   let (buf, svg_width, svg_height) = frame_ticked_svg(
     &buf,
     svg_width,
@@ -9298,6 +9331,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => buf,
     }
   };
+  if fixed_box && let Some((w, h)) = svg_root_size(&buf) {
+    let extra =
+      |total: f64, cells: u32| (total.round() as u32).saturating_sub(cells);
+    *overhead = (extra(w, cells_size.0), extra(h, cells_size.1));
+  }
 
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
   // colors with the first row at the top (`Raster` rows run bottom-up, so a
@@ -10035,7 +10073,7 @@ fn with_plot_label_above(svg: &str, label: &FieldPlotLabel) -> String {
   let extra = (lines.len() - 1) as f64 * line_h;
   let gutter = font * 1.8 + extra;
   let total_h = h + gutter;
-  let fill = crate::functions::graphics::theme().text_primary;
+  let fill = crate::functions::graphics::theme().plot_label_fill;
   let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{total_h:.0}\" \
      viewBox=\"0 0 {w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\

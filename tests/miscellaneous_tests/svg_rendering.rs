@@ -5416,6 +5416,24 @@ mod tests {
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
     }
 
+    /// The re-flowed list of a sized `Pane` under a styled `Panel` caption
+    /// draws each `Style[item, dirs…]` element as its own text in that
+    /// style, not as the literal `Style[…]` call.
+    #[test]
+    fn panel_with_styled_caption_keeps_styled_list_elements() {
+      let result = woxi::interpret_with_stdout(
+        r#"Panel[Pane[Table[If[OddQ[k], Style[{k, k^2}, Red], Style[{k, -k}, GrayLevel[0.7], Underlined]], {k, 30}], ImageSize -> {200, 100}], Style[Row[{"Pairs ", Style["p", Italic]}], "Label", Medium], Background -> White]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(!svg.contains("Style["), "{svg}");
+      assert!(!svg.contains("GrayLevel"), "{svg}");
+      assert!(svg.contains(">{1, 1}<"), "{svg}");
+      assert!(svg.contains(">{2, -2}<"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("text-decoration=\"underline\""), "{svg}");
+    }
+
     /// A list in a `Column` wider than the `Pane` around it breaks into
     /// lines at the pane's width, after the commas between its elements,
     /// whether the pane gives only a width or a fixed `{w, h}` box, and

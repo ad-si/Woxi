@@ -8065,6 +8065,27 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Discriminant: b^2 - 4*a*c
       let b_sq = multiply_exprs(b, b);
       let four_ac = multiply_exprs(&Expr::Integer(4), &multiply_exprs(a, c));
+      // wolframscript distributes the `4 a c` product over a sum
+      // coefficient (`x^2 - x + c + d` has `Sqrt[1 - 4 c - 4 d]`, not
+      // `Sqrt[1 - 4 (c + d)]`), so the constants combine with `b^2`; `b^2`
+      // itself keeps its power (`Sqrt[(1 + a)^2 - 4 c]`). Machine
+      // coefficients are expanded only when `a` and `b` are numbers: with a
+      // machine `b` in another unknown (a radical system's elimination) the
+      // regrouped rounding lets squared-in spurious roots through.
+      let numeric_ab = crate::functions::math_ast::try_eval_to_f64(a).is_some()
+        && crate::functions::math_ast::try_eval_to_f64(b).is_some();
+      let inexact = [a, b, c]
+        .iter()
+        .any(|e| crate::functions::math_ast::contains_inexact_real(e));
+      let four_ac = if numeric_ab || !inexact {
+        crate::evaluator::evaluate_function_call_ast(
+          "Expand",
+          std::slice::from_ref(&four_ac),
+        )
+        .unwrap_or(four_ac)
+      } else {
+        four_ac
+      };
       let discriminant = simplify(minus2(b_sq, four_ac));
 
       let neg_b = negate_expr(b);
@@ -8417,7 +8438,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         simplify(evaled2)
       };
       let num1 = eval_expr(minus2(neg_b.clone(), sqrt_disc.clone()));
-      let num2 = eval_expr(plus2(neg_b, sqrt_disc));
+      let num2 = eval_expr(plus2(neg_b, sqrt_disc.clone()));
       // A factor common to every term of the numerator and to 2a cancels:
       // `x^2 - 2 a x + b` has roots `a ± Sqrt[a^2 - b]`, not
       // `(2*a ± 2*Sqrt[a^2 - b])/2`.
@@ -8459,8 +8480,34 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         eval_expr(quotient)
       };
-      let sol1 = divide(&num1);
-      let sol2 = divide(&num2);
+      // With machine-number coefficients and numeric `a` and `b`,
+      // wolframscript writes each root distributed over `2 a`:
+      // `x^2 - 1.25 x + 0.25 + 0.5 e` has `0.625 - 0.5 Sqrt[0.5625 - 2. e]`,
+      // not `(1.25 - Sqrt[0.5625 - 2. e])/2`.
+      let inexact_numeric_lead = numeric_ab && inexact;
+      let distribute = |sign: i128| -> Expr {
+        let half_inv = solve_divide(&Expr::Integer(1), &two_a);
+        let half_inv = crate::evaluator::evaluate_function_call_ast(
+          "N",
+          std::slice::from_ref(&half_inv),
+        )
+        .unwrap_or(half_inv);
+        eval_expr(plus2(
+          multiply_exprs(&negate_expr(b), &half_inv),
+          multiply_exprs(
+            &multiply_exprs(&Expr::Integer(sign), &half_inv),
+            &sqrt_disc,
+          ),
+        ))
+      };
+      let (sol1, sol2) = if inexact_numeric_lead
+        && !in_nsolve()
+        && !matches!(sqrt_disc, Expr::Real(_) | Expr::Integer(_))
+      {
+        (distribute(-1), distribute(1))
+      } else {
+        (divide(&num1), divide(&num2))
+      };
       // Wolfram convention: negative root first. When the leading coefficient
       // is negative, dividing by 2a flips the root order, so swap.
       let leading_negative = match a {

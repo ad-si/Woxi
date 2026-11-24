@@ -2282,26 +2282,29 @@ pub fn together_expr(expr: &Expr) -> Expr {
   // entry would bypass the exponent arithmetic that produces the
   // fractional missing factor 2^(1/2).
   if !fractional_int_exponent {
-    let mut int_lcm: i128 = 1;
+    // In big integers: the LCM of denominators that each fit a machine
+    // integer can exceed one, and a denominator left out of the merge
+    // would be multiplied in whole, dropping the factors it shares.
+    let mut int_lcm = BigInt::from(1);
     let mut merged = 0usize;
     base_exp_map.retain(|(_, base, exp)| {
-      if let Expr::Integer(n) = base
-        && *n > 1
+      if let Some(n) = positive_big_integer(base)
+        && n > BigInt::from(1)
         && exp.1 == 1
         && exp.0 > 0
         && let Ok(e) = u32::try_from(exp.0)
-        && let Some(p) = n.checked_pow(e)
-        && let Some(l) = int_lcm.checked_mul(p / gcd_i128(int_lcm, p))
       {
-        int_lcm = l;
+        let p = num_traits::Pow::pow(&n, e);
+        let g = big_gcd(&int_lcm, &p);
+        int_lcm = &int_lcm / g * p;
         merged += 1;
         return false;
       }
       true
     });
-    if merged > 0 && int_lcm > 1 {
-      base_exp_map
-        .insert(0, (int_lcm.to_string(), Expr::Integer(int_lcm), (1, 1)));
+    if merged > 0 && int_lcm > BigInt::from(1) {
+      let lcm = big_integer_expr(int_lcm);
+      base_exp_map.insert(0, (expr_to_string(&lcm), lcm, (1, 1)));
     }
   }
 
@@ -2956,28 +2959,54 @@ fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
 /// integer parts *across* denominators, which must not see two factors of
 /// one denominator as alternatives.
 fn merge_integer_den_factors(factors: Vec<(Expr, Rat)>) -> Vec<(Expr, Rat)> {
-  let mut product: i128 = 1;
+  let mut product = BigInt::from(1);
   let mut merged = 0usize;
   let mut rest = Vec::with_capacity(factors.len());
   for (base, exp) in factors {
-    if let Expr::Integer(n) = &base
-      && *n > 1
+    if let Some(n) = positive_big_integer(&base)
+      && n > BigInt::from(1)
       && exp.1 == 1
       && exp.0 > 0
       && let Ok(e) = u32::try_from(exp.0)
-      && let Some(p) = n.checked_pow(e)
-      && let Some(next) = product.checked_mul(p)
     {
-      product = next;
+      product *= num_traits::Pow::pow(&n, e);
       merged += 1;
       continue;
     }
     rest.push((base, exp));
   }
   if merged > 0 {
-    rest.insert(0, (Expr::Integer(product), (1, 1)));
+    rest.insert(0, (big_integer_expr(product), (1, 1)));
   }
   rest
+}
+
+/// A positive integer, machine-sized or big, as a `BigInt`.
+fn positive_big_integer(e: &Expr) -> Option<BigInt> {
+  match e {
+    Expr::Integer(n) if *n > 0 => Some(BigInt::from(*n)),
+    Expr::BigInteger(n) if *n > BigInt::from(0) => Some(n.clone()),
+    _ => None,
+  }
+}
+
+/// The greatest common divisor of two positive big integers.
+fn big_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+  let (mut a, mut b) = (a.clone(), b.clone());
+  while b != BigInt::from(0) {
+    let r = &a % &b;
+    a = b;
+    b = r;
+  }
+  a
+}
+
+/// An integer as a machine `Integer` when it fits, else a `BigInteger`.
+fn big_integer_expr(n: BigInt) -> Expr {
+  match i128::try_from(&n) {
+    Ok(n) => Expr::Integer(n),
+    Err(_) => Expr::BigInteger(n),
+  }
 }
 
 /// The factors of `base^exp` in a denominator. A product raised to an
@@ -3023,15 +3052,17 @@ fn compute_missing_factor(
 
   // This fraction's integer denominator content, for dividing out of the
   // map's merged integer-LCM entry (a/2 against an LCM of 6 needs 3).
-  let den_int: i128 =
+  let den_int: BigInt =
     den_factors
       .iter()
-      .fold(1i128, |acc, (base, exp)| match (base, exp) {
-        (Expr::Integer(n), (e, 1)) if *n > 1 && *e > 0 => u32::try_from(*e)
-          .ok()
-          .and_then(|e| n.checked_pow(e))
-          .and_then(|p| acc.checked_mul(p))
-          .unwrap_or(0),
+      .fold(BigInt::from(1), |acc, (base, exp)| match (base, exp) {
+        (base, (e, 1)) if *e > 0 => match positive_big_integer(base) {
+          Some(n) if n > BigInt::from(1) => match u32::try_from(*e) {
+            Ok(e) => acc * num_traits::Pow::pow(&n, e),
+            Err(_) => BigInt::from(0),
+          },
+          _ => acc,
+        },
         _ => acc,
       });
   // A fractional exponent on an integer base (2^(1/2) from a rationalized
@@ -3043,15 +3074,16 @@ fn compute_missing_factor(
 
   let mut missing_factors: Vec<Expr> = Vec::new();
   for (key, base, lcm_exp) in base_exp_map {
-    if let Expr::Integer(l) = base
-      && *l > 1
+    if let Some(l) = positive_big_integer(base)
+      && l > BigInt::from(1)
       && *lcm_exp == (1, 1)
       && !den_has_frac_int
-      && den_int > 0
-      && l % den_int == 0
+      && den_int > BigInt::from(0)
+      && (&l % &den_int) == BigInt::from(0)
     {
-      if l / den_int > 1 {
-        missing_factors.push(Expr::Integer(l / den_int));
+      let quotient = &l / &den_int;
+      if quotient > BigInt::from(1) {
+        missing_factors.push(big_integer_expr(quotient));
       }
       continue;
     }

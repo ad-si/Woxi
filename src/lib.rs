@@ -310,21 +310,26 @@ pub fn mouse_position() -> Option<(f64, f64)> {
 }
 
 thread_local! {
-    static TIMED_REFRESH: std::cell::Cell<bool> =
-      const { std::cell::Cell::new(false) };
+    static TIMED_REFRESH: std::cell::Cell<Option<f64>> =
+      const { std::cell::Cell::new(None) };
 }
 
 /// Note that an evaluation ran `Refresh[expr, UpdateInterval -> t]` with a
 /// finite `t`: a front end re-evaluates the enclosing `Dynamic` every `t`
-/// seconds, even when none of its tracked symbols changed.
-pub fn request_timed_refresh() {
-  TIMED_REFRESH.with(|r| r.set(true));
+/// seconds, even when none of its tracked symbols changed. When several
+/// timed `Refresh`es ran, the shortest interval wins.
+pub fn request_timed_refresh(seconds: f64) {
+  TIMED_REFRESH.with(|r| {
+    let shortest = r.get().map_or(seconds, |s| s.min(seconds));
+    r.set(Some(shortest));
+  });
 }
 
-/// Whether a timed refresh was requested since the last call (see
-/// [`request_timed_refresh`]); clears the request.
-pub fn take_timed_refresh() -> bool {
-  TIMED_REFRESH.with(|r| r.replace(false))
+/// The shortest `UpdateInterval` (in seconds) of the timed refreshes
+/// requested since the last call (see [`request_timed_refresh`]), or `None`
+/// when none ran; clears the request.
+pub fn take_timed_refresh() -> Option<f64> {
+  TIMED_REFRESH.with(|r| r.replace(None))
 }
 
 /// Whether the interpreter is in visual (notebook-like) display mode, where
@@ -4003,23 +4008,20 @@ fn keep_fixed_pane_box(
   ))
 }
 
-/// Whether `expr` is a `Column[…]` under one or more `Style[…, directives]`
+/// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
 /// wrappers.
-fn is_styled_column(expr: &syntax::Expr) -> bool {
+fn is_text_column(expr: &syntax::Expr) -> bool {
   let mut current = expr;
-  let mut styled = false;
   while let syntax::Expr::FunctionCall { name, args } = current
     && name == "Style"
     && args.len() >= 2
   {
-    styled = true;
     current = &args[0];
   }
-  styled
-    && matches!(
-      current,
-      syntax::Expr::FunctionCall { name, .. } if name == "Column"
-    )
+  matches!(
+    current,
+    syntax::Expr::FunctionCall { name, .. } if name == "Column"
+  )
 }
 
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
@@ -4077,11 +4079,13 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
-          // A styled `Column` layout
-          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`) is drawn in the
-          // proportional text face, so the text of its items is not left in
-          // the monospace face of a bare `Column`'s `Row`s.
-          if is_styled_column(&content) {
+          // A `Column` layout, styled or not
+          // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`,
+          // `Text[Column[{Grid[…], Grid[…]}]]`) is drawn in the proportional
+          // text face, so the text of its items (numbers and subscripted
+          // symbols included) is not left in the monospace face of a bare
+          // `Column`'s `Row`s and grid cells.
+          if is_text_column(&content) {
             let in_face = render_visual_display_pipeline(
               &functions::graphics::in_text_face(&content),
             );
@@ -4252,36 +4256,19 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         }
         _ => return expr,
       };
-      let placements: Vec<(syntax::Expr, String)> =
+      let bottom_position = syntax::Expr::Identifier("Bottom".to_string());
+      let placements: Vec<(syntax::Expr, &syntax::Expr)> =
         match (&args[1], args.get(2)) {
           (syntax::Expr::List(labels), Some(syntax::Expr::List(positions)))
             if labels.len() == positions.len() =>
           {
-            labels
-              .iter()
-              .cloned()
-              .zip(positions.iter().map(|p| match p {
-                syntax::Expr::Identifier(s) => s.clone(),
-                _ => "Bottom".to_string(),
-              }))
-              .collect()
+            labels.iter().cloned().zip(positions.iter()).collect()
           }
           _ => {
-            let position = match args.get(2) {
-              Some(syntax::Expr::Identifier(p)) => p.clone(),
-              Some(syntax::Expr::List(ps)) => match ps.first() {
-                Some(syntax::Expr::Identifier(p)) => p.clone(),
-                _ => "Bottom".to_string(),
-              },
-              _ => "Bottom".to_string(),
-            };
-            vec![(args[1].clone(), position)]
+            vec![(args[1].clone(), args.get(2).unwrap_or(&bottom_position))]
           }
         };
-      let mut top = Vec::new();
-      let mut bottom = Vec::new();
-      let mut left = Vec::new();
-      let mut right = Vec::new();
+      let mut sides: [Vec<(String, f64)>; 4] = Default::default();
       for (label, position) in &placements {
         let label_grid = syntax::Expr::FunctionCall {
           name: "Grid".to_string(),
@@ -4298,12 +4285,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           }
           _ => return expr,
         };
-        match position.as_str() {
-          "Top" => top.push(label_svg.clone()),
-          "Left" => left.push(label_svg.clone()),
-          "Right" => right.push(label_svg.clone()),
-          _ => bottom.push(label_svg.clone()),
-        }
+        let (side, align) = functions::graphics::labeled_position(position);
+        sides[side].push((label_svg.clone(), align));
       }
       // `RotateLabel -> True` turns the left and right captions.
       let rotate = args[2..].iter().any(|opt| {
@@ -4311,11 +4294,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "RotateLabel")
             && matches!(replacement.as_ref(), syntax::Expr::Identifier(v) if v == "True"))
       });
-      match functions::graphics::labeled_sides_svg(
-        &content_svg,
-        &[top, left, right, bottom],
-        rotate,
-      ) {
+      match functions::graphics::labeled_sides_svg(&content_svg, &sides, rotate)
+      {
         Some(svg) => graphics_result(svg),
         None => expr,
       }
@@ -5127,8 +5107,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
-/// If `expr` is `TraditionalForm[{…}]`, render the list as a parenthesized matrix
-/// (same visual treatment as MatrixForm).
+/// If `expr` is `TraditionalForm[{{…}, …}]` (a list of lists), render it as
+/// a parenthesized matrix (same visual treatment as MatrixForm). A flat list
+/// stays a braced list.
 pub(crate) fn render_traditionalform_list_if_needed(
   expr: syntax::Expr,
 ) -> syntax::Expr {
@@ -5156,19 +5137,9 @@ pub(crate) fn render_traditionalform_list_if_needed(
             Err(_) => expr,
           }
         }
-        // 1D list: column vector with parentheses
-        syntax::Expr::List(items) if !items.is_empty() => {
-          let grid_data = syntax::Expr::List(
-            items
-              .iter()
-              .map(|e| syntax::Expr::List(vec![e.clone()].into()))
-              .collect(),
-          );
-          match functions::graphics::grid_ast_with_parens(&[grid_data]) {
-            Ok(result) => result,
-            Err(_) => expr,
-          }
-        }
+        // A flat list is not a matrix: the front end writes it on one
+        // line between braces (`{x₁ = 1, x₂ = 0}`), typeset like any other
+        // expression, so it is left to the box layout.
         _ => expr,
       }
     }
@@ -6140,13 +6111,11 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let syntax::Expr::List(_) = &pane_args[0]
   {
     let mut flowed = pane_args.to_vec();
+    let mut pieces = Vec::new();
+    list_flow_pieces(&pane_args[0], &mut pieces);
     flowed[0] = syntax::Expr::FunctionCall {
       name: "Row".to_string(),
-      args: vec![syntax::Expr::List(
-        vec![syntax::Expr::String(syntax::expr_to_string(&pane_args[0]))]
-          .into(),
-      )]
-      .into(),
+      args: vec![syntax::Expr::List(pieces.into())].into(),
     };
     held = syntax::Expr::FunctionCall {
       name: "Pane".to_string(),
@@ -6180,6 +6149,57 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match functions::graphics::panel_to_svg(&panel_args) {
     Some(svg) => graphics_result(svg),
     None => expr,
+  }
+}
+
+/// The pieces of `Row` text that a list re-flowed to a pane's width is laid
+/// out as: the list's InputForm text, except that each `Style[item, dirs…]`
+/// element keeps its directives around its own text, so a styled element
+/// (`Style[{3, 4, 5}, Gray, Underlined]`) shows its text in that style rather
+/// than as the literal `Style[…]` call. Adjacent plain text is merged.
+fn list_flow_pieces(expr: &syntax::Expr, out: &mut Vec<syntax::Expr>) {
+  fn push_text(out: &mut Vec<syntax::Expr>, text: &str) {
+    if let Some(syntax::Expr::String(last)) = out.last_mut() {
+      last.push_str(text);
+    } else {
+      out.push(syntax::Expr::String(text.to_string()));
+    }
+  }
+  match expr {
+    syntax::Expr::List(items) => {
+      push_text(out, "{");
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          push_text(out, ", ");
+        }
+        list_flow_pieces(item, out);
+      }
+      push_text(out, "}");
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Style" && args.len() >= 2 =>
+    {
+      let mut inner = Vec::new();
+      list_flow_pieces(&args[0], &mut inner);
+      let body = match <[syntax::Expr; 1]>::try_from(inner) {
+        Ok([single @ syntax::Expr::String(_)]) => single,
+        Ok([single]) => syntax::Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![syntax::Expr::List(vec![single].into())].into(),
+        },
+        Err(pieces) => syntax::Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![syntax::Expr::List(pieces.into())].into(),
+        },
+      };
+      let mut styled = vec![body];
+      styled.extend(args[1..].iter().cloned());
+      out.push(syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: styled.into(),
+      });
+    }
+    other => push_text(out, &syntax::expr_to_string(other)),
   }
 }
 

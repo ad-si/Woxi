@@ -373,7 +373,7 @@ mod solids {
 
   /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
   /// is drawn as its combining mark on the base (`T̂`, `x̃`), not as a
-  /// superscript beside it; a non-accent overscript stays a superscript.
+  /// superscript beside it; a non-accent overscript is stacked above it.
   #[test]
   fn accent_overscript_text_label_is_a_combining_mark() {
     for (over, mark) in
@@ -390,7 +390,8 @@ mod solids {
       "Graphics3D[{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\(k\\)]\\)\", \
        {0, 0, 0}]}]",
     );
-    assert!(s.contains("baseline-shift=\"super\""), "got: {s}");
+    assert!(s.contains("data-stack=\"over\""), "got: {s}");
+    assert!(!s.contains("baseline-shift=\"super\""), "got: {s}");
   }
 
   /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or
@@ -1940,6 +1941,67 @@ mod plot3d_family {
     assert!(count(&meshed) > 200, "{}", count(&meshed));
     assert_eq!(count(&bare), 0);
   }
+
+  // The symbolic result carries the same mesh the plot draws (15 lines of
+  // each parameter by default, `n` with `Mesh -> n`, plus the edges), so a
+  // `Show` of the plot keeps it.
+  #[test]
+  fn parametric_surface_result_carries_its_mesh() {
+    let surface = "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}";
+    let lines = |opts: &str| {
+      interpret(&format!(
+        "Map[Length, Cases[{surface}{opts}], Line[l_] :> l, Infinity]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(lines(""), "{34}");
+    assert_eq!(lines(", Mesh -> 3"), "{10}");
+    assert_eq!(lines(", Mesh -> {2, 4}"), "{10}");
+    assert_eq!(lines(", Mesh -> None"), "{}");
+    assert_eq!(lines(", MeshStyle -> None"), "{}");
+  }
+
+  #[test]
+  fn show_of_parametric_surface_keeps_its_mesh() {
+    let surface = "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}";
+    let mesh_lines = |s: &str| {
+      s.split("<line ")
+        .skip(1)
+        .filter(|rest| {
+          let tag = &rest[..rest.find('>').unwrap()];
+          tag.contains("stroke=\"rgb(0,0,0)\"") && tag.contains("opacity=")
+        })
+        .count()
+    };
+    let meshed = svg(&format!("Show[{surface}], ViewPoint -> {{0, -2, 1}}]"));
+    let bare = svg(&format!(
+      "Show[{surface}, Mesh -> None], ViewPoint -> {{0, -2, 1}}]"
+    ));
+    assert!(mesh_lines(&meshed) > 200, "{}", mesh_lines(&meshed));
+    assert_eq!(mesh_lines(&bare), 0);
+  }
+
+  // Like wolframscript, the result pins its range to the sampled surface's
+  // extent; an explicit `PlotRange` is kept as given.
+  #[test]
+  fn parametric_surface_result_pins_its_plot_range() {
+    assert_eq!(
+      interpret(
+        "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 2}]]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {0., 2.}, {0., 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 2}, PlotRange -> {0, 1}]]"
+      )
+      .unwrap(),
+      "{0, 1}"
+    );
+  }
 }
 
 mod level_surfaces {
@@ -2259,6 +2321,58 @@ mod arrows_and_box {
       }
     }
     pieces
+  }
+
+  // An explicit `PlotRange` cuts a 3D arrow off at the box like a `Line`:
+  // the shaft stops at the box's faces and a head whose tip falls outside
+  // the box is not drawn, while a head inside it keeps its place and size.
+  #[test]
+  fn plot_range_clips_3d_arrow() {
+    let scene = |prims: &str| {
+      svg(&format!(
+        "Graphics3D[{{Red, Arrowheads[{{-0.1, 0.1}}], {prims}}}, \
+         PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{-1, 1}}}}]"
+      ))
+    };
+    let extent = |s: &str| {
+      let xs: Vec<f64> = line_pieces(s, "rgb(255,0,0)")
+        .into_iter()
+        .map(|(_, (x, _))| x)
+        .collect();
+      assert!(!xs.is_empty(), "{s}");
+      let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      (lo, hi)
+    };
+
+    // Both ends outside: no heads, and the shaft spans just the box.
+    let through = scene("Arrow[{{-3, 0, 0}, {3, 0, 0}}]");
+    assert!(head_tips(&through).is_empty(), "{through}");
+    let line = scene("Line[{{-1, 0, 0}, {1, 0, 0}}]");
+    let (a, b) = (extent(&through), extent(&line));
+    assert!(
+      (a.0 - b.0).abs() < 2.0 && (a.1 - b.1).abs() < 2.0,
+      "{a:?} vs {b:?}"
+    );
+
+    // Tail outside, tip inside: only the head at the tip remains, exactly
+    // where the arrow cut at the box puts it.
+    let half = scene("Arrow[{{0, 0, -3}, {0, 0, 0.5}}]");
+    let cut = scene("Arrow[{{0, 0, -1}, {0, 0, 0.5}}]");
+    let tips = head_tips(&half);
+    assert_eq!(tips.len(), 1, "{half}");
+    let expected = head_tips(&cut)
+      .into_iter()
+      .min_by(|p, q| p.1.total_cmp(&q.1))
+      .unwrap();
+    assert!(
+      (tips[0].0 - expected.0).abs() < 0.5
+        && (tips[0].1 - expected.1).abs() < 0.5,
+      "{tips:?} vs {expected:?}"
+    );
+    let tip_only = scene("Arrowheads[0.1], Arrow[{{0, 0, -1}, {0, 0, 0.5}}]");
+    let (got, want) = (head_area(&half), head_area(&tip_only));
+    assert!((got - want).abs() < 0.05 * want, "{got} vs {want}");
   }
 
   // An opaque solid hides the part of a 3D arrow inside or behind it: the
@@ -3145,5 +3259,201 @@ mod plot_label {
        PlotLabel -> Style[\"{long}\", 20]]"
     ));
     assert_eq!(first_text_font_size(&s), 20.0, "{s}");
+  }
+}
+
+mod face_form_scope {
+  use super::*;
+
+  // `FaceForm` styles only the faces that follow it: a translucent plane
+  // leaves the lines, arrows and points after it opaque.
+  #[test]
+  fn face_form_opacity_leaves_lines_and_points_opaque() {
+    let out = svg(
+      "Graphics3D[{FaceForm[{Opacity[0.6]}], \
+       Polygon[{{-1, 2, 0}, {1, 2, 0}, {1, -2, 0}, {-1, -2, 0}}], \
+       Line[{{2, 0, -1}, {2, 0, 1}}], Arrow[{{0, 0, -2}, {0, 0, 2}}], \
+       PointSize[Large], Point[{0, 0, 0}]}, Boxed -> False]",
+    );
+    // Only the plane is drawn translucent.
+    assert_eq!(out.matches("opacity=\"0.6\"").count(), 1, "{out}");
+    assert!(out.contains("<path") && out.contains("opacity=\"0.6\""));
+    for tag in ["<polyline", "<circle"] {
+      let el = out.split(tag).nth(1).unwrap().split('>').next().unwrap();
+      assert!(!el.contains("opacity"), "{tag}: {el}");
+    }
+  }
+
+  // A `FaceForm` color does not recolor the lines either, while a plain
+  // color after it recolors the lines but not the faces.
+  #[test]
+  fn face_form_color_applies_to_faces_only() {
+    let out = svg(
+      "Graphics3D[{FaceForm[Red], Line[{{0, 0, 0}, {1, 1, 1}}], Blue, \
+       Line[{{1, 0, 0}, {0, 1, 1}}], Cuboid[{0, 0, 0}, {1, 1, 1}]}, \
+       Lighting -> {{\"Ambient\", White}}, Boxed -> False]",
+    );
+    // The first line keeps the default black, the second is blue.
+    assert!(out.contains("stroke=\"black\""), "{out}");
+    assert!(out.contains("stroke=\"rgb(0,0,255)\""), "{out}");
+    // The cuboid stays red under the later plain `Blue`.
+    assert!(fills(&out).contains("255,0,0"), "{:?}", fills(&out));
+    assert!(!fills(&out).contains("0,0,255"), "{:?}", fills(&out));
+  }
+
+  // A `FaceForm` that names only an opacity keeps the plain color for the
+  // faces.
+  #[test]
+  fn face_form_opacity_keeps_plain_face_color() {
+    let out = svg(
+      "Graphics3D[{Red, FaceForm[Opacity[0.5]], Cuboid[]}, \
+       Lighting -> {{\"Ambient\", White}}, Boxed -> False]",
+    );
+    assert!(fills(&out).contains("255,0,0"), "{:?}", fills(&out));
+    assert!(out.contains("opacity=\"0.5\""), "{out}");
+  }
+}
+
+mod arrow_setback_3d {
+  use super::*;
+
+  /// The `(x1, y1, x2, y2)` of every arrow shaft or line `<polyline>`
+  /// (its first and last points).
+  fn shafts(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    svg
+      .split("<polyline points=\"")
+      .skip(1)
+      .map(|el| {
+        let pts: Vec<(f64, f64)> = el
+          .split('"')
+          .next()
+          .unwrap()
+          .split(' ')
+          .map(|p| {
+            let mut it = p.split(',').map(|v| v.parse::<f64>().unwrap());
+            (it.next().unwrap(), it.next().unwrap())
+          })
+          .collect();
+        let (a, b) = (pts[0], pts[pts.len() - 1]);
+        (a.0, a.1, b.0, b.1)
+      })
+      .collect()
+  }
+
+  fn length(s: (f64, f64, f64, f64)) -> f64 {
+    (s.2 - s.0).hypot(s.3 - s.1)
+  }
+
+  const FRAME: &str = "Point[{{-3, -3, -3}, {3, 3, 3}}]";
+
+  // `Arrow[pts, s]` sets both ends back by `s` along the arrow; `{s1, s2}`
+  // sets the tail and the tip back separately.
+  #[test]
+  fn positive_setback_shortens_the_arrow() {
+    let arrow = |spec: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrow[{{{{0, 0, -2}}, {{0, 0, 2}}}}{spec}], {FRAME}}}, \
+         Boxed -> False]"
+      ))
+    };
+    let full = length(shafts(&arrow(""))[0]);
+    let half = length(shafts(&arrow(", 1"))[0]);
+    let tip_only = length(shafts(&arrow(", {0, 2}"))[0]);
+    assert!((half / full - 0.5).abs() < 0.05, "{half} vs {full}");
+    assert!((tip_only / full - 0.5).abs() < 0.05, "{tip_only} vs {full}");
+    // A setback longer than the arrow leaves nothing to draw.
+    assert!(shafts(&arrow(", 3")).is_empty());
+  }
+
+  // A negative setback lengthens the arrow past both of its end points.
+  #[test]
+  fn negative_setback_lengthens_the_arrow() {
+    let arrow = |spec: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrow[{{{{0, 0, -1}}, {{0, 0, 1}}}}{spec}], {FRAME}}}, \
+         Boxed -> False]"
+      ))
+    };
+    let plain = arrow("");
+    let long = arrow(", -1");
+    let ratio = length(shafts(&long)[0]) / length(shafts(&plain)[0]);
+    assert!((ratio - 2.0).abs() < 0.15, "{ratio}");
+    // It keeps its head.
+    assert_eq!(polygon_count(&long), polygon_count(&plain));
+  }
+
+  /// The lowest and highest screen y any black stroke reaches.
+  fn black_y_extent(svg: &str) -> (f64, f64) {
+    let mut ys = Vec::new();
+    for el in svg.split('<').filter(|el| el.contains("stroke=\"black\"")) {
+      let attr = |name: &str| {
+        el.split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .map(str::to_string)
+      };
+      if let Some(pts) = attr("points") {
+        for p in pts.split(' ') {
+          ys.push(p.split(',').nth(1).unwrap().parse::<f64>().unwrap());
+        }
+      }
+      for name in ["y1", "y2"] {
+        if let Some(v) = attr(name) {
+          ys.push(v.parse::<f64>().unwrap());
+        }
+      }
+    }
+    ys.iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &y| {
+        (lo.min(y), hi.max(y))
+      })
+  }
+
+  // The lengthened arrow does not widen the scene's range: what reaches
+  // past the box its end points fix is cut off, head and all.
+  #[test]
+  fn lengthened_arrow_is_cut_at_the_box() {
+    let scene = |spec: &str| {
+      svg(&format!(
+        "Graphics3D[{{FaceForm[Opacity[0.6]], Polygon[{{{{-1, 2, 0}}, \
+         {{1, 2, 0}}, {{1, -2, 0}}, {{-1, -2, 0}}}}], \
+         Arrow[{{{{0, 0, -2}}, {{0, 0, 2}}}}{spec}]}}, \
+         Boxed -> False, ImageSize -> {{400, 400}}]"
+      ))
+    };
+    let plain = scene("");
+    let long = scene(", -1");
+    // The plane is framed the same.
+    let plane = |s: &str| {
+      s.split("<path d=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string()
+    };
+    assert_eq!(plane(&plain), plane(&long));
+    // The shaft runs to the edges of the box, but no head is drawn.
+    let (lo, hi) = black_y_extent(&long);
+    let (plain_lo, plain_hi) = black_y_extent(&plain);
+    assert!((lo - plain_lo).abs() < 2.0 && (hi - plain_hi).abs() < 2.0);
+    assert!(plain.contains("<polygon"), "{plain}");
+    assert!(!long.contains("<polygon"), "{long}");
+  }
+
+  // The setback follows the arrow through a rotation.
+  #[test]
+  fn setback_survives_rotate() {
+    let out = svg(&format!(
+      "Graphics3D[{{Rotate[Arrow[{{{{0, 0, -1}}, {{0, 0, 1}}}}, -1], Pi/2, \
+       {{1, 0, 0}}], {FRAME}}}, Boxed -> False]"
+    ));
+    let plain = svg(&format!(
+      "Graphics3D[{{Rotate[Arrow[{{{{0, 0, -2}}, {{0, 0, 2}}}}], Pi/2, \
+       {{1, 0, 0}}], {FRAME}}}, Boxed -> False]"
+    ));
+    let (a, b) = (shafts(&out)[0], shafts(&plain)[0]);
+    assert!((length(a) - length(b)).abs() < 1.0, "{a:?} vs {b:?}");
   }
 }
