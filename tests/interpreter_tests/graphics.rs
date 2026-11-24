@@ -28969,10 +28969,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
-    /// `Contours -> n` spaces its levels over every sampled value: a field
-    /// that saturates over most of the domain (`1 - E^(-20 x)`) keeps the
-    /// low levels of its steep ramp next to `x == 0`, which the automatic
-    /// outlier fence would drop (its quartiles bunch next to 1).
+    /// `Contours -> n` spaces its levels, and the band colors, over every
+    /// sampled value: a field that saturates over most of the domain
+    /// (`1 - E^(-20 x)`) keeps the low levels of its steep ramp next to
+    /// `x == 0` and shades each of its `n + 1` bands in its own color,
+    /// where the automatic outlier fence (its quartiles bunch next to 1)
+    /// dropped them.
     #[test]
     fn contour_plot_contour_count_spans_a_saturating_field() {
       assert_eq!(
@@ -28980,10 +28982,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "g = ContourPlot[1 - Exp[-20 x], {x, 0, 1}, {y, 0, 1}, \
            Contours -> 9]; xs = Flatten[Cases[Normal[g], Line[p_] :> \
            p[[All, 1]], Infinity]]; {Length[Cases[Normal[g], _Line, \
-           Infinity]], Min[xs] < 0.02}"
+           Infinity]], Min[xs] < 0.02, Length[DeleteDuplicates[Cases[g,            _RGBColor | _Hue, Infinity]]]}"
         )
         .unwrap(),
-        "{9, True}"
+        "{9, True, 10}"
       );
     }
 
