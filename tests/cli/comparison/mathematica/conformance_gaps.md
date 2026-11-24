@@ -7611,7 +7611,11 @@ this area are artifacts of that.
 
 Wolfram uses a proprietary generator, Woxi uses ChaCha8; no seed produces the
 same sequence. Verify determinism and distribution instead.
-**Not reproducible.**
+`SeedRandom[n, Method -> m]` likewise draws from ChaCha8: each non-default
+method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
+reproducible stream (a key derived from the method is mixed into the seed),
+but none of them reproduces the named algorithm's numbers or statistical
+quirks. **Not reproducible.**
 
 ### Performance
 
