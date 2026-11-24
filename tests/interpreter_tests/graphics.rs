@@ -10114,6 +10114,111 @@ mod plot3d {
       assert_eq!(extracted, "{AbsoluteThickness[0.75]}");
     }
 
+    /// A `RegionFunction` clips the sampling cells it cuts along the
+    /// region's edge, as in wolframscript, instead of leaving out every
+    /// cell with a rejected corner (a sawtooth edge); and the cut is part
+    /// of the `BoundaryStyle` outline.
+    #[test]
+    fn parametric_surface_region_function_clips_cells_along_its_edge() {
+      clear_state();
+      let setup = "g = ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, \
+                   {v, -1, 1}, PlotPoints -> 12, Mesh -> None, \
+                   RegionFunction -> Function[{x, y, z}, x + z < 0.4], \
+                   BoundaryStyle -> Red]; pts = g[[1, 1]]; ";
+      // No point leaves the region, and the kept surface reaches its edge.
+      assert_eq!(
+        interpret(&format!(
+          "{setup}{{Max[pts[[All, 1]] + pts[[All, 3]]] <= 0.4, \
+           Count[pts, p_ /; Abs[p[[1]] + p[[3]] - 0.4] < 10^-3] > 10}}"
+        ))
+        .unwrap(),
+        "{True, True}"
+      );
+      // The outline runs along the cut: most of its points lie on it.
+      assert_eq!(
+        interpret(&format!(
+          "{setup}segs = Cases[g[[1, 2]], {{___, Red, Line[l_]}} :> l, \
+           Infinity][[1]]; on = Count[pts[[Flatten[segs]]], \
+           p_ /; Abs[p[[1]] + p[[3]] - 0.4] < 10^-3]; \
+           on > Length[Flatten[segs]]/2"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+
+    /// The clipped surface keeps the full area of the region: a cylinder
+    /// cut in half by a plane through its axis keeps half its area, which
+    /// whole cells alone would fall short of.
+    #[test]
+    fn parametric_surface_region_function_keeps_area_up_to_the_cut() {
+      clear_state();
+      let area = interpret(
+        "g = ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, 0, 1}, \
+         PlotPoints -> 7, Mesh -> None, \
+         RegionFunction -> Function[{x, y, z}, x < 0.3 + 0.2 y]]; \
+         pts = g[[1, 1]]; \
+         tri[{a_, b_, c_}] := Norm[Cross[b - a, c - a]]/2; \
+         polyArea[ix_] := Total[Table[tri[pts[[{ix[[1]], ix[[k]], \
+         ix[[k + 1]]}]]], {k, 2, Length[ix] - 1}]]; \
+         Total[polyArea /@ Cases[g[[1, 2]], Polygon[ix_] :> ix, Infinity]]",
+      )
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+      // The exact area of the part with x < 0.3 + 0.2 y of the unit
+      // cylinder of height 1, sampled on a coarse 7-point grid.
+      let exact = {
+        let n = 200_000;
+        let inside = (0..n)
+          .filter(|k| {
+            let t = (*k as f64 + 0.5) / n as f64 * std::f64::consts::TAU;
+            t.cos() < 0.3 + 0.2 * t.sin()
+          })
+          .count();
+        std::f64::consts::TAU * inside as f64 / n as f64
+      };
+      assert!(
+        (area - exact).abs() < 0.08 * exact,
+        "area {area}, expected about {exact}"
+      );
+    }
+
+    /// A `BoundaryStyle` naming no color draws the outline black in the
+    /// extracted complex too, not in the color of the surface it follows.
+    #[test]
+    fn extracted_parametric_surface_boundary_without_color_is_black() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+           PlotPoints -> 3, Mesh -> None, PlotStyle -> Red, \
+           BoundaryStyle -> AbsoluteThickness[3]][[1]], \
+           {_AbsoluteThickness, s_, _Line} :> s, Infinity]"
+        )
+        .unwrap(),
+        "{Directive[GrayLevel[0], AbsoluteThickness[3]]}"
+      );
+    }
+
+    /// The default mesh (`Mesh -> Automatic`) stays in the extracted
+    /// complex, so a surface drawn through `Show` is meshed as on its own.
+    #[test]
+    fn extracted_parametric_surface_keeps_default_mesh() {
+      clear_state();
+      let lines = |mesh: &str| {
+        interpret(&format!(
+          "Length[Cases[ParametricPlot3D[{{Cos[u], Sin[u], v}}, \
+           {{u, 0, 2 Pi}}, {{v, -1, 1}}{mesh}][[1]], Line[l_] :> l, \
+           Infinity]]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(lines(""), "1");
+      assert_eq!(lines(", Mesh -> None"), "0");
+      assert_eq!(lines(", MeshStyle -> None"), "0");
+    }
+
     #[test]
     fn holds_iterator_variables() {
       // Regression: RegionPlot3D was missing from the HoldAll list
