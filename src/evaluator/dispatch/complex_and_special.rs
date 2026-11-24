@@ -4165,6 +4165,17 @@ fn spacer_template_box(args: &[Expr]) -> Option<Expr> {
   ))
 }
 
+/// The `FrameBox` of `Framed[…]` around the boxes `body`, keeping the
+/// `Framed` options and marking them to survive being read back in.
+fn framed_box(body: Expr, options: &[Expr]) -> Expr {
+  let mut items = vec![body];
+  items.extend(options.iter().cloned());
+  if !options.iter().any(is_strip_on_input_rule) {
+    items.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
+  }
+  call("FrameBox", items)
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4923,6 +4934,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         inner
       }
+    }
+    // Framed[content, opts…] → FrameBox[content-box, opts…], as
+    // wolframscript writes it: `ToBoxes[Framed[x, Background -> Yellow]]`
+    // is `FrameBox["x", Background -> RGBColor[1, 1, 0], StripOnInput ->
+    // False]`.
+    Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      framed_box(expr_to_box_form(&args[0]), &args[1..])
     }
     // HoldForm[expr] → just the content
     Expr::FunctionCall { name, args }
@@ -8098,6 +8118,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.extend(args[1..].iter().cloned());
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
+    }
+    // `Framed[expr, opts…]` boxes as a `FrameBox` that keeps its options
+    // (`Background`, `FrameStyle`, …), as `ToBoxes` writes it.
+    "Framed" if !args.is_empty() => {
+      let body = if TF_BOX_TEXT.get() {
+        tf(&args[0])
+      } else {
+        tf_display(&args[0])
+      };
+      framed_box(body, &args[1..])
     }
     // `Spacer[w]` / `Spacer[{w, h}]` box as the FrontEnd's blank templates.
     "Spacer" if spacer_template_box(args).is_some() => {
