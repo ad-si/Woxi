@@ -4761,18 +4761,17 @@ fn restore_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
 // a small numeric closure tree (`NExpr`) for speed, with a fall-back to
 // full symbolic evaluation for operations the compiler doesn't know.
 
-/// The event specification of `Method -> {"EventLocator", "Event" -> g,
-/// "EventAction" :> action}`: the (still symbolic) event function and the
-/// held action.
-struct EventSpec {
-  event: Expr,
-  action: Option<Expr>,
-}
-
-/// Extract an `EventLocator` event from NDSolve's option rules. Returns
-/// `None` when no such method is given (any other `Method` is ignored —
-/// the integrator itself stays the same).
-fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
+/// Extract an `EventLocator` event from NDSolve's option rules, as the
+/// state event it is equivalent to. Returns `None` when no such method is
+/// given (any other `Method` is ignored — the integrator itself stays the
+/// same).
+///
+/// A real-valued event function fires where it crosses zero, and so does a
+/// simple comparison (`y[t] < 0.5`, where its two sides cross); any other
+/// logical event fires where it turns True. Without an `EventAction` the
+/// integration stops at the event, like the method's default
+/// `Throw[Null, "StopIntegration"]`.
+fn parse_event_locator_option(opts: &[Expr]) -> Option<RawStateEvent> {
   for opt in opts {
     let (Expr::Rule {
       pattern,
@@ -4820,8 +4819,11 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
         }
       }
     }
-    // A condition (`y[t] < 0`) fires where its two sides cross.
-    let event = event.map(|e| match &e {
+    let equation = |lhs: Expr, rhs: Expr| Expr::Comparison {
+      operands: vec![lhs, rhs],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let condition = event.map(|e| match &e {
       Expr::Comparison {
         operands,
         operators,
@@ -4834,15 +4836,51 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
             | ComparisonOp::GreaterEqual
         ) =>
       {
-        minus2(operands[0].clone(), operands[1].clone())
+        equation(operands[0].clone(), operands[1].clone())
       }
-      _ => e,
+      _ if is_logical_event(&e) => e,
+      _ => equation(e, Expr::Integer(0)),
     });
-    if let Some(event) = event {
-      return Some(EventSpec { event, action });
+    if let Some(condition) = condition {
+      return Some(RawStateEvent {
+        condition,
+        action: action
+          .unwrap_or_else(|| Expr::String("StopIntegration".to_string())),
+      });
     }
   }
   None
+}
+
+/// Whether an event is a logical condition (a comparison, a connective or
+/// a truth value) rather than a real-valued function.
+fn is_logical_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::Identifier(s) => s == "True" || s == "False",
+    Expr::BinaryOp { op, .. } => {
+      matches!(op, BinaryOperator::And | BinaryOperator::Or)
+    }
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Not,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "And"
+        | "Or"
+        | "Not"
+        | "Xor"
+        | "Nand"
+        | "Nor"
+        | "Implies"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "LessEqual"
+        | "Greater"
+        | "GreaterEqual"
+        | "TrueQ"
+    ),
+    _ => false,
+  }
 }
 
 /// One dependent function of the system.
@@ -5898,6 +5936,14 @@ fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
 /// which differentiates the interpolating piece.
 const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 
+/// A tolerance for telling points of `[lo, hi]` apart: `rel` of the span,
+/// plus a few units of rounding at the bounds' magnitude. It scales with the
+/// range, so a tiny one (`{t, 0, 10^-9}`) is not collapsed onto its start
+/// the way a tolerance with an absolute floor would.
+fn range_tolerance(lo: f64, hi: f64, rel: f64) -> f64 {
+  (hi - lo).abs() * rel + 4.0 * f64::EPSILON * lo.abs().max(hi.abs())
+}
+
 /// Restrict integrated solution samples (ascending in x) to `[lo, hi]`.
 ///
 /// A bound that falls between two grid points becomes a sample of its own,
@@ -5910,7 +5956,7 @@ fn clip_points_to_range(
   lo: f64,
   hi: f64,
 ) -> Vec<(f64, Vec<f64>)> {
-  let tol = (hi - lo).abs().max(1.0) * 1e-9;
+  let tol = range_tolerance(lo, hi, 1e-9);
   let xs: Vec<f64> = points.iter().map(|(x, _)| *x).collect();
   let bound = |target: f64| -> (f64, Vec<f64>) {
     if let Some(p) = points.iter().find(|(x, _)| (x - target).abs() <= tol) {
@@ -6183,7 +6229,7 @@ fn reduce_index(
 
 fn ndsolve_system(
   args: &[Expr],
-  event: Option<&EventSpec>,
+  event: Option<&RawStateEvent>,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Domain {x, xmin, xmax}, or the shorthand {x, xmax} that integrates
   // from the initial conditions' x-value out to xmax — the x_min side is
@@ -6323,6 +6369,12 @@ fn ndsolve_system(
     }
   }
   let eq_items = eq_items_no_events;
+  if let Some(ev) = event {
+    raw_state_events.push(RawStateEvent {
+      condition: ev.condition.clone(),
+      action: ev.action.clone(),
+    });
+  }
   let time_events_empty =
     raw_time_events.is_empty() && raw_state_events.is_empty();
   let mut odes: Vec<Expr> = Vec::new();
@@ -6899,14 +6951,6 @@ fn ndsolve_system(
       });
     });
   }
-  let event_fn = match event {
-    Some(spec) => {
-      let rewritten = substitute_function_values(&spec.event, &funcs, x_name);
-      Some(NumFn::new(rewritten, &var_names))
-    }
-    None => None,
-  };
-
   let time_events: Vec<TimeEvent> = raw_time_events
     .into_iter()
     .map(|ev| TimeEvent {
@@ -7105,8 +7149,6 @@ fn ndsolve_system(
             x0,
             x_min,
             -h_back,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             &time_events,
             event_ctx,
             x_name,
@@ -7130,8 +7172,6 @@ fn ndsolve_system(
             x0,
             x_max_resolved,
             h,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             &time_events,
             event_ctx,
             x_name,
@@ -7144,8 +7184,6 @@ fn ndsolve_system(
             &state_offset,
             &init_state,
             x0,
-            event_fn.as_ref(),
-            event.and_then(|e| e.action.as_ref()),
             event_ctx,
             x_name,
             cached_mass_matrix.as_ref(),
@@ -7583,7 +7621,7 @@ const MAX_UNBOUNDED_DOUBLINGS: u32 = 40;
 /// `NDSolve[…, {t, t0, Infinity}, Method -> {"EventLocator", …}]`. There's
 /// no domain length to size a step from, so the unknown span is searched
 /// geometrically — windows of 1, 2, 4, … units past `x0`, each with its
-/// own 1000-step grid — until `event_fn` fires inside one of them. Gives
+/// own 1000-step grid — until an event stops the integration inside one of them. Gives
 /// up after [`MAX_UNBOUNDED_DOUBLINGS`] windows and reports the last
 /// (event-less) one, the way wolframscript's `NDSolve::mxst` reports a
 /// truncated solution after an ordinary step-count overrun.
@@ -7594,8 +7632,6 @@ fn integrate_leg_until_event(
   state_offset: &[usize],
   init_state: &[f64],
   x0: f64,
-  event_fn: Option<&NumFn>,
-  event_action: Option<&Expr>,
   state_events: StateEventCtx,
   x_name: &str,
   cached_m: Option<&MassLu>,
@@ -7612,8 +7648,6 @@ fn integrate_leg_until_event(
       x0,
       x_to,
       h,
-      event_fn,
-      event_action,
       &[],
       state_events,
       x_name,
@@ -7872,8 +7906,6 @@ fn solve_bvp_shooting_from(
               from,
               target,
               step,
-              None,
-              None,
               &[],
               StateEventCtx::none(),
               x_name,
@@ -8576,8 +8608,6 @@ fn integrate_leg(
   x_from: f64,
   x_to: f64,
   h: f64,
-  event_fn: Option<&NumFn>,
-  event_action: Option<&Expr>,
   time_events: &[TimeEvent],
   state_events: StateEventCtx,
   x_name: &str,
@@ -8585,11 +8615,7 @@ fn integrate_leg(
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   // A delay equation's leg is cut at the breakpoints where its solution's
   // derivatives jump, so that no RK4 step straddles one.
-  if dde_active()
-    && event_fn.is_none()
-    && time_events.is_empty()
-    && state_events.events.is_empty()
-  {
+  if dde_active() && time_events.is_empty() && state_events.events.is_empty() {
     let breaks = dde_breaks_between(x_from, x_to);
     if !breaks.is_empty() {
       let mut out: Vec<(f64, Vec<f64>)> = Vec::new();
@@ -8604,8 +8630,6 @@ fn integrate_leg(
           start_x,
           end,
           h,
-          None,
-          None,
           &[],
           state_events,
           x_name,
@@ -8660,20 +8684,24 @@ fn integrate_leg(
     dde_record(&points);
   }
 
-  let eval_event = |x: f64, state: &[f64]| -> Option<f64> {
-    event_fn.and_then(|f| f.eval_state(x, state, funcs.len()).ok())
-  };
-  // An event function that starts at zero (to within roundoff — a bounce
-  // restarted on the surface it bounced off) has no side yet, so the
-  // first step cannot cross it; its sign is taken after that step.
-  let mut prev_event = eval_event(x, &state).filter(|g| g.abs() > 1e-8);
   let state_value = |ev: &StateEvent, x: f64, state: &[f64]| {
     ev.value(x, state, funcs, state_events.var_names)
   };
   let mut prev_state_values: Vec<Option<f64>> = state_events
     .events
     .iter()
-    .map(|ev| state_value(ev, x, &state))
+    .map(|ev| {
+      // A crossing that starts at zero (to within roundoff — a bounce
+      // restarted on the surface it bounced off) has no side yet, so the
+      // first step cannot cross it; its sign is taken after that step.
+      let g = state_value(ev, x, &state);
+      match ev.trigger {
+        StateTrigger::Crossing(_) => {
+          g.map(|g| if g.abs() > 1e-8 { g } else { 0.0 })
+        }
+        StateTrigger::Condition(_) => g,
+      }
+    })
     .collect();
 
   // A stiff system or a transient faster than the grid makes RK4
@@ -8684,8 +8712,7 @@ fn integrate_leg(
   // singular point prohibitively slow: such a leg only gets a bounded
   // number of stiff steps, and otherwise stops where RK4 did.
   let costly = residuals.iter().any(NumFn::is_costly);
-  let can_go_adaptive =
-    event_fn.is_none() && time_events.is_empty() && !dde_active();
+  let can_go_adaptive = time_events.is_empty() && !dde_active();
   let rhs = |xv: f64, s: &[f64]| {
     Ok(system_derivative(
       residuals,
@@ -8759,7 +8786,9 @@ fn integrate_leg(
   // shorter steps once an adaptive leg failed too, so an event just before
   // it — a `WhenEvent` that stops the integration as a tank runs empty —
   // still fires.
-  let creeps = event_fn.is_some() || !state_events.events.is_empty();
+  let creeps = !state_events.events.is_empty();
+  // Whether a state event has fired on this leg so far.
+  let mut event_fired = false;
   let mut adaptive_tried = false;
   // A DAE whose constraints are solved by Newton iteration at every
   // evaluation (a distillation column's stage temperatures) is stiff as a
@@ -8884,15 +8913,24 @@ fn integrate_leg(
     // The step failed even after refinement, or its refinement stalled
     // with an error estimate that no bisection reduced. A stiff system or a
     // transient faster than the grid makes RK4 diverge: the leg is
-    // integrated again with adaptive steps (the whole leg without events to
-    // locate; with state events from here, finding them afterwards on the
-    // adaptive points). A diverging step the adaptive methods cannot take
-    // either is kept as RK4 took it.
+    // integrated again with adaptive steps — the whole leg while no event
+    // has fired yet (its events then located on the adaptive points), and
+    // from here once one has, since its action may have changed the state.
+    // Going on from where the grid diverged would keep the grid's error up
+    // to there, which a chaotic orbit amplifies. A diverging step the
+    // adaptive methods cannot take either is kept as RK4 took it.
     if (stepped.is_none() || diverging) && can_go_adaptive && !adaptive_tried {
       adaptive_tried = true;
       if state_events.events.is_empty() {
         if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
           return Ok(Some(leg));
+        }
+      } else if !event_fired {
+        let mut start = vec![points[0].clone()];
+        if let Some(done) =
+          adaptive_with_events(&mut start, &points[0].1, x_from)?
+        {
+          return Ok(Some(done));
         }
       } else if let Some(done) = adaptive_with_events(&mut points, &state, x)? {
         return Ok(Some(done));
@@ -9032,6 +9070,7 @@ fn integrate_leg(
         }
       }
       if let Some((te, state_at, ei)) = earliest {
+        event_fired = true;
         let dir = h.signum();
         points.extend(refined.drain(..).filter(|(xr, _)| dir * *xr < dir * te));
         let outcome = state_events.events[ei].run(
@@ -9136,59 +9175,6 @@ fn integrate_leg(
           return Ok(Some(points));
         }
       }
-    }
-
-    if let Some(prev_g) = prev_event
-      && let Some(new_g) = eval_event(new_x, &new_state)
-    {
-      if prev_g.signum() != new_g.signum() && prev_g.is_finite() {
-        // Event crossing inside this step: locate it by linear
-        // interpolation of the event function, then take a partial RK4
-        // step to land on it.
-        let frac = if (prev_g - new_g).abs() > f64::EPSILON {
-          (prev_g / (prev_g - new_g)).clamp(0.0, 1.0)
-        } else {
-          1.0
-        };
-        let h_star = h * frac;
-        let (x_ev, state_ev) = if h_star.abs() > f64::EPSILON {
-          match rk4_system_step(
-            residuals,
-            funcs,
-            state_offset,
-            &state,
-            x,
-            h_star,
-            cached_m,
-          )? {
-            Some(s) => (x + h_star, s),
-            None => (new_x, new_state.clone()),
-          }
-        } else {
-          (x, state.clone())
-        };
-        points.push((x_ev, state_ev));
-        if let Some(action) = event_action {
-          let action = crate::syntax::substitute_variable(
-            action,
-            x_name,
-            &Expr::Real(x_ev),
-          );
-          match crate::evaluator::evaluate_expr_to_expr(&action) {
-            Ok(_) => {}
-            Err(InterpreterError::ThrowValue(_, tag))
-              if matches!(
-                tag.as_deref(),
-                Some(Expr::String(s)) if s == "StopIntegration"
-              ) => {}
-            Err(e) => return Err(e),
-          }
-        }
-        return Ok(Some(points));
-      }
-      prev_event = Some(new_g);
-    } else {
-      prev_event = eval_event(new_x, &new_state);
     }
 
     state = new_state;
@@ -10116,7 +10102,7 @@ fn dde_breaks_between(a: f64, b: f64) -> Vec<f64> {
       return Vec::new();
     };
     let (lo, hi) = if a < b { (a, b) } else { (b, a) };
-    let tol = 1e-12 * (hi - lo).abs().max(1.0);
+    let tol = range_tolerance(lo, hi, 1e-12);
     let mut v: Vec<f64> = h
       .breaks
       .iter()
@@ -10510,15 +10496,14 @@ enum NExpr {
   Neg(Box<Self>),
   Fn1(fn(f64) -> f64, Box<Self>),
   Fn2(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
-  /// `If[lhs op rhs, then, otherwise]` on a single numeric comparison — a
-  /// right-hand side that switches branch on the independent variable
-  /// (`If[t == 0, limit, general]`, the usual way to dodge a removable
-  /// singularity at the start). Only the chosen branch is evaluated, so a
-  /// branch that is singular off its own region never poisons the other.
+  /// `If[cond, then, otherwise]` on a numeric condition — a right-hand
+  /// side that switches branch on the independent variable (`If[t == 0,
+  /// limit, general]`, the usual way to dodge a removable singularity at the
+  /// start, or a pulse `If[t0 <= t <= t1, …, 0]`). Only the chosen branch is
+  /// evaluated, so a branch that is singular off its own region never
+  /// poisons the other. `Boole` and `Piecewise` compile to it as well.
   If {
-    op: ComparisonOp,
-    lhs: Box<Self>,
-    rhs: Box<Self>,
+    cond: Box<NCond>,
     then: Box<Self>,
     otherwise: Box<Self>,
   },
@@ -11135,14 +11120,14 @@ impl NExpr {
       }
       Self::Neg(a) | Self::Fn1(_, a) => a.collect_vars_from(from, out),
       Self::If {
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
-        ..
-      } => [lhs, rhs, then, otherwise]
-        .iter()
-        .all(|e| e.collect_vars_from(from, out)),
+      } => {
+        cond.exprs().iter().all(|e| e.collect_vars_from(from, out))
+          && then.collect_vars_from(from, out)
+          && otherwise.collect_vars_from(from, out)
+      }
       Self::Interp1D { arg, .. } => arg.collect_vars_from(from, out),
       Self::InterpGrid { args, .. } => {
         args.iter().all(|a| a.collect_vars_from(from, out))
@@ -11192,12 +11177,14 @@ impl NExpr {
       }
       Self::Neg(a) | Self::Fn1(_, a) => a.any_node(pred),
       Self::If {
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
-        ..
-      } => [lhs, rhs, then, otherwise].iter().any(|e| e.any_node(pred)),
+      } => {
+        cond.exprs().iter().any(|e| e.any_node(pred))
+          || then.any_node(pred)
+          || otherwise.any_node(pred)
+      }
       Self::Interp1D { arg, .. } => arg.any_node(pred),
       Self::InterpGrid { args, .. } => args.iter().any(|e| e.any_node(pred)),
       Self::Implicit { body, .. } => body.any_node(pred),
@@ -11260,24 +11247,11 @@ impl NExpr {
       Self::Fn1(f, a) => f(a.eval(vars)),
       Self::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
       Self::If {
-        op,
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
       } => {
-        let (l, r) = (lhs.eval(vars), rhs.eval(vars));
-        // `Equal` on machine reals tolerates the last few bits.
-        let close = (l - r).abs() <= l.abs().max(r.abs()) * 2f64.powi(-47);
-        let holds = match op {
-          ComparisonOp::Equal | ComparisonOp::SameQ => close,
-          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => !close,
-          ComparisonOp::Less => l < r && !close,
-          ComparisonOp::LessEqual => l < r || close,
-          ComparisonOp::Greater => l > r && !close,
-          ComparisonOp::GreaterEqual => l > r || close,
-        };
-        if holds {
+        if cond.holds(vars) {
           then.eval(vars)
         } else {
           otherwise.eval(vars)
@@ -11368,6 +11342,142 @@ fn collect_var_refs(
   }
   for child in expr_children(expr) {
     collect_var_refs(child, var_names, out);
+  }
+}
+
+/// A logical condition over compiled numeric expressions — the test of a
+/// compiled `If`, `Boole` or `Piecewise` case.
+enum NCond {
+  Const(bool),
+  Cmp {
+    op: ComparisonOp,
+    lhs: Box<NExpr>,
+    rhs: Box<NExpr>,
+  },
+  All(Vec<Self>),
+  Any(Vec<Self>),
+  Not(Box<Self>),
+}
+
+impl NCond {
+  fn holds(&self, vars: &[f64]) -> bool {
+    match self {
+      Self::Const(b) => *b,
+      Self::Cmp { op, lhs, rhs } => {
+        let (l, r) = (lhs.eval(vars), rhs.eval(vars));
+        // `Equal` on machine reals tolerates the last few bits.
+        let close = (l - r).abs() <= l.abs().max(r.abs()) * 2f64.powi(-47);
+        match op {
+          ComparisonOp::Equal | ComparisonOp::SameQ => close,
+          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => !close,
+          ComparisonOp::Less => l < r && !close,
+          ComparisonOp::LessEqual => l < r || close,
+          ComparisonOp::Greater => l > r && !close,
+          ComparisonOp::GreaterEqual => l > r || close,
+        }
+      }
+      Self::All(items) => items.iter().all(|c| c.holds(vars)),
+      Self::Any(items) => items.iter().any(|c| c.holds(vars)),
+      Self::Not(c) => !c.holds(vars),
+    }
+  }
+
+  /// The numeric expressions the condition compares.
+  fn exprs(&self) -> Vec<&NExpr> {
+    match self {
+      Self::Const(_) => Vec::new(),
+      Self::Cmp { lhs, rhs, .. } => vec![lhs.as_ref(), rhs.as_ref()],
+      Self::All(items) | Self::Any(items) => {
+        items.iter().flat_map(Self::exprs).collect()
+      }
+      Self::Not(c) => c.exprs(),
+    }
+  }
+}
+
+/// Compile a logical condition: a comparison (a chained one such as
+/// `a <= t <= b` holds where each adjacent pair does), `True`/`False`, or
+/// `And`/`Or`/`Not` of conditions. `None` for anything else.
+fn compile_condition(expr: &Expr, var_names: &[String]) -> Option<NCond> {
+  let comp = |e: &Expr| compile_numeric(e, var_names);
+  let pairwise = |operands: &[Expr], operators: &[ComparisonOp]| {
+    if operands.len() != operators.len() + 1 || operators.is_empty() {
+      return None;
+    }
+    let mut cmps = Vec::with_capacity(operators.len());
+    for (i, op) in operators.iter().enumerate() {
+      cmps.push(NCond::Cmp {
+        op: *op,
+        lhs: Box::new(comp(&operands[i])?),
+        rhs: Box::new(comp(&operands[i + 1])?),
+      });
+    }
+    Some(if cmps.len() == 1 {
+      cmps.pop().unwrap()
+    } else {
+      NCond::All(cmps)
+    })
+  };
+  let all_of = |items: &[&Expr], any: bool| {
+    let conds = items
+      .iter()
+      .map(|c| compile_condition(c, var_names))
+      .collect::<Option<Vec<_>>>()?;
+    Some(if any {
+      NCond::Any(conds)
+    } else {
+      NCond::All(conds)
+    })
+  };
+  match expr {
+    Expr::Identifier(name) if name == "True" => Some(NCond::Const(true)),
+    Expr::Identifier(name) if name == "False" => Some(NCond::Const(false)),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => pairwise(operands, operators),
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => all_of(&[left, right], *op == BinaryOperator::Or),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => Some(NCond::Not(Box::new(compile_condition(operand, var_names)?))),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "And" | "Or" if !args.is_empty() => {
+        all_of(&args.iter().collect::<Vec<_>>(), name == "Or")
+      }
+      "Not" if args.len() == 1 => Some(NCond::Not(Box::new(
+        compile_condition(&args[0], var_names)?,
+      ))),
+      // `Inequality[a, op1, b, op2, c, …]`, the full form of a chained
+      // comparison mixing operators.
+      "Inequality" if args.len() >= 3 && args.len() % 2 == 1 => {
+        let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+        let operators = args
+          .iter()
+          .skip(1)
+          .step_by(2)
+          .map(|o| match o {
+            Expr::Identifier(n) => match n.as_str() {
+              "Equal" => Some(ComparisonOp::Equal),
+              "Unequal" => Some(ComparisonOp::NotEqual),
+              "Less" => Some(ComparisonOp::Less),
+              "LessEqual" => Some(ComparisonOp::LessEqual),
+              "Greater" => Some(ComparisonOp::Greater),
+              "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+              _ => None,
+            },
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()?;
+        pairwise(&operands, &operators)
+      }
+      _ => None,
+    },
+    _ => None,
   }
 }
 
@@ -11820,6 +11930,11 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   match expr {
     Expr::Integer(n) => Some(NExpr::Const(*n as f64)),
     Expr::Real(v) => Some(NExpr::Const(*v)),
+    // A built-in constant (`Pi`, `E`, `Degree`, `EulerGamma`, …) as the
+    // parser leaves it in a held expression.
+    Expr::Constant(_) => {
+      crate::functions::math_ast::try_eval_to_f64(expr).map(NExpr::Const)
+    }
     Expr::Identifier(name) => {
       if let Some(idx) = var_names.iter().position(|n| n == name) {
         return Some(NExpr::Var(idx));
@@ -11968,22 +12083,52 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
             .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
         }
         "If" if args.len() == 3 => {
-          if let Expr::Comparison {
-            operands,
-            operators,
-          } = &args[0]
-            && let ([lhs, rhs], [op]) =
-              (operands.as_slice(), operators.as_slice())
-          {
+          if let Some(cond) = compile_condition(&args[0], var_names) {
             return Some(NExpr::If {
-              op: *op,
-              lhs: Box::new(comp(lhs)?),
-              rhs: Box::new(comp(rhs)?),
+              cond: Box::new(cond),
               then: Box::new(comp(&args[1])?),
               otherwise: Box::new(comp(&args[2])?),
             });
           }
           Some(compile_external_leaf(expr, var_names))
+        }
+        "Boole" if args.len() == 1 => {
+          if let Some(cond) = compile_condition(&args[0], var_names) {
+            return Some(NExpr::If {
+              cond: Box::new(cond),
+              then: Box::new(NExpr::Const(1.0)),
+              otherwise: Box::new(NExpr::Const(0.0)),
+            });
+          }
+          Some(compile_external_leaf(expr, var_names))
+        }
+        // `Piecewise[{{v1, c1}, …}, default]` takes the value of the first
+        // case whose condition holds — nested `If`s, innermost the default.
+        "Piecewise" if (1..=2).contains(&args.len()) => {
+          let compiled = (|| {
+            let Expr::List(cases) = &args[0] else {
+              return None;
+            };
+            let mut acc = match args.get(1) {
+              Some(d) => comp(d)?,
+              None => NExpr::Const(0.0),
+            };
+            for case in cases.iter().rev() {
+              let Expr::List(pair) = case else {
+                return None;
+              };
+              let [value, cond] = pair.as_slice() else {
+                return None;
+              };
+              acc = NExpr::If {
+                cond: Box::new(compile_condition(cond, var_names)?),
+                then: Box::new(comp(value)?),
+                otherwise: Box::new(acc),
+              };
+            }
+            Some(acc)
+          })();
+          compiled.or_else(|| Some(compile_external_leaf(expr, var_names)))
         }
         // Not one of the closed-form operators above — most commonly a
         // call to a function the session itself defined (a fixed boundary
@@ -17296,7 +17441,7 @@ fn evaluate_interpolating_function_values(
       if let Expr::List(pair) = pt
         && pair.len() == 2
         && let Ok(xp) = interp_value_to_f64(&pair[0])
-        && (xp - x_val).abs() < 1e-15
+        && same_abscissa(xp, x_val)
       {
         // A machine query point gives a machine value, as in wolframscript
         // (`Interpolation[{{1, 1}, {2, 3}, {3, 2}}][2.]` is `3.`).
@@ -17359,10 +17504,10 @@ fn evaluate_interpolating_function_values(
     // Linear interpolation
     let (x0, y0) = extract_point(&data_points[idx])?;
     let (x1, y1) = extract_point(&data_points[idx + 1])?;
-    let t = if (x1 - x0).abs() > 1e-15 {
-      (x_val - x0) / (x1 - x0)
-    } else {
+    let t = if same_abscissa(x0, x1) {
       0.0
+    } else {
+      (x_val - x0) / (x1 - x0)
     };
     let y_val = y0 + t * (y1 - y0);
     Ok(real_or_integer(y_val))
@@ -17376,6 +17521,14 @@ fn evaluate_interpolating_function_values(
     let y_val = lagrange_interpolate(data_points, x_val, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
+}
+
+/// Whether two abscissas are the same point up to rounding. The tolerance
+/// is relative to their magnitude, so a grid on a tiny scale (an NDSolve
+/// solution over `{t, 0, 5*10^-15}` has steps of about `10^-17`) is not
+/// collapsed onto its nodes the way a fixed absolute tolerance would.
+fn same_abscissa(a: f64, b: f64) -> bool {
+  (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs())
 }
 
 /// `InterpolatingFunctionDomain[interp]`, from the

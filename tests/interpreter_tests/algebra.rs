@@ -1685,6 +1685,35 @@ mod simplify {
     assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }
 
+  /// `Sin[u] Cos[u]` folds into `Sin[2 u]/2` when that is simpler.
+  #[test]
+  fn double_angle_product() {
+    assert_eq!(interpret("Simplify[2 Sin[x] Cos[x]]").unwrap(), "Sin[2*x]");
+    // The bare product is already the smaller form.
+    assert_eq!(
+      interpret("Simplify[Sin[x] Cos[x]]").unwrap(),
+      "Cos[x]*Sin[x]"
+    );
+  }
+
+  /// At a rational multiple of Pi the doubled angle evaluates on:
+  /// 7 Cos[Pi/7] Sin[Pi/7] = 7/2 Sin[2 Pi/7] = 7/2 Cos[3 Pi/14].
+  #[test]
+  fn double_angle_product_at_rational_pi_multiples() {
+    assert_eq!(
+      interpret("Simplify[7 Cos[Pi/7] Sqrt[Sin[Pi/7]^2]]").unwrap(),
+      "(7*Cos[(3*Pi)/14])/2"
+    );
+    assert_eq!(
+      interpret("Simplify[8 Cos[Pi/8] Sin[Pi/8]]").unwrap(),
+      "2*Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Simplify[9 Cos[Pi/9] Sin[Pi/9]]").unwrap(),
+      "(9*Sin[(2*Pi)/9])/2"
+    );
+  }
+
   #[test]
   fn pythagorean_with_coefficient() {
     assert_eq!(interpret("Simplify[2*Sin[x]^2 + 2*Cos[x]^2]").unwrap(), "2");
@@ -3450,6 +3479,37 @@ mod together {
     assert_eq!(
       interpret("Together[x/3 + y/(2 Sqrt[2])]").unwrap(),
       "(4*x + 3*Sqrt[2]*y)/12"
+    );
+  }
+
+  // Integer denominators that each fit a machine integer but whose LCM
+  // does not still combine by their LCM, keeping the shared factors once.
+  #[test]
+  fn integer_lcm_beyond_machine_integers() {
+    assert_eq!(
+      interpret("Together[1/(2^60 3^30) + x/(2^60 5^20) + y/2^120]").unwrap(),
+      "(109951162777600000000000000000000 + 237376313799769806328950291431424*x + 19635308465447330474853515625*y)/26099801718145147149084040184515458731763302400000000000000000000"
+    );
+    // A term whose missing factor was dropped changed the value.
+    assert_eq!(
+      interpret(
+        "e = 1/(38496193^2 50349853^2) + b x/(89 571^2 50349853) + x^2/(89 571^2 50349853)^2; Expand[Together[e] - e]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // Solving with rationalized machine coefficients goes through such
+  // denominators: the nearest point of a line to (a, b) stays linear in b.
+  #[test]
+  fn nsolve_line_circle_with_machine_coefficients() {
+    assert_eq!(
+      interpret(
+        "c = 1/Sqrt[0.65^2 + 1]; sol = NSolve[{(x - a)^2 + (y - b)^2 == d^2, -0.65 c x + c y + 1.1 c == 0}, {x, y}]; Round[{x, y} /. sol /. {a -> 3.5, b -> 0.81, d -> -0.65 c 3.5 + c 0.81 + 1.1 c}, 10^-4]"
+      )
+      .unwrap(),
+      "{{8333/2500, 5333/5000}, {8333/2500, 5333/5000}}"
     );
   }
 
@@ -6497,6 +6557,65 @@ y^2]^3)) y}, {x, y}]; \
     assert_eq!(
       interpret("Solve[a*x^2 + b*x + c == 0, x]").unwrap(),
       "{{x -> (-b - Sqrt[b^2 - 4*a*c])/(2*a)}, {x -> (-b + Sqrt[b^2 - 4*a*c])/(2*a)}}"
+    );
+  }
+
+  /// The `4 a c` product is distributed over a sum coefficient, so its
+  /// constants combine with `b^2` in the discriminant; `b^2` itself keeps
+  /// its power.
+  #[test]
+  fn symbolic_quadratic_distributes_four_ac() {
+    assert_eq!(
+      interpret("Solve[x^2 - x + c + d == 0, x]").unwrap(),
+      "{{x -> (1 - Sqrt[1 - 4*c - 4*d])/2}, {x -> (1 + Sqrt[1 - 4*c - 4*d])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + b x + 2 (c + d) == 0, x]").unwrap(),
+      "{{x -> (-b - Sqrt[b^2 - 8*c - 8*d])/2}, {x -> (-b + Sqrt[b^2 - 8*c - 8*d])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a + 1) x + c == 0, x]").unwrap(),
+      "{{x -> (-1 - a - Sqrt[(1 + a)^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[(1 + a)^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x (1 - x) (x - 1/4) == 1/2 e x, x]").unwrap(),
+      "{{x -> 0}, {x -> (5 - Sqrt[9 - 32*e])/8}, {x -> (5 + Sqrt[9 - 32*e])/8}}"
+    );
+  }
+
+  /// With machine-number coefficients each root is distributed over `2 a`
+  /// and no stray input coefficient survives, so a later numeric rule (here
+  /// `0.25 -> 0.1`) leaves the roots alone.
+  #[test]
+  fn symbolic_quadratic_machine_coefficients_distributed() {
+    assert_eq!(
+      interpret("Solve[x (1 - x) (x - 0.25) == 0.5 e x, x]").unwrap(),
+      "{{x -> 0.}, {x -> 0.625 - 0.5*Sqrt[0.5625 - 2.*e]}, \
+{x -> 0.625 + 0.5*Sqrt[0.5625 - 2.*e]}}"
+    );
+    assert_eq!(
+      interpret("Solve[-2. x^2 + x + a == 0, x]").unwrap(),
+      "{{x -> 0.25 - 0.25*Sqrt[1 + 8.*a]}, {x -> 0.25 + 0.25*Sqrt[1 + 8.*a]}}"
+    );
+    assert_eq!(
+      interpret(
+        "x /. Drop[Solve[x (1 - x) (x - 0.25) == 0.5 e x, x], 1] /. \
+{0.25 -> 0.1} /. e -> 0.2"
+      )
+      .unwrap(),
+      "{0.42344355629253627, 0.8265564437074637}"
+    );
+    // A machine radical system eliminated through quadratics whose `b` holds
+    // the other unknown keeps only its two real solutions.
+    assert_eq!(
+      interpret(
+        "Length[Solve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + \
+         Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == \
+         Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "2"
     );
   }
 

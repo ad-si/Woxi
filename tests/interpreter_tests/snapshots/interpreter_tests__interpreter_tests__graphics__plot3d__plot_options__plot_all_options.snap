@@ -76,5 +76,5 @@ expression: "export_svg(r#\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> \"
 <text x="201.9" y="442.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
 <text x="3540.0" y="1358.7" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">x</text>
 <text x="231.9" y="224.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">f(x)</text>
-<text x="1813.0" y="108.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#333">Trig Functions</text>
+<text x="1813.0" y="108.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#666666">Trig Functions</text>
 </svg>

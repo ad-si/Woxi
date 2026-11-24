@@ -3246,6 +3246,12 @@ fn string_form_boxes(expr: &Expr) -> Option<Expr> {
 /// or Times factor (so the rendered output is unambiguous).
 fn needs_paren_in_product(expr: &Expr) -> bool {
   match expr {
+    // A held term draws as its content and is bracketed like it.
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      needs_paren_in_product(&args[0])
+    }
     Expr::FunctionCall { name, args } => {
       (name == "Plus" && args.len() >= 2)
         // Negative term Times[-n, ...] renders with a leading minus sign
@@ -3430,8 +3436,22 @@ fn box_signed_operand(expr: &Expr) -> Expr {
 /// Does this (canonical) Power base need parentheses? Sums, products and
 /// negative numbers do: `(1+x)^2`, `(x y)^z`, `(-x)^y`, `(-2)^y`.
 fn needs_paren_as_power_base(base: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = base
+    && name == "HoldForm"
+    && args.len() == 1
+  {
+    return needs_paren_as_power_base(&args[0]);
+  }
   needs_paren_in_product(base)
     || matches!(base, Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2)
+    // A held product keeps its parsed operator form.
+    || matches!(
+      base,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times | BinaryOperator::Divide,
+        ..
+      }
+    )
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
     || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
@@ -4163,6 +4183,17 @@ fn spacer_template_box(args: &[Expr]) -> Option<Expr> {
     "TemplateBox",
     vec![Expr::List(sizes.into()), str_expr(template)],
   ))
+}
+
+/// The `FrameBox` of `Framed[…]` around the boxes `body`, keeping the
+/// `Framed` options and marking them to survive being read back in.
+fn framed_box(body: Expr, options: &[Expr]) -> Expr {
+  let mut items = vec![body];
+  items.extend(options.iter().cloned());
+  if !options.iter().any(is_strip_on_input_rule) {
+    items.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
+  }
+  call("FrameBox", items)
 }
 
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
@@ -4923,6 +4954,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         inner
       }
+    }
+    // Framed[content, opts…] → FrameBox[content-box, opts…], as
+    // wolframscript writes it: `ToBoxes[Framed[x, Background -> Yellow]]`
+    // is `FrameBox["x", Background -> RGBColor[1, 1, 0], StripOnInput ->
+    // False]`.
+    Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      framed_box(expr_to_box_form(&args[0]), &args[1..])
     }
     // HoldForm[expr] → just the content
     Expr::FunctionCall { name, args }
@@ -6005,6 +6045,12 @@ fn tf_needs_paren_factor(expr: &Expr) -> bool {
       ..
     } => true,
     Expr::Comparison { .. } => true,
+    // A held term draws as its content and is bracketed like it.
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      tf_needs_paren_factor(&args[0])
+    }
     Expr::FunctionCall { name, args } => {
       (name == "Plus" && args.len() >= 2)
         // `a ± b` binds looser than a product: `(a ± b) c`.
@@ -7635,6 +7681,9 @@ fn tf_prec(expr: &Expr) -> f64 {
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `HoldForm` draws as its content, so it binds like its content:
+      // `HoldForm[a b/c]^2` sets as `(a b/c)²`.
+      "HoldForm" if args.len() == 1 => tf_prec(&args[0]),
       "Plus" if args.len() >= 2 => of("Plus"),
       "Times" if args.len() >= 2 => of("Times"),
       "Power" if args.len() == 2 => of("Power"),
@@ -8098,6 +8147,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.extend(args[1..].iter().cloned());
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
+    }
+    // `Framed[expr, opts…]` boxes as a `FrameBox` that keeps its options
+    // (`Background`, `FrameStyle`, …), as `ToBoxes` writes it.
+    "Framed" if !args.is_empty() => {
+      let body = if TF_BOX_TEXT.get() {
+        tf(&args[0])
+      } else {
+        tf_display(&args[0])
+      };
+      framed_box(body, &args[1..])
     }
     // `Spacer[w]` / `Spacer[{w, h}]` box as the FrontEnd's blank templates.
     "Spacer" if spacer_template_box(args).is_some() => {

@@ -10818,6 +10818,52 @@ mod ndsolve {
     );
   }
 
+  /// Nodes spaced far below 1 are still told apart: a query between two
+  /// nodes is interpolated instead of snapping to the nearest node, at any
+  /// interpolation order (the grid-point match used to have a fixed
+  /// absolute tolerance of 10^-15).
+  #[test]
+  fn interpolation_on_a_tiny_scale_grid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "data = Table[{k 10^-17, k^2}, {k, 0, 6}]; \
+         f = Interpolation[data]; g = Interpolation[data, \
+         InterpolationOrder -> 1]; \
+         {Abs[f[2.5*^-17] - 6.25] < 10^-12, g[1.5*^-17], f[3*^-17], \
+         g[3.*^-17]}"
+      )
+      .unwrap(),
+      "{True, 2.5, 9, 9.}"
+    );
+  }
+
+  /// A time range shorter than 10^-9 keeps its end instead of collapsing
+  /// onto its start, and the solution over a femtosecond span follows the
+  /// exact solution between its steps, not only at them.
+  #[test]
+  fn ndsolve_solution_on_a_tiny_time_scale_is_smooth() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[(x /. First[NDSolve[{x'[t] == -x[t], x[0] == 1}, x, \
+         {t, 0, r}]])[\"Domain\"], {r, {10^-9, 5.*^-15}}]"
+      )
+      .unwrap(),
+      "{{{0., 1.*^-9}}, {{0., 5.*^-15}}}"
+    );
+    assert_eq!(
+      interpret(
+        "w = 3*^15; s = NDSolve[{x'[t] == u[t], u'[t] == -w^2 x[t], \
+         x[0] == 1, u[0] == 0}, {x, u}, {t, 0, 5*^-15}]; \
+         Max[Table[Abs[(x[t] /. s[[1]]) - Cos[w t]], \
+         {t, 0, 5*^-15, 1.3*^-17}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
   /// between two nodes it holds the value of the right node, at a node the
   /// node's own value, and its derivative is zero.
@@ -11684,6 +11730,62 @@ mod ndsolve {
       "Expected y at event ≈ 0.5, got {}",
       vals[1]
     );
+  }
+
+  #[test]
+  fn event_locator_keeps_close_encounter_accuracy() {
+    // A restricted three-body orbit swinging close past a primary makes
+    // the fixed-step grid diverge. An `EventLocator` that never fires must
+    // not change the solution: the whole leg is integrated again with
+    // adaptive steps, as without the event, instead of going on from
+    // where the grid diverged (whose error the chaotic orbit amplified
+    // into an escape to x ≈ -2·10^5).
+    let eqs = "m = 0.4; r1 = (x[t] + 1 - m)^2 + y[t]^2; \
+       r2 = (x[t] - m)^2 + y[t]^2; \
+       eqs = {x''[t] == 2 y'[t] + x[t] - m (x[t] + 1 - m)/r1^(3/2) - \
+       (1 - m) (x[t] - m)/r2^(3/2), \
+       y''[t] == -2 x'[t] + y[t] - m y[t]/r1^(3/2) - (1 - m) y[t]/r2^(3/2), \
+       x[0] == -0.8, y[0] == -0.35, x'[0] == -0.5, y'[0] == 0.3};";
+    for method in [
+      "",
+      ", Method -> {\"EventLocator\", \"Event\" :> x[t]^2 + y[t]^2 - 10^4}",
+      ", Method -> {EventLocator, Event :> Abs[x[t]] > 100 || Abs[y[t]] > 100}",
+    ] {
+      clear_state();
+      let result = interpret(&format!(
+        "{eqs} s = NDSolve[eqs, {{x[t], y[t]}}, {{t, 0, 40}}{method}]; \
+         Round[1000 ({{x[t], y[t]}} /. First[s] /. t -> 40)]"
+      ))
+      .unwrap();
+      assert_eq!(result, "{-223, -124}", "{method}");
+    }
+  }
+
+  #[test]
+  fn event_locator_action_without_stop_continues() {
+    // An `EventAction` that does not throw "StopIntegration" runs at each
+    // event and the integration goes on to the end of the domain.
+    let result = interpret(
+      "r = Reap[NDSolve[{y''[t] == -y[t], y[0] == 1, y'[0] == 0}, y, \
+       {t, 0, 10}, Method -> {\"EventLocator\", \"Event\" -> y[t], \
+       \"EventAction\" :> Sow[t]}]]; \
+       {Round[1000 r[[2, 1]]], y[\"Domain\"] /. r[[1, 1]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{1571, 4712, 7854}, {{0., 10.}}}");
+  }
+
+  #[test]
+  fn event_locator_logical_event_stops_where_it_turns_true() {
+    // A logical event (here a disjunction) fires where it turns True and,
+    // with no `EventAction`, stops the integration there.
+    let result = interpret(
+      "s = NDSolve[{x''[t] == 1, x[0] == 0, x'[0] == 0}, x, {t, 0, 10}, \
+       Method -> {\"EventLocator\", \"Event\" :> x[t] > 2 || x[t] < -1}]; \
+       Round[1000 x[\"Domain\"] /. First[s]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{{0, 2000}}");
   }
 
   #[test]
@@ -23934,6 +24036,64 @@ mod ndsolve_step_forcing {
          b = y[5] /. NDSolve[{y[0] == 0, y'[0] == 0, \
          y''[t] + y'[t] == HeavisideTheta[t - 1]}, y, {t, 0, 5}]; \
          Abs[First[a] - First[b]] < 0.01"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A forcing that is on only over a window `[a, b]` inside the domain:
+  // written with a compound condition (`&&`, `||`, `!`, a chained
+  // comparison, `Inequality`) in `If`, `Boole` or `Piecewise`. Such a
+  // right-hand side used to fall back to the interpreter, whose adaptive
+  // steps grew over the zero stretch before the window and jumped it, so
+  // the solution stayed 0. The integral of the window is `b - a`.
+  #[test]
+  fn compound_condition_window_forcing_is_integrated() {
+    for (a, b) in [("2", "3"), ("0.5", "0.75"), ("6", "8")] {
+      for rhs in [
+        format!("If[t >= {a} && t <= {b}, 1, 0]"),
+        format!("If[{a} <= t <= {b}, 1, 0]"),
+        format!("If[t < {a} || t > {b}, 0, 1]"),
+        format!("If[!(t < {a} || t > {b}), 1, 0]"),
+        format!("If[Inequality[{a}, LessEqual, t, Less, {b}], 1, 0]"),
+        format!("Boole[{a} <= t <= {b}]"),
+        format!("Piecewise[{{{{1, t >= {a} && t <= {b}}}}}]"),
+        format!("Piecewise[{{{{0, t < {a}}}, {{1, t <= {b}}}}}, 0]"),
+      ] {
+        let code = format!(
+          "Abs[(x[10] /. First[NDSolve[{{x'[t] == {rhs}, x[0] == 0}}, x, \
+           {{t, 0, 10}}]]) - ({b} - {a})] < 0.01"
+        );
+        assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+      }
+    }
+  }
+
+  // A half-sine bump through a compound condition drives a damped
+  // oscillator, which stays at rest before the bump and moves after it.
+  #[test]
+  fn compound_condition_bump_drives_second_order_system() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x''[t] + x'[t] + 4 x[t] == \
+         If[t >= 2 && t <= 3, Sin[Pi (t - 2)], 0], x[0] == 0, x'[0] == 0}, \
+         x, {t, 0, 10}]]; {x[1.9] /. s, Abs[x[3] /. s] > 0.05}"
+      )
+      .unwrap(),
+      "{0., True}"
+    );
+  }
+
+  // `Pi`, `E`, `Degree`, … in a right-hand side are numeric constants, not
+  // calls for the interpreter to evaluate at every step.
+  #[test]
+  fn builtin_constants_in_rhs_are_numeric() {
+    assert_eq!(
+      interpret(
+        "Abs[(x[1] /. First[NDSolve[{x'[t] == Pi + E t + Degree + \
+         EulerGamma, x[0] == 0}, x, {t, 0, 1}]]) - \
+         N[Pi + E/2 + Degree + EulerGamma]] < 10^-6"
       )
       .unwrap(),
       "True"

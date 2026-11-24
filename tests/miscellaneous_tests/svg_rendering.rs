@@ -5323,6 +5323,39 @@ mod tests {
       );
     }
 
+    /// Math shown as `Text` is set one script level down, so a fraction in
+    /// it is drawn at 0.75 of the text size — also when the `Text` sits in
+    /// a `Pane` or under a `Style` (the passes that draw the layout only
+    /// see what those wrappers hold).
+    #[test]
+    fn a_fraction_in_text_is_drawn_at_script_size() {
+      for code in [
+        r#"Pane[Text[Column[{Style[Row[{"a", "d"/"b"}], 36]}]], {580, 380}]"#,
+        r#"Text[Style[Row[{"a", "d"/"b"}], 36]]"#,
+        r#"Style[Text[Row[{"a", "d"/"b"}]], 36]"#,
+        r#"Pane[Text@Column[{Style[Row[{"a", "-", "d"/"b"}], 36], Style["c", 48, Blue]}, Spacings -> 5], {580, 380}, Alignment -> {Center, Center}]"#,
+      ] {
+        let result =
+          woxi::interpret_with_stdout(code).expect("interpret should succeed");
+        let svg = result.graphics.expect("the text is drawn as a picture");
+        assert!(
+          svg.contains(r#"font-size="27.0""#)
+            && !svg.contains(r#"font-size="36.0""#),
+          "{code}: {svg}"
+        );
+      }
+    }
+
+    /// Outside `Text` an outermost fraction keeps the surrounding size.
+    #[test]
+    fn a_fraction_outside_text_keeps_the_text_size() {
+      let result =
+        woxi::interpret_with_stdout(r#"Style[Row[{"a", "d"/"b"}], 36]"#)
+          .expect("interpret should succeed");
+      let svg = result.graphics.expect("the row is drawn as a picture");
+      assert!(svg.contains(r#"font-size="36.0""#), "{svg}");
+    }
+
     /// A layout of plain text is left to the text renderer — composing it
     /// as a picture would be a regression, not an improvement.
     #[test]
@@ -5414,6 +5447,24 @@ mod tests {
       )
       .expect("interpret should succeed");
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
+    }
+
+    /// The re-flowed list of a sized `Pane` under a styled `Panel` caption
+    /// draws each `Style[item, dirs…]` element as its own text in that
+    /// style, not as the literal `Style[…]` call.
+    #[test]
+    fn panel_with_styled_caption_keeps_styled_list_elements() {
+      let result = woxi::interpret_with_stdout(
+        r#"Panel[Pane[Table[If[OddQ[k], Style[{k, k^2}, Red], Style[{k, -k}, GrayLevel[0.7], Underlined]], {k, 30}], ImageSize -> {200, 100}], Style[Row[{"Pairs ", Style["p", Italic]}], "Label", Medium], Background -> White]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(!svg.contains("Style["), "{svg}");
+      assert!(!svg.contains("GrayLevel"), "{svg}");
+      assert!(svg.contains(">{1, 1}<"), "{svg}");
+      assert!(svg.contains(">{2, -2}<"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("text-decoration=\"underline\""), "{svg}");
     }
 
     /// A list in a `Column` wider than the `Pane` around it breaks into

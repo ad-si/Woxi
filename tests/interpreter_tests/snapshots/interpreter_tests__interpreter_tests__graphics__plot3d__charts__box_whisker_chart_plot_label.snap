@@ -1,13 +1,12 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 20479
 expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My Title\"]\"#)"
 ---
 <svg width="360" height="232" viewBox="0 0 360 232" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <clipPath id="plotClip_349x216"><rect x="0" y="0" width="349.36" height="215.92"/></clipPath>
 </defs>
-<text x="183.8" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#333333" xml:space="preserve">My Title</text>
+<text x="183.8" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#666666" xml:space="preserve">My Title</text>
 <g transform="translate(9.14,13.91)">
 <g>
 <circle cx="17.47" cy="205.12" r="1.40" fill="rgb(0,0,0)" opacity="0"/>

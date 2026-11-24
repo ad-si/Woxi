@@ -5452,6 +5452,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_framed_boxes_as_frame_box_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[Framed[x]]").unwrap(),
+      "FrameBox[x, StripOnInput -> False]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Framed[x, Background -> Yellow]]").unwrap(),
+      "FrameBox[x, Background -> RGBColor[1, 1, 0], StripOnInput -> False]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Framed[x], TraditionalForm]").unwrap(),
+      "FormBox[FrameBox[x, StripOnInput -> False], TraditionalForm]"
+    );
+  }
+
+  #[test]
   fn test_invisible_traditional_boxes_hide_contents() {
     clear_state();
     assert_eq!(

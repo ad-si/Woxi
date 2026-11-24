@@ -6412,10 +6412,19 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
     _ => None,
   });
   let (body_prims, body_opts) = match &body {
+    // The options may come as one list (`Graphics[prims, {opts…}]`, the
+    // form `Show[Graphics[…]]` returns); they are read one by one.
     Expr::FunctionCall { name, args }
       if name == "Graphics" && !args.is_empty() =>
     {
-      (args[0].clone(), args[1..].to_vec())
+      let opts: Vec<Expr> = args[1..]
+        .iter()
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .collect();
+      (args[0].clone(), opts)
     }
     // A body that evaluates straight to a rendered picture instead of
     // staying the symbolic `Graphics[prims, opts]` above — `Show[…]`,
@@ -6502,7 +6511,8 @@ fn locator_marker_units(
 /// `LocatorPane` marker's default size is scaled against, for a body that
 /// only exists as a rendered picture (so there is no `PlotRange` option
 /// lying around in a primitive list to read, as `locator_pane_graphic`
-/// reads for the symbolic-`Graphics` case). Falls back to `1.0` — matching
+/// reads for the symbolic-`Graphics` case): a plot's stored ranges, or a
+/// combination's symbolic form. Falls back to `1.0` — matching
 /// that case's own fallback — when the picture carries no source range (a
 /// plain `Graphics[…]` with no plot data, or a picture kind that keeps
 /// none).
@@ -6518,6 +6528,39 @@ fn rendered_graphic_units(body: &Expr) -> (f64, f64) {
       .aspect_ratio
       .or_else(|| (w > 0 && h > 0).then(|| f64::from(h) / f64::from(w)));
     return locator_marker_units(x_extent, y_extent, aspect);
+  }
+  // A combination (`Show[plot, Graphics[…]]`) keeps no plot source, only
+  // its symbolic `Graphics[prims, opts]`: it is measured by that, as
+  // `PlotRange[g]` is, with an explicit numeric `AspectRatio` (its options
+  // given one by one or as one list) or else `Automatic`.
+  if let Expr::Graphics {
+    structure: Some(structure),
+    is_3d: false,
+    ..
+  } = body
+    && let Some(((x0, x1), (y0, y1))) =
+      crate::functions::graphics::absolute_plot_range(structure)
+  {
+    let aspect = match structure.as_ref() {
+      Expr::FunctionCall { args, .. } => args
+        .iter()
+        .skip(1)
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .find_map(|o| match &o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "AspectRatio") => {
+            crate::functions::math_ast::try_eval_to_f64(replacement)
+          }
+          _ => None,
+        }),
+      _ => None,
+    };
+    return locator_marker_units((x1 - x0).abs(), (y1 - y0).abs(), aspect);
   }
   (1.0, 1.0)
 }
@@ -8537,18 +8580,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           {
             Some(vec![(label, position)])
           }
+          // A single `{side, align}` position (`{Top, Left}`).
+          (label, Some(position @ Expr::List(_))) => {
+            Some(vec![(label, position)])
+          }
           _ => None,
         };
       if let Some(side_labels) = side_labels {
-        let mut sides: [Vec<String>; 4] = Default::default();
+        let mut sides: [Vec<(String, f64)>; 4] = Default::default();
         for (label, position) in side_labels {
-          let side = match position {
-            Expr::Identifier(p) if p == "Top" => 0,
-            Expr::Identifier(p) if p == "Left" => 1,
-            Expr::Identifier(p) if p == "Right" => 2,
-            _ => 3,
-          };
-          sides[side].push(expr_to_svg(&unquoted_display_string(label)));
+          let (side, align) =
+            crate::functions::graphics::labeled_position(position);
+          sides[side]
+            .push((expr_to_svg(&unquoted_display_string(label)), align));
         }
         return crate::functions::graphics::labeled_sides_svg(
           &content, &sides, rotate,
@@ -9381,7 +9425,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         &args[0],
       ))
     }
-    // TraditionalForm[list] — render the list as a parenthesized matrix.
+    // TraditionalForm[matrix] — render a list of lists as a parenthesized
+    // matrix; a flat list falls back to its typeset braced form.
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -9595,13 +9640,15 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
   crate::functions::graphics::grid_svg_with_gaps(&grid_args, &gaps).ok()
 }
 
-/// `TraditionalForm[{…}]` typesets a list as a parenthesized matrix, the same
-/// drawing `MatrixForm` gets.
+/// `TraditionalForm[{{…}, …}]` typesets a list of lists as a parenthesized
+/// matrix, the same drawing `MatrixForm` gets. A flat list is no matrix: it
+/// stays a braced list on one line.
 fn is_traditional_matrix_form(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if name == "TraditionalForm"
       && args.len() == 1
-      && matches!(&args[0], Expr::List(_)))
+      && matches!(&args[0], Expr::List(rows)
+        if rows.iter().all(|r| matches!(r, Expr::List(_)))))
 }
 
 /// Render `Style[TableForm|MatrixForm[data], directives…]` to a styled grid

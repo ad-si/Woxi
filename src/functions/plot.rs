@@ -77,13 +77,13 @@ pub(crate) const MAX_SVG_DIMENSION: u32 = 100_000;
 pub(crate) fn plot_theme()
 -> (RGBColor, RGBColor, RGBColor, &'static str, &'static str) {
   if crate::is_dark_mode() {
-    // (background, axis_gray, origin_line_gray, label_fill, title_default_fill)
+    // (background, axis_gray, origin_line_gray, label_fill, text_fill)
     (
       RGBColor(0x1a, 0x1a, 0x1a), // dark background
       RGBColor(0x99, 0x99, 0x99), // lighter axes for dark bg
       RGBColor(0x44, 0x44, 0x44), // subtle origin lines
       "#999",                     // axis label fill
-      "#e0e0e0",                  // default plot label fill
+      "#e0e0e0",                  // default text fill
     )
   } else {
     (
@@ -91,7 +91,7 @@ pub(crate) fn plot_theme()
       RGBColor(0x66, 0x66, 0x66), // dark gray axes
       RGBColor(0xCC, 0xCC, 0xCC), // light gray origin lines
       "#666",                     // axis label fill
-      "#333",                     // default plot label fill
+      "#333",                     // default text fill
     )
   }
 }
@@ -5076,7 +5076,6 @@ pub(crate) fn plot_labels_svg(
   layout: &plot_padding::LabelLayout,
   sf: f64,
   label_fill: &str,
-  title_default_fill: &str,
   canvas_width: f64,
 ) -> String {
   use plot_padding::{
@@ -5122,7 +5121,7 @@ pub(crate) fn plot_labels_svg(
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let title_default_fill = title_default_fill_owned
     .as_deref()
-    .unwrap_or(title_default_fill);
+    .unwrap_or(super::graphics::theme().plot_label_fill);
   let [room_bottom, room_left, room_top, room_right] =
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
@@ -6535,7 +6534,7 @@ fn generate_svg_with_options(
     }
   }
 
-  let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, theme_gray, _, label_fill, _) = plot_theme();
   // `FrameStyle` and `FrameTicksStyle` paint each frame edge, its tick
   // marks and its tick labels.
   let frame_paints = frame_edge_paints(opts, theme_gray);
@@ -8016,7 +8015,6 @@ fn generate_svg_with_options(
         &layout,
         sf,
         label_fill,
-        title_default_fill,
         render_width as f64,
       ));
 
@@ -10661,6 +10659,9 @@ pub(crate) fn generate_bar_svg(
   let label_fill: &str = label_style_fill.as_deref().unwrap_or(label_fill);
   let title_default_fill: &str =
     label_style_fill.as_deref().unwrap_or(title_default_fill);
+  let plot_label_fill: &str = label_style_fill
+    .as_deref()
+    .unwrap_or(super::graphics::theme().plot_label_fill);
 
   // Reserve extra right margin for chart legends
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
@@ -11321,6 +11322,9 @@ pub(crate) fn generate_bar_svg(
             }
           }
         };
+        // A `Style[label, color]` label keeps its own color.
+        let own_fill = label.color.map(super::graphics::Color::to_svg_rgb);
+        let fill = own_fill.as_deref().unwrap_or(fill);
         // A stacked label sets each line as its own `tspan` (SVG would run
         // the lines together), with the line's own size and color.
         let multi_line = lines.len() > 1;
@@ -11502,7 +11506,7 @@ pub(crate) fn generate_bar_svg(
       let fill = sl
         .color
         .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+        .map_or_else(|| plot_label_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
       if sl.bold || label_bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -11696,7 +11700,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   };
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
-  let (bg, axis_gray, _light, label_fill, title_default_fill) = plot_theme();
+  let (bg, axis_gray, _light, label_fill, _) = plot_theme();
   let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
   let axis_stroke =
     format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
@@ -11951,10 +11955,10 @@ pub(crate) fn generate_horizontal_bar_svg(
     let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
     // A stacked title keeps its first line at the top and grows downwards
     // into the extra top margin reserved for it.
-    let fill = sl
-      .color
-      .as_ref()
-      .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+    let fill = sl.color.as_ref().map_or_else(
+      || super::graphics::theme().plot_label_fill.to_string(),
+      |c| c.to_svg_rgb(),
+    );
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
@@ -12224,8 +12228,7 @@ pub(crate) fn generate_bubble_chart_svg(
   let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 65 * RESOLUTION_SCALE;
 
-  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (bg_color, dark_gray, light_gray, label_fill, _) = plot_theme();
 
   // `ChartLegends` are set beside the finished image (see the end).
   let legend_margin_right = 10 * s as u32
@@ -12603,10 +12606,10 @@ pub(crate) fn generate_bubble_chart_svg(
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
       let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
-      let fill = sl
-        .color
-        .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+      let fill = sl.color.as_ref().map_or_else(
+        || super::graphics::theme().plot_label_fill.to_string(),
+        |c| c.to_svg_rgb(),
+      );
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -13718,8 +13721,7 @@ pub(crate) fn generate_histogram_svg(
     };
     (mix(r, bg.0), mix(g, bg.1), mix(b, bg.2))
   };
-  let (bg_color, _dark_gray, _light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (bg_color, _dark_gray, _light_gray, label_fill, _) = plot_theme();
 
   let side_margin = 2.0 * sf;
   let mut right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
@@ -14013,10 +14015,10 @@ pub(crate) fn generate_histogram_svg(
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
       let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
-      let fill = sl
-        .color
-        .as_ref()
-        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
+      let fill = sl.color.as_ref().map_or_else(
+        || super::graphics::theme().plot_label_fill.to_string(),
+        |c| c.to_svg_rgb(),
+      );
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -19121,9 +19123,36 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
   // An explicit `PlotRangePadding` replaces those defaults, side by side.
-  let y_span = y_data_max - y_data_min;
-  let y_degenerate =
-    y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
+  // A half-open `PlotRange -> {min, All}` pads its open end like an
+  // automatic range spanning from the pinned value to the curve's far
+  // extreme (not just the curve's own extent): `{300, All}` over a curve
+  // from 347 to 361 tops out at 361 + 61/18.
+  // (The pinned end arrives either as `plot_range_y` with the open end NaN
+  // or, scaled later, through `plot_range_y_half_open`.)
+  let pinned_y = match plot_range_y {
+    Some((lo, hi)) if lo.is_nan() != hi.is_nan() => {
+      Some(((!lo.is_nan()).then_some(lo), (!hi.is_nan()).then_some(hi)))
+    }
+    Some(_) => None,
+    None => plot_range_y_half_open.map(|(lo, hi)| {
+      let scaled = |v: Option<f64>| {
+        v.and_then(|v| match scaling.1.as_ref() {
+          Some(s) => s.forward(v),
+          None => Some(v),
+        })
+      };
+      (scaled(lo), scaled(hi))
+    }),
+  };
+  let half_open_span = match pinned_y {
+    Some((Some(lo), None)) => Some(y_data_max - lo),
+    Some((None, Some(hi))) => Some(hi - y_data_min),
+    _ => None,
+  }
+  .filter(|s| s.is_finite() && *s > 0.0);
+  let y_span = half_open_span.unwrap_or(y_data_max - y_data_min);
+  let y_degenerate = half_open_span.is_none()
+    && y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
   let x_span = x_max - x_min;
   let ((x_pad_lo, x_pad_hi), (y_pad_lo, y_pad_hi)) =
     if let Some(spec) = &range_padding {
@@ -19207,10 +19236,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // On a log axis whose automatic range cut the curve off at the bottom
   // the axis drops to the padded edge instead.
   let log_clipped_below = scaling.1.as_ref().is_some_and(Scaling::is_log)
-    && all_points
-      .iter()
-      .flatten()
-      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * y_span.abs());
+    && all_points.iter().flatten().any(|&(_, y)| {
+      y.is_finite() && y < y_data_min - 1e-9 * (y_data_max - y_data_min).abs()
+    });
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }

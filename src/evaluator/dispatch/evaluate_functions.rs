@@ -3298,20 +3298,24 @@ fn evaluate_function_call_ast_inner(
   // inside a Dynamic FrontEnd context, where a finite `UpdateInterval`
   // asks the front end to re-evaluate the enclosing `Dynamic` on a timer.
   if name == "Refresh" && !args.is_empty() {
-    let timed = args[1..].iter().any(|opt| {
-      matches!(
-        opt,
-        Expr::Rule { pattern, replacement }
-          | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval")
-            && evaluate_expr_to_expr(replacement)
-              .ok()
-              .and_then(|t| crate::functions::math_ast::try_eval_to_f64(&t))
-              .is_some_and(f64::is_finite)
-      )
+    let interval = args[1..].iter().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval") => {
+        evaluate_expr_to_expr(replacement)
+          .ok()
+          .and_then(|t| crate::functions::math_ast::try_eval_to_f64(&t))
+          .filter(|t| t.is_finite())
+      }
+      _ => None,
     });
-    if timed {
-      crate::request_timed_refresh();
+    if let Some(seconds) = interval {
+      crate::request_timed_refresh(seconds.max(0.0));
     }
     return Ok(args[0].clone());
   }

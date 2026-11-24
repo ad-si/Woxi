@@ -2799,8 +2799,10 @@ impl WoxiStudio {
       .any(|e| e.manipulate_state.as_ref().is_some_and(|s| s.wants_tick()))
     {
       subs.push(
-        iced::time::every(std::time::Duration::from_millis(ANIM_INTERVAL_MS))
-          .map(Message::ManipulateAnimationTick),
+        iced::time::every(std::time::Duration::from_millis(
+          manipulate::ANIM_INTERVAL_MS,
+        ))
+        .map(Message::ManipulateAnimationTick),
       );
     }
     #[cfg(target_os = "macos")]
@@ -4375,8 +4377,6 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
 /// immediately, so the thumb and value label track the cursor without lag.
 const MANIPULATE_THROTTLE_MS: u64 = 16;
 
-use manipulate::ANIM_INTERVAL_MS;
-
 /// Largest box a radio-bar choice icon is drawn in; a bigger picture is
 /// scaled down to fit, keeping its aspect ratio.
 const RADIO_ICON_MAX: (f32, f32) = (160.0, 48.0);
@@ -4445,11 +4445,13 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// is checked, and the display label a toggle sends (the other choice).
 ///
 /// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
-/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`).
-/// An explicit `ControlType -> Checkbox` over any two choices (`{1, 0}`) is
-/// a checkbox too, following `Checkbox[x, {v1, v2}]`: the first choice is
-/// unchecked and the second checked. While the bound value is none of the
-/// choices (`has_overflow`) the box shows unchecked.
+/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`),
+/// and stays checked on `True` when `ControlType -> Checkbox` is spelled out
+/// (`{color, {True, False}, ControlType -> Checkbox}`), as the FrontEnd
+/// draws it. An explicit `ControlType -> Checkbox` over any other two
+/// choices (`{1, 0}`, `{None, All}`) follows `Checkbox[x, {v1, v2}]`: the
+/// first choice is unchecked and the second checked. While the bound value
+/// is none of the choices (`has_overflow`) the box shows unchecked.
 fn discrete_checkbox_state(
   values: &[String],
   value_labels: &[String],
@@ -4458,7 +4460,10 @@ fn discrete_checkbox_state(
   other_type: bool,
   has_overflow: bool,
 ) -> Option<(bool, Option<String>)> {
-  if forced_checkbox && value_labels.len() == 2 {
+  if forced_checkbox
+    && value_labels.len() == 2
+    && !renders_as_checkbox(values, value_labels)
+  {
     let checked = !has_overflow && current_index == 1;
     return Some((checked, value_labels.get(usize::from(!checked)).cloned()));
   }
@@ -5111,6 +5116,10 @@ fn render_manipulate_widget<'a>(
           ) && !*popup)
         {
           let is_vertical = *is_vertical;
+          // A `Background -> color` option paints the faces the way it
+          // paints a `Button`'s (a selected segment keeps the accent so the
+          // current choice still reads as selected).
+          let face = state.control_face.get(ctrl_idx).copied().flatten();
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = !has_overflow && i == *current_index;
@@ -5134,8 +5143,16 @@ fn render_manipulate_widget<'a>(
                 },
               };
             let mut btn = button(btn_content).padding([3, 10]).style(
-              move |theme: &Theme, status| {
-                setter_button_style(
+              move |theme: &Theme, status| match face {
+                Some(rgb) if !is_selected => colored_button_style(
+                  rgb,
+                  if enabled {
+                    status
+                  } else {
+                    button::Status::Active
+                  },
+                ),
+                _ => setter_button_style(
                   theme,
                   status,
                   is_selected,
@@ -5143,7 +5160,7 @@ fn render_manipulate_widget<'a>(
                   count,
                   enabled,
                   is_vertical,
-                )
+                ),
               },
             );
             if enabled {
@@ -11396,6 +11413,60 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Graphics of translated/rotated pieces should render"
     );
   }
+  /// A body that sets a force diagram and a few lines of text in one
+  /// styled `Grid` inside a fixed-size `Pane`, with `"\n"` spacer rows
+  /// between the lines and an italic label whose subscript is written in
+  /// box notation. The automatically sized diagram is drawn at the half
+  /// size of a grid item (it filled the pane's whole width and pushed the
+  /// last lines out of the pane), each spacer row is one line high, and
+  /// the label's subscript stays one `tspan` deep so resvg shifts it.
+  /// Independently written, not copied from any specific Demonstration.
+  #[test]
+  fn manipulate_styled_grid_in_pane_fits_diagram_and_lines() {
+    let code = r#"Manipulate[
+      Pane[Style[Grid[{
+        {Graphics[{Rectangle[{0, 0}, {2, 1}], Red, Arrow[{{1, 0.5}, {1, 2}}],
+          Text[Row[{Style["\!\(\*SubscriptBox[\(P\), \(r\)]\)", Italic],
+            " = ", k}], {1, 2.3}]}, PlotRange -> {{-1, 3}, {-0.5, 2.6}}]},
+        {"\n"}, {Row[{"first ", k}]}, {"\n"}, {Row[{"second ", 2 k}]},
+        {"\n"}, {Row[{"third ", 3 k}]}}], 16], {380, 360},
+        Alignment -> {Center, Center}],
+      {{k, 2, "k"}, 0, 5, Appearance -> "Labeled"}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a slider row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let svg = state.current_svg().expect("the result is drawn");
+    // The diagram is the grid's first item, drawn 180 wide.
+    let item_width: f64 = svg
+      .split("<svg x=")
+      .nth(1)
+      .and_then(|part| part.split("width=\"").nth(1))
+      .and_then(|rest| rest.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .expect("a laid-out grid item");
+    assert_eq!(item_width, 180.0, "{svg}");
+    // Every line of text lies inside the pane.
+    let ys: Vec<f64> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .filter(|p| {
+        p.contains("first") || p.contains("second") || p.contains("third")
+      })
+      .filter_map(|p| p.split("y=\"").nth(1)?.split('"').next()?.parse().ok())
+      .collect();
+    assert_eq!(ys.len(), 3, "{svg}");
+    assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
+    // The label's subscript is shifted within one `tspan`.
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
   /// `TraditionalForm` at a large size, in a fixed-size `Pane`. The widget
@@ -12969,6 +13040,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     state.advance_animation();
     assert_eq!(values(&state), vec![3.0, 3.0]);
     assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  #[test]
+  fn play_pause_slider_advances_at_its_animation_rate() {
+    // A slider asking for a play/pause button sits paused; once played, each
+    // tick moves it by `AnimationRate` × the tick length, not by its (tiny)
+    // step size.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[t, {t, 0., 1000., 0.001, AnimationRate -> 5, \
+       AppearanceElements -> \"PlayPauseButton\"}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated);
+    assert!(!state.playing, "the play/pause button starts paused");
+    assert!(!state.wants_tick());
+    state.toggle_play();
+    assert!(state.wants_tick());
+    state.tick();
+    state.tick();
+    let current = match &state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current,
+      other => panic!("expected a slider row, got {other:?}"),
+    };
+    let expected = 2.0 * 5.0 * manipulate::ANIM_INTERVAL_MS as f64 / 1000.0;
+    assert!(
+      (current - expected).abs() < 1e-9,
+      "expected {expected}, got {current}"
+    );
   }
 
   #[test]
@@ -19532,6 +19632,40 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn popup_menu_choice_labels_read_dynamic_lookups_in_hidden_state() {
+    use woxi::functions::graphics::DisplayNode;
+    // A display-area `PopupMenu[Dynamic[v], {k -> Dynamic[k /. names]}]`
+    // whose labels look each value up in a hidden `ControlType -> None`
+    // rule list must show the looked-up names, not the lookup's code.
+    let code = "Manipulate[{v, w}, \
+      Row[{PopupMenu[Dynamic[v], {0 -> Dynamic[0 /. names], \
+        1 -> Dynamic[1 /. names], None -> Dynamic[None /. names]}], \
+      PopupMenu[Dynamic[w], {2 -> Dynamic[names[[2, 2]]], \
+        3 -> Dynamic[StringJoin[\"x\", 3 /. names]]}]}], \
+      {{names, {None -> \"Rest\", 0 -> \"P\", 1 -> \"Q\", 2 -> \"R\", \
+        3 -> \"S\"}}, ControlType -> None}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("popup Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    let labels: Vec<Vec<String>> = collect_popups(&state.display_trees)
+      .iter()
+      .map(|p| {
+        let DisplayNode::Popup { choices, .. } = p else {
+          panic!("expected a Popup leaf, got {p:?}");
+        };
+        choices.iter().map(|(_, l)| l.clone()).collect()
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        vec!["P".to_string(), "Q".to_string(), "Rest".to_string()],
+        vec!["P".to_string(), "xS".to_string()],
+      ]
+    );
+  }
+
+  #[test]
   fn gray_scott_manipulate_steps_and_resets() {
     // End-to-end regression for the "Gray-Scott Reaction-Diffusion"
     // Demonstration: Row-grouped SetterBars, a reset Button, a Trigger
@@ -25022,6 +25156,83 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
         false
       ),
       None
+    );
+  }
+
+  /// `ControlType -> Checkbox` spelled out over a `{True, False}` domain
+  /// still checks on `True`, whichever order the values are listed in, while
+  /// any other pair (`{None, All}`) keeps `Checkbox[x, {v1, v2}]`'s
+  /// positional reading. Regression: the explicit type made every pair
+  /// positional, so `{c, {True, False}, ControlType -> Checkbox}` showed
+  /// unchecked at its initial `True` and checked once switched to `False`.
+  #[test]
+  fn explicit_checkbox_over_boolean_choices_checks_on_true() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{c, m}, {c, {True, False}, ControlType -> Checkbox}, \
+       {m, {None, All}, ControlType -> Checkbox}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let states = |state: &manipulate::ManipulateState| {
+      state
+        .controls
+        .iter()
+        .map(|control| match control {
+          manipulate::ControlState::Discrete {
+            values,
+            value_labels,
+            current_index,
+            checkbox,
+            popup,
+            setter_bar,
+            overflow,
+            ..
+          } => {
+            assert!(*checkbox, "each control must be a checkbox");
+            discrete_checkbox_state(
+              values,
+              value_labels,
+              *current_index,
+              *checkbox,
+              *popup || *setter_bar,
+              overflow.is_some(),
+            )
+            .expect("draws as a checkbox")
+          }
+          other => panic!("unexpected control: {other:?}"),
+        })
+        .collect::<Vec<_>>()
+    };
+    // Initially `c = True` (checked) and `m = None` (unchecked).
+    assert_eq!(
+      states(&state),
+      vec![
+        (true, Some("False".to_string())),
+        (false, Some("All".to_string()))
+      ]
+    );
+    assert!(state.select_discrete(0, "False"));
+    assert!(state.select_discrete(1, "All"));
+    assert_eq!(
+      states(&state),
+      vec![
+        (false, Some("True".to_string())),
+        (true, Some("None".to_string()))
+      ]
+    );
+
+    // The `{False, True}` order checks on `True` as well.
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["False", "True"]),
+        &s(&["False", "True"]),
+        1,
+        true,
+        false,
+        false
+      ),
+      Some((true, Some("False".to_string())))
     );
   }
 
