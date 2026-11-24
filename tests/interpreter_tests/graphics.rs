@@ -2057,6 +2057,34 @@ mod graphics {
       );
     }
 
+    /// `Inset[obj]` with no position (or an `Automatic` one) is
+    /// `Inset[obj, Center]`: a styled label lands in the middle of the
+    /// picture. Regression: it went to `Text`'s default, the origin, which
+    /// put a card's big centered suit symbol on its corner.
+    #[test]
+    fn a_text_inset_without_position_is_centered() {
+      let text_xy = |position: &str| -> (f64, f64) {
+        let svg = export_svg(&format!(
+          "Graphics[{{Rectangle[{{0, 0}}, {{1, 1.5}}], \
+           Inset[Style[\"Q\", 40, Red]{position}]}}]"
+        ));
+        let attr = |name: &str| -> f64 {
+          svg
+            .split("<text")
+            .nth(1)
+            .and_then(|s| s.split(&format!(" {name}=\"")).nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("no text {name}: {svg}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      let centered = text_xy(", Scaled[{0.5, 0.5}]");
+      assert_eq!(text_xy(""), centered);
+      assert_eq!(text_xy(", Automatic"), centered);
+      assert_ne!(text_xy(", {0, 0}"), centered);
+    }
+
     /// A single-number inset size is the object's width; its height
     /// follows from the object's own aspect ratio. Regression: the number
     /// was used for both sides, so a tall picture was squeezed into a

@@ -8465,6 +8465,19 @@ fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
     args.iter().take_while(|e| !is_option(e)).collect();
   let mut text_args: Vec<Expr> =
     positional.iter().take(3).map(|e| (*e).clone()).collect();
+  // A missing or `Automatic` position is `Center`, the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`), not `Text`'s origin.
+  let center = || {
+    call(
+      "Scaled",
+      vec![Expr::List(vec![Expr::Real(0.5), Expr::Real(0.5)].into())],
+    )
+  };
+  match text_args.get(1) {
+    None if !text_args.is_empty() => text_args.push(center()),
+    Some(Expr::Identifier(a)) if a == "Automatic" => text_args[1] = center(),
+    _ => {}
+  }
   // `dirs` is either the pair `{{dx, dy}, {ex, ey}}` of the object's axis
   // directions or just the x direction `{dx, dy}`.
   let x_direction = match positional.get(4) {
