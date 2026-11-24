@@ -50871,15 +50871,51 @@ mod manipulate {
           *orientation,
           woxi::functions::graphics::ControlOrientation::Horizontal
         );
-        // Unlabeled control → a single upright run of the variable name.
+        // Unlabeled control → a single run of the variable name, italic
+        // because the name is one letter.
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
-        assert!(!label_runs[0].italic);
+        assert!(label_runs[0].italic);
         // {x, 0, 10} is all exact integers, so x stays exact throughout.
         assert!(!is_real);
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  /// An unlabeled control shows its variable the way the FrontEnd sets a
+  /// symbol: a one-letter name (Latin or Greek) in italics, a longer name
+  /// upright. Regression: every default label was upright, so `{θ, 0, 1}`
+  /// and `{μ, 0, 1}` sliders read `θ`/`μ` instead of `𝜃`/`𝜇`.
+  #[test]
+  fn spec_default_label_italic_for_single_letter_names() {
+    let expr = interpret_to_expr(
+      "Manipulate[{θ, μ, m1, speed, b}, {{θ, 0.5}, 0, 1}, {μ, 0, 1}, \
+       {{m1, 0.5}, 0, 1}, {speed, 0, 1}, {{b, 0.2}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let runs: Vec<(String, bool)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { label_runs, .. } => {
+          assert_eq!(label_runs.len(), 1, "{label_runs:?}");
+          (label_runs[0].text.clone(), label_runs[0].italic)
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      runs,
+      vec![
+        ("θ".to_string(), true),
+        ("μ".to_string(), true),
+        ("m1".to_string(), false),
+        ("speed".to_string(), false),
+        ("b".to_string(), true),
+      ]
+    );
   }
 
   fn first_continuous_label(code: &str) -> String {
