@@ -6230,6 +6230,18 @@ cylinder (`{x, -3, 3}, {y, -2, 2}`) has 17 at its upstream edge. Its seeding
 algorithm is not recoverable from the output, so Woxi's default sits between
 the two, and `StreamPoints` settings keep Wolfram's proportions to it.
 
+### `VectorPlot3D` lays its arrows out differently
+
+Woxi centers one arrow in each cell of an `n`×`n`×`n` grid
+(`VectorPoints -> n`), the longest `0.7 / n` of the box side. wolframscript
+samples a staggered lattice with spacing `1 / (2 (n - 1))` of the side and
+drops some of its points (4, 18, 49, 100, 221 arrows for `n = 2 … 6` of a
+uniform field), its longest arrow `0.225, 0.18, 0.164, 0.155, 0.15` of the
+side for `n = 2 … 6` and `0.9 / n` from there on, and widens the range (to
+`±1.222` for `{x, -1, 1}` at `n = 4`). Both size the heads
+(`Arrowheads[{{0.3 L, 1.}}]`) and tubes (`L / 20`) by the longest arrow `L`,
+so only the layout and `L` differ.
+
 ### `StreamPlot3D` picks different extra seeds past the coarse lattice
 
 `StreamPlot3D[…, StreamPoints -> n]` seeds a `k`×`k`×`k` lattice over the

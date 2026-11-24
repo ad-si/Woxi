@@ -14724,9 +14724,11 @@ mod plot3d {
            Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
         ))
       };
+      // wolframscript draws the sphere 337.5 px across: the view angle
+      // spans the box padded by `Scaled[0.05]` on each side.
       let narrow = sphere(", ViewAngle -> 18 Degree");
       assert!(
-        (narrow.0 - 378.0).abs() < 8.0 && (narrow.1 - 378.0).abs() < 8.0,
+        (narrow.0 - 337.5).abs() < 8.0 && (narrow.1 - 337.5).abs() < 8.0,
         "expected the sphere to nearly fill the frame, got {narrow:?}"
       );
       let wide = sphere(", ViewAngle -> 36 Degree");
@@ -75954,26 +75956,24 @@ mod graphics3d_review_ticks_heads_framing {
     }
     assert!(checked > 3, "{checked}");
   }
-  /// VectorPlot3D's arrows carry wolframscript's `Arrowheads[0.0675]`
-  /// and tube radius (0.0225 in a range 2 wide), and their heads are
-  /// drawn as smooth shaded cones: their faces are filled with gradients.
+  /// VectorPlot3D's arrows are sized as wolframscript's are, by the longest
+  /// arrow `L`: `Arrowheads[{{0.3 L, 1.}}]` and tubes `L / 20` thick (in a
+  /// range 2 wide that is a third of the head size; wolframscript gives
+  /// `0.0675` and `0.0225` for `VectorPoints -> 2`). Their heads are drawn
+  /// as smooth shaded cones: their faces are filled with gradients.
   #[test]
   fn vector_plot_3d_heads_are_shaded_cones() {
     clear_state();
     let g = "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
              VectorPoints -> 2]";
     assert_eq!(
-      interpret(&format!("Union[Cases[{g}, Arrowheads[_], Infinity]]"))
-        .unwrap(),
-      "{Arrowheads[0.0675]}"
-    );
-    assert_eq!(
       interpret(&format!(
-        "AllTrue[Cases[{g}, Tube[_, r_] :> r, Infinity], \
-         Abs[# - 0.0225] < 10^-9 &]"
+        "s = Union[Cases[{g}, Arrowheads[{{{{h_, 1.}}}}, ___] :> h, \
+         Infinity]]; r = Union[Cases[{g}, Tube[_, r_] :> r, Infinity]]; \
+         {{Length[s], Length[r], Abs[First[r] - First[s] / 3] < 10^-9}}"
       ))
       .unwrap(),
-      "True"
+      "{1, 1, True}"
     );
     let svg = export_svg(g);
     assert!(svg.matches("<linearGradient").count() > 50, "{svg}");

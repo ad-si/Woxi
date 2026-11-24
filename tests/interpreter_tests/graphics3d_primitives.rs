@@ -282,7 +282,8 @@ mod solids {
 
   /// The solid head of `Arrow[Tube[…]]` is sized by the scene's box (the
   /// diagonal of its `PlotRange`), not by the arrow itself: a short axis
-  /// arrow in a large scene keeps a visible head.
+  /// arrow in a large scene keeps a visible head. The head is drawn
+  /// without a rim round its base.
   #[test]
   fn arrow_tube_head_is_sized_by_the_scene() {
     let d = 0.05 * 3f64.sqrt() * 4.0;
@@ -293,7 +294,7 @@ mod solids {
       )),
       svg(&format!(
         "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
-         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+         EdgeForm[], Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
         b = 1.0 - d,
         r = 0.22 * d
       ))
@@ -351,7 +352,7 @@ mod solids {
       )),
       svg(&format!(
         "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
-         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+         EdgeForm[], Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
         b = 1.0 - len,
         r = 0.22 * len
       ))
@@ -866,8 +867,11 @@ mod framing {
     assert!(close(span("None"), 0.7), "{}", span("None"));
     assert!(close(span("-2"), 7.0 / 8.0), "{}", span("-2"));
     assert!(close(span("2"), 7.0 / 12.0), "{}", span("2"));
+    // `Scaled[0.1]` is a tenth of the *padded* width: 20 / 0.8 = 25
+    // across (wolframscript's `AbsoluteOptions` of a unit `Cuboid[]` under
+    // `PlotRangePadding -> Scaled[0.1]` reports a padding of 0.125).
     assert!(
-      close(span("Scaled[0.1]"), 7.0 / 12.0),
+      close(span("Scaled[0.1]"), 7.0 / 12.5),
       "{}",
       span("Scaled[0.1]")
     );
@@ -1487,7 +1491,7 @@ mod ticks {
     let top_face: Vec<usize> = lines
       .iter()
       .enumerate()
-      .filter(|(_, l)| l.starts_with("<polygon points=\"180.0,6.0 "))
+      .filter(|(_, l)| l.starts_with("<polygon points=\"180.0,6.1 "))
       .map(|(i, _)| i)
       .collect();
     assert_eq!(top_face.len(), 2, "{s}");
@@ -1513,8 +1517,8 @@ mod ticks {
       .iter()
       .position(|l| {
         // Its fill may reach across the internal cut by extra corners.
-        l.starts_with("<polygon points=\"134.0,170.5 ")
-          && l.contains(" 247.1,32.4 245.5,196.0\"")
+        l.starts_with("<polygon points=\"134.1,170.5 ")
+          && l.contains(" 247.0,32.6 245.4,196.0\"")
       })
       .expect("hiding face");
     assert!(last_red < hiding_face, "{s}");
@@ -2780,7 +2784,9 @@ mod per_axis_options {
   use super::*;
 
   // `PlotRange -> {{x0, x1}, All, All}` pins only the first axis; the
-  // others keep the extent of the contents.
+  // others keep the extent of the contents, padded like any automatic
+  // range (wolframscript's `AbsoluteOptions` reports a padding of
+  // `{{0, 0}, {1/24, 1/24}, {1/16, 1/16}}`).
   #[test]
   fn plot_range_mixing_intervals_and_all() {
     for spec in ["{{0, 4}, All, All}", "{{0, 4}, Automatic, Full}"] {
@@ -2791,7 +2797,8 @@ mod per_axis_options {
         )),
         svg(
           "Graphics3D[Line[{{1, 0, 0}, {2, 2, 3}}], Axes -> True, \
-           PlotRange -> {{0, 4}, {0, 2}, {0, 3}}]"
+           PlotRange -> {{0, 4}, {0, 2}, {0, 3}}, \
+           PlotRangePadding -> {0, Scaled[0.02], Scaled[0.02]}]"
         ),
         "{spec}"
       );
@@ -3660,5 +3667,233 @@ mod surface_outlines_and_meshes {
     };
     let (coarse, fine) = (count(0), count(1));
     assert!(fine >= 3 * coarse, "{coarse} vs {fine}");
+  }
+}
+
+/// `PlotRangePadding`: Wolfram's 3D plots pad an automatic range by
+/// `Scaled[0.02]` (`ParametricPlot3D` by `Scaled[0.05]`), measured as a
+/// fraction of the *padded* width, and `Scaled` coordinates are fractions
+/// of that padded box.
+mod range_padding {
+  use super::*;
+
+  /// The `<polygon>` vertices of an SVG, as `(x, y)` pairs.
+  fn polygon_points(svg: &str) -> Vec<(f64, f64)> {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .flat_map(|s| {
+        s.split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .filter_map(|p| {
+            let (x, y) = p.split_once(',')?;
+            Some((x.parse().ok()?, y.parse().ok()?))
+          })
+          .collect::<Vec<_>>()
+      })
+      .collect()
+  }
+
+  /// The end points of an SVG's `<line>` elements.
+  fn line_ends(svg: &str) -> Vec<(f64, f64)> {
+    let attr = |tag: &str, name: &str| -> Option<f64> {
+      tag
+        .split(&format!(" {name}=\""))
+        .nth(1)?
+        .split('"')
+        .next()?
+        .parse()
+        .ok()
+    };
+    svg
+      .split("<line")
+      .skip(1)
+      .flat_map(|s| {
+        let tag = s.split('>').next().unwrap();
+        [
+          attr(tag, "x1").zip(attr(tag, "y1")),
+          attr(tag, "x2").zip(attr(tag, "y2")),
+        ]
+      })
+      .flatten()
+      .collect()
+  }
+
+  #[test]
+  fn plot3d_spells_out_its_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PlotRangePadding /. Options[Plot3D[x y, {x, 0, 1}, {y, 0, 1}, \
+         PlotPoints -> 3]]"
+      )
+      .unwrap(),
+      "{Scaled[0.02], Scaled[0.02], Scaled[0.02]}"
+    );
+    // An explicit vertical range is not padded.
+    assert_eq!(
+      interpret(
+        "PlotRangePadding /. Options[Plot3D[x y, {x, 0, 1}, {y, 0, 1}, \
+         PlotRange -> {0, 2}, PlotPoints -> 3]]"
+      )
+      .unwrap(),
+      "{Scaled[0.02], Scaled[0.02], Automatic}"
+    );
+  }
+
+  /// The box reaches past the surface, so a tick at the extreme of the
+  /// data (`-1.0` for `Sin[x + y^2]`, whose minimum is just above -1) still
+  /// falls on the box. Regression: the box ended at the data's extent and
+  /// the tick was dropped.
+  #[test]
+  fn plot3d_box_keeps_the_extreme_ticks() {
+    let s = svg(
+      "Plot3D[Sin[x + y^2], {x, -3, 3}, {y, -2, 2}, PlotPoints -> 20, \
+       MaxRecursion -> 1]",
+    );
+    let labels: Vec<&str> = s
+      .split("</text>")
+      .filter_map(|t| t.rsplit('>').next())
+      .collect();
+    assert!(
+      labels
+        .iter()
+        .any(|l| l.ends_with("1.0") && !l.starts_with('1')),
+      "{labels:?}"
+    );
+  }
+
+  /// A flat surface at height `c` is boxed in `{c - |c|, c + |c|}`, as in
+  /// wolframscript (`{0, 2}` for `c = 1`). Regression: `{c - 1/2, c + 1/2}`.
+  #[test]
+  fn plot3d_flat_surface_range() {
+    let s = svg("Plot3D[1, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 3]");
+    let labels: Vec<&str> = s
+      .split("</text>")
+      .filter_map(|t| t.rsplit('>').next())
+      .collect();
+    assert!(
+      labels.contains(&"2.0") && labels.contains(&"1.5"),
+      "{labels:?}"
+    );
+  }
+
+  #[test]
+  fn field_and_slice_plots_pad_their_explicit_range() {
+    clear_state();
+    for plot in [
+      "SliceDensityPlot3D[x + y + z, \"CenterPlanes\", {x, -1, 1}, \
+       {y, -1, 1}, {z, -1, 1}, PlotPoints -> 5]",
+      "StreamPlot3D[{-y, x, 0.2}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       StreamPoints -> 4]",
+      "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       VectorPoints -> 3]",
+    ] {
+      assert_eq!(
+        interpret(&format!("PlotRangePadding /. Options[{plot}]")).unwrap(),
+        "Scaled[0.02]",
+        "{plot}"
+      );
+    }
+  }
+
+  #[test]
+  fn parametric_plot3d_pads_its_surface_by_five_percent() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PlotRangePadding /. Options[ParametricPlot3D[{u, v, u v}, \
+         {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3]]"
+      )
+      .unwrap(),
+      "Scaled[0.05]"
+    );
+  }
+
+  /// `Scaled[{0, 0, 0}]` … `Scaled[{1, 1, 0}]` is the floor of the padded
+  /// box: its corners are the corners of the drawn box. Regression: they
+  /// were fractions of the unpadded range, inside the box.
+  #[test]
+  fn scaled_points_are_fractions_of_the_padded_box() {
+    let s = svg(
+      "Graphics3D[{Cuboid[], Polygon[{Scaled[{0, 0, 0}], \
+       Scaled[{1, 0, 0}], Scaled[{1, 1, 0}], Scaled[{0, 1, 0}]}]}, \
+       Axes -> False]",
+    );
+    let corners = line_ends(&s);
+    let on_box_corner = |p: &(f64, f64)| {
+      corners
+        .iter()
+        .any(|c| (c.0 - p.0).abs() < 0.2 && (c.1 - p.1).abs() < 0.2)
+    };
+    let mut hits: Vec<(i64, i64)> = polygon_points(&s)
+      .iter()
+      .filter(|p| on_box_corner(p))
+      .map(|p| (p.0.round() as i64, p.1.round() as i64))
+      .collect();
+    hits.sort();
+    hits.dedup();
+    assert!(hits.len() >= 4, "{hits:?}\n{s}");
+  }
+
+  /// A 3D bar chart's invisible base slab is 0.024 high whatever the
+  /// values. Regression: it grew with the tallest bar.
+  #[test]
+  fn bar_chart3d_base_slab_is_fixed_height() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[BarChart3D[{10, 20}], Cuboid[{_, _, z0_}, {_, _, z1_}] :> \
+         {z0, z1}, Infinity]"
+      )
+      .unwrap(),
+      "{{0, 0.024}}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[BarChart3D[{-5, 2}], Cuboid[{_, _, z0_}, {_, _, z1_}] :> \
+         {z0, z1}, Infinity]"
+      )
+      .unwrap(),
+      "{{-0.02, 0.024}}"
+    );
+  }
+
+  /// `RectangleChart3D` stands its blocks on the same backdrop as
+  /// `BarChart3D`: a beveled floor and back wall in `Scaled` coordinates,
+  /// over the invisible base slab. Regression: it had neither.
+  #[test]
+  fn rectangle_chart3d_has_the_chart_backdrop() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = RectangleChart3D[{{1, 2, 3}, {2, 1, 2}, {3, 3, 1}}]; \
+         {Length[Cases[g, Polygon[{__Scaled}, ___], Infinity]], \
+         Cases[g, Cuboid[a_, b_] :> {a, b}, Infinity]}"
+      )
+      .unwrap(),
+      "{12, {{{-0.30970000000000003, -0.75, 0}, {6.5037, 3.75, 0.024}}}}"
+    );
+  }
+
+  /// `VectorPlot3D` sizes its heads as Wolfram does: `Arrowheads` of `0.3`
+  /// times the longest arrow (as a fraction of the box side) and tubes a
+  /// twentieth of that arrow thick, drawn by the `Arrow[Tube[…]]` renderer.
+  #[test]
+  fn vector_plot3d_arrowheads_follow_the_longest_arrow() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> 4]; \
+         {Max[Abs[Cases[g, Arrowheads[{{s_, _}}, ___] :> s, Infinity] - \
+         0.0525]] < 10^-9, Max[Abs[Cases[g, Tube[_, r_] :> r, Infinity] - \
+         0.0175]] < 10^-9, Count[g, CapForm[\"Butt\"], Infinity]}"
+      )
+      .unwrap(),
+      "{True, True, 1}"
+    );
   }
 }

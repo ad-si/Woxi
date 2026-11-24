@@ -2553,12 +2553,11 @@ fn parse_dependent_iterator(
 fn generate_mesh_lines(
   grid: &[Vec<f64>],
   grid_n: usize,
-  z_lo: f64,
-  z_hi: f64,
-  z_range: f64,
   mesh_mode: MeshMode,
   camera: &Camera,
-  half: [f64; 3],
+  // The grid point `(i, j)` at height `z`, in the normalized box (the
+  // height clamped to the plotted range).
+  at: &dyn Fn(usize, usize, f64) -> Point3D,
 ) -> Vec<MeshLine> {
   let step = match mesh_mode {
     MeshMode::Default => MESH_STEP,
@@ -2566,14 +2565,6 @@ fn generate_mesh_lines(
     MeshMode::All => return Vec::new(),
     MeshMode::None => return Vec::new(),
   };
-
-  let nx = |ii: usize| -> f64 {
-    (ii as f64 / grid_n as f64) * 2.0 * half[0] - half[0]
-  };
-  let ny = |jj: usize| -> f64 {
-    (jj as f64 / grid_n as f64) * 2.0 * half[1] - half[1]
-  };
-  let nz = |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * half[2] - half[2] };
 
   let mut lines = Vec::new();
 
@@ -2583,19 +2574,7 @@ fn generate_mesh_lines(
       let z0 = grid[i][j];
       let z1 = grid[i + 1][j];
       if z0.is_finite() && z1.is_finite() {
-        let cz0 = z0.clamp(z_lo, z_hi);
-        let cz1 = z1.clamp(z_lo, z_hi);
-        let p0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(cz0),
-        };
-        let p1 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(cz1),
-        };
-        lines.push(mesh_segment(p0, p1, camera));
+        lines.push(mesh_segment(at(i, j, z0), at(i + 1, j, z1), camera));
       }
     }
   }
@@ -2606,19 +2585,7 @@ fn generate_mesh_lines(
       let z0 = grid[i][j];
       let z1 = grid[i][j + 1];
       if z0.is_finite() && z1.is_finite() {
-        let cz0 = z0.clamp(z_lo, z_hi);
-        let cz1 = z1.clamp(z_lo, z_hi);
-        let p0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(cz0),
-        };
-        let p1 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(cz1),
-        };
-        lines.push(mesh_segment(p0, p1, camera));
+        lines.push(mesh_segment(at(i, j, z0), at(i, j + 1, z1), camera));
       }
     }
   }
@@ -2747,6 +2714,11 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` fixes the horizontal
+  // range too, which is then not padded.
+  let mut xy_range_explicit = false;
+  // `PlotRangePadding -> spec`; `None` is `Automatic`.
+  let mut range_padding: Option<[(RangePad, RangePad); 3]> = None;
   // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
   // automatic vertical range clips outliers off.
   let mut keep_z_outliers = false;
@@ -2873,9 +2845,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               y_max = y_max.min(yr.1);
             }
             z_clip = Some(zr);
+            xy_range_explicit = true;
           } else {
             z_clip = parse_z_only_range(replacement);
           }
+        }
+        Expr::Identifier(name) if name == "PlotRangePadding" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          range_padding = parse_range_padding_3d(&value);
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
@@ -3067,24 +3045,49 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
-  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
-    1.0
-  } else {
-    z_hi - z_lo
+
+  // The box spans the plotted range widened by `PlotRangePadding`: an
+  // automatic range gets `Scaled[0.02]` on each side, an explicit one
+  // none (Wolfram returns `{Scaled[0.02], Scaled[0.02], Automatic}` under
+  // `PlotRange -> {z0, z1}`). The surface sits inside the box, so the
+  // ticks at its extremes fall on the box instead of past its edge.
+  let box_range: [(f64, f64); 3] = {
+    let pads =
+      range_padding.unwrap_or([(RangePad::Automatic, RangePad::Automatic); 3]);
+    let explicit = [xy_range_explicit, xy_range_explicit, z_clip.is_some()];
+    // A flat surface at height `c` sits in the middle of `{c - |c|,
+    // c + |c|}` (`{-1, 1}` for `c = 0`), as in wolframscript.
+    let z_base = if (z_hi - z_lo).abs() < 1e-15 {
+      let half = if z_lo == 0.0 { 1.0 } else { z_lo.abs() };
+      (z_lo - half, z_hi + half)
+    } else {
+      (z_lo, z_hi)
+    };
+    let base = [(x_min, x_max), (y_min, y_max), z_base];
+    std::array::from_fn(|d| {
+      let (lo, hi) = padded_axis_range(
+        base[d],
+        pads[d].0.resolve(explicit[d]),
+        pads[d].1.resolve(explicit[d]),
+      );
+      if hi > lo { (lo, hi) } else { base[d] }
+    })
+  };
+  // A data coordinate along axis `d`, in the normalized box.
+  let box_coord = |d: usize, v: f64| -> f64 {
+    let (lo, hi) = box_range[d];
+    (v - lo) / (hi - lo) * 2.0 * box_half[d] - box_half[d]
   };
 
   // Lights placed at scene coordinates (`{"Point", c, {x, y, z}}`) follow
   // the data into the normalized box the surface is drawn in.
   {
-    let sx = 2.0 * box_half[0] / (x_max - x_min);
-    let sy = 2.0 * box_half[1] / (y_max - y_min);
-    let sz = 2.0 * box_half[2] / z_range;
-    scene.frame.scale = [sx, sy, sz];
-    scene.frame.offset = [
-      -box_half[0] - x_min * sx,
-      -box_half[1] - y_min * sy,
-      -box_half[2] - z_lo * sz,
-    ];
+    let scale: [f64; 3] = std::array::from_fn(|d| {
+      2.0 * box_half[d] / (box_range[d].1 - box_range[d].0)
+    });
+    scene.frame.scale = scale;
+    scene.frame.offset =
+      std::array::from_fn(|d| -box_half[d] - box_range[d].0 * scale[d]);
   }
 
   // Phase 2: Build triangles using the shared z range
@@ -3375,7 +3378,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
       })
     };
-    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    let (names_axes, names_ratios, names_padding) =
+      (names("Axes"), names("BoxRatios"), names("PlotRangePadding"));
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
@@ -3387,18 +3391,35 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       ));
     }
+    // The padding the picture was drawn with, as Wolfram spells it out:
+    // `Scaled[0.02]` for each automatic range, `Automatic` (none) for an
+    // explicit one.
+    if !names_padding {
+      let pad = |explicit: bool| {
+        if explicit {
+          id_expr("Automatic")
+        } else {
+          call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING))
+        }
+      };
+      structure_args.push(rule_expr(
+        id_expr("PlotRangePadding"),
+        Expr::List(
+          vec![
+            pad(xy_range_explicit),
+            pad(xy_range_explicit),
+            pad(xy_range_explicit || z_clip.is_some()),
+          ]
+          .into(),
+        ),
+      ));
+    }
     call("Graphics3D", structure_args)
   };
 
-  let nx = |x: f64| -> f64 {
-    (x - x_min) / (x_max - x_min) * 2.0 * box_half[0] - box_half[0]
-  };
-  let ny = |y: f64| -> f64 {
-    (y - y_min) / (y_max - y_min) * 2.0 * box_half[1] - box_half[1]
-  };
-  let nz = |z: f64| -> f64 {
-    ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * box_half[2] - box_half[2]
-  };
+  let nx = |x: f64| -> f64 { box_coord(0, x) };
+  let ny = |y: f64| -> f64 { box_coord(1, y) };
+  let nz = |z: f64| -> f64 { box_coord(2, z.clamp(z_lo, z_hi)) };
   let to_box = |p: [f64; 3]| Point3D {
     x: nx(p[0]),
     y: ny(p[1]),
@@ -3793,9 +3814,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         None => grid,
       };
-      let mut lines = generate_mesh_lines(
-        grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera, box_half,
-      );
+      let mut lines =
+        generate_mesh_lines(grid, grid_n, mesh_mode, &camera, &|i, j, z| {
+          to_box([grid_x(i), grid_y(j), z])
+        });
       // A mesh line leaving the `RegionFunction`'s region runs on to the
       // region's edge, where the surface was cut, instead of stopping at
       // the last sample inside it.
@@ -3917,14 +3939,6 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Finalize z range for axis labels
-  // z_lo/z_hi already account for PlotRange and flat-range handling
-  let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
-    (z_lo - 0.5, z_hi + 0.5)
-  } else {
-    (z_lo, z_hi)
-  };
-
   // Painter's algorithm: sort back-to-front (largest depth first)
   all_triangles.sort_by(|a, b| {
     b.depth
@@ -3938,9 +3952,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None,
     args[3..].iter().any(|o| matches!(o, Expr::Rule { pattern, replacement } if matches!(&**pattern, Expr::Identifier(n) if n == "PlotTheme") && matches!(&**replacement, Expr::String(t) if t == "Marketing"))),
     &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_axis_min, z_axis_max),
+    box_range[0],
+    box_range[1],
+    box_range[2],
     svg_width,
     svg_height,
     full_width,
@@ -5901,15 +5915,6 @@ pub(crate) fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
 /// Grid resolution for VectorPlot3D (N x N x N sample points).
 const VECTOR3D_GRID: usize = 7;
 
-/// The radius of `VectorPlot3D`'s arrow tubes as a fraction of the longest
-/// side of the plot range: wolframscript's `Arrow[Tube[…, 0.0225]]` in a
-/// range 2 wide.
-const VECTOR3D_TUBE_RADIUS: f64 = 0.01125;
-
-/// `VectorPlot3D`'s `Arrowheads[{{0.0675, 1.}}]`: the length of an arrow's
-/// cone head as a fraction of the diagonal of the box.
-const VECTOR3D_HEAD_FRACTION: f64 = 0.0675;
-
 /// `VectorStyle`'s per-field directives: the color to draw that field's
 /// arrows in, and the `Thickness`/`Arrowheads` sizes (fractions of the
 /// image width, same convention 2D `Graphics` directives use), each `None`
@@ -6124,21 +6129,31 @@ fn vector_plot3d_solid(
   // In box units each axis spans 1 (BoxRatios {1, 1, 1}), so lengths are
   // measured on the box, then mapped back to data per axis.
   let cell = 1.0 / n as f64;
-  let length_per = 0.7 * cell / m_hi;
-  let radius =
-    VECTOR3D_TUBE_RADIUS * sides.iter().copied().fold(0.0_f64, f64::max);
-  let mut content = Vec::with_capacity(samples.len());
-  // What is drawn: each arrow as a hexagonal shaft (a light solid that
-  // keeps the picture small) and a cone head, in box units mapped back to
-  // the data.
-  let mut drawn = vec![call0("EdgeForm")];
-  let to_data = |q: [f64; 3]| {
-    [
-      x0 + q[0] * sides[0],
-      y0 + q[1] * sides[1],
-      z0 + q[2] * sides[2],
-    ]
-  };
+  let longest = 0.7 * cell;
+  let length_per = longest / m_hi;
+  // Wolfram sizes every arrow by the longest one, `L` (in box units): an
+  // `Arrowheads` size of `0.3 L` -- a fraction of the box's diagonal, so
+  // the head of the longest arrow covers about two thirds of it -- and a
+  // tube `L / 20` thick, both measured along the first axis
+  // (`InputForm[VectorPlot3D[…]]` gives `Arrowheads[{{0.0491, 1.}}]` and
+  // `Tube[…, 0.0164]` for arrows 0.327 long over `{x, -1, 1}`).
+  let head_size = 0.3 * longest;
+  let radius = longest / 20.0 * sides[0];
+  let mut content = vec![
+    call1("CapForm", Expr::String("Butt".to_string())),
+    call(
+      "Arrowheads",
+      vec![
+        Expr::List(
+          vec![Expr::List(
+            vec![Expr::Real(head_size), Expr::Real(1.0)].into(),
+          )]
+          .into(),
+        ),
+        rule_expr(id_expr("Appearance"), Expr::String("Projected".to_string())),
+      ],
+    ),
+  ];
   for (f, p, v, m) in &samples {
     let half = [0, 1, 2].map(|d| 0.5 * v[d] * length_per * sides[d]);
     let a = [p[0] - half[0], p[1] - half[1], p[2] - half[2]];
@@ -6175,80 +6190,8 @@ fn vector_plot3d_solid(
         ],
       )
     };
-    {
-      // Box units: every axis spans 1.
-      let ua = [0, 1, 2].map(|d| (a[d] - [x0, y0, z0][d]) / sides[d]);
-      let ub = [0, 1, 2].map(|d| (b[d] - [x0, y0, z0][d]) / sides[d]);
-      let axis = v_sub(ub, ua);
-      let len = v_len(axis);
-      if len > 1e-12 {
-        let u = v_scale(axis, 1.0 / len);
-        let helper = if u[0].abs() < 0.9 {
-          [1.0, 0.0, 0.0]
-        } else {
-          [0.0, 1.0, 0.0]
-        };
-        let e1 = {
-          let c = v_cross(u, helper);
-          v_scale(c, 1.0 / v_len(c))
-        };
-        let e2 = v_cross(u, e1);
-        let shaft_r = VECTOR3D_TUBE_RADIUS;
-        // Wolfram's head is `Arrowheads[0.0675]` of the box diagonal (√3
-        // box units) long, as slim as any `Arrow[Tube[…]]` head, and keeps
-        // its size on an arrow shorter than itself.
-        let head_len = (VECTOR3D_HEAD_FRACTION * 3f64.sqrt()).min(len);
-        let head_r = 0.22 * head_len;
-        let base = v_sub(ub, v_scale(u, head_len));
-        let ring = |c: [f64; 3], rad: f64| -> Vec<[f64; 3]> {
-          (0..6)
-            .map(|k| {
-              let t = std::f64::consts::PI / 3.0 * k as f64;
-              v_add(
-                c,
-                v_add(v_scale(e1, rad * t.cos()), v_scale(e2, rad * t.sin())),
-              )
-            })
-            .collect()
-        };
-        let poly = |pts: Vec<[f64; 3]>| {
-          call1(
-            "Polygon",
-            Expr::List(
-              pts
-                .into_iter()
-                .map(|q| real3(to_data(q)))
-                .collect::<Vec<_>>()
-                .into(),
-            ),
-          )
-        };
-        let (r0, r1) = (ring(ua, shaft_r), ring(base, shaft_r));
-        let mut parts = vec![color.clone()];
-        if head_len < len {
-          for k in 0..6 {
-            let k2 = (k + 1) % 6;
-            parts.push(poly(vec![r0[k], r0[k2], r1[k2], r1[k]]));
-          }
-          parts.push(poly(r0.clone()));
-        }
-        // The head is a smooth, shaded cone, as Wolfram draws it; the thin
-        // shaft stays a hexagonal prism, whose facets do not show.
-        let head_radius =
-          head_r * sides.iter().copied().fold(0.0_f64, f64::max);
-        parts.push(call(
-          "Cone",
-          vec![
-            Expr::List(vec![real3(to_data(base)), real3(to_data(ub))].into()),
-            Expr::Real(head_radius),
-          ],
-        ));
-        drawn.push(Expr::List(parts.into()));
-      }
-    }
     content.push(Expr::List(
       vec![
-        call1("Arrowheads", Expr::Real(VECTOR3D_HEAD_FRACTION)),
         color,
         call1(
           "Arrow",
@@ -6279,7 +6222,7 @@ fn vector_plot3d_solid(
     "VectorColorFunction",
     "PlotLegends",
   ];
-  let mut g_args = vec![Expr::List(drawn.into())];
+  let mut g_args = vec![Expr::List(content.into())];
   g_args.extend(opts.iter().filter(|o| {
     !matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(k) if PLOT_ONLY.contains(&k.as_str())))
@@ -6307,17 +6250,14 @@ fn vector_plot3d_solid(
       ),
     ));
   }
-  let picture = graphics3d_ast(&g_args)?;
-  let Expr::Graphics { svg, .. } = &picture else {
-    return Ok(picture);
-  };
-  // The symbolic form keeps Wolfram's `Arrow[Tube[…]]` primitives.
-  let mut structure_args = vec![Expr::List(content.into())];
-  structure_args.extend(g_args[1..].iter().cloned());
-  Ok(crate::plot3d_result_with_structure(
-    svg.clone(),
-    call("Graphics3D", structure_args),
-  ))
+  // Wolfram pads the explicit range like an automatic one.
+  if !named("PlotRangePadding") {
+    g_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING)),
+    ));
+  }
+  graphics3d_ast(&g_args)
 }
 
 /// VectorPlot3D[{vx, vy, vz}, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
@@ -7206,6 +7146,7 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Background",
     "BoxRatios",
     "PlotRange",
+    "PlotRangePadding",
   ];
   for o in opts {
     if let Expr::Rule { pattern, .. } = o
@@ -7217,6 +7158,11 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let defaults = [
     ("Axes", bool_expr(true)),
     ("BoxRatios", Expr::List(vec![Expr::Integer(1); 3].into())),
+    // Wolfram pads the explicit range like an automatic one.
+    (
+      "PlotRangePadding",
+      call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING)),
+    ),
     (
       "PlotRange",
       Expr::List(
@@ -7290,37 +7236,57 @@ fn parse_point3d_list_strict(expr: &Expr) -> Option<Vec<Point3D>> {
 const UNBOUNDED_3D_HEADS: [&str; 4] =
   ["InfiniteLine", "HalfLine", "InfinitePlane", "HalfPlane"];
 
-/// Does any primitive need the final scene bounds (Scaled coordinates or an unbounded object)?
-fn has_frame_dependent_3d(expr: &Expr) -> bool {
+/// Which primitives [`expand_frame_dependent_3d`] places: the points in
+/// `Scaled` coordinates or the unbounded objects.
+#[derive(Clone, Copy, PartialEq)]
+enum FrameDependent {
+  Scaled,
+  Unbounded,
+}
+
+fn is_scaled_point_3d(name: &str, args: &[Expr]) -> bool {
+  name == "Scaled"
+    && (args.len() == 1 || args.len() == 2)
+    && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3)
+}
+
+/// Does any primitive of the `kind` need the final scene bounds?
+fn has_frame_dependent_3d(expr: &Expr, kind: FrameDependent) -> bool {
   match expr {
-    Expr::List(items) => items.iter().any(has_frame_dependent_3d),
+    Expr::List(items) => items.iter().any(|i| has_frame_dependent_3d(i, kind)),
     Expr::FunctionCall { name, args } => {
-      (name == "Scaled"
-        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3))
-        || UNBOUNDED_3D_HEADS.contains(&name.as_str())
-        || args.iter().any(has_frame_dependent_3d)
+      let own = match kind {
+        FrameDependent::Scaled => is_scaled_point_3d(name, args),
+        FrameDependent::Unbounded => {
+          UNBOUNDED_3D_HEADS.contains(&name.as_str())
+        }
+      };
+      own || args.iter().any(|a| has_frame_dependent_3d(a, kind))
     }
     _ => false,
   }
 }
 
-/// Resolve Scaled points and replace every unbounded primitive with the `Line`/`Polygon` it
-/// shows inside `bounds`, leaving the rest of the scene untouched. One that
-/// misses the box entirely disappears (an empty `Line[{}]`), which is what
-/// Wolfram draws for it.
-fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
+/// Resolve the `Scaled` points against `bounds`, or replace every
+/// unbounded primitive with the `Line`/`Polygon` it shows inside `bounds`,
+/// leaving the rest of the scene untouched. One that misses the box
+/// entirely disappears (an empty `Line[{}]`), which is what Wolfram draws
+/// for it.
+fn expand_frame_dependent_3d(
+  expr: &Expr,
+  bounds: &[(f64, f64); 3],
+  kind: FrameDependent,
+) -> Expr {
   match expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|i| expand_frame_dependent_3d(i, bounds))
+        .map(|i| expand_frame_dependent_3d(i, bounds, kind))
         .collect::<Vec<_>>()
         .into(),
     ),
     Expr::FunctionCall { name, args }
-      if name == "Scaled"
-        && (args.len() == 1 || args.len() == 2)
-        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3) =>
+      if kind == FrameDependent::Scaled && is_scaled_point_3d(name, args) =>
     {
       let Some(fractions) = eval_vec3(&args[0]) else {
         return expr.clone();
@@ -7342,7 +7308,8 @@ fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
       )
     }
     Expr::FunctionCall { name, args }
-      if UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
+      if kind == FrameDependent::Unbounded
+        && UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
     {
       unbounded_3d_to_primitive(name, args, bounds).unwrap_or_else(empty_line3d)
     }
@@ -7350,7 +7317,7 @@ fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| expand_frame_dependent_3d(a, bounds))
+        .map(|a| expand_frame_dependent_3d(a, bounds, kind))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -7929,18 +7896,43 @@ fn disk_triangle_signed_area(a: [f64; 2], b: [f64; 2], radius: f64) -> f64 {
   }
 }
 
+/// The `Scaled` padding Wolfram gives every side of an automatic 3D range
+/// (`PlotRangePadding -> Automatic`), and the one `Plot3D`, `ListPlot3D`
+/// and most other 3D plots spell out in the graphic they return.
+pub(crate) const AUTOMATIC_RANGE_PADDING: f64 = 0.02;
+
+/// The wider `Scaled` padding `ParametricPlot3D` and `RevolutionPlot3D`
+/// give their automatic ranges.
+const PARAMETRIC_RANGE_PADDING: f64 = 0.05;
+
 /// One side's `PlotRangePadding`: an absolute length in plot coordinates,
 /// or `Scaled[s]`, a fraction of the axis' range.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum RangePad {
+pub(crate) enum RangePad {
   Absolute(f64),
   Scaled(f64),
+  /// `Automatic`: `Scaled[0.02]` around a range taken from the contents,
+  /// nothing around an explicit one (see [`RangePad::resolve`]).
+  Automatic,
+}
+
+impl RangePad {
+  /// The padding a side gets, `Automatic` decided by whether its axis'
+  /// range was given explicitly.
+  pub(crate) fn resolve(self, explicit_range: bool) -> RangePad {
+    match self {
+      RangePad::Automatic if explicit_range => RangePad::Absolute(0.0),
+      RangePad::Automatic => RangePad::Scaled(AUTOMATIC_RANGE_PADDING),
+      other => other,
+    }
+  }
 }
 
 /// A single `PlotRangePadding` value: a number, `Scaled[s]` or `None`.
 fn parse_range_pad(expr: &Expr) -> Option<RangePad> {
   match expr {
     Expr::Identifier(s) if s == "None" => Some(RangePad::Absolute(0.0)),
+    Expr::Identifier(s) if s == "Automatic" => Some(RangePad::Automatic),
     Expr::FunctionCall { name, args }
       if name == "Scaled" && args.len() == 1 =>
     {
@@ -7958,7 +7950,9 @@ fn parse_range_pad(expr: &Expr) -> Option<RangePad> {
 /// value pads every side alike, `{px, py, pz}` gives one per axis and each
 /// of those may itself be `{low, high}`. `Automatic` (or anything not
 /// understood) is `None`, keeping the default framing.
-fn parse_range_padding_3d(expr: &Expr) -> Option<[(RangePad, RangePad); 3]> {
+pub(crate) fn parse_range_padding_3d(
+  expr: &Expr,
+) -> Option<[(RangePad, RangePad); 3]> {
   let side_pair = |e: &Expr| match e {
     Expr::List(items) if items.len() == 2 => {
       Some((parse_range_pad(&items[0])?, parse_range_pad(&items[1])?))
@@ -7975,19 +7969,33 @@ fn parse_range_padding_3d(expr: &Expr) -> Option<[(RangePad, RangePad); 3]> {
   }
 }
 
-/// `range` widened by `pad_lo` below and `pad_hi` above. A negative
-/// padding that would turn the range inside out leaves it collapsed at
-/// the point where the two sides meet.
-fn padded_axis_range(
+/// `range` widened by `pad_lo` below and `pad_hi` above. A `Scaled[s]`
+/// side is `s` of the *padded* width, as in Wolfram (`AbsoluteOptions`
+/// of `Graphics3D[Cuboid[]]` reports `1/48` for the default
+/// `Scaled[0.02]`, not `1/50`). A negative padding that would turn the
+/// range inside out leaves it collapsed at the point where the two sides
+/// meet.
+pub(crate) fn padded_axis_range(
   (lo, hi): (f64, f64),
   pad_lo: RangePad,
   pad_hi: RangePad,
 ) -> (f64, f64) {
-  let width = hi - lo;
-  let length = |pad: RangePad| match pad {
+  // An unresolved `Automatic` side is left unpadded.
+  let absolute = |pad: RangePad| match pad {
     RangePad::Absolute(p) => p,
-    RangePad::Scaled(s) => s * width,
+    RangePad::Scaled(_) | RangePad::Automatic => 0.0,
   };
+  let scaled = |pad: RangePad| match pad {
+    RangePad::Scaled(s) => s,
+    RangePad::Absolute(_) | RangePad::Automatic => 0.0,
+  };
+  let free = 1.0 - scaled(pad_lo) - scaled(pad_hi);
+  let width = if free > 0.0 {
+    (hi - lo + absolute(pad_lo) + absolute(pad_hi)) / free
+  } else {
+    hi - lo
+  };
+  let length = |pad: RangePad| absolute(pad) + scaled(pad) * width;
   let (new_lo, new_hi) = (lo - length(pad_lo), hi + length(pad_hi));
   if new_hi >= new_lo {
     (new_lo, new_hi)
@@ -7995,6 +8003,47 @@ fn padded_axis_range(
     let meet = f64::midpoint(new_lo, new_hi);
     (meet, meet)
   }
+}
+
+/// The `PlotRangePadding` among a plot's options, `None` when it is not
+/// given (or not understood).
+fn range_padding_option(opts: &[Expr]) -> Option<[(RangePad, RangePad); 3]> {
+  opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRangePadding") =>
+    {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      parse_range_padding_3d(&value)
+    }
+    _ => None,
+  })
+}
+
+/// The box a 3D picture displays around the range `raw`: each side widened
+/// by its `PlotRangePadding` (or narrowed, when negative). `Automatic` is
+/// `Scaled[0.02]` around a range taken from the contents (measured on
+/// wolframscript's `Graphics3D[Cuboid[]]`) and nothing around an
+/// `explicit` one.
+fn displayed_box_3d(
+  raw: [(f64, f64); 3],
+  explicit: [bool; 3],
+  padding: Option<[(RangePad, RangePad); 3]>,
+) -> [(f64, f64); 3] {
+  let pads = padding.unwrap_or([(RangePad::Automatic, RangePad::Automatic); 3]);
+  std::array::from_fn(|d| {
+    padded_axis_range(
+      raw[d],
+      pads[d].0.resolve(explicit[d]),
+      pads[d].1.resolve(explicit[d]),
+    )
+  })
 }
 
 /// A box the unbounded primitives can be clipped to. A scene made only of
@@ -11204,11 +11253,16 @@ fn collect_3d_primitives_styled(
                 style,
                 prims,
               );
+              // The head is a smooth solid: no rim is drawn round its base
+              // (wolframscript's `VectorPlot3D` heads show none).
               prims.push(Primitive3D::Cone {
                 p1: base,
                 p2: tip,
                 radius: 0.22 * len,
-                style: style.clone(),
+                style: StyleState3D {
+                  edges: false,
+                  ..style.clone()
+                },
               });
             }
             None => collect_3d_primitives(&args[0], style, prims),
@@ -15260,14 +15314,53 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // each of them replaced by the `Line`/`Polygon` it draws there. Clipping
   // to exactly those bounds is what keeps an unbounded object from
   // widening the range it was measured against.
-  if has_frame_dependent_3d(&content) {
+  // What is drawn: the content with its frame-dependent primitives placed
+  // (the symbolic result keeps them as written).
+  let mut drawn = std::borrow::Cow::Borrowed(&content);
+  if has_frame_dependent_3d(&drawn, FrameDependent::Unbounded) {
     let bounds =
       clipping_bounds(plot_range.unwrap_or_else(|| primitives_bounds(&prims)));
-    let expanded = expand_frame_dependent_3d(&content, &bounds);
+    drawn = std::borrow::Cow::Owned(expand_frame_dependent_3d(
+      &drawn,
+      &bounds,
+      FrameDependent::Unbounded,
+    ));
     prims.clear();
     style3d = StyleState3D::default();
-    collect_3d_primitives(&expanded, &mut style3d, &mut prims);
+    collect_3d_primitives(&drawn, &mut style3d, &mut prims);
   }
+
+  // `Scaled` coordinates are fractions of the *displayed* box -- the range
+  // widened by its `PlotRangePadding` -- so `Scaled[{0, 0, 0}]` is the
+  // box's corner (Wolfram's 3D charts lay their base plate out that way).
+  // They are placed once the rest of the scene has fixed that box, and do
+  // not widen it: `anchored_bounds` keeps the range they were placed in.
+  let explicit_axes: [bool; 3] = match partial_range {
+    Some(partial) => partial.map(|r| r.is_some()),
+    None => [plot_range.is_some(); 3],
+  };
+  let anchored_bounds: std::cell::Cell<Option<[(f64, f64); 3]>> =
+    std::cell::Cell::new(None);
+  if has_frame_dependent_3d(&drawn, FrameDependent::Scaled) {
+    let raw = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let displayed =
+      clipping_bounds(displayed_box_3d(raw, explicit_axes, range_padding));
+    drawn = std::borrow::Cow::Owned(expand_frame_dependent_3d(
+      &drawn,
+      &displayed,
+      FrameDependent::Scaled,
+    ));
+    prims.clear();
+    style3d = StyleState3D::default();
+    collect_3d_primitives(&drawn, &mut style3d, &mut prims);
+    anchored_bounds.set(Some(raw));
+  }
+  // The extent of the scene's contents, without what is anchored to its box.
+  let primitives_bounds = |prims: &[Primitive3D]| {
+    anchored_bounds
+      .get()
+      .unwrap_or_else(|| primitives_bounds(prims))
+  };
 
   resolve_scaled_sphere_radii(&mut prims, plot_range);
 
@@ -15492,6 +15585,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
       let vertical = scaled_view_vertical(camera.vertical, &bounds);
       perspective_warp(&mut prims, eye, target, vertical);
+      // The warped scene is framed by what it shows.
+      anchored_bounds.set(None);
       camera.azimuth = -std::f64::consts::FRAC_PI_2;
       camera.elevation = 0.0;
       camera.vertical = Camera::DEFAULT_VERTICAL;
@@ -15546,6 +15641,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for i in 0..3 {
           range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
         }
+      }
+      if let Some(mut range) = anchored_bounds.get() {
+        for i in 0..3 {
+          range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
+        }
+        anchored_bounds.set(Some(range));
       }
     }
   }
@@ -16152,59 +16253,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (all_triangles, triangle_vertices) =
     painter_sorted(all_triangles, triangle_vertices, &camera);
 
-  // Compute 3D bounding box of all primitives for the wireframe box
-  let [
-    (mut x3_min, mut x3_max),
-    (mut y3_min, mut y3_max),
-    (mut z3_min, mut z3_max),
-  ] = primitives_bounds(&prims);
-
-  // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
-  // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
-  if range_padding.is_none() {
-    let pad_x = (x3_max - x3_min) * 0.02;
-    let pad_y = (y3_max - y3_min) * 0.02;
-    let pad_z = (z3_max - z3_min) * 0.02;
-    x3_min -= pad_x;
-    x3_max += pad_x;
-    y3_min -= pad_y;
-    y3_max += pad_y;
-    z3_min -= pad_z;
-    z3_max += pad_z;
-  }
-
-  // An explicit PlotRange pins the displayed region regardless of the
-  // content's extent, keeping the framing stable across re-renders.
-  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
-    x3_min = xl;
-    x3_max = xh;
-    y3_min = yl;
-    y3_max = yh;
-    z3_min = zl;
-    z3_max = zh;
-  }
-
-  // An explicit `PlotRangePadding` widens (or, when negative, narrows)
-  // the displayed box on each side, whether the range is automatic or
-  // given. A negative padding zooms in on the middle of the range.
-  if let Some(pad) = range_padding {
-    let mut axes = [
-      (&mut x3_min, &mut x3_max),
-      (&mut y3_min, &mut y3_max),
-      (&mut z3_min, &mut z3_max),
-    ];
-    for ((lo, hi), (pad_lo, pad_hi)) in axes.iter_mut().zip(pad) {
-      let (padded_lo, padded_hi) =
-        padded_axis_range((**lo, **hi), pad_lo, pad_hi);
-      **lo = padded_lo;
-      **hi = padded_hi;
-    }
-  }
+  // The wireframe box: the extent of the primitives -- or an explicit
+  // PlotRange, which pins the displayed region regardless of the content's
+  // extent, keeping the framing stable across re-renders -- widened by
+  // `PlotRangePadding` (see `displayed_box_3d`).
+  let [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)] = displayed_box_3d(
+    plot_range.unwrap_or_else(|| primitives_bounds(&prims)),
+    explicit_axes,
+    range_padding,
+  );
 
   // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
   // longest side of the *displayed* box, padding included. An automatic
-  // range is padded by 2% per side before it becomes that box, so a scene
-  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  // range is padded by `Scaled[0.02]` per side before it becomes that box,
+  // so a scene under an explicit `ViewAngle` is drawn 0.96 of its unpadded
+  // size.
   let view_box_side =
     (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
@@ -18980,6 +19043,18 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     z_hi - z_lo
   };
+  // The box is the range padded by `Scaled[0.02]` on each side (the
+  // vertical one only when automatic), as Wolfram's `ListPlot3D` is: the
+  // surface fills `1 - 2 * 0.02` of each side, centered in the box.
+  let pad_of = |explicit: bool| {
+    if explicit {
+      0.0
+    } else {
+      AUTOMATIC_RANGE_PADDING
+    }
+  };
+  let pad = [pad_of(false), pad_of(false), pad_of(z_clip.is_some())];
+  let fill = pad.map(|s| 1.0 - 2.0 * s);
 
   // The surface's triangles in data coordinates: the two halves of each
   // grid cell, or the triangulation of scattered points.
@@ -19072,9 +19147,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (x, y, z) = points[k];
         let (fx, fy) = frac(x, y);
         Point3D {
-          x: fx / (rows - 1).max(1) as f64 * 2.0 - 1.0,
-          y: fy / (cols - 1).max(1) as f64 * 2.0 - 1.0,
-          z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+          x: (fx / (rows - 1).max(1) as f64 * 2.0 - 1.0) * fill[0],
+          y: (fy / (cols - 1).max(1) as f64 * 2.0 - 1.0) * fill[1],
+          z: (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE
+            - Z_SCALE)
+            * fill[2],
         }
       });
       let avg = t
@@ -19192,13 +19269,14 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       let nx = |ii: usize| -> f64 {
-        (ii as f64 / (rows - 1).max(1) as f64) * 2.0 - 1.0
+        ((ii as f64 / (rows - 1).max(1) as f64) * 2.0 - 1.0) * fill[0]
       };
       let ny = |jj: usize| -> f64 {
-        (jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0
+        ((jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0) * fill[1]
       };
       let nz = |z: f64| -> f64 {
-        ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+        (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE)
+          * fill[2]
       };
 
       // Each cell is cut along its diagonal from (i, j) to (i + 1, j + 1),
@@ -19334,9 +19412,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Mesh -> Automatic`: as in WL, 15 lines across each direction of the
   // data plus its outline, whatever the size of the data.
   let to_box = |fi: f64, fj: f64, z: f64| Point3D {
-    x: fi / (rows - 1).max(1) as f64 * 2.0 - 1.0,
-    y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
-    z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+    x: (fi / (rows - 1).max(1) as f64 * 2.0 - 1.0) * fill[0],
+    y: (fj / (cols - 1).max(1) as f64 * 2.0 - 1.0) * fill[1],
+    z: (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE)
+      * fill[2],
   };
   let mut mesh_lines = if let Some(segments) = &level_mesh {
     segments
@@ -19429,9 +19508,21 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(&mesh_world),
     false,
     &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_axis_min, z_axis_max),
+    padded_axis_range(
+      (x_min, x_max),
+      RangePad::Scaled(pad[0]),
+      RangePad::Scaled(pad[0]),
+    ),
+    padded_axis_range(
+      (y_min, y_max),
+      RangePad::Scaled(pad[1]),
+      RangePad::Scaled(pad[1]),
+    ),
+    padded_axis_range(
+      (z_axis_min, z_axis_max),
+      RangePad::Scaled(pad[2]),
+      RangePad::Scaled(pad[2]),
+    ),
     svg_width,
     svg_height,
     full_width,
@@ -22538,7 +22629,11 @@ fn contour3d_render(
     ));
   }
 
-  // `FitToSurfaces` boxes the plot to the extent of what was drawn.
+  // `FitToSurfaces` boxes the plot to the extent of what was drawn. The box
+  // is that range padded by `Scaled[0.02]` on each side (none around an
+  // explicit `PlotRange`), as Wolfram's `ContourPlot3D`, `RegionPlot3D` and
+  // `ListContourPlot3D` do.
+  let explicit_range = matches!(plot_range, Some(ContourBox::Explicit(_)));
   let plot_range = match plot_range {
     Some(ContourBox::Explicit(r)) => r,
     Some(ContourBox::FitToSurfaces) => {
@@ -22552,6 +22647,13 @@ fn contour3d_render(
     }
     None => ranges,
   };
+  // `ColorFunctionScaling` scales over the range itself, unpadded.
+  let data_range = plot_range;
+  let plot_range = displayed_box_3d(
+    plot_range,
+    [explicit_range; 3],
+    range_padding_option(opts),
+  );
   let [(x_min_p, x_max_p), (y_min_p, y_max_p), (z_min_p, z_max_p)] = plot_range;
   // Normalize coordinates to [-1, 1] for x and y and to the z half-extent
   // (`CONTOUR3D_Z_SCALE`) for z.
@@ -22586,7 +22688,7 @@ fn contour3d_render(
           |f: fn(&Point3D) -> f64| tri_world.iter().map(f).sum::<f64>() / 3.0;
         color_fn.style_with_extra_args(
           [mid(|p| p.x), mid(|p| p.y), mid(|p| p.z)],
-          plot_range,
+          data_range,
           &[(triangle_level[t], value_range)],
         )
       })
@@ -24839,8 +24941,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRange`, `BoxRatios` (the data's own proportions by default),
   // `Boxed`, `Axes` and the view options behave as they do for any 3D
   // graphic. ──
-  let svg =
-    render_surface_structure("SphericalPlot3D", complexes.clone(), &args[3..])?;
+  let svg = render_surface_structure(
+    "SphericalPlot3D",
+    complexes.clone(),
+    &args[3..],
+    0.0,
+  )?;
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   let content = if complexes.len() == 1 {
@@ -24887,11 +24993,14 @@ const SURFACE_PLOT_ONLY_OPTIONS: &[&str] = &[
 /// `Graphics3D` with the plot's options `opts`, so `PlotRange`,
 /// `BoxRatios`, `Boxed`, `Lighting`, textures and the view options behave
 /// as they do for any 3D graphic. Like the plots, it draws axes unless
-/// told otherwise.
+/// told otherwise, and pads the range by `Scaled[padding]` on each side
+/// unless `PlotRangePadding` says otherwise (Wolfram gives
+/// `SphericalPlot3D` none and `ParametricPlot3D` `Scaled[0.05]`).
 fn render_surface_structure(
   plot: &str,
   items: Vec<Expr>,
   opts: &[Expr],
+  padding: f64,
 ) -> Result<String, InterpreterError> {
   let option_name = |o: &Expr| {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n.to_string())
@@ -24912,6 +25021,17 @@ fn render_surface_structure(
   {
     render_args
       .push(rule_expr(Expr::Identifier("Axes".into()), bool_expr(true)));
+  }
+  // An explicit `PlotRange` is not padded.
+  if range_padding_option(opts).is_none()
+    && !opts
+      .iter()
+      .any(|o| option_name(o).as_deref() == Some("PlotRange"))
+  {
+    render_args.push(rule_expr(
+      Expr::Identifier("PlotRangePadding".into()),
+      call1("Scaled", Expr::Real(padding)),
+    ));
   }
   // Evaluated like any `Graphics3D[…]`, so a held `Texture[Image[…]]`
   // becomes the image it names.
@@ -26960,8 +27080,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // An explicit `PlotRange` pins the displayed region regardless of the
-  // sampled surface's own extent, matching `Graphics3D`.
-  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
+  // sampled surface's own extent, matching `Graphics3D`. The box is that
+  // range padded by `Scaled[0.05]` on each side (none around an explicit
+  // one), as Wolfram's `ParametricPlot3D` surfaces are. Colors and
+  // textures are scaled over the range itself, unpadded.
+  let [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)] = plot_range
+    .unwrap_or([(gx_min, gx_max), (gy_min, gy_max), (gz_min, gz_max)]);
+  {
+    let automatic = RangePad::Scaled(if plot_range.is_some() {
+      0.0
+    } else {
+      PARAMETRIC_RANGE_PADDING
+    });
+    let pads =
+      range_padding_option(&args[3..]).unwrap_or([(automatic, automatic); 3]);
+    let [(xl, xh), (yl, yh), (zl, zh)] = displayed_box_3d(
+      plot_range.unwrap_or([
+        (gx_min, gx_max),
+        (gy_min, gy_max),
+        (gz_min, gz_max),
+      ]),
+      [plot_range.is_some(); 3],
+      Some(pads),
+    );
     gx_min = xl;
     gx_max = xh;
     gy_min = yl;
@@ -27020,10 +27161,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
               let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
               if let Some(scheme) = &surface_color_scheme {
-                let t = if (gz_max - gz_min).abs() < 1e-15 {
+                let t = if (cz_max - cz_min).abs() < 1e-15 {
                   0.5
                 } else {
-                  (z - gz_min) / (gz_max - gz_min)
+                  (z - cz_min) / (cz_max - cz_min)
                 };
                 return Some(
                   crate::functions::field_plot::apply_named_color_function(
@@ -27043,9 +27184,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   }
                 };
                 [
-                  unit(x, gx_min, gx_max),
-                  unit(y, gy_min, gy_max),
-                  unit(z, gz_min, gz_max),
+                  unit(x, cx_min, cx_max),
+                  unit(y, cy_min, cy_max),
+                  unit(z, cz_min, cz_max),
                   unit(u, u_min, u_max),
                   unit(v, v_min, v_max),
                 ]
@@ -27111,9 +27252,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let call = Expr::CurriedCall {
       func: Box::new(f.clone()),
       args: [
-        unit(x, gx_min, gx_max),
-        unit(y, gy_min, gy_max),
-        unit(z, gz_min, gz_max),
+        unit(x, cx_min, cx_max),
+        unit(y, cy_min, cy_max),
+        unit(z, cz_min, cz_max),
         su,
         sv,
       ]
@@ -27490,7 +27631,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
     });
-    let extents = [(gx_min, gx_max), (gy_min, gy_max), (gz_min, gz_max)];
+    let extents = [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)];
     if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
       let range = extents
         .iter()
@@ -27500,6 +27641,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect::<Vec<_>>();
       structure_args
         .push(rule_expr(id_expr("PlotRange"), Expr::List(range.into())));
+      // The padding the picture was drawn with.
+      if range_padding_option(&structure_args).is_none() {
+        structure_args.push(rule_expr(
+          id_expr("PlotRangePadding"),
+          call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)),
+        ));
+      }
     }
     call("Graphics3D", structure_args)
   };
@@ -27514,7 +27662,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => items.to_vec(),
       single => vec![single.clone()],
     };
-    let svg = render_surface_structure("ParametricPlot3D", items, &args[3..])?;
+    let svg = render_surface_structure(
+      "ParametricPlot3D",
+      items,
+      &args[3..],
+      PARAMETRIC_RANGE_PADDING,
+    )?;
     let svg = with_plot_label(svg, args, svg_width, svg_height);
     return Ok(crate::plot3d_result_with_structure(svg, structure));
   }
