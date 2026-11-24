@@ -3545,4 +3545,26 @@ mod surface_outlines_and_meshes {
       .count();
     assert_eq!(degenerate, 0, "{s}");
   }
+
+  // With a `RegionFunction`, the default mesh lines of Plot3D run on to the
+  // rim where the region cuts the surface, as in Wolfram, instead of
+  // stopping at the last sample inside the region.
+  #[test]
+  fn plot3d_mesh_lines_run_to_the_region_cut() {
+    let s = svg(
+      "Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, \
+       RegionFunction -> (#1^2 + #2^2 <= 4 &), PlotPoints -> 20, \
+       MaxRecursion -> 1]",
+    );
+    let rim: std::collections::HashSet<(String, String)> =
+      line_ends(&s, "rgb(0,0,0)").into_iter().flatten().collect();
+    let meeting = line_ends(&s, "#000000a0")
+      .into_iter()
+      .flatten()
+      .filter(|p| rim.contains(p))
+      .count();
+    // About 60 mesh lines end on the rim; only the few whose last sample
+    // happened to lie on the circle met it before.
+    assert!(meeting >= 40, "{meeting} mesh line ends on the rim: {s}");
+  }
 }

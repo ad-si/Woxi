@@ -3708,6 +3708,48 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut lines = generate_mesh_lines(
         grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera, box_half,
       );
+      // A mesh line leaving the `RegionFunction`'s region runs on to the
+      // region's edge, where the surface was cut, instead of stopping at
+      // the last sample inside it.
+      if let (Some(masks), Some(rf), MeshMode::Default) =
+        (&region_masks, &region_function, mesh_mode)
+      {
+        let mask = &masks[surface_idx];
+        let compiled = crate::functions::plot::PlotBody2::new(
+          bodies[surface_idx],
+          &xvar,
+          &yvar,
+        );
+        let surface_at = |x: f64, y: f64| -> Option<[f64; 3]> {
+          compiled
+            .at(x, y)
+            .filter(|z| z.is_finite())
+            .map(|z| [x, y, z])
+        };
+        let inside = |p: &[f64; 3]| {
+          crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+        };
+        let raw = &grids[surface_idx];
+        let point = |i: usize, j: usize| [grid_x(i), grid_y(j), raw[i][j]];
+        let mut edges: Vec<((usize, usize), (usize, usize))> = Vec::new();
+        for k in (0..=grid_n).step_by(MESH_STEP) {
+          for m in 0..grid_n {
+            edges.push(((m, k), (m + 1, k)));
+            edges.push(((k, m), (k, m + 1)));
+          }
+        }
+        for (a, b) in edges {
+          let (lo, hi) = match (mask[a.0][a.1], mask[b.0][b.1]) {
+            (true, false) => (a, b),
+            (false, true) => (b, a),
+            _ => continue,
+          };
+          let from = point(lo.0, lo.1);
+          let to =
+            bisect_region_edge(from, point(hi.0, hi.1), &surface_at, &inside);
+          lines.push(mesh_segment(to_box(from), to_box(to), &camera));
+        }
+      }
       if let Some(style) = &mesh_style {
         for line in &mut lines {
           *line = styled_line_like(line, style);
