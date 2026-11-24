@@ -1307,6 +1307,7 @@
     - [`CoefficientRules`](symbolic/CoefficientRules.md)
     - [`Curl`](symbolic/Curl.md)
     - [`Cyclotomic`](symbolic/Cyclotomic.md)
+    - [`CylindricalDecomposition`](symbolic/CylindricalDecomposition.md)
     - [`D`](symbolic/D.md)
     - [`DifferenceDelta`](symbolic/DifferenceDelta.md)
     - [`DifferenceQuotient`](symbolic/DifferenceQuotient.md)

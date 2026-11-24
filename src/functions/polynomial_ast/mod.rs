@@ -72,6 +72,7 @@ pub use polynomial_mod::*;
 pub use polynomial_q::*;
 pub use real_cells::*;
 pub use reduce::*;
+pub use reduce_backend::cylindrical_decomposition_ast;
 pub(crate) use reduce_backend::try_linear_integer_resolve;
 pub(crate) use reduce_backend::try_linear_rational_resolve;
 pub use resultant::*;

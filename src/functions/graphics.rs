@@ -42942,18 +42942,23 @@ fn framed_box_to_svg(
   // flash card — is typeset and framed rather than printed as source. A
   // captioned `Labeled[body, label, Top]` is laid out the same way, its
   // caption stacked beside the body rather than spelled out as a call.
+  // The content without its display wrappers, also under a `Style` (a
+  // layout cell sets `Style[Text[…], FontFamily -> …]`).
+  let unwrapped = unwrap_framed_layout(content);
   let (inner_svg, inner_w, inner_h) = match inner_svg {
     None => {
-      let unwrapped = unwrap_framed_layout(content);
-      let is_layout =
-        |name: &str| matches!(name, "Grid" | "Column" | "Row" | "Labeled");
-      if matches!(&unwrapped, Expr::FunctionCall { name, args }
-        if is_layout(name) && !args.is_empty())
-        || matches!(&unwrapped, Expr::FunctionCall { name, args }
-          if name == "Style" && args.len() >= 2
-            && matches!(&args[0], Expr::FunctionCall { name, .. }
-              if is_layout(name)))
-      {
+      // A layout, possibly under (nested) `Style`s.
+      fn styled_layout(expr: &Expr) -> bool {
+        match expr {
+          Expr::FunctionCall { name, args } => match name.as_str() {
+            "Grid" | "Column" | "Row" | "Labeled" => !args.is_empty(),
+            "Style" => args.len() >= 2 && styled_layout(&args[0]),
+            _ => false,
+          },
+          _ => false,
+        }
+      }
+      if styled_layout(&unwrapped) {
         let svg = crate::evaluator::expr_to_svg(&unwrapped);
         if svg.starts_with("<svg") {
           let (w, h) = parse_svg_wh(&svg);
@@ -42971,7 +42976,7 @@ fn framed_box_to_svg(
   let (child_svg, content_w, content_h) = if let Some(svg) = inner_svg {
     (svg, inner_w, inner_h)
   } else {
-    let content = unwrap_display_wrappers(content);
+    let content = unwrapped;
     let style = extract_cell_style(&content);
     let size = style.font_size.unwrap_or(14.0);
     let boxes =
