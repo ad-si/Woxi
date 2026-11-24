@@ -16242,6 +16242,57 @@ mod exp_to_trig {
       "x + Cos[y] + I*Sin[y]"
     );
   }
+
+  #[test]
+  fn conjugate_exponentials_cancel() {
+    assert_eq!(
+      interpret("ExpToTrig[a E^(I x) + a E^(-I x)]").unwrap(),
+      "2*a*Cos[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[(a E^(I x) - a E^(-I x))/(Sqrt[2] I)]").unwrap(),
+      "Sqrt[2]*a*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn coefficients_distribute_over_rewritten_sum() {
+    assert_eq!(
+      interpret("ExpToTrig[E^(I x) a + E^(-I x) b]").unwrap(),
+      "a*Cos[x] + b*Cos[x] + I*a*Sin[x] - I*b*Sin[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[(1 + y)^2 E^(I x)]").unwrap(),
+      "(1 + y)^2*Cos[x] + I*(1 + y)^2*Sin[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[2 E^x]").unwrap(),
+      "2*Cosh[x] + 2*Sinh[x]"
+    );
+  }
+
+  /// Real combinations of complex spherical harmonics come out real, so
+  /// their numeric values carry no `0. I` part that breaks comparisons.
+  #[test]
+  fn real_spherical_harmonic_combination() {
+    assert_eq!(
+      interpret(
+        "ExpToTrig[(SphericalHarmonicY[1, -1, t, f] - \
+         SphericalHarmonicY[1, 1, t, f])/Sqrt[2]]"
+      )
+      .unwrap(),
+      "(Sqrt[3/Pi]*Cos[f]*Sin[t])/2"
+    );
+    assert_eq!(
+      interpret(
+        "y = ExpToTrig[(SphericalHarmonicY[2, -1, t, f] + \
+         SphericalHarmonicY[2, 1, t, f])/(Sqrt[2] I)]; \
+         Head[y /. {t -> 0.7, f -> 0.3}]"
+      )
+      .unwrap(),
+      "Real"
+    );
+  }
 }
 
 mod trig_to_exp {
