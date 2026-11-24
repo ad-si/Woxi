@@ -2601,34 +2601,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
-/// Multiply a decimal literal by `10^exponent` by moving its decimal point,
-/// keeping every digit the literal was written with. Used for the `*^` form
-/// of a precision-tagged real, where rounding through `f64` would throw away
-/// the extra digits the precision tag exists to carry.
-fn shift_decimal_point(literal: &str, exponent: i32) -> String {
-  if exponent == 0 {
-    return literal.to_string();
-  }
-  let (sign, digits) = match literal.strip_prefix('-') {
-    Some(rest) => ("-", rest),
-    None => ("", literal),
-  };
-  let (int_part, frac_part) = digits.split_once('.').unwrap_or((digits, ""));
-  let mut all: String = int_part.to_string();
-  all.push_str(frac_part);
-  // Where the point sits in `all` after the shift.
-  let point = int_part.len() as i32 + exponent;
-  let body = if point <= 0 {
-    format!("0.{}{all}", "0".repeat((-point) as usize))
-  } else if (point as usize) >= all.len() {
-    format!("{all}{}.", "0".repeat(point as usize - all.len()))
-  } else {
-    let (head, tail) = all.split_at(point as usize);
-    format!("{head}.{tail}")
-  };
-  format!("{sign}{body}")
-}
-
 fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
@@ -2717,7 +2689,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           && let Ok(exponent) = s[idx + 2..].parse::<i32>()
         {
           return Expr::BigFloat(
-            shift_decimal_point(&s[..idx], exponent),
+            crate::functions::math_ast::numerical::bigfloat_digits_from_scientific(
+              &s[..idx],
+              i64::from(exponent),
+            ),
             crate::functions::math_ast::numerical::MACHINE_OVERFLOW_PRECISION,
           );
         }
@@ -2801,7 +2776,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       };
       // The scaled literal, as the digit string the BigFloat path stores
       // (always with a decimal point: `3`20` is the real `3.`20.`).
-      let mut scaled_str = shift_decimal_point(value_str, exponent);
+      let mut scaled_str =
+        crate::functions::math_ast::numerical::bigfloat_digits_from_scientific(
+          value_str,
+          i64::from(exponent),
+        );
       if !scaled_str.contains('.') {
         scaled_str.push('.');
       }
@@ -8683,6 +8662,16 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     (false, digits)
   };
   let prefix = if is_negative { "-" } else { "" };
+
+  // Compact storage (`d.ddd…e<exponent>`) is already in scientific form.
+  if let Some((mantissa, exponent)) =
+    crate::functions::math_ast::numerical::split_compact_digits(abs_digits)
+  {
+    return format!(
+      "{prefix}{mantissa}`{}*^{exponent}",
+      format_precision(prec)
+    );
+  }
 
   // Find the decimal point position
   let dot_pos = abs_digits.find('.');

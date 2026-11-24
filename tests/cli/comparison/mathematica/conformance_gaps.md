@@ -1248,30 +1248,32 @@ tracking through the Gamma-ratio path starting from a machine-real argument.
 
 Overflow of `Exp[x.]`, `a.^b`, products, quotients and sums of machine reals
 is promoted to an arbitrary-precision number (up to a decimal exponent of
-10000), but not everywhere:
+6*10^8), but not everywhere:
 
 ```sh
-wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
-woxi eval 'Exp[1000] // N'             # Infinity
-
 wolframscript -code 'Exp[-1000.]'      # General::munfl: Exp[-1000.] is too small to represent as a normalized machine number; precision may be lost.
                                        # 0.
 woxi eval 'Exp[-1000.]'                # 0.  (no General::munfl)
 
-wolframscript -code 'Exp[1000.] > 10^433'   # True
-woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
-Exact input made inexact by `N` and underflow still collapse to `Infinity` /
-`0.`, and machine results beyond a decimal exponent of 10000 stay `Infinity`:
-numeric routines (limits, `NMaximize`, `FindRoot`) sample far outside the
-machine range and rely on that staying cheap. For the same reason Woxi emits
-no `General::munfl` — wolframscript's own numeric routines do not either,
-but a top-level `Exp[-1000.]` or `0.5^2000.` does. Arbitrary-precision input
-is promoted up to a decimal exponent of 10^8 (`Exp[10.`30^5]` is
-`2.8066…*^43429` in both); past that Woxi returns `Overflow[]`/`Underflow[]`
-with `General::ovfl`/`General::unfl` where wolframscript still shows a number
-(`Exp[10.`30^9]`, `10^-1100329811.`30`).
+Machine underflow collapses to `0.` without `General::munfl` —
+wolframscript's own numeric routines do not emit it either, but a top-level
+`Exp[-1000.]` or `0.5^2000.` does. Functions other than `Exp` and `Power`
+(`Cosh`, `Sinh`, `Gamma`, …) still return `Infinity` past the machine range
+(`Cosh[1000.]`), where wolframscript gives a number.
+
+The arbitrary-precision type has a 32-bit binary exponent, so numbers end
+near 10^646456993 where wolframscript's `$MaxNumber` is near
+10^1355718576299609. Past a decimal exponent of 6*10^8 a machine result is
+`Infinity` (`Exp[2.*^9]`) and an arbitrary-precision one is
+`Overflow[]`/`Underflow[]` with `General::ovfl`/`General::unfl`
+(`Exp[10.`30^10]`, `10^-1100329811.`30`), where wolframscript still shows a
+number.
+
+`MantissaExponent` of an arbitrary-precision number outside the machine range
+stays unevaluated (`MantissaExponent[1.5`20*^5000]`), where wolframscript
+returns the mantissa and exponent.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 

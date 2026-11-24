@@ -7223,6 +7223,9 @@ fn precision_number_display(token: &str) -> Option<String> {
 /// figure its precision claims (`N[28, 6]` → `28.0000`, `3.14`5` → `3.1400`).
 pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
   let prec = prec.max(1);
+  // A compactly stored number is laid out digit by digit like any other.
+  let mantissa =
+    &*functions::math_ast::numerical::plain_bigfloat_digits(mantissa);
   let (int_s, frac_s) = match mantissa.find('.') {
     Some(i) => (&mantissa[..i], &mantissa[i + 1..]),
     None => (mantissa, ""),
