@@ -6667,40 +6667,15 @@ fn bar_chart_3d_graphics(
     ));
   }
   let x_extent = xs.last().map_or(1.0, |x| x + 1.0);
-  // The invisible base plate Wolfram adds, which sets the scene's extent
-  // a little past the bars.
-  let z_top = bars.iter().map(|b| b.2.abs()).fold(0.0, f64::max);
-  let v3 = |p: [f64; 3]| {
-    Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
-  };
-  content.insert(
-    0,
-    Expr::List(
-      vec![
-        Expr::FunctionCall {
-          name: "Opacity".to_string(),
-          args: vec![Expr::Integer(0)].into(),
-        },
-        Expr::FunctionCall {
-          name: "EdgeForm".to_string(),
-          args: vec![].into(),
-        },
-        Expr::FunctionCall {
-          name: "Cuboid".to_string(),
-          args: vec![
-            v3([-0.05 * x_extent, -0.25, 0.0]),
-            v3([1.05 * x_extent, 1.25, 0.0048 * z_top]),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    ),
+  let below_floor = bars.iter().any(|b| b.2 < 0.0);
+  let mut scene = crate::functions::chart3d::chart3d_base(
+    x_extent,
+    1.0,
+    below_floor,
+    color(0, 0),
   );
-  content.insert(
-    0,
-    crate::functions::chart3d::bar_chart_backdrop(color(0, 0)),
-  );
+  scene.extend(content);
+  let content = scene;
   let defaults = bar_chart3d_options(
     &bar_ticks(&xs, &column_group),
     x_extent,

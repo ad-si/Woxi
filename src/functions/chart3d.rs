@@ -155,6 +155,43 @@ pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
   )
 }
 
+/// What Wolfram lays under the blocks of a 3D bar or rectangle chart whose
+/// blocks span `x_extent` along x (from 0) and `y_extent` deep: the
+/// backdrop (see [`bar_chart_backdrop`]) in color `c`, and an invisible
+/// slab from `-0.05` to `1.05` of `x_extent`, `-0.25` to `1.25` of
+/// `y_extent` and `0` to `0.024` high (from `-0.02` when a block hangs
+/// below the floor), whatever the values. The slab sets the scene's range
+/// a little past the blocks, so the backdrop's floor, anchored to the
+/// padded box, ends just below `z = 0` where the blocks stand.
+pub(crate) fn chart3d_base(
+  x_extent: f64,
+  y_extent: f64,
+  below_floor: bool,
+  c: (f64, f64, f64),
+) -> Vec<Expr> {
+  let v3 = |p: [f64; 3]| list(p.iter().map(|&v| real(v)).collect());
+  let z0 = if below_floor {
+    real(-0.02)
+  } else {
+    Expr::Integer(0)
+  };
+  let slab = call(
+    "Cuboid",
+    vec![
+      list(vec![real(-0.05 * x_extent), real(-0.25 * y_extent), z0]),
+      v3([1.05 * x_extent, 1.25 * y_extent, 0.024]),
+    ],
+  );
+  vec![
+    bar_chart_backdrop(c),
+    list(vec![
+      call("Opacity", vec![Expr::Integer(0)]),
+      call("EdgeForm", vec![]),
+      slab,
+    ]),
+  ]
+}
+
 /// A bar of a 3D bar or rectangle chart from corner `lo` to corner `hi`, as
 /// Wolfram draws one: unlit faces in color `c` blending toward a light
 /// tint (`c` four fifths of the way to white) on one side and a dark shade
