@@ -4580,6 +4580,43 @@ mod graphics {
       assert!(height(&svg) > height(&label(" ")) + 10.0, "{svg}");
     }
 
+    /// A `PlotLabel` that is itself `Framed` (under a `Style` with a
+    /// `Background`) draws the frame and the shading behind its text,
+    /// rather than dropping both and printing only the bare text.
+    #[test]
+    fn plot_label_framed_draws_frame_and_background() {
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[Framed[\"10:45\"], 14, \
+         Background -> RGBColor[1, 0.5, 0]]]",
+      );
+      assert!(!svg.contains("Framed"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,128,0)\""), "{svg}");
+      assert!(svg.contains("stroke-width=\"0.5\""), "{svg}");
+      assert!(svg.contains("font-size=\"14.0\""), "{svg}");
+      assert!(svg.contains(">10:45<"), "{svg}");
+
+      // A bare frame draws its box with no shading.
+      let plain = export_svg("Graphics[Disk[], PlotLabel -> Framed[\"abc\"]]");
+      assert!(plain.contains("<rect x=\"0.5\" y=\"0.5\""), "{plain}");
+      assert!(plain.contains(">abc<"), "{plain}");
+
+      // A `Style` that only shades the text draws the shading, no frame.
+      let shaded = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[\"abc\", Background -> Yellow]]",
+      );
+      assert!(shaded.contains("fill=\"rgb(255,255,0)\""), "{shaded}");
+      assert!(!shaded.contains("<rect x=\"0.5\" y=\"0.5\""), "{shaded}");
+      assert!(shaded.contains(">abc<"), "{shaded}");
+
+      // A label with neither stays a plain line of title text.
+      let text =
+        export_svg("Graphics[Disk[], PlotLabel -> Style[\"abc\", 14]]");
+      assert!(
+        text.contains("<tspan font-size=\"14\">abc</tspan>"),
+        "{text}"
+      );
+    }
+
     /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
     /// On a `Graphics` (including a `Show` of several) it still takes up the
     /// title's line, unlike `None`.
