@@ -45813,6 +45813,11 @@ pub struct ManipulateSpec {
   /// `AnimationRunning -> True`; `AnimationRunning -> False` builds the
   /// widget paused until the user presses play.
   pub animation_running: bool,
+  /// `AnimationRate -> r` of the animation: the animated variable advances
+  /// `r` units per second of play (Wolfram's documented meaning), instead
+  /// of the front end's default pace. `None` for `AnimationRate ->
+  /// Automatic` or no rate at all.
+  pub animation_rate: Option<f64>,
   /// `Appearance -> None`: the widget shows no visible control rows (the
   /// animation just runs), matching Wolfram's control-free appearance.
   pub appearance_none: bool,
@@ -46762,6 +46767,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let mut animated = is_animate_call(name, args);
   let mut animation_running = true;
+  // `AnimationRate -> r` of the animated control (or of the `Animate`).
+  let mut animation_rate: Option<f64> = None;
 
   // A Manipulate whose body is itself an `Animate[…]` (the Demonstrations
   // "oscilloscope" pattern) nests an auto-playing animation inside the outer
@@ -46806,6 +46813,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   ) = if let Some(inner) = inner {
     animated = true;
     animation_running = inner.animation_running;
+    animation_rate = inner.animation_rate;
     (
       inner.body_code,
       inner.controls,
@@ -47012,6 +47020,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }) {
     animation_running = false;
   }
+  // The same evaluated `Animate` moves `AnimationRate -> r` into its
+  // control specifications. It paces the first one that states it; an
+  // explicit `Animator`/`Trigger` spec's own rate (read below) wins.
+  let spec_animation_rate = args[1..].iter().find_map(|spec| match spec {
+    Expr::List(items) => animation_rate_option(items),
+    _ => None,
+  });
   for spec in &args[1..] {
     // `ExpressionCell[content, …]` is the front end's wrapper around a
     // control row saved with the notebook (Demonstrations store their
@@ -47292,6 +47307,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
       {
         animation_running = false;
+      }
+      // `Animate[…, AnimationRate -> r]`: the pace of the whole animation,
+      // unless the animated control's own spec sets one.
+      if animation_rate.is_none() {
+        animation_rate = animation_rate_option(std::slice::from_ref(spec));
       }
       // `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
       // each holding the code that jumps the controls to that preset (the
@@ -47703,6 +47723,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animated = true;
           animation_running = running;
           animation_var = Some(c.name().to_string());
+          if let Expr::List(items) = &spec {
+            animation_rate = animation_rate_option(items);
+          }
         }
         // A second spec for an already-bound variable merges into the
         // earlier row — contributing only the enabled semantics captured
@@ -48472,6 +48495,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     }
   }
+  // An `Animate` without an explicit `Animator`/`Trigger` spec takes the
+  // rate its evaluated form moved into a plain control spec.
+  if animated && animation_var.is_none() && animation_rate.is_none() {
+    animation_rate = spec_animation_rate;
+  }
 
   Some(ManipulateSpec {
     module_locals,
@@ -48492,6 +48520,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var,
     animated,
     animation_running,
+    animation_rate,
     appearance_none,
     tracked_symbols,
     tracking,
@@ -53302,6 +53331,27 @@ fn manipulate_post_body_bindings(
   out
 }
 
+/// The `AnimationRate -> r` setting among a control spec's (or an
+/// `Animate`'s) items: a positive finite number of units per second.
+/// `Automatic`, a non-numeric value or a non-positive rate yield `None`,
+/// leaving the front end's default pace.
+fn animation_rate_option(items: &[Expr]) -> Option<f64> {
+  items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRate") => {
+      crate::functions::math_ast::try_eval_to_f64(replacement)
+        .filter(|r| r.is_finite() && *r > 0.0)
+    }
+    _ => None,
+  })
+}
+
 /// Evaluate a Manipulate bound expression to a number. A literal (`2 Pi`)
 /// resolves statically; a bound referencing another control variable (`P`)
 /// resolves through the evaluator against the initial-value globals the
@@ -53934,6 +53984,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var: None,
     animated: true,
     animation_running: true,
+    animation_rate: None,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -54018,6 +54069,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var: None,
     animated: false,
     animation_running: false,
+    animation_rate: None,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -54116,6 +54168,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var: None,
     animated: true,
     animation_running: true,
+    animation_rate: None,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -54382,6 +54435,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var: None,
     animated: false,
     animation_running: true,
+    animation_rate: None,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -54448,6 +54502,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var: None,
     animated: false,
     animation_running: true,
+    animation_rate: None,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -54505,6 +54560,10 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // A standalone `Control[{…, ControlType -> Trigger/Animator}]` animates
   // its own variable.
   let animation_var = animate.map(|_| control.name().to_string());
+  let animation_rate = match &args[0] {
+    Expr::List(items) if animate.is_some() => animation_rate_option(items),
+    _ => None,
+  };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
     body_code,
@@ -54524,6 +54583,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_var,
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
+    animation_rate,
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
@@ -64748,6 +64808,46 @@ mod manipulate_control_placement_tests {
       )
       .animation_running
     );
+  }
+
+  /// `AnimationRate -> r` paces the animation in units per second: an
+  /// `Animator` spec carries its own rate, an `Animate` states it as an
+  /// option (or, evaluated, inside its control spec), and a non-numeric or
+  /// non-positive rate leaves the default pace.
+  #[test]
+  fn animation_rate_is_recorded() {
+    let rate = |code: &str| {
+      extract_manipulate_spec(&crate::parse_to_expr(code).expect("parse"))
+        .expect("extract spec")
+        .animation_rate
+    };
+    assert_eq!(
+      rate(
+        "Manipulate[t, {{t, 0, \"time\"}, 0, 10, Animator, \
+         AnimationRunning -> False, AnimationRate -> .25}]"
+      ),
+      Some(0.25)
+    );
+    assert_eq!(
+      rate("Animate[a, {a, 0, 5}, AnimationRate -> 3/2]"),
+      Some(1.5)
+    );
+    assert_eq!(rate("Animate[a, {a, 0, 5, AnimationRate -> 2}]"), Some(2.0));
+    // Only the animated control's rate counts.
+    assert_eq!(
+      rate(
+        "Manipulate[a + b, {a, 0, 1, AnimationRate -> 5}, \
+         {b, 0, 1, Animator, AnimationRate -> 0.5}]"
+      ),
+      Some(0.5)
+    );
+    assert_eq!(
+      rate("Animate[a, {a, 0, 5}, AnimationRate -> Automatic]"),
+      None
+    );
+    assert_eq!(rate("Animate[a, {a, 0, 5}, AnimationRate -> -1]"), None);
+    assert_eq!(rate("Animate[a, {a, 0, 5}]"), None);
+    assert_eq!(rate("Manipulate[a, {a, 0, 5, AnimationRate -> 2}]"), None);
   }
 
   /// A list of more than one side places successive controls rather than

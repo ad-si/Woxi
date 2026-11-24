@@ -4375,11 +4375,7 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
 /// immediately, so the thumb and value label track the cursor without lag.
 const MANIPULATE_THROTTLE_MS: u64 = 16;
 
-/// Auto-playing widgets (Animate / ListAnimate) advance their animation
-/// control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
-/// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate
-/// (and the Playground's pace).
-const ANIM_INTERVAL_MS: u64 = 60;
+use manipulate::ANIM_INTERVAL_MS;
 
 /// Largest box a radio-bar choice icon is drawn in; a bigger picture is
 /// scaled down to fit, keeping its aspect ratio.
@@ -13454,6 +13450,59 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(state.animated);
     assert!(!state.playing);
+  }
+
+  /// `AnimationRate -> r` moves the animated variable `r` units per second
+  /// of play: each tick advances it by `r` times the tick interval instead
+  /// of the default hundredth of the range, still wrapping at the end.
+  #[test]
+  fn animation_rate_paces_the_sweep_per_second() {
+    let current = |s: &manipulate::ManipulateState, name: &str| {
+      s.controls
+        .iter()
+        .find_map(|c| match c {
+          manipulate::ControlState::Continuous {
+            name: n, current, ..
+          } if n == name => Some(*current),
+          _ => None,
+        })
+        .expect("continuous control")
+    };
+    let tick = manipulate::ANIM_INTERVAL_MS as f64 / 1000.0;
+
+    // An `Animator` control with buttons beside it, starting paused.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[t^2, Row[{Button[\"reset\", t = 0]}], \
+       {{t, 0, \"time\"}, 0, 80, Animator, AnimationRunning -> False, \
+       AnimationRate -> 0.5}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated && !state.playing);
+    state.advance_animation();
+    assert!((current(&state, "t") - 0.5 * tick).abs() < 1e-12);
+    state.advance_animation();
+    assert!((current(&state, "t") - 2.0 * 0.5 * tick).abs() < 1e-12);
+
+    // An `Animate` option; the sweep still wraps past the end.
+    let expr =
+      woxi::interpret_to_expr("Animate[x, {x, 0, 1}, AnimationRate -> 5]")
+        .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let mut wrapped = false;
+    let mut last = current(&state, "x");
+    for _ in 0..10 {
+      state.advance_animation();
+      let now = current(&state, "x");
+      if now < last {
+        wrapped = true;
+        assert_eq!(now, 0.0);
+        break;
+      }
+      assert!((now - last - 5.0 * tick).abs() < 1e-12);
+      last = now;
+    }
+    assert!(wrapped, "the rate-paced sweep must loop back to the start");
   }
 
   /// A phase-portrait Demonstration — sliders for a nonlinear oscillator's

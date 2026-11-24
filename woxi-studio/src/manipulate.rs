@@ -18,6 +18,13 @@ use woxi::functions::graphics::{
 };
 use woxi::syntax::Expr;
 
+/// Auto-playing widgets (Animate / ListAnimate) advance their animation
+/// control one step every `ANIM_INTERVAL_MS`. At ~60ms the default 100-step
+/// continuous range sweeps in ~6s, matching Wolfram's leisurely Animate
+/// (and the Playground's pace). An `AnimationRate -> r` animation instead
+/// moves `r * ANIM_INTERVAL_MS / 1000` units per step, i.e. `r` per second.
+pub const ANIM_INTERVAL_MS: u64 = 60;
+
 /// A control caption drawn as a picture, at the size its SVG states.
 #[derive(Debug, Clone)]
 pub struct LabelIcon {
@@ -1192,6 +1199,9 @@ pub struct ManipulateState {
   /// `advance_animation` targets this control instead of defaulting to the
   /// first continuous one.
   animation_var: Option<String>,
+  /// `AnimationRate -> r`: the animated variable moves `r` units per second
+  /// of play rather than one default step per tick. `None` keeps the step.
+  animation_rate: Option<f64>,
   /// Per-control `TrackingFunction -> f` callback (InputForm code), as
   /// `(control name, function code)`. Run against the control's new value
   /// whenever the user moves it (see [`apply_tracking`]), so a Demonstration
@@ -1499,6 +1509,7 @@ impl ManipulateState {
       row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
+      animation_rate: spec.animation_rate,
       module_locals: spec.module_locals,
       self_refreshing: false,
       dynamic_feedback_vars,
@@ -2424,6 +2435,10 @@ impl ManipulateState {
     let Some(idx) = idx else { return };
     // A Trigger's `AnimationRepetitions` may name another control.
     let limit = self.trigger_repetition_limit(idx);
+    // An `AnimationRate` paces the sweep in units per second of play.
+    let rate_step = self
+      .animation_rate
+      .map(|r| r * ANIM_INTERVAL_MS as f64 / 1000.0);
     let mut finished = false;
     match &mut self.controls[idx] {
       ControlState::Continuous {
@@ -2433,11 +2448,12 @@ impl ManipulateState {
         current,
         ..
       } => {
-        let mut v = *current + *step;
+        let step = rate_step.unwrap_or(*step);
+        let mut v = *current + step;
         // Loop back to the start once we step past the end (small epsilon
         // so floating-point drift doesn't skip the final frame). An
         // infinite end (`{time, 0, Infinity, 1}`) never wraps.
-        if max.is_finite() && v > *max + *step * 1e-6 {
+        if max.is_finite() && v > *max + step * 1e-6 {
           v = *min;
         }
         *current = v;
@@ -2450,8 +2466,9 @@ impl ManipulateState {
         completed,
         ..
       } => {
-        let mut v = *current + *step;
-        if max.is_finite() && v > *max + *step * 1e-6 {
+        let step = rate_step.unwrap_or(*step);
+        let mut v = *current + step;
+        if max.is_finite() && v > *max + step * 1e-6 {
           *completed += 1;
           if limit.is_some_and(|n| *completed >= n) {
             // The last requested sweep is done: rest on the final frame.
