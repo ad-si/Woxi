@@ -1140,6 +1140,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Permutations" => Some((1, 2)),
     "PermutationSupport" => Some((1, 1)),
     "Combinatorica`UnrankPermutation" => Some((2, 2)),
+    "Combinatorica`Cofactor" => Some((2, 2)),
     "Combinatorica`Partitions" => Some((1, 1)),
     "Combinatorica`Permutations" => Some((1, 1)),
     "Combinatorica`Derangements" => Some((1, 1)),

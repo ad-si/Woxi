@@ -6353,13 +6353,14 @@ mod grid_item_style_tests {
       r#"ExportString[Style[Style["u", Italic, Blue], Red], "SVG"]"#,
     )
     .unwrap();
-    assert_eq!(svg.matches("<tspan").count(), 1, "{svg}");
-    assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\" fill=\"rgb(0,0,255)\">u</tspan>"
-      ),
-      "{svg}"
-    );
+    // Set directly on the `<text>`, the merged run needs no span at all.
+    assert!(svg.matches("<tspan").count() <= 1, "{svg}");
+    let text = svg.split("<text").nth(1).expect("text element");
+    let text = &text[..text.find("</text>").unwrap()];
+    assert!(text.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+    assert!(text.contains("font-style=\"italic\""), "{svg}");
+    assert!(!text.contains("rgb(255,0,0)"), "{svg}");
+    assert!(text.ends_with(">u"), "{svg}");
   }
 
   #[test]
@@ -6513,6 +6514,60 @@ mod grid_item_style_tests {
       face.families,
       face.weight
     );
+  }
+
+  #[test]
+  fn test_generic_family_of_named_fonts() {
+    use resvg::usvg::FontFamily;
+    use woxi::functions::image_ast::generic_family_of;
+    for name in ["Arial", "Helvetica", "Verdana", "Source Sans Pro", "Ubuntu"] {
+      assert_eq!(generic_family_of(name), FontFamily::SansSerif, "{name}");
+    }
+    for name in ["Times", "Times New Roman", "Georgia", "Noto Serif"] {
+      assert_eq!(generic_family_of(name), FontFamily::Serif, "{name}");
+    }
+    for name in ["Courier", "Courier New", "DejaVu Sans Mono", "Menlo"] {
+      assert_eq!(generic_family_of(name), FontFamily::Monospace, "{name}");
+    }
+  }
+
+  /// A named font family that isn't installed falls back to the generic
+  /// family it belongs to — a missing "Arial" draws in the default
+  /// sans-serif face, not in usvg's serif last resort.
+  #[test]
+  fn test_missing_named_font_falls_back_to_its_generic_family() {
+    use resvg::usvg::fontdb::Database;
+    let face_family = |family: &str| -> String {
+      let mut db = Database::new();
+      woxi::functions::image_ast::load_embedded_fonts(&mut db);
+      // The embedded set has no serif face of its own; point the serif
+      // family at another face so a serif fallback is detectable.
+      db.set_serif_family("Atkinson Hyperlegible Mono");
+      let mut db = std::sync::Arc::new(db);
+      let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" \
+         height=\"20\"><text x=\"0\" y=\"15\" font-family=\"{family}\">\
+         A</text></svg>"
+      );
+      let opts = woxi::functions::image_ast::svg_render_options(db.clone());
+      let tree = resvg::usvg::Tree::from_str(&svg, &opts).unwrap();
+      let resvg::usvg::Node::Text(text) = &tree.root().children()[0] else {
+        panic!("expected a text node");
+      };
+      let font = text.chunks()[0].spans()[0].font().clone();
+      let resolver = woxi::functions::image_ast::font_resolver();
+      let id = (resolver.select_font)(&font, &mut db).expect("a face");
+      db.face(id).unwrap().families[0].0.clone()
+    };
+    let sans = face_family("sans-serif");
+    let serif = face_family("serif");
+    assert_ne!(sans, serif);
+    assert_eq!(face_family("Arial"), sans);
+    assert_eq!(face_family("Helvetica"), sans);
+    assert_eq!(face_family("Arial, Helvetica"), sans);
+    // An explicit generic family in the list still wins over a stand-in.
+    assert_eq!(face_family("Arial, serif"), serif);
+    assert_eq!(face_family("Times"), serif);
   }
 
   #[test]

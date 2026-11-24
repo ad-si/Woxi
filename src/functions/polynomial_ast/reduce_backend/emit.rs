@@ -1100,6 +1100,123 @@ fn comparison_op(relation: Relation) -> ComparisonOp {
   }
 }
 
+/// Emits cylindrical cells as nested conditions: cells sharing the bound on
+/// a variable are grouped under it, so `x < 0 && (y < 1 || y > 2)` is
+/// written once per distinct bound, in order along the real line where the
+/// bounds are constants.
+pub(super) fn cylindrical_cells_expr(
+  cells: &[woxi_reduce::cad::Cell],
+  targets: &[Variable],
+) -> Expr {
+  let refs: Vec<&[woxi_reduce::cad::Bound]> =
+    cells.iter().map(std::vec::Vec::as_slice).collect();
+  cylindrical_group_expr(&refs, targets)
+}
+
+fn cylindrical_group_expr(
+  cells: &[&[woxi_reduce::cad::Bound]],
+  targets: &[Variable],
+) -> Expr {
+  let Some(target) = targets.first() else {
+    return bool_expr(!cells.is_empty());
+  };
+  let mut ordered = cells.to_vec();
+  ordered
+    .sort_by(|left, right| woxi_reduce::cad::bound_cmp(&left[0], &right[0]));
+  let mut groups: Vec<(
+    &woxi_reduce::cad::Bound,
+    Vec<&[woxi_reduce::cad::Bound]>,
+  )> = Vec::new();
+  for cell in ordered {
+    if let Some((_, members)) =
+      groups.iter_mut().find(|(bound, _)| **bound == cell[0])
+    {
+      members.push(&cell[1..]);
+    } else {
+      groups.push((&cell[0], vec![&cell[1..]]));
+    }
+  }
+  let mut alternatives = Vec::new();
+  for (bound, members) in groups {
+    let rest = cylindrical_group_expr(&members, &targets[1..]);
+    let is_bool = |expr: &Expr, value: &str| matches!(expr, Expr::Identifier(b) if b == value);
+    let part = match cylindrical_bound_expr(bound, target) {
+      None => rest,
+      Some(_) if is_bool(&rest, "False") => continue,
+      Some(head) if is_bool(&rest, "True") => head,
+      Some(head) => binop(BinaryOperator::And, head, rest),
+    };
+    if matches!(&part, Expr::Identifier(t) if t == "True") {
+      return part;
+    }
+    alternatives.push(part);
+  }
+  alternatives
+    .into_iter()
+    .reduce(|left, right| binop(BinaryOperator::Or, left, right))
+    .unwrap_or_else(|| bool_expr(false))
+}
+
+fn cylindrical_bound_expr(
+  bound: &woxi_reduce::cad::Bound,
+  target: &Variable,
+) -> Option<Expr> {
+  use woxi_reduce::cad::Bound;
+  let variable = Expr::Identifier(target.name.clone());
+  let compare = |operator, value: &AffineTerm| Expr::Comparison {
+    operands: vec![variable.clone(), term_expr(value)],
+    operators: vec![operator],
+  };
+  match bound {
+    Bound::Free => None,
+    Bound::Equal(value) => Some(compare(ComparisonOp::Equal, value)),
+    Bound::Interval {
+      lower: Some(lower),
+      upper: Some(upper),
+    } => {
+      let relation = |strict: bool| {
+        Expr::Identifier(if strict { "Less" } else { "LessEqual" }.into())
+      };
+      Some(call(
+        "Inequality",
+        vec![
+          term_expr(&lower.term),
+          relation(lower.strict),
+          variable.clone(),
+          relation(upper.strict),
+          term_expr(&upper.term),
+        ],
+      ))
+    }
+    Bound::Interval {
+      lower: Some(lower),
+      upper: None,
+    } => Some(compare(
+      if lower.strict {
+        ComparisonOp::Greater
+      } else {
+        ComparisonOp::GreaterEqual
+      },
+      &lower.term,
+    )),
+    Bound::Interval {
+      lower: None,
+      upper: Some(upper),
+    } => Some(compare(
+      if upper.strict {
+        ComparisonOp::Less
+      } else {
+        ComparisonOp::LessEqual
+      },
+      &upper.term,
+    )),
+    Bound::Interval {
+      lower: None,
+      upper: None,
+    } => None,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::collections::BTreeMap;

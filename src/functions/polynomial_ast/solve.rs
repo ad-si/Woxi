@@ -26472,9 +26472,15 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Linear inequalities (and equations) over the reals.
   if matches!(domain.as_deref(), None | Some("Reals"))
     && var_names.len() == var_exprs.len()
-    && let Some(instances) = find_instance_linear(cond, &var_names, n)?
   {
-    return Ok(Expr::List(instances.into()));
+    if let Some(instances) = find_instance_linear(cond, &var_names, n)? {
+      return Ok(Expr::List(instances.into()));
+    }
+    if let Some(instances) =
+      find_instance_linear_disjunction(cond, &var_names, n)?
+    {
+      return Ok(Expr::List(instances.into()));
+    }
   }
 
   // Whether the solution set below is provably complete: Solve returned the
@@ -26596,6 +26602,127 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// The disjuncts of a condition built from `And`, `Or` and lists over
+/// atomic conditions, each as a list of its conjoined atoms. `None` when
+/// the expansion exceeds `limit` disjuncts.
+fn condition_dnf(cond: &Expr, limit: usize) -> Option<Vec<Vec<Expr>>> {
+  use crate::syntax::BinaryOperator;
+  let conjoin = |parts: Vec<&Expr>| -> Option<Vec<Vec<Expr>>> {
+    let mut result: Vec<Vec<Expr>> = vec![Vec::new()];
+    for part in parts {
+      let alternatives = condition_dnf(part, limit)?;
+      let mut next = Vec::new();
+      for left in &result {
+        for right in &alternatives {
+          let mut conjunction = left.clone();
+          conjunction.extend(right.iter().cloned());
+          next.push(conjunction);
+          if next.len() > limit {
+            return None;
+          }
+        }
+      }
+      result = next;
+    }
+    Some(result)
+  };
+  let disjoin = |parts: Vec<&Expr>| -> Option<Vec<Vec<Expr>>> {
+    let mut result = Vec::new();
+    for part in parts {
+      result.extend(condition_dnf(part, limit)?);
+      if result.len() > limit {
+        return None;
+      }
+    }
+    Some(result)
+  };
+  match cond {
+    Expr::List(items) => conjoin(items.iter().collect()),
+    Expr::FunctionCall { name, args } if name == "And" => {
+      conjoin(args.iter().collect())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => conjoin(vec![left, right]),
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      disjoin(args.iter().collect())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => disjoin(vec![left, right]),
+    Expr::Identifier(b) if b == "False" => Some(Vec::new()),
+    Expr::Identifier(b) if b == "True" => Some(vec![Vec::new()]),
+    atom => Some(vec![vec![atom.clone()]]),
+  }
+}
+
+/// `FindInstance` for a disjunction of linear systems over the reals: the
+/// instances of each disjunct in turn, as `find_instance_linear` finds
+/// them, until `n` distinct ones are collected. `None` unless the
+/// condition has an `Or` and every disjunct is a linear system.
+fn find_instance_linear_disjunction(
+  cond: &Expr,
+  var_names: &[String],
+  n: usize,
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  fn has_or(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Or,
+          ..
+        }
+      )
+      || match e {
+        Expr::List(items) => items.iter().any(has_or),
+        Expr::FunctionCall { name, args } if name == "And" => {
+          args.iter().any(has_or)
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::And,
+          left,
+          right,
+        } => has_or(left) || has_or(right),
+        _ => false,
+      }
+  }
+  if !has_or(cond) {
+    return Ok(None);
+  }
+  let Some(disjuncts) = condition_dnf(cond, 4096) else {
+    return Ok(None);
+  };
+  let mut instances: Vec<Expr> = Vec::new();
+  for atoms in disjuncts {
+    if instances.len() >= n {
+      break;
+    }
+    let conjunction = if atoms.is_empty() {
+      Expr::Identifier("True".into())
+    } else {
+      call("And", atoms)
+    };
+    let Some(found) =
+      find_instance_linear(&conjunction, var_names, n - instances.len())?
+    else {
+      return Ok(None);
+    };
+    for instance in found {
+      if !instances.iter().any(|known| {
+        crate::evaluator::pattern_matching::expr_equal(known, &instance)
+      }) {
+        instances.push(instance);
+      }
+    }
+  }
+  Ok(Some(instances))
+}
+
 /// The atoms of a conjunction of conditions: the members of lists and
 /// `And`s, with a comparison chain `a < x <= b` split into its links.
 fn condition_atoms(
@@ -26619,6 +26746,26 @@ fn condition_atoms(
     } if operators.len() + 1 == operands.len() => {
       for (i, op) in operators.iter().enumerate() {
         out.push((operands[i].clone(), *op, operands[i + 1].clone()));
+      }
+      true
+    }
+    // `Inequality[a, Less, x, LessEqual, b]` chains its comparisons.
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() >= 3 && args.len() % 2 == 1 =>
+    {
+      for i in (0..args.len() - 2).step_by(2) {
+        let op = match &args[i + 1] {
+          Expr::Identifier(head) => match head.as_str() {
+            "Less" => ComparisonOp::Less,
+            "LessEqual" => ComparisonOp::LessEqual,
+            "Greater" => ComparisonOp::Greater,
+            "GreaterEqual" => ComparisonOp::GreaterEqual,
+            "Equal" => ComparisonOp::Equal,
+            _ => return false,
+          },
+          _ => return false,
+        };
+        out.push((args[i].clone(), op, args[i + 2].clone()));
       }
       true
     }
@@ -26724,8 +26871,10 @@ fn find_instance_linear(
   // may hold with equality, and wolframscript, too, likes to pick such a
   // boundary point: `x >= 3` gives `x -> 3`.
   let k = vars.len();
-  let solve = |objective: &[Expr],
-               slack: &Expr|
+  // `bounds_box` limits each variable to the given interval.
+  let solve_in = |objective: &[Expr],
+                  slack: &Expr,
+                  bounds_box: Option<&[Expr]>|
    -> Result<Option<Vec<Expr>>, InterpreterError> {
     let mut m = Vec::with_capacity(rows.len());
     let mut b = Vec::with_capacity(rows.len());
@@ -26746,11 +26895,14 @@ fn find_instance_linear(
       ));
     }
     let infinity = Expr::Identifier("Infinity".to_string());
-    let mut bounds: Vec<Expr> = (0..k)
-      .map(|_| {
-        Expr::List(vec![negate_expr(&infinity), infinity.clone()].into())
-      })
-      .collect();
+    let mut bounds: Vec<Expr> = match bounds_box {
+      Some(intervals) => intervals.to_vec(),
+      None => (0..k)
+        .map(|_| {
+          Expr::List(vec![negate_expr(&infinity), infinity.clone()].into())
+        })
+        .collect(),
+    };
     bounds.push(slack.clone());
     let program = call(
       "LinearProgramming",
@@ -26775,6 +26927,8 @@ fn find_instance_linear(
       _ => None,
     })
   };
+  let solve =
+    |objective: &[Expr], slack: &Expr| solve_in(objective, slack, None);
   let slack_between = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
 
   // The largest slack, which centers a bounded interval; where it can grow
@@ -26825,6 +26979,37 @@ fn find_instance_linear(
         && !points.iter().any(|q| same(q, &p[..k]))
       {
         points.push(p[..k].to_vec());
+      }
+    }
+  }
+  // Still short with a single point (an unbounded region whose extreme
+  // points along every axis escape to infinity): the extreme points of the
+  // region cut down to a unit box around that point.
+  if points.len() == 1 && n > 1 {
+    let unit_box: Vec<Expr> = points[0]
+      .iter()
+      .map(|value| {
+        Ok(Expr::List(
+          vec![
+            eval(&minus2(value.clone(), Expr::Integer(1)))?,
+            eval(&plus2(value.clone(), Expr::Integer(1)))?,
+          ]
+          .into(),
+        ))
+      })
+      .collect::<Result<_, InterpreterError>>()?;
+    'boxed: for j in 0..k {
+      for sign in [1, -1] {
+        if points.len() >= n {
+          break 'boxed;
+        }
+        let mut objective = vec![Expr::Integer(0); k + 1];
+        objective[j] = Expr::Integer(sign);
+        if let Some(p) = solve_in(&objective, &slack, Some(&unit_box))?
+          && !points.iter().any(|q| same(q, &p[..k]))
+        {
+          points.push(p[..k].to_vec());
+        }
       }
     }
   }

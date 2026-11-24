@@ -556,6 +556,11 @@ pub fn dispatch_polynomial_functions(
     "Reduce" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
+    "CylindricalDecomposition" if args.len() == 2 => {
+      return Some(
+        crate::functions::polynomial_ast::cylindrical_decomposition_ast(args),
+      );
+    }
     "FindInstance" if args.len() >= 2 && args.len() <= 4 => {
       return Some(crate::functions::polynomial_ast::find_instance_ast(args));
     }

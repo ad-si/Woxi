@@ -1465,10 +1465,17 @@ fn evaluate_function_call_ast_inner(
   // `GraphPlot` takes them (`{1 -> 2, "label"}`), or on a `Graph`. Build
   // the equivalent `Graph` and delegate to the built-in graph functions
   // instead of reimplementing them.
-  if let Some(short) = name.strip_prefix("GraphUtilities`")
+  // While the package is loaded its `AdjacencyMatrix` shadows the
+  // built-in, so the bare name reads a (labeled) rule list too.
+  let shadowed = (name == "AdjacencyMatrix"
+    && matches!(args.first(), Some(Expr::List(_)))
+    && crate::context_path_contains("GraphUtilities`"))
+  .then_some(name);
+  if let Some(short) = name.strip_prefix("GraphUtilities`").or(shadowed)
     && matches!(
       short,
       "VertexList"
+        | "AdjacencyMatrix"
         | "PageRanks"
         | "ClosenessCentrality"
         | "CommunityStructureAssignment"
@@ -1483,6 +1490,10 @@ fn evaluate_function_call_ast_inner(
     ))?;
     return match short {
       "VertexList" => Ok(vertices),
+      "AdjacencyMatrix" => crate::evaluator::evaluate_expr_to_expr(&call1(
+        "AdjacencyMatrix",
+        graph,
+      )),
       // The communities of maximal modularity (`FindGraphCommunities`),
       // either as the vertex lists themselves or as each vertex's 1-based
       // community number, in `VertexList` order.
@@ -1653,6 +1664,7 @@ fn evaluate_function_call_ast_inner(
     "OrbitRepresentatives" if combinatorica_active() => {
       "Combinatorica`OrbitRepresentatives"
     }
+    "Cofactor" if combinatorica_active() => "Combinatorica`Cofactor",
     "UnrankPermutation" if combinatorica_active() => {
       "Combinatorica`UnrankPermutation"
     }
@@ -1717,7 +1729,7 @@ fn evaluate_function_call_ast_inner(
     "KSetPartitions" if combinatorica_active() => {
       "Combinatorica`KSetPartitions"
     }
-    "ToAdjacencyMatrix" | "Edges" | "M"
+    "ToAdjacencyMatrix" | "IncidenceMatrix" | "Edges" | "M"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -3269,6 +3281,44 @@ fn evaluate_function_call_ast_inner(
             replacement: Box::new(crate::functions::graphics::plot_range_expr(
               range,
             )),
+          });
+        }
+        continue;
+      }
+      if let Some(Expr::List(given)) = &given
+        && let Some(rule) = given.iter().find(|r| {
+          matches!(r, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if crate::syntax::expr_to_string(pattern) == crate::syntax::expr_to_string(&opt))
+        })
+      {
+        rules.push(rule.clone());
+      }
+    }
+    return Ok(Expr::List(rules.into()));
+  }
+
+  // AbsoluteOptions[graph, opt] — the effective option values of a graph.
+  // `VertexCoordinates` reports the layout the graph is drawn with; any
+  // other option reports the value it was given.
+  if name == "AbsoluteOptions"
+    && args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { name: g, args: ga }
+      if g == "Graph" && ga.len() >= 2)
+  {
+    let names: Vec<Expr> = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    let given = evaluate_function_call_ast("Options", &[args[0].clone()]).ok();
+    let mut rules = Vec::new();
+    for opt in names {
+      if matches!(&opt, Expr::Identifier(n) if n == "VertexCoordinates") {
+        let coordinates =
+          evaluate_function_call_ast("GraphEmbedding", &[args[0].clone()])?;
+        if matches!(coordinates, Expr::List(_)) {
+          rules.push(Expr::Rule {
+            pattern: Box::new(opt),
+            replacement: Box::new(coordinates),
           });
         }
         continue;
@@ -6826,9 +6876,16 @@ fn evaluate_function_call_ast_inner(
     } = &args[0]
       && gname == "Graph"
       && gargs.len() >= 2
-      && let Expr::List(_) = &gargs[0]
+      && let Expr::List(vertices) = &gargs[0]
     {
-      return Ok(gargs[0].clone());
+      // `Style[v, …]`, `Tooltip[v, tip]` and `Labeled[v, label]` only
+      // annotate a vertex; the vertex itself is `v`.
+      return Ok(Expr::List(
+        vertices
+          .iter()
+          .map(|v| crate::functions::graph::bare_vertex(v).clone())
+          .collect(),
+      ));
     }
     return Ok(unevaluated(name, args));
   }
@@ -9132,7 +9189,7 @@ fn evaluate_function_call_ast_inner(
         .map(|(i, v)| (expr_to_string(v), i))
         .collect();
       // Initialize n×n zero matrix
-      let mut matrix = vec![vec![Expr::Integer(0); n]; n];
+      let mut matrix = vec![vec![0i128; n]; n];
       for edge in edges {
         if let Expr::FunctionCall {
           name: ename,
@@ -9145,15 +9202,19 @@ fn evaluate_function_call_ast_inner(
           if let (Some(&fi), Some(&ti)) =
             (vertex_index.get(&from_str), vertex_index.get(&to_str))
           {
-            matrix[fi][ti] = Expr::Integer(1);
-            if ename == "UndirectedEdge" {
-              matrix[ti][fi] = Expr::Integer(1);
+            // Parallel edges are counted.
+            matrix[fi][ti] += 1;
+            if ename == "UndirectedEdge" && fi != ti {
+              matrix[ti][fi] += 1;
             }
           }
         }
       }
       return Ok(Expr::List(
-        matrix.into_iter().map(|v| Expr::List(v.into())).collect(),
+        matrix
+          .into_iter()
+          .map(|v| Expr::List(v.into_iter().map(Expr::Integer).collect()))
+          .collect(),
       ));
     }
     return Ok(unevaluated(name, args));
@@ -15890,6 +15951,7 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ToUnorderedPairs" => "Combinatorica`ToUnorderedPairs",
     "ConnectedComponents" => "Combinatorica`ConnectedComponents",
     "ToAdjacencyMatrix" => "Combinatorica`ToAdjacencyMatrix",
+    "IncidenceMatrix" => "Combinatorica`IncidenceMatrix",
     "Edges" => "Combinatorica`Edges",
     "M" => "Combinatorica`M",
     "ShowGraph" => "Combinatorica`ShowGraph",

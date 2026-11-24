@@ -4946,6 +4946,7 @@ fn render_manipulate_widget<'a>(
         radio: as_radio,
         slider: as_slider,
         vertical: is_vertical,
+        bar_grid,
         checkbox: forced_checkbox,
       } => {
         // A shared variable can have several disjoint SetterBar rows (see
@@ -5095,7 +5096,29 @@ fn render_manipulate_widget<'a>(
             };
             items.push(item);
           }
-          if *is_vertical {
+          if let Some(grid) = bar_grid {
+            // `Appearance -> "Horizontal" -> {rows, columns}`: one line of
+            // radio choices per grid row (or column, for a vertical bar).
+            let lines = bar_grid_lines(items.len(), *grid, *is_vertical);
+            let mut slots: Vec<Option<Element<Message>>> =
+              items.into_iter().map(Some).collect();
+            let line_widgets: Vec<Element<Message>> = lines
+              .iter()
+              .map(|line| {
+                let cells = line.iter().filter_map(|&i| slots[i].take());
+                if *is_vertical {
+                  Column::with_children(cells).spacing(4).into()
+                } else {
+                  Row::with_children(cells).spacing(12).align_y(Center).into()
+                }
+              })
+              .collect();
+            if *is_vertical {
+              Row::with_children(line_widgets).spacing(12).into()
+            } else {
+              Column::with_children(line_widgets).spacing(4).into()
+            }
+          } else if *is_vertical {
             Column::with_children(items).spacing(4).into()
           } else {
             // A bar too wide for the cell (seventeen picture choices)
@@ -5116,12 +5139,36 @@ fn render_manipulate_widget<'a>(
           ) && !*popup)
         {
           let is_vertical = *is_vertical;
+          // `Appearance -> "Horizontal" -> {rows, columns}` breaks the bar
+          // into lines (rows, or columns for a vertical bar); each line is
+          // a segmented bar of its own, so a segment's rounded corners
+          // follow its position within its line.
+          let lines = bar_grid
+            .map(|grid| bar_grid_lines(count, grid, is_vertical))
+            .unwrap_or_else(|| vec![(0..count).collect()]);
+          let mut segment_of = vec![(0, 1); count];
+          for line in &lines {
+            for (pos, &i) in line.iter().enumerate() {
+              segment_of[i] = (pos, line.len());
+            }
+          }
+          // In a grid the cells of a column line up, so every button takes
+          // the width of the widest text label.
+          let cell_width = bar_grid.is_some().then(|| {
+            let chars = value_labels
+              .iter()
+              .map(|l| l.chars().count())
+              .max()
+              .unwrap_or(1);
+            chars as f32 * 7.0 + 20.0
+          });
           // A `Background -> color` option paints the faces the way it
           // paints a `Button`'s (a selected segment keeps the accent so the
           // current choice still reads as selected).
           let face = state.control_face.get(ctrl_idx).copied().flatten();
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
+            let (segment, segment_count) = segment_of[i];
             let is_selected = !has_overflow && i == *current_index;
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
             // shows the rendered icon; a text choice shows its label, honoring
@@ -5156,13 +5203,16 @@ fn render_manipulate_widget<'a>(
                   theme,
                   status,
                   is_selected,
-                  i,
-                  count,
+                  segment,
+                  segment_count,
                   enabled,
                   is_vertical,
                 ),
               },
             );
+            if let Some(width) = cell_width {
+              btn = btn.width(iced::Length::Fixed(width));
+            }
             if enabled {
               btn = btn.on_press(Message::ManipulateDiscreteIndexChanged(
                 cell_idx, ctrl_idx, i,
@@ -5172,7 +5222,24 @@ fn render_manipulate_widget<'a>(
           }
           // `Appearance -> "Vertical"` stacks the segments in a column
           // instead of Wolfram's default horizontal bar.
-          if is_vertical {
+          if bar_grid.is_some() {
+            let mut slots: Vec<Option<Element<Message>>> =
+              buttons.into_iter().map(Some).collect();
+            let line_widgets = lines.iter().map(|line| {
+              let cells = line.iter().filter_map(|&i| slots[i].take());
+              if is_vertical {
+                Column::with_children(cells).spacing(0).into()
+              } else {
+                Row::with_children(cells).spacing(0).into()
+              }
+            });
+            let line_widgets: Vec<Element<Message>> = line_widgets.collect();
+            if is_vertical {
+              Row::with_children(line_widgets).spacing(4).into()
+            } else {
+              Column::with_children(line_widgets).spacing(4).into()
+            }
+          } else if is_vertical {
             Column::with_children(buttons).spacing(0).into()
           } else {
             Row::with_children(buttons)
@@ -6683,6 +6750,10 @@ fn rasterize_svg(
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let svg_str =
     &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
+  let svg_str = &woxi::functions::image_ast::widen_hairline_strokes(
+    svg_str,
+    scale_factor as f64,
+  );
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -7561,6 +7632,25 @@ fn context_menu_style(theme: &Theme) -> container::Style {
 /// The selected segment is filled blue with white text; the others are a
 /// neutral surface with a hairline border. `index`/`count` decide which
 /// outer corners are rounded so the row reads as a single pill.
+/// The lines a SetterBar with `Appearance -> "Horizontal" -> {rows,
+/// columns}` draws its `count` choices in, as choice indices per line: the
+/// rows of the grid, filled left to right and top to bottom, or — for a
+/// `vertical` bar (`"Vertical" -> {rows, columns}`) — its columns, filled
+/// top to bottom and then left to right. A line past the last choice is
+/// dropped.
+fn bar_grid_lines(
+  count: usize,
+  (rows, columns): (usize, usize),
+  vertical: bool,
+) -> Vec<Vec<usize>> {
+  let per_line = if vertical { rows } else { columns }.max(1);
+  (0..count)
+    .collect::<Vec<_>>()
+    .chunks(per_line)
+    .map(<[usize]>::to_vec)
+    .collect()
+}
+
 fn setter_button_style(
   theme: &Theme,
   status: button::Status,
@@ -8673,11 +8763,13 @@ fn encode_svg_as_png(
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let scale: f32 = 2.0;
   let svg_str =
     &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
+  let svg_str =
+    &woxi::functions::image_ast::widen_hairline_strokes(svg_str, scale as f64);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
-  let scale: f32 = 2.0;
   let w = (size.width() * scale).ceil() as u32;
   let h = (size.height() * scale).ceil() as u32;
   if w == 0 || h == 0 {
@@ -9850,6 +9942,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert!(!is_text_table(rows), "{rows:?}");
   }
 
+  /// A SetterBar with `Appearance -> "Horizontal" -> {2, Automatic}` over
+  /// sixteen choices reaches the Studio widget as a 2 × 8 grid and draws
+  /// two rows of eight buttons, filled left to right. Regression: the grid
+  /// spec was dropped and all sixteen buttons ran together in one long row.
+  #[test]
+  fn setter_bar_grid_appearance_splits_choices_into_rows() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[k, {k, 1, 16, 1, ControlType -> SetterBar,
+        Appearance -> ("Horizontal" -> {2, Automatic})}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let Some(manipulate::ControlState::Discrete {
+      bar_grid, vertical, ..
+    }) = state.controls.first()
+    else {
+      panic!("expected a discrete control");
+    };
+    assert_eq!(*bar_grid, Some((2, 8)));
+    let lines = bar_grid_lines(16, bar_grid.unwrap(), *vertical);
+    assert_eq!(
+      lines,
+      vec![(0..8).collect::<Vec<_>>(), (8..16).collect::<Vec<_>>()]
+    );
+  }
+
+  /// A `"Vertical" -> {rows, columns}` grid fills its columns top to
+  /// bottom, and a short last line keeps only the remaining choices.
+  #[test]
+  fn vertical_setter_bar_grid_fills_columns() {
+    assert_eq!(
+      bar_grid_lines(7, (3, 3), true),
+      vec![vec![0, 1, 2], vec![3, 4, 5], vec![6]]
+    );
+    assert_eq!(
+      bar_grid_lines(7, (3, 3), false),
+      vec![vec![0, 1, 2], vec![3, 4, 5], vec![6]]
+    );
+    assert_eq!(
+      bar_grid_lines(6, (2, 3), true),
+      vec![vec![0, 1], vec![2, 3], vec![4, 5]]
+    );
+  }
+
   /// A control caption `Row[{"viewpoint ", Subscript["V", "y"]}]` must set
   /// its `y` as a smaller script: Unicode has no subscript `y`, so the run
   /// keeps the plain letter and is flagged as a subscript, which
@@ -10911,6 +11048,50 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     state.apply_button_action(&ccw_action);
     state.apply_button_action(&ccw_action);
     assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
+  }
+
+  /// A `Toggler[Dynamic[var], {value -> label, …}]` written inside a
+  /// `Dynamic` display row (not a formal control spec) is a button showing
+  /// the label of the value `var` holds; pressing it moves `var` on to the
+  /// next value, wrapping around. Regression: it used to render as its
+  /// frozen source text (`Toggler[Dynamic[mode], {…}]`).
+  #[test]
+  fn display_toggler_cycles_its_variable_through_its_states() {
+    use woxi::functions::graphics::DisplayNode;
+    let code = "Manipulate[\
+      {mode, n}, \
+      {{n, 1}, 1, 3, 1}, \
+      {{mode, \"b\"}, None}, \
+      Dynamic[Row[{Toggler[Dynamic[mode], \
+        {\"a\" -> \"first\", \"b\" -> \"second\", \"c\" -> \"third\"}]}]]\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Toggler Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    let button = |state: &manipulate::ManipulateState| {
+      state
+        .display_trees
+        .iter()
+        .find_map(|t| match t {
+          DisplayNode::Row(items) => items.iter().find_map(|i| match i {
+            DisplayNode::Button { label, action } => {
+              Some((display_node_plain_text(label), action.clone()))
+            }
+            _ => None,
+          }),
+          _ => None,
+        })
+        .expect("the Toggler must be drawn as a button")
+    };
+    let (label, action) = button(&state);
+    assert_eq!(label, "second");
+    assert_eq!(action, "mode = \"c\"");
+    state.apply_button_action(&action);
+    assert_eq!(state.text_output.as_deref(), Some("{c, 1}"));
+    // The last state wraps around to the first.
+    let (label, action) = button(&state);
+    assert_eq!(label, "third");
+    assert_eq!(action, "mode = \"a\"");
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -13550,6 +13731,59 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(state.animated);
     assert!(!state.playing);
+  }
+
+  /// `AnimationRate -> r` moves the animated variable `r` units per second
+  /// of play: each tick advances it by `r` times the tick interval instead
+  /// of the default hundredth of the range, still wrapping at the end.
+  #[test]
+  fn animation_rate_paces_the_sweep_per_second() {
+    let current = |s: &manipulate::ManipulateState, name: &str| {
+      s.controls
+        .iter()
+        .find_map(|c| match c {
+          manipulate::ControlState::Continuous {
+            name: n, current, ..
+          } if n == name => Some(*current),
+          _ => None,
+        })
+        .expect("continuous control")
+    };
+    let tick = manipulate::ANIM_INTERVAL_MS as f64 / 1000.0;
+
+    // An `Animator` control with buttons beside it, starting paused.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[t^2, Row[{Button[\"reset\", t = 0]}], \
+       {{t, 0, \"time\"}, 0, 80, Animator, AnimationRunning -> False, \
+       AnimationRate -> 0.5}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.animated && !state.playing);
+    state.advance_animation();
+    assert!((current(&state, "t") - 0.5 * tick).abs() < 1e-12);
+    state.advance_animation();
+    assert!((current(&state, "t") - 2.0 * 0.5 * tick).abs() < 1e-12);
+
+    // An `Animate` option; the sweep still wraps past the end.
+    let expr =
+      woxi::interpret_to_expr("Animate[x, {x, 0, 1}, AnimationRate -> 5]")
+        .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let mut wrapped = false;
+    let mut last = current(&state, "x");
+    for _ in 0..10 {
+      state.advance_animation();
+      let now = current(&state, "x");
+      if now < last {
+        wrapped = true;
+        assert_eq!(now, 0.0);
+        break;
+      }
+      assert!((now - last - 5.0 * tick).abs() < 1e-12);
+      last = now;
+    }
+    assert!(wrapped, "the rate-paced sweep must loop back to the start");
   }
 
   /// A phase-portrait Demonstration — sliders for a nonlinear oscillator's

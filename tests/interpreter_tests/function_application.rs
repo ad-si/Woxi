@@ -3051,6 +3051,56 @@ mod apply_held_arguments {
   }
 }
 
+mod map_level_compound_head {
+  use super::*;
+
+  // Map with a level spec rebuilds the parts it descends through. A part
+  // with a compound head such as `h[1][2]` must keep `h[1]` as its head
+  // expression, so it still evaluates once `h` gets a definition.
+  #[test]
+  fn rebuilt_part_keeps_compound_head() {
+    assert_eq!(
+      interpret("Head[First[Map[f, {h[1][2]}, {2}]]]").unwrap(),
+      "h[1]"
+    );
+    assert_eq!(
+      interpret("Map[f, {h[1][2], g[x][y]}, {2}]").unwrap(),
+      "{h[1][f[2]], g[x][f[y]]}"
+    );
+    assert_eq!(interpret("Map[f, h[1][2], {-1}]").unwrap(), "h[1][f[2]]");
+  }
+
+  #[test]
+  fn rebuilt_part_evaluates_with_later_definition() {
+    assert_eq!(
+      interpret("r = Map[f, {{h[1][2]}}, {2}]; h[a_][b_] := a + b; r").unwrap(),
+      "{{f[3]}}"
+    );
+  }
+
+  // A Block result built by Map is evaluated again once the blocked
+  // symbol's definitions are back.
+  #[test]
+  fn block_result_from_level_map_reevaluates() {
+    assert_eq!(
+      interpret(
+        "h[a_][b_][c_] := a + b + c; \
+         Block[{h, k}, k = h[1]; Map[Line, {{{k[2][3]}}}, {2}]]"
+      )
+      .unwrap(),
+      "{{Line[{6}]}}"
+    );
+  }
+
+  #[test]
+  fn heads_mapped_as_expressions() {
+    assert_eq!(
+      interpret("Map[f, {h[1][2]}, {2}, Heads -> True]").unwrap(),
+      "{f[h[1]][f[2]]}"
+    );
+  }
+}
+
 mod map_operator_composite_head {
   use super::*;
 

@@ -1458,19 +1458,27 @@ fn render_item(
           f64::midpoint(area.x_min, area.x_max),
           f64::midpoint(area.y_min, area.y_max),
         ));
-        // An explicit `size` (a width in the plot's x units) lays the
-        // object out anew at that width; a plot is inset transparently.
-        let width = args
-          .get(3)
-          .and_then(|s| {
-            point2(s).map(|(w, _)| w).or_else(|| try_eval_to_f64(s))
-          })
-          .map(|w| area.rx(w) / area.scale);
+        // An explicit `size` (a width in the plot's x units, or a
+        // `{w, h}` box in the plot's x and y units) lays the object out
+        // anew at that width; a plot is inset transparently.
         let object = crate::evaluator::evaluate_expr_to_expr(&args[0])
           .unwrap_or_else(|_| args[0].clone());
+        let width = args.get(3).and_then(|s| match point2(s) {
+          // A `{w, h}` box keeps the object's own aspect ratio: it is
+          // scaled to the largest size that fits inside the box.
+          Some((w, h)) => {
+            let (bw, bh) = (area.rx(w) / area.scale, area.ry(h) / area.scale);
+            let natural = crate::functions::graphics::svg_natural_size(
+              &crate::evaluator::expr_to_svg(&object),
+            );
+            Some(crate::functions::graphics::fit_inset_box(bw, bh, natural).0)
+          }
+          None => try_eval_to_f64(s).map(|w| area.rx(w) / area.scale),
+        });
         let relaid = width.and_then(|w| {
           crate::functions::graphics::plot_inset_at_width(&object, w)
         });
+        let was_relaid = relaid.is_some();
         let svg = if let Some((svg, _, _)) = relaid {
           svg
         } else {
@@ -1484,6 +1492,12 @@ fn render_item(
         };
         if let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
         {
+          // An object that could not be laid out anew is scaled to the
+          // requested width instead.
+          let (w, h) = match width {
+            Some(width) if !was_relaid && w > 0.0 => (width, width * h / w),
+            _ => (w, h),
+          };
           let (w, h) = (w * area.scale, h * area.scale);
           // `opos` names the point of the inset object (a plot's data
           // coordinates, a display's `Text`-style offset) that lands on

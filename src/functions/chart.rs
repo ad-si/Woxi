@@ -219,6 +219,37 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
   try_eval_to_f64(chart_datum_expr(e))
 }
 
+/// The number every element [`extract_grouped_values`] keeps stands for,
+/// exactly as the data gives it, in the same grouping: a
+/// `LabelingFunction` sees the datum itself, so a real `85.` is labeled
+/// `85.` and an integer `85` is labeled `85`.
+fn extract_grouped_exact(
+  arg: &Expr,
+) -> Result<Vec<Vec<Expr>>, InterpreterError> {
+  extract_grouped(arg, |e| {
+    chart_datum_value(e).map(|v| match chart_datum_expr(e) {
+      exact @ (Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)) => exact.clone(),
+      exact @ Expr::FunctionCall { name, .. } if name == "Rational" => {
+        exact.clone()
+      }
+      _ => numeric_value_expr(v),
+    })
+  })
+}
+
+/// A chart value carried as `f64` back as the number it was: values that
+/// are whole came from integer data, as charts are almost always given.
+fn numeric_value_expr(v: f64) -> Expr {
+  if (v - v.round()).abs() < 1e-10 && v.abs() < 9.0e15 {
+    Expr::Integer(v as i128)
+  } else {
+    Expr::Real(v)
+  }
+}
+
 /// A graphic's `FormatType` is `TraditionalForm`, so each item of a
 /// `Row`/`Column`/`Grid` label is typeset in it: `x == 5` reads `x = 5`,
 /// `1 + n` reads `n + 1` and `Mod[a, m]` reads `a mod m`.
@@ -1338,6 +1369,9 @@ pub(crate) struct ChartOptions {
   pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
+  /// `PlotRange -> s` (a bare number), whose value range `{-s, s}` a bar
+  /// chart of nonnegative values starts at its bar origin `0` instead.
+  pub plot_range_scalar: bool,
   /// `AxesOrigin -> {x, y}`: where the axes cross, in data coordinates;
   /// `None` keeps a coordinate's automatic placement. Currently consumed by
   /// `Histogram`.
@@ -3591,6 +3625,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
+    plot_range_scalar: false,
     axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
@@ -3738,12 +3773,16 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             } else {
               opts.axes_label = Some((x, y));
             }
-          } else if name == "AxesLabel"
-            && !matches!(&val, Expr::Identifier(n) if n == "None")
+          } else if !matches!(&val, Expr::Identifier(n) if n == "None")
             && let Some(y) = expr_to_label(&val)
           {
-            // A lone label names the value (vertical) axis, as in WL.
-            opts.axes_label = Some((String::new(), y));
+            // A lone label names the value (vertical) axis, as in WL —
+            // a `FrameLabel` as well as an `AxesLabel`.
+            if name == "FrameLabel" {
+              opts.frame_label = Some((String::new(), y));
+            } else {
+              opts.axes_label = Some((String::new(), y));
+            }
           }
         }
         "LegendAppearance" => {
@@ -3802,6 +3841,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             crate::functions::plot::parse_series_plot_range(replacement);
           opts.plot_range_x = crate::functions::plot::closed_range(rx);
           opts.plot_range_y = crate::functions::plot::closed_range(ry);
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          opts.plot_range_scalar =
+            try_eval_to_f64(&val).is_some_and(|r| r > 0.0);
         }
         // `Ticks -> None` suppresses ticks entirely; `Automatic`/`All` leave
         // the renderer's own automatic ticks in place; an explicit
@@ -4166,6 +4209,14 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let mut opts = parse_chart_options(args);
+  // `PlotRange -> s` shows the values from the bars' origin up to `s`
+  // when none is negative (WL draws no empty negative half).
+  if opts.plot_range_scalar
+    && groups.iter().flatten().all(|&v| v >= 0.0)
+    && let Some((lo, _)) = &mut opts.plot_range_y
+  {
+    *lo = 0.0;
+  }
 
   // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per
   // bar. With a flat list each value is its own bar (color keyed by group
@@ -4194,12 +4245,25 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.chart_style = sample_gradient(&BUSINESS_THEME_GRADIENT, color_count);
   }
 
-  // LabelingFunction -> f produces a label drawn at each bar's end.
+  // LabelingFunction -> f produces a label drawn at each bar's end, from
+  // the data value as given (the f64 `groups` lose integer vs. real).
+  let exact_groups = extract_grouped_exact(&args[0])
+    .ok()
+    .filter(|eg| {
+      eg.len() == groups.len()
+        && eg.iter().zip(&groups).all(|(e, g)| e.len() == g.len())
+    })
+    .unwrap_or_else(|| {
+      groups
+        .iter()
+        .map(|g| g.iter().map(|&v| numeric_value_expr(v)).collect())
+        .collect()
+    });
   let bar_labels: Vec<String> = match &opts.labeling_function {
-    Some(func) => groups
+    Some(func) => exact_groups
       .iter()
       .enumerate()
-      .flat_map(|(gi, g)| g.iter().enumerate().map(move |(bi, &v)| (gi, bi, v)))
+      .flat_map(|(gi, g)| g.iter().enumerate().map(move |(bi, v)| (gi, bi, v)))
       .enumerate()
       .map(|(k, (gi, bi, v))| {
         let meta = LabelMeta {
@@ -4219,7 +4283,9 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if groups
         .iter()
         .flat_map(|g| g.iter())
-        .filter_map(|&v| labeling_function_label(func, v, None))
+        .filter_map(|&v| {
+          labeling_function_label(func, &numeric_value_expr(v), None)
+        })
         .any(|(_, pos)| pos.as_deref() == Some("Above")) =>
     {
       crate::functions::plot::BarLabelPlacement::Above
@@ -4533,15 +4599,24 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       // `PlotTheme -> "Business"`: a bottom frame and left labels,
       // dotted value grid lines (and its own palette, see `bar_chart_ast`).
-      "PlotTheme" => {
-        if matches!(&value, Expr::String(s) if s == "Business") {
+      // `PlotTheme -> "Detailed"`: a full frame with the same dotted value
+      // grid lines.
+      "PlotTheme" => match &value {
+        Expr::String(s) if s == "Business" => {
           look.axes = false;
           look.frame = true;
           look.frame_sides = [true, false, true, false];
           look.hide_value_frame = true;
           look.value_grid = Some(((102, 102, 102), 0.5, 1.0, Some((1.0, 2.0))));
         }
-      }
+        Expr::String(s) if s == "Detailed" => {
+          look.axes = false;
+          look.frame = true;
+          look.frame_sides = [true; 4];
+          look.value_grid = Some(((102, 102, 102), 0.5, 1.0, Some((1.0, 2.0))));
+        }
+        _ => {}
+      },
       "FrameStyle" => {
         if let Some((c, w)) = paint(&value) {
           look.hide_value_frame = false;
@@ -4552,8 +4627,17 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       "BarSpacing" => {
         // `{s, sg}` spaces bars within a group by `s` and groups by `sg`;
         // a scalar is `s`.
+        // The named sizes are fractions of a bar width (`Large` leaves half
+        // a bar between neighbors).
         let amount = |e: &Expr| match e {
-          Expr::Identifier(v) if v == "None" => Some(0.0),
+          Expr::Identifier(v) => match v.as_str() {
+            "None" => Some(0.0),
+            "Tiny" => Some(0.05),
+            "Small" => Some(0.1),
+            "Medium" => Some(0.25),
+            "Large" => Some(0.5),
+            _ => try_eval_to_f64(e),
+          },
           other => try_eval_to_f64(other),
         };
         look.bar_spacing = match &value {
@@ -4594,7 +4678,7 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
             label_font_style(&items[0]).0,
             items.get(1).and_then(|y| label_font_style(y).0),
           ];
-        } else if name == "AxesLabel" && !matches!(&value, Expr::List(_)) {
+        } else if !matches!(&value, Expr::List(_)) {
           look.axes_label_fonts = [None, label_font_style(&value).0];
         }
       }
@@ -5567,7 +5651,7 @@ fn chart_label_text(label: &ChartLabel, x: f64) -> Expr {
 /// chart fixes at the bar end, so only `expr` matters here).
 fn apply_labeling_function(
   func: &Expr,
-  value: f64,
+  value: &Expr,
   meta: Option<LabelMeta<'_>>,
 ) -> Option<String> {
   labeling_function_label(func, value, meta).map(|(text, _)| text)
@@ -5589,7 +5673,7 @@ struct LabelMeta<'a> {
 
 fn labeling_function_label(
   func: &Expr,
-  value: f64,
+  value: &Expr,
   meta: Option<LabelMeta<'_>>,
 ) -> Option<(String, Option<String>)> {
   // A bare position (`LabelingFunction -> Above`) labels each element
@@ -5620,7 +5704,7 @@ fn labeling_function_label(
   let call = Expr::CurriedCall {
     func: Box::new(func.clone()),
     args: {
-      let mut args = vec![Expr::Real(value)];
+      let mut args = vec![value.clone()];
       if let Some(m) = meta {
         let pos = Expr::List(
           vec![
@@ -5668,12 +5752,6 @@ fn labeling_function_label(
   }
   let text = match inner {
     Expr::String(s) => s.clone(),
-    // Bar values are carried as f64, so integer data arrives as e.g. `10904.0`.
-    // wolframscript labels it `10904` (no trailing dot), so render an
-    // integer-valued real as an integer.
-    Expr::Real(r) if (r - r.round()).abs() < 1e-10 && r.abs() < 9.0e15 => {
-      format!("{}", *r as i64)
-    }
     // A structured label — `Row[{NumberForm[100 #, 2], "%"}, " "]` is how a
     // Demonstration writes a percentage — typesets the same way every other
     // chart label does, so the number forms inside it are applied.
@@ -6023,19 +6101,20 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `LabelingFunction -> f` labels every slice with `f[value]`. The result
   // may be wrapped in `Placed[…, position]`, which decides how far out along
   // the slice's mid-angle the text sits.
-  let slice_labels: Vec<Vec<Option<(String, Option<String>)>>> =
-    match &opts.labeling_function {
-      Some(func) => rows
-        .iter()
-        .map(|row| {
-          row
-            .iter()
-            .map(|&v| labeling_function_label(func, v, None))
-            .collect()
-        })
-        .collect(),
-      None => Vec::new(),
-    };
+  let slice_labels: Vec<Vec<Option<(String, Option<String>)>>> = match &opts
+    .labeling_function
+  {
+    Some(func) => rows
+      .iter()
+      .map(|row| {
+        row
+          .iter()
+          .map(|&v| labeling_function_label(func, &numeric_value_expr(v), None))
+          .collect()
+      })
+      .collect(),
+    None => Vec::new(),
+  };
   // Callout labels sit outside the pie, so the wedges give up the room the
   // text needs — the same trade wolframscript makes.
   // `ChartLabels -> Placed[labels, "RadialOuter"]` (any named radial

@@ -457,13 +457,26 @@ mod row_visual_mode {
       }
     }
     assert_eq!(max_depth, 1, "{text}");
-    // The shifted script keeps the color and resolves its relative size.
+    // The shifted script keeps the color and resolves its relative size:
+    // set on the span itself, or inherited from the `<text>` (at 16pt, so
+    // a 70% script is 11.2pt).
     let script = text
       .split("<tspan")
       .find(|t| t.contains("baseline-shift=\"sub\""))
       .expect("subscript span");
-    assert!(script.contains("fill=\"rgb(255,0,0)\""), "{script}");
-    assert!(script.contains("font-size=\"11.2\""), "{script}");
+    let head = &text[..text.find("<tspan").unwrap()];
+    assert!(
+      script.contains("fill=\"rgb(255,0,0)\"")
+        || (head.contains("fill=\"rgb(255,0,0)\"")
+          && !script.contains("fill=")),
+      "{text}"
+    );
+    assert!(
+      script.contains("font-size=\"11.2\"")
+        || (head.contains("font-size=\"16\"")
+          && script.contains("font-size=\"70%\"")),
+      "{text}"
+    );
   }
 
   /// The `<text>` element of an SVG that draws `needle`.

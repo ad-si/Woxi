@@ -1870,46 +1870,6 @@ fn graph_render(
     }
   }
 
-  // --- PlotLabel: centered title above the graph ---
-  if let Some(label_expr) = plot_label {
-    let (x_min, x_max, y_max) = positions.iter().fold(
-      (f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-      |(xmin, xmax, ymax), &(x, y)| (xmin.min(x), xmax.max(x), ymax.max(y)),
-    );
-    let cx = if positions.is_empty() {
-      0.0
-    } else {
-      f64::midpoint(x_min, x_max)
-    };
-    let label_y = y_max + vertex_radius + 0.2;
-
-    // If the user already provided a Style[...] wrapper, keep it so their
-    // directives (color, size, Bold/Italic) win. Otherwise wrap the label
-    // so it renders at a larger, bold font by default. Either way the label
-    // is kept as an expression (not pre-stringified) so structure such as
-    // `Subscript[…]` typesets instead of showing its literal head name.
-    let styled = match &label_expr {
-      Expr::FunctionCall { name, args }
-        if name == "Style" && !args.is_empty() =>
-      {
-        label_expr.clone()
-      }
-      _ => call(
-        "Style",
-        vec![label_expr.clone(), Expr::Integer(16), id_expr("Bold")],
-      ),
-    };
-
-    // Force black text regardless of any preceding directive (edges may
-    // have set a different color last).
-    primitives.push(call(
-      "RGBColor",
-      vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-    ));
-    let point = Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into());
-    primitives.push(call("Text", vec![styled, point]));
-  }
-
   // The graph is drawn on the internal scale and handed back in the
   // caller's coordinates, which Prolog / Epilog (and any graphics `Show`n
   // with it) are given in. `Scale` moves text without resizing its glyphs.
@@ -1947,6 +1907,11 @@ fn graph_render(
   );
 
   let mut graphics_args = vec![content, image_size_opt];
+  // The title is the picture's own `PlotLabel`, set above the plot area in
+  // the default label style, as `GraphPlot` returns it.
+  if let Some(label) = plot_label {
+    graphics_args.push(rule_expr(id_expr("PlotLabel"), label));
+  }
   if let Some(bg) = background {
     graphics_args.push(rule_expr(id_expr("Background"), bg));
   }
@@ -4721,6 +4686,20 @@ pub(crate) fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
     }
   }
   (expr, color)
+}
+
+/// The vertex an entry of a graph's vertex list names, with the
+/// `Style[v, …]`, `Tooltip[v, tip]` and `Labeled[v, label]` annotations
+/// around it peeled off.
+pub(crate) fn bare_vertex(mut expr: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      "Style" if !args.is_empty() => expr = &args[0],
+      "Tooltip" | "Labeled" if args.len() == 2 => expr = &args[0],
+      _ => break,
+    }
+  }
+  expr
 }
 
 /// Render a `VertexShape -> …` value — typically a nested `Graph[…]` or a
@@ -12502,9 +12481,20 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !rules.is_empty()
     && rules.iter().all(|r| matches!(r, Expr::Rule { .. }))
   {
+    // `{graph, item}` keeps naming the same item for every rule.
+    let item = match &args[0] {
+      Expr::List(parts) if parts.len() == 2 => Some(parts[1].clone()),
+      _ => None,
+    };
     let mut current = args[0].clone();
     for rule in rules {
-      current = graph_set_property_ast(&[current, rule.clone()])?;
+      let target = match (&item, &current) {
+        (Some(item), Expr::FunctionCall { name, .. }) if name == "Graph" => {
+          Expr::List(vec![current.clone(), item.clone()].into())
+        }
+        _ => current.clone(),
+      };
+      current = graph_set_property_ast(&[target, rule.clone()])?;
       if matches!(&current, Expr::FunctionCall { name, .. } if name == "SetProperty")
       {
         return Ok(original());
@@ -12539,42 +12529,92 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(original());
   };
-  let slots = if property.starts_with("Vertex") {
-    &vertices
-  } else {
-    &edges
-  };
-  // Every slot keeps whatever it had; the named one takes the new value.
-  let existing = graph_option(&options, property);
-  let mut values: Vec<Expr> = (0..slots.len())
-    .map(|i| match &existing {
-      Some(Expr::List(items)) => items
-        .get(i)
-        .cloned()
-        .unwrap_or_else(|| id_expr("Automatic")),
-      _ => id_expr("Automatic"),
-    })
-    .collect();
-  if let Some(item) = item {
-    let index = if property.starts_with("Vertex") {
+  let is_vertex = property.starts_with("Vertex");
+  let slots = if is_vertex { &vertices } else { &edges };
+  // The slot `item` names, if any (`None` from the outer `Option` when the
+  // graph has no such vertex or edge).
+  let index = match item {
+    Some(item) if is_vertex => Some(
       vertices
         .iter()
-        .position(|v| expr_to_string(v) == expr_to_string(item))
-    } else {
-      edges.iter().position(|e| same_edge(e, item))
-    };
-    match index {
-      Some(i) => values[i] = (**replacement).clone(),
-      None => return Ok(original()),
-    }
-  } else if let Expr::List(items) = replacement.as_ref()
-    && items.len() == slots.len()
-  {
-    // One value per vertex or edge, in order.
-    values = items.iter().cloned().collect();
-  } else {
-    values = vec![(**replacement).clone(); slots.len()];
+        .position(|v| expr_to_string(bare_vertex(v)) == expr_to_string(item)),
+    ),
+    Some(item) => Some(edges.iter().position(|e| same_edge(e, item))),
+    None => None,
+  };
+  if matches!(index, Some(None)) {
+    return Ok(original());
   }
+  let index = index.flatten();
+  let existing = graph_option(&options, property);
+  let value = if is_positional_graph_property(property) {
+    // Data such as weights is one value per vertex or edge, in order: every
+    // slot keeps whatever it had; the named one takes the new value.
+    let mut values: Vec<Expr> = (0..slots.len())
+      .map(|i| match &existing {
+        Some(Expr::List(items)) => items
+          .get(i)
+          .cloned()
+          .unwrap_or_else(|| id_expr("Automatic")),
+        _ => id_expr("Automatic"),
+      })
+      .collect();
+    if let Some(i) = index {
+      values[i] = (**replacement).clone();
+    } else if let Expr::List(items) = replacement.as_ref()
+      && items.len() == slots.len()
+    {
+      values = items.iter().cloned().collect();
+    } else {
+      values = vec![(**replacement).clone(); slots.len()];
+    }
+    Expr::List(values.into())
+  } else if let Some(i) = index {
+    // A style-like annotation names its part, `part -> value`: a list of
+    // them is how a value is given to only some parts (a plain list is one
+    // value, a list of directives, for every part).
+    let key = |slot: &Expr| {
+      if is_vertex {
+        bare_vertex(slot).clone()
+      } else {
+        unwrap_edge_wrappers(slot).0.clone()
+      }
+    };
+    let names = |rule: &Expr, i: usize| match rule {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        if is_vertex {
+          expr_to_string(pattern) == expr_to_string(&key(&slots[i]))
+        } else {
+          same_edge(pattern, &slots[i])
+        }
+      }
+      _ => false,
+    };
+    let mut rules: Vec<Expr> = match &existing {
+      None => Vec::new(),
+      Some(Expr::Identifier(s)) if s == "Automatic" => Vec::new(),
+      Some(Expr::List(items))
+        if items.iter().all(|r| {
+          matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+      {
+        items.to_vec()
+      }
+      // One value for every part: each part now says so for itself.
+      Some(value) => slots
+        .iter()
+        .map(|slot| rule_expr(key(slot), value.clone()))
+        .collect(),
+    };
+    let new_rule = rule_expr(key(&slots[i]), (**replacement).clone());
+    match rules.iter().position(|r| names(r, i)) {
+      Some(at) => rules[at] = new_rule,
+      None => rules.push(new_rule),
+    }
+    Expr::List(rules.into())
+  } else {
+    (**replacement).clone()
+  };
   let mut new_options: Vec<Expr> = options
     .iter()
     .filter(|o| {
@@ -12583,14 +12623,25 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .cloned()
     .collect();
-  new_options.push(rule_expr(
-    Expr::Identifier(property.clone()),
-    Expr::List(values.into()),
-  ));
+  new_options.push(rule_expr(Expr::Identifier(property.clone()), value));
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(edges.into())];
   graph_args.extend(new_options);
   Ok(call("Graph", graph_args))
+}
+
+/// Whether a graph property holds data with one value per vertex or edge,
+/// in order (`EdgeWeight -> {5, 7}`), rather than a style-like annotation.
+fn is_positional_graph_property(property: &str) -> bool {
+  matches!(
+    property,
+    "EdgeWeight"
+      | "VertexWeight"
+      | "EdgeCapacity"
+      | "VertexCapacity"
+      | "EdgeCost"
+      | "VertexCoordinates"
+  )
 }
 
 /// The form a graph with options is written in (InputForm, FullForm), as

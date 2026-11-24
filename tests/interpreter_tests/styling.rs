@@ -1667,3 +1667,44 @@ mod styled_number_forms {
     }
   }
 }
+
+mod traditional_form_notation {
+  use super::*;
+
+  #[test]
+  fn a_function_is_written_as_a_map() {
+    assert_eq!(
+      interpret("ToBoxes[Function[x, x^2], TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{x, \u{21A6}, SuperscriptBox[x, 2]}], TraditionalForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Function[{x, y}, x + y], TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{RowBox[{{, RowBox[{x, ,, y}], }}], \u{21A6}, \
+       RowBox[{x, +, y}]}], TraditionalForm]"
+    );
+  }
+
+  #[test]
+  fn congruent_is_written_infix() {
+    assert_eq!(
+      interpret("ToBoxes[Congruent[Mod[x, 2], 0], TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{RowBox[{x, mod, 2}], \u{2261}, 0}], TraditionalForm]"
+    );
+  }
+
+  #[test]
+  fn a_typeset_function_is_drawn_with_its_piecewise_brace() {
+    // The formula stays typeset under nested `Style`s, alone or as the
+    // item of a `Column`.
+    for code in [
+      r#"ExportString[Style[Style[TraditionalForm[Function[x, Piecewise[{{x/2, Mod[x, 2] == 0}, {3 x + 1, Mod[x, 2] == 1}}]]], Red], Bold], "SVG"]"#,
+      r#"ExportString[Column[{1, Text[Style[Style[TraditionalForm[Function[x, Piecewise[{{x/2, Mod[x, 2] == 0}, {3 x + 1, Mod[x, 2] == 1}}]]], FontFamily -> "Times"], FontFamily -> "Times"]]}], "SVG"]"#,
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains('\u{21A6}'), "{code}: {svg}");
+      assert!(svg.contains("<path"), "{code}: {svg}");
+      assert!(!svg.contains("Function["), "{code}: {svg}");
+      assert!(!svg.contains("Piecewise"), "{code}: {svg}");
+    }
+  }
+}
