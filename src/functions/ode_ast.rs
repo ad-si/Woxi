@@ -5898,6 +5898,14 @@ fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
 /// which differentiates the interpolating piece.
 const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 
+/// A tolerance for telling points of `[lo, hi]` apart: `rel` of the span,
+/// plus a few units of rounding at the bounds' magnitude. It scales with the
+/// range, so a tiny one (`{t, 0, 10^-9}`) is not collapsed onto its start
+/// the way a tolerance with an absolute floor would.
+fn range_tolerance(lo: f64, hi: f64, rel: f64) -> f64 {
+  (hi - lo).abs() * rel + 4.0 * f64::EPSILON * lo.abs().max(hi.abs())
+}
+
 /// Restrict integrated solution samples (ascending in x) to `[lo, hi]`.
 ///
 /// A bound that falls between two grid points becomes a sample of its own,
@@ -5910,7 +5918,7 @@ fn clip_points_to_range(
   lo: f64,
   hi: f64,
 ) -> Vec<(f64, Vec<f64>)> {
-  let tol = (hi - lo).abs().max(1.0) * 1e-9;
+  let tol = range_tolerance(lo, hi, 1e-9);
   let xs: Vec<f64> = points.iter().map(|(x, _)| *x).collect();
   let bound = |target: f64| -> (f64, Vec<f64>) {
     if let Some(p) = points.iter().find(|(x, _)| (x - target).abs() <= tol) {
@@ -10116,7 +10124,7 @@ fn dde_breaks_between(a: f64, b: f64) -> Vec<f64> {
       return Vec::new();
     };
     let (lo, hi) = if a < b { (a, b) } else { (b, a) };
-    let tol = 1e-12 * (hi - lo).abs().max(1.0);
+    let tol = range_tolerance(lo, hi, 1e-12);
     let mut v: Vec<f64> = h
       .breaks
       .iter()
@@ -10510,15 +10518,14 @@ enum NExpr {
   Neg(Box<Self>),
   Fn1(fn(f64) -> f64, Box<Self>),
   Fn2(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
-  /// `If[lhs op rhs, then, otherwise]` on a single numeric comparison — a
-  /// right-hand side that switches branch on the independent variable
-  /// (`If[t == 0, limit, general]`, the usual way to dodge a removable
-  /// singularity at the start). Only the chosen branch is evaluated, so a
-  /// branch that is singular off its own region never poisons the other.
+  /// `If[cond, then, otherwise]` on a numeric condition — a right-hand
+  /// side that switches branch on the independent variable (`If[t == 0,
+  /// limit, general]`, the usual way to dodge a removable singularity at the
+  /// start, or a pulse `If[t0 <= t <= t1, …, 0]`). Only the chosen branch is
+  /// evaluated, so a branch that is singular off its own region never
+  /// poisons the other. `Boole` and `Piecewise` compile to it as well.
   If {
-    op: ComparisonOp,
-    lhs: Box<Self>,
-    rhs: Box<Self>,
+    cond: Box<NCond>,
     then: Box<Self>,
     otherwise: Box<Self>,
   },
@@ -11135,14 +11142,14 @@ impl NExpr {
       }
       Self::Neg(a) | Self::Fn1(_, a) => a.collect_vars_from(from, out),
       Self::If {
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
-        ..
-      } => [lhs, rhs, then, otherwise]
-        .iter()
-        .all(|e| e.collect_vars_from(from, out)),
+      } => {
+        cond.exprs().iter().all(|e| e.collect_vars_from(from, out))
+          && then.collect_vars_from(from, out)
+          && otherwise.collect_vars_from(from, out)
+      }
       Self::Interp1D { arg, .. } => arg.collect_vars_from(from, out),
       Self::InterpGrid { args, .. } => {
         args.iter().all(|a| a.collect_vars_from(from, out))
@@ -11192,12 +11199,14 @@ impl NExpr {
       }
       Self::Neg(a) | Self::Fn1(_, a) => a.any_node(pred),
       Self::If {
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
-        ..
-      } => [lhs, rhs, then, otherwise].iter().any(|e| e.any_node(pred)),
+      } => {
+        cond.exprs().iter().any(|e| e.any_node(pred))
+          || then.any_node(pred)
+          || otherwise.any_node(pred)
+      }
       Self::Interp1D { arg, .. } => arg.any_node(pred),
       Self::InterpGrid { args, .. } => args.iter().any(|e| e.any_node(pred)),
       Self::Implicit { body, .. } => body.any_node(pred),
@@ -11260,24 +11269,11 @@ impl NExpr {
       Self::Fn1(f, a) => f(a.eval(vars)),
       Self::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
       Self::If {
-        op,
-        lhs,
-        rhs,
+        cond,
         then,
         otherwise,
       } => {
-        let (l, r) = (lhs.eval(vars), rhs.eval(vars));
-        // `Equal` on machine reals tolerates the last few bits.
-        let close = (l - r).abs() <= l.abs().max(r.abs()) * 2f64.powi(-47);
-        let holds = match op {
-          ComparisonOp::Equal | ComparisonOp::SameQ => close,
-          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => !close,
-          ComparisonOp::Less => l < r && !close,
-          ComparisonOp::LessEqual => l < r || close,
-          ComparisonOp::Greater => l > r && !close,
-          ComparisonOp::GreaterEqual => l > r || close,
-        };
-        if holds {
+        if cond.holds(vars) {
           then.eval(vars)
         } else {
           otherwise.eval(vars)
@@ -11368,6 +11364,142 @@ fn collect_var_refs(
   }
   for child in expr_children(expr) {
     collect_var_refs(child, var_names, out);
+  }
+}
+
+/// A logical condition over compiled numeric expressions — the test of a
+/// compiled `If`, `Boole` or `Piecewise` case.
+enum NCond {
+  Const(bool),
+  Cmp {
+    op: ComparisonOp,
+    lhs: Box<NExpr>,
+    rhs: Box<NExpr>,
+  },
+  All(Vec<Self>),
+  Any(Vec<Self>),
+  Not(Box<Self>),
+}
+
+impl NCond {
+  fn holds(&self, vars: &[f64]) -> bool {
+    match self {
+      Self::Const(b) => *b,
+      Self::Cmp { op, lhs, rhs } => {
+        let (l, r) = (lhs.eval(vars), rhs.eval(vars));
+        // `Equal` on machine reals tolerates the last few bits.
+        let close = (l - r).abs() <= l.abs().max(r.abs()) * 2f64.powi(-47);
+        match op {
+          ComparisonOp::Equal | ComparisonOp::SameQ => close,
+          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => !close,
+          ComparisonOp::Less => l < r && !close,
+          ComparisonOp::LessEqual => l < r || close,
+          ComparisonOp::Greater => l > r && !close,
+          ComparisonOp::GreaterEqual => l > r || close,
+        }
+      }
+      Self::All(items) => items.iter().all(|c| c.holds(vars)),
+      Self::Any(items) => items.iter().any(|c| c.holds(vars)),
+      Self::Not(c) => !c.holds(vars),
+    }
+  }
+
+  /// The numeric expressions the condition compares.
+  fn exprs(&self) -> Vec<&NExpr> {
+    match self {
+      Self::Const(_) => Vec::new(),
+      Self::Cmp { lhs, rhs, .. } => vec![lhs.as_ref(), rhs.as_ref()],
+      Self::All(items) | Self::Any(items) => {
+        items.iter().flat_map(Self::exprs).collect()
+      }
+      Self::Not(c) => c.exprs(),
+    }
+  }
+}
+
+/// Compile a logical condition: a comparison (a chained one such as
+/// `a <= t <= b` holds where each adjacent pair does), `True`/`False`, or
+/// `And`/`Or`/`Not` of conditions. `None` for anything else.
+fn compile_condition(expr: &Expr, var_names: &[String]) -> Option<NCond> {
+  let comp = |e: &Expr| compile_numeric(e, var_names);
+  let pairwise = |operands: &[Expr], operators: &[ComparisonOp]| {
+    if operands.len() != operators.len() + 1 || operators.is_empty() {
+      return None;
+    }
+    let mut cmps = Vec::with_capacity(operators.len());
+    for (i, op) in operators.iter().enumerate() {
+      cmps.push(NCond::Cmp {
+        op: *op,
+        lhs: Box::new(comp(&operands[i])?),
+        rhs: Box::new(comp(&operands[i + 1])?),
+      });
+    }
+    Some(if cmps.len() == 1 {
+      cmps.pop().unwrap()
+    } else {
+      NCond::All(cmps)
+    })
+  };
+  let all_of = |items: &[&Expr], any: bool| {
+    let conds = items
+      .iter()
+      .map(|c| compile_condition(c, var_names))
+      .collect::<Option<Vec<_>>>()?;
+    Some(if any {
+      NCond::Any(conds)
+    } else {
+      NCond::All(conds)
+    })
+  };
+  match expr {
+    Expr::Identifier(name) if name == "True" => Some(NCond::Const(true)),
+    Expr::Identifier(name) if name == "False" => Some(NCond::Const(false)),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => pairwise(operands, operators),
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => all_of(&[left, right], *op == BinaryOperator::Or),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => Some(NCond::Not(Box::new(compile_condition(operand, var_names)?))),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "And" | "Or" if !args.is_empty() => {
+        all_of(&args.iter().collect::<Vec<_>>(), name == "Or")
+      }
+      "Not" if args.len() == 1 => Some(NCond::Not(Box::new(
+        compile_condition(&args[0], var_names)?,
+      ))),
+      // `Inequality[a, op1, b, op2, c, …]`, the full form of a chained
+      // comparison mixing operators.
+      "Inequality" if args.len() >= 3 && args.len() % 2 == 1 => {
+        let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+        let operators = args
+          .iter()
+          .skip(1)
+          .step_by(2)
+          .map(|o| match o {
+            Expr::Identifier(n) => match n.as_str() {
+              "Equal" => Some(ComparisonOp::Equal),
+              "Unequal" => Some(ComparisonOp::NotEqual),
+              "Less" => Some(ComparisonOp::Less),
+              "LessEqual" => Some(ComparisonOp::LessEqual),
+              "Greater" => Some(ComparisonOp::Greater),
+              "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+              _ => None,
+            },
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()?;
+        pairwise(&operands, &operators)
+      }
+      _ => None,
+    },
+    _ => None,
   }
 }
 
@@ -11820,6 +11952,11 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   match expr {
     Expr::Integer(n) => Some(NExpr::Const(*n as f64)),
     Expr::Real(v) => Some(NExpr::Const(*v)),
+    // A built-in constant (`Pi`, `E`, `Degree`, `EulerGamma`, …) as the
+    // parser leaves it in a held expression.
+    Expr::Constant(_) => {
+      crate::functions::math_ast::try_eval_to_f64(expr).map(NExpr::Const)
+    }
     Expr::Identifier(name) => {
       if let Some(idx) = var_names.iter().position(|n| n == name) {
         return Some(NExpr::Var(idx));
@@ -11968,22 +12105,52 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
             .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
         }
         "If" if args.len() == 3 => {
-          if let Expr::Comparison {
-            operands,
-            operators,
-          } = &args[0]
-            && let ([lhs, rhs], [op]) =
-              (operands.as_slice(), operators.as_slice())
-          {
+          if let Some(cond) = compile_condition(&args[0], var_names) {
             return Some(NExpr::If {
-              op: *op,
-              lhs: Box::new(comp(lhs)?),
-              rhs: Box::new(comp(rhs)?),
+              cond: Box::new(cond),
               then: Box::new(comp(&args[1])?),
               otherwise: Box::new(comp(&args[2])?),
             });
           }
           Some(compile_external_leaf(expr, var_names))
+        }
+        "Boole" if args.len() == 1 => {
+          if let Some(cond) = compile_condition(&args[0], var_names) {
+            return Some(NExpr::If {
+              cond: Box::new(cond),
+              then: Box::new(NExpr::Const(1.0)),
+              otherwise: Box::new(NExpr::Const(0.0)),
+            });
+          }
+          Some(compile_external_leaf(expr, var_names))
+        }
+        // `Piecewise[{{v1, c1}, …}, default]` takes the value of the first
+        // case whose condition holds — nested `If`s, innermost the default.
+        "Piecewise" if (1..=2).contains(&args.len()) => {
+          let compiled = (|| {
+            let Expr::List(cases) = &args[0] else {
+              return None;
+            };
+            let mut acc = match args.get(1) {
+              Some(d) => comp(d)?,
+              None => NExpr::Const(0.0),
+            };
+            for case in cases.iter().rev() {
+              let Expr::List(pair) = case else {
+                return None;
+              };
+              let [value, cond] = pair.as_slice() else {
+                return None;
+              };
+              acc = NExpr::If {
+                cond: Box::new(compile_condition(cond, var_names)?),
+                then: Box::new(comp(value)?),
+                otherwise: Box::new(acc),
+              };
+            }
+            Some(acc)
+          })();
+          compiled.or_else(|| Some(compile_external_leaf(expr, var_names)))
         }
         // Not one of the closed-form operators above — most commonly a
         // call to a function the session itself defined (a fixed boundary
@@ -17296,7 +17463,7 @@ fn evaluate_interpolating_function_values(
       if let Expr::List(pair) = pt
         && pair.len() == 2
         && let Ok(xp) = interp_value_to_f64(&pair[0])
-        && (xp - x_val).abs() < 1e-15
+        && same_abscissa(xp, x_val)
       {
         // A machine query point gives a machine value, as in wolframscript
         // (`Interpolation[{{1, 1}, {2, 3}, {3, 2}}][2.]` is `3.`).
@@ -17359,10 +17526,10 @@ fn evaluate_interpolating_function_values(
     // Linear interpolation
     let (x0, y0) = extract_point(&data_points[idx])?;
     let (x1, y1) = extract_point(&data_points[idx + 1])?;
-    let t = if (x1 - x0).abs() > 1e-15 {
-      (x_val - x0) / (x1 - x0)
-    } else {
+    let t = if same_abscissa(x0, x1) {
       0.0
+    } else {
+      (x_val - x0) / (x1 - x0)
     };
     let y_val = y0 + t * (y1 - y0);
     Ok(real_or_integer(y_val))
@@ -17376,6 +17543,14 @@ fn evaluate_interpolating_function_values(
     let y_val = lagrange_interpolate(data_points, x_val, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
+}
+
+/// Whether two abscissas are the same point up to rounding. The tolerance
+/// is relative to their magnitude, so a grid on a tiny scale (an NDSolve
+/// solution over `{t, 0, 5*10^-15}` has steps of about `10^-17`) is not
+/// collapsed onto its nodes the way a fixed absolute tolerance would.
+fn same_abscissa(a: f64, b: f64) -> bool {
+  (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs())
 }
 
 /// `InterpolatingFunctionDomain[interp]`, from the
