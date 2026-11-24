@@ -8757,6 +8757,23 @@ mod plot3d {
       );
     }
 
+    // A factorial in a legend entry or axis label is set postfix (`n!`,
+    // `(n+1)!!`) in TraditionalForm italics, not as a `Factorial(n)` call.
+    #[test]
+    fn factorial_label_typesets_postfix() {
+      const FN: &str = "<tspan font-style=\"italic\">f</tspan>(<tspan \
+                        font-style=\"italic\">n</tspan>!)";
+      let svg =
+        export_svg("ListLinePlot[{1, 2}, PlotLegends -> {f[n!], g[n^2]}]");
+      assert!(!svg.contains("Factorial"), "{svg}");
+      assert!(svg.contains(FN), "{svg}");
+      let svg = export_svg("ListLinePlot[{1, 2}, PlotLegends -> {(n + 1)!!}]");
+      assert!(!svg.contains("Factorial2"), "{svg}");
+      assert!(svg.contains("+1)!!"), "{svg}");
+      let svg = export_svg("Plot[x, {x, 0, 1}, AxesLabel -> {f[n!], None}]");
+      assert!(svg.contains(FN), "{svg}");
+    }
+
     // A long z-axis label is set upright beside the vertical axis, as
     // Wolfram sets it, and must not be pushed off the canvas.
     #[test]
