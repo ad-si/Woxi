@@ -44867,6 +44867,47 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // The curves one body item expands into share that item's `PlotStyle`
+  // entry (and its `Tube`), and an item yielding no curve (`{}`) still uses
+  // up its entry. Before, the curves were styled one by one, so the second
+  // curve of the group took the first entry and every curve became a tube.
+  #[test]
+  fn curve_group_shares_its_plot_style() {
+    let styled = |body: &str| {
+      interpret(&format!(
+        "g = ParametricPlot3D[{body}, {{t, 0, 2 Pi}}, \
+         PlotStyle -> {{{{Red}}, {{Green, Tube[0.1]}}}}]; \
+         {{Count[g, _Tube, Infinity], Count[g, _Line, Infinity], \
+         Cases[g, Directive[{{c_RGBColor}}] :> c, Infinity]}}"
+      ))
+      .unwrap()
+    };
+    let pair = "{{Cos[t], Sin[t], 0}, {0, Cos[t], Sin[t]}}";
+    assert_eq!(
+      styled(&format!("{{{{}}, {pair}}}")),
+      "{2, 0, {RGBColor[0, 1, 0], RGBColor[0, 1, 0]}}"
+    );
+    assert_eq!(
+      styled(&format!("{{{pair}, {{Sin[t], 0, Cos[t]}}}}")),
+      "{1, 2, {RGBColor[1, 0, 0], RGBColor[1, 0, 0], RGBColor[0, 1, 0]}}"
+    );
+  }
+
+  // Without a `PlotStyle`, the curves of one group take the same default
+  // color too.
+  #[test]
+  fn curve_group_shares_its_default_color() {
+    assert_eq!(
+      interpret(
+        "g = ParametricPlot3D[{{{Cos[t], Sin[t], 0}, {0, Cos[t], Sin[t]}}, \
+         {Sin[t], 0, Cos[t]}}, {t, 0, 2 Pi}]; \
+         Length[Union[Cases[g, Directive[c_RGBColor, _] :> c, Infinity]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   /// Width and height spanned by every `<polygon>` vertex of an SVG.
   fn polygon_size(svg: &str) -> (f64, f64) {
     let (mut x0, mut x1, mut y0, mut y1) = (
