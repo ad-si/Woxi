@@ -3403,6 +3403,27 @@ mod graphics {
       );
     }
 
+    /// A list label keeps each element's own `Style` color; the whole list
+    /// used to be drawn in the surrounding color.
+    #[test]
+    fn text_label_list_keeps_styled_elements() {
+      let svg = export_svg(
+        "Graphics[{Purple, Text[{Style[1.5, Red], Style[-2, Blue], 3}, \
+         {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(128,0,128)\"")
+          && svg.contains(
+            ">{<tspan fill=\"rgb(255,0,0)\">1.5</tspan>, \
+           <tspan fill=\"rgb(0,0,255)\">-2</tspan>, 3}</text>"
+          ),
+        "{svg}"
+      );
+      let plain = export_svg("Graphics[{Text[{1, 2.5, \"a\"}, {0, 0}]}]");
+      assert!(plain.contains(">{1, 2.5, a}</text>"), "{plain}");
+      assert!(!plain.contains("<tspan"), "{plain}");
+    }
+
     /// An option given to the `Row` (`BaseStyle -> …`) is not a separator:
     /// taking it for one dropped the styled parts of the label.
     #[test]
