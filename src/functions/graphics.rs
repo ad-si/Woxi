@@ -8982,12 +8982,18 @@ fn inset_primitives(
     && let Some(dims) = parse_svg_dimensions(svg)
     && let Some((x, y, scaled)) = anchor
   {
-    let (target_w, target_h) = parse_inset_layout_size(args);
     // A plot is inset transparently, and laid out anew at an explicit
     // size (see `plot_inset_at_width`).
     let plot = match peel_style_wrapper(&args[0]) {
       g @ Expr::Graphics { is_3d: false, .. } => Some(g),
       _ => None,
+    };
+    // A plot is laid out anew into the box a single-number size spans; any
+    // other picture (an image) takes that number as its width.
+    let (target_w, target_h) = if plot.is_some() {
+      parse_inset_target_size(args)
+    } else {
+      parse_inset_layout_size(args)
     };
     let plot_background = plot.and_then(graphics_options).is_some_and(|o| {
       o.iter().any(|o| {
