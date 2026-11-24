@@ -194,20 +194,27 @@ pub(crate) fn closed_convex_interior(tris: &[[Point3D; 3]]) -> Option<Point3D> {
   Some(c)
 }
 
-/// Bends a vertex normal so the vertex faces the viewer (along `toward`)
-/// the same way as its triangle, whose normal is `face`. Near a silhouette
-/// an averaged normal can tip past the edge of view; lit as-is it would
-/// be flipped to the other side and light the rim from behind.
-pub(crate) fn orient_vertex_normal(
+/// `normal` turned to the side of the triangle whose normal is `face`.
+fn align_with_face(normal: Vec3, face: Vec3) -> Vec3 {
+  if dot(normal, face) < 0.0 {
+    [-normal[0], -normal[1], -normal[2]]
+  } else {
+    normal
+  }
+}
+
+/// Bends a vertex normal, aligned with its triangle's normal `face`, so
+/// the vertex faces the viewer (along `toward`, from the vertex) on the
+/// triangle's side `side` (`1.0`: the side `face` points to). Near a
+/// silhouette an averaged normal can tip past the edge of view; lit as-is
+/// it would be flipped to the other side and light the rim from behind.
+fn orient_vertex_normal(
   normal: Vec3,
   face: Vec3,
   toward: Vec3,
+  side: f64,
 ) -> Vec3 {
-  let mut n = normal;
-  if dot(n, face) < 0.0 {
-    n = [-n[0], -n[1], -n[2]];
-  }
-  let side = if dot(face, toward) < 0.0 { -1.0 } else { 1.0 };
+  let mut n = align_with_face(normal, face);
   let along = dot(n, toward) * side;
   let min = 1e-3;
   if along < min {
@@ -295,8 +302,33 @@ pub(crate) fn corner_colors(
     .enumerate()
     .map(|(i, ((t, n), face))| {
       // Whether the triangle faces the eye is settled where it sits.
-      let view = toward(centroid(t));
-      [0, 1, 2].map(|c| shade(i, orient_vertex_normal(n[c], face, view), t[c]))
+      let views = t.map(toward);
+      let mut side = if dot(face, toward(centroid(t))) < 0.0 {
+        -1.0
+      } else {
+        1.0
+      };
+      // A facet turned away from the eye whose surface turns toward it
+      // at one of its corners, or comes within the facet's own spread of
+      // normals of doing so, lies on the smooth surface's silhouette: what
+      // shows of it (a sliver past the facets in front) is the rim of the
+      // outer side seen edge-on, not the inner side, which lit the rim of
+      // a sphere cut open by a `PlotRange` in dark slivers. A facet seen
+      // from behind well away from a silhouette (the inside of a bowl,
+      // through its opening) keeps its inner side.
+      if side < 0.0 {
+        let aligned = n.map(|v| align_with_face(v, face));
+        let spread = aligned
+          .iter()
+          .map(|&v| dot(cross(v, face), cross(v, face)).sqrt())
+          .fold(0.0, f64::max);
+        if (0..3).any(|c| dot(aligned[c], views[c]) > -spread) {
+          side = 1.0;
+        }
+      }
+      [0, 1, 2].map(|c| {
+        shade(i, orient_vertex_normal(n[c], face, views[c], side), t[c])
+      })
     })
     .collect()
 }
@@ -662,6 +694,41 @@ mod tests {
     });
     assert_eq!(lit.len(), 3);
     assert!(lit.iter().all(|n| n[0] > 0.9), "{lit:?}");
+  }
+
+  /// A facet turned (just) away from the eye whose surface turns toward
+  /// the eye at its corners straddles the silhouette of the smooth
+  /// surface: its corners are lit on the outer side, as the surface
+  /// there is, not bent to the facet's back (which the lighting then
+  /// flipped to the inner side, darkening the rim).
+  #[test]
+  fn silhouette_facets_are_lit_on_the_outer_side() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // Face normal (0, 1, -0.1): away from the eye along +z.
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 0.1, 1.0), p(1.0, 0.0, 0.0)]];
+    let exact = |_: usize, _: Point3D, _: Vec3, _: Point3D| [0.0, 1.0, 0.2];
+    let mut lit = Vec::new();
+    corner_colors(&tris, Some(&exact), &|_| [0.0, 0.0, 1.0], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert_eq!(lit.len(), 3);
+    assert!(lit.iter().all(|n| n[1] > 0.9 && n[2] > 0.1), "{lit:?}");
+  }
+
+  /// A facet turned away from the eye on a surface that turns away too
+  /// (the inside of a bowl seen through its opening) keeps its back side.
+  #[test]
+  fn facets_seen_from_behind_stay_on_their_back() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 0.1, 1.0), p(1.0, 0.0, 0.0)]];
+    let exact = |_: usize, _: Point3D, _: Vec3, _: Point3D| [0.0, 1.0, -0.2];
+    let mut lit = Vec::new();
+    corner_colors(&tris, Some(&exact), &|_| [0.0, 0.0, 1.0], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert!(lit.iter().all(|n| n[2] < 0.0), "{lit:?}");
   }
 
   #[test]

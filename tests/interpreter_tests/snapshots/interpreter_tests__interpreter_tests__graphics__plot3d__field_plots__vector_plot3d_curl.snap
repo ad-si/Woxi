@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 30878
 expression: "export_svg(\"VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]\")"
 ---
 <svg width="360" height="386" viewBox="0 0 360 386" xmlns="http://www.w3.org/2000/svg">
@@ -4526,8 +4525,8 @@ expression: "export_svg(\"VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -
 <linearGradient id="s7dbbb5adf1" gradientUnits="userSpaceOnUse" x1="307.8" y1="218.7" x2="307.8" y2="218.7"><stop stop-color="#d07100"/><stop offset="1" stop-color="#c06b00"/></linearGradient>
 <polygon points="303.1,211.5 309.7,221.8 309.7,221.8 310.0,222.2 309.6,222.4 309.8,222.7 310.3,222.5" fill="url(#s7dbbb5adf1)" stroke="url(#s7dbbb5adf1)" stroke-width="0.5"/>
 <polygon points="326.0,178.0 328.8,179.5 329.8,179.8 330.1,179.4 330.5,178.8 330.7,178.4 329.8,178.2" fill="rgb(141,110,0)" stroke="rgb(141,110,0)" stroke-width="0.5"/>
-<linearGradient id="s52018ae722" gradientUnits="userSpaceOnUse" x1="200.8" y1="41.4" x2="200.8" y2="41.4"><stop stop-color="#e25200"/><stop offset="1" stop-color="#e85500"/></linearGradient>
-<polygon points="187.2,44.7 207.6,39.8 207.6,39.8 207.6,39.8 207.6,39.8" fill="url(#s52018ae722)" stroke="url(#s52018ae722)" stroke-width="0.5"/>
+<linearGradient id="s5357a818fe" gradientUnits="userSpaceOnUse" x1="200.8" y1="41.4" x2="200.8" y2="41.4"><stop stop-color="#e25100"/><stop offset="1" stop-color="#e85500"/></linearGradient>
+<polygon points="187.2,44.7 207.6,39.8 207.6,39.8 207.6,39.8 207.6,39.8" fill="url(#s5357a818fe)" stroke="url(#s5357a818fe)" stroke-width="0.5"/>
 <linearGradient id="s5d855cc9f6" gradientUnits="userSpaceOnUse" x1="302.6" y1="218.8" x2="303.0" y2="218.9"><stop stop-color="#a02700"/><stop offset="1" stop-color="#b02e00"/></linearGradient>
 <polygon points="303.1,211.5 302.1,223.1 302.1,223.1 302.4,222.7 302.9,222.9 303.3,222.6 302.8,222.3 303.2,222.0 303.2,222.0" fill="url(#s5d855cc9f6)" stroke="url(#s5d855cc9f6)" stroke-width="0.5"/>
 <polygon points="326.0,178.0 322.8,181.7 322.5,182.1 323.0,182.3 323.6,182.4 324.1,182.5 324.4,182.0" fill="rgb(141,110,0)" stroke="rgb(141,110,0)" stroke-width="0.5"/>

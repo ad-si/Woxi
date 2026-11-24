@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 35596
 expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1,1,1}, {2,2,2}]}]\")"
 ---
 <svg width="360" height="389" viewBox="0 0 360 389" xmlns="http://www.w3.org/2000/svg">
@@ -316,8 +315,8 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <polygon points="138.6,267.8 139.1,268.0 139.4,267.4 141.2,262.5 141.3,262.0 140.8,261.9 140.7,262.3 139.9,263.1 138.2,267.6" fill="url(#sabc9586390)" stroke="url(#sabc9586390)" stroke-width="0.5"/>
 <linearGradient id="s37308cde42" gradientUnits="userSpaceOnUse" x1="125.6" y1="284.5" x2="125.9" y2="285.0"><stop stop-color="#690000"/><stop offset="1" stop-color="#660000"/></linearGradient>
 <polygon points="124.0,285.8 123.6,286.0 123.9,286.4 124.3,286.2 128.9,282.4 128.6,282.0 128.1,282.4" fill="url(#s37308cde42)" stroke="url(#s37308cde42)" stroke-width="0.5"/>
-<linearGradient id="s576c064ba7" gradientUnits="userSpaceOnUse" x1="70.5" y1="214.2" x2="71.0" y2="214.8"><stop stop-color="#b20000"/><stop offset="1" stop-color="#d00000"/></linearGradient>
-<polygon points="72.5,213.5 72.9,213.3 72.6,212.8 72.2,213.1 67.5,216.8 67.9,217.2 68.4,216.8" fill="url(#s576c064ba7)" stroke="url(#s576c064ba7)" stroke-width="0.5"/>
+<linearGradient id="sda7bbdb585" gradientUnits="userSpaceOnUse" x1="70.5" y1="214.2" x2="71.0" y2="214.8"><stop stop-color="#b30000"/><stop offset="1" stop-color="#d00000"/></linearGradient>
+<polygon points="72.5,213.5 72.9,213.3 72.6,212.8 72.2,213.1 67.5,216.8 67.9,217.2 68.4,216.8" fill="url(#sda7bbdb585)" stroke="url(#sda7bbdb585)" stroke-width="0.5"/>
 <linearGradient id="s15f5cfb8f1" gradientUnits="userSpaceOnUse" x1="90.2" y1="205.5" x2="90.4" y2="206.2"><stop stop-color="#ce0000"/><stop offset="1" stop-color="#e50000"/></linearGradient>
 <polygon points="94.2,205.5 94.1,205.0 93.5,205.1 88.3,205.9 87.8,206.0 87.9,206.5 88.4,206.4 89.5,206.8 94.2,206.0" fill="url(#s15f5cfb8f1)" stroke="url(#s15f5cfb8f1)" stroke-width="0.5"/>
 <linearGradient id="sad499e89cf" gradientUnits="userSpaceOnUse" x1="138.1" y1="269.7" x2="137.6" y2="269.4"><stop stop-color="#710000"/><stop offset="1" stop-color="#770000"/></linearGradient>
@@ -325,8 +324,8 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <polygon points="119.0,288.9 118.6,289.1 118.8,289.6 119.3,289.4 124.3,286.2 124.0,285.8 123.5,286.1" fill="rgb(102,0,0)" stroke="rgb(102,0,0)" stroke-width="0.5"/>
 <linearGradient id="sf1f081cc0d" gradientUnits="userSpaceOnUse" x1="66.0" y1="218.1" x2="66.6" y2="218.7"><stop stop-color="#a80000"/><stop offset="1" stop-color="#c70000"/></linearGradient>
 <polygon points="67.9,217.2 68.3,216.9 67.9,216.5 67.5,216.8 63.4,221.1 63.8,221.4 64.3,221.0" fill="url(#sf1f081cc0d)" stroke="url(#sf1f081cc0d)" stroke-width="0.5"/>
-<linearGradient id="sfe5ee312f4" gradientUnits="userSpaceOnUse" x1="84.5" y1="207.0" x2="84.7" y2="207.6"><stop stop-color="#c90000"/><stop offset="1" stop-color="#e20000"/></linearGradient>
-<polygon points="88.4,206.4 88.3,205.9 87.7,206.1 82.6,207.6 82.2,207.8 82.4,208.3 82.8,208.1 83.9,208.3 88.5,206.9" fill="url(#sfe5ee312f4)" stroke="url(#sfe5ee312f4)" stroke-width="0.5"/>
+<linearGradient id="s85ec52742a" gradientUnits="userSpaceOnUse" x1="84.5" y1="207.0" x2="84.7" y2="207.6"><stop stop-color="#ca0000"/><stop offset="1" stop-color="#e20000"/></linearGradient>
+<polygon points="88.4,206.4 88.3,205.9 87.7,206.1 82.6,207.6 82.2,207.8 82.4,208.3 82.8,208.1 83.9,208.3 88.5,206.9" fill="url(#s85ec52742a)" stroke="url(#s85ec52742a)" stroke-width="0.5"/>
 <linearGradient id="s3c96734889" gradientUnits="userSpaceOnUse" x1="134.7" y1="274.5" x2="135.1" y2="274.8"><stop stop-color="#730000"/><stop offset="1" stop-color="#6d0000"/></linearGradient>
 <polygon points="132.5,277.7 132.9,278.0 133.3,277.5 136.4,273.2 136.6,272.8 136.2,272.5 135.9,273.0 134.9,273.5 132.1,277.4" fill="url(#s3c96734889)" stroke="url(#s3c96734889)" stroke-width="0.5"/>
 <polygon points="113.7,291.4 113.2,291.5 113.4,292.0 113.9,291.9 119.3,289.4 119.1,288.9 118.5,289.1" fill="rgb(102,0,0)" stroke="rgb(102,0,0)" stroke-width="0.5"/>
@@ -352,8 +351,8 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <polygon points="134.9,230.0 135.2,230.5 137.4,229.2 137.5,228.7 135.1,224.0 134.8,223.5 134.4,223.8 134.0,224.1 134.4,229.1" fill="url(#s4a6346db37)" stroke="url(#s4a6346db37)" stroke-width="0.5"/>
 <linearGradient id="se7d35de2a7" gradientUnits="userSpaceOnUse" x1="127.4" y1="219.6" x2="129.7" y2="217.9"><stop stop-color="#e30000"/><stop offset="1" stop-color="#cc0000"/></linearGradient>
 <polygon points="128.7,221.3 129.0,221.6 130.9,219.9 130.8,219.3 127.3,215.4 126.9,215.0 126.6,215.4 126.2,215.8 127.9,220.5" fill="url(#se7d35de2a7)" stroke="url(#se7d35de2a7)" stroke-width="0.5"/>
-<linearGradient id="sb4d7a714d2" gradientUnits="userSpaceOnUse" x1="69.0" y1="215.5" x2="69.5" y2="216.1"><stop stop-color="#b20000"/><stop offset="1" stop-color="#d00000"/></linearGradient>
-<polygon points="72.5,213.5 72.2,213.1 71.6,213.5 67.5,216.8 67.2,217.1 67.5,217.5 67.9,217.2 69.0,217.0 72.8,213.9" fill="url(#sb4d7a714d2)" stroke="url(#sb4d7a714d2)" stroke-width="0.5"/>
+<linearGradient id="s256e2967fb" gradientUnits="userSpaceOnUse" x1="69.0" y1="215.5" x2="69.5" y2="216.1"><stop stop-color="#b30000"/><stop offset="1" stop-color="#d00000"/></linearGradient>
+<polygon points="72.5,213.5 72.2,213.1 71.6,213.5 67.5,216.8 67.2,217.1 67.5,217.5 67.9,217.2 69.0,217.0 72.8,213.9" fill="url(#s256e2967fb)" stroke="url(#s256e2967fb)" stroke-width="0.5"/>
 <linearGradient id="s504a389f6a" gradientUnits="userSpaceOnUse" x1="136.7" y1="232.8" x2="139.5" y2="232.2"><stop stop-color="#c60000"/><stop offset="1" stop-color="#ad0000"/></linearGradient>
 <polygon points="137.2,234.9 137.3,235.4 139.7,234.5 139.8,233.9 138.1,229.0 137.9,228.4 137.5,228.7 136.9,228.9 136.7,233.9" fill="url(#s504a389f6a)" stroke="url(#s504a389f6a)" stroke-width="0.5"/>
 <linearGradient id="sc0dba8c02f" gradientUnits="userSpaceOnUse" x1="123.3" y1="216.1" x2="125.3" y2="214.1"><stop stop-color="#eb0000"/><stop offset="1" stop-color="#d40000"/></linearGradient>

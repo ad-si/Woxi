@@ -10094,6 +10094,11 @@ a unit sphere's by 0.5, as in wolframscript. What still differs:
   `θ ∈ [0, π]`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
+- DensityPlot3D (a `Raster3D`) draws its voxels as sharp-edged translucent
+  cubes; wolframscript's volume rendering blends neighboring voxels, so
+  their edges look blurred. A vector SVG can approximate it with a
+  `feGaussianBlur` over the voxel faces, but the 3D painter has no way yet
+  to mark which of its triangles form a volume.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
   are ignored.
 - 3D charts: the translucent backdrop panels wolframscript puts behind

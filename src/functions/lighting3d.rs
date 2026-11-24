@@ -476,6 +476,16 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 impl ViewFrame {
+  /// The unit direction from `position` (in the renderer's coordinates)
+  /// toward the viewer: toward the eye of a perspective camera, else the
+  /// view direction.
+  pub(crate) fn toward_at(&self, position: [f64; 3]) -> [f64; 3] {
+    self
+      .eye
+      .and_then(|e| normalize(sub(e, position)))
+      .unwrap_or(self.toward)
+  }
+
   /// A light point in the renderer's coordinates.
   fn place(&self, p: LightPoint) -> [f64; 3] {
     match p {
@@ -518,10 +528,7 @@ pub(crate) fn shade(
   frame: &ViewFrame,
 ) -> (u8, u8, u8) {
   let mut n = normalize(normal).unwrap_or(frame.toward);
-  let view = frame
-    .eye
-    .and_then(|e| normalize(sub(e, position)))
-    .unwrap_or(frame.toward);
+  let view = frame.toward_at(position);
   if dot(n, view) < 0.0 {
     n = [-n[0], -n[1], -n[2]];
   }

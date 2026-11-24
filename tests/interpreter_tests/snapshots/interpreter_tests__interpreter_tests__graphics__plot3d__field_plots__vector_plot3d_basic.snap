@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 30841
 expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]\")"
 ---
 <svg width="360" height="386" viewBox="0 0 360 386" xmlns="http://www.w3.org/2000/svg">
@@ -4680,8 +4679,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <polygon points="311.8,171.5 310.7,167.5 310.7,167.5 310.5,167.8 310.3,168.1 310.1,168.5 310.1,168.5" fill="rgb(125,33,0)" stroke="rgb(125,33,0)" stroke-width="0.5"/>
 <polygon points="151.0,211.3 151.4,209.4 151.4,209.4 151.1,209.2 150.9,209.1 150.6,209.0 150.6,209.0" fill="rgb(157,55,123)" stroke="rgb(157,55,123)" stroke-width="0.5"/>
 <polygon points="151.0,211.3 153.0,212.6 153.0,212.6 153.0,212.3 153.0,212.0 152.9,211.7 152.9,211.7" fill="rgb(157,55,123)" stroke="rgb(157,55,123)" stroke-width="0.5"/>
-<linearGradient id="s201e4b7aec" gradientUnits="userSpaceOnUse" x1="317.9" y1="168.2" x2="317.9" y2="168.2"><stop stop-color="#e96600"/><stop offset="1" stop-color="#dd5c00"/></linearGradient>
-<polygon points="330.1,170.5 311.7,167.0 311.7,167.5 311.9,167.6 312.0,167.1 312.2,167.2 312.2,167.2" fill="url(#s201e4b7aec)" stroke="url(#s201e4b7aec)" stroke-width="0.5"/>
+<linearGradient id="sdeb9771f7b" gradientUnits="userSpaceOnUse" x1="317.9" y1="168.2" x2="317.9" y2="168.2"><stop stop-color="#e96600"/><stop offset="1" stop-color="#de5c00"/></linearGradient>
+<polygon points="330.1,170.5 311.7,167.0 311.7,167.5 311.9,167.6 312.0,167.1 312.2,167.2 312.2,167.2" fill="url(#sdeb9771f7b)" stroke="url(#sdeb9771f7b)" stroke-width="0.5"/>
 <polygon points="226.3,91.4 223.7,92.1 223.7,92.1 224.1,92.3 224.5,92.5 224.9,92.7 224.9,92.7" fill="rgb(95,21,16)" stroke="rgb(95,21,16)" stroke-width="0.5"/>
 <polygon points="226.3,91.4 226.7,93.3 226.7,93.3 227.2,93.3 227.6,93.4 228.1,93.3 228.1,93.3" fill="rgb(95,21,16)" stroke="rgb(95,21,16)" stroke-width="0.5"/>
 <polygon points="239.1,169.9 240.1,171.6 240.1,171.6 240.2,171.5 241.2,171.0 241.3,170.8 240.4,171.3 240.5,171.0 240.5,171.0" fill="rgb(77,11,56)" stroke="rgb(77,11,56)" stroke-width="0.5"/>
@@ -13720,8 +13719,8 @@ expression: "export_svg(\"VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1
 <polygon points="249.3,153.9 239.1,158.5 239.1,158.5 239.3,158.9 239.5,159.3 239.7,159.6 239.7,159.6" fill="url(#sae25232d3b)" stroke="url(#sae25232d3b)" stroke-width="0.5"/>
 <linearGradient id="sa400a00f5a" gradientUnits="userSpaceOnUse" x1="242.5" y1="156.9" x2="242.7" y2="157.3"><stop stop-color="#641232"/><stop offset="1" stop-color="#5d1134"/></linearGradient>
 <polygon points="249.3,153.9 239.0,158.1 239.0,158.1 239.1,158.5 239.3,158.9 239.5,159.3 239.5,159.3" fill="url(#sa400a00f5a)" stroke="url(#sa400a00f5a)" stroke-width="0.5"/>
-<linearGradient id="s639492ffd0" gradientUnits="userSpaceOnUse" x1="244.4" y1="303.7" x2="244.4" y2="303.7"><stop stop-color="#956b00"/><stop offset="1" stop-color="#896300"/></linearGradient>
-<polygon points="245.7,320.3 243.8,295.5 243.8,295.3 243.7,295.1 243.7,295.1" fill="url(#s639492ffd0)" stroke="url(#s639492ffd0)" stroke-width="0.5"/>
+<linearGradient id="s13606ba152" gradientUnits="userSpaceOnUse" x1="244.4" y1="303.7" x2="244.4" y2="303.7"><stop stop-color="#956b00"/><stop offset="1" stop-color="#886200"/></linearGradient>
+<polygon points="245.7,320.3 243.8,295.5 243.8,295.3 243.7,295.1 243.7,295.1" fill="url(#s13606ba152)" stroke="url(#s13606ba152)" stroke-width="0.5"/>
 <polygon points="245.7,320.3 233.2,298.3 233.2,298.3 233.2,298.6 233.3,298.8" fill="rgb(102,32,0)" stroke="rgb(102,32,0)" stroke-width="0.5"/>
 <linearGradient id="se0701976c0" gradientUnits="userSpaceOnUse" x1="244.3" y1="303.5" x2="244.4" y2="303.5"><stop stop-color="#a97700"/><stop offset="1" stop-color="#956b00"/></linearGradient>
 <polygon points="245.7,320.3 243.8,295.5 243.8,295.5 243.8,295.3 243.7,295.1 243.5,294.9 243.5,294.9" fill="url(#se0701976c0)" stroke="url(#se0701976c0)" stroke-width="0.5"/>

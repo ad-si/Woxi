@@ -1027,26 +1027,33 @@ struct SmoothFacet {
 fn shade_smoothly(
   triangles: &mut [Triangle],
   facets: &[SmoothFacet],
-  toward: [f64; 3],
+  frame: &ViewFrame,
   shade: impl FnMut(&SmoothFacet, [f64; 3], Point3D) -> (u8, u8, u8),
 ) {
-  shade_smoothly_with(triangles, facets, None, toward, shade);
+  shade_smoothly_with(triangles, facets, None, frame, shade);
 }
 
 /// `shade_smoothly` with the surface's exact normals (`exact` is called
 /// with the facet's position in `facets`), where they are known.
+///
+/// Which side of a facet faces the viewer is settled from the eye of a
+/// perspective `frame`, where the facet sits, as the lighting settles it.
+/// Judged from the view direction at the center instead, a facet the eye
+/// sees past the edge of a curved surface (a torus's underside near its
+/// silhouette) had its normals turned to its back, which the lighting
+/// then flipped to the surface's inner side and lit dark.
 fn shade_smoothly_with(
   triangles: &mut [Triangle],
   facets: &[SmoothFacet],
   exact: Option<crate::functions::smooth_shading::ExactNormal>,
-  toward: [f64; 3],
+  frame: &ViewFrame,
   mut shade: impl FnMut(&SmoothFacet, [f64; 3], Point3D) -> (u8, u8, u8),
 ) {
   let worlds: Vec<[Point3D; 3]> = facets.iter().map(|f| f.world).collect();
   let colors = crate::functions::smooth_shading::corner_colors(
     &worlds,
     exact,
-    &|_| toward,
+    &|p| frame.toward_at([p.x, p.y, p.z]),
     |i, n, p| shade(&facets[i], n, p),
   );
   for (facet, c) in facets.iter().zip(colors) {
@@ -1801,6 +1808,12 @@ fn grid_mesh_lines(
 /// hole); `segment(a, b, axis)` builds the line piece between two samples
 /// of a line of constant first (`axis == 0`) or second (`axis == 1`)
 /// parameter.
+///
+/// The surface draws each cell as the two triangles cut along its diagonal
+/// from `(i + 1, j)` to `(i, j + 1)`, so a line between two grid rows bends
+/// where it crosses that diagonal: it lies on the triangles. Straight
+/// across a cell that is not flat (a twisted Möbius strip) it would cut
+/// through them, and the triangle in front of it hid stretches of it.
 fn parameter_grid_mesh_lines(
   grid_u: usize,
   grid_v: usize,
@@ -1814,9 +1827,14 @@ fn parameter_grid_mesh_lines(
     z: a.z + (b.z - a.z) * f,
   };
   let mut lines = Vec::new();
-  for (axis, polyline) in
-    parameter_grid_mesh_polylines(grid_u, grid_v, n, at, &interpolate)
-  {
+  for (axis, polyline) in parameter_grid_mesh_polylines_bent(
+    grid_u,
+    grid_v,
+    n,
+    at,
+    &interpolate,
+    true,
+  ) {
     for pair in polyline.windows(2) {
       lines.push(segment(pair[0], pair[1], axis));
     }
@@ -1840,6 +1858,21 @@ fn parameter_grid_mesh_polylines<P: Copy>(
   n: [usize; 2],
   at: &dyn Fn(usize, usize) -> Option<P>,
   interpolate: &dyn Fn(P, P, f64) -> P,
+) -> Vec<(usize, Vec<P>)> {
+  parameter_grid_mesh_polylines_bent(grid_u, grid_v, n, at, interpolate, false)
+}
+
+/// `parameter_grid_mesh_polylines`, with (`bend`) a point added where a
+/// line between two grid rows crosses a cell's diagonal from `(i + 1, j)`
+/// to `(i, j + 1)`, so the line lies on the two triangles the cell is
+/// drawn as.
+fn parameter_grid_mesh_polylines_bent<P: Copy>(
+  grid_u: usize,
+  grid_v: usize,
+  n: [usize; 2],
+  at: &dyn Fn(usize, usize) -> Option<P>,
+  interpolate: &dyn Fn(P, P, f64) -> P,
+  bend: bool,
 ) -> Vec<(usize, Vec<P>)> {
   let mut polylines = Vec::new();
   for m in 0..=n[0].max(n[1]) + 1 {
@@ -1868,9 +1901,26 @@ fn parameter_grid_mesh_polylines<P: Copy>(
       };
       // Only pieces whose both ends exist are drawn, so a lone sample
       // between two holes contributes nothing.
+      // Where the line crosses the diagonal of the cell between `j - 1`
+      // and `j` along it.
+      let diagonal_point = |j: usize| {
+        if axis == 0 {
+          Some(interpolate(at(k + 1, j - 1)?, at(k, j)?, 1.0 - f))
+        } else {
+          Some(interpolate(at(j, k)?, at(j - 1, k + 1)?, f))
+        }
+      };
       let mut current: Vec<P> = Vec::new();
       for j in 0..=along {
         if let Some(p) = point(j) {
+          if bend
+            && !current.is_empty()
+            && f > 0.0
+            && f < 1.0
+            && let Some(d) = diagonal_point(j)
+          {
+            current.push(d);
+          }
           current.push(p);
         } else {
           if current.len() >= 2 {
@@ -3611,7 +3661,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     shade_smoothly(
       &mut all_triangles,
       &facets,
-      scene.frame.toward,
+      &scene.frame,
       |facet, normal, at| {
         shade_facet(
           SurfaceDefault::Theme(surface_idx),
@@ -19061,7 +19111,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vertex_colors: None,
       });
     }
-    shade_smoothly(&mut base, &base_facets, scene.frame.toward, |f, n, at| {
+    shade_smoothly(&mut base, &base_facets, &scene.frame, |f, n, at| {
       shade_facet(
         SurfaceDefault::Theme(0),
         f.style.as_ref(),
@@ -19251,7 +19301,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut all_triangles,
     &facets,
     Some(&exact),
-    scene.frame.toward,
+    &scene.frame,
     |facet, normal, at| {
       shade_facet(
         SurfaceDefault::Theme(0),
@@ -22682,7 +22732,7 @@ fn contour3d_render(
     &mut all_triangles,
     &facets,
     exact,
-    scene.frame.toward,
+    &scene.frame,
     |facet, normal, at| {
       shade_facet(
         SurfaceDefault::Theme(world_triangles[facet.index].1),
@@ -26757,9 +26807,6 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // given, so the default theme material is used.
   let plot_styles: Vec<StyleState3D> =
     plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, surfaces.len()));
-
-  let camera = Camera::default();
-  let scene = Scene::new(&camera, args);
   // Without an explicit `PlotPoints` the grid is 50 samples per direction,
   // refined to about 20 per full turn (2π) of a long parameter span, so a
   // surface winding many times around (a Klein bottle over `{u, 0, 30 π}`)
@@ -26942,6 +26989,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
   // The box is normalized to ±box_ratios, so the eye stands back by that.
   let camera = Camera::for_box(box_ratios);
+  // The lights and the side of a facet that faces the eye are settled from
+  // this camera too. The default one's eye, placed for a box of side 2,
+  // stood inside a larger box: seen from there, much of a torus faced
+  // away and was lit from behind.
+  let scene = Scene::new(&camera, args);
 
   // `ColorFunction`: the color of facet `(i, j)`, from `f` at the facet's
   // mean point and its center in parameter space.
@@ -27614,7 +27666,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &mut all_triangles,
       &facets,
       Some(&exact),
-      scene.frame.toward,
+      &scene.frame,
       |facet, normal, at| {
         shade_facet(
           SurfaceDefault::Theme(surface_idx),
@@ -28615,13 +28667,22 @@ mod review_mesh_tests {
           depth: 0.0,
         },
       );
-      assert_eq!(lines.len(), (count + 2) * (nu + nv));
-      let levels: std::collections::BTreeSet<_> = lines
-        .iter()
-        .filter(|l| l.endpoints[0].x == l.endpoints[1].x)
-        .map(|l| (l.endpoints[0].x * 1e6).round() as i64)
-        .collect();
+      // Each level runs the whole way across, in pieces bent at the cell
+      // diagonals (on this flat grid the bends stay on the line).
+      let mut levels: std::collections::BTreeMap<i64, f64> =
+        std::collections::BTreeMap::new();
+      for l in &lines {
+        let [a, b] = l.endpoints;
+        if (a.x - b.x).abs() < 1e-9 {
+          *levels.entry((a.x * 1e6).round() as i64).or_default() +=
+            (b.y - a.y).abs();
+        }
+      }
       assert_eq!(levels.len(), count + 2);
+      assert!(
+        levels.values().all(|&len| (len - nv as f64).abs() < 1e-9),
+        "{levels:?}"
+      );
     }
   }
 }

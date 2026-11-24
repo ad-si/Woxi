@@ -3606,6 +3606,46 @@ mod surface_outlines_and_meshes {
     assert_eq!(s.matches("stroke=\"#000000a0\"").count(), 64, "{s}");
   }
 
+  // ParametricPlot3D normalizes its box to ±BoxRatios and looks at it
+  // from |ViewPoint| times that box, so scaling the surface changes
+  // nothing on screen — its shading included. The lights used to judge
+  // which side of a facet faces the eye from the default camera's eye,
+  // which stood inside the box of a torus of radius 3 and lit much of it
+  // from behind (dark, toothed patches).
+  #[test]
+  fn parametric_plot3d_shading_does_not_depend_on_scale() {
+    let stops = |k: u32| -> Vec<String> {
+      let s = svg(&format!(
+        "ParametricPlot3D[{k} {{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], \
+         Sin[v]}}, {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}, PlotPoints -> 10, \
+         MaxRecursion -> 0, Mesh -> None, Axes -> False]"
+      ));
+      s.split("stop-color=\"")
+        .skip(1)
+        .filter_map(|r| r.split('"').next().map(str::to_string))
+        .collect()
+    };
+    let (small, large) = (stops(1), stops(10));
+    assert_ne!(small, Vec::<String>::new());
+    assert_eq!(small, large);
+  }
+
+  // ParametricPlot3D draws each grid cell as two triangles cut along the
+  // diagonal from (i + 1, j) to (i, j + 1); a mesh line between two grid
+  // rows bends where it crosses that diagonal so it stays on the
+  // triangles. Straight across a twisted cell (a Möbius strip) it dipped
+  // under one of them, which hid stretches of it.
+  #[test]
+  fn parametric_plot3d_mesh_lines_bend_at_the_cell_diagonal() {
+    let s = svg(
+      "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 2, \
+       MaxRecursion -> 0]",
+    );
+    assert_eq!(polygon_count(&s), 2, "{s}");
+    // 17 lines each way, the 15 inner ones in two pieces each.
+    assert_eq!(s.matches("stroke=\"#000000a0\"").count(), 64, "{s}");
+  }
+
   // `PlotPoints -> n` with `MaxRecursion -> r` samples ParametricPlot3D
   // more finely than `PlotPoints` alone, up to `(n - 1) 2^r` cells per
   // direction, as Wolfram's adaptive sampler may. `MaxRecursion` was
