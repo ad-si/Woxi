@@ -46088,6 +46088,13 @@ pub enum ManipulateControl {
     /// Only affects the SetterBar/RadioButtonBar bar layout; a dropdown or
     /// index slider ignores it.
     vertical: bool,
+    /// `Appearance -> "Horizontal" -> {rows, columns}` (or `"Vertical" ->
+    /// …`): break the SetterBar/RadioButtonBar into a grid of `(rows,
+    /// columns)` cells, with an `Automatic` side resolved from the choice
+    /// count (see `appearance_bar_grid`). A horizontal bar fills the grid
+    /// row by row, a vertical one (`vertical` set) column by column.
+    /// `None` keeps the single row (or column).
+    bar_grid: Option<(usize, usize)>,
     /// `ControlType -> Checkbox` over a two-choice domain (`{{k, 1}, {1, 0},
     /// Checkbox}`): draw a checkbox whatever the choices are, like
     /// `Checkbox[x, {v1, v2}]` — unchecked sets the first choice, checked
@@ -54720,6 +54727,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     radio: false,
     slider: false,
     vertical: false,
+    bar_grid: None,
     checkbox: false,
   };
   Some(ManipulateSpec {
@@ -58191,8 +58199,7 @@ fn parse_manipulate_control(
       return false;
     };
     matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
-      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
-        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+      && appearance_direction(replacement) == Some(true)
   });
 
   // A `ControlType -> Trigger` (or bare `Trigger` marker) becomes a
@@ -58649,6 +58656,7 @@ fn parse_manipulate_control(
       });
       let forced_checkbox =
         control_type.as_deref() == Some("Checkbox") && values.len() == 2;
+      let n_choices = values.len();
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
           name,
@@ -58683,6 +58691,7 @@ fn parse_manipulate_control(
             Some("Slider" | "VerticalSlider" | "Manipulator")
           ),
           vertical: appearance_vertical,
+          bar_grid: appearance_bar_grid(items, n_choices),
           checkbox: forced_checkbox,
         },
         enabled,
@@ -60544,6 +60553,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         radio,
         slider,
         vertical,
+        bar_grid: _,
         checkbox,
       } => {
         let value_parts: Vec<String> = values
@@ -62680,6 +62690,70 @@ fn setterbar_node(
   } else {
     DisplayNode::Row(buttons)
   })
+}
+
+/// The direction an `Appearance` setting gives a SetterBar or
+/// RadioButtonBar: `Some(true)` for `"Vertical"` (string or symbol, bare or
+/// as `"Vertical" -> {rows, columns}`), `Some(false)` for `"Horizontal"`,
+/// `None` for anything else.
+fn appearance_direction(appearance: &Expr) -> Option<bool> {
+  let direction = match appearance {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      pattern.as_ref()
+    }
+    other => other,
+  };
+  match direction {
+    Expr::String(s) | Expr::Identifier(s) if s == "Vertical" => Some(true),
+    Expr::String(s) | Expr::Identifier(s) if s == "Horizontal" => Some(false),
+    _ => None,
+  }
+}
+
+/// The `(rows, columns)` grid an `Appearance -> "Horizontal" -> {rows,
+/// columns}` (or `"Vertical" -> …`) option among a Manipulate control's
+/// `items` lays its `count` choices out in. An `Automatic` side is however
+/// many lines the other side needs to hold every choice, so `{2,
+/// Automatic}` splits sixteen choices into two rows of eight; when both
+/// sides are given but too small, the rows grow to fit. `None` when no
+/// such option is present or both sides are `Automatic`.
+fn appearance_bar_grid(items: &[Expr], count: usize) -> Option<(usize, usize)> {
+  let spec = items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance") => {
+      match replacement.as_ref() {
+        Expr::Rule {
+          replacement: dims, ..
+        }
+        | Expr::RuleDelayed {
+          replacement: dims, ..
+        } if appearance_direction(replacement).is_some() => Some(dims.as_ref()),
+        _ => None,
+      }
+    }
+    _ => None,
+  })?;
+  let side = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+    _ => None,
+  };
+  let (rows, cols) = match spec {
+    Expr::List(dims) if dims.len() == 2 => (side(&dims[0]), side(&dims[1])),
+    _ => return None,
+  };
+  let count = count.max(1);
+  match (rows, cols) {
+    (Some(r), None) => Some((r, count.div_ceil(r))),
+    (None, Some(c)) => Some((count.div_ceil(c), c)),
+    (Some(r), Some(c)) => Some((r.max(count.div_ceil(c)), c)),
+    (None, None) => None,
+  }
 }
 
 /// Build a `PopupMenu[Dynamic[lval], choices]` display: a dropdown whose
@@ -65914,6 +65988,94 @@ mod manipulate_pane_sequence_tests {
       spec.displays.is_empty(),
       "Place-only PaneSelector must not become a display: {:?}",
       spec.displays
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_setter_bar_grid_tests {
+  use super::*;
+
+  fn grid_and_vertical(code: &str) -> (Option<(usize, usize)>, bool) {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match spec.controls.first() {
+      Some(ManipulateControl::Discrete {
+        bar_grid, vertical, ..
+      }) => (*bar_grid, *vertical),
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `Appearance -> "Horizontal" -> {2, Automatic}` splits a SetterBar's
+  /// sixteen choices into two rows of eight; the `Automatic` side is
+  /// resolved from the choice count.
+  #[test]
+  fn automatic_columns_follow_the_row_count() {
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, 1, 16, 1, ControlType -> SetterBar, \
+         Appearance -> (\"Horizontal\" -> {2, Automatic})}]"
+      ),
+      (Some((2, 8)), false)
+    );
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[7], ControlType -> SetterBar, \
+         Appearance -> \"Horizontal\" -> {3, Automatic}}]"
+      ),
+      (Some((3, 3)), false)
+    );
+  }
+
+  /// An `Automatic` row count follows the given columns, and rows too few
+  /// for every choice grow to fit them.
+  #[test]
+  fn automatic_rows_follow_the_column_count() {
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[10], ControlType -> SetterBar, \
+         Appearance -> \"Horizontal\" -> {Automatic, 4}}]"
+      ),
+      (Some((3, 4)), false)
+    );
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[10], ControlType -> SetterBar, \
+         Appearance -> \"Horizontal\" -> {1, 4}}]"
+      ),
+      (Some((3, 4)), false)
+    );
+  }
+
+  /// A `"Vertical" -> {rows, columns}` grid also marks the bar vertical,
+  /// so it fills column by column.
+  #[test]
+  fn vertical_grid_marks_the_bar_vertical() {
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[6], ControlType -> SetterBar, \
+         Appearance -> \"Vertical\" -> {Automatic, 2}}]"
+      ),
+      (Some((3, 2)), true)
+    );
+  }
+
+  /// A plain direction keeps the single line.
+  #[test]
+  fn plain_direction_has_no_grid() {
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[6], ControlType -> SetterBar, \
+         Appearance -> \"Vertical\"}]"
+      ),
+      (None, true)
+    );
+    assert_eq!(
+      grid_and_vertical(
+        "Manipulate[k, {k, Range[6], ControlType -> SetterBar}]"
+      ),
+      (None, false)
     );
   }
 }

@@ -152,6 +152,10 @@ pub enum ControlState {
     /// choices in a column instead of a row. Ignored by the dropdown and
     /// index-slider layouts.
     vertical: bool,
+    /// `Appearance -> "Horizontal" -> {rows, columns}`: lay the
+    /// SetterBar/RadioButtonBar choices out in this `(rows, columns)` grid
+    /// (see `ManipulateControl::Discrete::bar_grid`).
+    bar_grid: Option<(usize, usize)>,
     /// `ControlType -> Checkbox` over two choices: draw a checkbox that
     /// binds the first choice when unchecked and the second when checked
     /// (see `ManipulateControl::Discrete::checkbox`).
@@ -3318,6 +3322,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio,
         slider,
         vertical,
+        bar_grid,
         checkbox,
       } => ControlState::Discrete {
         name: name.clone(),
@@ -3337,6 +3342,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio: *radio,
         slider: *slider,
         vertical: *vertical,
+        bar_grid: *bar_grid,
         checkbox: *checkbox,
       },
       ManipulateControl::Slider2D {
