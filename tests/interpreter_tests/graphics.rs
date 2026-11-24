@@ -2092,11 +2092,24 @@ mod graphics {
         assert!((w - 200.0).abs() < 8.0, "width of {what}: {w}");
         assert!((h / w - 1.5).abs() < 0.05, "aspect of {what}: {w} x {h}");
       };
+      // The image is drawn by a nested picture (its own pixel size, `<svg
+      // width='…' height='…' viewBox=…>`) placed in a padded frame (`<svg
+      // x=… width=… viewBox="0 0 vw vh">`) that the frame's `width`/`vw`
+      // scales onto the page.
       let svg = inset("Image[Graphics[Rectangle[{0, 0}, {1, 1.5}]]]");
+      let frame_view_width = svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("viewBox=\"0 0 ").nth(1))
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("no padded frame in {svg}"));
+      let scale = attr(&svg, "<svg x=", "", "width") / frame_view_width;
+      let picture = "<svg xmlns='http://www.w3.org/2000/svg'";
       check(
         "the image",
-        attr(&svg, "<image", "", "width"),
-        attr(&svg, "<image", "", "height"),
+        attr(&svg, picture, "viewBox", "width") * scale,
+        attr(&svg, picture, "viewBox", "height") * scale,
       );
       let svg = inset("Graphics[{Red, Rectangle[{0, 0}, {1, 1.5}]}]");
       let red = "rgb(255,0,0)";
