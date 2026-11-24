@@ -1192,9 +1192,21 @@ fn split_interpenetrating(
       }
     }
   });
+  apply_split_planes(verts, triangles, &planes, camera);
+}
+
+/// Cuts each triangle `k` along the planes of the triangles `planes[k]`
+/// names, replacing it by the pieces, within the scene's split budget.
+fn apply_split_planes(
+  verts: &mut Vec<[Point3D; 3]>,
+  triangles: &mut Vec<Triangle>,
+  planes: &[Vec<usize>],
+  camera: &Camera,
+) {
   if planes.iter().all(std::vec::Vec::is_empty) {
     return;
   }
+  let n = verts.len();
   let original = verts.clone();
   // Cut every triangle first, then count what the cuts cost.
   let mut cuts: Vec<Option<Vec<Vec<(Point3D, bool)>>>> = triangles
@@ -1278,6 +1290,78 @@ fn split_interpenetrating(
   *triangles = new_tris;
 }
 
+/// Most rounds of cutting `split_depth_cycles` makes: each round cuts the
+/// triangles of every remaining cycle, and a cut piece rarely needs more.
+const DEPTH_CYCLE_SPLIT_ROUNDS: usize = 3;
+
+/// Cuts triangles whose pairwise depth order goes round in a cycle (Newell's
+/// algorithm). No back-to-front order can draw three faces that each hide
+/// part of the next, so `painter_order` would break such a cycle by centroid
+/// depth and draw some face over one that lies in front of it: the large
+/// fins of a fractal tree with small solids threaded along them came out
+/// under the solids behind them. Within each cycle, a triangle that
+/// straddles the plane of a triangle it overlaps is cut along that plane
+/// (of two that straddle each other's, the larger one), so its pieces each
+/// lie on one side and can be ordered. Returns the order constraints of
+/// the scene as it is left, when the last round computed them, so
+/// `painter_order` need not compute them again.
+fn split_depth_cycles(
+  verts: &mut Vec<[Point3D; 3]>,
+  triangles: &mut Vec<Triangle>,
+  camera: &Camera,
+) -> Option<Vec<Vec<usize>>> {
+  for _ in 0..DEPTH_CYCLE_SPLIT_ROUNDS {
+    let n = verts.len();
+    if !(3..=SPLIT_MAX_TRIANGLES).contains(&n) {
+      return None;
+    }
+    let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
+    let opacities: Vec<_> = triangles.iter().map(|t| t.opacity).collect();
+    let after = depth_order_edges(verts, &projected, &opacities, camera);
+    let (component, count) = strongly_connected_components(&after);
+    let mut size = vec![0usize; count];
+    for &c in &component {
+      size[c] += 1;
+    }
+    let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, next) in after.iter().enumerate() {
+      if size[component[i]] < 2 {
+        continue;
+      }
+      for &j in next {
+        if component[j] != component[i] {
+          continue;
+        }
+        let i_straddles = side_of_plane(&verts[i], &verts[j], camera).is_none();
+        let j_straddles = side_of_plane(&verts[j], &verts[i], camera).is_none();
+        let (cut, by) = match (i_straddles, j_straddles) {
+          (true, false) => (i, j),
+          (false, true) => (j, i),
+          (true, true) => {
+            if triangle_area(&verts[i]) >= triangle_area(&verts[j]) {
+              (i, j)
+            } else {
+              (j, i)
+            }
+          }
+          (false, false) => continue,
+        };
+        if planes[cut].len() < MAX_SPLIT_PLANES && !planes[cut].contains(&by) {
+          planes[cut].push(by);
+        }
+      }
+    }
+    if planes.iter().all(std::vec::Vec::is_empty) {
+      return Some(after);
+    }
+    apply_split_planes(verts, triangles, &planes, camera);
+    if verts.len() == n {
+      return Some(after);
+    }
+  }
+  None
+}
+
 /// Back-to-front draw order for the triangles. A centroid sort alone draws a
 /// large face that lies behind a small one on top of it (a cube inside a
 /// polyhedron pokes through its faces), so every overlapping pair is first
@@ -1290,6 +1374,7 @@ fn painter_order(
   depths: &[f64],
   opacities: &[f64],
   camera: &Camera,
+  edges: Option<Vec<Vec<usize>>>,
 ) -> Vec<usize> {
   let n = verts.len();
   // Depths that agree to within rounding noise are ties, kept in the order
@@ -1313,6 +1398,24 @@ fn painter_order(
   if n > PAINTER_ORDER_MAX_TRIANGLES {
     return by_depth;
   }
+  let after = edges
+    .unwrap_or_else(|| depth_order_edges(verts, projected, opacities, camera));
+  let mut rank = vec![0usize; n];
+  for (r, &k) in by_depth.iter().enumerate() {
+    rank[k] = r;
+  }
+  topological_order_breaking_cycles(&after, &rank)
+}
+
+/// The pairwise draw-order constraints of `painter_order`: `after[i]` lists
+/// the triangles that overlap `i` on screen and must be drawn after it.
+fn depth_order_edges(
+  verts: &[[Point3D; 3]],
+  projected: &[[(f64, f64); 3]],
+  opacities: &[f64],
+  camera: &Camera,
+) -> Vec<Vec<usize>> {
+  let n = verts.len();
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(projected, |i, j| {
@@ -1354,11 +1457,7 @@ fn painter_order(
       None => {}
     }
   });
-  let mut rank = vec![0usize; n];
-  for (r, &k) in by_depth.iter().enumerate() {
-    rank[k] = r;
-  }
-  topological_order_breaking_cycles(&after, &rank)
+  after
 }
 
 /// Strongly connected components of the graph whose edges run from `k` to
@@ -15599,6 +15698,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Painter's algorithm
   split_interpenetrating(&mut triangle_vertices, &mut all_triangles, &camera);
+  let edges =
+    split_depth_cycles(&mut triangle_vertices, &mut all_triangles, &camera);
   {
     let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
     let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
@@ -15609,6 +15710,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &depths,
       &opacities,
       &camera,
+      edges,
     );
     let mut slots: Vec<Option<Triangle>> =
       all_triangles.drain(..).map(Some).collect();
@@ -27452,6 +27554,92 @@ mod painter_order_tests {
     }
   }
 
+  /// Three bars that each lie over the next where they cross (A over B,
+  /// B over C, C over A) have no back-to-front order as wholes. They are
+  /// cut until the order graph has no cycle left, and at every crossing the
+  /// piece drawn last is the one nearest the viewer.
+  #[test]
+  fn cyclically_overlapping_triangles_are_cut_into_a_drawable_order() {
+    // Looking straight down the z axis: screen position is (x, y), and a
+    // larger z is nearer.
+    let camera = Camera {
+      azimuth: 0.0,
+      elevation: std::f64::consts::FRAC_PI_2,
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // A along y = 0 (z falls with x), B along x = 0 (z rises with y), C
+    // along x + y = 2 at a constant height between the two.
+    let z_a = |x: f64| 1.0 - x / 2.0;
+    let z_b = |y: f64| y / 2.0;
+    let mut verts = vec![
+      [
+        p(-1.0, -0.2, z_a(-1.0)),
+        p(-1.0, 0.2, z_a(-1.0)),
+        p(3.0, 0.0, z_a(3.0)),
+      ],
+      [
+        p(-0.2, -1.0, z_b(-1.0)),
+        p(0.2, -1.0, z_b(-1.0)),
+        p(0.0, 3.0, z_b(3.0)),
+      ],
+      [p(3.1, -0.9, 0.5), p(2.9, -1.1, 0.5), p(-1.0, 3.0, 0.5)],
+    ];
+    let mut tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    let order_graph = |verts: &[[Point3D; 3]], tris: &[Triangle]| {
+      let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+      let opacities: Vec<_> = tris.iter().map(|t| t.opacity).collect();
+      depth_order_edges(verts, &projected, &opacities, &camera)
+    };
+    let (_, components) =
+      strongly_connected_components(&order_graph(&verts, &tris));
+    assert_eq!(components, 1, "the three bars must form one cycle");
+
+    split_depth_cycles(&mut verts, &mut tris, &camera);
+    assert!(verts.len() > 3);
+    assert_eq!(verts.len(), tris.len());
+    let after = order_graph(&verts, &tris);
+    let (_, components) = strongly_connected_components(&after);
+    assert_eq!(components, verts.len(), "no cycle may be left");
+
+    let depths: Vec<_> = verts
+      .iter()
+      .map(|v| -(v[0].z + v[1].z + v[2].z) / 3.0)
+      .collect();
+    let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+    let opacities: Vec<_> = tris.iter().map(|t| t.opacity).collect();
+    let order =
+      painter_order(&verts, &projected, &depths, &opacities, &camera, None);
+    let covers = |t: &[Point3D; 3], (x, y): (f64, f64)| {
+      let side = |a: Point3D, b: Point3D| {
+        (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)
+      };
+      let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
+      s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
+    };
+    let height_at = |t: &[Point3D; 3], (x, y): (f64, f64)| {
+      // The plane through the triangle, solved for z at (x, y).
+      let n = triangle_normal(t[0], t[1], t[2]);
+      t[0].z - (n[0] * (x - t[0].x) + n[1] * (y - t[0].y)) / n[2]
+    };
+    for (point, nearest) in
+      [((0.0, 0.0), 1.0), ((0.0, 2.0), 1.0), ((2.0, 0.0), 0.5)]
+    {
+      let top = order
+        .iter()
+        .rev()
+        .find(|&&k| covers(&verts[k], point))
+        .expect("a piece covers every crossing");
+      let z = height_at(&verts[*top], point);
+      assert!(
+        (z - nearest).abs() < 1e-9,
+        "at {point:?} drew z = {z} on top"
+      );
+    }
+  }
+
   /// Two triangles that pierce each other cannot be ordered as wholes, so
   /// they are cut along the crossing; afterwards every overlapping pair of
   /// pieces lies wholly on one side of the other.
@@ -27680,6 +27868,7 @@ mod painter_order_tests {
       &depths,
       &vec![1.0; verts.len()],
       &camera,
+      None,
     );
     assert_eq!(order.len(), verts.len());
     assert_eq!(order[0], 0, "the large back face is drawn first");
