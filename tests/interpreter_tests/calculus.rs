@@ -23940,6 +23940,64 @@ mod ndsolve_step_forcing {
     );
   }
 
+  // A forcing that is on only over a window `[a, b]` inside the domain:
+  // written with a compound condition (`&&`, `||`, `!`, a chained
+  // comparison, `Inequality`) in `If`, `Boole` or `Piecewise`. Such a
+  // right-hand side used to fall back to the interpreter, whose adaptive
+  // steps grew over the zero stretch before the window and jumped it, so
+  // the solution stayed 0. The integral of the window is `b - a`.
+  #[test]
+  fn compound_condition_window_forcing_is_integrated() {
+    for (a, b) in [("2", "3"), ("0.5", "0.75"), ("6", "8")] {
+      for rhs in [
+        format!("If[t >= {a} && t <= {b}, 1, 0]"),
+        format!("If[{a} <= t <= {b}, 1, 0]"),
+        format!("If[t < {a} || t > {b}, 0, 1]"),
+        format!("If[!(t < {a} || t > {b}), 1, 0]"),
+        format!("If[Inequality[{a}, LessEqual, t, Less, {b}], 1, 0]"),
+        format!("Boole[{a} <= t <= {b}]"),
+        format!("Piecewise[{{{{1, t >= {a} && t <= {b}}}}}]"),
+        format!("Piecewise[{{{{0, t < {a}}}, {{1, t <= {b}}}}}, 0]"),
+      ] {
+        let code = format!(
+          "Abs[(x[10] /. First[NDSolve[{{x'[t] == {rhs}, x[0] == 0}}, x, \
+           {{t, 0, 10}}]]) - ({b} - {a})] < 0.01"
+        );
+        assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+      }
+    }
+  }
+
+  // A half-sine bump through a compound condition drives a damped
+  // oscillator, which stays at rest before the bump and moves after it.
+  #[test]
+  fn compound_condition_bump_drives_second_order_system() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x''[t] + x'[t] + 4 x[t] == \
+         If[t >= 2 && t <= 3, Sin[Pi (t - 2)], 0], x[0] == 0, x'[0] == 0}, \
+         x, {t, 0, 10}]]; {x[1.9] /. s, Abs[x[3] /. s] > 0.05}"
+      )
+      .unwrap(),
+      "{0., True}"
+    );
+  }
+
+  // `Pi`, `E`, `Degree`, … in a right-hand side are numeric constants, not
+  // calls for the interpreter to evaluate at every step.
+  #[test]
+  fn builtin_constants_in_rhs_are_numeric() {
+    assert_eq!(
+      interpret(
+        "Abs[(x[1] /. First[NDSolve[{x'[t] == Pi + E t + Degree + \
+         EulerGamma, x[0] == 0}, x, {t, 0, 1}]]) - \
+         N[Pi + E/2 + Degree + EulerGamma]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn derivative_of_defined_function_with_list_product_body() {
     // The body `x/2 {…}` is a scalar times a list: it must be differentiated
