@@ -254,19 +254,38 @@ pub(crate) fn corner_colors(
     })
     .collect();
   let normals: Vec<[Vec3; 3]> = match exact {
-    Some(f) => tris
-      .iter()
-      .zip(&faces)
-      .enumerate()
-      .map(|(i, (t, &face))| {
-        let centroid = Point3D {
-          x: (t[0].x + t[1].x + t[2].x) / 3.0,
-          y: (t[0].y + t[1].y + t[2].y) / 3.0,
-          z: (t[0].z + t[1].z + t[2].z) / 3.0,
-        };
-        t.map(|p| normalize(f(i, p, face, centroid)).unwrap_or(face))
-      })
-      .collect(),
+    Some(f) => {
+      let exact: Vec<[Option<Vec3>; 3]> = tris
+        .iter()
+        .zip(&faces)
+        .enumerate()
+        .map(|(i, (t, &face))| {
+          let centroid = Point3D {
+            x: (t[0].x + t[1].x + t[2].x) / 3.0,
+            y: (t[0].y + t[1].y + t[2].y) / 3.0,
+            z: (t[0].z + t[1].z + t[2].z) / 3.0,
+          };
+          t.map(|p| normalize(f(i, p, face, centroid)))
+        })
+        .collect();
+      // A corner without a known normal (a zero vector) is lit with the
+      // normal averaged from the faces around it.
+      let averaged = exact
+        .iter()
+        .any(|n| n.iter().any(Option::is_none))
+        .then(|| vertex_normals(tris));
+      exact
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| {
+          [0, 1, 2].map(|c| {
+            n[c].unwrap_or_else(|| {
+              averaged.as_ref().map_or(faces[i], |a| a[i][c])
+            })
+          })
+        })
+        .collect()
+    }
     None => vertex_normals(tris),
   };
   tris

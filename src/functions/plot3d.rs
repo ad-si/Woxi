@@ -1702,9 +1702,11 @@ fn styled_mesh_segment(
 
 /// The default mesh of a surface sampled on a `[i][j]` grid of heights
 /// (`ListPlot3D`'s data): `count` lines evenly spaced across each
-/// direction plus the outline, each following the surface linearly between
-/// the samples it crosses. `to_box` maps fractional grid indices and a
-/// height into the normalized box.
+/// direction plus the outline. `to_box` maps fractional grid indices and a
+/// height into the normalized box. Each cell is drawn as two triangles cut
+/// along its diagonal from `(i, j)` to `(i + 1, j + 1)`, so a line crossing
+/// a cell bends where it crosses that diagonal: it lies on the triangles
+/// rather than cutting through them, where they would hide parts of it.
 fn grid_mesh_lines(
   grid: &[Vec<f64>],
   count: usize,
@@ -1717,39 +1719,53 @@ fn grid_mesh_lines(
     return Vec::new();
   }
   let mut lines = Vec::new();
-  // Height at fractional row `fi` of column `j` (and the transpose).
-  let along_rows = |fi: f64, j: usize| {
-    let i0 = (fi.floor() as usize).min(rows - 2);
-    let t = fi - i0 as f64;
-    grid[i0][j] * (1.0 - t) + grid[i0 + 1][j] * t
+  // The cell holding a fractional index, and the fraction across it.
+  let cell = |f: f64, n: usize| {
+    let k = (f.floor().max(0.0) as usize).min(n - 2);
+    (k, f - k as f64)
   };
-  let along_cols = |i: usize, fj: f64| {
-    let j0 = (fj.floor() as usize).min(cols - 2);
-    let t = fj - j0 as f64;
-    grid[i][j0] * (1.0 - t) + grid[i][j0 + 1] * t
-  };
-  for k in 0..=count + 1 {
-    let fi = k as f64 / (count + 1) as f64 * (rows - 1) as f64;
-    for j in 0..cols - 1 {
-      let (z0, z1) = (along_rows(fi, j), along_rows(fi, j + 1));
-      if z0.is_finite() && z1.is_finite() {
+  // A polyline through `(fi, fj, z)` points, split where a height is
+  // undefined.
+  let mut push = |pts: &[(f64, f64, f64)]| {
+    for pair in pts.windows(2) {
+      let [(i0, j0, z0), (i1, j1, z1)] = [pair[0], pair[1]];
+      if z0.is_finite() && z1.is_finite() && (i0, j0) != (i1, j1) {
         lines.push(mesh_segment(
-          to_box(fi, j as f64, z0),
-          to_box(fi, (j + 1) as f64, z1),
+          to_box(i0, j0, z0),
+          to_box(i1, j1, z1),
           camera,
         ));
       }
     }
+  };
+  for k in 0..=count + 1 {
+    // The line at fractional row `fi`, across every column cell.
+    let fi = k as f64 / (count + 1) as f64 * (rows - 1) as f64;
+    let (i0, t) = cell(fi, rows);
+    let lerp = |a: f64, b: f64| a * (1.0 - t) + b * t;
+    for j in 0..cols - 1 {
+      let start = (fi, j as f64, lerp(grid[i0][j], grid[i0 + 1][j]));
+      let end = (
+        fi,
+        (j + 1) as f64,
+        lerp(grid[i0][j + 1], grid[i0 + 1][j + 1]),
+      );
+      let bend = (fi, j as f64 + t, lerp(grid[i0][j], grid[i0 + 1][j + 1]));
+      push(&[start, bend, end]);
+    }
+    // The line at fractional column `fj`, across every row cell.
     let fj = k as f64 / (count + 1) as f64 * (cols - 1) as f64;
+    let (j0, u) = cell(fj, cols);
+    let lerp = |a: f64, b: f64| a * (1.0 - u) + b * u;
     for i in 0..rows - 1 {
-      let (z0, z1) = (along_cols(i, fj), along_cols(i + 1, fj));
-      if z0.is_finite() && z1.is_finite() {
-        lines.push(mesh_segment(
-          to_box(i as f64, fj, z0),
-          to_box((i + 1) as f64, fj, z1),
-          camera,
-        ));
-      }
+      let start = (i as f64, fj, lerp(grid[i][j0], grid[i][j0 + 1]));
+      let end = (
+        (i + 1) as f64,
+        fj,
+        lerp(grid[i + 1][j0], grid[i + 1][j0 + 1]),
+      );
+      let bend = (i as f64 + u, fj, lerp(grid[i][j0], grid[i + 1][j0 + 1]));
+      push(&[start, bend, end]);
     }
   }
   lines
@@ -18938,9 +18954,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut tris = Vec::new();
     for i in 0..rows.saturating_sub(1) {
       for j in 0..cols.saturating_sub(1) {
+        // Cut along the same diagonal as the drawn surface.
         for corners in [
-          [(i, j), (i + 1, j), (i, j + 1)],
-          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+          [(i, j), (i + 1, j), (i + 1, j + 1)],
+          [(i, j), (i + 1, j + 1), (i, j + 1)],
         ] {
           if let [Some(a), Some(b), Some(c)] = corners.map(|(a, b)| node(a, b))
           {
@@ -19122,27 +19139,32 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
       };
 
-      // Triangle 1: (i,j), (i+1,j), (i,j+1)
-      if z00.is_finite() && z10.is_finite() && z01.is_finite() {
-        let v0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(z00),
-        };
-        let v1 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(z10),
-        };
-        let v2 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(z01),
-        };
+      // Each cell is cut along its diagonal from (i, j) to (i + 1, j + 1),
+      // as Wolfram's ListPlot3D triangulates a grid of heights.
+      let corner_z = |a: usize, b: usize| match (a - i, b - j) {
+        (0, 0) => z00,
+        (1, 0) => z10,
+        (0, 1) => z01,
+        _ => z11,
+      };
+      for corners in [
+        [(i, j), (i + 1, j), (i + 1, j + 1)],
+        [(i, j), (i + 1, j + 1), (i, j + 1)],
+      ] {
+        let zs = corners.map(|(a, b)| corner_z(a, b));
+        if !zs.iter().all(|z| z.is_finite()) {
+          continue;
+        }
+        let [v0, v1, v2] = [0, 1, 2].map(|k| Point3D {
+          x: nx(corners[k].0),
+          y: ny(corners[k].1),
+          z: nz(zs[k]),
+        });
 
-        let avg = ((z00.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range)
+        let avg = zs
+          .iter()
+          .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
+          .sum::<f64>()
           / 3.0;
         let normal = triangle_normal(v0, v1, v2);
         let (color, opacity) = shade_facet(
@@ -19160,15 +19182,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style: color_at(avg),
           plot_style: None,
         });
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
+        let center = tri_center(v0, v1, v2);
         mesh_world.push([v0, v1, v2]);
         all_triangles.push(Triangle {
           boundary: [true; 3],
@@ -19176,70 +19190,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
-          projected: [p0, p1, p2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-          texture: None,
-          vertex_colors: None,
-        });
-      }
-
-      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
-      if z11.is_finite() && z01.is_finite() && z10.is_finite() {
-        let v0 = Point3D {
-          x: nx(i + 1),
-          y: ny(j + 1),
-          z: nz(z11),
-        };
-        let v1 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(z01),
-        };
-        let v2 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(z10),
-        };
-
-        let avg = ((z11.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range)
-          / 3.0;
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) = shade_facet(
-          SurfaceDefault::Theme(0),
-          color_at(avg).as_ref(),
-          surface_style,
-          normal,
-          tri_center(v0, v1, v2),
-          &scene,
-        );
-
-        facets.push(SmoothFacet {
-          index: all_triangles.len(),
-          world: [v0, v1, v2],
-          style: color_at(avg),
-          plot_style: None,
-        });
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        mesh_world.push([v0, v1, v2]);
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          edge_opacity: 1.0,
-          edge_width: None,
-          edge_dashing: None,
-          projected: [p0, p1, p2],
+          projected: [v0, v1, v2].map(|v| project(v, &camera)),
           depth: depth(center, &camera),
           color,
           opacity,
@@ -19249,9 +19200,45 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  shade_smoothly(
+  // A sample of a regular grid is lit with the normal of the surface the
+  // grid samples there (from its neighbors on both sides), like Wolfram's
+  // `VertexNormals`, so a sharp fold between samples shades smoothly
+  // instead of alternating bright and dark facets along it.
+  let box_grid: Vec<Vec<Option<(f64, f64, f64)>>> = if scattered.is_some() {
+    Vec::new()
+  } else {
+    let span =
+      |k: usize, n: usize| k as f64 / (n - 1).max(1) as f64 * 2.0 - 1.0;
+    (0..rows)
+      .map(|i| {
+        (0..cols)
+          .map(|j| {
+            let z = grid[i][j];
+            z.is_finite().then(|| {
+              (
+                span(i, rows),
+                span(j, cols),
+                ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE
+                  - Z_SCALE,
+              )
+            })
+          })
+          .collect()
+      })
+      .collect()
+  };
+  let grid_normals =
+    parameter_grid_normals(&box_grid, &|(x, y, z)| Point3D { x, y, z });
+  let exact = |_: usize, p: Point3D, _: [f64; 3], _: Point3D| {
+    grid_normals
+      .get(&grid_point_key(p))
+      .copied()
+      .unwrap_or([0.0; 3])
+  };
+  shade_smoothly_with(
     &mut all_triangles,
     &facets,
+    Some(&exact),
     scene.frame.toward,
     |facet, normal, at| {
       shade_facet(
@@ -19368,7 +19355,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           push(at(i, j), at(i, j + 1));
         }
         if i + 1 < rows && j + 1 < cols {
-          push(at(i + 1, j), at(i, j + 1));
+          push(at(i, j), at(i + 1, j + 1));
         }
       }
     }
@@ -26330,6 +26317,51 @@ fn parameter_domain_edges(
   let along_v =
     (0..nv).flat_map(move |j| [((0, j), (0, j + 1)), ((nu, j), (nu, j + 1))]);
   along_u.chain(along_v)
+}
+
+/// The key a sample of a parameter grid is looked up by: its normalized
+/// position, to a billionth.
+fn grid_point_key(p: Point3D) -> (i64, i64, i64) {
+  let q = |v: f64| (v * 1e9).round() as i64;
+  (q(p.x), q(p.y), q(p.z))
+}
+
+/// The surface normal at each sample of a parameter grid (`grid[i][j]`,
+/// `None` in a hole), mapped through `to_box`: the cross product of the
+/// central differences along the two parameters (one-sided at an edge or
+/// beside a hole), keyed by [`grid_point_key`]. A sample where the
+/// tangents are parallel (a pole) is left out.
+fn parameter_grid_normals(
+  grid: &[Vec<Option<(f64, f64, f64)>>],
+  to_box: &dyn Fn((f64, f64, f64)) -> Point3D,
+) -> std::collections::HashMap<(i64, i64, i64), [f64; 3]> {
+  let mut normals = std::collections::HashMap::new();
+  let at = |i: usize, j: usize| -> Option<Point3D> {
+    grid.get(i)?.get(j).copied().flatten().map(to_box)
+  };
+  let diff = |a: Point3D, b: Point3D| [b.x - a.x, b.y - a.y, b.z - a.z];
+  for i in 0..grid.len() {
+    for j in 0..grid[i].len() {
+      let Some(p) = at(i, j) else { continue };
+      let along =
+        |prev: Option<Point3D>, next: Option<Point3D>| match (prev, next) {
+          (Some(a), Some(b)) => Some(diff(a, b)),
+          (None, Some(b)) => Some(diff(p, b)),
+          (Some(a), None) => Some(diff(a, p)),
+          (None, None) => None,
+        };
+      let du = along(i.checked_sub(1).and_then(|k| at(k, j)), at(i + 1, j));
+      let dv = along(j.checked_sub(1).and_then(|k| at(i, k)), at(i, j + 1));
+      if let (Some(du), Some(dv)) = (du, dv) {
+        let n = v_cross(du, dv);
+        let scale = v_len(du) * v_len(dv);
+        if scale > 0.0 && v_len(n) > 1e-6 * scale {
+          normals.insert(grid_point_key(p), n);
+        }
+      }
+    }
+  }
+  normals
 }
 
 /// Implementation of ParametricPlot3D.

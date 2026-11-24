@@ -38221,7 +38221,9 @@ mod list_plot_3d {
       .matches("stroke=\"#000000a0\"")
       .count()
     };
-    assert_eq!(mesh(""), 2 * 17 * 31);
+    // 17 lines across the 31 cells each way; the 15 inner lines bend
+    // where they cross a cell's diagonal, so each is two pieces per cell.
+    assert_eq!(mesh(""), 2 * (2 * 15 + 2) * 31);
     assert_eq!(mesh(", Mesh -> None"), 0);
     // Some mesh segments lie under facets painted after them.
     let svg = export_svg(

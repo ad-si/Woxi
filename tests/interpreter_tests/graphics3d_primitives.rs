@@ -3567,4 +3567,42 @@ mod surface_outlines_and_meshes {
     // happened to lie on the circle met it before.
     assert!(meeting >= 40, "{meeting} mesh line ends on the rim: {s}");
   }
+
+  // Wolfram's ListPlot3D cuts each grid cell along its diagonal from
+  // `(i, j)` to `(i + 1, j + 1)`. From the default `ViewPoint ->
+  // {1.3, -2.4, 2}` that diagonal joins the leftmost and the rightmost
+  // corner of a cell on screen; Woxi cut along the other one, from the
+  // topmost to the bottommost corner.
+  #[test]
+  fn list_plot3d_cuts_cells_along_the_rising_diagonal() {
+    let s = svg("ListPlot3D[{{0, 0}, {0, 1}}, Mesh -> All, MeshStyle -> Blue]");
+    let num = |v: &String| v.parse::<f64>().unwrap();
+    let lines: Vec<[(f64, f64); 2]> = line_ends(&s, "rgb(0,0,255)")
+      .iter()
+      .map(|[a, b]| [(num(&a.0), num(&a.1)), (num(&b.0), num(&b.1))])
+      .collect();
+    assert_eq!(lines.len(), 5, "four sides and a diagonal: {s}");
+    let xs: Vec<f64> = lines.iter().flatten().map(|p| p.0).collect();
+    let left = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let right = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+      lines.iter().any(|[a, b]| {
+        let mut ends = [a.0, b.0];
+        ends.sort_by(f64::total_cmp);
+        ends == [left, right]
+      }),
+      "{s}"
+    );
+  }
+
+  // The default mesh lines of ListPlot3D lie on the triangles the surface
+  // is drawn as: a line crossing a cell bends where it crosses the cell's
+  // diagonal. Drawn straight across the cell, a line dipped under one of
+  // the two triangles, which hid stretches of it.
+  #[test]
+  fn list_plot3d_mesh_lines_bend_at_the_cell_diagonal() {
+    let s = svg("ListPlot3D[{{0, 0}, {0, 1}}]");
+    // 17 lines each way, the 15 inner ones in two pieces each.
+    assert_eq!(s.matches("stroke=\"#000000a0\"").count(), 64, "{s}");
+  }
 }
