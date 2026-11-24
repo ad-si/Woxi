@@ -402,10 +402,71 @@ mod adjacency_matrix {
       "{{1, 1}, {0, 0}}"
     );
   }
+
+  /// Parallel edges are counted, as `WeightedAdjacencyMatrix` does with
+  /// unit weights.
+  #[test]
+  fn parallel_edges_are_counted() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 -> 2, 1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{0, 2, 0}, {0, 0, 1}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "{{0, 2}, {2, 0}}"
+    );
+  }
+
+  /// `GraphUtilities\`AdjacencyMatrix` takes a rule list whose items may
+  /// carry an edge label (`{u -> v, label}`), its vertices in the order
+  /// they first appear.
+  #[test]
+  fn graph_utilities_labeled_edge_list() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"GraphUtilities`\"]]; \
+         GraphUtilities`AdjacencyMatrix[{{3 -> 1, \"a\"}, {1 -> 2, \"b\"}, \
+           {2 -> 3, \"c\"}, {3 -> 2, \"d\"}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 1}, {0, 0, 1}, {1, 0, 0}}"
+    );
+  }
+
+  /// While `GraphUtilities\`` is loaded, the bare `AdjacencyMatrix` (as a
+  /// Demonstration's saved code spells it) is the package's and reads a
+  /// labeled rule list too.
+  #[test]
+  fn graph_utilities_bare_name_reads_labeled_edge_list() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"GraphUtilities`\"]]; \
+         {AdjacencyMatrix[{{1 -> 2, 1}, {2 -> 1, 2}}], \
+          AdjacencyMatrix[Graph[{1 -> 2}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}, {1, 0}}, {{0, 1}, {0, 0}}}"
+    );
+  }
 }
 
 mod incidence_matrix {
   use super::*;
+
+  /// Combinatorica's `IncidenceMatrix` is the (0, 1) vertex-by-edge matrix:
+  /// a directed edge marks only the vertex it leaves.
+  #[test]
+  fn combinatorica_directed_and_undirected() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; \
+         {IncidenceMatrix[FromOrderedPairs[{{3, 1}, {1, 2}, {2, 2}}]], \
+          Combinatorica`IncidenceMatrix[FromUnorderedPairs[{{3, 1}, {1, 2}}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}, {{1, 1}, {0, 1}, {1, 0}}}"
+    );
+  }
 
   #[test]
   fn undirected_complete() {
@@ -2185,7 +2246,7 @@ mod graph_rendering {
       "ExportString[Graph[{1 <-> 2}, PlotLabel -> Style[\"Red Title\", Red, 20, Italic]], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">Red Title</text>"), "SVG: {svg}");
+    assert!(svg.contains(">Red Title<"), "SVG: {svg}");
     assert!(
       svg.contains("fill=\"rgb(255,0,0)\""),
       "expected red fill; SVG: {svg}"
@@ -2198,6 +2259,30 @@ mod graph_rendering {
       svg.contains("font-style=\"italic\""),
       "expected italic; SVG: {svg}"
     );
+  }
+
+  /// `GraphPlot`'s `PlotLabel` is the picture's own plot label, set above
+  /// the plot area in the default gray label style, like any `Graphics`.
+  #[test]
+  fn graph_plot_label_is_a_graphics_plot_label() {
+    let graph_plot = interpret(
+      "ExportString[GraphPlot[{1 -> 2, 2 -> 3}, PlotLabel -> \"title\"], \"SVG\"]",
+    )
+    .unwrap();
+    let graphics = interpret(
+      "ExportString[Graphics[Circle[], PlotLabel -> \"title\"], \"SVG\"]",
+    )
+    .unwrap();
+    let label = |svg: &str| {
+      let end = svg.find(">title</text>").expect("label drawn");
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end]
+        .split(' ')
+        .filter(|a| !a.starts_with("x="))
+        .collect::<Vec<_>>()
+        .join(" ")
+    };
+    assert_eq!(label(&graph_plot), label(&graphics));
   }
 
   /// PlotLabel -> None must suppress the label entirely (no <text> added
@@ -2228,7 +2313,9 @@ mod graph_rendering {
     )
     .unwrap();
     assert!(
-      svg.contains("<tspan font-style=\"italic\">I</tspan>\u{2084}<"),
+      svg.contains(
+        "<tspan font-style=\"italic\">I</tspan><tspan baseline-shift=\"sub\""
+      ),
       "SVG: {svg}"
     );
     assert!(

@@ -4176,6 +4176,138 @@ fn framed_box(body: Expr, options: &[Expr]) -> Expr {
   call("FrameBox", items)
 }
 
+/// Whether `expr` is a call of a box head (`FractionBox[…]`, `RowBox[…]`).
+fn is_box_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if name.len() > 3 && name.ends_with("Box"))
+}
+
+/// Whether a box call occurs anywhere inside `expr`.
+pub fn contains_box_call(expr: &Expr) -> bool {
+  if is_box_call(expr) {
+    return true;
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_box_call),
+    Expr::List(items) => items.iter().any(contains_box_call),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_box_call(left) || contains_box_call(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_box_call(operand),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_box_call(pattern) || contains_box_call(replacement),
+    _ => false,
+  }
+}
+
+/// The boxes `DisplayForm[expr]` displays: box calls inside `expr` are
+/// shown as the boxes they are, everything around them is typeset as usual
+/// — `DisplayForm[Row[{x^2, FractionBox["a", "b"]}]]` shows x² next to the
+/// fraction a/b.
+pub fn display_form_boxes(expr: &Expr) -> Expr {
+  display_form_boxes_in(expr, false)
+}
+
+/// [`display_form_boxes`] typesetting the non-box parts in TraditionalForm
+/// (`traditional`) or StandardForm.
+pub fn display_form_boxes_in(expr: &Expr, traditional: bool) -> Expr {
+  // A box's own arguments: strings and lists stay box structure, a nested
+  // box keeps going, and an expression (`FractionBox[1, x^2 + m^2]`) is
+  // typeset.
+  fn box_arg(arg: &Expr, traditional: bool) -> Expr {
+    match arg {
+      Expr::String(_) => arg.clone(),
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| box_arg(a, traditional)).collect())
+      }
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => arg.clone(),
+      Expr::Identifier(_) if !is_box_call(arg) => arg.clone(),
+      other => display_form_boxes_in(other, traditional),
+    }
+  }
+  let typeset = |e: &Expr| {
+    if traditional {
+      tf(e)
+    } else {
+      expr_to_box_form(e)
+    }
+  };
+  if let Expr::FunctionCall { name, args } = expr
+    && is_box_call(expr)
+  {
+    return Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|a| box_arg(a, traditional)).collect(),
+    };
+  }
+  if !contains_box_call(expr) {
+    return typeset(expr);
+  }
+  // Typeset the expression with each box call stood in for by a unique
+  // placeholder symbol, then put the boxes back where their placeholders
+  // landed.
+  fn replace(expr: &Expr, boxes: &mut Vec<Expr>) -> Expr {
+    if is_box_call(expr) {
+      boxes.push(expr.clone());
+      return Expr::Identifier(format!("WoxiDisplayFormBox{}", boxes.len()));
+    }
+    match expr {
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| replace(a, boxes)).collect(),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| replace(a, boxes)).collect())
+      }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(replace(left, boxes)),
+        right: Box::new(replace(right, boxes)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(replace(operand, boxes)),
+      },
+      other => other.clone(),
+    }
+  }
+  fn restore(expr: &Expr, boxes: &[Expr], traditional: bool) -> Expr {
+    let placeholder = |s: &str| {
+      s.strip_prefix("WoxiDisplayFormBox")
+        .and_then(|n| n.parse::<usize>().ok())
+        .and_then(|n| boxes.get(n.wrapping_sub(1)))
+    };
+    match expr {
+      Expr::String(s) | Expr::Identifier(s) if placeholder(s).is_some() => {
+        display_form_boxes_in(placeholder(s).unwrap(), traditional)
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| restore(a, boxes, traditional))
+          .collect(),
+      },
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|a| restore(a, boxes, traditional))
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  }
+  let mut boxes = Vec::new();
+  let replaced = replace(expr, &mut boxes);
+  restore(&typeset(&replaced), &boxes, traditional)
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -7909,7 +8041,8 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     // `DisplayForm[boxes]` shows its boxes typeset, just like `RawBoxes`:
     // `DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]` is `(a/2)`.
-    "RawBoxes" | "DisplayForm" if args.len() == 1 => args[0].clone(),
+    "RawBoxes" if args.len() == 1 => args[0].clone(),
+    "DisplayForm" if args.len() == 1 => display_form_boxes_in(&args[0], true),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `a | b | c` keeps its infix bar (`P(X | A)` for a conditional
     // probability) instead of falling back to `Alternatives(a, b, c)`.

@@ -10913,6 +10913,50 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
+  /// A `Toggler[Dynamic[var], {value -> label, …}]` written inside a
+  /// `Dynamic` display row (not a formal control spec) is a button showing
+  /// the label of the value `var` holds; pressing it moves `var` on to the
+  /// next value, wrapping around. Regression: it used to render as its
+  /// frozen source text (`Toggler[Dynamic[mode], {…}]`).
+  #[test]
+  fn display_toggler_cycles_its_variable_through_its_states() {
+    use woxi::functions::graphics::DisplayNode;
+    let code = "Manipulate[\
+      {mode, n}, \
+      {{n, 1}, 1, 3, 1}, \
+      {{mode, \"b\"}, None}, \
+      Dynamic[Row[{Toggler[Dynamic[mode], \
+        {\"a\" -> \"first\", \"b\" -> \"second\", \"c\" -> \"third\"}]}]]\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Toggler Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    let button = |state: &manipulate::ManipulateState| {
+      state
+        .display_trees
+        .iter()
+        .find_map(|t| match t {
+          DisplayNode::Row(items) => items.iter().find_map(|i| match i {
+            DisplayNode::Button { label, action } => {
+              Some((display_node_plain_text(label), action.clone()))
+            }
+            _ => None,
+          }),
+          _ => None,
+        })
+        .expect("the Toggler must be drawn as a button")
+    };
+    let (label, action) = button(&state);
+    assert_eq!(label, "second");
+    assert_eq!(action, "mode = \"c\"");
+    state.apply_button_action(&action);
+    assert_eq!(state.text_output.as_deref(), Some("{c, 1}"));
+    // The last state wraps around to the first.
+    let (label, action) = button(&state);
+    assert_eq!(label, "third");
+    assert_eq!(action, "mode = \"a\"");
+  }
+
   /// A Manipulate whose body calls a `Compile`d helper with bare
   /// (undeclared-type) parameters that are only ever used as repetition
   /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
