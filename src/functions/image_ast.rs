@@ -13892,14 +13892,119 @@ pub fn svg_render_options(
 
 /// usvg's font resolver with a fallback that keeps the text's style.
 ///
-/// When the chosen font lacks a glyph, the fallback face is picked by
+/// The face is picked by [`generic_fallback_font_selector`]; when the chosen
+/// font lacks a glyph, the fallback face is picked by
 /// [`same_style_fallback_selector`].
 #[cfg(not(target_arch = "wasm32"))]
 pub fn font_resolver() -> resvg::usvg::FontResolver<'static> {
   resvg::usvg::FontResolver {
-    select_font: resvg::usvg::FontResolver::default_font_selector(),
+    select_font: generic_fallback_font_selector(),
     select_fallback: same_style_fallback_selector(),
   }
+}
+
+/// The generic family a named font family belongs to, used as its stand-in
+/// when the named face isn't installed: serif faces ("Times", "Georgia", …)
+/// map to serif, typewriter faces ("Courier", "… Mono", …) to monospace, and
+/// everything else — "Arial", "Helvetica", "Verdana", … — to sans-serif,
+/// the kind of face Wolfram substitutes for a missing font.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn generic_family_of(name: &str) -> resvg::usvg::FontFamily {
+  use resvg::usvg::FontFamily;
+  let lower = name.to_ascii_lowercase();
+  const MONOSPACE: [&str; 6] = [
+    "courier",
+    "consolas",
+    "menlo",
+    "monaco",
+    "inconsolata",
+    "fixed",
+  ];
+  const SERIF: [&str; 12] = [
+    "times",
+    "georgia",
+    "garamond",
+    "palatino",
+    "book antiqua",
+    "cambria",
+    "baskerville",
+    "didot",
+    "bodoni",
+    "century schoolbook",
+    "constantia",
+    "minion",
+  ];
+  if lower.contains("mono") || MONOSPACE.iter().any(|m| lower.contains(m)) {
+    FontFamily::Monospace
+  } else if (lower.contains("serif") && !lower.contains("sans"))
+    || SERIF.iter().any(|s| lower.contains(s))
+  {
+    FontFamily::Serif
+  } else {
+    FontFamily::SansSerif
+  }
+}
+
+/// usvg's default font selection, except for what happens when none of the
+/// requested families is installed.
+///
+/// usvg then always falls back to its serif face, so a `Graphics` `Text`
+/// in `FontFamily -> "Arial"` came out in a serif face on a system without
+/// Arial. This selector instead tries the generic family of each named
+/// family (see [`generic_family_of`]) before that serif last resort.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn generic_fallback_font_selector() -> resvg::usvg::FontSelectionFn<'static>
+{
+  use resvg::usvg::{FontFamily, FontStretch, FontStyle, fontdb};
+  fn generic(family: &FontFamily) -> fontdb::Family<'_> {
+    match family {
+      FontFamily::Serif => fontdb::Family::Serif,
+      FontFamily::SansSerif => fontdb::Family::SansSerif,
+      FontFamily::Cursive => fontdb::Family::Cursive,
+      FontFamily::Fantasy => fontdb::Family::Fantasy,
+      FontFamily::Monospace => fontdb::Family::Monospace,
+      FontFamily::Named(s) => fontdb::Family::Name(s),
+    }
+  }
+  Box::new(|font, db| {
+    let stand_ins: Vec<FontFamily> = font
+      .families()
+      .iter()
+      .filter_map(|family| match family {
+        FontFamily::Named(name) => Some(generic_family_of(name)),
+        _ => None,
+      })
+      .collect();
+    let mut families: Vec<fontdb::Family> = font
+      .families()
+      .iter()
+      .chain(stand_ins.iter())
+      .map(generic)
+      .collect();
+    families.push(fontdb::Family::Serif);
+    let stretch = match font.stretch() {
+      FontStretch::UltraCondensed => fontdb::Stretch::UltraCondensed,
+      FontStretch::ExtraCondensed => fontdb::Stretch::ExtraCondensed,
+      FontStretch::Condensed => fontdb::Stretch::Condensed,
+      FontStretch::SemiCondensed => fontdb::Stretch::SemiCondensed,
+      FontStretch::Normal => fontdb::Stretch::Normal,
+      FontStretch::SemiExpanded => fontdb::Stretch::SemiExpanded,
+      FontStretch::Expanded => fontdb::Stretch::Expanded,
+      FontStretch::ExtraExpanded => fontdb::Stretch::ExtraExpanded,
+      FontStretch::UltraExpanded => fontdb::Stretch::UltraExpanded,
+    };
+    let style = match font.style() {
+      FontStyle::Normal => fontdb::Style::Normal,
+      FontStyle::Italic => fontdb::Style::Italic,
+      FontStyle::Oblique => fontdb::Style::Oblique,
+    };
+    db.query(&fontdb::Query {
+      families: &families,
+      weight: fontdb::Weight(font.weight()),
+      stretch,
+      style,
+    })
+  })
 }
 
 /// Whether the font face `id` has a glyph for `c`.
