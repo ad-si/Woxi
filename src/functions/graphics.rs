@@ -62074,7 +62074,9 @@ fn display_expr_to_node(
         match style_wrapped_block_layout(&args[0], bindings) {
           // A typeset layout (`Style[TraditionalForm[Grid[…]], 9]`) is drawn
           // as the styled picture it is, at the size its `Style` asks for.
-          Some(inner) if !std::ptr::eq(strip_form_wrappers(&inner), &inner) => {
+          Some(inner)
+            if !std::ptr::eq(strip_form_wrappers(&inner), &raw const inner) =>
+          {
             static_leaf_node(
               &call(
                 name.as_str(),
