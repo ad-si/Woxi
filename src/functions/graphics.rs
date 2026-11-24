@@ -3840,6 +3840,18 @@ fn collect_primitives(
                 None => parse_text(args, style, prims),
               }
             }
+            // `Text[Row[{Column[…], Column[…]}]]` sets its stacked items
+            // side by side — a table of labels next to a column of values —
+            // so it is laid out as a picture in the text face and inset,
+            // not flattened into lines that run the columns together.
+            Expr::FunctionCall { name, args: rargs }
+              if name == "Row" && row_holds_stacked_item(rargs) =>
+            {
+              match text_row_layout_inset(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
             _ => parse_text(args, style, prims),
           }
         }
@@ -8400,6 +8412,45 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
     _ => false,
   });
   has_span || has_chrome || has_styled_cell
+}
+
+/// Whether a `Row[{…}]`'s items include one that stacks several lines (a
+/// `Column` of two or more items or a `Grid` of two or more rows, under any
+/// style wrappers), which a single run of text cannot set beside the others.
+fn row_holds_stacked_item(row_args: &[Expr]) -> bool {
+  let Some(Expr::List(items)) = row_args.first() else {
+    return false;
+  };
+  items.iter().any(|item| match peel_style_wrapper(item) {
+    Expr::FunctionCall { name, args } if name == "Column" || name == "Grid" => {
+      matches!(args.first(), Some(Expr::List(lines)) if lines.len() >= 2)
+    }
+    _ => false,
+  })
+}
+
+/// `Text[row, pos, offset]` for a row laid out as a picture: the row is
+/// rendered in the proportional text face and embedded at the anchor like
+/// an `Inset`, the text offset naming the matching point of its box.
+fn text_row_layout_inset(
+  args: &[Expr],
+  errors: &mut Vec<String>,
+) -> Option<Vec<Primitive>> {
+  let svg = with_text_display_grids(|| {
+    crate::evaluator::expr_to_svg(&in_text_face(&args[0]))
+  });
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let mut inset_args = text_offset_as_inset_args(args);
+  inset_args[0] = Expr::Graphics {
+    svg,
+    is_3d: false,
+    source: None,
+    head: None,
+    structure: None,
+  };
+  inset_primitives(&inset_args, errors)
 }
 
 /// `Text[expr, pos, {ox, oy}]` puts the point `{ox, oy}` of the text's box
@@ -19799,6 +19850,16 @@ pub(crate) fn text_face_family() -> Expr {
     pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
     replacement: Box::new(Expr::String("sans-serif".to_string())),
   }
+}
+
+/// The distance between successive lines of a `Column` set in the
+/// proportional text face, as a multiple of the font size.
+const TEXT_FACE_LINE_PITCH: f64 = 1.28;
+
+/// Whether `family` names the proportional text face that
+/// [`text_face_family`] sets.
+fn is_text_face_family(family: &str) -> bool {
+  family == "sans-serif"
 }
 
 /// `content` set in the proportional text face, the way `Text[content]`
@@ -41289,7 +41350,14 @@ fn column_layout_svg(
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        let width = if *plain && style.font_family.is_none() {
+        // The proportional text face (a plain `Text[…]` item, or one under
+        // the `FontFamily` a `Text[…]` display pushes onto its items) is
+        // measured glyph by glyph, as it is drawn.
+        let in_text_face = style
+          .font_family
+          .as_deref()
+          .map_or(*plain, is_text_face_family);
+        let width = if in_text_face {
           text_display_width(style.content, fs)
         } else {
           // A item styled in a proportional face sets narrower glyphs than
@@ -41375,11 +41443,22 @@ fn column_layout_svg(
     .map(|(i, c)| {
       let natural = match c {
         Cell::Svg { height, .. } => *height,
-        Cell::Text(e, _) => {
+        Cell::Text(e, plain) => {
           let (style, fs) = text_style(e, font_size);
           let lines = markup_lines(&expr_to_svg_markup(style.content))
             .map_or(1, |l| l.len());
-          fs * lines as f64 + pad_y
+          // A line in the proportional text face of a `Text[…]` display
+          // takes the front end's text line pitch (12 pt labels stack about
+          // 15.3 pt apart); the monospace typeset face keeps its padded box.
+          let in_text_face = style
+            .font_family
+            .as_deref()
+            .map_or(*plain, is_text_face_family);
+          if in_text_face {
+            fs * lines as f64 * TEXT_FACE_LINE_PITCH
+          } else {
+            fs * lines as f64 + pad_y
+          }
         }
       };
       item_size_entry_at(item_size_h, i, n_items)
@@ -41472,6 +41551,9 @@ fn column_layout_svg(
         // column keeps its monospace default, except that a plain
         // `Text[…]` item is set in the proportional text face.
         let (ff, advance, proportional) = match style.font_family.as_deref() {
+          Some(ff) if is_text_face_family(ff) => {
+            (ff, SANS_ADVANCE / MONO_ADVANCE, true)
+          }
           Some(ff) if !is_monospace_font_family(ff) => {
             (ff, SANS_ADVANCE / MONO_ADVANCE, false)
           }
