@@ -9556,16 +9556,16 @@ fn array_plot_ast_inset(
   // `PixelConstrained` has already fixed that size to whole pixels per
   // cell, which the requested `ImageSize` only bounds.
   if pixel_constrained.is_some() {
-    structure_args.push(rule(
-      "ImageSize",
-      Expr::List(
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+      replacement: Box::new(Expr::List(
         vec![
           Expr::Integer(svg_width as i128),
           Expr::Integer(svg_height as i128),
         ]
         .into(),
-      ),
-    ));
+      )),
+    });
   } else {
     for opt in &args[1..] {
       if let Expr::Rule { pattern, .. } = opt
