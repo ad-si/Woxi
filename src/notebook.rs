@@ -1084,6 +1084,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "SubsuperscriptBox",
     "OverscriptBox",
     "UnderscriptBox",
+    "UnderoverscriptBox",
     "SqrtBox",
     "RadicalBox",
     "TagBox",
@@ -1334,6 +1335,30 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           "Underscript[{}, \"{}\"]",
           conv(&args[0]),
           escape_string(&conv(&args[1]))
+        )
+      }
+      // `UnderoverscriptBox[a, b, c]` → `Underoverscript[a, b, c]`, as the
+      // FrontEnd reads it: the limits are code (a typeset `∑` label whose
+      // upper limit is a control variable shows that variable's value). A
+      // limit that is not a valid expression on its own is quoted instead.
+      // A big operator (`∑`, `∏`, …) with its body in the enclosing row is
+      // handled by `big_operator_call`.
+      "UnderoverscriptBox"
+        if args.len() == 3 && big_operator_head(&args[0]).is_none() =>
+      {
+        let limit = |a: &str| {
+          let src = conv(a);
+          if crate::parse_to_expr(&src).is_ok() {
+            src
+          } else {
+            format!("\"{}\"", escape_string(&src))
+          }
+        };
+        format!(
+          "Underoverscript[{}, {}, {}]",
+          conv(&args[0]),
+          limit(&args[1]),
+          limit(&args[2])
         )
       }
       // `SqrtBox[a]` → `Sqrt[a]`.
@@ -2699,7 +2724,24 @@ fn render_text_element(s: &str) -> String {
             .is_some_and(|r| r.trim_start().starts_with("Cell["))
         })
         .map_or_default(|c| render_inline_math_content(c.trim())),
-      _ => String::new(),
+      // Any other style around plain prose — a string or a `TextData`
+      // run, e.g. the `Cell["March", "RevMonth"]` date fields of a
+      // template's "Modified by … on …" line — is real text in the
+      // sentence. Only box content (the opener-button chrome) is dropped.
+      _ => parts
+        .first()
+        .map(|c| c.trim())
+        .and_then(|c| {
+          if c.starts_with('"') && c.ends_with('"') && c.len() >= 2 {
+            Some(extract_string_content(c))
+          } else {
+            c.strip_prefix("TextData[")
+              .and_then(|r| find_matching_bracket(r).ok())
+              .filter(|(_, after)| after.trim().is_empty())
+              .map(|(inner, _)| extract_textdata(inner))
+          }
+        })
+        .unwrap_or_default(),
     };
   }
 
@@ -8478,6 +8520,33 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_extract_textdata_styled_inline_string_cells() {
+    // Inline cells of any other style that hold a plain string (or prose
+    // `TextData`) are part of the sentence, e.g. a template's revision
+    // date fields. Regression: they were dropped, leaving "on , , at ".
+    let s = r#"TextData[{
+ "Edited on ",
+ Cell["Monday", "RevDay",ExpressionUUID->
+  "00000000-0000-0000-0000-000000000001"],
+ ", ",
+ Cell["May", "RevMonth"],
+ " ",
+ Cell[TextData[{"7"}], "RevDate"],
+ ", at ",
+ Cell["09:15:00", "RevTime"],
+ "."
+}]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Edited on Monday, May 7, at 09:15:00."
+    );
+    // Box content in a styled inline cell is still dropped (opener chrome).
+    let s = r#"TextData[{"Label", Cell[BoxData[
+ PaneSelectorBox[{False->"x", True->"y"}, Dynamic[a]]], "Opener"]}]"#;
+    assert_eq!(extract_cell_content(s), "Label");
+  }
+
+  #[test]
   fn test_extract_cell_content_prime_derivative() {
     // `SuperscriptBox[f, "\[Prime]"]` is the FrontEnd's typeset form of a
     // derivative; the trailing `MultilineFunction -> None` display option
@@ -9891,6 +9960,22 @@ Cell[TextData[{
     // A non-operator base keeps its box (nothing to evaluate here).
     let s = r#"BoxData[RowBox[{UnderoverscriptBox["x", "a", "b"], "f"}]]"#;
     assert!(!extract_cell_content(s).starts_with("Sum["));
+  }
+
+  /// A non-operator `UnderoverscriptBox` in code reads as the evaluable
+  /// `Underoverscript[base, under, over]`, with both limits as code, so a
+  /// typeset label like `∑` over `n` shows the current value of `n`.
+  #[test]
+  fn test_underoverscript_box_reads_as_underoverscript() {
+    let s = r#"BoxData[RowBox[{"Row", "[", RowBox[{"{", RowBox[{UnderoverscriptBox[RowBox[{"Style", "[", RowBox[{"\"\<x\>\"", ",", "24"}], "]"}], RowBox[{"Row", "[", RowBox[{"{", RowBox[{"\"\<j\>\"", ",", "\"\< = 1\>\""}], "}"}], "]"}], "m"], ",", "y"}], "}"}], "]"}]]"#;
+    let src = extract_cell_content(s);
+    assert_eq!(
+      src,
+      r#"Row[{Underoverscript[Style["x",24], Row[{"j"," = 1"}], m],y}]"#
+    );
+    // A limit that is not an expression on its own stays a string.
+    let s = r#"BoxData[UnderoverscriptBox["x", "+", "b"]]"#;
+    assert_eq!(extract_cell_content(s), r#"Underoverscript[x, "+", b]"#);
   }
 
   /// In prose the same box is display text, not code: `∑_(n=1)^m …`.

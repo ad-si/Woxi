@@ -12406,8 +12406,8 @@ abb""#,
   }
   // ExponentFunction -> f re-expresses the number as `mantissa × 10^e'`, where
   // e' = f applied to the natural base-10 exponent. The exponent renders as a
-  // superscript on the line above (matching wolframscript). `Null` (or a zero
-  // exponent) suppresses the factor; integer arguments are shown verbatim.
+  // superscript on the line above (matching wolframscript). `Null`
+  // suppresses the factor; integer arguments are shown verbatim.
   #[test]
   fn to_string_number_form_exponent_function() {
     // Identity: same as the default scientific rendering.
@@ -12439,6 +12439,36 @@ abb""#,
     assert_case(
       "ToString[NumberForm[123456, 4, ExponentFunction -> (3 Floor[#/3] &)]]",
       "123456",
+    );
+  }
+  // `NumberForm[x, {n, f}, ExponentFunction -> f, opts…]`: the mantissa is
+  // laid out with the digit spec, padding and sign options of a plain
+  // number, and an exponent the function returns is shown even when it
+  // is 0.
+  #[test]
+  fn to_string_number_form_exponent_function_with_fixed_spec() {
+    let form = |x: &str| {
+      format!(
+        "ToString[NumberForm[{x}, {{5, 4}}, NumberPadding -> {{\" \", \"0\"}}, \
+         NumberSigns -> {{\"-\", \"+\"}}, ExponentFunction -> (# &)]]"
+      )
+    };
+    assert_case(&form("0."), "            0\n+0.0000 \u{00d7} 10");
+    assert_case(&form("-2."), "            0\n-2.0000 \u{00d7} 10");
+    assert_case(&form("0.00199526"), "            -3\n+1.9953 \u{00d7} 10");
+    assert_case(&form("7.7716*^-16"), "            -16\n+7.7716 \u{00d7} 10");
+    assert_case(&form("-123.456"), "            2\n-1.2346 \u{00d7} 10");
+    // Without padding options the `{n, f}` spec still fills the fraction.
+    assert_case(
+      "ToString[NumberForm[1.*^-7, {4, 3}, ExponentFunction -> (# &)]]",
+      "           -7\n1.000 \u{00d7} 10",
+    );
+    // A function returning Null for some exponents writes those numbers
+    // out in full, threading over a list.
+    assert_case(
+      "ToString[NumberForm[{1.5, 12345.}, 3, \
+       ExponentFunction -> (If[-3 < # < 3, Null, #] &)]]",
+      "               4\n{1.5, 1.23 \u{00d7} 10 }",
     );
   }
   #[test]

@@ -279,6 +279,11 @@ pub(crate) struct StyledLabel {
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
   pub segments: Vec<LabelSegment>,
+  /// The lines of a stacked title line up at their left edges inside a
+  /// block that is itself centered, the way a `Column` (whose default
+  /// `Alignment` is `Left`) sets them. `false` centers every line on its
+  /// own, as a `Grid` does.
+  pub left_aligned: bool,
 }
 
 /// The box `Framed[…]` draws around a title or one line of it.
@@ -520,6 +525,19 @@ impl StyledLabel {
       .collect()
   }
 
+  /// The width of the widest line of this label, each line measured at
+  /// the size [`Self::line_font_sizes`] gives it (same units as `base`).
+  pub(crate) fn widest_line_width(&self, base: f64, scale: f64) -> f64 {
+    let sizes = self.line_font_sizes(base, scale);
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .zip(sizes)
+      .map(|(line, size)| {
+        crate::functions::plot_padding::text_width(&line, size)
+      })
+      .fold(0.0, f64::max)
+  }
+
   /// The baseline-to-baseline distance from each line to the next: the
   /// usual `1.2` line pitch taken over the two lines' mean size, so a
   /// label whose lines share one size keeps that size's plain pitch while
@@ -697,6 +715,7 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
+  let mut named = None;
   // A list of directives applies each of them in turn, so
   // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
   fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
@@ -744,6 +763,16 @@ pub(crate) fn parse_style_directive_args(
         }
         _ => {}
       },
+      // A named style (`"Label"`, `"Section"`, …) is the base the other
+      // directives refine: its size and color apply only where no explicit
+      // one is given, wherever that one is written.
+      Expr::String(name) => {
+        if let Some((size, rgb)) =
+          crate::functions::graphics::named_style_appearance(name)
+        {
+          named = Some((size, rgb));
+        }
+      }
       _ => {
         if let Some(c) = parse_color(arg) {
           color = Some(c);
@@ -751,6 +780,18 @@ pub(crate) fn parse_style_directive_args(
           font_size = Some(f);
         }
       }
+    }
+  }
+  if let Some((size, rgb)) = named {
+    font_size = font_size.or(Some(size));
+    if color.is_none()
+      && let Some((r, g, b)) = rgb
+    {
+      color = Some(Color::new(
+        f64::from(r) / 255.0,
+        f64::from(g) / 255.0,
+        f64::from(b) / 255.0,
+      ));
     }
   }
   (bold, italic, color, font_size)
@@ -873,7 +914,40 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     frame: None,
     line_frames: Vec::new(),
     segments,
+    left_aligned: false,
   })
+}
+
+/// Whether a stacked title is a `Column` whose lines line up at the left:
+/// its default `Alignment` is `Left`, and a second argument
+/// (`Column[{…}, Center]`) or an `Alignment -> …` option overrides it.
+fn column_aligns_left(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  if name != "Column" {
+    return false;
+  }
+  let mut alignment = None;
+  for arg in &args[1..] {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Alignment") =>
+      {
+        alignment = Some(replacement.as_ref());
+      }
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {}
+      other if alignment.is_none() => alignment = Some(other),
+      _ => {}
+    }
+  }
+  match alignment {
+    None => true,
+    Some(Expr::Identifier(a)) => a == "Left",
+    Some(_) => false,
+  }
 }
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
@@ -965,6 +1039,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames,
       segments: Vec::new(),
+      left_aligned: column_aligns_left(expr),
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -1026,6 +1101,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
+        left_aligned: false,
       });
     }
   }
@@ -1051,6 +1127,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
+        left_aligned: false,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -1064,6 +1141,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
+      left_aligned: false,
     }),
     // `Null` typesets as nothing — a label variable left unset, or an
     // option default of `Null`, must not print the word "Null".
@@ -1082,6 +1160,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
+      left_aligned: false,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -1141,6 +1220,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments,
+        left_aligned: false,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -1185,6 +1265,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           frame: None,
           line_frames: Vec::new(),
           segments,
+          left_aligned: false,
         })
       }
     }
@@ -5322,15 +5403,7 @@ fn bar_chart_structure(
     );
     for (li, _, x_center) in anchors {
       let label = &opts.chart_labels[li];
-      labels.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![
-          Expr::String(label.text.clone()),
-          Expr::List(vec![Expr::Real(x_center + 0.5), Expr::Real(0.0)].into()),
-          Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
-        ]
-        .into(),
-      });
+      labels.push(chart_label_text(label, x_center + 0.5));
     }
     prims.push(Expr::List(labels.into()));
   }
@@ -5350,21 +5423,113 @@ fn bar_chart_structure(
           | "AspectRatio"
           | "FrameTicks"
           | "Ticks"
+          | "ImagePadding"
+          | "PlotRangePadding"
+          | "PlotRangeClipping"
+          | "FrameStyle"
+          | "FrameTicksStyle"
+          | "AxesStyle"
+          | "TicksStyle"
+          | "LabelStyle"
+          | "BaseStyle"
+          | "Background"
+          | "PlotLabel"
+          | "GridLines"
+          | "GridLinesStyle"
+          | "ImageMargins"
       )
     {
       framed |= name == "Frame";
       graphics_args.push(arg.clone());
     }
   }
+  let given = |option: &str| {
+    graphics_args.iter().skip(1).any(|arg| {
+      matches!(arg, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == option))
+    })
+  };
+  let mut defaults = Vec::new();
   if !framed {
-    graphics_args.push(crate::helpers::rule_expr(
+    defaults.push(crate::helpers::rule_expr(
       crate::helpers::id_expr("Axes"),
       crate::helpers::bool_expr(true),
     ));
+    // The category axis names the bars by their labels, not by numbers.
+    if !given("Ticks") {
+      defaults.push(crate::helpers::rule_expr(
+        crate::helpers::id_expr("Ticks"),
+        Expr::List(
+          vec![
+            crate::helpers::id_expr("None"),
+            crate::helpers::id_expr("Automatic"),
+          ]
+          .into(),
+        ),
+      ));
+    }
   }
+  // Like the rendered chart, the bars fill a golden-ratio frame.
+  if !given("AspectRatio") {
+    defaults.push(crate::helpers::rule_expr(
+      crate::helpers::id_expr("AspectRatio"),
+      Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO),
+    ));
+  }
+  graphics_args.extend(defaults);
   Expr::FunctionCall {
     name: "Graphics".to_string(),
     args: graphics_args.into(),
+  }
+}
+
+/// The `Text` primitive that sets one `ChartLabels` entry under the bar
+/// (or group) centered at `x`, keeping the label's `Style` size and
+/// weight. A `Rotate[label, θ]` label is drawn along direction θ and hangs
+/// from its far end, so a tilted label reads down and away from the axis
+/// rather than straddling it.
+fn chart_label_text(label: &ChartLabel, x: f64) -> Expr {
+  let mut content = Expr::String(label.text.clone());
+  let mut styles: Vec<Expr> = Vec::new();
+  if let Some(size) = label.font_size {
+    styles.push(Expr::Real(size));
+  }
+  if label.bold {
+    styles.push(Expr::Identifier("Bold".to_string()));
+  }
+  if label.italic {
+    styles.push(Expr::Identifier("Italic".to_string()));
+  }
+  if !styles.is_empty() {
+    styles.insert(0, content);
+    content = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: styles.into(),
+    };
+  }
+  let pair = |a: Expr, b: Expr| Expr::List(vec![a, b].into());
+  let position = pair(Expr::Real(x), Expr::Real(0.0));
+  let theta = label.rotation;
+  let args = if theta.abs() < 1e-9 {
+    vec![content, position, pair(Expr::Integer(0), Expr::Real(1.5))]
+  } else {
+    // Anchor the top corner of the label's end nearest the axis: its right
+    // end for a counterclockwise tilt, its left end for a clockwise one.
+    let end = if theta.cos() * theta.sin() >= 0.0 {
+      1.0
+    } else {
+      -1.0
+    };
+    vec![
+      content,
+      position,
+      pair(Expr::Real(end), Expr::Real(1.0)),
+      pair(Expr::Real(theta.cos()), Expr::Real(theta.sin())),
+    ]
+  };
+  Expr::FunctionCall {
+    name: "Text".to_string(),
+    args: args.into(),
   }
 }
 
@@ -5651,7 +5816,11 @@ fn glass_sector_gradient(
   (r_in, r_out): (f64, f64),
 ) -> (String, String) {
   use std::hash::{Hash, Hasher};
-  let (h, s, v) = rgb_to_hsb(r, g, b);
+  let (h, s, v) = crate::functions::image_ast::rgb_to_hsv(
+    r as f64 / 255.0,
+    g as f64 / 255.0,
+    b as f64 / 255.0,
+  );
   let mut stops = String::new();
   for (k, (sf, bf)) in GLASS_SECTOR_SATURATION
     .iter()
@@ -5683,25 +5852,6 @@ fn glass_sector_gradient(
     ),
     id,
   )
-}
-
-/// An 8-bit RGB color as hue, saturation and brightness in `0..=1`.
-fn rgb_to_hsb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
-  let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
-  let max = r.max(g).max(b);
-  let min = r.min(g).min(b);
-  let d = max - min;
-  let h = if d == 0.0 {
-    0.0
-  } else if max == r {
-    ((g - b) / d).rem_euclid(6.0) / 6.0
-  } else if max == g {
-    ((b - r) / d + 2.0) / 6.0
-  } else {
-    ((r - g) / d + 4.0) / 6.0
-  };
-  let s = if max == 0.0 { 0.0 } else { d / max };
-  (h, s, max)
 }
 
 /// Hue, saturation and brightness in `0..=1` as an 8-bit RGB color.

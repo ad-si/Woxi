@@ -3453,6 +3453,37 @@ mod together {
     );
   }
 
+  // Integer denominators that each fit a machine integer but whose LCM
+  // does not still combine by their LCM, keeping the shared factors once.
+  #[test]
+  fn integer_lcm_beyond_machine_integers() {
+    assert_eq!(
+      interpret("Together[1/(2^60 3^30) + x/(2^60 5^20) + y/2^120]").unwrap(),
+      "(109951162777600000000000000000000 + 237376313799769806328950291431424*x + 19635308465447330474853515625*y)/26099801718145147149084040184515458731763302400000000000000000000"
+    );
+    // A term whose missing factor was dropped changed the value.
+    assert_eq!(
+      interpret(
+        "e = 1/(38496193^2 50349853^2) + b x/(89 571^2 50349853) + x^2/(89 571^2 50349853)^2; Expand[Together[e] - e]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // Solving with rationalized machine coefficients goes through such
+  // denominators: the nearest point of a line to (a, b) stays linear in b.
+  #[test]
+  fn nsolve_line_circle_with_machine_coefficients() {
+    assert_eq!(
+      interpret(
+        "c = 1/Sqrt[0.65^2 + 1]; sol = NSolve[{(x - a)^2 + (y - b)^2 == d^2, -0.65 c x + c y + 1.1 c == 0}, {x, y}]; Round[{x, y} /. sol /. {a -> 3.5, b -> 0.81, d -> -0.65 c 3.5 + c 0.81 + 1.1 c}, 10^-4]"
+      )
+      .unwrap(),
+      "{{8333/2500, 5333/5000}, {8333/2500, 5333/5000}}"
+    );
+  }
+
   #[test]
   fn together_basic() {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
