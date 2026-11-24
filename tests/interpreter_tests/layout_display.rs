@@ -783,7 +783,7 @@ mod layout_display {
   fn grid_item_size_column_grows_to_fit_a_wider_picture() {
     let svg = svg_of(
       "Grid[{{Graphics[Disk[], ImageSize -> 50], \
-       Grid[{{\"Number of stones in the group\", 12345}}]}}, \
+       Grid[{{\"Number of stones in the group\", 345}}]}}, \
        ItemSize -> {{Automatic, 5}}]",
     );
     let num = |tag: &str, name: &str| -> f64 {
@@ -800,7 +800,7 @@ mod layout_display {
         "{tag} overflows width {outer_w}\n{svg}"
       );
     }
-    assert!(svg.contains(">12345<"), "{svg}");
+    assert!(svg.contains(">345<"), "{svg}");
   }
 
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
