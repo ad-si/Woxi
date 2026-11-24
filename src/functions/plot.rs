@@ -16712,7 +16712,12 @@ pub(crate) fn parse_explicit_tick_entries(
           _ if crate::functions::graphics::has_explicit_style(&label_expr) => {
             crate::functions::graphics::expr_to_svg_markup(&label_expr)
           }
-          Some(text) => crate::functions::graphics::box_string_to_svg(&text),
+          // Tick labels are set in TraditionalForm: a one-letter symbol in
+          // the string's box code (`"-\!\(\*SubscriptBox[\(d\), \(ox\)]\)"`)
+          // is italic, its plain text upright.
+          Some(text) => {
+            crate::functions::graphics::traditional_box_string_to_svg(&text)
+          }
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))
           }

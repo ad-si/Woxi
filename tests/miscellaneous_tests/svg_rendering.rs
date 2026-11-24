@@ -2,7 +2,7 @@ use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
   box_has_fraction, box_string_to_svg, box_string_visible_len, boxes_to_svg,
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
-  layout_box, layout_to_svg, row_to_svg,
+  layout_box, layout_to_svg, row_to_svg, traditional_box_string_to_svg,
 };
 use woxi::helpers::{
   binop, bool_expr, call, call1, div2, id_expr, minus2, neg1, plus2, pow, pow2,
@@ -1558,6 +1558,39 @@ mod tests {
     fn box_string_plain_text_is_html_escaped() {
       // A label without any box notation is a safe drop-in for svg_escape.
       assert_eq!(box_string_to_svg("a < b & c"), "a &lt; b &amp; c");
+    }
+
+    #[test]
+    fn traditional_box_string_single_letter_box_symbols_are_italic() {
+      // A TraditionalForm label sets a one-letter symbol written as box
+      // code in italics, while the plain text run before it and a
+      // multi-letter script stay upright.
+      let svg = traditional_box_string_to_svg(
+        "-\\!\\(\\*SubscriptBox[\\(d\\), \\(ox\\)]\\)",
+      );
+      assert!(svg.starts_with('-'), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">d<"), "{svg}");
+      assert!(!svg.contains("italic\" baseline-shift"), "{svg}");
+      assert!(svg.contains(">ox</tspan>"), "{svg}");
+      // Plain text outside the box code is not italicized.
+      let svg = traditional_box_string_to_svg(
+        "a \\!\\(\\*SuperscriptBox[\\(b\\), \\(2\\)]\\)",
+      );
+      assert!(svg.starts_with("a "), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">b<"), "{svg}");
+    }
+
+    #[test]
+    fn plot_tick_label_italicizes_single_letter_box_symbols() {
+      let code = r#"ExportString[Plot[x, {x, 0, 1}, Ticks -> {{{0.5, "-\!\(\*SubscriptBox[\(d\), \(ox\)]\)"}}, None}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          ">-<tspan font-style=\"italic\">d</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">ox</tspan></text>"
+        ),
+        "{svg}"
+      );
     }
 
     #[test]
