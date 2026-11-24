@@ -8139,6 +8139,122 @@ mod graph_annotations {
   }
 
   #[test]
+  fn a_style_set_on_one_vertex_keeps_the_others_style() {
+    clear_state();
+    // A style for one vertex is a `vertex -> style` rule, and the value
+    // the graph gave every vertex stays with the others.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
+         VertexStyle -> Blue, VertexSize -> {\"Scaled\", 0.01}], 2}, \
+         {VertexStyle -> Red, VertexSize -> {\"Scaled\", 0.04}}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexSize -> {1 -> {\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}, \
+       3 -> {\"Scaled\", 0.01}}, VertexStyle -> {1 -> RGBColor[0, 0, 1], \
+       2 -> RGBColor[1, 0, 0], 3 -> RGBColor[0, 0, 1]}}"
+    );
+    // Every rule of a list names the same vertex.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[{1 -> 2, 2 -> 3}], 3}, \
+         {VertexStyle -> Red, VertexShapeFunction -> \"Star\"}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexShapeFunction -> {3 -> \"Star\"}, VertexStyle -> {3 -> RGBColor[1, 0, 0]}}"
+    );
+    // Setting it again replaces that vertex's rule.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{SetProperty[{Graph[{1 -> 2}], 1}, \
+         VertexStyle -> Red], 1}, VertexStyle -> Green]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexStyle -> {1 -> RGBColor[0, 1, 0]}}"
+    );
+  }
+
+  #[test]
+  fn a_style_set_on_one_vertex_is_drawn_on_that_vertex_only() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
+       VertexStyle -> Blue], 2}, VertexStyle -> Red], \"SVG\"]"
+        .replace("       ", "")
+        .as_str(),
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn annotated_vertices_are_the_vertices_they_wrap() {
+    clear_state();
+    // `Tooltip`, `Labeled` and `Style` only annotate a vertex.
+    assert_eq!(
+      interpret(
+        "ToString[VertexList[Graph[{Tooltip[1, \"a\"], Labeled[2, \"b\"], \
+         Style[3, Red]}, {1 -> 2, 2 -> 3}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "MemberQ[VertexList[Graph[Tooltip[#, #] & /@ {1, 2}, {1 -> 2}]], 1]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A property set on such a vertex finds it.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[Tooltip[#, #] & /@ {1, 2}, \
+         {1 -> 2}], 2}, VertexStyle -> Red]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexStyle -> {2 -> RGBColor[1, 0, 0]}}"
+    );
+  }
+
+  #[test]
+  fn absolute_vertex_coordinates_are_the_graph_layout() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graph[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {1, 0}, {1, 1}}], VertexCoordinates]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexCoordinates -> {{0, 0}, {1, 0}, {1, 1}}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3, 3 -> 1}]; \
+         (VertexCoordinates /. AbsoluteOptions[g, VertexCoordinates]) \
+         === GraphEmbedding[g]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn the_property_list_grows_with_what_the_graph_carries() {
     clear_state();
     assert_eq!(
