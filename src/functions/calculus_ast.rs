@@ -17999,6 +17999,17 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
   }
 
+  // EllipticK[m] and EllipticE[m] are analytic at m == 0, but their
+  // derivatives carry an apparent 1/m singularity, so the generic Taylor
+  // path samples 0/0 there. Expand their hypergeometric forms instead.
+  if let Some(rewritten) =
+    elliptic_ke_hypergeometric_rewrite(&args[0], &var_name, &x0)
+  {
+    let mut inner = args.to_vec();
+    inner[0] = rewritten;
+    return series_ast(&inner);
+  }
+
   // A rational function about 0 with numeric coefficients: divide the
   // power series of numerator and denominator. Repeated differentiation
   // swells exponentially with the order (a Molien series to x^20).
@@ -24246,6 +24257,57 @@ fn qfactorial_series_at_zero(var_name: &str, n: usize, order: i128) -> Expr {
 }
 
 /// Build SeriesData[var, 0, {...}, 1, order+1, 1] for `Series[BarnesG[var], {var, 0, order}]`.
+/// Replace every `EllipticK[a]` / `EllipticE[a]` in `expr` whose argument
+/// `a` vanishes at `x0` by its hypergeometric form
+///   EllipticK[m] = Pi/2 Hypergeometric2F1[1/2, 1/2, 1, m]
+///   EllipticE[m] = Pi/2 Hypergeometric2F1[-1/2, 1/2, 1, m]
+/// whose Taylor coefficients at m == 0 the generic path computes without
+/// the spurious 1/m singularity of the elliptic derivatives. Returns `None`
+/// when nothing was replaced.
+fn elliptic_ke_hypergeometric_rewrite(
+  expr: &Expr,
+  var: &str,
+  x0: &Expr,
+) -> Option<Expr> {
+  let replaced = std::cell::Cell::new(false);
+  let rewritten = crate::functions::string_ast::map_expr_tree(expr, &|n| {
+    let Expr::FunctionCall { name, args } = n else {
+      return None;
+    };
+    if !(name == "EllipticK" || name == "EllipticE") || args.len() != 1 {
+      return None;
+    }
+    let arg = &args[0];
+    if is_constant_wrt(arg, var) {
+      return None;
+    }
+    let at_x0 = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(arg, var, x0),
+    )
+    .ok()?;
+    if !matches!(at_x0, Expr::Integer(0)) {
+      return None;
+    }
+    let half =
+      |p: i128| call("Rational", vec![Expr::Integer(p), Expr::Integer(2)]);
+    let a = if name == "EllipticK" {
+      half(1)
+    } else {
+      half(-1)
+    };
+    replaced.set(true);
+    Some(times(vec![
+      half(1),
+      const_expr("Pi"),
+      call(
+        "Hypergeometric2F1",
+        vec![a, half(1), Expr::Integer(1), arg.clone()],
+      ),
+    ]))
+  });
+  replaced.get().then_some(rewritten)
+}
+
 fn barnes_g_series_at_zero(var_name: &str, order: i128) -> Expr {
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize);
   for k in 1..=order {

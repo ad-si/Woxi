@@ -11322,6 +11322,9 @@ pub(crate) fn generate_bar_svg(
             }
           }
         };
+        // A `Style[label, color]` label keeps its own color.
+        let own_fill = label.color.map(super::graphics::Color::to_svg_rgb);
+        let fill = own_fill.as_deref().unwrap_or(fill);
         // A stacked label sets each line as its own `tspan` (SVG would run
         // the lines together), with the line's own size and color.
         let multi_line = lines.len() > 1;
@@ -19120,9 +19123,36 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
   // An explicit `PlotRangePadding` replaces those defaults, side by side.
-  let y_span = y_data_max - y_data_min;
-  let y_degenerate =
-    y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
+  // A half-open `PlotRange -> {min, All}` pads its open end like an
+  // automatic range spanning from the pinned value to the curve's far
+  // extreme (not just the curve's own extent): `{300, All}` over a curve
+  // from 347 to 361 tops out at 361 + 61/18.
+  // (The pinned end arrives either as `plot_range_y` with the open end NaN
+  // or, scaled later, through `plot_range_y_half_open`.)
+  let pinned_y = match plot_range_y {
+    Some((lo, hi)) if lo.is_nan() != hi.is_nan() => {
+      Some(((!lo.is_nan()).then_some(lo), (!hi.is_nan()).then_some(hi)))
+    }
+    Some(_) => None,
+    None => plot_range_y_half_open.map(|(lo, hi)| {
+      let scaled = |v: Option<f64>| {
+        v.and_then(|v| match scaling.1.as_ref() {
+          Some(s) => s.forward(v),
+          None => Some(v),
+        })
+      };
+      (scaled(lo), scaled(hi))
+    }),
+  };
+  let half_open_span = match pinned_y {
+    Some((Some(lo), None)) => Some(y_data_max - lo),
+    Some((None, Some(hi))) => Some(hi - y_data_min),
+    _ => None,
+  }
+  .filter(|s| s.is_finite() && *s > 0.0);
+  let y_span = half_open_span.unwrap_or(y_data_max - y_data_min);
+  let y_degenerate = half_open_span.is_none()
+    && y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
   let x_span = x_max - x_min;
   let ((x_pad_lo, x_pad_hi), (y_pad_lo, y_pad_hi)) =
     if let Some(spec) = &range_padding {
@@ -19206,10 +19236,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // On a log axis whose automatic range cut the curve off at the bottom
   // the axis drops to the padded edge instead.
   let log_clipped_below = scaling.1.as_ref().is_some_and(Scaling::is_log)
-    && all_points
-      .iter()
-      .flatten()
-      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * y_span.abs());
+    && all_points.iter().flatten().any(|&(_, y)| {
+      y.is_finite() && y < y_data_min - 1e-9 * (y_data_max - y_data_min).abs()
+    });
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
