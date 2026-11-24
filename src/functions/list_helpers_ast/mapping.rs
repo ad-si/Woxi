@@ -328,7 +328,7 @@ fn map_at_depth_heads(
         })
         .collect::<Result<_, _>>()?;
       if in_range(current_depth + 1) {
-        let new_head = apply_func_ast(func, &id_expr(&head))?;
+        let new_head = apply_func_ast(func, &head)?;
         Expr::CurriedCall {
           func: Box::new(new_head),
           args: mapped,
@@ -352,21 +352,46 @@ fn map_at_depth_heads(
 /// Everything else is decomposed to its FullForm so operator and special
 /// forms (`x^2` = Power[x, 2], `a == b` = Equal[a, b], `a -> b` = Rule[a, b],
 /// `!a` = Not[a], …) are descended into, just like Level and Depth.
-fn map_decompose(expr: &Expr) -> Option<(String, Vec<Expr>)> {
+///
+/// The head is an expression: a compound head such as the `h[1]` of
+/// `h[1][2]` must survive the round trip as that expression, not as a symbol
+/// named `"h[1]"`, or the rebuilt part never evaluates again.
+fn map_decompose(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
   use crate::functions::expr_form::{ExprForm, decompose_expr};
   if crate::functions::predicate_ast::is_atomic_number(expr)
     || matches!(expr, Expr::Association(_))
   {
     return None;
   }
+  match expr {
+    Expr::CurriedCall { func, args } => {
+      return Some((func.as_ref().clone(), args.clone()));
+    }
+    Expr::PrefixApply { func, arg } => {
+      return Some((func.as_ref().clone(), vec![arg.as_ref().clone()]));
+    }
+    Expr::Postfix { expr, func } => {
+      return Some((func.as_ref().clone(), vec![expr.as_ref().clone()]));
+    }
+    _ => {}
+  }
   match decompose_expr(expr) {
     ExprForm::Atom(_) => None,
-    ExprForm::Composite { head, children } => Some((head, children)),
+    ExprForm::Composite { head, children } => {
+      Some((Expr::Identifier(head), children))
+    }
   }
 }
 
 /// Rebuild a mapped composite from its canonical head and new children.
-fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
+fn rewrap(head: &Expr, children: Vec<Expr>) -> Expr {
+  let Expr::Identifier(head) = head else {
+    return Expr::CurriedCall {
+      func: Box::new(head.clone()),
+      args: children,
+    };
+  };
+  let head = head.as_str();
   // Relational heads must be rebuilt as `Expr::Comparison` so they render
   // infix (`f[a] == f[b]`), not as `Equal[f[a], f[b]]`.
   let cmp_op = match head {
@@ -414,8 +439,11 @@ fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
 /// Whether a composite with this head keeps its parts unevaluated
 /// (`Function`, `Hold`, …): a Map below it builds `f[part]` without
 /// evaluating it, as Wolfram does.
-fn holds_parts(head: &str) -> bool {
+fn holds_parts(head: &Expr) -> bool {
   use crate::evaluator::{Attributes as A, get_builtin_attributes};
+  let Expr::Identifier(head) = head else {
+    return false;
+  };
   get_builtin_attributes(head).contains(A::HoldAll | A::HoldAllComplete)
 }
 

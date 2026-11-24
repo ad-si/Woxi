@@ -588,6 +588,32 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// Regression: a `Text` under a `Style` inside `Framed`
+  /// (`Framed[Style[Text[Grid[…]], 24]]`, a score board) printed the
+  /// `Text[…]` call as source instead of drawing its content.
+  #[test]
+  fn framed_styled_text_draws_its_content() {
+    for (expr, shown) in [
+      ("Framed[Style[Text[Grid[{{a, b}}]], 24]]", "ab"),
+      (
+        "Framed[Style[Text[Grid[{{Row[{\"p: \", Style[1, Bold]}], c}}, \
+         ItemSize -> 8, Alignment -> Left]], 24]]",
+        "p:1c",
+      ),
+      ("Framed[Style[Text[Row[{a, b}]], Red, 20]]", "ab"),
+      ("Framed[Style[Text[\"ab\"], 24]]", "ab"),
+      ("Framed[Style[Text[x], 24]]", "x"),
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert_eq!(flat_text(&svg), shown, "{expr}: {svg}");
+      assert!(svg.contains("font-size=\"2"), "{expr}: {svg}");
+    }
+    // The outer directives still reach the text under the peeled `Text`.
+    let svg = svg_of("Framed[Style[Text[Row[{a, b}]], Red, 20]]");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
   /// The `font-family` of the `<text>` element that draws `text`.
   fn text_family<'a>(svg: &'a str, text: &str) -> &'a str {
     let end = svg
@@ -772,6 +798,86 @@ mod layout_display {
     for (width, expected) in widths.iter().zip([49.5, 60.5, 93.0, 60.5]) {
       assert!((width - expected).abs() < 1.5, "{widths:?}\n{svg}");
     }
+  }
+
+  /// Regression: a picture (here a nested `Grid`) wider than its fixed
+  /// `ItemSize` column was squeezed into the column, so the outer grid was
+  /// narrower than its content and the picture's right side was cut off.
+  /// Text wraps to the fixed width, but a picture cannot, so the column
+  /// grows to hold it, as in the front end.
+  #[test]
+  fn grid_item_size_column_grows_to_fit_a_wider_picture() {
+    let svg = svg_of(
+      "Grid[{{Graphics[Disk[], ImageSize -> 50], \
+       Grid[{{\"Number of stones in the group\", 345}}]}}, \
+       ItemSize -> {{Automatic, 5}}]",
+    );
+    let num = |tag: &str, name: &str| -> f64 {
+      let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[j..j + tag[j..].find('"').unwrap()].parse().unwrap()
+    };
+    let outer = &svg[..svg.find('>').unwrap()];
+    let outer_w = num(outer, "width");
+    // Every nested picture lies inside the outer grid's width.
+    for (i, _) in svg.match_indices("<svg x=") {
+      let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+      assert!(
+        num(tag, "x") + num(tag, "width") <= outer_w + 0.5,
+        "{tag} overflows width {outer_w}\n{svg}"
+      );
+    }
+    assert!(svg.contains(">345<"), "{svg}");
+  }
+
+  /// Regression: a graphic wider than the column a fixed `ItemSize` sets
+  /// was drawn at its full size, hanging past both sides of the column and
+  /// cropped by the grid (a plot legend lost its end tick labels). The front
+  /// end shrinks the graphic to the column's width, keeping its shape.
+  #[test]
+  fn grid_item_size_shrinks_a_wider_graphic_to_fit() {
+    let svg = svg_of(
+      "Grid[{{Graphics[Disk[], ImageSize -> 300]}, \
+       {Graphics[Rectangle[{0, 0}, {4, 1}], ImageSize -> 400]}, \
+       {Graphics[Circle[], ImageSize -> 50]}}, ItemSize -> {{10, 3}, Automatic}]",
+    );
+    let attr = |tag: &str, name: &str| -> f64 {
+      let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[j..j + tag[j..].find('"').unwrap()]
+        .trim_end_matches("px")
+        .parse()
+        .unwrap()
+    };
+    let tags: Vec<&str> = svg
+      .match_indices("<svg ")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect();
+    let grid_w = attr(tags[0], "width");
+    let cells: Vec<(f64, f64, f64)> = tags[1..]
+      .iter()
+      .filter(|t| t.contains(" x=\""))
+      .map(|t| (attr(t, "x"), attr(t, "width"), attr(t, "height")))
+      .collect();
+    assert_eq!(cells.len(), 3, "{svg}");
+    // The two wide graphics fill the same column width, inside the grid.
+    let (x1, w1, h1) = cells[0];
+    let (x2, w2, h2) = cells[1];
+    assert!(w1 < 300.0 && (w1 - w2).abs() < 0.5, "{cells:?}");
+    for (x, w) in [(x1, w1), (x2, w2)] {
+      assert!(x >= 0.0 && x + w <= grid_w + 0.5, "{cells:?} in {grid_w}");
+    }
+    // Each keeps its shape.
+    let natural_ratio = |tag: &str| -> f64 {
+      let j = tag.find(" viewBox=\"").unwrap() + 10;
+      let vb: Vec<f64> = tag[j..j + tag[j..].find('"').unwrap()]
+        .split_whitespace()
+        .map(|v| v.parse().unwrap())
+        .collect();
+      vb[3] / vb[2]
+    };
+    assert!((h1 - w1).abs() < 0.5, "{cells:?}");
+    assert!((h2 / w2 - natural_ratio(tags[2])).abs() < 0.01, "{cells:?}");
+    // A graphic narrower than the column keeps its own size.
+    assert!((cells[2].1 - 50.0).abs() < 0.5, "{cells:?}");
   }
 
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads

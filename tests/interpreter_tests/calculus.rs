@@ -12235,6 +12235,26 @@ mod ndsolve {
     }
   }
 
+  /// A stationary radial operator `-(1/r) ∂r(r ∂r u)` on a range symmetric
+  /// about the axis puts a grid point on `r == 0`, where the row is `0/0`;
+  /// it takes its limit there (`u_r / r → u_rr`), so the quadratic exact
+  /// solution `1/4 - r^2 + x` is reproduced, whichever variable is first.
+  #[test]
+  fn ndsolve_stationary_removable_axis_singularity() {
+    for doms in ["{x, 0, 1}, {r, -1/2, 1/2}", "{r, -1/2, 1/2}, {x, 0, 1}"] {
+      let code = format!(
+        "f = NDSolveValue[{{-(1/r) D[r D[u[x, r], r], r] - \
+         D[u[x, r], x, x] == 4 + NeumannValue[1, x == 1] + \
+         DirichletCondition[u[x, r] == x, r == -1/2] + \
+         DirichletCondition[u[x, r] == x, r == 1/2] + \
+         DirichletCondition[u[x, r] == 1/4 - r^2, x == 0]}}, u, {doms}]; \
+         Max[Abs[Flatten[Table[f[x, r] - (1/4 - r^2 + x), \
+         {{x, {{0.3, 0.7, 1.}}}}, {{r, {{-0.2, 0., 0.35}}}}]]]] < 10^-6"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{doms}");
+    }
+  }
+
   /// `NeumannValue[g, x == x0]` on the right-hand side is the natural
   /// boundary condition `n·(c ∇u) = g` (outward normal `n`), so a constant
   /// inflow `g` at one end of a diffusing bar with an insulated other end
@@ -16220,6 +16240,57 @@ mod exp_to_trig {
     assert_eq!(
       interpret("ExpToTrig[x + Exp[I y]]").unwrap(),
       "x + Cos[y] + I*Sin[y]"
+    );
+  }
+
+  #[test]
+  fn conjugate_exponentials_cancel() {
+    assert_eq!(
+      interpret("ExpToTrig[a E^(I x) + a E^(-I x)]").unwrap(),
+      "2*a*Cos[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[(a E^(I x) - a E^(-I x))/(Sqrt[2] I)]").unwrap(),
+      "Sqrt[2]*a*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn coefficients_distribute_over_rewritten_sum() {
+    assert_eq!(
+      interpret("ExpToTrig[E^(I x) a + E^(-I x) b]").unwrap(),
+      "a*Cos[x] + b*Cos[x] + I*a*Sin[x] - I*b*Sin[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[(1 + y)^2 E^(I x)]").unwrap(),
+      "(1 + y)^2*Cos[x] + I*(1 + y)^2*Sin[x]"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[2 E^x]").unwrap(),
+      "2*Cosh[x] + 2*Sinh[x]"
+    );
+  }
+
+  /// Real combinations of complex spherical harmonics come out real, so
+  /// their numeric values carry no `0. I` part that breaks comparisons.
+  #[test]
+  fn real_spherical_harmonic_combination() {
+    assert_eq!(
+      interpret(
+        "ExpToTrig[(SphericalHarmonicY[1, -1, t, f] - \
+         SphericalHarmonicY[1, 1, t, f])/Sqrt[2]]"
+      )
+      .unwrap(),
+      "(Sqrt[3/Pi]*Cos[f]*Sin[t])/2"
+    );
+    assert_eq!(
+      interpret(
+        "y = ExpToTrig[(SphericalHarmonicY[2, -1, t, f] + \
+         SphericalHarmonicY[2, 1, t, f])/(Sqrt[2] I)]; \
+         Head[y /. {t -> 0.7, f -> 0.3}]"
+      )
+      .unwrap(),
+      "Real"
     );
   }
 }

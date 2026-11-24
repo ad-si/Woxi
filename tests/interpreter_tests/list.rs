@@ -12006,6 +12006,27 @@ mod join_non_list {
     );
   }
 
+  /// `Combinatorica\`Cofactor[m, {i, j}]` is (-1)^(i + j) times the minor
+  /// of `m` without row i and column j; a non-matrix stays unevaluated.
+  #[test]
+  fn combinatorica_cofactor_is_the_signed_minor() {
+    assert_eq!(
+      interpret(
+        "Combinatorica`Cofactor[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}, {1, 2}]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; {Cofactor[{{a, b}, {c, d}}, {1, 2}], \
+         Cofactor[SparseArray[{{a, b}, {c, d}}], {2, 2}], Cofactor[x, {1, 1}]}"
+      )
+      .unwrap(),
+      "{-c, a, Cofactor[x, {1, 1}]}"
+    );
+  }
+
   #[test]
   fn combinatorica_unrank_permutation_matches_lexicographic_order() {
     // Combinatorica`UnrankPermutation[r, l] gives the permutation of `l`

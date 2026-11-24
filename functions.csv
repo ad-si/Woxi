@@ -937,7 +937,7 @@ AircraftData,"",🚫,,10.0,883
 IntegerPartitions,"Returns the integer partitions of n optionally constrained by part count (including Infinity and step forms) and allowed parts",✅,pure,6.0,884
 MinMax,"Returns the minimum and maximum of a list an association values or an interval",✅,pure,10.1,885
 MachinePrecision,"Machine-precision number (~15.95 digits)",✅,pure,5.0,886
-AbsoluteOptions,"Effective option values of a 2D or 3D graphic: the computed PlotRange (before padding) and the values of options it was given",🚧,pure,4.0,888
+AbsoluteOptions,"Effective option values of a 2D or 3D graphic (the computed PlotRange, before padding) or of a graph (its layout as VertexCoordinates), and the values of options it was given",🚧,pure,4.0,888
 GraphLayout,"Option specifying the layout used to position graph vertices",✅,none,8.0,888
 Names,"Lists symbol names matching a string pattern whose context part selects the context",✅,pure,1.0,889
 RotateLabel,"",🚫,,2.0,890
@@ -2354,7 +2354,7 @@ ImageCorrelate,"Correlate image with kernel",✅,pure,7.0,2344
 ParameterEstimator,"statistical estimation",🚫,None,8.0,2344
 TransformationMatrix,"Gives the homogeneous matrix of a transformation function",✅,pure,6.0,2344
 VectorAspectRatio,"visualization option",🚫,None,12.1,2344
-CylindricalDecomposition,"algebraic geometry",🚫,None,5.0,2350
+CylindricalDecomposition,"Gives a cylindrical decomposition of the real solution set of a formula in the given variable order; exact affine formulas use Fourier-Motzkin elimination and other real formulas go through Reduce over the reals",✅,pure,5.0,2350
 FindMinValue,"Finds the value at a local minimum of a function numerically",✅,pure,7.0,2350
 FromContinuedFraction,"Converts a continued fraction to a number",✅,pure,4.0,2350
 InverseSurvivalFunction,"Inverse survival function giving x where the survival probability equals q",✅,pure,8.0,2350
@@ -2619,7 +2619,7 @@ DistributionParameterQ,"Tests whether the parameters of a distribution are valid
 PlanarAngle,"Planar angle at a vertex from the list form {q1 p q2} or the vertex-rule form p -> {q1 q2} (2-D only)",✅,pure,12.0,2617
 PrivateFontOptions,"",🚫,,3.0,2617
 StarGraph,"Star graph with n vertices",✅,1,8.0,2617
-Toggler,"Toggler control element (stays symbolic in script mode)",✅,unevaluated,6.0,2617
+Toggler,"Toggler control element cycling a variable through its states (stays symbolic in script mode)",✅,unevaluated,6.0,2617
 GraphDiameter,"Maximum shortest path distance",✅,1,8.0,2625
 ImageCorners,"",🚫,,9.0,2625
 Inpaint,"Fill masked image pixels from their surroundings by diffusion",✅,pure,8.0,2625
@@ -6390,9 +6390,12 @@ GraphUtilities`GraphCoordinates,"Vertex coordinates of a graph given as a list o
 GraphUtilities`GraphCoordinates3D,"Vertex coordinates of a graph given as a list of rules in a 3D force-directed layout",✅,pure,8.0,
 GraphUtilities`GraphPath,"Shortest path between two vertices of a graph given as a list of rules",✅,pure,8.0,
 GraphUtilities`HamiltonianCycles,"Up to n (or All) Hamiltonian cycles of a rule list or Graph or Combinatorica graph or adjacency matrix in the package search order",✅,pure,8.0,
+GraphUtilities`AdjacencyMatrix,"Adjacency matrix of a graph given as a list of (optionally labeled) rules",✅,pure,6.0,
 MultivariateStatistics`EllipsoidQuantile,"Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance]",✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,"Builds a Combinatorica graph with one edge per (sorted) vertex pair on a circular embedding",✅,pure,6.0,
 Combinatorica`FromOrderedPairs,"Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding",✅,pure,6.0,
+Combinatorica`IncidenceMatrix,"(0; 1) vertex-by-edge matrix of a Combinatorica graph; a directed edge marks the vertex it leaves",✅,pure,6.0,
+Combinatorica`Cofactor,"Signed minor (-1)^(i+j) Det of a matrix without row i and column j",✅,pure,6.0,
 Combinatorica`Cycle,"The n-cycle (or with Directed the directed n-cycle) as a Combinatorica graph on a circular embedding",✅,pure,6.0,
 Combinatorica`SetGraphOptions,"Sets options on vertices or edges or the whole of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`StableMarriage,"Man-optimal stable matching from men's and women's preference lists (Gale-Shapley)",✅,pure,6.0,

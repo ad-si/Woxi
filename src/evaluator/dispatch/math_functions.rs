@@ -7458,6 +7458,41 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
       let z = exp_to_trig_recursive(&args[1]);
       exp_to_trig_expand(&z)
     }
+    // A product with an exponential factor: distribute the other factors
+    // over the rewritten `Cos + I Sin` (or `Cosh + Sinh`) sum, so that
+    // conjugate terms such as `a E^(I x) + a E^(-I x)` cancel to `2 a Cos[x]`.
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.iter().any(is_exp_power) =>
+    {
+      let mut sum: Option<Vec<Expr>> = None;
+      let mut others = Vec::with_capacity(args.len());
+      for arg in args {
+        if sum.is_none() && is_exp_power(arg) {
+          let rewritten = exp_to_trig_recursive(arg);
+          match &rewritten {
+            Expr::FunctionCall { name, args } if name == "Plus" => {
+              sum = Some(args.to_vec());
+            }
+            _ => others.push(rewritten),
+          }
+        } else {
+          others.push(exp_to_trig_recursive(arg));
+        }
+      }
+      match sum {
+        Some(terms) => plus(
+          terms
+            .into_iter()
+            .map(|term| {
+              let mut factors = others.clone();
+              factors.push(term);
+              times(factors)
+            })
+            .collect(),
+        ),
+        None => times(others),
+      }
+    }
     // Recurse into function calls
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -7479,6 +7514,23 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
       Expr::List(items.iter().map(exp_to_trig_recursive).collect())
     }
     _ => expr.clone(),
+  }
+}
+
+/// Whether `expr` is a power of `E`, the form `ExpToTrig` rewrites.
+fn is_exp_power(expr: &Expr) -> bool {
+  let is_e =
+    |b: &Expr| matches!(b, Expr::Constant(c) | Expr::Identifier(c) if c == "E");
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => is_e(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_e(&args[0])
+    }
+    _ => false,
   }
 }
 

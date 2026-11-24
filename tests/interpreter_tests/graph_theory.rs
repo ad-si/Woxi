@@ -402,10 +402,71 @@ mod adjacency_matrix {
       "{{1, 1}, {0, 0}}"
     );
   }
+
+  /// Parallel edges are counted, as `WeightedAdjacencyMatrix` does with
+  /// unit weights.
+  #[test]
+  fn parallel_edges_are_counted() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 -> 2, 1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{0, 2, 0}, {0, 0, 1}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "{{0, 2}, {2, 0}}"
+    );
+  }
+
+  /// `GraphUtilities\`AdjacencyMatrix` takes a rule list whose items may
+  /// carry an edge label (`{u -> v, label}`), its vertices in the order
+  /// they first appear.
+  #[test]
+  fn graph_utilities_labeled_edge_list() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"GraphUtilities`\"]]; \
+         GraphUtilities`AdjacencyMatrix[{{3 -> 1, \"a\"}, {1 -> 2, \"b\"}, \
+           {2 -> 3, \"c\"}, {3 -> 2, \"d\"}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 1}, {0, 0, 1}, {1, 0, 0}}"
+    );
+  }
+
+  /// While `GraphUtilities\`` is loaded, the bare `AdjacencyMatrix` (as a
+  /// Demonstration's saved code spells it) is the package's and reads a
+  /// labeled rule list too.
+  #[test]
+  fn graph_utilities_bare_name_reads_labeled_edge_list() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"GraphUtilities`\"]]; \
+         {AdjacencyMatrix[{{1 -> 2, 1}, {2 -> 1, 2}}], \
+          AdjacencyMatrix[Graph[{1 -> 2}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1}, {1, 0}}, {{0, 1}, {0, 0}}}"
+    );
+  }
 }
 
 mod incidence_matrix {
   use super::*;
+
+  /// Combinatorica's `IncidenceMatrix` is the (0, 1) vertex-by-edge matrix:
+  /// a directed edge marks only the vertex it leaves.
+  #[test]
+  fn combinatorica_directed_and_undirected() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; \
+         {IncidenceMatrix[FromOrderedPairs[{{3, 1}, {1, 2}, {2, 2}}]], \
+          Combinatorica`IncidenceMatrix[FromUnorderedPairs[{{3, 1}, {1, 2}}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}, {{1, 1}, {0, 1}, {1, 0}}}"
+    );
+  }
 
   #[test]
   fn undirected_complete() {
@@ -2185,7 +2246,7 @@ mod graph_rendering {
       "ExportString[Graph[{1 <-> 2}, PlotLabel -> Style[\"Red Title\", Red, 20, Italic]], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">Red Title</text>"), "SVG: {svg}");
+    assert!(svg.contains(">Red Title<"), "SVG: {svg}");
     assert!(
       svg.contains("fill=\"rgb(255,0,0)\""),
       "expected red fill; SVG: {svg}"
@@ -2198,6 +2259,30 @@ mod graph_rendering {
       svg.contains("font-style=\"italic\""),
       "expected italic; SVG: {svg}"
     );
+  }
+
+  /// `GraphPlot`'s `PlotLabel` is the picture's own plot label, set above
+  /// the plot area in the default gray label style, like any `Graphics`.
+  #[test]
+  fn graph_plot_label_is_a_graphics_plot_label() {
+    let graph_plot = interpret(
+      "ExportString[GraphPlot[{1 -> 2, 2 -> 3}, PlotLabel -> \"title\"], \"SVG\"]",
+    )
+    .unwrap();
+    let graphics = interpret(
+      "ExportString[Graphics[Circle[], PlotLabel -> \"title\"], \"SVG\"]",
+    )
+    .unwrap();
+    let label = |svg: &str| {
+      let end = svg.find(">title</text>").expect("label drawn");
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end]
+        .split(' ')
+        .filter(|a| !a.starts_with("x="))
+        .collect::<Vec<_>>()
+        .join(" ")
+    };
+    assert_eq!(label(&graph_plot), label(&graphics));
   }
 
   /// PlotLabel -> None must suppress the label entirely (no <text> added
@@ -2228,7 +2313,9 @@ mod graph_rendering {
     )
     .unwrap();
     assert!(
-      svg.contains("<tspan font-style=\"italic\">I</tspan>\u{2084}<"),
+      svg.contains(
+        "<tspan font-style=\"italic\">I</tspan><tspan baseline-shift=\"sub\""
+      ),
       "SVG: {svg}"
     );
     assert!(
@@ -8048,6 +8135,122 @@ mod graph_annotations {
       )
       .unwrap(),
       "{UndirectedEdge[1, 2]}"
+    );
+  }
+
+  #[test]
+  fn a_style_set_on_one_vertex_keeps_the_others_style() {
+    clear_state();
+    // A style for one vertex is a `vertex -> style` rule, and the value
+    // the graph gave every vertex stays with the others.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
+         VertexStyle -> Blue, VertexSize -> {\"Scaled\", 0.01}], 2}, \
+         {VertexStyle -> Red, VertexSize -> {\"Scaled\", 0.04}}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexSize -> {1 -> {\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}, \
+       3 -> {\"Scaled\", 0.01}}, VertexStyle -> {1 -> RGBColor[0, 0, 1], \
+       2 -> RGBColor[1, 0, 0], 3 -> RGBColor[0, 0, 1]}}"
+    );
+    // Every rule of a list names the same vertex.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[{1 -> 2, 2 -> 3}], 3}, \
+         {VertexStyle -> Red, VertexShapeFunction -> \"Star\"}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexShapeFunction -> {3 -> \"Star\"}, VertexStyle -> {3 -> RGBColor[1, 0, 0]}}"
+    );
+    // Setting it again replaces that vertex's rule.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{SetProperty[{Graph[{1 -> 2}], 1}, \
+         VertexStyle -> Red], 1}, VertexStyle -> Green]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexStyle -> {1 -> RGBColor[0, 1, 0]}}"
+    );
+  }
+
+  #[test]
+  fn a_style_set_on_one_vertex_is_drawn_on_that_vertex_only() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
+       VertexStyle -> Blue], 2}, VertexStyle -> Red], \"SVG\"]"
+        .replace("       ", "")
+        .as_str(),
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn annotated_vertices_are_the_vertices_they_wrap() {
+    clear_state();
+    // `Tooltip`, `Labeled` and `Style` only annotate a vertex.
+    assert_eq!(
+      interpret(
+        "ToString[VertexList[Graph[{Tooltip[1, \"a\"], Labeled[2, \"b\"], \
+         Style[3, Red]}, {1 -> 2, 2 -> 3}]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "MemberQ[VertexList[Graph[Tooltip[#, #] & /@ {1, 2}, {1 -> 2}]], 1]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A property set on such a vertex finds it.
+    assert_eq!(
+      interpret(
+        "ToString[Options[SetProperty[{Graph[Tooltip[#, #] & /@ {1, 2}, \
+         {1 -> 2}], 2}, VertexStyle -> Red]], InputForm]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexStyle -> {2 -> RGBColor[1, 0, 0]}}"
+    );
+  }
+
+  #[test]
+  fn absolute_vertex_coordinates_are_the_graph_layout() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graph[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {1, 0}, {1, 1}}], VertexCoordinates]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{VertexCoordinates -> {{0, 0}, {1, 0}, {1, 1}}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3, 3 -> 1}]; \
+         (VertexCoordinates /. AbsoluteOptions[g, VertexCoordinates]) \
+         === GraphEmbedding[g]"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "True"
     );
   }
 

@@ -4062,6 +4062,22 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   };
   let body = resolved.as_ref().unwrap_or(&args[0]);
+  // A one-function list `{f}` given explicit `Contours` is the function
+  // itself, shaded between its levels as Wolfram draws it; without them it
+  // keeps the list's zero contour (below).
+  if let Expr::List(items) = body
+    && let [f] = items.as_slice()
+    && !matches!(f, Expr::List(_))
+    && equation_zero_body(f).is_none()
+    && !matches!(
+      parse_density_contour_options(args, 3).contours,
+      ContourSpec::Automatic
+    )
+  {
+    let mut unwrapped = args.to_vec();
+    unwrapped[0] = f.clone();
+    return contour_plot_ast(&unwrapped);
+  }
   // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
   // equation's implicit curve — the zero contour of `lhs - rhs` — with no
   // band shading, matching Wolfram.
@@ -4221,8 +4237,19 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let (v_min, v_max) = opts.sampled_range(&samples);
-  let (level_min, level_max) = opts.sampled_range(&all_samples);
+  // `Contours -> n` spaces its levels, and the band colors between them,
+  // over every sampled value: the outlier fence of the automatic range
+  // would drop a genuine minority of values (the inlet ramp of a field
+  // saturated over most of the domain), leaving it without levels or
+  // shading.
+  let range_of = |values: &[f64]| match opts.contours {
+    ContourSpec::Count(_) if opts.value_range.is_none() => {
+      full_value_range(values)
+    }
+    _ => opts.sampled_range(values),
+  };
+  let (v_min, v_max) = range_of(&samples);
+  let (level_min, level_max) = range_of(&all_samples);
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(

@@ -938,6 +938,89 @@ fn adaptive_sample(
     });
   }
 
+  if let Some((lo, hi)) = visible_y
+    && lo.is_finite()
+    && hi.is_finite()
+    && lo < hi
+  {
+    points = resolve_steep_crossings(points, lo, hi, &sample);
+  }
+
+  points
+}
+
+/// Where two neighboring samples lie far past opposite edges of the
+/// visible window `[lo, hi]` of an explicit `PlotRange`, the curve either
+/// has a pole between them or runs steeply but continuously through the
+/// window (`10^12 (x - n)` draws a vertical line at `n`). Bisecting the
+/// gap tells the two apart: the values of a continuous, monotone stretch
+/// stay between those of its ends, a pole's do not. A crossing gets
+/// samples where the curve enters and leaves the window, so it is drawn
+/// rather than taken for a pole.
+fn resolve_steep_crossings(
+  mut points: Vec<(f64, f64)>,
+  lo: f64,
+  hi: f64,
+  sample: &dyn Fn(f64) -> f64,
+) -> Vec<(f64, f64)> {
+  // Bisect `[a, b]` for the x where the curve passes `level`, returning
+  // the sample on the side of `level` that faces the window, or `None`
+  // when a value leaves the span of its ends (a pole, not a crossing).
+  let bisect = |(mut a, mut ya): (f64, f64),
+                (mut b, mut yb): (f64, f64),
+                level: f64,
+                inside_is_above: bool|
+   -> Option<(f64, f64)> {
+    let a_below = ya < level;
+    loop {
+      let m = f64::midpoint(a, b);
+      if m <= a.min(b) || m >= a.max(b) {
+        break;
+      }
+      let ym = sample(m);
+      if !ym.is_finite() || ym < ya.min(yb) || ym > ya.max(yb) {
+        return None;
+      }
+      if (ym < level) == a_below {
+        (a, ya) = (m, ym);
+      } else {
+        (b, yb) = (m, ym);
+      }
+    }
+    // `a` stays on its starting side of `level`, `b` on the other.
+    let a_inside = if inside_is_above { !a_below } else { a_below };
+    Some(if a_inside { (a, ya) } else { (b, yb) })
+  };
+
+  let mut added: Vec<(f64, f64)> = Vec::new();
+  for pair in points.windows(2) {
+    let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+    let all_finite =
+      x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite();
+    if !all_finite || !is_pole_jump(y0, y1, lo, hi) {
+      continue;
+    }
+    // The edge the curve enters the window through, then the one it
+    // leaves it through.
+    let (enter, leave) = if y0 < y1 { (lo, hi) } else { (hi, lo) };
+    let Some(first) = bisect((x0, y0), (x1, y1), enter, y0 < y1) else {
+      continue;
+    };
+    added.push(first);
+    if first.1 >= lo
+      && first.1 <= hi
+      && let Some(second) = bisect(first, (x1, y1), leave, y0 > y1)
+    {
+      added.push(second);
+    }
+  }
+  if !added.is_empty() {
+    points.extend(added);
+    points.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    points.dedup_by(|a, b| a.0 == b.0);
+  }
   points
 }
 
@@ -6308,17 +6391,21 @@ fn generate_svg_with_options(
   // need (see `plot_padding`). A framed plot hands the left and bottom room
   // to plotters as label areas, which draws the frame's tick labels in
   // them; unframed axes draw their own labels, so it is plain margin.
-  let bottom_graphic_h =
-    opts.frame_label_bottom_graphic.as_ref().map_or(0.0, |g| {
+  let graphic_h = |g: &Option<GraphicLabel>| {
+    g.as_ref().map_or(0.0, |g| {
       scaled_graphic_label_size(g, render_width as f64 * 0.85, sf).1 / sf
-    });
+    })
+  };
   let decorations = plot_padding::plot_decorations(
     opts,
     &x_ticks,
     &y_ticks,
     (x_scale, y_scale),
     origin,
-    bottom_graphic_h,
+    (
+      graphic_h(&opts.frame_label_bottom_graphic),
+      graphic_h(&opts.frame_label_top_graphic),
+    ),
   );
   let auto_padding = opts.image_padding.is_none().then(|| {
     let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
@@ -8118,6 +8205,16 @@ fn generate_svg_with_options(
     );
   }
 
+  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
+  // tick label that does not fit in the padding is cut off at the image
+  // boundary, also when the picture is nested in a layout (`Labeled`,
+  // `Grid`) whose cells let their content overflow. The clip covers only
+  // the plot image itself, so it is applied before a legend is placed
+  // beside it: the legend lies outside that image and stays visible.
+  if opts.image_padding.is_some() {
+    clip_to_image(&mut buf, render_width, render_height);
+  }
+
   // `"Placeholder"` (and a list plot's `Automatic`, whose series have no
   // names) numbers the series; a lone series gets no such legend.
   if opts.plot_legends.is_empty()
@@ -8160,13 +8257,6 @@ fn generate_svg_with_options(
     if let Some(end) = buf.rfind("</svg>") {
       buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
     }
-  }
-  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
-  // tick label that does not fit in the padding is cut off at the image
-  // boundary, also when the picture is nested in a layout (`Labeled`,
-  // `Grid`) whose cells let their content overflow.
-  if opts.image_padding.is_some() {
-    clip_to_image(&mut buf, render_width, render_height);
   }
   Ok(buf)
 }
@@ -16450,12 +16540,15 @@ fn frame_label_picture(e: &Expr) -> Option<String> {
 /// `Grid[…]` uses so the frame label shows the table instead of nothing.
 fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
   let val = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
-  // `Style[label, …]` is looked through to the label it styles.
+  // `Style[label, …]` is looked through to the label it styles; its
+  // directives, innermost first, still style a `Row`'s items.
   let mut val = &val;
+  let mut styles: Vec<&[Expr]> = Vec::new();
   while let Expr::FunctionCall { name, args } = val
     && name == "Style"
     && !args.is_empty()
   {
+    styles.push(&args[1..]);
     val = &args[0];
   }
   let Expr::FunctionCall { name, args } = val else {
@@ -16466,8 +16559,35 @@ fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
       crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?
     }
     // A `Row` holding pictures (a legend swatch drawn as `Graphics`) can
-    // only be shown as a picture, not read off as text.
+    // only be shown as a picture, not read off as text. Its text is set
+    // like any frame label (gray sans-serif) under the label's own styles.
     "Row" if row_holds_graphics(args) => {
+      let frame_label_style = [
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+          replacement: Box::new(Expr::String("sans-serif".to_string())),
+        },
+        Expr::FunctionCall {
+          name: "GrayLevel".to_string(),
+          args: vec![Expr::Real(0.4)].into(),
+        },
+      ];
+      let mut row = val.clone();
+      for directives in styles
+        .iter()
+        .rev()
+        .copied()
+        .chain(std::iter::once(&frame_label_style[..]))
+      {
+        if let Some(styled) =
+          crate::functions::graphics::style_pushed_into_layout(&row, directives)
+        {
+          row = styled;
+        }
+      }
+      let Expr::FunctionCall { args, .. } = &row else {
+        return None;
+      };
       crate::functions::graphics::row_to_svg(args)?
     }
     _ => return None,
@@ -16591,6 +16711,12 @@ pub(crate) fn parse_explicit_tick_entries(
         );
         let label = match crate::functions::chart::expr_to_label(&label_expr) {
           _ if fraction.is_some() => fraction.unwrap_or_default(),
+          // A label whose `Style` changes how it is drawn (`Style["l",
+          // Italic]`) keeps that styling rather than being read as its
+          // plain text.
+          _ if crate::functions::graphics::has_explicit_style(&label_expr) => {
+            crate::functions::graphics::expr_to_svg_markup(&label_expr)
+          }
           Some(text) => crate::functions::graphics::box_string_to_svg(&text),
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))

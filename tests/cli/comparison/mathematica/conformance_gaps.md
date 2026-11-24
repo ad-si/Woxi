@@ -8010,13 +8010,13 @@ vertex and edge order may differ.
 
 ### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
 
-`PolyhedronData[]` holds the 160 solids Woxi knows, while Wolfram's list
+`PolyhedronData[]` holds the 162 solids Woxi knows, while Wolfram's list
 has 195 (a Demonstration drives a `1`–`195` slider through
 `PolyhedronData[][[n]]`). Positions therefore name different solids: the
 stored snapshots of that Demonstration show the `Icosidodecahedron` at
-position `127` (Woxi: position `84`) and a nonconvex uniform star polyhedron
+position `127` (Woxi: position `85`) and a nonconvex uniform star polyhedron
 with octahedral symmetry at position `51`.
-Positions `161`–`195` are out of range in Woxi (`Part::partw`). The missing
+Positions `163`–`195` are out of range in Woxi (`Part::partw`). The missing
 entities appear to be nonconvex uniform polyhedra and similar solids, but which
 ones, and how Wolfram sorts the family entries (`{"Antiprism", n}`,
 `{"Prism", n}`, …) among the names, could not be determined without
@@ -9655,6 +9655,16 @@ sorts the distinct roots.
 `FindInstance[x > 1000, x]` is `{{x -> 1027}}` and
 `FindInstance[x < -1000, x]` is `{{x -> -1075}}` in wolframscript (an
 internal heuristic); Woxi gives the nearest integers `1001` and `-1001`.
+
+## `CylindricalDecomposition` cell boundaries (unverified against wolframscript)
+
+Linear formulas are decomposed exactly, but where two bounds of a variable
+tie (`y > x && y > -x` at `x == 0`) the tie goes to the cell of the bound
+listed later (`(x < 0 && y > -x) || (x >= 0 && y > x)`), and cells from
+different disjuncts are merged only when they are adjacent pieces of the
+same cell. Wolfram may attach the boundary to the other side, split it
+into a cell of its own, or merge cells differently. Nonlinear formulas go
+through `Reduce` over the reals and stay unevaluated where it does.
 
 ## `NDSolve` accuracy and step control
 
