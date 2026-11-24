@@ -5290,6 +5290,18 @@ fn parse_rectangle(
   });
 }
 
+/// A polygon's `VertexColors` matched to its `n` points: a list with too
+/// few colors gives the remaining points black (as the front end does),
+/// while a list with too many can't be mapped and is dropped.
+fn polygon_vertex_colors(
+  colors: Option<Vec<Color>>,
+  n: usize,
+) -> Option<Vec<Color>> {
+  let mut colors = colors.filter(|c| !c.is_empty() && c.len() <= n)?;
+  colors.resize(n, BLACK);
+  Some(colors)
+}
+
 fn parse_polygon(
   args: &[Expr],
   style: &StyleState,
@@ -5301,9 +5313,8 @@ fn parse_polygon(
   // a list of them, which is what mapping a face-index table over a vertex
   // list produces.
   if let Some(pts) = expr_to_point_list(&args[0]) {
-    // `VertexColors` assigns one color per point, in order — only usable
-    // when the count actually lines up with the points being drawn.
-    let vc = vertex_colors.clone().filter(|c| c.len() == pts.len());
+    // `VertexColors` assigns one color per point, in order.
+    let vc = polygon_vertex_colors(vertex_colors.clone(), pts.len());
     let style = with_texture_coords(style, tex_coords.as_deref(), pts.len());
     prims.push(Primitive::PolygonPrim {
       points: pts,
@@ -5320,9 +5331,8 @@ fn parse_polygon(
     // boundary; hole boundaries have no colors of their own.
     let single = faces.len() == 1;
     for (outer, holes) in faces {
-      let vc = vertex_colors
-        .clone()
-        .filter(|c| single && c.len() == outer.len());
+      let vc = polygon_vertex_colors(vertex_colors.clone(), outer.len())
+        .filter(|_| single);
       prims.push(Primitive::PolygonPrim {
         points: outer,
         holes,
@@ -5338,7 +5348,7 @@ fn parse_polygon(
       .iter()
       .filter_map(|item| expr_to_point_list(item).map(|p| p.len()))
       .sum();
-    let vertex_colors = vertex_colors.filter(|c| c.len() == total_points);
+    let vertex_colors = polygon_vertex_colors(vertex_colors, total_points);
     let mut point_idx = 0usize;
     for item in items {
       if let Some(pts) = expr_to_point_list(item) {

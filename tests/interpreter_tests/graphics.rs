@@ -4119,17 +4119,42 @@ mod graphics {
           assert!(svg.matches("<polygon").count() > 4);
         }
 
-        /// A `VertexColors` list whose length doesn't match the point count
-        /// can't be mapped one-to-one, so `Polygon` falls back to its
-        /// ordinary flat fill instead of panicking or misaligning colors.
+        /// A `VertexColors` list with more colors than points can't be
+        /// mapped one-to-one, so `Polygon` falls back to its ordinary flat
+        /// fill instead of panicking or misaligning colors.
         #[test]
-        fn mismatched_color_count_falls_back_to_flat_fill() {
+        fn surplus_color_count_falls_back_to_flat_fill() {
           let svg = export_svg(
-            "Graphics[{Red, Polygon[{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}, \
-             VertexColors -> {Green, Blue}]}]",
+            "Graphics[{Red, Polygon[{{-1, -1}, {1, -1}, {1, 1}}, \
+             VertexColors -> {Green, Blue, Yellow, Cyan}]}]",
           );
           assert_eq!(svg.matches("<polygon").count(), 1);
           assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+        }
+
+        /// Fewer `VertexColors` than points: the leading points take the
+        /// given colors and every remaining point is black, so the fill
+        /// blends toward black there (not the current flat color).
+        #[test]
+        fn missing_vertex_colors_blend_toward_black() {
+          let svg = export_svg(
+            "Graphics[{Red, Polygon[Table[{Cos[2 Pi k/6], Sin[2 Pi k/6]}, \
+             {k, 6}], VertexColors -> {Green, Blue, Yellow}]}]",
+          );
+          assert!(svg.matches("<polygon").count() > 6);
+          assert!(!svg.contains("fill=\"rgb(255,0,0)\""));
+          // Shading near the uncolored vertices is (close to) black.
+          let near_black = svg.split("fill=\"rgb(").skip(1).any(|rest| {
+            let rgb: Vec<u32> = rest
+              .split(')')
+              .next()
+              .unwrap()
+              .split(',')
+              .filter_map(|v| v.trim().parse().ok())
+              .collect();
+            rgb.len() == 3 && rgb.iter().all(|&c| c < 40)
+          });
+          assert!(near_black, "{svg}");
         }
 
         /// A triangle (the minimal polygon) needs no subdivision fan beyond
