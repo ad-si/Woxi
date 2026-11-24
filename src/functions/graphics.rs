@@ -13338,7 +13338,8 @@ fn is_fan_from_first_vertex(points: &[(f64, f64)]) -> bool {
 }
 
 /// Draw `triangles` (indices into `all_pts`) with their corner colors
-/// blended across each one, as finely faceted flat-colored pieces.
+/// blended across each one: by a linear gradient where that is exact,
+/// else as finely faceted flat-colored pieces.
 #[allow(clippy::too_many_arguments)]
 fn emit_vertex_color_triangles(
   out: &mut String,
@@ -13391,43 +13392,74 @@ fn emit_vertex_color_triangles(
   } else {
     1.0
   };
-  let mut emit_tri = |p0: (f64, f64),
-                      c0: Color,
-                      p1: (f64, f64),
-                      c1: Color,
-                      p2: (f64, f64),
-                      c2: Color| {
+  // A triangle with its corners on screen, filled with `paint` (a color
+  // or a gradient) at opacity `alpha`.
+  let polygon = |out: &mut String,
+                 s: [(f64, f64); 3],
+                 paint: &str,
+                 alpha: f64| {
+    // An opaque facet is outlined in its own paint, so the anti-aliased
+    // edges of neighboring facets do not leave light seams between them.
+    let fill_opacity = if alpha < 1.0 {
+      format!(" fill-opacity=\"{alpha}\"")
+    } else {
+      format!(
+        " stroke=\"{paint}\" stroke-width=\"0.5\" stroke-linejoin=\"round\""
+      )
+    };
+    let [(sx0, sy0), (sx1, sy1), (sx2, sy2)] = s;
+    out.push_str(&format!(
+      "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{paint}\"{fill_opacity}/>\n",
+    ));
+  };
+  // Blending fully opaque corners can round the alpha just below 1.
+  let snap_alpha = |a: f64| if a > 1.0 - 1e-9 { 1.0 } else { a };
+  let emit_tri = |out: &mut String,
+                  p0: (f64, f64),
+                  c0: Color,
+                  p1: (f64, f64),
+                  c1: Color,
+                  p2: (f64, f64),
+                  c2: Color| {
     // Average the three corner colors (two lerps: midpoint of the first
     // pair, then 1/3 of the way to the third — equivalent to (c0+c1+c2)/3),
     // then fold in the shape's own `Opacity[…]`, exactly as the flat-fill
     // path folds it into `effective_face_color`.
     let avg = c0.lerp(c1, 0.5).lerp(c2, 1.0 / 3.0);
-    let avg = avg.with_alpha(avg.a * opacity);
-    // Blending fully opaque corners can round the alpha just below 1.
-    let avg = if avg.a > 1.0 - 1e-9 {
-      avg.with_alpha(1.0)
-    } else {
-      avg
-    };
-    let (sx0, sy0) = screen(p0);
-    let (sx1, sy1) = screen(p1);
-    let (sx2, sy2) = screen(p2);
-    // An opaque facet is outlined in its own color, so the anti-aliased
-    // edges of neighboring facets do not leave light seams between them.
-    let fill_opacity = if avg.a < 1.0 {
-      format!(" fill-opacity=\"{}\"", avg.a)
-    } else {
-      format!(
-        " stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"",
-        avg.to_svg_rgb()
-      )
-    };
-    out.push_str(&format!(
-      "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{}\"{}/>\n",
-      avg.to_svg_rgb(),
-      fill_opacity,
-    ));
+    let alpha = snap_alpha(avg.a * opacity);
+    polygon(
+      out,
+      [screen(p0), screen(p1), screen(p2)],
+      &avg.to_svg_rgb(),
+      alpha,
+    );
   };
+  // A triangle whose corner colors change along one screen direction
+  // only (a shade of one color, as on a lit bulb) is exactly one linear
+  // gradient; flat facets would show their steps as bands. `false` when
+  // the colors (or their opacities) do not allow that.
+  let mut gradients = crate::functions::smooth_shading::GradientDefs::default();
+  let mut emit_linear =
+    |out: &mut String, p: [(f64, f64); 3], c: [Color; 3]| {
+      use crate::functions::smooth_shading::LinearPaint;
+      if c.iter().any(|k| (k.a - c[0].a).abs() > 1e-9) {
+        return false;
+      }
+      let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+      let rgb = c.map(|k| (byte(k.r), byte(k.g), byte(k.b)));
+      let s = p.map(screen);
+      let mut definition = String::new();
+      let paint = match gradients.linear_paint(&mut definition, s, rgb) {
+        Some(LinearPaint::Gradient(url)) => url,
+        Some(LinearPaint::Flat) => {
+          c[0].lerp(c[1], 0.5).lerp(c[2], 1.0 / 3.0).to_svg_rgb()
+        }
+        Some(LinearPaint::NotLinear) | None => return false,
+      };
+      out.push_str(&definition);
+      polygon(out, s, &paint, snap_alpha(c[0].a * opacity));
+      true
+    };
   // A facet wholly beyond one edge of the picture cannot be seen.
   let offscreen = |ps: [(f64, f64); 3]| {
     let s = ps.map(screen);
@@ -13442,6 +13474,9 @@ fn emit_vertex_color_triangles(
       continue;
     }
     let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
+    if emit_linear(out, tri_p, tri_c) {
+      continue;
+    }
     let subdiv = ((subdiv as f64 * scale).round() as usize).max(2);
     let n = subdiv as f64;
     for row in 0..subdiv {
@@ -13454,12 +13489,12 @@ fn emit_vertex_color_triangles(
         let (p10, c10) = at(&tri_p, &tri_c, u1, v0);
         let (p01, c01) = at(&tri_p, &tri_c, u0, v1);
         if !offscreen([p00, p10, p01]) {
-          emit_tri(p00, c00, p10, c10, p01, c01);
+          emit_tri(out, p00, c00, p10, c10, p01, c01);
         }
         if col + row < subdiv - 1 {
           let (p11, c11) = at(&tri_p, &tri_c, u1, v1);
           if !offscreen([p10, p11, p01]) {
-            emit_tri(p10, c10, p11, c11, p01, c01);
+            emit_tri(out, p10, c10, p11, c11, p01, c01);
           }
         }
       }
@@ -17648,6 +17683,12 @@ fn render_primitive(
       let cell_w = (x_max - x_min) / ncols as f64;
       let cell_h = (y_max - y_min) / nrows as f64;
 
+      // The cells abut along fractional pixel positions: anti-aliased one
+      // by one, each shared edge would be covered only partly by both
+      // cells, letting the background through as a grid of light seams.
+      // Drawn with crisp edges they tile the pixels exactly, as the
+      // pixelated `<image>` of a large raster does.
+      out.push_str("<g shape-rendering=\"crispEdges\">\n");
       // Row 0 in Wolfram is at the bottom (y_min), so iterate bottom-to-top
       for (ri, row) in data.iter().enumerate() {
         let y = y_min + ri as f64 * cell_h;
@@ -17671,6 +17712,7 @@ fn render_primitive(
           ));
         }
       }
+      out.push_str("</g>\n");
     }
     // A screen-space icon (e.g. a Locator's appearance) centered on its
     // data-space anchor: embed the pre-rendered SVG at its pixel size.

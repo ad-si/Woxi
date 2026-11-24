@@ -807,10 +807,56 @@ mod graphics_primitives {
        {t, 0, 2 Pi, 2 Pi/40}]], VertexColors -> Join[{White}, \
        Table[Black, 41]]], ImageSize -> 200]",
     );
-    // Every fan triangle has the white center as a corner, so no facet
-    // anywhere is the pure rim color.
+    // Every fan triangle has the white center as a corner: each is one
+    // gradient from white to the black rim, none a flat rim color.
     assert!(!svg.contains("fill=\"rgb(0,0,0)\""), "black facet");
-    assert!(svg.matches("<polygon").count() > 100);
+    assert_eq!(svg.matches("<polygon").count(), 40, "{svg}");
+    assert_eq!(
+      svg.matches("<linearGradient").count(),
+      svg.matches("stop-color=\"#ffffff\"").count(),
+      "{svg}"
+    );
+  }
+
+  /// The cells of a small `Raster` abut at fractional pixel positions; each
+  /// anti-aliased on its own, they let the background show through every
+  /// shared edge as a grid of light seams. They are drawn with crisp edges.
+  #[test]
+  fn raster_cells_tile_without_seams() {
+    let svg = svg_of(
+      "Graphics[Raster[Table[{x, y, 0}, {y, 0, 1, 1/31}, {x, 0, 1, 1/31}]], \
+       ImageSize -> 120]",
+    );
+    let group = svg
+      .split("<g shape-rendering=\"crispEdges\">")
+      .nth(1)
+      .and_then(|rest| rest.split("</g>").next())
+      .unwrap_or_else(|| panic!("no crisp-edged group: {svg}"));
+    assert_eq!(group.matches("<rect ").count(), 32 * 32, "{svg}");
+  }
+
+  /// A `VertexColors` triangle whose corners are shades of one color (a
+  /// lit bulb, as `ThermometerGauge` draws) is filled with one linear
+  /// gradient, which blends it exactly; small flat facets showed their
+  /// steps as bands. Corners of unrelated colors still need the facets.
+  #[test]
+  fn vertex_colors_shades_of_one_color_fill_with_a_gradient() {
+    let shaded = svg_of(
+      "Graphics[Polygon[{{0, 0}, {1, 0}, {0, 1}}, VertexColors -> \
+       {Hue[0, 0.7, 1], Hue[0, 0.7, 0.3], Hue[0, 0.7, 0.6]}], \
+       ImageSize -> 300]",
+    );
+    assert_eq!(shaded.matches("<polygon").count(), 1, "{shaded}");
+    assert_eq!(shaded.matches("<linearGradient").count(), 1, "{shaded}");
+    // Opaque: the triangle is outlined in its own gradient, so it leaves
+    // no anti-aliasing seam against a neighbor.
+    assert!(shaded.contains("stroke=\"url(#"), "{shaded}");
+    let mixed = svg_of(
+      "Graphics[Polygon[{{0, 0}, {1, 0}, {0, 1}}, VertexColors -> \
+       {Red, Green, Blue}], ImageSize -> 300]",
+    );
+    assert!(mixed.matches("<polygon").count() > 1, "{mixed}");
+    assert!(!mixed.contains("<linearGradient"), "{mixed}");
   }
 
   /// `MeshCellLabel -> {0 -> …}` marks each labeled vertex with its point

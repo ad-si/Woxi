@@ -476,6 +476,17 @@ pub(crate) fn fit_gradient(
 /// filled flat.
 const FLAT_SPREAD: u8 = 2;
 
+/// A triangle's fill by [`GradientDefs::linear_paint`].
+pub(crate) enum LinearPaint {
+  /// One color (the corners' mean) is as good as a gradient.
+  Flat,
+  /// The `url(#…)` of a linear gradient.
+  Gradient(String),
+  /// The channels change along different directions, which no single
+  /// linear gradient reproduces.
+  NotLinear,
+}
+
 /// The gradients one SVG document defines, so a gradient used twice is
 /// written once.
 #[derive(Default)]
@@ -554,6 +565,28 @@ impl GradientDefs {
     pts: [(f64, f64); 3],
     colors: [(u8, u8, u8); 3],
   ) -> Option<String> {
+    match self.linear_paint(out, pts, colors)? {
+      LinearPaint::Flat => None,
+      LinearPaint::Gradient(paint) => Some(paint),
+      LinearPaint::NotLinear => {
+        let (id, definition) = rgb_triangle_pattern(pts, colors)?;
+        out.push_str(&definition);
+        Some(format!("url(#{id})"))
+      }
+    }
+  }
+
+  /// How a triangle with screen corners `pts` and corner colors `colors`
+  /// is filled by at most one linear gradient: flat in the corners' mean
+  /// color, by a gradient (written to `out` the first time it is needed),
+  /// or not at all, when the color changes along more than one direction.
+  /// `None` for a degenerate triangle.
+  pub(crate) fn linear_paint(
+    &mut self,
+    out: &mut String,
+    pts: [(f64, f64); 3],
+    colors: [(u8, u8, u8); 3],
+  ) -> Option<LinearPaint> {
     // Corners within a couple of levels of each other: a flat fill in
     // their mean is off by at most one level, which no one sees, and
     // saves the gradient.
@@ -563,19 +596,17 @@ impl GradientDefs {
     };
     if spread(|c| c.0).max(spread(|c| c.1)).max(spread(|c| c.2)) <= FLAT_SPREAD
     {
-      return None;
+      return Some(LinearPaint::Flat);
     }
     let c = colors
       .map(|(r, g, b)| [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0]);
     let fit = fit_gradient(pts, c)?;
     if fit.rms_error > 2.0 {
-      let (id, definition) = rgb_triangle_pattern(pts, colors)?;
-      out.push_str(&definition);
-      return Some(format!("url(#{id})"));
+      return Some(LinearPaint::NotLinear);
     }
     let (c1, c2) = (hex(fit.from_color), hex(fit.to_color));
     if c1 == c2 {
-      return None;
+      return Some(LinearPaint::Flat);
     }
     let body = format!(
       "x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"><stop stop-color=\"{c1}\"/><stop offset=\"1\" stop-color=\"{c2}\"/>",
@@ -596,7 +627,7 @@ impl GradientDefs {
         "<linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" {body}</linearGradient>"
       );
     }
-    Some(format!("url(#{id})"))
+    Some(LinearPaint::Gradient(format!("url(#{id})")))
   }
 }
 
