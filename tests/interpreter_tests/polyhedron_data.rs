@@ -1811,4 +1811,87 @@ mod polyhedron_data_tests {
       "{12, {1}}"
     );
   }
+
+  // Regression: the tetrahedron 3-compound and the dodecahedron 2-compound
+  // were unknown entities, so code building them from their vertices and
+  // faces failed with `PolyhedronData::notent`.
+  #[test]
+  fn compound_counts_and_metrics() {
+    assert_eq!(
+      interpret(
+        r#"Map[PolyhedronData["TetrahedronThreeCompound", #] &,
+          {"VertexCount", "EdgeCount", "FaceCount", "Midradius",
+           "SurfaceArea", "Volume", "Classes"}]"#
+      )
+      .unwrap(),
+      "{12, 18, 12, 1/(2*Sqrt[2]), 3*Sqrt[3], Missing[NotApplicable], \
+       {Amphichiral, Compound, Equilateral}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Map[PolyhedronData["DodecahedronTwoCompound", #] &,
+          {"VertexCount", "EdgeCount", "FaceCount", "Midradius", "Classes"}]"#
+      )
+      .unwrap(),
+      "{32, 60, 24, (3 + Sqrt[5])/4, {Amphichiral, Compound, Equilateral}}"
+    );
+    // The numbered spellings name the same solids.
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["Tetrahedron3Compound", "FaceCount"],
+          PolyhedronData["Dodecahedron2Compound", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{12, 24}"
+    );
+  }
+
+  // Each component solid is a block of consecutive faces (four triangles
+  // per tetrahedron, twelve pentagons per dodecahedron) with unit edges,
+  // and the compound is centered at the origin.
+  #[test]
+  fn compound_faces_form_unit_edge_components() {
+    for (name, per_part, parts) in [
+      ("TetrahedronThreeCompound", 4, 3),
+      ("DodecahedronTwoCompound", 12, 2),
+    ] {
+      let result = interpret(&format!(
+        r#"With[{{v = N[PolyhedronData["{name}", "VertexCoordinates"]],
+              f = PolyhedronData["{name}", "FaceIndices"]}},
+           {{Union[Round[Flatten[Map[Norm[v[[#[[1]]]] - v[[#[[2]]]]] &,
+               Partition[#, 2, 1, 1] & /@ f, {{2}}]], 10^-6]],
+             Union[Length /@ Map[Union @@ # &, Partition[f, {per_part}]]],
+             Length[Partition[f, {per_part}]],
+             Chop[Total[v]]}}]"#
+      ))
+      .unwrap();
+      let corners = if per_part == 4 { 4 } else { 20 };
+      assert_eq!(
+        result,
+        format!("{{{{1}}, {{{corners}}}, {parts}, {{0, 0, 0}}}}"),
+        "solid: {name}"
+      );
+    }
+  }
+
+  // Wolfram's vertex order and face winding for the tetrahedron 3-compound.
+  #[test]
+  fn tetrahedron_three_compound_vertices_and_faces() {
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["TetrahedronThreeCompound", "VertexCoordinates"][[{1, 3, 12}]]"#
+      )
+      .unwrap(),
+      "{{-1/4*Sqrt[2 + Sqrt[3]], (Sqrt[2] - Sqrt[6])/8, 1/(2*Sqrt[2])}, \
+       {-1/2*1/Sqrt[2], -1/2*1/Sqrt[2], -1/2*1/Sqrt[2]}, \
+       {Sqrt[2 + Sqrt[3]]/4, Sqrt[2 - Sqrt[3]]/4, 1/(2*Sqrt[2])}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TetrahedronThreeCompound", "FaceIndices"]"#)
+        .unwrap(),
+      "{{9, 4, 3}, {3, 4, 10}, {10, 9, 3}, {4, 9, 10}, {1, 12, 6}, \
+       {6, 12, 7}, {7, 1, 6}, {12, 1, 7}, {8, 5, 11}, {11, 5, 2}, \
+       {2, 8, 11}, {5, 8, 2}}"
+    );
+  }
 }
