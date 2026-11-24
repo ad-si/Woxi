@@ -4920,7 +4920,8 @@ fn with_texture_coords(
   out
 }
 
-fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
+/// The value of a `VertexColors -> value` option among `opts`.
+fn vertex_colors_value(opts: &[Expr]) -> Option<&Expr> {
   opts.iter().find_map(|o| match o {
     Expr::Rule {
       pattern,
@@ -4931,14 +4932,40 @@ fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") =>
     {
-      if let Expr::List(items) = replacement.as_ref() {
-        items.iter().map(parse_color).collect()
-      } else {
-        None
-      }
+      Some(replacement.as_ref())
     }
     _ => None,
   })
+}
+
+/// `VertexColors -> {{c11, c12, …}, {c21, …}, …}`: one color list per
+/// part of a multi-part primitive (each sub-polygon of
+/// `Polygon[{poly1, poly2, …}]`, each segment of `Line[{seg1, …}]`).
+/// `None` when the value is not a list of color lists.
+fn parse_nested_vertex_colors(opts: &[Expr]) -> Option<Vec<Vec<Color>>> {
+  let Expr::List(parts) = vertex_colors_value(opts)? else {
+    return None;
+  };
+  parts
+    .iter()
+    .map(|part| match part {
+      Expr::List(items) => items.iter().map(parse_color).collect(),
+      _ => None,
+    })
+    .collect()
+}
+
+/// `VertexColors -> {c1, c2, …}`: one color per point, in order. The
+/// per-part form `{{c11, …}, {c21, …}}` is read as its parts concatenated.
+fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
+  let Expr::List(items) = vertex_colors_value(opts)? else {
+    return None;
+  };
+  items
+    .iter()
+    .map(parse_color)
+    .collect::<Option<Vec<Color>>>()
+    .or_else(|| parse_nested_vertex_colors(opts).map(|parts| parts.concat()))
 }
 
 /// The segments of a `Line` whose vertices use `Scaled[{dx, dy}, pos]` /
@@ -5432,17 +5459,30 @@ fn parse_polygon(
     // `VertexColors` for a list of polygons assigns one color per point,
     // in order, across all sub-polygons concatenated — mirroring how it
     // works for `Line`'s multi-segment form.
+    // The per-polygon form `{{c11, …}, {c21, …}}` gives each sub-polygon
+    // its own color list instead, matched to that polygon's points.
+    let per_polygon = parse_nested_vertex_colors(&args[1..])
+      .filter(|parts| parts.len() == items.len());
     let total_points: usize = items
       .iter()
       .filter_map(|item| expr_to_point_list(item).map(|p| p.len()))
       .sum();
-    let vertex_colors = polygon_vertex_colors(vertex_colors, total_points);
+    let vertex_colors = if per_polygon.is_some() {
+      None
+    } else {
+      polygon_vertex_colors(vertex_colors, total_points)
+    };
     let mut point_idx = 0usize;
-    for item in items {
+    for (item_idx, item) in items.iter().enumerate() {
       if let Some(pts) = expr_to_point_list(item) {
-        let vc = vertex_colors
-          .as_ref()
-          .map(|c| c[point_idx..point_idx + pts.len()].to_vec());
+        let vc = match &per_polygon {
+          Some(parts) => {
+            polygon_vertex_colors(Some(parts[item_idx].clone()), pts.len())
+          }
+          None => vertex_colors
+            .as_ref()
+            .map(|c| c[point_idx..point_idx + pts.len()].to_vec()),
+        };
         point_idx += pts.len();
         prims.push(Primitive::PolygonPrim {
           points: pts,
@@ -13106,6 +13146,39 @@ fn emit_polygon_vertex_gradient(
   svg_w: f64,
   svg_h: f64,
 ) {
+  // Corners that all share one color blend to that color everywhere: one
+  // flat even-odd fill draws the same picture as the facet mesh, without
+  // thousands of facets per polygon (a hex grid colored cell by cell
+  // through `VertexColors` would otherwise be enormous).
+  if let Some(&first) = colors.first()
+    && colors.len() == points.len()
+    && colors.iter().all(|&c| c == first)
+  {
+    let fill = first.with_alpha(first.a * opacity);
+    let mut d = String::new();
+    for ring in std::iter::once(points).chain(holes.iter().map(Vec::as_slice)) {
+      for (i, &(x, y)) in ring.iter().enumerate() {
+        d.push_str(&format!(
+          "{}{:.2},{:.2} ",
+          if i == 0 { "M" } else { "L" },
+          coord_x(x, bb, svg_w),
+          coord_y(y, bb, svg_h)
+        ));
+      }
+      d.push_str("Z ");
+    }
+    let fill_opacity = if fill.a < 1.0 {
+      format!(" fill-opacity=\"{}\"", fill.a)
+    } else {
+      String::new()
+    };
+    out.push_str(&format!(
+      "<path d=\"{}\" fill=\"{}\"{fill_opacity} fill-rule=\"evenodd\"/>\n",
+      d.trim_end(),
+      fill.to_svg_rgb(),
+    ));
+    return;
+  }
   // An outline that crosses itself, or runs around a second loop from a
   // corner it already visited, is filled by the even-odd rule like any
   // other polygon: only the regions it winds around an odd number of
