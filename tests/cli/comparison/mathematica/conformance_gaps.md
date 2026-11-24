@@ -5632,6 +5632,14 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
   of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
 - `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
   triangulation in wolframscript; Woxi draws one polygon over the points.
+- A `ParametricPlot3D` surface with `PlotPoints -> n, MaxRecursion -> r`
+  is sampled on a uniform grid of `(n - 1) 2^r` cells per direction (at
+  most the automatic grid); wolframscript refines only where the surface
+  bends (the figure-eight Klein bottle at `n = 20, r = 1`: 2286 triangles
+  against Woxi's 2888). Where a surface folds over at its silhouette
+  (that Klein bottle's outer rim), the facets straddling the fold show as
+  small teeth between the lit outside and the darker inside, which
+  wolframscript's finer facets there keep too small to see.
 - `ContourPlot3D` meshes its `PlotPoints` grid only, while wolframscript
   refines it adaptively (`MaxRecursion`): with `PlotPoints -> 15` an
   ellipsoid shows a 2–3× finer mesh in wolframscript.

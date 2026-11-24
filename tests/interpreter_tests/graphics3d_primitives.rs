@@ -3605,4 +3605,20 @@ mod surface_outlines_and_meshes {
     // 17 lines each way, the 15 inner ones in two pieces each.
     assert_eq!(s.matches("stroke=\"#000000a0\"").count(), 64, "{s}");
   }
+
+  // `PlotPoints -> n` with `MaxRecursion -> r` samples ParametricPlot3D
+  // more finely than `PlotPoints` alone, up to `(n - 1) 2^r` cells per
+  // direction, as Wolfram's adaptive sampler may. `MaxRecursion` was
+  // ignored whenever `PlotPoints` was given.
+  #[test]
+  fn parametric_plot3d_max_recursion_refines_the_grid() {
+    let count = |r: u32| {
+      polygon_count(&svg(&format!(
+        "ParametricPlot3D[{{Cos[u], Sin[u], v}}, {{u, 0, 2}}, {{v, 0, 1}}, \
+         PlotPoints -> 10, MaxRecursion -> {r}, Mesh -> None]"
+      )))
+    };
+    let (coarse, fine) = (count(0), count(1));
+    assert!(fine >= 3 * coarse, "{coarse} vs {fine}");
+  }
 }

@@ -1372,6 +1372,28 @@ fn split_depth_cycles(
   None
 }
 
+/// `triangles` (with their corners `worlds` in the normalized box) cut
+/// where they pass through each other or their depth order cycles, and put in back-to-front draw order
+/// (see [`painter_order`]).
+fn painter_sorted(
+  mut triangles: Vec<Triangle>,
+  mut worlds: Vec<[Point3D; 3]>,
+  camera: &Camera,
+) -> (Vec<Triangle>, Vec<[Point3D; 3]>) {
+  split_interpenetrating(&mut worlds, &mut triangles, camera);
+  let edges = split_depth_cycles(&mut worlds, &mut triangles, camera);
+  let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
+  let depths: Vec<_> = triangles.iter().map(|t| t.depth).collect();
+  let opacities: Vec<_> = triangles.iter().map(|t| t.opacity).collect();
+  let order =
+    painter_order(&worlds, &projected, &depths, &opacities, camera, edges);
+  let mut slots: Vec<Option<Triangle>> =
+    triangles.into_iter().map(Some).collect();
+  let worlds = order.iter().map(|&i| worlds[i]).collect();
+  let triangles = order.into_iter().filter_map(|i| slots[i].take()).collect();
+  (triangles, worlds)
+}
+
 /// Back-to-front draw order for the triangles. A centroid sort alone draws a
 /// large face that lies behind a small one on top of it (a cube inside a
 /// polyhedron pokes through its faces), so every overlapping pair is first
@@ -16069,26 +16091,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Painter's algorithm
-  split_interpenetrating(&mut triangle_vertices, &mut all_triangles, &camera);
-  let edges =
-    split_depth_cycles(&mut triangle_vertices, &mut all_triangles, &camera);
-  {
-    let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
-    let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
-    let opacities: Vec<_> = all_triangles.iter().map(|t| t.opacity).collect();
-    let order = painter_order(
-      &triangle_vertices,
-      &projected,
-      &depths,
-      &opacities,
-      &camera,
-      edges,
-    );
-    let mut slots: Vec<Option<Triangle>> =
-      all_triangles.drain(..).map(Some).collect();
-    triangle_vertices = order.iter().map(|&i| triangle_vertices[i]).collect();
-    all_triangles = order.into_iter().filter_map(|i| slots[i].take()).collect();
-  }
+  let (all_triangles, triangle_vertices) =
+    painter_sorted(all_triangles, triangle_vertices, &camera);
 
   // Compute 3D bounding box of all primitives for the wireframe box
   let [
@@ -26763,7 +26767,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram starts `ParametricPlot3D` from 15 samples per direction.
   let recursion_grid = |p: Option<usize>, auto: usize| -> usize {
     match (p, max_recursion) {
-      (Some(p), _) => p - 1,
+      // Wolfram's sampler halves the cells that are not yet smooth: a
+      // refined grid, no finer than the automatic one, stands in for it.
+      (Some(p), Some(r)) => {
+        let cells = p - 1;
+        cells.saturating_mul(1 << r.min(10)).min(auto.max(cells))
+      }
+      (Some(p), None) => p - 1,
       (None, Some(r)) => 14usize.saturating_mul(1 << r.min(10)).min(auto),
       (None, None) => auto,
     }
@@ -27451,6 +27461,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  // Each triangle's corners in the normalized box, for the draw order.
+  let mut all_worlds: Vec<[Point3D; 3]> = Vec::new();
 
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
@@ -27527,6 +27539,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style: cf_style,
           plot_style: shaded_style.or_else(|| style.cloned()),
         });
+        all_worlds.push([v0, v1, v2]);
         let center = Point3D {
           x: (v0.x + v1.x + v2.x) / 3.0,
           y: (v0.y + v1.y + v2.y) / 3.0,
@@ -27576,9 +27589,23 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         push_triangle(p[0], p[k], p[k + 1], piece.cell);
       }
     }
-    shade_smoothly(
+    // Like Wolfram's `VertexNormals`, a sample is lit with the normal of
+    // the surface itself there — the cross product of its tangents along
+    // the two parameters — rather than an average of the coarse facets
+    // around it, which creases where the surface bends sharply between
+    // samples. Corners off the grid (a `RegionFunction` cut) fall back to
+    // the averaged normal.
+    let grid_normals = parameter_grid_normals(sg, &normalize);
+    let exact = |_: usize, p: Point3D, _: [f64; 3], _: Point3D| {
+      grid_normals
+        .get(&grid_point_key(p))
+        .copied()
+        .unwrap_or([0.0; 3])
+    };
+    shade_smoothly_with(
       &mut all_triangles,
       &facets,
+      Some(&exact),
       scene.frame.toward,
       |facet, normal, at| {
         shade_facet(
@@ -27669,16 +27696,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  // A surface passing through itself (a Klein bottle) has facets that no
+  // centroid sort orders correctly. Order them as `Graphics3D` does: cut
+  // where they intersect, then by which one lies behind the other's
+  // plane.
+  let (all_triangles, all_worlds) =
+    painter_sorted(all_triangles, all_worlds, &camera);
 
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
-    None,
+    Some(&all_worlds),
     false,
     &camera,
     (gx_min, gx_max),
