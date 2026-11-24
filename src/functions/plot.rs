@@ -16589,6 +16589,12 @@ pub(crate) fn parse_explicit_tick_entries(
         );
         let label = match crate::functions::chart::expr_to_label(&label_expr) {
           _ if fraction.is_some() => fraction.unwrap_or_default(),
+          // A label whose `Style` changes how it is drawn (`Style["l",
+          // Italic]`) keeps that styling rather than being read as its
+          // plain text.
+          _ if crate::functions::graphics::has_explicit_style(&label_expr) => {
+            crate::functions::graphics::expr_to_svg_markup(&label_expr)
+          }
           Some(text) => crate::functions::graphics::box_string_to_svg(&text),
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))

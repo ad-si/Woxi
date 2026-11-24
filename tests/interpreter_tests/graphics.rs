@@ -16403,6 +16403,27 @@ mod plot3d {
       assert!(graphics.contains(">p0.5<"), "{graphics}");
     }
 
+    // A `FrameTicks` label written as `Style[label, Italic]` (or bold, or
+    // colored) is drawn with that styling, not as its plain text, in
+    // `Graphics` and `Plot` alike.
+    #[test]
+    fn frame_tick_labels_keep_their_style() {
+      let graphics = export_svg(
+        r#"Graphics[Point[{{0, 0}, {3, 3}}], Frame -> True,
+          FrameTicks -> {{{{0, "O"}, {2, Style["l", Italic]}}, None},
+                         {{{0, "O"}, {3, Style["s", Bold]}}, None}}]"#,
+      );
+      assert!(graphics.contains("font-style=\"italic\""), "{graphics}");
+      assert!(graphics.contains("font-weight=\"bold\""), "{graphics}");
+      assert!(graphics.contains(">O<"), "{graphics}");
+      let plot = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameTicks -> {{{{0.5, Style["m", Italic]}}, None},
+                         {Automatic, None}}]"#,
+      );
+      assert!(plot.contains("font-style=\"italic\""), "{plot}");
+    }
+
     // `FrameTicks` naming a `Module` local that holds an explicit tick list
     // uses the list: the symbol is not called as a tick function, so the
     // frame is not marked invalid and the right-edge labels are drawn.
