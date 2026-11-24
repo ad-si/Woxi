@@ -3457,3 +3457,72 @@ mod arrow_setback_3d {
     assert!((length(a) - length(b)).abs() < 1.0, "{a:?} vs {b:?}");
   }
 }
+
+mod surface_outlines_and_meshes {
+  use super::*;
+
+  /// The end points of every `<line>` stroked in `stroke`, as written.
+  fn line_ends(svg: &str, stroke: &str) -> Vec<[(String, String); 2]> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .filter_map(|l| l.split("/>").next())
+      .filter(|l| l.contains(&format!("stroke=\"{stroke}\"")))
+      .filter_map(|l| {
+        let attr = |k: &str| -> Option<String> {
+          Some(
+            l.split(&format!("{k}=\""))
+              .nth(1)?
+              .split('"')
+              .next()?
+              .into(),
+          )
+        };
+        Some([(attr("x1")?, attr("y1")?), (attr("x2")?, attr("y2")?)])
+      })
+      .collect()
+  }
+
+  /// The corners of every `<polygon>`.
+  fn polygon_corners(svg: &str) -> Vec<Vec<(f64, f64)>> {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .map(|pts| {
+        pts
+          .split(' ')
+          .filter_map(|p| {
+            let (x, y) = p.split_once(',')?;
+            Some((x.parse().ok()?, y.parse().ok()?))
+          })
+          .collect()
+      })
+      .collect()
+  }
+
+  // Wolfram outlines a `BSplineSurface` along its open rim in its
+  // `EdgeForm`, and `EdgeForm[None]` leaves it bare. Woxi drew no rim at
+  // all, so the curved edges of the surface faded into the background.
+  #[test]
+  fn bspline_surface_rim_follows_edge_form() {
+    let scene = |edge: &str| {
+      svg(&format!(
+        "Graphics3D[{{{edge}BSplineSurface[Table[{{i, j, Sin[i] Cos[j]}}, \
+         {{i, 0, 3}}, {{j, 0, 3}}]]}}, Boxed -> False]"
+      ))
+    };
+    let red = scene("EdgeForm[Red], ");
+    assert!(red.contains("rgb(255,0,0)"), "a red rim: {red}");
+    let bare = scene("EdgeForm[None], ");
+    assert!(!bare.contains("rgb(255,0,0)"));
+    assert_ne!(scene(""), bare, "the default EdgeForm draws a rim");
+  }
+
+  // A torus is closed: it has no rim to outline.
+  #[test]
+  fn closed_surfaces_have_no_rim() {
+    let red = svg("Graphics3D[{EdgeForm[Red], Torus[]}, Boxed -> False]");
+    assert!(!red.contains("rgb(255,0,0)"), "{red}");
+  }
+}

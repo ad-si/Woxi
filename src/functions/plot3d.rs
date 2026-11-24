@@ -8325,6 +8325,10 @@ enum Primitive3D {
     tris: Vec<(Point3D, Point3D, Point3D)>,
     style: StyleState3D,
     smooth: bool,
+    /// The surface is a face whose open rim (the triangle edges no other
+    /// triangle shares) is drawn in its `EdgeForm`, as Wolfram outlines a
+    /// `BSplineSurface`. Curved solids and tubes draw no rim.
+    outlined: bool,
   },
 }
 
@@ -10093,6 +10097,7 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
       // A tilted box keeps its flat faces and their outline, unlike the
       // curved solids, whose facet cuts must stay invisible.
       smooth: !matches!(prim, Primitive3D::Cuboid { .. }),
+      outlined: matches!(prim, Primitive3D::Surface3D { outlined: true, .. }),
     };
     return;
   }
@@ -11282,6 +11287,7 @@ fn collect_3d_primitives_styled(
               tris: tessellate_capsule(p1, p2, radius),
               style: style.clone(),
               smooth: true,
+              outlined: false,
             });
           }
         }
@@ -11460,6 +11466,7 @@ fn collect_3d_primitives_styled(
                   tris,
                   style: style.clone(),
                   smooth: true,
+                  outlined: false,
                 });
               }
             }
@@ -11492,6 +11499,7 @@ fn collect_3d_primitives_styled(
             tris: tessellate_torus(&center, r1, r2),
             style: style.clone(),
             smooth: true,
+            outlined: false,
           });
         }
         // `BSplineCurve[{p1, …}, opts…]` draws the spline its control
@@ -11513,6 +11521,7 @@ fn collect_3d_primitives_styled(
               tris: tessellate_bspline_surface(&grid),
               style: style.clone(),
               smooth: true,
+              outlined: true,
             });
           }
         }
@@ -11577,6 +11586,7 @@ fn collect_3d_primitives_styled(
                 tris,
                 style,
                 smooth: true,
+                outlined: false,
               });
             }
             *style = saved;
@@ -12241,6 +12251,7 @@ fn collect_raster3d(
           tris: tessellate_cuboid(&at(i0, j0, k0), &at(i1, j1, k1)),
           style: voxel_style,
           smooth: false,
+          outlined: false,
         });
       }
     }
@@ -12334,6 +12345,7 @@ fn collect_opaque_raster3d_faces(
             ],
             style: voxel_style,
             smooth: false,
+            outlined: false,
           });
         }
       }
@@ -13067,6 +13079,33 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
     is_edge(corners[1], corners[2]),
     is_edge(corners[2], corners[0]),
   ]
+}
+
+/// The rim of an open surface: each triangle edge no other triangle
+/// shares (corners matched to 1e-8, so a closed seam stays shut).
+fn open_rim_flags(tris: &[(Point3D, Point3D, Point3D)]) -> Vec<[bool; 3]> {
+  use std::collections::HashMap;
+  let key = |p: Point3D| {
+    let q = |v: f64| (v * 1e8).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+  };
+  let edge_key = |a: Point3D, b: Point3D| {
+    let (ka, kb) = (key(a), key(b));
+    if ka <= kb { (ka, kb) } else { (kb, ka) }
+  };
+  let mut uses: HashMap<_, usize> = HashMap::new();
+  for t in tris {
+    for (a, b) in [(t.0, t.1), (t.1, t.2), (t.2, t.0)] {
+      *uses.entry(edge_key(a, b)).or_default() += 1;
+    }
+  }
+  tris
+    .iter()
+    .map(|t| {
+      let rim = |a: Point3D, b: Point3D| uses[&edge_key(a, b)] == 1;
+      [rim(t.0, t.1), rim(t.1, t.2), rim(t.2, t.0)]
+    })
+    .collect()
 }
 
 /// Which edges of a flat-faced mesh's triangles outline a face: an edge is an
@@ -14344,6 +14383,7 @@ fn perspective_warp(
         tris,
         style,
         smooth,
+        outlined,
       } => {
         let tris: Vec<(Point3D, Point3D, Point3D)> = tris
           .iter()
@@ -14354,6 +14394,7 @@ fn perspective_warp(
             tris,
             style,
             smooth,
+            outlined,
           });
         }
       }
@@ -15178,14 +15219,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let clipped = clip_triangles_to_box(&tris, &bounds);
       let style = primitive_style(prim).clone();
-      let smooth = match prim {
-        Primitive3D::Surface3D { smooth, .. } => *smooth,
-        _ => true,
+      let (smooth, outlined) = match prim {
+        Primitive3D::Surface3D {
+          smooth, outlined, ..
+        } => (*smooth, *outlined),
+        _ => (true, false),
       };
       *prim = Primitive3D::Surface3D {
         tris: clipped,
         style,
         smooth,
+        outlined,
       };
     }
     prims.retain(
@@ -15585,10 +15629,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tris,
           style,
           smooth,
+          outlined,
         } => {
           // A Raster3D voxel is a box, so only its own edges are outlined.
           if !*smooth {
             holed_boundaries = coplanar_cut_flags(tris);
+          } else if *outlined && style.edges {
+            holed_boundaries = open_rim_flags(tris);
           }
           (tris.clone(), style)
         }
