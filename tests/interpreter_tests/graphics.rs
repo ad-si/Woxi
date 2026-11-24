@@ -3082,7 +3082,7 @@ mod graphics {
         "Graphics[Line[{{0, 0}, {1, 1}}]]",
         "Graphics[{Thickness[0.05], Red, Line[{{0, 0}, {0, 2}}]}]",
         "Graphics[{Thickness -> 0.025, Green, Line[{{1, 2}, {1, -2}}]}]",
-        "Graphics[{Dashed, Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]",
+        "Graphics[{Red, Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]",
       ] {
         let svg = export_svg(code);
         assert!(
@@ -3104,7 +3104,8 @@ mod graphics {
         "Line[{{0, 0}, {1, 0}, {1, 1}}]",
         "Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]",
       ] {
-        for directives in ["", "Thickness[0.02], ", "Red, Dashed, "] {
+        // (A dashed line has butt caps; see `dashed_lines_have_butt_caps`.)
+        for directives in ["", "Thickness[0.02], ", "Red, "] {
           let svg = export_svg(&format!("Graphics[{{{directives}{line}}}]"));
           assert!(svg.contains("stroke-linecap=\"square\""), "{line}: {svg}");
           assert!(!svg.contains("stroke-linecap=\"butt\""), "{line}: {svg}");
@@ -31245,8 +31246,137 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    // Too few points to interpolate (two points span no triangle): no
-    // arrows, as in the Wolfram Language.
+    // List data drops only an exactly zero vector: the `1.*^-16` residue a
+    // real-stepped `Table` leaves at the center of a rotation field still
+    // gets its arrow, as in Wolfram (only a sampled function's vectors
+    // below `$MachineEpsilon` are noise).
+    #[test]
+    fn list_vector_plot_keeps_tiny_vectors() {
+      let count = |center: &str| {
+        interpret(&format!(
+          "d = N[Table[{{y, -x}}, {{x, -2, 2, 1/2}}, {{y, -2, 2, 1/2}}]]; \
+           d[[5, 5]] = {center}; \
+           Length[Cases[ListVectorPlot[d][[1]], _Arrow, Infinity]]"
+        ))
+        .unwrap()
+        .parse::<i64>()
+        .unwrap()
+      };
+      assert_eq!(count("{1.*^-20, 0.}"), count("{0., 0.}") + 1);
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot[{2.*^-16, 0}, {x, -1, 1}, {y, -1, 1}][[1]], \
+             _Arrow, Infinity]]"
+        )
+        .unwrap(),
+        "0"
+      );
+    }
+
+    // `InterpolationOrder -> 0` on matrix data fills the cell between
+    // nodes k and k + 1 with the value at node k, as Wolfram does: a 2x2
+    // matrix is one flat cell in the color of its first entry (it used to
+    // be split into four quadrants around the nodes).
+    #[test]
+    fn list_density_plot_order_zero_uses_lower_node() {
+      let svg = export_svg(
+        "ListDensityPlot[{{0, 1}, {2, 3}}, InterpolationOrder -> 0, \
+         ColorFunction -> GrayLevel]",
+      );
+      let i = svg.find("base64,").unwrap() + 7;
+      let j = i + svg[i..].find('"').unwrap();
+      use base64::Engine;
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(&svg[i..j])
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgba8();
+      let first = *img.get_pixel(0, 0);
+      assert!(img.pixels().all(|p| *p == first), "not one flat cell");
+      assert_eq!(first.0[0], 0, "{first:?}");
+    }
+
+    // The polar axes and their labels are drawn over the curve, the grid
+    // under it, as in Wolfram (the axes used to be painted first).
+    #[test]
+    fn polar_axes_are_drawn_over_the_curve() {
+      let svg = export_svg(
+        "PolarPlot[2 + Cos[3 t], {t, 0, 2 Pi}, PolarAxes -> True, \
+         PolarGridLines -> Automatic]",
+      );
+      let curve = svg.find("3D99CC").expect("curve");
+      let label = svg.find(">4.<").expect("radial label");
+      assert!(curve < label, "curve {curve} after label {label}");
+    }
+
+    // `Region[reg, Axes -> True]` draws its axes: the option no longer
+    // loses to Region's own `Axes -> False` default.
+    #[test]
+    fn region_honors_axes_option() {
+      let svg = |opts: &str| {
+        export_svg(&format!(
+          "Region[ImplicitRegion[1/4 <= x^2 + y^2 <= 4 && y >= x/2, {{x, y}}], \
+           PlotRange -> {{{{-2.2, 2.2}}, {{-2.2, 2.2}}}}{opts}]"
+        ))
+      };
+      assert_eq!(svg(", Axes -> True").matches(">-1<").count(), 2);
+      assert_eq!(svg("").matches(">-1<").count(), 0);
+    }
+
+    // A plot's frame is stroked half a point wide, as Wolfram draws it
+    // (it was a full point, reading as a dark border).
+    #[test]
+    fn plot_frame_is_half_a_point_wide() {
+      let svg = export_svg("Plot[1/x, {x, -2, 2}, Frame -> True]");
+      let frame = svg
+        .match_indices("<polyline ")
+        .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+        .find(|el| el.matches(',').count() == 5)
+        .expect("closed frame polyline");
+      assert!(frame.contains("stroke-width=\"5\""), "{frame}");
+    }
+
+    // A ParametricPlot region's curved edges are cut into chords fine
+    // enough to meet the boundary line drawn over them: the annulus of
+    // `PlotPoints -> 20` has (as in Wolfram) at least 76 chords along its
+    // outer arc, where 19 left visible white slivers.
+    #[test]
+    fn parametric_region_follows_curved_edges() {
+      assert_eq!(
+        interpret(
+          "p = ParametricPlot[{r Cos[t], r Sin[t]}, {r, 1, 2}, \
+           {t, 0, 3 Pi/2}, PlotPoints -> 20]; \
+           Length[Union[Round[Select[Flatten[Cases[p, Polygon[pts_] :> pts, \
+           Infinity], 1], Abs[Norm[#] - 2] < 10^-9 &], 10^-6]]] >= 77"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // A user function returning a picture is laid out like the
+    // `Graphics[…]` it builds: drawn again at the cell's size (keeping its
+    // own proportions, as Wolfram does), not drawn at full size and then
+    // shrunk with its labels.
+    #[test]
+    fn graphics_row_redraws_user_function_pictures() {
+      let cells = |row: &str| {
+        let svg = export_svg(row);
+        svg
+          .match_indices("<svg x=")
+          .map(|(i, _)| svg[i..i + svg[i..].find('>').unwrap()].to_string())
+          .collect::<Vec<_>>()
+      };
+      let direct = cells(
+        "GraphicsRow[{Graphics[{Disk[]}, Frame -> True], \
+         Graphics[{Disk[]}, Frame -> True]}, ImageSize -> 520]",
+      );
+      let via_function = cells(
+        "p[c_] := Graphics[{Disk[]}, Frame -> True]; \
+         GraphicsRow[{p[1], p[2]}, ImageSize -> 520]",
+      );
+      assert_eq!(direct, via_function);
+      assert!(!direct[0].contains("viewBox=\"0 0 360"), "{direct:?}");
+    }
     #[test]
     fn list_vector_plot_two_points_draws_nothing() {
       assert_eq!(
@@ -68401,7 +68531,7 @@ mod frame_ticks_per_edge {
     assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#0000FF");
     // The frame keeps its own style.
     assert!(
-      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"5\""),
       "{svg}"
     );
   }
@@ -68445,7 +68575,7 @@ mod frame_ticks_per_edge {
       "{svg}"
     );
     assert!(
-      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"5\""),
       "{svg}"
     );
     assert!(
@@ -68453,7 +68583,7 @@ mod frame_ticks_per_edge {
       "{svg}"
     );
     assert!(
-      svg.contains("stroke=\"#0000FF\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#0000FF\" stroke-width=\"5\""),
       "{svg}"
     );
     // The y = 0 axis keeps the theme gray hairline.

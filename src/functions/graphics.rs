@@ -13106,6 +13106,21 @@ fn emit_polygon_vertex_gradient(
   svg_w: f64,
   svg_h: f64,
 ) {
+  // Wolfram blends a polygon over the fan of triangles from its first
+  // vertex whenever that fan covers it exactly once: a convex polygon, or
+  // one star-shaped around its first vertex (a shaded disk drawn as a fan
+  // around an off-center highlight, as `ThermometerGauge`'s bulb).
+  if holes.is_empty()
+    && colors.len() == points.len()
+    && is_fan_from_first_vertex(points)
+  {
+    let triangles: Vec<[usize; 3]> =
+      (1..points.len() - 1).map(|i| [0, i, i + 1]).collect();
+    emit_vertex_color_triangles(
+      out, points, colors, &triangles, opacity, bb, svg_w, svg_h,
+    );
+    return;
+  }
   // An outline that crosses itself, or runs around a second loop from a
   // corner it already visited, is filled by the even-odd rule like any
   // other polygon: only the regions it winds around an odd number of
@@ -13161,28 +13176,16 @@ fn emit_polygon_vertex_gradient(
     }
     hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
   }
-  // Wolfram blends a convex polygon over the fan of triangles from its
-  // first vertex; anything else is ear-clipped. (A self-crossing outline
-  // never gets here: it is split into its even-odd regions above.)
-  let convex = holes.is_empty() && points.len() >= 3 && {
-    let n = points.len();
-    let turn = |i: usize| {
-      let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
-      (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
-    };
-    let turns: Vec<f64> = (0..n).map(turn).collect();
-    turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
-  };
-  let triangles: Vec<[usize; 3]> = if convex {
-    (1..points.len() - 1).map(|i| [0, i, i + 1]).collect()
-  } else {
+  // Anything the first vertex's fan does not cover is ear-clipped. (A
+  // self-crossing outline never gets here: it is split into its even-odd
+  // regions above.)
+  let triangles: Vec<[usize; 3]> =
     crate::functions::polygon_holes::triangulate_with_holes(
       &all_pts,
       &outer_indices,
       &hole_indices,
     )
-    .triangles
-  };
+    .triangles;
   emit_vertex_color_triangles(
     out,
     &all_pts,
@@ -13193,6 +13196,49 @@ fn emit_polygon_vertex_gradient(
     svg_w,
     svg_h,
   );
+}
+
+/// Whether the fan of triangles `(p0, p_i, p_{i+1})` covers the polygon
+/// exactly once: seen from its first vertex, the rest of the outline turns
+/// one way only (degenerate, zero-area steps allowed) through at most one
+/// full turn. Convex polygons qualify, as does any polygon star-shaped
+/// around its first vertex.
+fn is_fan_from_first_vertex(points: &[(f64, f64)]) -> bool {
+  if points.len() < 3 {
+    return false;
+  }
+  let p0 = points[0];
+  // An outline that passes through its first vertex again before its end
+  // starts another loop there (`polygon_holes::even_odd_regions` decides
+  // how that is filled); only a closing repeat of it is harmless.
+  if points[1..points.len() - 1].contains(&p0) {
+    return false;
+  }
+  let mut sign = 0.0_f64;
+  let mut sweep = 0.0;
+  for w in points[1..].windows(2) {
+    let (a, b) = (
+      (w[0].0 - p0.0, w[0].1 - p0.1),
+      (w[1].0 - p0.0, w[1].1 - p0.1),
+    );
+    let cross = a.0 * b.1 - a.1 * b.0;
+    let dot = a.0 * b.0 + a.1 * b.1;
+    let scale = a.0.hypot(a.1) * b.0.hypot(b.1);
+    if scale == 0.0 || cross.abs() <= 1e-12 * scale {
+      // A zero-area step: along a ray from p0, or back over it.
+      if dot < 0.0 {
+        return false;
+      }
+      continue;
+    }
+    if sign == 0.0 {
+      sign = cross.signum();
+    } else if cross.signum() != sign {
+      return false;
+    }
+    sweep += cross.abs().atan2(dot);
+  }
+  sign != 0.0 && sweep <= std::f64::consts::TAU + 1e-9
 }
 
 /// Draw `triangles` (indices into `all_pts`) with their corner colors
@@ -13354,8 +13400,17 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
 }
 
 /// The `stroke-linecap` value for an `Arrow`/curve stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap.
-fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap. A dashed
+/// stroke always has butt caps, whatever its `CapForm`: Wolfram's SVG
+/// export draws every dash flat-ended, its zero-length dots (`Dotted`,
+/// `Dashing[{0, d}]`) as one-pixel ticks.
+fn stroke_linecap_attr(
+  cap_form: Option<LineCapKind>,
+  dashing: Option<&Vec<f64>>,
+) -> &'static str {
+  if dashing.is_some() {
+    return "butt";
+  }
   match cap_form {
     Some(LineCapKind::Round) => "round",
     Some(LineCapKind::Square) => "square",
@@ -13404,10 +13459,13 @@ fn degenerate_line_dot(
 /// with square caps unless a `CapForm` says otherwise: each end extends
 /// half the line's thickness past its endpoint, so a short thick segment
 /// (a tick mark) is as wide as its stroke plus its length.
-fn line_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+fn line_linecap_attr(
+  cap_form: Option<LineCapKind>,
+  dashing: Option<&Vec<f64>>,
+) -> &'static str {
   match cap_form {
-    None => "square",
-    some => stroke_linecap_attr(some),
+    None if dashing.is_none() => "square",
+    some => stroke_linecap_attr(some, dashing),
   }
 }
 
@@ -16098,7 +16156,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = line_linecap_attr(style.cap_form);
+      let cap = line_linecap_attr(style.cap_form, style.dashing.as_ref());
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
@@ -16228,7 +16286,7 @@ fn render_primitive(
             ));
           }
         } else {
-          let cap = line_linecap_attr(style.cap_form);
+          let cap = line_linecap_attr(style.cap_form, style.dashing.as_ref());
           out.push_str(&format!(
             "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{} stroke-linecap=\"{cap}\"/>\n",
             color.to_svg_rgb(),
@@ -16682,7 +16740,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       out.push_str(&format!(
         "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}{}/>\n",
         coord_x(sx, bb, svg_w),
@@ -16707,7 +16765,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
 
       // The path in screen pixels, with its cumulative arc length, so a
@@ -16847,11 +16905,21 @@ fn render_primitive(
           cut_end += sw / 2.0;
         }
       }
-      let shaft = if cut_start + cut_end > 0.0 {
+      let mut shaft = if cut_start + cut_end > 0.0 {
         trim_screen_path(&screen, cut_start, cut_end)
       } else {
         screen.clone()
       };
+      // A forward head at the very start of the arrow sits behind it, and
+      // Wolfram runs the shaft on back through it — by the length of the
+      // first segment, out to the picture's edge as a rule — so the line
+      // shows through the head's notch instead of starting at its tip.
+      if heads.iter().any(|&(t, _, dir)| t <= 0.0 && dir > 0.0)
+        && cut_start == 0.0
+        && let [(x0, y0), (x1, y1), ..] = shaft[..]
+      {
+        shaft.insert(0, (2.0 * x0 - x1, 2.0 * y0 - y1));
+      }
 
       // Draw the line
       if shaft.len() >= 2 {
@@ -17409,7 +17477,7 @@ fn render_primitive(
         return;
       }
 
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       out.push_str(&format!(
         "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"{cap}\"{}{}/>\n",
         d,
@@ -18799,6 +18867,35 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             grown.y_min = grown.y_min.min(y - r / ky);
             grown.y_max = grown.y_max.max(y + r / ky);
           }
+        }
+      }
+    }
+    // A thick line keeps its stroke whole inside an automatic range: the
+    // picture reaches at least half the stroke width past every vertex,
+    // whatever the line's `CapForm` (Wolfram widens a 30-point line's
+    // margins to 15 points even under `PlotRangePadding -> None`).
+    for prim in &primitives {
+      let Primitive::Line {
+        segments, style, ..
+      } = prim
+      else {
+        continue;
+      };
+      let r = thickness_px(style.thickness, &bb, svg_width as f64) / 2.0;
+      if !(r.is_finite() && r > 0.0) {
+        continue;
+      }
+      for &(x, y) in segments.iter().flatten() {
+        if !(x.is_finite() && y.is_finite()) {
+          continue;
+        }
+        if plot_range_x.is_none() {
+          grown.x_min = grown.x_min.min(x - r / kx);
+          grown.x_max = grown.x_max.max(x + r / kx);
+        }
+        if plot_range_y.is_none() {
+          grown.y_min = grown.y_min.min(y - r / ky);
+          grown.y_max = grown.y_max.max(y + r / ky);
         }
       }
     }
@@ -28625,6 +28722,16 @@ pub(crate) fn mesh_region_graphics_prims(region: &Expr) -> Option<Vec<Expr>> {
           ]
           .into(),
         );
+        // A labeled vertex is marked by its point, as Wolfram draws it:
+        // in the points' `MeshCellStyle`, else the default mesh color.
+        if dim == 0.0 {
+          let color = mesh_cell_styles(&opts)[0]
+            .clone()
+            .unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr());
+          prims.push(Expr::List(
+            vec![color, call1("Point", position.clone())].into(),
+          ));
+        }
         prims.push(Expr::List(
           vec![
             Color::gray(0.0).to_expr(),
@@ -38805,6 +38912,23 @@ fn resolve_layout_cell(item: &Expr) -> Expr {
   };
   if matches!(&value, Expr::FunctionCall { name, .. } if name == "Dynamic") {
     dynamic_current_value(&value)
+  } else if is_user_call
+    && match &value {
+      Expr::FunctionCall { name, .. } => name == "Graphics",
+      Expr::Graphics {
+        structure: Some(inner),
+        ..
+      } => {
+        matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Graphics")
+      }
+      _ => false,
+    }
+  {
+    // A user function returning a picture (`picture[clip_] :=
+    // Graphics[…]`) is laid out like the `Graphics[…]` it builds: drawn
+    // again at the cell's size, so its labels and lines keep their own
+    // sizes instead of shrinking with a picture scaled down to fit.
+    value
   } else {
     target
   }
@@ -39030,7 +39154,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             std::slice::from_ref(item),
             (w.round() as i128).max(1),
             None,
-            true,
+            false,
           )
         })
         .collect();
@@ -39054,7 +39178,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let fit = (GRAPHICS_ROW_AUTO_WIDTH - fixed_gaps) / (n + (n - 1.0) * gap);
       per_cell_w = per_cell_w.min((fit.round() as i128).max(1));
     }
-    render_items_at_size(items, per_cell_w, per_cell_h, true)
+    render_items_at_size(items, per_cell_w, per_cell_h, false)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -39135,7 +39259,7 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     let (per_cell_w, per_cell_h) = layout_cell_size(&opts, 1, items.len(), 1);
-    render_items_at_size(items, per_cell_w, per_cell_h, true)
+    render_items_at_size(items, per_cell_w, per_cell_h, false)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {

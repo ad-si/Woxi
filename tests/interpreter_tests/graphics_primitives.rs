@@ -734,4 +734,94 @@ mod graphics_primitives {
     assert!(ax < -200.0, "{ax}");
     assert!(bx > 400.0, "{bx}");
   }
+
+  /// Every `<polyline>`'s `stroke-linecap`.
+  fn polyline_caps(svg: &str) -> Vec<String> {
+    svg
+      .match_indices("<polyline ")
+      .map(|(i, _)| {
+        let el = &svg[i..i + svg[i..].find('>').unwrap()];
+        let k = el.find("stroke-linecap=\"").unwrap() + 16;
+        el[k..k + el[k..].find('"').unwrap()].to_string()
+      })
+      .collect()
+  }
+
+  /// A dashed stroke is drawn with butt caps whatever its `CapForm`, as in
+  /// Wolfram's SVG export: `Dashing[{0, d}]` with round caps gave fat
+  /// round dots, where Wolfram draws one-pixel ticks; a dashed `Line`
+  /// without a `CapForm` lost its square caps' lengthening of every dash.
+  #[test]
+  fn dashed_lines_have_butt_caps() {
+    let svg = svg_of(
+      "Graphics[{{Dashing[{0, 0.02}], CapForm[\"Round\"], \
+       AbsoluteThickness[4], Line[{{0, 0}, {4, 0}}]}, \
+       {Dashed, Line[{{0, 1}, {4, 1}}]}, Line[{{0, 2}, {4, 2}}]}]",
+    );
+    assert_eq!(polyline_caps(&svg), ["butt", "butt", "square"], "{svg}");
+    assert!(svg.contains("stroke-dasharray=\"1.0,"), "{svg}");
+  }
+
+  /// A thick line keeps its stroke inside the picture: Wolfram widens the
+  /// margin to half the stroke width past each vertex (15 points for a
+  /// 30-point line, even with `PlotRangePadding -> None`), so round caps
+  /// are not cut off at the image edge.
+  #[test]
+  fn thick_line_margin_holds_half_its_stroke() {
+    for cap in ["Butt", "Round"] {
+      let svg = svg_of(&format!(
+        "Graphics[{{AbsoluteThickness[30], CapForm[\"{cap}\"], \
+         Line[{{{{0, 0}}, {{3, 0}}}}], Thin, Line[{{{{0, -1}}, {{0, 2}}}}]}}, \
+         PlotRangePadding -> None]"
+      ));
+      let pts = polyline_points(&svg);
+      assert!(close(pts[0].0, 15.0, 1.5), "{cap}: {pts:?}");
+      assert!(close(pts[1].0, 345.0, 1.5), "{cap}: {pts:?}");
+    }
+  }
+
+  /// With a head at position 0 the shaft runs on back through the head
+  /// (by the first segment's length, as Wolfram draws it), so the line
+  /// shows in the head's notch instead of starting at its tip.
+  #[test]
+  fn arrowhead_at_start_overlaps_the_shaft() {
+    let svg = svg_of(
+      "Graphics[{Arrowheads[{{0.05, 0}}], Arrow[{{0, 0}, {3, 0}}]}, \
+       PlotRange -> {{-1, 4}, {-1, 1}}, ImageSize -> 360]",
+    );
+    let pts = polyline_points(&svg);
+    assert_eq!(pts.len(), 3, "{pts:?}");
+    assert!(close(pts[0].0, -144.0, 1.0), "{pts:?}");
+    assert!(close(pts[1].0, 72.0, 1.0), "{pts:?}");
+    assert!(close(pts[2].0, 288.0, 1.0), "{pts:?}");
+  }
+
+  /// A `VertexColors` polygon star-shaped around its first vertex is
+  /// blended over the fan from that vertex, as Wolfram does: the shaded
+  /// bulb of `ThermometerGauge` (a highlight point inside a circle) was
+  /// ear-clipped instead, smearing the rim colors across its middle.
+  #[test]
+  fn vertex_colors_fan_from_interior_first_vertex() {
+    let svg = svg_of(
+      "Graphics[Polygon[Join[{{0, 0}}, Table[{Cos[t], Sin[t]}, \
+       {t, 0, 2 Pi, 2 Pi/40}]], VertexColors -> Join[{White}, \
+       Table[Black, 41]]], ImageSize -> 200]",
+    );
+    // Every fan triangle has the white center as a corner, so no facet
+    // anywhere is the pure rim color.
+    assert!(!svg.contains("fill=\"rgb(0,0,0)\""), "black facet");
+    assert!(svg.matches("<polygon").count() > 100);
+  }
+
+  /// `MeshCellLabel -> {0 -> …}` marks each labeled vertex with its point
+  /// (in the default mesh color), as Wolfram draws it.
+  #[test]
+  fn mesh_vertex_labels_draw_their_points() {
+    let out = interpret(
+      "Count[Show[MeshRegion[{{0, 0}, {2, 0}, {1, 1}}, Triangle[{1, 2, 3}], \
+       MeshCellLabel -> {0 -> \"Index\"}]][[1]], _Point, Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "3");
+  }
 }

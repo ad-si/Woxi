@@ -342,17 +342,22 @@ fn implicit_graphics(reg: &Expr, opts: &[Expr]) -> Option<Expr> {
     )
   };
   let rule = |key: &str, value: Expr| rule_expr(id_expr(key), value);
-  let mut plot_args = vec![
-    args[0].clone(),
-    iterator(0),
-    iterator(1),
-    rule("Frame", id_expr("False")),
-    rule("Axes", id_expr("False")),
-    rule("BoundaryStyle", id_expr("None")),
-    rule("PlotStyle", option("BaseStyle").unwrap_or_else(area_color)),
-    rule("AspectRatio", id_expr("Automatic")),
-  ];
+  let mut plot_args = vec![args[0].clone(), iterator(0), iterator(1)];
   plot_args.extend(opts.iter().cloned());
+  // Region's own defaults, each unless an option of the call sets it
+  // (`Region[reg, Axes -> True]` draws its axes).
+  let defaults = [
+    ("Frame", id_expr("False")),
+    ("Axes", id_expr("False")),
+    ("BoundaryStyle", id_expr("None")),
+    ("PlotStyle", option("BaseStyle").unwrap_or_else(area_color)),
+    ("AspectRatio", id_expr("Automatic")),
+  ];
+  for (key, value) in defaults {
+    if option(key).is_none() {
+      plot_args.push(rule(key, value));
+    }
+  }
   let rendered =
     crate::functions::field_plot::region_plot_ast(&plot_args).ok()?;
   if option("PlotRange").is_none()
