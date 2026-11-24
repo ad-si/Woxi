@@ -1662,8 +1662,9 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
 }
 
 /// The point of an inset's own picture that sits on its position, as
-/// fractions `(from the left, from the top)` of the picture. Only the
-/// symbolic corners `{Left, Top}` … are understood; `None` otherwise.
+/// fractions `(from the left, from the top)` of the picture: a symbolic
+/// corner `{Left, Top}` …, an `ImageScaled` fraction of the picture, or a
+/// point in the object's own coordinates. An `Offset[…, p]` yields `p`.
 fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
   // Without an explicit `opos`, a position named by the region's sides
   // (`{Center, Bottom}`, `{Right, Top}`) puts the object's matching point
@@ -1680,6 +1681,31 @@ fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
     },
     Some(opos) => opos,
   };
+  // `Offset[{dx, dy}, p]` is the point `p` of the object moved by printer's
+  // points; the move depends on the size the object is shown at, so it is
+  // applied by the caller (see [`inset_object_point_offset`]).
+  let opos = match opos {
+    Expr::FunctionCall { name, args: oargs }
+      if name == "Offset" && oargs.len() == 2 =>
+    {
+      &oargs[1]
+    }
+    other => other,
+  };
+  // `ImageScaled[{fx, fy}]` names fractions of the object's own picture,
+  // not of the enclosing one.
+  if let Expr::FunctionCall { name, args: iargs } = opos
+    && name == "ImageScaled"
+    && iargs.len() == 1
+  {
+    let Expr::List(items) = &iargs[0] else {
+      return None;
+    };
+    let [fx, fy] = items.as_slice() else {
+      return None;
+    };
+    return Some((expr_to_f64(fx)?, 1.0 - expr_to_f64(fy)?));
+  }
   let (x, y, scaled) = expr_to_anchor(opos)?;
   if scaled {
     return Some((x, 1.0 - y));
@@ -1693,6 +1719,68 @@ fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
     return Some((x / *width as f64, 1.0 - y / *height as f64));
   }
   inset_object_fraction(peel_style_wrapper(args.first()?), x, y)
+}
+
+/// The printer's points `{dx, dy}` an inset's `opos` of the form
+/// `Offset[{dx, dy}, p]` moves the object's point `p` by.
+fn inset_object_point_offset(args: &[Expr]) -> Option<(f64, f64)> {
+  match args.get(2)? {
+    Expr::FunctionCall { name, args: oargs }
+      if name == "Offset" && oargs.len() == 2 =>
+    {
+      let Expr::List(items) = &oargs[0] else {
+        return None;
+      };
+      let [dx, dy] = items.as_slice() else {
+        return None;
+      };
+      Some((expr_to_f64(dx)?, expr_to_f64(dy)?))
+    }
+    _ => None,
+  }
+}
+
+/// How many points one point of an inset picture `w`×`h` points large
+/// spans once it is shown at `size` (in the enclosing picture's data
+/// coordinates, or fractions of its plot range when `size_scaled`). The
+/// picture keeps its shape, so it is fitted inside that box. Needs the
+/// enclosing picture's frame, which is only known on the second pass.
+fn inset_display_scale(
+  w: f64,
+  h: f64,
+  size: Option<(f64, f64)>,
+  size_scaled: bool,
+) -> f64 {
+  let Some((sw, sh)) = size else {
+    return 1.0;
+  };
+  let frame = match COORD_MODE.with(std::cell::Cell::get) {
+    CoordMode::Known(f) => f,
+    CoordMode::Pending => {
+      DEFERRED_COORDS.with(|c| c.set(true));
+      return 1.0;
+    }
+    CoordMode::Unsupported => return 1.0,
+  };
+  let (pw, ph) = if size_scaled {
+    (sw * frame.w, sh * frame.h)
+  } else {
+    (
+      sw * frame.w / frame.bb.width(),
+      sh * frame.h / frame.bb.height(),
+    )
+  };
+  let scale = match (pw.is_finite(), ph.is_finite()) {
+    (true, true) => (pw / w).min(ph / h),
+    (true, false) => pw / w,
+    (false, true) => ph / h,
+    (false, false) => 1.0,
+  };
+  if scale.is_finite() && scale > 0.0 {
+    scale
+  } else {
+    1.0
+  }
 }
 
 /// Where the point `(ox, oy)` of an inset object's own coordinates sits in
@@ -8890,7 +8978,17 @@ fn inset_primitives(
     // center, on `pos`. Embedded pictures always center on the anchor, so
     // pad the picture to twice its distance to the far side of that point.
     let (mut x, mut y) = (x, y);
+    // `Offset[{dx, dy}, p]` as `opos` moves the object's point `p` by
+    // printer's points at the size the object is shown at.
+    let point_offset = inset_object_point_offset(args);
     let object_anchor = inset_object_anchor(args)
+      .map(|(fx, fy)| match point_offset {
+        Some((dx, dy)) if w > 0.0 && h > 0.0 => {
+          let k = inset_display_scale(w, h, size, inset_size_is_scaled(args));
+          (fx + dx / (k * w), fy - dy / (k * h))
+        }
+        _ => (fx, fy),
+      })
       .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9);
     if let Some((fx, fy)) = object_anchor
       && let Some((sw, sh)) = size
