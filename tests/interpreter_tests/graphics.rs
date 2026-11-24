@@ -31615,8 +31615,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "{head}[{{{{0, 1}}, {{1, 0}}}}, ImageSize -> {size}, PlotLabel -> {long}]"
         ));
         assert!(font < 14.0, "{head} at {size}: {font}");
-        // The estimated width of the 41 characters stays inside the canvas.
-        assert!(41.0 * 0.52 * font <= width - 8.0 + 0.5, "{head}: {font}");
+        // The caption's Arial advances add up to about 17.4 em; at the
+        // shrunk size the line stays inside the canvas.
+        assert!(17.4 * font <= width - 8.0 + 0.5, "{head}: {font}");
       }
       // A title too long for any legible size stops shrinking at 9 points.
       let tiny = format!(
@@ -31627,6 +31628,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let short =
         "ArrayPlot[{{0, 1}, {1, 0}}, ImageSize -> 250, PlotLabel -> \"Short\"]";
       assert_eq!(title_of(short).0, 14.0);
+    }
+
+    #[test]
+    fn array_plot_space_padded_plot_label_keeps_its_size() {
+      // Regression: the title's width was estimated as half an em per
+      // character, spaces included, so a caption whose letters are spread
+      // out by runs of spaces (to sit above columns of the picture) shrank
+      // to the 9-point floor. Spaces are about a quarter em wide, so the
+      // line fits a 422-point picture at about 13.5 points.
+      let spaced = format!(
+        "\"P{}Q{}R{}\"",
+        " ".repeat(27),
+        " ".repeat(18),
+        " ".repeat(57)
+      );
+      let svg = export_svg(&format!(
+        "ArrayPlot[Table[Mod[i + j, 2], {{i, 40}}, {{j, 422}}], \
+         PixelConstrained -> 1, PlotLabel -> {spaced}]"
+      ));
+      let end = svg.find("</text>").unwrap();
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let a = tag.find("font-size=\"").unwrap() + 11;
+      let font: f64 = tag[a..a + tag[a..].find('"').unwrap()].parse().unwrap();
+      assert!((13.0..14.0).contains(&font), "{font}");
     }
 
     #[test]

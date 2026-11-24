@@ -26366,30 +26366,17 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
 /// picture `width` wide: `base`, shrunk (down to 9 points) so the widest
 /// line fits between the edges instead of being clipped at both of them.
 pub(crate) fn fit_title_font(lines: &[String], base: f64, width: f64) -> f64 {
+  // Each glyph counts with its own advance: a run of spaces (a title
+  // padded to line its letters up with the picture) is far narrower than
+  // as many letters.
   let widest = lines
     .iter()
-    .map(|l| {
-      let mut in_tag = false;
-      l.chars()
-        .filter(|c| match c {
-          '<' => {
-            in_tag = true;
-            false
-          }
-          '>' => {
-            in_tag = false;
-            false
-          }
-          _ => !in_tag,
-        })
-        .count()
-    })
-    .max()
-    .unwrap_or(0);
-  if widest == 0 {
+    .map(|l| crate::functions::plot_padding::text_width(l, 1.0))
+    .fold(0.0, f64::max);
+  if widest <= 0.0 {
     base
   } else {
-    base.min(((width - 8.0) / (widest as f64 * 0.52)).max(9.0))
+    base.min(((width - 8.0) / widest).max(9.0))
   }
 }
 
