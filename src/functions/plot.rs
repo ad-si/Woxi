@@ -11321,6 +11321,9 @@ pub(crate) fn generate_bar_svg(
             }
           }
         };
+        // A `Style[label, color]` label keeps its own color.
+        let own_fill = label.color.map(super::graphics::Color::to_svg_rgb);
+        let fill = own_fill.as_deref().unwrap_or(fill);
         // A stacked label sets each line as its own `tspan` (SVG would run
         // the lines together), with the line's own size and color.
         let multi_line = lines.len() > 1;
