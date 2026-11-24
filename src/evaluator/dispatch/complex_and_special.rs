@@ -6005,6 +6005,12 @@ fn tf_needs_paren_factor(expr: &Expr) -> bool {
       ..
     } => true,
     Expr::Comparison { .. } => true,
+    // A held term draws as its content and is bracketed like it.
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      tf_needs_paren_factor(&args[0])
+    }
     Expr::FunctionCall { name, args } => {
       (name == "Plus" && args.len() >= 2)
         // `a ± b` binds looser than a product: `(a ± b) c`.
@@ -7635,6 +7641,9 @@ fn tf_prec(expr: &Expr) -> f64 {
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `HoldForm` draws as its content, so it binds like its content:
+      // `HoldForm[a b/c]^2` sets as `(a b/c)²`.
+      "HoldForm" if args.len() == 1 => tf_prec(&args[0]),
       "Plus" if args.len() >= 2 => of("Plus"),
       "Times" if args.len() >= 2 => of("Times"),
       "Power" if args.len() == 2 => of("Power"),
