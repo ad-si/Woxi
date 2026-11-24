@@ -6531,6 +6531,65 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
+  /// The `4 a c` product is distributed over a sum coefficient, so its
+  /// constants combine with `b^2` in the discriminant; `b^2` itself keeps
+  /// its power.
+  #[test]
+  fn symbolic_quadratic_distributes_four_ac() {
+    assert_eq!(
+      interpret("Solve[x^2 - x + c + d == 0, x]").unwrap(),
+      "{{x -> (1 - Sqrt[1 - 4*c - 4*d])/2}, {x -> (1 + Sqrt[1 - 4*c - 4*d])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + b x + 2 (c + d) == 0, x]").unwrap(),
+      "{{x -> (-b - Sqrt[b^2 - 8*c - 8*d])/2}, {x -> (-b + Sqrt[b^2 - 8*c - 8*d])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a + 1) x + c == 0, x]").unwrap(),
+      "{{x -> (-1 - a - Sqrt[(1 + a)^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[(1 + a)^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x (1 - x) (x - 1/4) == 1/2 e x, x]").unwrap(),
+      "{{x -> 0}, {x -> (5 - Sqrt[9 - 32*e])/8}, {x -> (5 + Sqrt[9 - 32*e])/8}}"
+    );
+  }
+
+  /// With machine-number coefficients each root is distributed over `2 a`
+  /// and no stray input coefficient survives, so a later numeric rule (here
+  /// `0.25 -> 0.1`) leaves the roots alone.
+  #[test]
+  fn symbolic_quadratic_machine_coefficients_distributed() {
+    assert_eq!(
+      interpret("Solve[x (1 - x) (x - 0.25) == 0.5 e x, x]").unwrap(),
+      "{{x -> 0.}, {x -> 0.625 - 0.5*Sqrt[0.5625 - 2.*e]}, \
+{x -> 0.625 + 0.5*Sqrt[0.5625 - 2.*e]}}"
+    );
+    assert_eq!(
+      interpret("Solve[-2. x^2 + x + a == 0, x]").unwrap(),
+      "{{x -> 0.25 - 0.25*Sqrt[1 + 8.*a]}, {x -> 0.25 + 0.25*Sqrt[1 + 8.*a]}}"
+    );
+    assert_eq!(
+      interpret(
+        "x /. Drop[Solve[x (1 - x) (x - 0.25) == 0.5 e x, x], 1] /. \
+{0.25 -> 0.1} /. e -> 0.2"
+      )
+      .unwrap(),
+      "{0.42344355629253627, 0.8265564437074637}"
+    );
+    // A machine radical system eliminated through quadratics whose `b` holds
+    // the other unknown keeps only its two real solutions.
+    assert_eq!(
+      interpret(
+        "Length[Solve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + \
+         Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == \
+         Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn quartic_factor_based() {
     assert_eq!(
