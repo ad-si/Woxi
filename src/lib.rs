@@ -5498,7 +5498,40 @@ pub(crate) fn render_event_handler_if_needed(
 /// `MatrixForm`, `Column`, `Row`, `Grid`, … wrappers into embedded SVGs.
 /// Used for a cell's top-level result and, recursively, for the content an
 /// `EventHandler[…]` wraps once its event rules have been dropped.
+///
+/// Content shown as `Text` (also under the `Pane`, `Style`, … wrappers
+/// the passes below peel off) sets its math one script level down, so a
+/// fraction in it is drawn at the reduced size of a nested one — the
+/// `Text` itself is gone by the time the layout renderers see the content.
 fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
+  if is_shown_as_text(expr) {
+    functions::graphics::with_inline_text_math(|| {
+      render_visual_display_pipeline_impl(expr)
+    })
+  } else {
+    render_visual_display_pipeline_impl(expr)
+  }
+}
+
+/// Whether `expr` is `Text[content]`, possibly inside display wrappers
+/// that only box or style what they hold (`Pane[Text[…], size]`,
+/// `Style[Text[…], 16]`).
+fn is_shown_as_text(expr: &syntax::Expr) -> bool {
+  let mut current = expr;
+  while let syntax::Expr::FunctionCall { name, args } = current
+    && let Some(first) = args.first()
+  {
+    match name.as_str() {
+      "Text" => return args.len() == 1,
+      "Pane" | "Item" | "Deploy" | "Style" | "TraditionalForm"
+      | "StandardForm" | "ExpressionCell" => current = first,
+      _ => return false,
+    }
+  }
+  false
+}
+
+fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
   // A `Pane[content, {width, height}]` reserves a fixed box in the
   // FrontEnd; capture that now, before `unwrap_display_pass_through`
   // discards the wrapper below, so the composed picture can be clipped to
