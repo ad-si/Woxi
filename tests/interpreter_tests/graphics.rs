@@ -21496,6 +21496,26 @@ mod plot3d {
       );
     }
 
+    /// A styled point inside a display wrapper (`Tooltip[Style[{x, y},
+    /// color], label]`, `Labeled[Style[…], label]`) is drawn in its
+    /// `Style`'s color, not the dataset's default one.
+    #[test]
+    fn list_plot_styled_points_inside_tooltips() {
+      let svg = export_svg(
+        "ListPlot[{Tooltip[Style[{1, 2}, Red], \"a\"], \
+         Tooltip[Style[{2, 3}, GrayLevel[0.9]], \"b\"], \
+         Labeled[Style[{3, 1}, Blue], \"c\"], {4, 4}}]",
+      );
+      let fills: std::collections::HashSet<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<circle"))
+        .filter_map(|l| l.split("fill=\"").nth(1)?.split('"').next())
+        .collect();
+      for color in ["#FF0000", "#E6E6E6", "#0000FF", "#3D99CC"] {
+        assert!(fills.contains(color), "{color} missing in {fills:?}");
+      }
+    }
+
     #[test]
     fn list_plot_plot_style() {
       insta::assert_snapshot!(export_svg(
