@@ -2175,6 +2175,62 @@ mod graphics {
       }
     }
 
+    /// An inset size `{w, h}` is a box in the enclosing picture's
+    /// coordinates; a graphic keeps its own shape on screen inside it,
+    /// scaled to the largest size that fits, even where the x and y units
+    /// differ in length. It used to be stretched by one data-unit scale,
+    /// so a square drawn into a plot whose x range is much shorter than
+    /// its y range came out many times wider than tall.
+    #[test]
+    fn an_inset_box_size_keeps_the_aspect_ratio_on_screen() {
+      let svg = export_svg(
+        "Graphics[{Point[{0, 0}], Point[{4, 8}], Inset[Graphics[{Green, \
+         Rectangle[]}, PlotRange -> {{0, 1}, {0, 1}}], {2, 4}, Automatic, \
+         {2, 2}]}, PlotRange -> {{0, 4}, {0, 8}}, AspectRatio -> 1/2, \
+         ImageSize -> {200, 100}]",
+      );
+      // The box is 2 x-units (99 px) wide by 2 y-units (24.75 px) high:
+      // the square fits its height, centered on the anchor.
+      assert!(
+        svg.contains(
+          "<rect x=\"86.62\" y=\"37.12\" width=\"24.75\" height=\"24.75\""
+        ),
+        "a square fitting the box's short side: {svg}"
+      );
+    }
+
+    /// The same holds for an inset in a plot's `Epilog`: the box's sides
+    /// are measured in the plot's x and y units, and the picture fits it
+    /// at its own aspect ratio instead of taking the box's width alone.
+    #[test]
+    fn a_plot_epilog_inset_box_size_keeps_the_aspect_ratio() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotRange -> {0, 20}, Epilog -> \
+         Inset[Graphics[{Green, Rectangle[]}, PlotRange -> {{0, 1}, \
+         {0, 1}}], {0.5, 10}, Automatic, {10, 10}]]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      let attr = |name: &str| -> f64 {
+        nested
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name}: {nested}"))
+      };
+      let (w, h) = (attr("width"), attr("height"));
+      assert!((w - h).abs() < 0.5, "the inset stays square: {nested}");
+      // Half the y range is about half the plot's height (238 px at
+      // a 10x render scale), not ten times the plot's width.
+      assert!(w > 900.0 && w < 1200.0, "half the plot height: {nested}");
+    }
+
     /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
     /// picture in a flat one, at its own size — a Demonstration puts a
     /// little schematic of its apparatus in the corner that way. It used

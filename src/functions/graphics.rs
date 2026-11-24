@@ -8004,6 +8004,25 @@ pub(crate) fn plot_inset_at_width(
   Some((svg, dims.nat_w, dims.nat_h))
 }
 
+/// The size an inset object of natural size `natural` takes inside a
+/// `width`×`height` box: the largest one of the object's own aspect ratio
+/// that fits (the box itself when the natural size is unknown).
+pub(crate) fn fit_inset_box(
+  width: f64,
+  height: f64,
+  natural: Option<(f64, f64)>,
+) -> (f64, f64) {
+  match natural {
+    Some((nw, nh))
+      if nw > 0.0 && nh > 0.0 && width.is_finite() && height.is_finite() =>
+    {
+      let k = (width / nw).min(height / nh);
+      (nw * k, nh * k)
+    }
+    _ => (width, height),
+  }
+}
+
 /// Whether `options` give a `Background` other than `None`.
 fn sets_background(options: &[Expr]) -> bool {
   options.iter().any(|o| {
@@ -9023,7 +9042,24 @@ fn inset_primitives(
     if name == "Graphics" || name == "GraphicsBox")
     || matches!(&args[0], Expr::Graphics { .. });
   let (sx, sy) = match (target_w, target_h) {
-    (Some(_), Some(_)) if keeps_shape => (sx.min(sy), sx.min(sy)),
+    // The shape is kept on screen, where this picture's x and y units
+    // need not be equally long: once its frame is known, the scales
+    // differ in data units so that they agree in pixels.
+    (Some(tw), Some(th)) if keeps_shape && w > 0.0 && h > 0.0 => {
+      match COORD_MODE.with(std::cell::Cell::get) {
+        CoordMode::Known(f) if f.bb.width() > 0.0 && f.bb.height() > 0.0 => {
+          let (kx, ky) = (f.w / f.bb.width(), f.h / f.bb.height());
+          let k = (tw * kx / w).min(th * ky / h);
+          (k / kx, k / ky)
+        }
+        mode => {
+          if matches!(mode, CoordMode::Pending) {
+            DEFERRED_COORDS.with(|c| c.set(true));
+          }
+          (sx.min(sy), sx.min(sy))
+        }
+      }
+    }
     // `{w, Automatic}` / `{Automatic, h}`: the given side sets the scale
     // of both, so the object keeps its shape.
     (Some(_), None) => (sx, sx),
@@ -15875,6 +15911,14 @@ fn render_primitive(
         (pw, pw * *h / *w)
       } else if pw.is_nan() && *h > 0.0 {
         (ph * *w / *h, ph)
+      } else {
+        (pw, ph)
+      };
+      // A plot laid out anew inside a box with both sides given keeps its
+      // own aspect ratio: it takes the largest width at which it fits. (An
+      // embedded picture is fitted by its `preserveAspectRatio` instead.)
+      let (pw, ph) = if size.is_some() && source.is_some() {
+        fit_inset_box(pw, ph, Some((*w, *h)))
       } else {
         (pw, ph)
       };
