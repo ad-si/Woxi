@@ -4238,7 +4238,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let (v_min, v_max) = opts.sampled_range(&samples);
-  let (level_min, level_max) = opts.sampled_range(&all_samples);
+  // `Contours -> n` spaces its levels over every sampled value: the
+  // outlier fence of the automatic range would drop a genuine minority of
+  // values (the inlet ramp of a field saturated over most of the domain).
+  let (level_min, level_max) = match opts.contours {
+    ContourSpec::Count(_) => full_value_range(&all_samples),
+    _ => opts.sampled_range(&all_samples),
+  };
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(

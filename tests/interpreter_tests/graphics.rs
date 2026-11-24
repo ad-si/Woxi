@@ -28969,6 +28969,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// `Contours -> n` spaces its levels over every sampled value: a field
+    /// that saturates over most of the domain (`1 - E^(-20 x)`) keeps the
+    /// low levels of its steep ramp next to `x == 0`, which the automatic
+    /// outlier fence would drop (its quartiles bunch next to 1).
+    #[test]
+    fn contour_plot_contour_count_spans_a_saturating_field() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[1 - Exp[-20 x], {x, 0, 1}, {y, 0, 1}, \
+           Contours -> 9]; xs = Flatten[Cases[Normal[g], Line[p_] :> \
+           p[[All, 1]], Infinity]]; {Length[Cases[Normal[g], _Line, \
+           Infinity]], Min[xs] < 0.02}"
+        )
+        .unwrap(),
+        "{9, True}"
+      );
+    }
+
     /// A nested function list counts as its flattened functions, and a
     /// function list with `Contours -> n` gets `n` levels for each
     /// function; both used to yield an opaque, primitive-less plot.
