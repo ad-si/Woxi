@@ -28944,6 +28944,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A one-function list `ContourPlot[{f}, …]` is shaded like the bare
+    /// function `f`; only several functions draw bare level curves.
+    #[test]
+    fn contour_plot_single_function_list_is_shaded() {
+      for (f, opts) in [
+        (
+          "x + y",
+          ", Contours -> 5, ColorFunction -> \"TemperatureMap\"",
+        ),
+        ("Sin[x] Cos[y]", ", Contours -> 12"),
+      ] {
+        let filled = |body: String| {
+          interpret(&format!(
+            "Count[ContourPlot[{body}, {{x, 0, 3}}, {{y, 0, 3}}{opts}], \
+             _Polygon | _FilledCurve, Infinity]"
+          ))
+          .unwrap()
+        };
+        let listed = filled(format!("{{{f}}}"));
+        assert_ne!(listed, "0", "{f}");
+        assert_eq!(listed, filled(f.to_string()), "{f}");
+      }
+    }
+
     /// A nested function list counts as its flattened functions, and a
     /// function list with `Contours -> n` gets `n` levels for each
     /// function; both used to yield an opaque, primitive-less plot.
