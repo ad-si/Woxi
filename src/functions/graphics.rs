@@ -49894,8 +49894,12 @@ pub fn manipulate_locator_markers(
 }
 
 /// Wrap a Manipulate body so the given Locator controls (see
-/// [`manipulate_locator_markers`]) show as markers on the first 2D graphic
-/// the body returns, the way Wolfram places a Manipulate's Locators. The
+/// [`manipulate_locator_markers`]) show as markers on the outermost 2D
+/// graphic the body returns, the way Wolfram places a Manipulate's Locators
+/// — a graphic nested inside it (an `Inset` picture) never takes them.
+/// `Sort` orders positions shortest first, so an enclosing graphic wins
+/// over the ones it contains.
+/// The
 /// markers join the graphic's `Epilog`, so they neither move its plot range
 /// nor hide its own epilog; a result with no graphic is returned unchanged.
 /// Each variable may hold one point or a list of points.
@@ -49921,8 +49925,9 @@ pub fn locator_marker_body(
     .join(", ");
   format!(
     "Module[{{woxiRes = ({body}), woxiPos, woxiGraphic}}, \
-     woxiPos = FirstPosition[woxiRes, _Graphics, None, Heads -> False]; \
-     If[woxiPos === None, woxiRes, \
+     woxiPos = Position[woxiRes, _Graphics, Heads -> False]; \
+     If[woxiPos === {{}}, woxiRes, \
+     woxiPos = First[Sort[woxiPos]]; \
      woxiGraphic = If[woxiPos === {{}}, woxiRes, Extract[woxiRes, woxiPos]]; \
      woxiGraphic = Show[woxiGraphic, Epilog -> \
      Join[Flatten[{{Lookup[Options[woxiGraphic, Epilog], Epilog, {{}}]}}], \

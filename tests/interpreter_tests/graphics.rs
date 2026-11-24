@@ -57795,6 +57795,31 @@ mod color_data_indexed {
     );
   }
 
+  // A Manipulate's Locator markers join the outermost graphic its body
+  // returns, never a picture nested inside it (an `Inset` graphic), which
+  // a post-order `FirstPosition` search would find first.
+  #[test]
+  fn manipulate_locator_markers_join_the_outermost_graphic() {
+    clear_state();
+    let markers = vec![("pt".to_string(), None)];
+    let wrap = |body: &str| {
+      woxi::functions::graphics::locator_marker_body(body, &markers)
+    };
+    interpret("pt = {1, 0}").unwrap();
+    let nested = wrap(
+      "Graphics[{Inset[Graphics[Disk[], PlotRange -> 3]], Circle[]}, \
+       PlotRange -> 2]",
+    );
+    assert_eq!(
+      interpret(&format!("Options[{nested}, Epilog]")).unwrap(),
+      "{Epilog -> {Locator[{1, 0}]}}"
+    );
+    assert_eq!(
+      interpret(&format!("FreeQ[{nested}[[1, 1, 1]], Locator]")).unwrap(),
+      "True"
+    );
+  }
+
   // `ContourPlot[lhs == rhs, …]` draws the implicit curve `lhs - rhs = 0`,
   // and `plot[[1]]` yields the contour primitives (with the ContourStyle
   // directives) for re-embedding in an outer Graphics — including after
