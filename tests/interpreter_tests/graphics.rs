@@ -74718,6 +74718,80 @@ mod reversed_3d_plot_ranges {
   }
 }
 
+// An unboxed 3D scene at a fixed width and height is fitted to the frame by
+// its contents. The dots of the `Point`s on its outline used to be centered
+// on the edges and cut in half; Wolfram keeps them whole.
+mod fitted_3d_scene_keeps_edge_dots_whole {
+  use super::*;
+
+  /// `(cx, cy, r)` of every `<circle>` in the SVG.
+  fn circles(svg: &str) -> Vec<(f64, f64, f64)> {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = tag.find(&key).expect(tag) + key.len();
+      let end = start + tag[start..].find('"').unwrap();
+      tag[start..end].parse().unwrap()
+    };
+    svg
+      .split("<circle")
+      .skip(1)
+      .map(|rest| {
+        let tag = &rest[..rest.find("/>").unwrap()];
+        (attr(tag, "cx"), attr(tag, "cy"), attr(tag, "r"))
+      })
+      .collect()
+  }
+
+  fn dots(code: &str) -> Vec<(f64, f64, f64)> {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let dots = circles(&svg);
+    assert!(!dots.is_empty(), "{svg}");
+    dots
+  }
+
+  #[test]
+  fn flat_net_of_large_points() {
+    let (w, h) = (350.0, 400.0);
+    let dots = dots(
+      "Graphics3D[{PointSize[Large], \
+       Point[Flatten[Table[{i, j, 0}, {i, 0, 4}, {j, 0, 4}], 1]]}, \
+       Boxed -> False, ImageSize -> {350, 400}]",
+    );
+    for &(cx, cy, r) in &dots {
+      assert!(cx - r >= -0.01 && cx + r <= w + 0.01, "{dots:?}");
+      assert!(cy - r >= -0.01 && cy + r <= h + 0.01, "{dots:?}");
+    }
+    // The outermost dots still reach the left and right edges (up to the
+    // 1-pixel padding of the fitted frame).
+    let left = dots
+      .iter()
+      .map(|(cx, _, r)| cx - r)
+      .fold(f64::MAX, f64::min);
+    let right = dots
+      .iter()
+      .map(|(cx, _, r)| cx + r)
+      .fold(f64::MIN, f64::max);
+    assert!(left.abs() < 1.6 && (right - w).abs() < 1.6, "{dots:?}");
+  }
+
+  #[test]
+  fn dots_of_any_size_stay_inside() {
+    for size in ["0.05", "0.1"] {
+      let dots = dots(&format!(
+        "Graphics3D[{{PointSize[{size}], \
+         Point[{{{{0, 0, 0}}, {{1, 0, 0}}, {{0, 1, 1}}, {{1, 1, 1}}}}]}}, \
+         Boxed -> False, ImageSize -> {{200, 150}}]"
+      ));
+      for &(cx, cy, r) in &dots {
+        assert!(r > 3.0, "{dots:?}");
+        assert!(cx - r >= -0.01 && cx + r <= 200.01, "{size}: {dots:?}");
+        assert!(cy - r >= -0.01 && cy + r <= 150.01, "{size}: {dots:?}");
+      }
+    }
+  }
+}
+
 mod plot_label_default_color {
   use super::*;
 

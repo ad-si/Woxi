@@ -12943,6 +12943,51 @@ fn scene_image_width() -> f64 {
   SCENE_IMAGE_WIDTH.get()
 }
 
+/// The radius in pixels of the dot a 3D `Point` is drawn as. A relative
+/// `PointSize` is measured against the same length as a relative
+/// `Thickness` (see `scene_image_width`).
+fn point_dot_radius(style: &StyleState3D) -> f64 {
+  style.point_size.map_or(3.0, |ps| {
+    crate::functions::graphics::point_radius(ps, scene_image_width())
+  })
+}
+
+/// The room each side of the picture (`[left, right, bottom, top]`)
+/// needs for the disks of the `Point`s that reach that side of the
+/// projected outline `[x_min, x_max, y_min, y_max]`: the largest radius
+/// among them, or nothing when no dot lies on that side.
+fn point_disk_padding(
+  prims: &[Primitive3D],
+  camera: &Camera,
+  [x_min, x_max, y_min, y_max]: [f64; 4],
+) -> [f64; 4] {
+  let tol = 1e-9 * (x_max - x_min).abs().max((y_max - y_min).abs()).max(1.0);
+  let mut pad = [0.0_f64; 4];
+  for prim in prims {
+    let Primitive3D::Point3DPrim { points, style } = prim else {
+      continue;
+    };
+    let radius = point_dot_radius(style);
+    for &pt in points {
+      let (px, py) = project(pt, camera);
+      for (side, reached) in [
+        px <= x_min + tol,
+        px >= x_max - tol,
+        py <= y_min + tol,
+        py >= y_max - tol,
+      ]
+      .into_iter()
+      .enumerate()
+      {
+        if reached {
+          pad[side] = pad[side].max(radius);
+        }
+      }
+    }
+  }
+  pad
+}
+
 thread_local! {
   /// Diagonal of the box of the `Graphics3D` currently being collected (its
   /// explicit `PlotRange`, else the extent of its contents), which an
@@ -15872,6 +15917,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if image_padding == Some([0.0; 4]) && plot_region.is_some() {
     image_padding = None;
   }
+  // Contents fitted to the frame are fitted with their dots whole: a
+  // `Point` on the outline of the scene keeps its disk inside the picture
+  // rather than being cut in half by the edge. A Demonstration's unboxed
+  // net of `PointSize[Large]` control points at `ImageSize -> {350, 400}`
+  // leaves the same margin of one dot radius on all four sides.
+  if fit_contents && image_padding.is_none() && plot_region.is_none() {
+    let pad =
+      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max]);
+    if pad.iter().any(|p| *p > 0.0) {
+      image_padding = Some(pad);
+    }
+  }
   let region_height_pending = plot_region.is_some()
     && image_padding.is_none()
     && !full_width
@@ -16334,11 +16391,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
-      // A relative `PointSize` is measured against the same length as a
-      // relative `Thickness` (see `scene_image_width`).
-      let radius = style.point_size.map_or(3.0, |ps| {
-        crate::functions::graphics::point_radius(ps, scene_image_width())
-      });
+      let radius = point_dot_radius(style);
       for &pt in points {
         sorted_edges.push(SceneEdge {
           endpoints: [pt, pt],
