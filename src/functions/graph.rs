@@ -100,9 +100,9 @@ pub(crate) fn build_ungraph(
 struct RenderEdgeData {
   directed: bool,
   label: Option<String>,
-  /// Fraction along the edge (source to target) at which the label sits,
-  /// from `Labeled[edge, Placed[label, fraction]]`; the middle otherwise.
-  label_at: Option<f64>,
+  /// Where along the edge the label sits, from
+  /// `Labeled[edge, Placed[label, pos]]`; centered on the middle otherwise.
+  label_at: EdgeLabelPlace,
   /// Every directive of the edge's `Style[…]` wrappers.
   directives: Vec<Expr>,
 }
@@ -148,7 +148,7 @@ fn build_render_graph(
           RenderEdgeData {
             directed,
             label: label.clone(),
-            label_at: edge_label_fraction(e),
+            label_at: edge_label_place_of(e),
             directives: style_directives(e),
           },
         );
@@ -1642,37 +1642,35 @@ fn graph_render(
       if let Some(label) = label
         && edge_labeling
       {
-        let (label, position) = placed_edge_label(label);
-        let t = position.unwrap_or(0.5);
+        let (label, place) = placed_edge_label(label);
+        let t = place.t;
         let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
         // A curved edge carries its label on the curve.
         let (cx, cy) =
           curve_ctrl.unwrap_or((f64::midpoint(x1, x2), f64::midpoint(y1, y2)));
         let omt = 1.0 - t;
-        let point = Expr::List(
-          vec![
-            Expr::Real(omt * omt * x1 + 2.0 * omt * t * cx + t * t * x2),
-            Expr::Real(omt * omt * y1 + 2.0 * omt * t * cy + t * t * y2),
-          ]
-          .into(),
+        let point = place.text_point(
+          omt * omt * x1 + 2.0 * omt * t * cx + t * t * x2,
+          omt * omt * y1 + 2.0 * omt * t * cy + t * t * y2,
         );
-        primitives.push(label_text(styled, point, None));
+        primitives.push(label_text(styled, point, place.text_offset()));
       }
     }
 
     // Edge label
     if let Some(lbl) = &edge_data.label {
-      let t = edge_data.label_at.unwrap_or(0.5);
-      let mx = if si == di { x1 } else { x1 + t * (x2 - x1) };
-      let my = if si == di {
-        y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5
-      } else {
-        y1 + t * (y2 - y1)
-      };
+      let place = edge_data.label_at;
       let styled =
         call("Style", vec![Expr::String(lbl.clone()), Expr::Integer(10)]);
-      let point = Expr::List(vec![Expr::Real(mx), Expr::Real(my)].into());
-      primitives.push(label_text(styled, point, None));
+      if si == di {
+        let my = y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5;
+        let point = Expr::List(vec![Expr::Real(x1), Expr::Real(my)].into());
+        primitives.push(label_text(styled, point, None));
+      } else {
+        let t = place.t;
+        let point = place.text_point(x1 + t * (x2 - x1), y1 + t * (y2 - y1));
+        primitives.push(label_text(styled, point, place.text_offset()));
+      }
     }
     if !edge_data.directives.is_empty() {
       let mut scoped: Vec<Expr> = edge_data.directives.clone();
@@ -4583,24 +4581,89 @@ pub(crate) fn snap_coord(v: f64) -> f64 {
   v
 }
 
-/// The text of an edge label: strings as they are, `Placed[label, pos]`
-/// looked through, anything else in its formatted output form (so
-/// `NumberForm[x, 3]` shows as the rounded number).
-fn placed_edge_label(label: &Expr) -> (&Expr, Option<f64>) {
+/// Where an edge label sits: the fraction `t` along the edge and, for a
+/// `Placed[label, t]` or `Placed[label, {t, {ax, ay}}]` label, the point of
+/// the label (in label-scaled coordinates, `{0.5, 0}` by default: its
+/// bottom center) that Wolfram puts 2 printer points above that spot.
+/// Unplaced labels and the named positions `"Start"`, `"Middle"` and
+/// `"End"` are centered on the edge.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct EdgeLabelPlace {
+  t: f64,
+  anchor: Option<(f64, f64)>,
+}
+
+impl EdgeLabelPlace {
+  const MIDDLE: EdgeLabelPlace = EdgeLabelPlace {
+    t: 0.5,
+    anchor: None,
+  };
+
+  fn from_position(position: Option<&Expr>) -> EdgeLabelPlace {
+    use crate::functions::math_ast::try_eval_to_f64;
+    let centered = |t: f64| EdgeLabelPlace { t, anchor: None };
+    let anchored = |t: f64, anchor: (f64, f64)| EdgeLabelPlace {
+      t,
+      anchor: Some(anchor),
+    };
+    match position {
+      None => Self::MIDDLE,
+      Some(Expr::String(s)) => match s.as_str() {
+        "Start" => centered(0.0),
+        "End" => centered(1.0),
+        _ => Self::MIDDLE,
+      },
+      Some(Expr::List(items)) if items.len() == 2 => {
+        let anchor = match &items[1] {
+          Expr::List(a) if a.len() == 2 => {
+            try_eval_to_f64(&a[0]).zip(try_eval_to_f64(&a[1]))
+          }
+          _ => None,
+        };
+        match (try_eval_to_f64(&items[0]), anchor) {
+          (Some(t), Some(anchor)) => anchored(t, anchor),
+          _ => Self::MIDDLE,
+        }
+      }
+      Some(other) => match try_eval_to_f64(other) {
+        Some(t) => anchored(t, (0.5, 0.0)),
+        None => Self::MIDDLE,
+      },
+    }
+  }
+
+  /// The label's `Text` position for the spot `(x, y)` on the edge.
+  fn text_point(&self, x: f64, y: f64) -> Expr {
+    let pair =
+      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+    match self.anchor {
+      Some(_) => call("Offset", vec![pair(0.0, 2.0), pair(x, y)]),
+      None => pair(x, y),
+    }
+  }
+
+  /// The label's `Text` offset: the anchor in `Text`'s `-1 … 1` scale.
+  fn text_offset(&self) -> Option<(f64, f64)> {
+    self.anchor.map(|(ax, ay)| (2.0 * ax - 1.0, 2.0 * ay - 1.0))
+  }
+}
+
+/// An edge label with any `Placed[label, pos]` wrapper looked through,
+/// and where it sits.
+fn placed_edge_label(label: &Expr) -> (&Expr, EdgeLabelPlace) {
   match label {
     Expr::FunctionCall { name, args }
       if name == "Placed" && !args.is_empty() =>
     {
-      (
-        &args[0],
-        args
-          .get(1)
-          .and_then(crate::functions::math_ast::try_eval_to_f64),
-      )
+      (&args[0], EdgeLabelPlace::from_position(args.get(1)))
     }
-    other => (other, None),
+    other => (other, EdgeLabelPlace::MIDDLE),
   }
 }
+
+/// The text of an edge label: strings as they are, `Placed[label, pos]`
+/// looked through, anything else in its formatted output form (so
+/// `NumberForm[x, 3]` shows as the rounded number).
 
 fn edge_label_text(label: &Expr) -> String {
   let (label, _) = placed_edge_label(label);
@@ -4618,22 +4681,16 @@ fn edge_label_text(label: &Expr) -> String {
   }
 }
 
-/// The numeric position of a `Labeled[edge, Placed[label, pos]]` label
-/// along the edge, if it has one.
-fn edge_label_fraction(mut e: &Expr) -> Option<f64> {
+/// Where the label of a `Labeled[edge, label]` edge sits.
+fn edge_label_place_of(mut e: &Expr) -> EdgeLabelPlace {
   while let Expr::FunctionCall { name, args } = e {
     match name.as_str() {
-      "Labeled" if args.len() == 2 => {
-        if let (_, Some(position)) = placed_edge_label(&args[1]) {
-          return Some(position);
-        }
-        e = &args[0];
-      }
+      "Labeled" if args.len() == 2 => return placed_edge_label(&args[1]).1,
       "Style" if args.len() >= 2 => e = &args[0],
       _ => break,
     }
   }
-  None
+  EdgeLabelPlace::MIDDLE
 }
 
 /// Peel off `Labeled[..., label]` and `Style[..., directives...]` wrappers,
