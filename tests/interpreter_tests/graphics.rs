@@ -51289,6 +51289,33 @@ mod manipulate {
     assert_eq!(names, ["w", "j"]);
   }
 
+  /// A control spec's `Background -> color` option is kept as live code
+  /// (unwrapped from `Dynamic`), so a frontend can paint a `Setter` only
+  /// while its condition yields a color; `None` asks for the default face.
+  #[test]
+  fn control_background_option_is_kept_as_live_code() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, {{x, False, \"\"}, {True -> \"go\"}, \
+       ControlType -> Setter, Background -> Dynamic[If[ok, LightBlue, None]]}, \
+       {{y, 1}, {1, 2}, Background -> Pink}, \
+       {{z, 1}, {1, 2}, Background -> None}, {{ok, True}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(
+      spec.control_backgrounds,
+      vec![
+        ("x".to_string(), "If[ok, LightBlue, None]".to_string()),
+        ("y".to_string(), "RGBColor[1, 0.5, 0.5]".to_string()),
+      ]
+    );
+    let eval = woxi::functions::graphics::manipulate_eval_background;
+    let lit = eval("If[True, LightBlue, None]").expect("a color");
+    assert!((lit.0 - 0.87).abs() < 1e-9 && (lit.2 - 1.0).abs() < 1e-9);
+    assert_eq!(eval("If[False, LightBlue, None]"), None);
+    assert_eq!(eval("Pink"), Some((1.0, 0.5, 0.5)));
+  }
+
   /// Each `PaneSelector` pane's controls are collected into the one flat
   /// control panel, but they carry the condition under which their pane is
   /// on screen so a frontend can show one panel at a time. A variable used

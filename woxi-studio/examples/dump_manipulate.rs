@@ -164,6 +164,9 @@ fn main() {
         if let Some(icon) = state.label_svg(c.name()) {
           println!("    label icon: {}x{}", icon.width, icon.height);
         }
+        if let Some(Some((r, g, b))) = state.control_face.get(i) {
+          println!("    face: rgb({r:.3}, {g:.3}, {b:.3})");
+        }
       }
       if !state.state.is_empty() {
         println!("state vars:");
