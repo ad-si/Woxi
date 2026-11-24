@@ -4445,11 +4445,13 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// is checked, and the display label a toggle sends (the other choice).
 ///
 /// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
-/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`).
-/// An explicit `ControlType -> Checkbox` over any two choices (`{1, 0}`) is
-/// a checkbox too, following `Checkbox[x, {v1, v2}]`: the first choice is
-/// unchecked and the second checked. While the bound value is none of the
-/// choices (`has_overflow`) the box shows unchecked.
+/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`),
+/// and stays checked on `True` when `ControlType -> Checkbox` is spelled out
+/// (`{color, {True, False}, ControlType -> Checkbox}`), as the FrontEnd
+/// draws it. An explicit `ControlType -> Checkbox` over any other two
+/// choices (`{1, 0}`, `{None, All}`) follows `Checkbox[x, {v1, v2}]`: the
+/// first choice is unchecked and the second checked. While the bound value
+/// is none of the choices (`has_overflow`) the box shows unchecked.
 fn discrete_checkbox_state(
   values: &[String],
   value_labels: &[String],
@@ -4458,7 +4460,10 @@ fn discrete_checkbox_state(
   other_type: bool,
   has_overflow: bool,
 ) -> Option<(bool, Option<String>)> {
-  if forced_checkbox && value_labels.len() == 2 {
+  if forced_checkbox
+    && value_labels.len() == 2
+    && !renders_as_checkbox(values, value_labels)
+  {
     let checked = !has_overflow && current_index == 1;
     return Some((checked, value_labels.get(usize::from(!checked)).cloned()));
   }
@@ -25098,6 +25103,83 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
         false
       ),
       None
+    );
+  }
+
+  /// `ControlType -> Checkbox` spelled out over a `{True, False}` domain
+  /// still checks on `True`, whichever order the values are listed in, while
+  /// any other pair (`{None, All}`) keeps `Checkbox[x, {v1, v2}]`'s
+  /// positional reading. Regression: the explicit type made every pair
+  /// positional, so `{c, {True, False}, ControlType -> Checkbox}` showed
+  /// unchecked at its initial `True` and checked once switched to `False`.
+  #[test]
+  fn explicit_checkbox_over_boolean_choices_checks_on_true() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{c, m}, {c, {True, False}, ControlType -> Checkbox}, \
+       {m, {None, All}, ControlType -> Checkbox}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let states = |state: &manipulate::ManipulateState| {
+      state
+        .controls
+        .iter()
+        .map(|control| match control {
+          manipulate::ControlState::Discrete {
+            values,
+            value_labels,
+            current_index,
+            checkbox,
+            popup,
+            setter_bar,
+            overflow,
+            ..
+          } => {
+            assert!(*checkbox, "each control must be a checkbox");
+            discrete_checkbox_state(
+              values,
+              value_labels,
+              *current_index,
+              *checkbox,
+              *popup || *setter_bar,
+              overflow.is_some(),
+            )
+            .expect("draws as a checkbox")
+          }
+          other => panic!("unexpected control: {other:?}"),
+        })
+        .collect::<Vec<_>>()
+    };
+    // Initially `c = True` (checked) and `m = None` (unchecked).
+    assert_eq!(
+      states(&state),
+      vec![
+        (true, Some("False".to_string())),
+        (false, Some("All".to_string()))
+      ]
+    );
+    assert!(state.select_discrete(0, "False"));
+    assert!(state.select_discrete(1, "All"));
+    assert_eq!(
+      states(&state),
+      vec![
+        (false, Some("True".to_string())),
+        (true, Some("None".to_string()))
+      ]
+    );
+
+    // The `{False, True}` order checks on `True` as well.
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["False", "True"]),
+        &s(&["False", "True"]),
+        1,
+        true,
+        false,
+        false
+      ),
+      Some((true, Some("False".to_string())))
     );
   }
 
