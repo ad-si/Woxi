@@ -151,6 +151,56 @@ mod image_size {
     assert!((80.0..88.0).contains(&h), "frame height {h}");
   }
 
+  // A top `FrameLabel` drawn as a picture (a `Row` holding an inline
+  // `Graphics`) gets its room above the frame like a text label does,
+  // instead of being placed above the image's top edge.
+  #[test]
+  fn top_picture_frame_label_stays_inside_image() {
+    for size in ["ImageSize -> {375, 232}", "ImageSize -> 300"] {
+      let svg = svg_of(&format!(
+        "ListPlot[{{1, 2, 3}}, Frame -> True, FrameLabel -> {{{{\"l\", \"\"}}, \
+         {{\"b\", Row[{{\"key \", Graphics[{{Red, Line[{{{{0, 0}}, {{10, 0}}}}]}}, \
+         ImageSize -> {{30, 20}}]}}]}}}}, {size}]"
+      ));
+      // The label's own `<svg>` is the first one nested in the image.
+      let nested = svg.match_indices("<svg ").nth(1).map(|(i, _)| i).unwrap();
+      let tag = &svg[nested..nested + svg[nested..].find('>').unwrap()];
+      let start = tag.find(" y=\"").unwrap() + 4;
+      let y: f64 = tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap();
+      assert!(y >= 0.0, "{size}: label starts at y = {y}: {tag}");
+    }
+  }
+
+  // The text of such a picture label is set like a text frame label, in
+  // gray sans-serif, while a `Style` around the label (its size) and around
+  // an item (italic, a color) still applies.
+  #[test]
+  fn picture_frame_label_text_takes_frame_label_style() {
+    for edge in ["{\"b\", LABEL}", "{LABEL, \"\"}"] {
+      let label = "Style[Row[{\"key \", Style[\"t\", Italic], \" \", \
+         Style[\"hot\", Red], Graphics[{Red, Line[{{0, 0}, {10, 0}}]}, \
+         ImageSize -> {30, 20}]}], 17]";
+      let svg = svg_of(&format!(
+        "ListPlot[{{1, 2, 3}}, Frame -> True, FrameLabel -> {{{{\"l\", \"\"}}, \
+         {}}}]",
+        edge.replace("LABEL", label)
+      ));
+      let text_tag = |content: &str| {
+        let end = svg.find(&format!(">{content}")).unwrap();
+        &svg[svg[..end].rfind("<text").unwrap()..end]
+      };
+      let key = text_tag("key ");
+      assert!(key.contains("sans-serif"), "{edge}: {key}");
+      assert!(key.contains("fill=\"rgb(102,102,102)\""), "{edge}: {key}");
+      assert!(key.contains("font-size=\"17\""), "{edge}: {key}");
+      let hot = text_tag("hot");
+      assert!(hot.contains("fill=\"rgb(255,0,0)\""), "{edge}: {hot}");
+      assert!(svg.contains("font-style=\"italic\">t"), "{edge}");
+    }
+  }
+
   // `ImageSize -> {Automatic, h}` fixes the height of a list plot too.
   #[test]
   fn list_plot_fixed_height() {

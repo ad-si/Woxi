@@ -981,7 +981,8 @@ pub(crate) fn plot_title_band(
 ///
 /// `x_ticks`/`y_ticks` are the labeled ticks of the bottom/left edge (or
 /// the axes), `x`/`y` the axis scales, `origin` where the axes cross and
-/// `bottom_graphic_h` the height of a picture `FrameLabel` under the frame.
+/// `bottom_graphic_h`/`top_graphic_h` the heights of picture `FrameLabel`s
+/// under and above the frame.
 pub(crate) fn plot_decorations(
   opts: &crate::functions::plot::PlotOptions,
   x_ticks: &crate::functions::plot_axes::AxisTicks,
@@ -991,7 +992,7 @@ pub(crate) fn plot_decorations(
     crate::functions::plot_axes::AxisScale,
   ),
   origin: (f64, f64),
-  bottom_graphic_h: f64,
+  (bottom_graphic_h, top_graphic_h): (f64, f64),
 ) -> Decorations {
   let tick_font = plot_tick_font(opts);
   let label_font = plot_label_font(opts);
@@ -1131,6 +1132,10 @@ pub(crate) fn plot_decorations(
   ];
   if d.frame_labels[0].is_none() && bottom_graphic_h > 0.0 {
     d.frame_labels[0] = Some(bottom_graphic_h);
+  }
+  // A top label drawn as a picture needs its room above the frame too.
+  if d.frame_labels[2].is_none() && top_graphic_h > 0.0 {
+    d.frame_labels[2] = Some(top_graphic_h);
   }
   if !frame {
     d.frame_labels = [None; 4];

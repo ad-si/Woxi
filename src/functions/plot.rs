@@ -6308,17 +6308,21 @@ fn generate_svg_with_options(
   // need (see `plot_padding`). A framed plot hands the left and bottom room
   // to plotters as label areas, which draws the frame's tick labels in
   // them; unframed axes draw their own labels, so it is plain margin.
-  let bottom_graphic_h =
-    opts.frame_label_bottom_graphic.as_ref().map_or(0.0, |g| {
+  let graphic_h = |g: &Option<GraphicLabel>| {
+    g.as_ref().map_or(0.0, |g| {
       scaled_graphic_label_size(g, render_width as f64 * 0.85, sf).1 / sf
-    });
+    })
+  };
   let decorations = plot_padding::plot_decorations(
     opts,
     &x_ticks,
     &y_ticks,
     (x_scale, y_scale),
     origin,
-    bottom_graphic_h,
+    (
+      graphic_h(&opts.frame_label_bottom_graphic),
+      graphic_h(&opts.frame_label_top_graphic),
+    ),
   );
   let auto_padding = opts.image_padding.is_none().then(|| {
     let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
@@ -16445,12 +16449,15 @@ fn frame_label_picture(e: &Expr) -> Option<String> {
 /// `Grid[…]` uses so the frame label shows the table instead of nothing.
 fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
   let val = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
-  // `Style[label, …]` is looked through to the label it styles.
+  // `Style[label, …]` is looked through to the label it styles; its
+  // directives, innermost first, still style a `Row`'s items.
   let mut val = &val;
+  let mut styles: Vec<&[Expr]> = Vec::new();
   while let Expr::FunctionCall { name, args } = val
     && name == "Style"
     && !args.is_empty()
   {
+    styles.push(&args[1..]);
     val = &args[0];
   }
   let Expr::FunctionCall { name, args } = val else {
@@ -16461,8 +16468,35 @@ fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
       crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?
     }
     // A `Row` holding pictures (a legend swatch drawn as `Graphics`) can
-    // only be shown as a picture, not read off as text.
+    // only be shown as a picture, not read off as text. Its text is set
+    // like any frame label (gray sans-serif) under the label's own styles.
     "Row" if row_holds_graphics(args) => {
+      let frame_label_style = [
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+          replacement: Box::new(Expr::String("sans-serif".to_string())),
+        },
+        Expr::FunctionCall {
+          name: "GrayLevel".to_string(),
+          args: vec![Expr::Real(0.4)].into(),
+        },
+      ];
+      let mut row = val.clone();
+      for directives in styles
+        .iter()
+        .rev()
+        .copied()
+        .chain(std::iter::once(&frame_label_style[..]))
+      {
+        if let Some(styled) =
+          crate::functions::graphics::style_pushed_into_layout(&row, directives)
+        {
+          row = styled;
+        }
+      }
+      let Expr::FunctionCall { args, .. } = &row else {
+        return None;
+      };
       crate::functions::graphics::row_to_svg(args)?
     }
     _ => return None,
