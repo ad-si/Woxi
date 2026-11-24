@@ -44,6 +44,17 @@ isosurface without the dark rim wolframscript shows at the box walls. An
 explicit `BoundaryStyle -> style` is kept as `Line` primitives and survives
 `Show`.
 
+### Inline box code in a graphics `Text` is never italic
+
+Inside graphics, Wolfram sets the single-letter symbols of typeset math in
+italics, including those of a string carrying inline box code:
+`Graphics[Text[TraditionalForm["\!\(\*SuperscriptBox[\(x\), \(2\)]\)"]]]`
+shows an italic x². Woxi's graphics `Text` folds such box code to plain
+Unicode text (`x²`) before any italic decision, so the letter stays
+upright. `Graphics[Text[TraditionalForm[x^2]]]` (an expression, not a box
+string) is italic as in Wolfram. Exported on its own (not inside graphics),
+the same math is upright in both.
+
 ### Displaying held `Graphics[…]` evaluates its primitives
 
 A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset

@@ -14822,6 +14822,14 @@ fn contents_sphere_radius(
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Math inside a picture keeps its italics even when the picture is drawn
+  // as part of an SVG export of a larger expression.
+  if crate::functions::graphics::export_upright_letters() {
+    return crate::functions::graphics::with_export_upright_letters(
+      false,
+      || graphics3d_ast(args),
+    );
+  }
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
   let content = evaluate_expr_to_expr(&args[0])?;
 

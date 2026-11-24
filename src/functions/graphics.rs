@@ -18229,6 +18229,11 @@ pub fn graphics_option_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Math inside a picture keeps its italics even when the picture is drawn
+  // as part of an SVG export of a larger expression.
+  if export_upright_letters() {
+    return with_export_upright_letters(false, || graphics_ast(args));
+  }
   let args = &graphics_option_args(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
@@ -21075,6 +21080,7 @@ impl BoxLayout {
     // slanted), so surrounding layout is unaffected.
     let style_attr = if is_math_italic_atom(s)
       && !BOX_UPRIGHT_TEXT.with(std::cell::Cell::get)
+      && !export_upright_letters()
     {
       " font-style=\"italic\""
     } else {
@@ -21126,6 +21132,12 @@ thread_local! {
   /// a string is literal text, so its single letters are not math variables
   /// and stay upright.
   static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while exporting an expression that is not a picture to SVG.
+  /// Wolfram's SVG export of typeset math draws its single-letter symbols
+  /// upright — `Export["f.svg", TraditionalForm[x^2]]` shows an upright x —
+  /// whereas the same math inside graphics (a `PlotLabel`, a `Text`
+  /// primitive) and every raster export keep them italic.
+  static EXPORT_UPRIGHT_LETTERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
   /// Set while drawing the content of a `Text[expr]` outside graphics.
   /// Wolfram sets math inside text one script level down (a text style's
   /// `ScriptLevel -> 1`), so even an outermost fraction there is drawn at
@@ -21143,6 +21155,28 @@ pub(crate) fn with_inline_text_math<R>(f: impl FnOnce() -> R) -> R {
   }
   let _restore = Restore(BOX_INLINE_TEXT_MATH.with(|c| c.replace(true)));
   f()
+}
+
+/// Run `f` with [`EXPORT_UPRIGHT_LETTERS`] set to `upright`, restoring it
+/// after.
+pub(crate) fn with_export_upright_letters<R>(
+  upright: bool,
+  f: impl FnOnce() -> R,
+) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      EXPORT_UPRIGHT_LETTERS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(EXPORT_UPRIGHT_LETTERS.with(|c| c.replace(upright)));
+  f()
+}
+
+/// Whether automatic math-variable italics are off (see
+/// [`EXPORT_UPRIGHT_LETTERS`]).
+pub(crate) fn export_upright_letters() -> bool {
+  EXPORT_UPRIGHT_LETTERS.with(std::cell::Cell::get)
 }
 
 /// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
@@ -25863,6 +25897,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // A quoted string is literal text, upright whatever the form.
       if unquoted.len() == s.len()
         && SINGLE_LETTER_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
         && is_single_letter_symbol(unquoted)
       {
         return format!(
