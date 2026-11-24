@@ -34203,15 +34203,25 @@ fn grid_svg_styled_internal_reporting(
   // by the ordinary cells first, and only what a span still needs is added
   // afterwards, so one wide heading does not stretch a single column.
   let mut spans: Vec<(usize, usize, f64)> = Vec::new();
+  // The widest picture (graphic, image or nested grid) in each column. Text
+  // wraps to a fixed `ItemSize` width, but a picture cannot, so such a
+  // column still grows to hold it.
+  let mut rigid_widths: Vec<f64> = vec![0.0; num_cols];
   for row in &rows {
     for (j, cell) in row.iter().enumerate() {
       if is_span_placeholder(cell) {
         continue;
       }
-      let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
-        nat_w + col_pad(j)
-      } else if let Some((img_w, _)) = grid_image_shown_size(cell) {
-        img_w + col_pad(j)
+      let rigid_w = grid_cell_graphic(cell)
+        .map(|(_, nat_w, _)| nat_w)
+        .or_else(|| grid_image_shown_size(cell).map(|(img_w, _)| img_w));
+      if let Some(w) = rigid_w
+        && span_width(row, j) == 1
+      {
+        rigid_widths[j] = rigid_widths[j].max(w + col_pad(j));
+      }
+      let w = if let Some(w) = rigid_w {
+        w + col_pad(j)
       } else {
         let advance = if contains_base_form(cell) {
           font_size * MONO_ADVANCE
@@ -34293,10 +34303,12 @@ fn grid_svg_styled_internal_reporting(
   // `ItemSize` fixes a column's width at `w` of the front end's item-size
   // units. Measured against front-end snapshots (14 px text, divider to
   // divider), `ItemSize` 4, 5 and 8 give 49.5, 60.5 and 93 px: a unit is
-  // about 0.775 of the font size, plus half the cell's usual padding.
+  // about 0.775 of the font size, plus half the cell's usual padding. A
+  // picture wider than that widens the column instead of being cut off.
   for (j, width) in col_widths.iter_mut().enumerate() {
     if let Some(w) = item_size_at(&item_size_w, j, num_cols) {
-      *width = w * ITEM_SIZE_EM * font_size + col_pad(j) / 2.0;
+      *width =
+        (w * ITEM_SIZE_EM * font_size + col_pad(j) / 2.0).max(rigid_widths[j]);
     }
   }
 

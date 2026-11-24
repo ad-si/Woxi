@@ -774,6 +774,35 @@ mod layout_display {
     }
   }
 
+  /// Regression: a picture (here a nested `Grid`) wider than its fixed
+  /// `ItemSize` column was squeezed into the column, so the outer grid was
+  /// narrower than its content and the picture's right side was cut off.
+  /// Text wraps to the fixed width, but a picture cannot, so the column
+  /// grows to hold it, as in the front end.
+  #[test]
+  fn grid_item_size_column_grows_to_fit_a_wider_picture() {
+    let svg = svg_of(
+      "Grid[{{Graphics[Disk[], ImageSize -> 50], \
+       Grid[{{\"Number of stones in the group\", 12345}}]}}, \
+       ItemSize -> {{Automatic, 5}}]",
+    );
+    let num = |tag: &str, name: &str| -> f64 {
+      let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[j..j + tag[j..].find('"').unwrap()].parse().unwrap()
+    };
+    let outer = &svg[..svg.find('>').unwrap()];
+    let outer_w = num(outer, "width");
+    // Every nested picture lies inside the outer grid's width.
+    for (i, _) in svg.match_indices("<svg x=") {
+      let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+      assert!(
+        num(tag, "x") + num(tag, "width") <= outer_w + 0.5,
+        "{tag} overflows width {outer_w}\n{svg}"
+      );
+    }
+    assert!(svg.contains(">12345<"), "{svg}");
+  }
+
   /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
   /// as `{w, h}`: every column is `w` ems wide, not just the first one.
   #[test]
