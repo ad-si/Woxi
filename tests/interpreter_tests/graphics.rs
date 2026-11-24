@@ -21622,6 +21622,23 @@ mod plot3d {
       );
     }
 
+    /// A styled point inside a `Tooltip` (`Tooltip[Style[{x, y}, color],
+    /// label]`) is drawn in its `Style`'s color, not the dataset's default
+    /// one.
+    #[test]
+    fn list_plot_styled_points_inside_tooltips() {
+      let svg = export_svg(
+        "ListPlot[Table[Tooltip[Style[{k, k^2}, \
+         If[EvenQ[k], Red, GrayLevel[0.9]]], k], {k, 4}]]",
+      );
+      let fills: std::collections::HashSet<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<circle"))
+        .filter_map(|l| l.split("fill=\"").nth(1)?.split('"').next())
+        .collect();
+      assert_eq!(fills, ["#FF0000", "#E6E6E6"].into_iter().collect(), "{svg}");
+    }
+
     #[test]
     fn list_plot_plot_style() {
       insta::assert_snapshot!(export_svg(

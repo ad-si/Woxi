@@ -2687,10 +2687,21 @@ fn styled_point_colors(
       _ => e,
     }
   }
-  let style_color = |e: &Expr| -> Option<(u8, u8, u8)> {
+  // A point may sit inside display wrappers (`Tooltip[Style[{x, y}, c],
+  // label]`, `Labeled[…]`): the color comes from the innermost `Style`,
+  // looking through any of those wrappers.
+  fn style_color(e: &Expr) -> Option<(u8, u8, u8)> {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
+    let is_wrapper = PLOT_DATA_DISPLAY_WRAPPER_HEADS.contains(&name.as_str())
+      || matches!(name.as_str(), "Labeled" | "Callout");
+    if !is_wrapper || args.is_empty() {
+      return None;
+    }
+    if let Some(inner) = style_color(&args[0]) {
+      return Some(inner);
+    }
     if name != "Style" || args.len() < 2 {
       return None;
     }
@@ -2701,7 +2712,7 @@ fn styled_point_colors(
     let c = style.color?;
     let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     Some((ch(c.r), ch(c.g), ch(c.b)))
-  };
+  }
   let is_dataset = |e: &Expr| {
     matches!(unstyle(e), Expr::List(items)
       if items.len() != 2 || items.iter().any(|v| matches!(v, Expr::List(_))))

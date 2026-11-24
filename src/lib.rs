@@ -6120,13 +6120,11 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && let syntax::Expr::List(_) = &pane_args[0]
   {
     let mut flowed = pane_args.to_vec();
+    let mut pieces = Vec::new();
+    list_flow_pieces(&pane_args[0], &mut pieces);
     flowed[0] = syntax::Expr::FunctionCall {
       name: "Row".to_string(),
-      args: vec![syntax::Expr::List(
-        vec![syntax::Expr::String(syntax::expr_to_string(&pane_args[0]))]
-          .into(),
-      )]
-      .into(),
+      args: vec![syntax::Expr::List(pieces.into())].into(),
     };
     held = syntax::Expr::FunctionCall {
       name: "Pane".to_string(),
@@ -6160,6 +6158,57 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match functions::graphics::panel_to_svg(&panel_args) {
     Some(svg) => graphics_result(svg),
     None => expr,
+  }
+}
+
+/// The pieces of `Row` text that a list re-flowed to a pane's width is laid
+/// out as: the list's InputForm text, except that each `Style[item, dirs…]`
+/// element keeps its directives around its own text, so a styled element
+/// (`Style[{3, 4, 5}, Gray, Underlined]`) shows its text in that style rather
+/// than as the literal `Style[…]` call. Adjacent plain text is merged.
+fn list_flow_pieces(expr: &syntax::Expr, out: &mut Vec<syntax::Expr>) {
+  fn push_text(out: &mut Vec<syntax::Expr>, text: &str) {
+    if let Some(syntax::Expr::String(last)) = out.last_mut() {
+      last.push_str(text);
+    } else {
+      out.push(syntax::Expr::String(text.to_string()));
+    }
+  }
+  match expr {
+    syntax::Expr::List(items) => {
+      push_text(out, "{");
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          push_text(out, ", ");
+        }
+        list_flow_pieces(item, out);
+      }
+      push_text(out, "}");
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Style" && args.len() >= 2 =>
+    {
+      let mut inner = Vec::new();
+      list_flow_pieces(&args[0], &mut inner);
+      let body = match <[syntax::Expr; 1]>::try_from(inner) {
+        Ok([single @ syntax::Expr::String(_)]) => single,
+        Ok([single]) => syntax::Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![syntax::Expr::List(vec![single].into())].into(),
+        },
+        Err(pieces) => syntax::Expr::FunctionCall {
+          name: "Row".to_string(),
+          args: vec![syntax::Expr::List(pieces.into())].into(),
+        },
+      };
+      let mut styled = vec![body];
+      styled.extend(args[1..].iter().cloned());
+      out.push(syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: styled.into(),
+      });
+    }
+    other => push_text(out, &syntax::expr_to_string(other)),
   }
 }
 
