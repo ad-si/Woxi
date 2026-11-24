@@ -10862,3 +10862,18 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### A slightly shrunk copy of a solid drawn under the original
+
+A scene that draws a copy of a solid scaled by `0.998` about its center in
+one color, and then the solid itself (opened into frame-shaped faces by a
+`GraphicsComplex` rewrite) in a second color, under a distant camera
+(`ViewPoint -> {0, 100, 71}`, `ViewAngle -> 0.008`). Woxi draws the outer surface on top, as the geometry says, so the frames
+cover the shrunk copy. All four of Wolfram's saved snapshots of such a scene
+show only the shrunk copy's color and its edges. Even the frames' own edges
+are hidden; only a few hairline slivers of the outer surface show along
+silhouettes. That looks like depth-buffer precision under a far camera, with
+the earlier primitive winning the near-tie. But Woxi already draws exactly
+coplanar faces later-on-top, as in Wolfram. With that rule, a depth tie would
+put the outer surface on top, so the cause is unconfirmed. Not yet checked
+against wolframscript.
