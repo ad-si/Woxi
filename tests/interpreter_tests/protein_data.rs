@@ -19,12 +19,17 @@ mod protein_data_tests {
       "MASGVTVNDEVI"
     );
     assert_eq!(
+      interpret(r#"ProteinData["CFL1", "SequenceLength"]"#).unwrap(),
+      "Quantity[166, AminoAcids]"
+    );
+    // A list of proteins is no entity; it is not mapped over.
+    assert_eq!(
       interpret(r#"ProteinData[{"CFL1", "CFL2"}, "SequenceLength"]"#).unwrap(),
-      "{166, 166}"
+      "ProteinData[{CFL1, CFL2}, SequenceLength]"
     );
     assert_eq!(
       interpret(
-        r#"StringLength[ProteinData["CFL1", "Sequence"]] == ProteinData["CFL1", "SequenceLength"]"#
+        r#"StringLength[ProteinData["CFL1", "Sequence"]] == QuantityMagnitude[ProteinData["CFL1", "SequenceLength"]]"#
       )
       .unwrap(),
       "True"
@@ -103,6 +108,11 @@ mod protein_data_tests {
     );
     assert_eq!(
       interpret(r#"ProteinData["CFL1", "NoSuchProperty"]"#).unwrap(),
+      "ProteinData[CFL1, NoSuchProperty]"
+    );
+    // A property WL has but the bundled table lacks is missing.
+    assert_eq!(
+      interpret(r#"ProteinData["CFL1", "MolecularWeight"]"#).unwrap(),
       "Missing[NotAvailable]"
     );
   }

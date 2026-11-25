@@ -3483,7 +3483,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && b != 0.0
         && contains_inexact_real_log(&args[0])
       {
-        let re = 0.5 * (a * a + b * b).ln();
+        let re = a.hypot(b).ln();
         let im = b.atan2(a);
         return Ok(build_complex_float_expr(re, im));
       }
@@ -3494,7 +3494,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if a == 0.0 && b == 0.0 {
           return Ok(id_expr("Indeterminate"));
         }
-        let re = 0.5 * (a * a + b * b).ln();
+        let re = a.hypot(b).ln();
         return Ok(build_complex_float_expr_keep_real(re, b.atan2(a)));
       }
       Ok(unevaluated("Log", args))

@@ -74,14 +74,37 @@ fn main() -> iced::Result {
 #[cfg(target_os = "linux")]
 const APPLICATION_ID: &str = "woxi-studio";
 
+/// The app icon (also used for the macOS bundle and the docs favicon),
+/// embedded so the title bar and taskbar show it instead of the
+/// platform's generic default window icon.
+const APP_ICON_PNG: &[u8] = include_bytes!("../../images/favicon.png");
+
+fn app_icon() -> Option<iced::window::Icon> {
+  iced::window::icon::from_file_data(APP_ICON_PNG, None).ok()
+}
+
 fn window_settings() -> iced::window::Settings {
   iced::window::Settings {
+    icon: app_icon(),
     #[cfg(target_os = "linux")]
     platform_specific: iced::window::settings::PlatformSpecific {
       application_id: String::from(APPLICATION_ID),
       ..Default::default()
     },
     ..Default::default()
+  }
+}
+
+#[cfg(test)]
+mod window_icon_tests {
+  use super::*;
+
+  /// Without an explicit icon, Windows and X11 show a generic default
+  /// window icon (https://github.com/ad-si/Woxi/issues/2942).
+  #[test]
+  fn window_has_app_icon() {
+    assert!(app_icon().is_some(), "embedded app icon must decode");
+    assert!(window_settings().icon.is_some());
   }
 }
 
@@ -21072,16 +21095,28 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
 
     // Turning the blue opacity down to zero empties those cells without
     // erasing them: no blue face shows (a fully transparent face paints
-    // nothing at all), but every outline survives.
-    // Distinct edges: a wall shared by two opaque cells is drawn once (the
-    // covered copy and its identical outline are dropped), while two
-    // transparent cells each draw it, so the same edge may come twice.
+    // nothing at all), but every outline survives. Neighboring cells share
+    // faces, and an opaque face covered by an identical later one is left
+    // out, so the opaque sheet draws each shared edge once while the
+    // transparent one may draw it twice: compare the distinct edges, with
+    // each segment's ends taken in either order.
     let outlines = |svg: &str| {
+      let attr = |l: &str, name: &str| -> String {
+        l.split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .unwrap_or("")
+          .to_string()
+      };
       svg
         .lines()
         .filter(|l| l.starts_with("<line"))
         .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
-        .map(str::to_string)
+        .map(|l| {
+          let a = (attr(l, "x1"), attr(l, "y1"));
+          let b = (attr(l, "x2"), attr(l, "y2"));
+          if a <= b { (a, b) } else { (b, a) }
+        })
         .collect::<std::collections::BTreeSet<_>>()
     };
     set(&mut widget, 4, 0.0);
@@ -21093,6 +21128,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
       hidden.iter().all(|l| l.contains("opacity=\"0\"")),
       "no blue face may show through: {hidden:?}"
     );
+    assert!(!outlines(&sheet).is_empty(), "the cells are outlined");
     assert_eq!(
       outlines(&hollow),
       outlines(&sheet),

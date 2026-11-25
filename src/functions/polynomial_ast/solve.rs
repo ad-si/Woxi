@@ -3323,9 +3323,62 @@ fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(split_radicand_content(result))
 }
 
-/// Drop the solutions of a single equation in one unknown that make one of
-/// its denominators vanish: `(x^2 - 1)/(x - 1) == 2` is undefined at
-/// `x == 1`, which only the cancelled numerator `x + 1 - 2` has as a root.
+/// Whether `expr` holds a circular or hyperbolic function.
+fn mentions_trig_function(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Sin"
+          | "Cos"
+          | "Tan"
+          | "Cot"
+          | "Sec"
+          | "Csc"
+          | "Sinh"
+          | "Cosh"
+          | "Tanh"
+          | "Coth"
+          | "Sech"
+          | "Csch"
+      ) =>
+    {
+      true
+    }
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(mentions_trig_function),
+  }
+}
+
+/// `expr` expanded, unless the expansion has more than `slack` leaves more
+/// than `expr` itself.
+fn expand_unless_bigger(expr: Expr, slack: i128) -> Expr {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let leaves = |e: &Expr| match eval(call("LeafCount", vec![e.clone()])) {
+    Some(Expr::Integer(n)) => Some(n),
+    _ => None,
+  };
+  let Some(evaluated) = eval(expr.clone()) else {
+    return expr;
+  };
+  match eval(call("Expand", vec![evaluated.clone()])) {
+    Some(expanded)
+      if leaves(&expanded)
+        .zip(leaves(&evaluated))
+        .is_some_and(|(e, o)| e - o <= slack) =>
+    {
+      expanded
+    }
+    _ => expr,
+  }
+}
+
+/// Drop the solutions of a single equation in one unknown that make the
+/// denominator of its difference vanish. As in Wolfram, the difference is
+/// brought over a common denominator with common factors cancelled first,
+/// so a removable singularity is no pole: `(x^2 - 1)/(x - 1) == 2` has the
+/// solution `x == 1`, but `x/(x - 1) == 1` has none.
 fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
   let (Some(eq), Some(Expr::Identifier(var))) = (args.first(), args.get(1))
   else {
@@ -3340,16 +3393,28 @@ fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
     }
     _ => return result,
   };
-  let mut denominators = Vec::new();
-  for side in sides {
-    collect_denominator_sums(side, var, &mut denominators);
-  }
   let Expr::List(solutions) = &result else {
     return result;
   };
-  if denominators.is_empty() {
-    return result;
-  }
+  let difference = crate::helpers::call(
+    "Plus",
+    vec![
+      sides[0].clone(),
+      crate::helpers::call("Times", vec![Expr::Integer(-1), sides[1].clone()]),
+    ],
+  );
+  let denominator =
+    crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+      "Denominator",
+      vec![crate::helpers::call(
+        "Together",
+        vec![crate::helpers::call("Rationalize", vec![difference])],
+      )],
+    ));
+  let denominators: Vec<Expr> = match denominator {
+    Ok(den) if super::eliminate::contains_var(&den, var) => vec![den],
+    _ => return result,
+  };
   let vanishes = |value: &Expr| {
     denominators.iter().any(|den| {
       let at = crate::syntax::substitute_variable(den, var, value);
@@ -8163,6 +8228,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         four_ac
       };
       let discriminant = simplify(minus2(b_sq, four_ac));
+      // An exact discriminant is expanded unless that makes it clearly
+      // bigger (more than four leaves): `(1 + a)^2 - 4 c` becomes
+      // `1 + 2 a + a^2 - 4 c`, `(a + b)^2 - 4 c` stays. One holding a
+      // circular or hyperbolic function stays as well:
+      // `(1 + Sin[t])^2 - 4 c`.
+      let discriminant = if inexact || mentions_trig_function(&discriminant) {
+        discriminant
+      } else {
+        expand_unless_bigger(discriminant, 4)
+      };
 
       let neg_b = negate_expr(b);
       let two_a = multiply_exprs(&Expr::Integer(2), a);

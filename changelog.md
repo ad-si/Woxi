@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A large `Point` in a 3D picture is drawn whole over the surface faces
+    behind it: a marker floating above a `Plot3D` surface was placed in
+    the depth order by its center alone, so the faces next to it were
+    painted over part of its disc.
+- Woxi Studio windows show the Woxi app icon in the title bar and
+    taskbar instead of the platform's generic default icon.
 - `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`
     search a long text in one pass: a pattern that is absent or sparse in a
     few hundred kilobytes took seconds, the search restarting at every

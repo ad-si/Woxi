@@ -1094,6 +1094,22 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     {
       return Some(row_template_source(tag, &parts));
     }
+    // The script and `Mod` templates stand for the call they typeset:
+    // `TemplateBox[{"x", "3"}, "Superscript"]` is `Superscript[x, 3]`.
+    // Its options (`SyntaxForm -> SuperscriptBox`) follow the name.
+    let name = args[1].trim().trim_matches('"');
+    if matches!(name, "Superscript" | "Subscript" | "Subsuperscript" | "Mod") {
+      let items = args[0].trim();
+      let items = match items.strip_prefix("List[") {
+        Some(rest) => format!("{{{}}}", rest.strip_suffix(']').unwrap_or(rest)),
+        None => items.to_string(),
+      };
+      let operands: Vec<String> = template_box_parts(&items)
+        .iter()
+        .map(|p| format!("({})", extract_cell_content(p.trim())))
+        .collect();
+      return Some(format!("{name}[{}]", operands.join(", ")));
+    }
     // A Demonstration's cloud-compatible snapshot slideshow is stored as
     // `TemplateBox[{InterpretationBox[Null, EmbeddedHTML["<html…>"]], …},
     // "EmbeddedHTML"]`. Show the page's visible text rather than its markup.
@@ -1468,6 +1484,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `TagBox[content, tag, opts...]` is a display annotation; the
       // evaluable value is just `content`.
+      // A one-column `GridBox` tagged `Column` is how `MatrixForm`
+      // typesets a vector, and reads back as that flat list:
+      // `TagBox[GridBox[{{a}, {b}}], Column]` is `{a, b}`, not `{{a}, {b}}`.
+      "TagBox"
+        if args.len() >= 2
+          && args[1].trim() == "Column"
+          && args[0].trim_start().starts_with("GridBox[") =>
+      {
+        let grid = conv(&args[0]);
+        column_grid_as_vector(&grid).unwrap_or(grid)
+      }
       "TagBox" if !args.is_empty() => conv(&args[0]),
       // `StyleBox[op, "OperatorCharacter"]` colors one operator character
       // of a larger expression (e.g. a `Which` guard's `&&`/`==`) without
@@ -1591,6 +1618,21 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     });
   }
   None
+}
+
+/// The entries of a one-column grid literal `{{a}, {b}, …}` as the flat
+/// list `{a, b, …}`, or `None` when a row does not hold exactly one entry.
+fn column_grid_as_vector(grid: &str) -> Option<String> {
+  let inner = grid.trim().strip_prefix('{')?.strip_suffix('}')?;
+  let entries = split_top_level_commas(inner)
+    .into_iter()
+    .map(|row| {
+      let cells = row.trim().strip_prefix('{')?.strip_suffix('}')?;
+      let cells = split_top_level_commas(cells);
+      (cells.len() == 1).then(|| cells[0].trim().to_string())
+    })
+    .collect::<Option<Vec<_>>>()?;
+  Some(format!("{{{}}}", entries.join(", ")))
 }
 
 /// Rebuild an evaluable `Image[data, "type", opts…]` from the typeset
@@ -7500,6 +7542,17 @@ Cell["Chapter 2", "Chapter"]
   fn test_style_box_inside_word_keeps_word() {
     let s = r#"BoxData[RowBox[{"Module", "[", RowBox[{RowBox[{"{", RowBox[{StyleBox[RowBox[{"Ke", StyleBox["t1", FontColor->GrayLevel[0]]}]], ",", "Ket2"}], "}"}], ",", "1"}], "]"}]]"#;
     assert_eq!(extract_cell_content(s), "Module[{Ket1,Ket2},1]");
+  }
+
+  /// `MatrixForm` typesets a vector as a one-column `GridBox` tagged
+  /// `Column`, which reads back as the flat list, not a column matrix.
+  #[test]
+  fn test_column_tagged_grid_is_vector() {
+    let s = r#"BoxData[RowBox[{"v", "=", TagBox[RowBox[{"(", "\[NoBreak]", TagBox[GridBox[{{"0"}, {"a"}, {RowBox[{"b", "+", "1"}]}}, GridBoxAlignment->{"Columns" -> {{Center}}}], Column], "\[NoBreak]", ")"}], Function[BoxForm`e$, MatrixForm[BoxForm`e$]]]}]]"#;
+    assert_eq!(extract_cell_content(s), "v=({0, a, b+1})");
+    // A grid with more than one column stays a matrix.
+    let s = r#"BoxData[TagBox[GridBox[{{"1", "2"}, {"3", "4"}}], Column]]"#;
+    assert_eq!(extract_cell_content(s), "{{1, 2}, {3, 4}}");
   }
 
   /// A two-row, one-column `GridBox` in bare parentheses reads back as the
