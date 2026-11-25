@@ -23792,6 +23792,167 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.matches("<polyline").count() >= 4, "{svg}");
     }
 
+    /// Regression: a `Mesh` setting (even `{0, 0}`, as a mesh switched off
+    /// by a `Manipulate` checkbox gives) dropped the `ColorFunction` and
+    /// painted the region in the plain plot color.
+    #[test]
+    fn parametric_plot_two_parameters_color_function_with_mesh() {
+      let colored = |mesh: &str| {
+        export_svg(&format!(
+          "ParametricPlot[{{u, v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
+           ColorFunction -> (RGBColor[1, 0, 1] &), Mesh -> {mesh}, \
+           MeshStyle -> Black, PlotPoints -> 3, MaxRecursion -> 0]"
+        ))
+      };
+      for mesh in ["{0, 0}", "{2, 1}", "2*{1, 3}*0"] {
+        let svg = colored(mesh);
+        assert!(svg.contains("fill=\"rgb(255,0,255)\""), "{mesh}: {svg}");
+        assert!(!svg.contains("fill-opacity=\"0.3\""), "{mesh}: {svg}");
+      }
+      // The mesh lines are drawn over the colored cells.
+      assert!(
+        colored("{2, 1}").matches("<polyline").count()
+          >= colored("{0, 0}").matches("<polyline").count() + 3
+      );
+    }
+
+    /// `MeshFunctions -> {f, g}` draws level curves of `f[x, y, u, v]` and
+    /// `g[x, y, u, v]`, `Mesh -> {m, n}` of them, in place of the
+    /// iso-parameter lines.
+    #[test]
+    fn parametric_plot_two_parameters_mesh_functions() {
+      let svg = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, Mesh -> {3, 2}, \
+         MeshFunctions -> {#1 + #2 &, #3 &}, \
+         MeshStyle -> {RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, \
+         PlotPoints -> 3, MaxRecursion -> 0, BoundaryStyle -> None]",
+      );
+      let segments = |color: &str| -> Vec<Vec<(f64, f64)>> {
+        svg
+          .lines()
+          .filter(|l| l.starts_with("<polyline") && l.contains(color))
+          .map(|l| {
+            let points = l.split("points=\"").nth(1).unwrap();
+            points[..points.find('"').unwrap()]
+              .split(' ')
+              .map(|p| {
+                let (x, y) = p.split_once(',').unwrap();
+                (x.parse().unwrap(), y.parse().unwrap())
+              })
+              .collect()
+          })
+          .collect()
+      };
+      // x + y = 1/2, 1, 3/2 over a 2 x 2 grid of cells: four diagonal
+      // pieces, each as wide as it is tall.
+      let diagonal = segments("rgb(255,0,0)");
+      assert_eq!(diagonal.len(), 4, "{svg}");
+      for seg in &diagonal {
+        let (dx, dy) = (seg[1].0 - seg[0].0, seg[1].1 - seg[0].1);
+        assert!((dx.abs() - dy.abs()).abs() < 0.02, "{seg:?}");
+        assert!(dx.abs() > 1.0, "{seg:?}");
+      }
+      // u = 1/3 and 2/3: vertical pieces.
+      let vertical = segments("rgb(0,0,255)");
+      assert_eq!(vertical.len(), 4, "{svg}");
+      for seg in &vertical {
+        assert!((seg[1].0 - seg[0].0).abs() < 0.02, "{seg:?}");
+      }
+      // A mesh function with no levels asked for draws nothing.
+      let none = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, Mesh -> {0, 0}, \
+         MeshFunctions -> {#1 + #2 &, #3 &}, PlotPoints -> 3, \
+         MaxRecursion -> 0, BoundaryStyle -> None]",
+      );
+      assert!(!none.contains("<polyline"), "{none}");
+    }
+
+    /// `BoundaryStyle` styles the outline of a two-parameter region, and
+    /// `BoundaryStyle -> None` leaves it out.
+    #[test]
+    fn parametric_plot_two_parameters_boundary_style() {
+      let region = |opts: &str| {
+        export_svg(&format!(
+          "ParametricPlot[{{u, v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
+           PlotPoints -> 3, MaxRecursion -> 0{opts}]"
+        ))
+      };
+      assert_eq!(region("").matches("<polyline").count(), 1);
+      assert!(!region(", BoundaryStyle -> None").contains("<polyline"));
+      let styled =
+        region(", BoundaryStyle -> Directive[Opacity[0.5], RGBColor[0, 1, 0]]");
+      assert!(styled.contains("stroke=\"rgb(0,255,0)\""), "{styled}");
+      assert!(styled.contains("opacity=\"0.5\""), "{styled}");
+      assert_eq!(region(", BoundaryStyle -> Automatic"), region(""));
+    }
+
+    /// An `Opacity` in `PlotStyle` makes the cells a `ColorFunction` colors
+    /// translucent; without one they stay opaque.
+    #[test]
+    fn parametric_plot_two_parameters_color_function_opacity() {
+      let region = |opts: &str| {
+        export_svg(&format!(
+          "ParametricPlot[{{u, v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
+           ColorFunction -> (RGBColor[1, 0, 1] &), PlotPoints -> 2, \
+           MaxRecursion -> 0{opts}]"
+        ))
+      };
+      let translucent = region(", PlotStyle -> Opacity[0.8]");
+      assert!(
+        translucent.contains("fill=\"rgb(255,0,255)\" fill-opacity=\"0.8\""),
+        "{translucent}"
+      );
+      assert!(!region("").contains("fill-opacity"), "{}", region(""));
+    }
+
+    /// The constant parts of a `ColorFunction` (nested `Blend`s, the
+    /// arithmetic placing their stops) are evaluated ahead of the cells;
+    /// the colors are those of evaluating the function as written.
+    #[test]
+    fn parametric_plot_two_parameters_color_function_constant_parts() {
+      let svg = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, ColorFunction -> \
+         (Blend[{{Min[1, 2] - 1, Blend[{Red, Blue}, {1, 1}]}, \
+         {3/3, White}}, #3] &), PlotPoints -> 2, MaxRecursion -> 0]",
+      );
+      assert!(svg.contains("fill=\"rgb(191,128,191)\""), "{svg}");
+      // A part that is not constant is evaluated for every cell.
+      assert_eq!(
+        interpret(
+          "n = 0; ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, \
+           ColorFunction -> ((n++; Blend[{Red, Blue}, #3]) &), \
+           PlotPoints -> 3, MaxRecursion -> 0]; n"
+        )
+        .unwrap(),
+        "4"
+      );
+    }
+
+    /// Regression: every point of a two-parameter region was evaluated
+    /// several times over (the grid twice, and five more probes per cell
+    /// even where the grid already showed the cell to be flat).
+    #[test]
+    fn parametric_plot_two_parameters_evaluates_each_point_once() {
+      let evaluations: i64 = interpret(
+        "n = 0; ParametricPlot[{n++; u, v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 10]; n",
+      )
+      .unwrap()
+      .parse()
+      .unwrap();
+      // The 100 grid points plus the finer samples along the boundary.
+      assert!((100..=250).contains(&evaluations), "{evaluations}");
+      // A bent image still has its cells refined.
+      let bent: i64 = interpret(
+        "n = 0; ParametricPlot[{n++; u, Sin[6 v]}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 4]; n",
+      )
+      .unwrap()
+      .parse()
+      .unwrap();
+      assert!(bent > 16 + 3 * 16, "{bent}");
+    }
+
     /// `ColorFunction` paints each cell of a two-parameter region in the
     /// opaque color the function gives at the cell's center.
     #[test]
@@ -42324,6 +42485,59 @@ mod show_function {
   fn show_graphics_circle() {
     // Show[Graphics[...]] should produce a valid SVG
     insta::assert_snapshot!(export_svg("Show[Graphics[{Circle[]}]]"));
+  }
+
+  /// Regression: `Show` evaluated a plot given to it three times over
+  /// (once to look for a legend, once for an image, once to draw it).
+  #[test]
+  fn show_evaluates_its_graphic_once() {
+    for plot in [
+      "Plot[(n++; x), {x, 0, 1}, PlotPoints -> 5, MaxRecursion -> 0]",
+      "ParametricPlot[{n++; u, v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3, \
+       MaxRecursion -> 0]",
+    ] {
+      let alone = interpret(&format!("n = 0; {plot}; n")).unwrap();
+      for shown in [
+        format!("Show[{plot}, ImageSize -> 300]"),
+        format!("Show[{{{plot}, Graphics[Disk[]]}}]"),
+        format!("Show[{plot}, Graphics[Disk[]], PlotRange -> All]"),
+      ] {
+        assert_eq!(
+          interpret(&format!("n = 0; {shown}; n")).unwrap(),
+          alone,
+          "{shown}"
+        );
+      }
+    }
+  }
+
+  /// Regression: among the options a shown graphic carries itself the first
+  /// setting of a name is the one in force, but `Show` let the last one
+  /// win — so a framed region `ParametricPlot[…, Axes -> False]` (whose
+  /// defaults follow the caller's options) got its axes back.
+  #[test]
+  fn show_keeps_the_first_setting_of_a_repeated_option() {
+    let shown = |axes: &str| {
+      export_svg(&format!(
+        "Show[ParametricPlot[{{u, v}}, {{u, -1, 1}}, {{v, -1, 1}}, \
+         PlotPoints -> 3, MaxRecursion -> 0{axes}], ImageSize -> 300]"
+      ))
+    };
+    let (with_axes, without) = (shown(""), shown(", Axes -> False"));
+    assert_eq!(
+      with_axes.matches("<line").count(),
+      without.matches("<line").count() + 2,
+      "{without}"
+    );
+    // An option given to `Show` itself still overrides the graphic's.
+    assert_eq!(
+      export_svg(
+        "Show[ParametricPlot[{u, v}, {u, -1, 1}, {v, -1, 1}, \
+         PlotPoints -> 3, MaxRecursion -> 0, Axes -> False], \
+         ImageSize -> 300, Axes -> True]"
+      ),
+      with_axes
+    );
   }
 
   #[test]

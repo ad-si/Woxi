@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
+    is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
+    and a `PlotStyle` opacity on colored cells, and evaluates each point
+    once (a `PlotPoints -> 140` region no longer takes minutes). `Show`
+    evaluates a plot given to it once instead of three times and keeps the
+    first of a repeated option of the graphic (`Axes -> False`).
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms
