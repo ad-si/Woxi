@@ -4664,7 +4664,6 @@ fn placed_edge_label(label: &Expr) -> (&Expr, EdgeLabelPlace) {
 /// The text of an edge label: strings as they are, `Placed[label, pos]`
 /// looked through, anything else in its formatted output form (so
 /// `NumberForm[x, 3]` shows as the rounded number).
-
 fn edge_label_text(label: &Expr) -> String {
   let (label, _) = placed_edge_label(label);
   match label {
