@@ -145,6 +145,18 @@ pub fn resized_graphic_svg(expr: &Expr) -> Option<String> {
   })
 }
 
+/// The picture `expr` as a cell of the current container shows it, when
+/// that differs from its own rendering: drawn again at the container's
+/// reduced size ([`resized_graphic_svg`]), or — a 3D scene of fixed size
+/// that the default framing fitted to its sphere — by its box outline.
+pub fn cell_graphic_svg(expr: &Expr) -> Option<String> {
+  resized_graphic_svg(expr).or_else(|| {
+    (image_size_multiplier() < 1.0)
+      .then(|| crate::functions::plot3d::outline_fitted_cell_svg(expr))
+      .flatten()
+  })
+}
+
 fn redraw_at_width(
   svg: &str,
   source: Option<&crate::syntax::PlotSource>,
