@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Text` label in a plot's `Prolog` or `Epilog` whose `Row` holds a
+    quotient (`Text[Row[{"y = 1 + ", 1/x}], pos]`) stacks the numerator
+    over the denominator as it does in `Graphics`, instead of printing
+    `1/x` on one line.
 - Machine results far past the machine range stay numbers: `Exp[30000.]`
     is `6.83…*^13028` and `Exp[1.*^9]` is `8.00…*^434294481` instead of
     `Infinity` (the limit rose from a decimal exponent of 10^4 to 6*10^8).

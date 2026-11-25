@@ -3891,6 +3891,110 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_overlay_text_row_stacks_fraction() {
+    // Regression: a `Text` label in a plot's `Prolog`/`Epilog` whose `Row`
+    // holds a quotient (`Row[{"y = 1 + ", 1/x}]`) printed the quotient as
+    // the text `1/x`; `Graphics` — and Wolfram — stack the numerator over
+    // the denominator with a fraction line between them.
+    clear_state();
+    for (option, label) in [
+      ("Prolog", "Row[{\"y = 1 + \", 1/x}]"),
+      ("Epilog", "Row[{\"y = 1 + \", 1/x}]"),
+      (
+        "Prolog",
+        "Style[Row[{\"y = \", 1/Style[\"x\", Italic]}], Medium]",
+      ),
+      ("Epilog", "Row[{\"r = \", (a + b)/c, \" units\"}]"),
+      ("Epilog", "x^2/y"),
+    ] {
+      let svg = interpret(&format!(
+        "ExportString[Plot[x, {{x, 0, 1}}, {option} -> \
+         {{Text[{label}, {{0.5, 0.5}}]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      // The label is embedded as its own picture, after the plot's.
+      let (start, _) = svg
+        .match_indices("<svg x=\"")
+        .last()
+        .unwrap_or_else(|| panic!("{option} {label}: no picture: {svg}"));
+      let picture = &svg[start..];
+      let picture = &picture[..picture.find("</svg>").unwrap()];
+      assert!(
+        picture.contains("<line"),
+        "{option} {label}: expected a fraction line: {picture}"
+      );
+      assert!(
+        !["1/x", "/c<", "/y<"]
+          .iter()
+          .any(|flat| picture.contains(flat)),
+        "{option} {label}: fraction was flattened: {picture}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_plot_overlay_stacked_label_takes_style_color_and_offset() {
+    // The stacked label's own `Style` color draws its text and its
+    // fraction bar, and `Text[label, pos, {-1, 0}]` puts the label's left
+    // edge on the anchor: the picture is padded on the left by its own
+    // width, so its middle — where the label starts — is the middle of the
+    // centered label.
+    clear_state();
+    let span_of = |offset: &str| {
+      let svg = interpret(&format!(
+        "ExportString[Plot[x, {{x, 0, 1}}, Epilog -> {{Text[Style[Row[{{\
+         \"y = \", 1/x}}], Red], {{0.5, 0.5}}{offset}]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      let (start, _) = svg
+        .match_indices("<svg x=\"")
+        .last()
+        .unwrap_or_else(|| panic!("no embedded label: {svg}"));
+      let label = &svg[start..];
+      assert!(
+        label.contains("color=\"rgb(255,0,0)\""),
+        "label not drawn in its Style color: {label}"
+      );
+      let attr = |name: &str| {
+        let key = format!(" {name}=\"");
+        let start = label.find(&key).expect("attribute") + key.len();
+        label[start..]
+          .split('"')
+          .next()
+          .and_then(|v| v.parse::<f64>().ok())
+          .unwrap_or_else(|| panic!("no {name}: {label}"))
+      };
+      (attr("x"), attr("width"))
+    };
+    let (x, width) = span_of("");
+    let (left_x, left_width) = span_of(", {-1, 0}");
+    assert!(
+      (left_width - 2.0 * width).abs() < 1.0,
+      "{width} {left_width}"
+    );
+    let (center, left_edge) = (x + width / 2.0, left_x + left_width / 2.0);
+    assert!(
+      (center - left_edge).abs() < 1.0,
+      "left-anchored label starts at {left_edge}, anchor at {center}"
+    );
+  }
+
+  #[test]
+  fn test_plot_overlay_plain_text_stays_one_line() {
+    // A label without stacked material is still one `<text>` run.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Text[Row[{\"y = \", \
+       Style[\"x\", Italic]}], {0.5, 0.5}]}], \"SVG\"]",
+    )
+    .unwrap();
+    let prolog = &svg[svg.find("prologClip").expect("prolog group")..];
+    let prolog = &prolog[..prolog.find("</g>").unwrap()];
+    assert!(prolog.contains("<text"), "{prolog}");
+    assert!(!prolog.contains("<line"), "{prolog}");
+  }
+
+  #[test]
   fn test_row_item_with_inline_fraction_box_stacks_fraction() {
     // Regression: a `Row`/`Column` item holding linear-syntax
     // `\!\(\*FractionBox[…]\)` (a Demonstration's "percentage change =

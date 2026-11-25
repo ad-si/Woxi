@@ -9610,11 +9610,62 @@ fn expr_holds_grid(expr: &Expr) -> bool {
   }
 }
 
+/// The picture of a label that cannot be set as one line of text, with its
+/// width and height in points, or `None` for a label that can.
+///
+/// A string whose inline box notation stacks material (an arrow with its
+/// rate above it, a fraction), an expression that typesets as a built-up
+/// fraction (`x^2/y`, or a `Row` holding a quotient such as `1/x`) and a
+/// `TraditionalForm` with a raised exponent are laid out as boxes, so the
+/// fraction stacks inline with the rest of the label. `Text` in `Graphics`
+/// and in a plot's `Prolog`/`Epilog` both draw such labels through here.
+pub(crate) fn stacked_label_picture(
+  content: &Expr,
+  font_size: f64,
+  font_family: &str,
+  color: &str,
+) -> Option<(String, f64, f64)> {
+  let boxes = match content {
+    Expr::String(s) if has_script_stacked_inline_box(s) => {
+      inline_box_string_to_box_expr(s)
+    }
+    _ if label_typesets_fraction(content)
+      || formula_has_graphics_operand(content) =>
+    {
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          content,
+        ),
+      ))
+    }
+    // `TraditionalForm[x^n]` typesets the power with a raised exponent
+    // (and a quotient as a built-up fraction); flattening its boxes to
+    // one text run would print `xn`.
+    _ => traditional_form_two_dimensional_boxes(content),
+  }?;
+  // The label is set in the graphic's proportional text face, like the
+  // one-line labels around it, not in the notebook's monospace face.
+  let family = if font_family.is_empty() {
+    crate::functions::image_ast::DEFAULT_SVG_FONT_FAMILY
+  } else {
+    font_family
+  };
+  let layout =
+    with_box_font_family(Some(family), || layout_box(&boxes, font_size));
+  (layout.width > 0.0 && layout.height > 0.0).then(|| {
+    (
+      layout_to_svg(&layout, color),
+      layout.width.ceil().max(1.0),
+      layout.height.ceil().max(1.0),
+    )
+  })
+}
+
 /// A picture of natural size `w`×`h` padded so that, drawn centered on a
 /// `Text` anchor, it sits where `Text[…, pos, {ox, oy}]` places it: the
 /// point `{ox, oy}` of the label's box (each from -1 to 1, `{-1, 0}` the
 /// middle of its left edge) on the anchor.
-fn align_inset_picture(
+pub(crate) fn align_inset_picture(
   svg: String,
   w: f64,
   h: f64,
@@ -10330,61 +10381,32 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Row` holding a `Row[…]/Row[…]` quotient such as `dθ/dξ`) is laid out
   // the same way, so the fraction stacks inline with the rest of the label
   // instead of being printed as a multi-line text picture.
-  let stacked_boxes = match content {
-    Expr::String(s) if has_script_stacked_inline_box(s) => {
-      inline_box_string_to_box_expr(s)
-    }
-    _ if label_typesets_fraction(content)
-      || formula_has_graphics_operand(content) =>
-    {
-      Some(crate::strip_number_precision_markers(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          content,
-        ),
-      ))
-    }
-    // `TraditionalForm[x^n]` typesets the power with a raised exponent
-    // (and a quotient as a built-up fraction); flattening its boxes to
-    // one text run would print `xn`.
-    _ => traditional_form_two_dimensional_boxes(content),
-  };
   if frame_opts.is_empty()
-    && let Some(boxes) = stacked_boxes
+    && let Some((svg, w, h)) = stacked_label_picture(
+      content,
+      local_style.font_size,
+      &local_style.font_family,
+      &local_style.effective_color().to_svg_rgb(),
+    )
     && let Some((x, y, scaled)) = match args.get(1) {
       Some(pos) => expr_to_anchor(pos),
       None => Some((0.0, 0.0, false)),
     }
   {
-    // The label is set in the graphic's proportional text face, like the
-    // one-line labels around it, not in the notebook's monospace face.
-    let family = if local_style.font_family.is_empty() {
-      crate::functions::image_ast::DEFAULT_SVG_FONT_FAMILY
-    } else {
-      local_style.font_family.as_str()
-    };
-    let layout = with_box_font_family(Some(family), || {
-      layout_box(&boxes, local_style.font_size)
+    let (svg, w, h) =
+      align_inset_picture(svg, w, h, picture_offset.unwrap_or_default());
+    prims.push(Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+      size: None,
+      size_scaled: false,
+      source: None,
     });
-    if layout.width > 0.0 && layout.height > 0.0 {
-      let (svg, w, h) = align_inset_picture(
-        layout_to_svg(&layout, &local_style.effective_color().to_svg_rgb()),
-        layout.width.ceil().max(1.0),
-        layout.height.ceil().max(1.0),
-        picture_offset.unwrap_or_default(),
-      );
-      prims.push(Primitive::InsetGraphic {
-        svg,
-        x,
-        y,
-        w,
-        h,
-        scaled,
-        size: None,
-        size_scaled: false,
-        source: None,
-      });
-      return;
-    }
+    return;
   }
   // A `Spacer[w]` is `w` points wide: as text, the blanks of the label's
   // font that come closest to that width.
