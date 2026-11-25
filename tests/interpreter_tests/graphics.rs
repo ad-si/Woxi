@@ -52390,6 +52390,45 @@ mod manipulate {
     );
   }
 
+  /// A held caption written as a product of three or more typeset pieces
+  /// (`"speed " Superscript["m", 2] Text["/s"]`, which parses as the
+  /// left-nested `(a*b)*c`) sets its factors side by side. Regression: the
+  /// inner product was parenthesized and joined by `*`, giving
+  /// `((speed *m²)*/s)`.
+  #[test]
+  fn spec_label_held_product_sets_factors_side_by_side() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"speed \" Superscript[\"m\", 2] Superscript[\"k\", 3] \
+         Text[\"/s\"]}, {1, 2}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let label = match &spec.controls[0] {
+      ManipulateControl::Discrete { label, .. } => label.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(label, "speed  m\u{00B2} k\u{00B3} /s");
+  }
+
+  /// A string factor in a product of typeset pieces is text, set beside
+  /// its neighbor: `", " Style["D", Italic]` reads `,  D`, not `, *D`.
+  #[test]
+  fn spec_choice_label_string_times_style_has_no_star() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"\"}, {1 -> Row[{\"x\", \", \" Style[\"D\", Italic]}], \
+         2 -> \"y\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let labels = match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => value_labels.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(labels[0], "x,  D");
+  }
+
   /// A caption's `Style` color may be any expression that evaluates to a
   /// color, such as a palette entry `ColorData[1, n]`. Regression: only
   /// literal color directives were recognized, so these captions lost
@@ -62535,7 +62574,9 @@ mod grid_text_in_graphics {
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(\*OverscriptBox[\(AB\), \(_\)] × \*OverscriptBox[\(AC\), \(_\)]\), \(2\)]\)", {0, 0}]], "SVG"]"#,
     )
     .unwrap();
-    assert!(svg.contains("(AB\u{0304}*AC\u{0304})/2"), "{svg}");
+    // Typeset factors set side by side, the same as the evaluated
+    // `Times[Overscript[…], Overscript[…]]`.
+    assert!(svg.contains("(AB\u{0304} AC\u{0304})/2"), "{svg}");
   }
 
   #[test]

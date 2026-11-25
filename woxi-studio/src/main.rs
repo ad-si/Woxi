@@ -21073,12 +21073,16 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
     // Turning the blue opacity down to zero empties those cells without
     // erasing them: no blue face shows (a fully transparent face paints
     // nothing at all), but every outline survives.
+    // Distinct edges: a wall shared by two opaque cells is drawn once (the
+    // covered copy and its identical outline are dropped), while two
+    // transparent cells each draw it, so the same edge may come twice.
     let outlines = |svg: &str| {
       svg
         .lines()
         .filter(|l| l.starts_with("<line"))
         .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
-        .count()
+        .map(str::to_string)
+        .collect::<std::collections::BTreeSet<_>>()
     };
     set(&mut widget, 4, 0.0);
     widget.reevaluate();

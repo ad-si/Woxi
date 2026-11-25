@@ -58093,6 +58093,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       runs.extend(grouped_label_runs(operand, italic));
       runs
     }
+    // A held product (`a b c` parses as the left-nested `(a*b)*c`) is
+    // one `Times` of all its factors, set by the same code as the
+    // evaluated `Times[a, b, c]`: nesting must not parenthesize the inner
+    // product, and typeset factors sit side by side.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } if contains_presentation_head(expr) => {
+      let mut factors = Vec::new();
+      flatten_held_product(expr, &mut factors);
+      product_label_runs(&factors, italic)
+    }
     // Arithmetic joining typeset label pieces — a Demonstrations setter
     // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
     // the operands so their `Row`/`Style`/`Superscript` structure keeps
@@ -58104,16 +58116,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       if arithmetic_label_operator(*op).is_some()
         && contains_presentation_head(expr) =>
     {
-      let (mut text, group) =
-        arithmetic_label_operator(*op).unwrap_or_default();
-      // Typeset pieces multiplied together set side by side.
-      let is_styled = |e: &Expr| {
-        is_style_call(e)
-          || matches!(e, Expr::FunctionCall { name, .. } if name == "Text")
-      };
-      if text == "*" && is_styled(left) && is_styled(right) {
-        text = " ";
-      }
+      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
       let side = |e: &Expr| {
         if group {
           grouped_label_runs(e, italic)
@@ -58319,6 +58322,21 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The factors of a held product, in order: `(a*b)*c` gives `a, b, c`.
+fn flatten_held_product(expr: &Expr, factors: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_held_product(left, factors);
+      flatten_held_product(right, factors);
+    }
+    other => factors.push(other.clone()),
+  }
+}
+
 /// Runs for a `Times[…]` of typeset pieces. Reciprocal factors are the
 /// quotient's denominator, so `Row[…] Row[…]^-1` — what `Row[…]/Row[…]`
 /// evaluates to — sets as a quotient rather than as a product with a
@@ -58342,7 +58360,11 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head)
+  // A string factor is text too: `", " Style["D", Italic]` sets as
+  // `, D`, never `, *D`.
+  let sep = if numerators
+    .iter()
+    .all(|f| matches!(f, Expr::String(_)) || contains_presentation_head(f))
     || numerators.iter().any(has_script_head)
   {
     " "
