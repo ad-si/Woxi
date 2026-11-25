@@ -33961,9 +33961,14 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
     }
     _ => Some(parse_color(expr)?),
   };
-  // The thickness and dashing the style asks for.
+  // The thickness and dashing the style asks for. A grid has no plot width
+  // for a relative `Thickness[d]` to be a fraction of, so it is `d` points,
+  // like `AbsoluteThickness[d]`.
   let style = crate::functions::plot::parse_style_directives(expr);
-  let width = style.as_ref().and_then(|s| s.thickness).unwrap_or(1.0);
+  let width = style
+    .as_ref()
+    .and_then(|s| s.thickness_fraction.or(s.thickness))
+    .unwrap_or(1.0);
   let dash = style
     .as_ref()
     .and_then(|s| s.dashing.as_ref())

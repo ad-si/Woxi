@@ -752,6 +752,33 @@ mod layout_display {
     );
   }
 
+  /// Regression: a relative `Thickness[d]` divider was scaled as a fraction
+  /// of a 360-point plot width, so `Thickness[2]` drew a 720-point stroke
+  /// that blacked out the whole grid. A grid draws it `d` points wide.
+  #[test]
+  fn grid_divider_relative_thickness_is_in_points() {
+    for (spec, color, width) in [
+      ("Thickness[2]", "rgb(0,0,0)", "2"),
+      ("Directive[Red, Thickness[3]]", "rgb(255,0,0)", "3"),
+      ("{Blue, Thickness[0.5]}", "rgb(0,0,255)", "0.5"),
+    ] {
+      let svg = svg_of(&format!(
+        "Grid[{{{{1, 2}}, {{3, 4}}}}, Dividers -> {{None, {{2 -> {spec}}}}}]"
+      ));
+      let lines: Vec<&str> = svg
+        .split("<line")
+        .skip(1)
+        .filter(|l| l.contains("stroke-width"))
+        .collect();
+      assert_eq!(lines.len(), 1, "{spec}: {svg}");
+      assert!(
+        lines[0].contains(&format!("stroke-width=\"{width}\""))
+          && (spec.starts_with("Thickness") || lines[0].contains(color)),
+        "{spec}: {svg}"
+      );
+    }
+  }
+
   /// `Item[…, Alignment -> Right]`, `Background` and `Frame` style their
   /// own cell.
   #[test]
