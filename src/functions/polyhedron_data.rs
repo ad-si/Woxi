@@ -1495,10 +1495,21 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   if names.is_empty() {
     return Ok(None);
   }
-  // Every class, the Platonic solids included, lists its members
-  // alphabetically: `{"Cube", "Dodecahedron", "Icosahedron", "Octahedron",
-  // "Tetrahedron"}`.
+  // A class lists its members alphabetically — except the Platonic solids,
+  // which WL lists by their face count: `{"Tetrahedron", "Cube",
+  // "Octahedron", "Dodecahedron", "Icosahedron"}`.
   sort_entity_names(&mut names);
+  if class == "Platonic" {
+    let faces = |n: &str| match n {
+      "Tetrahedron" => 4,
+      "Cube" => 6,
+      "Octahedron" => 8,
+      "Dodecahedron" => 12,
+      "Icosahedron" => 20,
+      _ => usize::MAX,
+    };
+    names.sort_by_key(|n| faces(n));
+  }
   Ok(Some(string_list(&names)))
 }
 

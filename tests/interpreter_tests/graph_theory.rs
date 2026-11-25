@@ -9195,7 +9195,7 @@ mod graph_utilities_package {
   fn polyhedron_data_class_lists_members_and_names() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
-      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
+      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
     );
     assert_eq!(
       interpret("PolyhedronData[\"PlatonicDual\"]").unwrap(),
