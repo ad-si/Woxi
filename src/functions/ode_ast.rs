@@ -3102,6 +3102,20 @@ fn ndsolve_pde(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
+  // Finite element notation makes it a finite element problem.
+  let finite_element_notation = eq_items.iter().any(|e| {
+    mentions_head(e, "DirichletCondition") || mentions_head(e, "NeumannValue")
+  });
+  let fem_opts;
+  let opts = if finite_element_notation && !opts.finite_element {
+    fem_opts = pde_mol::MolOptions {
+      finite_element: true,
+      ..opts.clone()
+    };
+    &fem_opts
+  } else {
+    opts
+  };
   let eq_items =
     extract_summed_dirichlet_conditions(&flatten_chained_equalities(&eq_items));
   // The solutions take their arguments in the order of the unknowns' own
@@ -14554,12 +14568,19 @@ fn solve_power_riccati(
     name: "C".to_string(),
     args: vec![Expr::Integer(1)].into(),
   };
+  // Wolfram writes an integer-order pair as `Y + C[1] J`, else `J + C[1] Y`.
+  let integer_order = matches!(nu, Expr::Integer(_));
+  let (first, second) = if integer_order {
+    ("BesselY", "BesselJ")
+  } else {
+    ("BesselJ", "BesselY")
+  };
   let bessel_pair = |order: &Expr| {
     plus(vec![
-      call("BesselJ", vec![order.clone(), z.clone()]),
+      call(first, vec![order.clone(), z.clone()]),
       times(vec![
         constant.clone(),
-        call("BesselY", vec![order.clone(), z.clone()]),
+        call(second, vec![order.clone(), z.clone()]),
       ]),
     ])
   };
@@ -17483,8 +17504,10 @@ fn evaluate_interpolating_function_values(
   }
 
   // `InterpolationOrder -> 0`: a step function. On `(x[i-1], x[i]]` it takes
-  // the value `y[i]` (at and below the first node, `y[1]`; past the last
-  // node, `y[n]`), so it is flat between nodes with derivative zero.
+  // the value `y[i]` (counting from 0; on `[x[0], x[1]]` and below, `y[1]`;
+  // past the last node, `y[n-1]`), so it is flat between nodes with
+  // derivative zero. The value comes back exact when all the data is,
+  // also for a machine query point, and as a machine real otherwise.
   if order == 0 {
     if derivative_order > 0 {
       return Ok(Expr::Integer(0));
@@ -17493,7 +17516,7 @@ fn evaluate_interpolating_function_values(
     for (i, pt) in data_points.iter().enumerate() {
       let (xp, _) = extract_point(pt)?;
       if x_val <= xp {
-        idx = i;
+        idx = i.max(1);
         break;
       }
     }
@@ -17501,8 +17524,9 @@ fn evaluate_interpolating_function_values(
       Expr::List(pair) if pair.len() == 2 => pair[1].clone(),
       pt => real_or_integer(extract_point(pt)?.1),
     };
-    // A machine query point gives a machine value, as at the grid points.
-    if crate::functions::math_ast::contains_inexact_real(&x_val_expr)
+    if data_points
+      .iter()
+      .any(crate::functions::math_ast::contains_inexact_real)
       && !crate::functions::math_ast::contains_inexact_real(&value)
     {
       return crate::evaluator::evaluate_expr_to_expr(&call1("N", value));

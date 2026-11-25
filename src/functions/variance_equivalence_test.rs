@@ -240,50 +240,10 @@ fn automatic_test(data: &[Vec<f64>]) -> &'static str {
   }
 }
 
-fn grid(rows: Vec<Expr>) -> Expr {
-  let header = Expr::List(
-    vec![
-      Expr::String(String::new()),
-      Expr::String("Statistic".into()),
-      Expr::String("P\u{2010}Value".into()),
-    ]
-    .into(),
-  );
-  let mut all = vec![header];
-  all.extend(rows);
-  let rule = |k: &str, v: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(k.into())),
-    replacement: Box::new(v),
-  };
-  let at_second = || {
-    Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Integer(2)),
-        replacement: Box::new(call("GrayLevel", vec![Expr::Real(0.7)])),
-      }]
-      .into(),
-    )
-  };
-  call(
-    "Grid",
-    vec![
-      Expr::List(all.into()),
-      rule(
-        "Alignment",
-        Expr::List(
-          vec![
-            Expr::Identifier("Left".into()),
-            Expr::Identifier("Automatic".into()),
-          ]
-          .into(),
-        ),
-      ),
-      rule(
-        "Dividers",
-        Expr::List(vec![at_second(), at_second()].into()),
-      ),
-      rule("Spacings", Expr::Identifier("Automatic".into())),
-    ],
+fn grid(rows: Vec<(String, Vec<Expr>)>) -> Expr {
+  crate::functions::math_ast::hypothesis_test_table(
+    &["Statistic", "P\u{2010}Value"],
+    rows,
   )
 }
 
@@ -305,12 +265,10 @@ fn result_of(pairs: &[(Expr, Expr)], test: &str) -> Option<(f64, f64)> {
   Some((try_eval_to_f64(&sp[0])?, try_eval_to_f64(&sp[1])?))
 }
 
-fn row(pairs: &[(Expr, Expr)], test: &str) -> Option<Expr> {
+fn row(pairs: &[(Expr, Expr)], test: &str) -> Option<(String, Vec<Expr>)> {
   let (s, p) = result_of(pairs, test)?;
   let label = TESTS.iter().find(|(n, _)| *n == test)?.1;
-  Some(Expr::List(
-    vec![Expr::String(label.into()), Expr::Real(s), Expr::Real(p)].into(),
-  ))
+  Some((label.to_string(), vec![Expr::Real(s), Expr::Real(p)]))
 }
 
 /// Properties of the `HypothesisTestData` object, or `None` when it is not

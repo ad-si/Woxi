@@ -2869,6 +2869,26 @@ pub fn dispatch_math_functions(
       } else {
         10.0
       };
+      // An arbitrary-precision number keeps its precision in the mantissa,
+      // and may lie far outside the machine range: its exponent comes from
+      // its decimal digits.
+      if matches!(&args[0], Expr::BigFloat(..))
+        && (args.len() == 1
+          || !matches!(&args[1], Expr::Real(_) | Expr::BigFloat(..)))
+        && let Some((m, k)) = crate::functions::math_ast::scaled_parts(&args[0])
+        && m != 0.0
+      {
+        let log_b = (m.abs().log10() + k as f64) / base_num.log10();
+        let e = log_b.floor() as i128 + 1;
+        let base_expr = args.get(1).cloned().unwrap_or(Expr::Integer(10));
+        let mantissa = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+          args[0].clone(),
+          pow(base_expr, Expr::Integer(-e)),
+        ]));
+        return Some(
+          mantissa.map(|m| Expr::List(vec![m, Expr::Integer(e)].into())),
+        );
+      }
       // Numerically evaluate the value to compute the exponent.
       let val_num: f64 = match try_eval_to_f64(&args[0]) {
         Some(v) => v,
@@ -7471,9 +7491,13 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
     }
     // A product with an exponential factor: distribute the other factors
     // over the rewritten `Cos + I Sin` (or `Cosh + Sinh`) sum, so that
-    // conjugate terms such as `a E^(I x) + a E^(-I x)` cancel to `2 a Cos[x]`.
+    // conjugate terms such as `a E^(I x) + a E^(-I x)` cancel to `2 a Cos[x]`
+    // — unless one of them is a sum or a positive power of one, which
+    // Wolfram leaves a factor: `(1 + y)^2 (Cos[x] + I Sin[x])`.
     Expr::FunctionCall { name, args }
-      if name == "Times" && args.iter().any(is_exp_power) =>
+      if name == "Times"
+        && args.iter().any(is_exp_power)
+        && !args.iter().any(is_polynomial_sum_factor) =>
     {
       let mut sum: Option<Vec<Expr>> = None;
       let mut others = Vec::with_capacity(args.len());
@@ -7525,6 +7549,31 @@ fn exp_to_trig_recursive(expr: &Expr) -> Expr {
       Expr::List(items.iter().map(exp_to_trig_recursive).collect())
     }
     _ => expr.clone(),
+  }
+}
+
+/// Whether `expr` is a sum or a positive integer power of one.
+fn is_polynomial_sum_factor(expr: &Expr) -> bool {
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_sum(&args[0]) && matches!(args[1], Expr::Integer(k) if k > 0)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => is_sum(left) && matches!(right.as_ref(), Expr::Integer(k) if *k > 0),
+    other => is_sum(other),
   }
 }
 

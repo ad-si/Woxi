@@ -71,6 +71,20 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
+    // A precision past `$MaxPrecision` is lowered to it.
+    let (_, max_precision) = crate::precision_bounds();
+    let precision_f64 = if precision_f64 > max_precision {
+      crate::emit_message(&format!(
+        "N::preclg: Requested precision {} is larger than $MaxPrecision. \
+         Using current $MaxPrecision of {} instead. $MaxPrecision = \
+         Infinity specifies that any precision should be allowed.",
+        expr_to_string(&args[1]),
+        expr_to_string(&Expr::Real(max_precision))
+      ));
+      max_precision
+    } else {
+      precision_f64
+    };
     return n_eval_arbitrary_precision_form(&args[0], precision_f64);
   }
   n_eval(&args[0])
@@ -4947,13 +4961,14 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // precision *is* the accuracy (Wolfram stores `0``a` as a 0 with
     // accuracy a, which we represent as a BigFloat whose precision field
     // already holds a — see the parser).
-    Expr::BigFloat(digits, prec) => {
-      let val: f64 = digits.parse().unwrap_or(0.0);
-      let prec_f = *prec;
-      if val == 0.0 {
-        return Ok(Expr::Real(prec_f));
+    Expr::BigFloat(_, prec) => {
+      // The magnitude may lie far outside the machine range (`1.5`20*^500`).
+      match super::arithmetic::scaled_parts(&args[0]) {
+        Some((m, k)) if m != 0.0 => {
+          Ok(Expr::Real(*prec - (m.abs().log10() + k as f64)))
+        }
+        _ => Ok(Expr::Real(*prec)),
       }
-      Ok(Expr::Real(prec_f - val.abs().log10()))
     }
     Expr::Identifier(name)
       if name == "Infinity"
@@ -5441,12 +5456,19 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
         collect_variables(item, vars);
       }
     }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => collect_power_variables(expr, left, right, vars),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      collect_power_variables(expr, &args[0], &args[1], vars);
+    }
     Expr::BinaryOp { op, left, right } => {
       match op {
         BinaryOperator::Plus
         | BinaryOperator::Minus
         | BinaryOperator::Times
-        | BinaryOperator::Power
         | BinaryOperator::Divide => {
           collect_variables(left, vars);
           collect_variables(right, vars);
@@ -5476,6 +5498,22 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
     _ => {
       vars.push(expr.clone());
     }
+  }
+}
+
+/// A power with a numeric exponent contributes the variables of its base;
+/// one with a symbolic exponent is a variable as a whole (`x^n`), unless its
+/// base is a number, which makes it no polynomial variable at all (`E^x`).
+fn collect_power_variables(
+  expr: &Expr,
+  base: &Expr,
+  exp: &Expr,
+  vars: &mut Vec<Expr>,
+) {
+  if crate::functions::predicate_ast::is_numeric_q(exp) {
+    collect_variables(base, vars);
+  } else if !crate::functions::predicate_ast::is_numeric_q(base) {
+    vars.push(expr.clone());
   }
 }
 

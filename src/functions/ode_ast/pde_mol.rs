@@ -34,6 +34,10 @@ pub(super) struct MolOptions {
   pub min_points: Option<usize>,
   pub max_points: Option<usize>,
   pub difference_order: Option<usize>,
+  /// A finite element problem (`Method -> "FiniteElement"`, or written
+  /// with `DirichletCondition`/`NeumannValue`), whose piecewise
+  /// coefficients of second derivatives are read in flux form.
+  pub finite_element: bool,
 }
 
 impl MolOptions {
@@ -66,6 +70,13 @@ impl MolOptions {
             "MaxPoints" => out.max_points = as_count(),
             "DifferenceOrder" => {
               out.difference_order = as_count().filter(|p| *p <= 8);
+            }
+            "Method"
+              if matches!(replacement.as_ref(), Expr::String(m) if m == "FiniteElement")
+                || matches!(replacement.as_ref(), Expr::List(items)
+                  if matches!(items.first(), Some(Expr::String(m)) if m == "FiniteElement")) =>
+            {
+              out.finite_element = true;
             }
             _ => walk(replacement, out),
           }
@@ -1521,10 +1532,12 @@ fn solve_pde_mol_inner(
     stencils.push(per_point);
   }
 
-  // Piecewise coefficients of second derivatives, read in flux form.
+  // Piecewise coefficients of second derivatives, read in flux form by
+  // the finite element method; the method of lines takes `c u_xx` as it
+  // is written.
   let mut flux_form: Vec<Vec<(usize, Vec<FluxForm>)>> =
     vec![Vec::new(); f_exprs.len()];
-  if !periodic && k_max >= 2 {
+  if !periodic && k_max >= 2 && opts.finite_element {
     let tx = [t_name.to_string(), x_name.to_string()];
     for (e, f) in f_exprs.iter().enumerate() {
       for j in 0..n {
