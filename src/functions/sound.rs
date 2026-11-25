@@ -493,11 +493,46 @@ fn sample_play(play: &Expr) -> Option<(Vec<f64>, u32)> {
 /// the samples together with the sample rate in Hz, or `None` when the
 /// expression contains no samplable `Play` segment.
 pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
+  // `Sound[primitives, dur]` / `Sound[primitives, {tmin, tmax}]` rescales
+  // the time of its primitives so that together they fill that span.
+  let (primitives, span) = match sound_expr {
+    Expr::FunctionCall { name, args } if name == "Sound" && args.len() == 2 => {
+      (&args[0], sound_time_span(&args[1]))
+    }
+    _ => (sound_expr, None),
+  };
   let mut segments = Vec::new();
-  collect_segments(sound_expr, &mut segments);
+  collect_segments(primitives, &mut segments);
   let mut notes = Vec::new();
   let mut cursor = 0.0;
-  collect_notes(sound_expr, &mut cursor, &mut notes);
+  collect_notes(primitives, &mut cursor, &mut notes);
+  let mut leading_silence = 0.0;
+  if let Some((tmin, tmax)) = span {
+    // The natural length: sampled segments play one after another, then
+    // the notes (see below).
+    let segments_len: f64 = segments
+      .iter()
+      .map(|(s, r)| s.len() as f64 / f64::from(*r))
+      .sum();
+    let notes_len = notes
+      .iter()
+      .map(|n| n.start + n.duration)
+      .fold(0.0_f64, f64::max);
+    let natural = segments_len + notes_len;
+    if natural > 0.0 {
+      let factor = (tmax - tmin) / natural;
+      // Sampled data is played faster or slower; notes keep their pitch
+      // and only have their onsets and lengths scaled.
+      for (seg, _) in &mut segments {
+        *seg = stretch_samples(seg, factor);
+      }
+      for note in &mut notes {
+        note.start *= factor;
+        note.duration *= factor;
+      }
+      leading_silence = tmin;
+    }
+  }
   if let Some(seg) = synthesize_notes(&notes) {
     segments.push(seg);
   }
@@ -507,11 +542,46 @@ pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
   // Play the whole sound at the first segment's sample rate, resampling any
   // segment recorded at another rate so it keeps its duration and pitch.
   let rate = segments[0].1;
-  let mut samples = Vec::new();
+  let mut samples =
+    vec![0.0; (leading_silence * f64::from(rate)).round() as usize];
   for (seg, seg_rate) in &segments {
     samples.extend_from_slice(&resample_linear(seg, *seg_rate, rate));
   }
   (!samples.is_empty()).then_some((samples, rate))
+}
+
+/// The `{tmin, tmax}` span of a `Sound` time specification: a positive
+/// duration `dur` (meaning `{0, dur}`) or an explicit increasing
+/// `{tmin, tmax}` pair with `tmin >= 0`. `None` for anything else.
+fn sound_time_span(spec: &Expr) -> Option<(f64, f64)> {
+  let (tmin, tmax) = match spec {
+    Expr::List(items) if items.len() == 2 => {
+      (try_eval_to_f64(&items[0])?, try_eval_to_f64(&items[1])?)
+    }
+    Expr::List(_) => return None,
+    other => (0.0, try_eval_to_f64(other)?),
+  };
+  (tmin.is_finite() && tmax.is_finite() && tmin >= 0.0 && tmax > tmin)
+    .then_some((tmin, tmax))
+}
+
+/// Stretch `samples` in time by `factor` (> 1 lengthens) by linear
+/// interpolation, keeping the sample rate (so the pitch shifts with it).
+fn stretch_samples(samples: &[f64], factor: f64) -> Vec<f64> {
+  if samples.is_empty() || (factor - 1.0).abs() < 1e-12 {
+    return samples.to_vec();
+  }
+  let len = ((samples.len() as f64) * factor).round().max(1.0) as usize;
+  (0..len)
+    .map(|i| {
+      let pos = i as f64 / factor;
+      let idx = pos.floor() as usize;
+      let frac = pos - idx as f64;
+      let a = samples[idx.min(samples.len() - 1)];
+      let b = samples[(idx + 1).min(samples.len() - 1)];
+      a + (b - a) * frac
+    })
+    .collect()
 }
 
 /// Resample `samples` recorded at `from` Hz to `to` Hz by linear

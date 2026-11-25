@@ -516,7 +516,7 @@ fn frame_labels_take_their_frame_style_color() {
   assert_eq!(label_fill(&svg, "tl"), "rgb(255,0,0)");
   let svg =
     svg_of(r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"}]"#);
-  assert_eq!(label_fill(&svg, "tb"), "#666");
+  assert_eq!(label_fill(&svg, "tb"), "#404040");
 }
 
 /// A `Style[label, …, Background -> color]` inside a `Plot` `Epilog`
