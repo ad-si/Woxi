@@ -2025,6 +2025,27 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect()
   };
 
+  // The event of an `EventLocator` method names the unknowns the same way
+  // the equations do, so it follows them through both renamings.
+  let event = event.map(|e| {
+    let renamed = |expr: &Expr| {
+      let expr = if idx_renames.is_empty() {
+        expr.clone()
+      } else {
+        rename_indexed_vars(expr, &idx_renames)
+      };
+      if renames.is_empty() {
+        expr
+      } else {
+        rename_compound_heads(&expr, &renames)
+      }
+    };
+    RawStateEvent {
+      condition: renamed(&e.condition),
+      action: renamed(&e.action),
+    }
+  });
+
   // Every shape — one equation or a coupled system, linear or not — goes
   // through the same integrator. A single scalar equation used to take a
   // separate path built on DSolve's *linear* term classifier, which

@@ -11733,6 +11733,41 @@ mod ndsolve {
   }
 
   #[test]
+  fn event_locator_follows_indexed_unknowns() {
+    // Unknowns written as indexed heads (`x[1]`, `x[2]`) are renamed while
+    // integrating; the event must be renamed with them, or it never fires.
+    // Both free particles pass 3 once the slower one does, at t = 3.
+    assert_eq!(
+      interpret(
+        "stopT = None; \
+         sol = NDSolve[{x[1]''[t] == 0, x[2]''[t] == 0, x[1][0] == 0, \
+         x[2][0] == 0, x[1]'[0] == 1, x[2]'[0] == 2}, {x[1], x[2]}, \
+         {t, 0, 10}, Method -> {\"EventLocator\", \
+         \"Event\" -> And @@ Table[x[i][t] > 3, {i, 2}], \
+         \"EventAction\" :> Throw[stopT = t, \"StopIntegration\"]}]; \
+         {Round[stopT, 0.001], Round[(x[2] /. sol[[1]])[[1, 1, 2]], 0.001]}"
+      )
+      .unwrap(),
+      "{3., 3.}"
+    );
+  }
+
+  #[test]
+  fn event_locator_follows_compound_head_unknowns() {
+    // The same for an unknown with a compound head such as a Subscript.
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{Subscript[c, 1]'[t] == 1, Subscript[c, 1][0] == 0}, \
+         Subscript[c, 1], {t, 0, 10}, Method -> {\"EventLocator\", \
+         \"Event\" -> Subscript[c, 1][t] - 2.5}]; \
+         Round[(Subscript[c, 1] /. sol[[1]])[[1, 1, 2]], 0.001]"
+      )
+      .unwrap(),
+      "2.5"
+    );
+  }
+
+  #[test]
   fn event_locator_keeps_close_encounter_accuracy() {
     // A restricted three-body orbit swinging close past a primary makes
     // the fixed-step grid diverge. An `EventLocator` that never fires must
