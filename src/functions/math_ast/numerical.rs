@@ -9872,6 +9872,8 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
     *slot = (best_zr, best_zi);
   }
 
+  merge_multiple_root_clusters(&monic, roots);
+
   // Snap to real / round trailing fp noise.
   for (r, i) in roots.iter_mut() {
     let mag = r.hypot(*i).max(1.0);
@@ -9909,6 +9911,150 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
         paired[j] = true;
         break;
       }
+    }
+  }
+}
+
+/// Coefficients of the `j`-th derivative of the polynomial `coeffs`
+/// (`coeffs[i]` is the coefficient of x^i).
+fn poly_derivative_coeffs(coeffs: &[f64], j: usize) -> Vec<f64> {
+  (j..coeffs.len())
+    .map(|i| {
+      let falling = ((i - j + 1)..=i).fold(1.0_f64, |acc, k| acc * k as f64);
+      falling * coeffs[i]
+    })
+    .collect()
+}
+
+/// `Σ |c_i| |z|^i`, the size of the terms that `Σ c_i z^i` sums: the
+/// scale its rounding error is measured against.
+fn poly_abs_scale(coeffs: &[f64], z: (f64, f64)) -> f64 {
+  let r = z.0.hypot(z.1);
+  coeffs
+    .iter()
+    .rev()
+    .fold(0.0_f64, |acc, c| acc * r + c.abs())
+}
+
+/// Collapse the clusters a repeated root leaves behind into that root.
+///
+/// In machine arithmetic a root of multiplicity m is only determined to
+/// about eps^(1/m): a simultaneous root finder returns m points scattered on
+/// a small circle around it (the 9-fold root 3.7 of
+/// `(z - 3.7)^9 (z^2 + 1)` lands up to 0.1 away). wolframscript reports the
+/// root itself m times. A group of nearby roots is merged when the point
+/// it shrinks to — the simple root of `p^(m-1)` near the group's centroid —
+/// annihilates `p, p', …, p^(m-1)` to rounding level, which distinct close
+/// roots never do. A group that fails the test sheds its outermost member
+/// and is tried again.
+fn merge_multiple_root_clusters(monic: &[f64], roots: &mut [(f64, f64)]) {
+  let n = roots.len();
+  if n < 2 || monic.len() != n + 1 {
+    return;
+  }
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  // Single-linkage groups of roots closer than a tenth of their size.
+  let mut group = vec![usize::MAX; n];
+  let mut groups: Vec<Vec<usize>> = Vec::new();
+  for start in 0..n {
+    if group[start] != usize::MAX {
+      continue;
+    }
+    let id = groups.len();
+    group[start] = id;
+    let mut members = vec![start];
+    let mut k = 0;
+    while k < members.len() {
+      let a = roots[members[k]];
+      for j in 0..n {
+        if group[j] == usize::MAX {
+          let b = roots[j];
+          let size = a.0.hypot(a.1).max(b.0.hypot(b.1)).max(1.0);
+          if dist(a, b) < 0.1 * size {
+            group[j] = id;
+            members.push(j);
+          }
+        }
+      }
+      k += 1;
+    }
+    groups.push(members);
+  }
+
+  let derivatives: Vec<Vec<f64>> =
+    (0..=n).map(|j| poly_derivative_coeffs(monic, j)).collect();
+  let div = |a: (f64, f64), b: (f64, f64)| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  // The point a group of `m` roots shrinks to, if it is an m-fold root.
+  let fold = |roots: &[(f64, f64)], members: &[usize]| -> Option<(f64, f64)> {
+    let m = members.len();
+    let mut c = members.iter().fold((0.0, 0.0), |acc, &k| {
+      (acc.0 + roots[k].0, acc.1 + roots[k].1)
+    });
+    c = (c.0 / m as f64, c.1 / m as f64);
+    let radius = members
+      .iter()
+      .map(|&k| dist(roots[k], c))
+      .fold(0.0_f64, f64::max);
+    let start = c;
+    // Newton on p^(m-1), which has a simple root at an m-fold root of p.
+    let (f, df) = (&derivatives[m - 1], &derivatives[m]);
+    for _ in 0..20 {
+      let fv = poly_eval_complex(f, c.0, c.1);
+      let dv = poly_eval_complex(df, c.0, c.1);
+      if dv.0.hypot(dv.1) < 1e-300 {
+        break;
+      }
+      let step = div(fv, dv);
+      c = (c.0 - step.0, c.1 - step.1);
+      if step.0.hypot(step.1) <= 1e-16 * c.0.hypot(c.1).max(1.0) {
+        break;
+      }
+    }
+    // The group's own spread understates how far its centroid can sit from
+    // the root (all members may lean the same way), so Newton may move it
+    // up to the grouping distance.
+    let size = start.0.hypot(start.1).max(1.0);
+    if dist(c, start) > (2.0 * radius).max(0.1 * size) {
+      return None;
+    }
+    let annihilates = derivatives[..m].iter().all(|d| {
+      let v = poly_eval_complex(d, c.0, c.1);
+      v.0.hypot(v.1) <= 1e-11 * poly_abs_scale(d, c)
+    });
+    annihilates.then_some(c)
+  };
+
+  for mut members in groups {
+    while members.len() > 1 {
+      if let Some(c) = fold(roots, &members) {
+        for &k in &members {
+          roots[k] = c;
+        }
+        break;
+      }
+      // Drop the member farthest from the others' centroid and retry.
+      let m = members.len() as f64;
+      let sum = members.iter().fold((0.0, 0.0), |acc, &k| {
+        (acc.0 + roots[k].0, acc.1 + roots[k].1)
+      });
+      let (worst, _) = members
+        .iter()
+        .enumerate()
+        .map(|(pos, &k)| {
+          let rest = (
+            (sum.0 - roots[k].0) / (m - 1.0),
+            (sum.1 - roots[k].1) / (m - 1.0),
+          );
+          (pos, dist(roots[k], rest))
+        })
+        .fold(
+          (0, -1.0_f64),
+          |best, cur| if cur.1 > best.1 { cur } else { best },
+        );
+      members.remove(worst);
     }
   }
 }
