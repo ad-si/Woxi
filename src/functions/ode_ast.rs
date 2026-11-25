@@ -14,6 +14,7 @@ mod complex_pde;
 mod cse;
 mod curve;
 mod dde;
+mod param_family;
 mod pde_mol;
 mod pde_mol2d;
 mod state_data;
@@ -1854,7 +1855,14 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
         Ok(None) => match complex_pde::ndsolve_pde_complex(&positional) {
           Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
-          Ok(None) => Ok(unevaluated("NDSolve", args)),
+          Ok(None) => match param_family::ndsolve_parameter_family(
+            &positional,
+            &args[n_pos..],
+          ) {
+            Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+            Ok(None) => Ok(unevaluated("NDSolve", args)),
+            Err(e) => Err(e),
+          },
           Err(e) => Err(e),
         },
         Err(e) => Err(e),
@@ -16193,12 +16201,9 @@ fn evaluate_grid_interpolating_function(
         .into(),
     ))
   }
-  let derivative_free = derivative.iter().all(|&d| d == 0);
-  let window_values = if derivative_free {
-    slice_values(values, &windows)
-  } else {
-    None
-  };
+  // A partial derivative differentiates the same local pieces, so it reads
+  // the same window.
+  let window_values = slice_values(values, &windows);
   let (grid_axes, grid_values) = match &window_values {
     Some(v) => (sub_axes, v),
     None => (axes, values),

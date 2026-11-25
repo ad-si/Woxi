@@ -13052,6 +13052,112 @@ mod ndsolve {
     }
   }
 
+  /// A second variable that is never differentiated is a parameter: an
+  /// ODE for each of its values, which may enter the equation and the
+  /// initial condition. The solution is a function of both variables.
+  #[test]
+  fn ndsolve_ode_family_over_a_parameter() {
+    assert_eq!(
+      interpret(
+        "f = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1 + a}, \
+         u, {t, 0, 2}, {a, 0, 3}]; \
+         {Head[f], f[\"Domain\"], Last[Dimensions[f[\"ValuesOnGrid\"]]], \
+         Abs[f[1.5, 2.] - 3 Exp[-3.]] < 10^-6, \
+         Abs[f[0.7, 0.33] - 1.33 Exp[-0.231]] < 10^-6}"
+      )
+      .unwrap(),
+      "{InterpolatingFunction, {{0., 2.}, {0., 3.}}, 51, True, True}"
+    );
+  }
+
+  /// The parameter may be the unknown's first argument, and the domains
+  /// may come in either order.
+  #[test]
+  fn ndsolve_ode_family_follows_the_unknowns_argument_order() {
+    for doms in ["{a, 0, 3}, {t, 0, 2}", "{t, 0, 2}, {a, 0, 3}"] {
+      let code = format!(
+        "g = NDSolveValue[{{D[u[a, t], t] == -a u[a, t], \
+         u[a, 0] == 1 + a}}, u, {doms}]; \
+         {{g[\"Domain\"], Abs[g[2., 1.5] - 3 Exp[-3.]] < 10^-6}}"
+      );
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "{{{0., 3.}, {0., 2.}}, True}",
+        "{doms}"
+      );
+    }
+  }
+
+  /// Higher time derivatives with an initial velocity, and coupled
+  /// unknowns, are families too.
+  #[test]
+  fn ndsolve_ode_family_second_order_and_coupled() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{D[x[t, k], t, t] == -k^2 x[t, k], x[0, k] == 1, \
+         Derivative[1, 0][x][0, k] == 0}, x, {t, 0, 3}, {k, 1, 2}]; \
+         Abs[(x[2., 1.5] /. sol[[1]]) - Cos[3.]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{D[x[t, k], t] == y[t, k], \
+         D[y[t, k], t] == -k^2 x[t, k], x[0, k] == 1, y[0, k] == 0}, \
+         {x, y}, {t, 0, 3}, {k, 1, 2}]; \
+         Max[Abs[({x[2., 1.5], y[2., 1.5]} /. sol[[1]]) - \
+         {Cos[3.], -1.5 Sin[3.]}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// The parameter grid resolves a steep initial profile and honors
+  /// `"MinPoints"`.
+  #[test]
+  fn ndsolve_ode_family_parameter_grid() {
+    assert_eq!(
+      interpret(
+        "h = NDSolveValue[{D[u[t, a], t] == -u[t, a], \
+         u[0, a] == Exp[-200 (a - 1)^2]}, u, {t, 0, 1}, {a, 0, 2}]; \
+         {Last[Dimensions[h[\"ValuesOnGrid\"]]], \
+         Abs[h[1., 1.03] - Exp[-1. - 200 0.03^2]] < 10^-4}"
+      )
+      .unwrap(),
+      "{401, True}"
+    );
+    assert_eq!(
+      interpret(
+        "h = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1}, \
+         u, {t, 0, 1}, {a, 0, 2}, \"MinPoints\" -> 101]; \
+         Last[Dimensions[h[\"ValuesOnGrid\"]]]"
+      )
+      .unwrap(),
+      "101"
+    );
+  }
+
+  /// Partial derivatives of a grid solution are read off the same local
+  /// stencil as its values (they used to convert the whole grid on every
+  /// call), in either variable and at the domain's ends.
+  #[test]
+  fn ndsolve_ode_family_partial_derivatives() {
+    assert_eq!(
+      interpret(
+        "f = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1 + a}, \
+         u, {t, 0, 2}, {a, 0, 3}]; \
+         {Abs[Derivative[1, 0][f][1.5, 2.] + 6 Exp[-3.]] < 10^-5, \
+         Abs[Derivative[0, 1][f][1.5, 2.] + 3.5 Exp[-3.]] < 10^-5, \
+         Abs[Derivative[1, 0][f][0., 3.] + 12.] < 10^-2, \
+         Abs[Derivative[1, 0][f][2., 0.] - 0.] < 10^-4}"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+  }
+
   /// The same holds with `NeumannValue` boundary terms on the variable
   /// that is not the unknown's first argument (`c[x, r]` with the flux on
   /// `r`): no extrapolation, and values at the inflow `x = 0` are the
