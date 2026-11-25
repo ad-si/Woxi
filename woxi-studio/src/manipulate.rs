@@ -5557,6 +5557,46 @@ mod tests {
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate shows
+  /// readouts as small tables of strings and numbers with tight `Spacings`,
+  /// all under `Style[…, "Label", size]`, above a picture. Regression check:
+  /// the tables' columns follow the widths of the proportional label face,
+  /// so a narrow string is not set in a column as wide as its character
+  /// count at a fixed advance. This is a self-authored, construct-equivalent
+  /// example.
+  #[test]
+  fn label_styled_readout_table_columns_follow_glyph_widths() {
+    let code = r#"Manipulate[
+      Grid[{
+        {Style[Grid[{{"illi", "MMWM", NumberForm[t, {4, 2}]}},
+           Dividers -> All, Spacings -> 0], "Label", 16]},
+        {Graphics[Disk[{0, 0}, t], PlotRange -> 2, ImageSize -> 120]}}],
+      {{t, 1.}, 0.5, 2}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the readout is drawn");
+    let attr = |line: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = line.find(&key).expect("attribute") + key.len();
+      line[start..start + line[start..].find('"').expect("quote")]
+        .parse()
+        .expect("number")
+    };
+    let mut xs: Vec<f64> = svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+      .map(|l| attr(l, "x1"))
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    assert_eq!(xs.len(), 4, "{svg}");
+    let (narrow, wide) = (xs[1] - xs[0], xs[2] - xs[1]);
+    assert!(narrow < wide * 0.5, "{narrow} vs {wide}: {svg}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook whose Manipulate holds a
   /// list of `Appearance -> None` locators gated by `Enabled -> !flag`, next
   /// to buttons that overwrite the whole point list. Regression check: the
