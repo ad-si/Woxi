@@ -78498,3 +78498,76 @@ mod graphics3d_review_ticks_heads_framing {
     assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
   }
 }
+
+mod row_image_size_box {
+  use super::*;
+
+  fn root_size(svg: &str) -> (String, String) {
+    let open = svg.split_once('>').map(|(open, _)| open).unwrap_or(svg);
+    let attr = |name: &str| {
+      open
+        .split_once(&format!(" {name}=\""))
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(value, _)| value.to_string())
+        .unwrap_or_default()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `Row[{graphic}, ImageSize -> {w, h}]` is a `w` × `h` box: an
+  /// automatically sized picture is redrawn to fit it, as in a `Pane` of
+  /// that size, instead of keeping its default 360-point square.
+  #[test]
+  fn an_auto_sized_picture_fits_the_row_box() {
+    clear_state();
+    let svg = export_svg("Row[{Graphics[{Disk[]}]}, ImageSize -> {200, 50}]");
+    assert_eq!(root_size(&svg), ("200".to_string(), "50".to_string()));
+    assert!(svg.contains("viewBox=\"0 0 50 50\""), "{svg}");
+  }
+
+  /// A picture of labels alone has no shape of its own, so it takes the
+  /// shape of the row's box and its text stays centered and readable.
+  #[test]
+  fn a_picture_of_labels_takes_the_shape_of_the_row_box() {
+    clear_state();
+    for (w, h) in [(360, 16), (240, 30)] {
+      let svg = export_svg(&format!(
+        "Row[{{Graphics[{{Style[Text[\"some readout\"], 12]}}]}}, \
+         ImageSize -> {{{w}, {h}}}, BaselinePosition -> Center]"
+      ));
+      assert_eq!(root_size(&svg), (w.to_string(), h.to_string()));
+      assert!(svg.contains(&format!("viewBox=\"0 0 {w} {h}\"")), "{svg}");
+      assert!(svg.contains(">some readout</text>"), "{svg}");
+    }
+  }
+
+  /// In a notebook `Column` such a row takes only the strip it names.
+  #[test]
+  fn a_sized_row_in_a_column_takes_only_its_strip() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Row[{Graphics[{Text[\"readout\"]}]}, ImageSize -> {360, 16}], \
+       Graphics[{Disk[]}, ImageSize -> {360, 50}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("a rendered column");
+    let (_, height) = root_size(&svg);
+    assert!(height.parse::<f64>().unwrap() < 100.0, "{svg}");
+  }
+
+  /// A picture with its own `ImageSize`, and a row that names a width
+  /// alone, are left as they were.
+  #[test]
+  fn sized_pictures_and_width_only_rows_keep_their_size() {
+    clear_state();
+    let own = export_svg(
+      "Row[{Graphics[{Disk[]}, ImageSize -> 30]}, ImageSize -> {200, 50}]",
+    );
+    assert!(own.contains("viewBox=\"0 0 30 30\""), "{own}");
+    let width_only = export_svg("Row[{Graphics[{Disk[]}]}, ImageSize -> 400]");
+    assert!(
+      width_only.contains("viewBox=\"0 0 360 360\""),
+      "{width_only}"
+    );
+  }
+}
