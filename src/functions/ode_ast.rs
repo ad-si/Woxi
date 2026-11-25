@@ -14568,12 +14568,19 @@ fn solve_power_riccati(
     name: "C".to_string(),
     args: vec![Expr::Integer(1)].into(),
   };
+  // Wolfram writes an integer-order pair as `Y + C[1] J`, else `J + C[1] Y`.
+  let integer_order = matches!(nu, Expr::Integer(_));
+  let (first, second) = if integer_order {
+    ("BesselY", "BesselJ")
+  } else {
+    ("BesselJ", "BesselY")
+  };
   let bessel_pair = |order: &Expr| {
     plus(vec![
-      call("BesselJ", vec![order.clone(), z.clone()]),
+      call(first, vec![order.clone(), z.clone()]),
       times(vec![
         constant.clone(),
-        call("BesselY", vec![order.clone(), z.clone()]),
+        call(second, vec![order.clone(), z.clone()]),
       ]),
     ])
   };

@@ -9059,8 +9059,14 @@ mod dsolve {
   fn power_coefficient_riccati_equation_solution_form() {
     assert_eq!(
       interpret("DSolve[x y'[x] + y[x]^2 == -x^2, y[x], x]").unwrap(),
-      "{{y[x] -> (x*(-BesselJ[1, x] - BesselY[1, x]*C[1]))/\
-       (BesselJ[0, x] + BesselY[0, x]*C[1])}}"
+      "{{y[x] -> (x*(-BesselY[1, x] - BesselJ[1, x]*C[1]))/\
+       (BesselY[0, x] + BesselJ[0, x]*C[1])}}"
+    );
+    // An integer order pairs `Y + C[1] J`.
+    assert_eq!(
+      interpret("DSolve[x y'[x] - y[x]^2 == x^2, y[x], x]").unwrap(),
+      "{{y[x] -> -((x*(-BesselY[1, x] - BesselJ[1, x]*C[1]))/\
+       (BesselY[0, x] + BesselJ[0, x]*C[1]))}}"
     );
   }
 
