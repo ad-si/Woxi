@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- Curves whose coordinates come from a piecewise complex map
+    (`ParametricPlot[{Re[f[t + I b]], Im[f[t + I b]]}, …]` with `f` an
+    `If` or `Piecewise` over `Re`/`Im`) are sampled with compiled machine
+    arithmetic rather than evaluated symbolically per point, which draws
+    such plots several times faster.
+- `Show[plot, Graphics[…]]` of a plot spanning `PlotRange -> All` keeps
+    the margin the plot left around its own data instead of the narrower
+    padding of a bare `Graphics`, so the picture stays the size the plot
+    drew itself in.
 - A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
     is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
     and a `PlotStyle` opacity on colored cells, and evaluates each point

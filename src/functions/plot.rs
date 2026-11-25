@@ -745,6 +745,11 @@ pub(crate) fn symbol_body_value(body: &Expr, vars: &[String]) -> Option<Expr> {
     })
     .ok();
   }
+  // Only a symbol can stand for a stored expression; any other body is
+  // left alone without copying it (this runs once per plot sample).
+  if !matches!(body, Expr::Identifier(_)) {
+    return None;
+  }
   let mut current = body.clone();
   let mut resolved = false;
   for _ in 0..8 {
