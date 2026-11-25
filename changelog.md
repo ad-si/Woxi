@@ -2,6 +2,47 @@
 
 # Unreleased
 
+- A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
+    is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
+    and a `PlotStyle` opacity on colored cells, and evaluates each point
+    once (a `PlotPoints -> 140` region no longer takes minutes). `Show`
+    evaluates a plot given to it once instead of three times and keeps the
+    first of a repeated option of the graphic (`Axes -> False`).
+- `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
+    plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
+    `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
+    `ContourPlot` holds its `GraphicsComplex` as the graphic's first argument,
+    so `plot[[1, 1]]` is the point table.
+- A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
+    way to draw a ground plane) is filled instead of drawn as a bare
+    outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes
+    the front color, not the back one, and a plain color after the
+    `FaceForm` colors a `Sphere`, `Cylinder` or `Cone`.
+- A `Cylinder` or `Cone` cut open by the `PlotRange` of a 3D scene keeps
+    the outline of its end circles inside the box. 3D axes crossing at an
+    `AxesOrigin` carry their `AxesLabel`s at their far ends instead of
+    piled up on the crossing point.
+- A `Text` label in a plot's `Prolog` or `Epilog` whose `Row` holds a
+    quotient (`Text[Row[{"y = 1 + ", 1/x}], pos]`) stacks the numerator
+    over the denominator as it does in `Graphics`, instead of printing
+    `1/x` on one line.
+- Machine results far past the machine range stay numbers: `Exp[30000.]`
+    is `6.83…*^13028` and `Exp[1.*^9]` is `8.00…*^434294481` instead of
+    `Infinity` (the limit rose from a decimal exponent of 10^4 to 6*10^8).
+    A product of an underflowed and an overflowed factor is therefore `0.`
+    rather than `Indeterminate`, so a plotted curve such as
+    `E^-a (E^a - 1)` no longer breaks off where `E^a` overflows. Numbers
+    with huge exponents are stored compactly, so arithmetic on them takes
+    the same time as on any other arbitrary-precision number.
+- A `Framed` around a captioned picture (`Framed[Labeled[graphic, …]]`) or,
+    under `Text`, around a table (`Text[Framed[Grid[…]]]`) keeps its border
+    in notebook output instead of showing the bare content.
+- An unboxed `Graphics3D` of fixed `ImageSize` with a pinned `PlotRange` or
+    explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or list
+    fills its cell by the box outline instead of being framed by its
+    sphere (about 0.7× the size).
+- `Tube[BSplineCurve[pts, r]]` takes a single radius written as the
+    curve's second argument as the tube's radius.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms
