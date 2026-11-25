@@ -148,9 +148,7 @@ mod container_layout {
     for column in [
       format!("Column[{{\"label\", {m}}}, Center]"),
       format!("Column[{{\"label\", {m}}}, Alignment -> Center]"),
-      format!(
-        "Column[{{\"label\", Plot[x, {{x, 0, 1}}]}}, Alignment -> Right]"
-      ),
+      "Column[{\"label\", Plot[x, {x, 0, 1}]}, Alignment -> Right]".to_string(),
       format!("Text[Column[{{\"label\", {m}}}, Alignment -> Center]]"),
       format!(
         "Text[Grid[{{{{Column[{{\"label\", {m}}}, Alignment -> Center]}}}}]]"
