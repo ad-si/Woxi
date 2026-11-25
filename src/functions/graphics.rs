@@ -9731,11 +9731,15 @@ pub(crate) fn stacked_label_picture(
   color: &str,
 ) -> Option<(String, f64, f64)> {
   let boxes = match content {
-    Expr::String(s) if has_script_stacked_inline_box(s) => {
+    Expr::String(s)
+      if has_script_stacked_inline_box(s)
+        || label_has_large_operator_script(content) =>
+    {
       inline_box_string_to_box_expr(s)
     }
     _ if label_typesets_fraction(content)
-      || formula_has_graphics_operand(content) =>
+      || formula_has_graphics_operand(content)
+      || label_has_large_operator_script(content) =>
     {
       Some(crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
@@ -32934,6 +32938,47 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
     && !["FractionBox", "SqrtBox", "RadicalBox"]
       .iter()
       .any(|head| s.contains(head))
+}
+
+/// Whether a label holds inline box notation that hangs limits on a large
+/// operator (`∫` with its bounds, `∑` with its index), on its own or among
+/// the parts of a `Row` or under a style wrapper. The sign is drawn tall
+/// with the limits at its ends, which a line of text with sub/superscript
+/// runs cannot show, so such a label goes through the box layout.
+pub(crate) fn label_has_large_operator_script(expr: &Expr) -> bool {
+  fn boxes_script_large_operator(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        (matches!(
+          name.as_str(),
+          "SubscriptBox"
+            | "SuperscriptBox"
+            | "SubsuperscriptBox"
+            | "UnderscriptBox"
+            | "OverscriptBox"
+            | "UnderoverscriptBox"
+        ) && matches!(args.first(),
+          Some(Expr::String(base)) if large_operator_scale(base).is_some()))
+          || args.iter().any(boxes_script_large_operator)
+      }
+      Expr::List(items) => items.iter().any(boxes_script_large_operator),
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::String(s) => inline_box_string_to_box_expr(s)
+      .is_some_and(|boxes| boxes_script_large_operator(&boxes)),
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      matches!(&args[0], Expr::List(items)
+        if items.iter().any(label_has_large_operator_script))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      label_has_large_operator_script(&args[0])
+    }
+    _ => false,
+  }
 }
 
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a

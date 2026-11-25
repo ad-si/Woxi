@@ -34606,6 +34606,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `Text` label whose inline box notation hangs limits on a large
+    /// operator — on its own or as a part of a `Row` — is laid out as boxes:
+    /// the sign is drawn tall with its limits at its ends, instead of the
+    /// label printing the linear `∫_a^b` or a text-sized sign.
+    #[test]
+    fn text_large_operator_limits_are_laid_out() {
+      for (label, limits) in [
+        (
+          r#""\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)""#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"area = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)", Style["f", Italic], Style[" dx", Italic]}]"#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"s = ", Style["\!\(\*UnderoverscriptBox[\(\[Sum]\), \(k\), \(n\)]\)", 16]}]"#,
+          vec!["k", "n"],
+        ),
+        (
+          r#"Row[{"\!\(\*SubscriptBox[\(\[ContourIntegral]\), \(c\)]\)", "w"}]"#,
+          vec!["c"],
+        ),
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        let at = svg
+          .find("<svg x=")
+          .unwrap_or_else(|| panic!("{label}: no label picture in {svg}"));
+        let picture = &svg[at..];
+        for limit in limits {
+          assert!(
+            picture.contains(&format!(">{limit}</text>")),
+            "{label}: limit {limit} missing in {picture}"
+          );
+        }
+        assert!(
+          !svg.contains("_a^b") && !svg.contains("Box["),
+          "{label}: linear or box source leaked: {svg}"
+        );
+      }
+      // The integral sign itself is a drawn stroke, taller than the text.
+      let svg = export_svg(
+        r#"Graphics[{Text[Row[{"v = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(0\), \(h\)]\)", "A"}], {0, 0}]}]"#,
+      );
+      assert!(svg.contains("<path d=\"M "), "no integral stroke: {svg}");
+      assert!(svg.contains(">v = </text>"), "{svg}");
+      // Ordinary scripts stay on the one-line text path.
+      let plain = export_svg(
+        r#"Graphics[{Text[Row[{"a", "\!\(\*SubsuperscriptBox[\(x\), \(0\), \(h\)]\)"}], {0, 0}]}]"#,
+      );
+      assert!(!plain.contains("<svg x="), "{plain}");
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A

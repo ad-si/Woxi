@@ -11006,13 +11006,28 @@ fn push_text3d_label(
       (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
     ));
   }
+  // A label whose inline box notation hangs limits on a large operator
+  // (an integral with its bounds) is laid out as boxes, the way the 2D
+  // `Text` draws it: the sign tall, its limits at its ends.
+  let picture =
+    crate::functions::graphics::label_has_large_operator_script(label_expr)
+      .then(|| {
+        let color = match text_style.color {
+          Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+          None => crate::functions::graphics::theme().text_primary.to_string(),
+        };
+        crate::functions::graphics::stacked_label_picture(
+          label_expr, font_size, "", &color,
+        )
+      })
+      .flatten();
   prims.push(Primitive3D::Text3D {
     label,
     pos,
     offset,
     font_size,
     width_chars,
-    picture: None,
+    picture,
     bold,
     italic,
     panel,
