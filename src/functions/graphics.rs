@@ -44783,9 +44783,9 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         // The default sans face (`Text[…]`, or `sans-serif` by name) is
         // drawn in the embedded Atkinson Hyperlegible Next, whose digits
         // and blanks run wider than Arial's: measured by Arial's advances,
-        // a centered part spills into its neighbors. The thin gaps
-        // between the digit groups of a long number are `dx` shifts
-        // rather than glyphs, so they are added on top.
+        // a centered part spills into its neighbors.
+        // The thin gaps between the digit groups of a long number
+        // (`<tspan dx="0.18em">`) advance the line beyond its glyphs.
         (crate::functions::plot_padding::exported_text_extent(
           &markup,
           st.font_size,
