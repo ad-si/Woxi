@@ -1102,6 +1102,11 @@ fn delete_cases_walk(
     return DeleteWalk::Deleted;
   }
 
+  // `1/2` and `1 + 2 I` are atoms: they have no parts to delete.
+  if crate::functions::predicate_ast::is_atomic_number(expr) {
+    return DeleteWalk::Keep(expr.clone());
+  }
+
   match expr {
     Expr::Association(pairs) => {
       let mut kept: Vec<(Expr, Expr)> = Vec::with_capacity(pairs.len());

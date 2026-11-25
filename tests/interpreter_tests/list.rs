@@ -27168,6 +27168,14 @@ fn rebuilt_non_list_heads_are_evaluated() {
     ("Take[Hold[1 + 1, b], 1]", "Hold[1 + 1]"),
     ("DeleteCases[Hold[1 + 1, b], b]", "Hold[1 + 1]"),
     ("Take[{1, 2, 3}, 2]", "{1, 2}"),
+    // Rational and complex numbers are atoms without parts.
+    ("DeleteCases[1/2, 1]", "1/2"),
+    ("DeleteCases[1 + 2 I, 1]", "1 + 2*I"),
+    (
+      "DeleteCases[{1/2, 1, 1 + 2 I}, 1, Infinity]",
+      "{1/2, 1 + 2*I}",
+    ),
+    ("DeleteCases[(1 + 2 I) + z, 1]", "(1 + 2*I) + z"),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }

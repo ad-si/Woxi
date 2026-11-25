@@ -1739,6 +1739,7 @@ fn evaluate_rebuilt_head(
   result: Expr,
 ) -> Result<Expr, InterpreterError> {
   let rebuilt = !matches!(source, Expr::List(_) | Expr::Association(_))
+    && !crate::functions::predicate_ast::is_atomic_number(source)
     && !matches!(&result, Expr::FunctionCall { name: n, .. } if n == name);
   if !rebuilt || crate::evaluator::core_eval::head_holds_arguments(source) {
     return Ok(result);
