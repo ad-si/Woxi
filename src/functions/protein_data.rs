@@ -128,6 +128,42 @@ const PROPERTIES: &[&str] = &[
   "StandardName",
 ];
 
+/// Every property wolframscript's `ProteinData["Properties"]` lists. One of
+/// these the bundled table lacks is `Missing["NotAvailable"]`; any other
+/// name is no property at all (`ProteinData::notprop`).
+const WL_PROPERTIES: &[&str] = &[
+  "AdditionalAtomPositions",
+  "AdditionalAtomTypes",
+  "AtomPositions",
+  "AtomRoles",
+  "AtomTypes",
+  "BiologicalProcesses",
+  "CellularComponents",
+  "ChainLabels",
+  "ChainSequences",
+  "DihedralAngles",
+  "DNACodingSequence",
+  "DNACodingSequenceLength",
+  "DomainIDs",
+  "DomainPositions",
+  "Domains",
+  "Gene",
+  "GeneID",
+  "GyrationRadius",
+  "Memberships",
+  "MolecularFunctions",
+  "MolecularWeight",
+  "MoleculePlot",
+  "Name",
+  "NCBIAccessions",
+  "PDBIDList",
+  "PrimaryPDBID",
+  "SecondaryStructureRules",
+  "Sequence",
+  "SequenceLength",
+  "StandardName",
+];
+
 fn find(spec: &Expr) -> Option<&'static Protein> {
   let name = match spec {
     Expr::String(s) => s.as_str(),
@@ -178,7 +214,13 @@ fn property(p: &'static Protein, prop: &str) -> Expr {
     "Name" => str_expr(&p.name),
     "StandardName" => str_expr(&p.symbol),
     "Sequence" => str_expr(&p.sequence),
-    "SequenceLength" => Expr::Integer(p.sequence.chars().count() as i128),
+    "SequenceLength" => call(
+      "Quantity",
+      vec![
+        Expr::Integer(p.sequence.chars().count() as i128),
+        str_expr("AminoAcids"),
+      ],
+    ),
     _ => match go_list(p, prop) {
       Some(ids) => strings(ids.iter().map(|&i| TABLE.terms[i].class.as_str())),
       None => call1("Missing", str_expr("NotAvailable")),
@@ -196,11 +238,11 @@ fn property_names(p: &'static Protein, prop: &str) -> Expr {
 
 fn notent(spec: &Expr) {
   crate::emit_message(&format!(
-    "ProteinData::notent: {} is not a known entity, class, or tag for \
+    "ProteinData::notent: {} is not a known entity, class or tag for \
      ProteinData. Use ProteinData[] for a list of entities.",
     match spec {
       Expr::String(s) => s.clone(),
-      other => crate::syntax::expr_to_output(other),
+      other => crate::syntax::expr_to_input_form(other),
     }
   ));
 }
@@ -228,18 +270,16 @@ pub fn protein_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(unevaluated("ProteinData", args))
       }
     }
-    // A list of proteins maps over its elements.
-    [Expr::List(items), rest @ ..] if !rest.is_empty() => {
-      let mut out = Vec::with_capacity(items.len());
-      for item in items {
-        let mut a = vec![item.clone()];
-        a.extend_from_slice(rest);
-        out.push(protein_data_ast(&a)?);
-      }
-      Ok(Expr::List(out.into()))
-    }
+    // A list of proteins is no entity: wolframscript does not map over it
+    // (`ProteinData::notent`), so it falls to the cases below.
     [spec, Expr::String(prop)] => {
       if let Some(p) = find(spec) {
+        if !PROPERTIES.contains(&prop.as_str())
+          && !WL_PROPERTIES.contains(&prop.as_str())
+        {
+          crate::functions::chemical_data::emit_notprop("ProteinData", prop);
+          return Ok(unevaluated("ProteinData", args));
+        }
         Ok(property(p, prop))
       } else {
         notent(spec);

@@ -772,6 +772,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // Manipulate it holds its arguments via the explicit name-match in
     // core_eval.rs rather than a HoldAll attribute.
     "GeometricScene" => A::Protected | A::ReadProtected,
+    "ChartElementData" => A::Protected | A::ReadProtected,
     // The moment functions and their formal-symbol evaluator.
     "Moment" | "CentralMoment" | "Cumulant" | "FactorialMoment"
     | "MomentEvaluate" => A::Protected | A::ReadProtected,

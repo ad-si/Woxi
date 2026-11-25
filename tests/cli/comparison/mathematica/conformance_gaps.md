@@ -9729,7 +9729,7 @@ which can differ from WL's (older) wording, the GO annotations are
 UniProt's current ones, and a class (`ProteinData["ActinBinding"]`) lists
 only the bundled proteins annotated directly with its term. Only the
 `"Name"`, `"StandardName"`, `"Sequence"`, `"SequenceLength"` and GO class
-properties are available.
+properties are available; the other properties WL lists are `Missing["NotAvailable"]`.
 
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
