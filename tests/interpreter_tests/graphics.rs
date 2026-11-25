@@ -1935,7 +1935,7 @@ mod graphics {
         assert!(t.contains("fill=\"rgb(0,0,255)\""), "{t}");
       }
       let t = tag("zzplain");
-      assert!(t.contains("font-size=\"14\""), "{t}");
+      assert!(t.contains("font-size=\"10\""), "{t}");
       assert!(t.contains("font-weight=\"normal\""), "{t}");
     }
 
@@ -5396,9 +5396,9 @@ mod graphics {
       // The drawing is what the labels leave of the 230 points.
       let clip = &svg[svg.find("<clipPath").unwrap()..];
       let drawing_w = num(clip, "width=\"");
-      assert!(drawing_w > 25.0 && drawing_w < 60.0, "{svg}");
+      assert!(drawing_w > 60.0 && drawing_w < 110.0, "{svg}");
       // The rectangle spans (almost) the whole drawing width …
-      let rect = &svg[svg.find("<rect x=\"0.").unwrap()..];
+      let rect = &svg[svg.rfind("<rect ").unwrap()..];
       let rect_w = num(rect, "width=\"");
       assert!(rect_w > 0.9 * drawing_w, "{svg}");
       // … and its edge is 5% of that width, not of the whole picture.
@@ -19085,7 +19085,7 @@ mod plot3d {
       // A row with an unstyled part keeps the label's own size, and the
       // sized part is drawn at its own size inside it.
       const PQ: &str = "p<tspan font-size=\"20\">q</tspan>";
-      assert_eq!(attr(&svg, PQ, "font-size"), "14");
+      assert_eq!(attr(&svg, PQ, "font-size"), "10");
     }
 
     /// A `Button` inside a picture draws as the button itself — a rounded
@@ -19608,7 +19608,7 @@ mod plot3d {
       assert!(label.contains("fill=\"rgb(0,0,0)\""), "{label}");
       // An unknown style name changes nothing.
       let plain = attrs("\"NoSuchStyle\"");
-      assert!(plain.contains("font-size=\"14\""), "{plain}");
+      assert!(plain.contains("font-size=\"10\""), "{plain}");
     }
 
     /// The "Label" style sets its text in a proportional sans-serif face,
@@ -35753,7 +35753,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "font-size=\"9.8\" stroke=\"none\" xml:space=\"preserve\">2</text>"
+          "font-size=\"7.0\" stroke=\"none\" xml:space=\"preserve\">2</text>"
         ),
         "the raised exponent: {svg}"
       );
@@ -61678,9 +61678,42 @@ fn named_font_sizes_in_a_style() {
   );
   let plain = export_svg("Graphics[{Text[\"z\", {0, 0}]}, ImageSize -> 200]");
   assert!(
-    !larger.contains("font-size=\"14\"") && plain.contains("font-size=\"14\""),
+    larger.contains("font-size=\"12.5\"") && plain.contains("font-size=\"10\""),
     "Larger should grow the inherited size: {larger}"
   );
+}
+
+/// A picture's `Text` is set at 10 points unless a style asks for another
+/// size — what wolframscript's SVG export writes, and as tall as a plot's
+/// tick labels in the front end — whether the label is a string, a number
+/// from a `Table`, or placed by an `Inset`. Typeset output outside a
+/// picture keeps its own 14 point size.
+#[test]
+fn graphics_text_defaults_to_ten_points() {
+  let svg = export_svg(
+    "Graphics[{Text[\"zzlabel\", {0, 0}], Black, \
+     Table[Text[IntegerPart[7 + h], {1, h}], {h, 1, 3}], \
+     Inset[\"zzinset\", {2, 0}], Text[Style[\"zzbig\", 18], {2, 2}]}, \
+     ImageSize -> {250, 250}]",
+  );
+  let size_of = |label: &str| {
+    let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+    let tag = &svg[svg[..end].rfind("<text").expect(&svg)..end];
+    let size = tag.split("font-size=\"").nth(1).expect(tag);
+    size.split('"').next().unwrap().to_string()
+  };
+  for label in ["zzlabel", "8", "9", "10", "zzinset"] {
+    assert_eq!(size_of(label), "10", "{label}: {svg}");
+  }
+  assert_eq!(size_of("zzbig"), "18", "{svg}");
+  // The same size whatever the picture's width.
+  let wide =
+    export_svg("Graphics[{Text[\"zzlabel\", {0, 0}]}, ImageSize -> 600]");
+  assert!(wide.contains("font-size=\"10\""), "{wide}");
+  // A `Row` on its own is typeset output, not a picture's label.
+  let row = export_svg("Row[{\"zzrow\", 20}]");
+  assert!(row.contains("font-size=\"14\""), "{row}");
+  assert!(!row.contains("font-size=\"10\""), "{row}");
 }
 
 /// `Text[…]` sets its content in the graphic's own text style, so the weight
@@ -66238,9 +66271,9 @@ mod surface_vertex_colors {
         .and_then(|r| r.split('"').next())
         .and_then(|w| w.parse().ok())
         .unwrap();
-      // The label's glyphs add up to about 105 px at the default 14 pt.
+      // The label's glyphs add up to about 75 px at the default 10 pt.
       assert!(
-        tx - 52.0 >= -0.5 && tx + 52.0 <= width + 0.5,
+        tx - 37.0 >= -0.5 && tx + 37.0 <= width + 0.5,
         "{side} label cut off: x = {tx}, width = {width}"
       );
     }
@@ -75783,11 +75816,11 @@ fn graphics_text_column_lines_sized_by_their_styles() {
   assert!(svg.contains("dy=\"70\""), "{svg}");
   let svg = export_svg("Graphics[Text[Column[{\"a\", \"b\", \"c\"}], {0, 0}]]");
   assert!(
-    svg.contains("dy=\"-14\" dominant-baseline=\"central\">a</tspan>"),
+    svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
     "{svg}"
   );
   assert!(
-    svg.contains("dy=\"14\" dominant-baseline=\"central\">b</tspan>"),
+    svg.contains("dy=\"10\" dominant-baseline=\"central\">b</tspan>"),
     "{svg}"
   );
 }
@@ -76571,11 +76604,11 @@ mod traditional_form_text_scripts {
     // The exponent is set as its own smaller run (raised over its base),
     // not run into the base as `x2`.
     let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
-    assert_eq!(runs_at(&svg, "9.8"), ["2"], "{svg}");
-    assert!(runs_at(&svg, "14.0").contains(&"x".to_string()), "{svg}");
+    assert_eq!(runs_at(&svg, "7.0"), ["2"], "{svg}");
+    assert!(runs_at(&svg, "10.0").contains(&"x".to_string()), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    let scripts = runs_at(&svg, "9.8");
+    let scripts = runs_at(&svg, "7.0");
     assert!(scripts.contains(&"n".to_string()), "{svg}");
     assert!(scripts.contains(&"3".to_string()), "{svg}");
   }
@@ -76583,14 +76616,14 @@ mod traditional_form_text_scripts {
   #[test]
   fn scripts_without_glyphs_become_tspans() {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
-    let scripts = runs_at(&svg, "9.8");
+    let scripts = runs_at(&svg, "7.0");
     assert!(
       scripts.contains(&"a".to_string()) && scripts.contains(&"b".to_string()),
       "{svg}"
     );
     let svg =
       export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
-    assert_eq!(runs_at(&svg, "9.8"), ["k"], "{svg}");
+    assert_eq!(runs_at(&svg, "7.0"), ["k"], "{svg}");
   }
 }
 

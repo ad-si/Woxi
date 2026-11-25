@@ -711,6 +711,23 @@ fn parse_shadow_color(expr: &Expr) -> Option<Color> {
   None
 }
 
+impl StyleState {
+  /// The style typeset output outside a picture starts from (a `Row`'s
+  /// text items, a `Button` label): the 14 point output text, where a
+  /// picture's own labels default to [`GRAPHICS_TEXT_FONT_SIZE`].
+  fn typeset() -> Self {
+    Self {
+      font_size: 14.0,
+      ..Self::default()
+    }
+  }
+}
+
+/// The size a picture's `Text` is set at when nothing asks for another
+/// one: 10 points, which is what wolframscript's SVG export writes and what
+/// the front end draws (a `Text` digit is as tall as a plot's tick label).
+pub(crate) const GRAPHICS_TEXT_FONT_SIZE: f64 = 10.0;
+
 impl Default for StyleState {
   fn default() -> Self {
     Self {
@@ -733,7 +750,7 @@ impl Default for StyleState {
       edge_form: None,
       halo: None,
       drop_shadow: None,
-      font_size: 14.0,
+      font_size: GRAPHICS_TEXT_FONT_SIZE,
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
       font_family: String::new(),
@@ -4242,7 +4259,9 @@ fn collect_primitives(
           // other object (a string, a number) is placed like `Text`.
           if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
-          } else if let Some(label) = text_row_inset_object(args, 14.0) {
+          } else if let Some(label) =
+            text_row_inset_object(args, style.font_size)
+          {
             // A `Row` of text runs is a (possibly wrapped) paragraph.
             let mut text_args = args.to_vec();
             text_args[0] = label;
@@ -7144,7 +7163,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
       match pane_width_points(args) {
-        Some(w) => wrap_text_to_points(&text, w, 14.0),
+        Some(w) => wrap_text_to_points(&text, w, GRAPHICS_TEXT_FONT_SIZE),
         None => text,
       }
     }
@@ -7735,7 +7754,7 @@ fn button_text_plate_svg(args: &[Expr]) -> String {
   let size = button_image_size(args);
   // A `Style[label, …]` label (`Style[n, "Title"]`, `Style[k, 24, Bold]`)
   // keeps its font size, color and face on the plate.
-  let mut text_style = StyleState::default();
+  let mut text_style = StyleState::typeset();
   let mut styled = false;
   let mut inner = &args[0];
   while let Expr::FunctionCall { name, args: sargs } = inner
@@ -44335,7 +44354,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
   }
 
   let make_text_cell = |item: &Expr| -> Cell {
-    let mut st = StyleState::default();
+    let mut st = StyleState::typeset();
     let mut color: Option<Color> = None;
     // An `Invisible[…]` item takes its content's width but is painted with
     // no fill, so the row keeps its shape while the item reads blank.
