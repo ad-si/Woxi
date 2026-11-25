@@ -56377,6 +56377,13 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         {
           return manipulate_label_runs_inner(&args[0], italic);
         }
+        // Scientific notation sets on one line with a raised exponent
+        // (`1.63 × 10⁸`), not as the stacked 2-D layout whose exponent
+        // would land on a line of its own above the mantissa.
+        let text = match split_scientific_2d(&text) {
+          Some((base, exp)) => base + &to_unicode_script(&exp, true),
+          None => text,
+        };
         vec![LabelRun {
           text,
           italic,
@@ -64546,6 +64553,50 @@ mod manipulate_label_tests {
       vec![run("viewpoint ", false), run("V", false), sub_run("z")]
     );
     assert_eq!(flatten_label_runs(&runs(&row)), "viewpoint Vz");
+  }
+
+  /// A number format that switches to scientific notation reads on one
+  /// line with a raised exponent, whatever the mantissa's precision or the
+  /// exponent's sign — not as `ToString`'s stacked layout, which puts the
+  /// exponent on a line of its own above the mantissa.
+  #[test]
+  fn scientific_number_form_label_raises_the_exponent() {
+    for (form, value, spec, expected) in [
+      (
+        "NumberForm",
+        1.6298520107e8,
+        Some((9, 4)),
+        "1.6299 \u{d7} 10\u{2078}",
+      ),
+      (
+        "NumberForm",
+        2.5e-12,
+        Some((4, 2)),
+        "2.50 \u{d7} 10\u{207b}\u{b9}\u{b2}",
+      ),
+      ("ScientificForm", 12345.0, None, "1.2345 \u{d7} 10\u{2074}"),
+    ] {
+      let mut args = vec![Expr::Real(value)];
+      if let Some((n, f)) = spec {
+        args.push(Expr::List(vec![Expr::Integer(n), Expr::Integer(f)].into()));
+      }
+      let label = call(form, args);
+      assert_eq!(runs(&label), vec![run(expected, false)], "{form}");
+      // Inside the styled column a Manipulate readout frames it in.
+      let column =
+        call1("Column", Expr::List(vec![str_expr("value"), label].into()));
+      let text = flatten_label_runs(&runs(&call1("Text", column)));
+      assert_eq!(text, format!("value\n{expected}"), "{form}");
+    }
+    // A number that needs no exponent keeps its plain digits.
+    let plain = call(
+      "NumberForm",
+      vec![
+        Expr::Real(1234.5),
+        Expr::List(vec![Expr::Integer(9), Expr::Integer(4)].into()),
+      ],
+    );
+    assert_eq!(runs(&plain), vec![run("1234.5000", false)]);
   }
 
   #[test]
