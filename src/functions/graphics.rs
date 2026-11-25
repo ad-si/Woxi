@@ -44784,11 +44784,15 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         // drawn in the embedded Atkinson Hyperlegible Next, whose digits
         // and blanks run wider than Arial's: measured by Arial's advances,
         // a centered part spills into its neighbors.
-        crate::functions::plot_padding::exported_text_extent(
+        // The thin gaps between the digit groups of a long number
+        // (`<tspan dx="0.18em">`) advance the line beyond its glyphs.
+        (crate::functions::plot_padding::exported_text_extent(
           &markup,
           st.font_size,
         )
-        .1 * bold
+        .1 + crate::functions::plot_padding::tspan_shift_em(&markup)
+          * st.font_size)
+          * bold
       } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
