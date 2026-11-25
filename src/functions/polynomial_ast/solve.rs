@@ -3323,6 +3323,57 @@ fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(split_radicand_content(result))
 }
 
+/// Whether `expr` holds a circular or hyperbolic function.
+fn mentions_trig_function(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Sin"
+          | "Cos"
+          | "Tan"
+          | "Cot"
+          | "Sec"
+          | "Csc"
+          | "Sinh"
+          | "Cosh"
+          | "Tanh"
+          | "Coth"
+          | "Sech"
+          | "Csch"
+      ) =>
+    {
+      true
+    }
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(mentions_trig_function),
+  }
+}
+
+/// `expr` expanded, unless the expansion has more than `slack` leaves more
+/// than `expr` itself.
+fn expand_unless_bigger(expr: Expr, slack: i128) -> Expr {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let leaves = |e: &Expr| match eval(call("LeafCount", vec![e.clone()])) {
+    Some(Expr::Integer(n)) => Some(n),
+    _ => None,
+  };
+  let Some(evaluated) = eval(expr.clone()) else {
+    return expr;
+  };
+  match eval(call("Expand", vec![evaluated.clone()])) {
+    Some(expanded)
+      if leaves(&expanded)
+        .zip(leaves(&evaluated))
+        .is_some_and(|(e, o)| e - o <= slack) =>
+    {
+      expanded
+    }
+    _ => expr,
+  }
+}
+
 /// Drop the solutions of a single equation in one unknown that make the
 /// denominator of its difference vanish. As in Wolfram, the difference is
 /// brought over a common denominator with common factors cancelled first,
@@ -8177,6 +8228,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         four_ac
       };
       let discriminant = simplify(minus2(b_sq, four_ac));
+      // An exact discriminant is expanded unless that makes it clearly
+      // bigger (more than four leaves): `(1 + a)^2 - 4 c` becomes
+      // `1 + 2 a + a^2 - 4 c`, `(a + b)^2 - 4 c` stays. One holding a
+      // circular or hyperbolic function stays as well:
+      // `(1 + Sin[t])^2 - 4 c`.
+      let discriminant = if inexact || mentions_trig_function(&discriminant) {
+        discriminant
+      } else {
+        expand_unless_bigger(discriminant, 4)
+      };
 
       let neg_b = negate_expr(b);
       let two_a = multiply_exprs(&Expr::Integer(2), a);

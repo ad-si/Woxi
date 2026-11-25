@@ -6666,7 +6666,20 @@ y^2]^3)) y}, {x, y}]; \
     );
     assert_eq!(
       interpret("Solve[x^2 + (a + 1) x + c == 0, x]").unwrap(),
-      "{{x -> (-1 - a - Sqrt[(1 + a)^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[(1 + a)^2 - 4*c])/2}}"
+      "{{x -> (-1 - a - Sqrt[1 + 2*a + a^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[1 + 2*a + a^2 - 4*c])/2}}"
+    );
+    // The discriminant is expanded unless that adds more than four leaves.
+    assert_eq!(
+      interpret("Solve[x^2 + (a + b) x + c == 0, x]").unwrap(),
+      "{{x -> (-a - b - Sqrt[(a + b)^2 - 4*c])/2}, {x -> (-a - b + Sqrt[(a + b)^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a - b) x + c == 0, x]").unwrap(),
+      "{{x -> (-a + b - Sqrt[a^2 - 2*a*b + b^2 - 4*c])/2}, {x -> (-a + b + Sqrt[a^2 - 2*a*b + b^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a + a^2) x + c == 0, x]").unwrap(),
+      "{{x -> (-a - a^2 - Sqrt[a^2 + 2*a^3 + a^4 - 4*c])/2}, {x -> (-a - a^2 + Sqrt[a^2 + 2*a^3 + a^4 - 4*c])/2}}"
     );
     assert_eq!(
       interpret("Solve[x (1 - x) (x - 1/4) == 1/2 e x, x]").unwrap(),
