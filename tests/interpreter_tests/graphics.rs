@@ -24848,8 +24848,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           line
             .split_once(&format!(" {key}=\""))
             .and_then(|(_, r)| r.split_once('"'))
-            .map(|(v, _)| v.to_string())
-            .unwrap_or_else(|| panic!("no {key} in {line}"))
+            .map_or_else(
+              || panic!("no {key} in {line}"),
+              |(v, _)| v.to_string(),
+            )
         };
         // Every further line starts at the same x as the first.
         let x = attr("x");
