@@ -4412,6 +4412,59 @@ mod graphics {
           assert!(svg.matches("<polygon").count() > 2);
         }
 
+        /// `Polygon[{poly1, poly2}, VertexColors -> {cols1, cols2}]` gives
+        /// each sub-polygon its own color list instead of drawing them all
+        /// with the default black fill.
+        #[test]
+        fn multi_polygon_per_polygon_color_lists() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{{0, 0}, {1, 0}, {0, 1}}, \
+             {{2, 0}, {3, 0}, {2, 1}}, {{4, 0}, {5, 0}, {4, 1}}}, \
+             VertexColors -> {Table[GrayLevel[1], {3}], \
+             Table[Red, {3}], Table[GrayLevel[0], {3}]}]}]",
+          );
+          // Each sub-polygon's corners share one color, so each is one
+          // flat fill rather than a mesh of blended facets.
+          assert_eq!(
+            svg.matches("fill=\"rgb(255,255,255)\"").count(),
+            1,
+            "{svg}"
+          );
+          assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+          assert_eq!(svg.matches("fill=\"rgb(0,0,0)\"").count(), 1, "{svg}");
+        }
+
+        /// A per-polygon color list shorter than its polygon leaves the
+        /// remaining corners of that polygon black, as a flat list does.
+        #[test]
+        fn multi_polygon_per_polygon_short_color_list() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{{0, 0}, {1, 0}, {0, 1}}, \
+             {{2, 0}, {3, 0}, {2, 1}}}, \
+             VertexColors -> {{Red, Red, Red}, {Blue}}]}]",
+          );
+          assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+          // The second triangle blends from blue into black corners: a
+          // gradient between the two, not one flat color.
+          assert!(svg.contains("<stop stop-color=\"#0000ff\"/>"), "{svg}");
+          assert!(
+            svg.contains("<stop offset=\"1\" stop-color=\"#000000\"/>"),
+            "{svg}"
+          );
+        }
+
+        /// `Line[{seg1, seg2}, VertexColors -> {cols1, cols2}]` colors each
+        /// segment with its own list.
+        #[test]
+        fn multi_segment_line_per_segment_color_lists() {
+          let svg = export_svg(
+            "Graphics[{Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}, \
+             VertexColors -> {{Red, Red}, {Blue, Blue}}]}]",
+          );
+          assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+          assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+        }
+
         /// A self-crossing outline is filled by the even-odd rule whether
         /// it is flat-colored or blended: the blend is clipped to the
         /// even-odd region, so a pentagram's center stays hollow.
