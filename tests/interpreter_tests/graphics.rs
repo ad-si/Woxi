@@ -55827,7 +55827,8 @@ mod manipulate {
     else {
       panic!("expected Slider2D control, got {:?}", spec.controls[0]);
     };
-    assert!(!label_runs.is_empty());
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "point");
     assert!(label_runs.iter().all(|r| r.italic), "runs: {label_runs:?}");
   }
 
