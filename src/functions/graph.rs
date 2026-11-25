@@ -11805,9 +11805,6 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
   if name != "Graph3D" {
     return None;
   }
-  let is_option = |a: &Expr| {
-    crate::evaluator::dispatch::list_operations::as_rule(a).is_some()
-  };
   let (inner, outer_options): (Expr, Vec<Expr>) = match args.first()? {
     Expr::FunctionCall { name, .. } if name == "Graph" => {
       (args[0].clone(), args[1..].to_vec())
@@ -11819,11 +11816,12 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
       },
       Vec::new(),
     ),
-    // `Graph3D[edges, opts…]`: `Graph` works out the vertex list.
-    Expr::List(_) if args[1..].iter().all(is_option) => (
-      crate::evaluator::evaluate_expr_to_expr(&call1("Graph", args[0].clone()))
+    // `Graph3D[edges, opts…]`: `Graph` works out the vertex list (and
+    // takes in options given as one list).
+    Expr::List(_) => (
+      crate::evaluator::evaluate_expr_to_expr(&call("Graph", args.to_vec()))
         .ok()?,
-      args[1..].to_vec(),
+      Vec::new(),
     ),
     _ => return None,
   };

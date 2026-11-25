@@ -9547,6 +9547,21 @@ mod find_shortest_tour {
   }
 
   #[test]
+  fn graph_takes_its_options_as_one_list() {
+    assert_eq!(
+      interpret(
+        "red[g_] := StringCount[ExportString[g, \"SVG\"], \
+           \"fill=\\\"rgb(255,0,0)\\\"\"]; \
+         {red[Graph[{1 <-> 2}, {VertexStyle -> Red}]], \
+          red[Graph[{1 <-> 2}, VertexStyle -> Red]], red[Graph[{1 <-> 2}]], \
+          {VertexCount[#], EdgeCount[#]} &[Graph[{a, b}, {a -> b}]]}"
+      )
+      .unwrap(),
+      "{2, 2, 0, {2, 1}}"
+    );
+  }
+
+  #[test]
   fn graph3d_of_a_non_graph_stays_symbolic() {
     assert_eq!(
       interpret(
@@ -9570,10 +9585,11 @@ mod find_shortest_tour {
            \"rx=\\\"\" ~~ Shortest[r__] ~~ \"\\\"\" :> r]]; \
          {StringCount[flat, \"fill=\\\"rgb(255,0,0)\\\"\"], \
           radii[[1]] > 5 radii[[2]], radii[[2]] == radii[[3]], \
-          StringContainsQ[ExportString[Graph3D[g, o], \"SVG\"], \
-            \"rgb(255,0,0)\"], \
-          StringContainsQ[ExportString[Graph3D[g], \"SVG\"], \
-            \"rgb(255,0,0)\"]}"
+          ExportString[Graph3D[g, o], \"SVG\"] === \
+            ExportString[Graph3D[g, VertexStyle -> {{\"H\", 1} -> Red, \
+              {\"H\", 2} -> Red}, VertexSize -> {{\"C\", 1} -> 0.5}], \"SVG\"], \
+          ExportString[Graph3D[g, o], \"SVG\"] === \
+            ExportString[Graph3D[g], \"SVG\"]}"
       )
       .unwrap(),
       "{2, True, True, True, False}"
