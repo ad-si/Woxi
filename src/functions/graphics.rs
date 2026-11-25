@@ -42205,7 +42205,13 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 /// unlike `Column[items, align, 0]`, whose spacing is measured between the
 /// lines of text and so takes their blank margins out of the gap.
 fn stacked_boxes_svg(items: Vec<Expr>, align: &str) -> Option<String> {
-  let boxes = vec![false; items.len()];
+  let boxes = vec![
+    ColumnItemKind {
+      text: false,
+      text_line: None,
+    };
+    items.len()
+  ];
   column_to_svg_with_text_items(
     &[
       Expr::List(items.into()),
@@ -42222,7 +42228,7 @@ fn stacked_boxes_svg(items: Vec<Expr>, align: &str) -> Option<String> {
 /// measured between its lines rather than its padded box.
 pub fn column_to_svg_with_text_items(
   args: &[Expr],
-  text_items: Option<&[bool]>,
+  text_items: Option<&[ColumnItemKind]>,
 ) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Column", args) {
     return column_to_svg_with_text_items(&styled, text_items);
@@ -42516,9 +42522,76 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
+/// What a `Column` item was before its caller drew it as a picture.
+#[derive(Clone, Copy)]
+pub struct ColumnItemKind {
+  /// The item was text (a string, or a layout of text) rather than a
+  /// picture.
+  pub text: bool,
+  /// The item was a one-line text `Row` (see [`one_line_text_row`]).
+  pub text_line: Option<bool>,
+}
+
+/// Whether `expr` (under any `Style`/`Text` wrappers) is a `Row` of plain text
+/// atoms — strings without a line break, numbers and symbols, each possibly
+/// styled — which is set on one line. The value tells whether a wrapper
+/// puts it in the proportional text face (see [`text_face_family`]).
+pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
+  fn is_text_atom(e: &Expr) -> bool {
+    match e {
+      Expr::String(s) => !s.contains('\n'),
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Identifier(_) => true,
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        is_text_atom(&args[0])
+      }
+      _ => false,
+    }
+  }
+  let mut core = expr;
+  let mut text_face = false;
+  while let Expr::FunctionCall { name, args } = core
+    && (is_style_wrapper(name) || (name == "Text" && args.len() == 1))
+    && let Some(first) = args.first()
+  {
+    text_face |= name == "Text";
+    text_face |= args[1..].iter().any(|o| {
+      option_kv(o).is_some_and(|(k, v)| {
+        k == "FontFamily"
+          && matches!(v, Expr::String(f) if is_text_face_family(f))
+      })
+    });
+    core = first;
+  }
+  let Expr::FunctionCall { name, args } = core else {
+    return None;
+  };
+  let separator_ok = match args.get(1) {
+    None => true,
+    Some(Expr::String(s)) => !s.contains('\n'),
+    Some(_) => false,
+  };
+  match args.first() {
+    Some(Expr::List(items))
+      if name == "Row"
+        && args.len() <= 2
+        && separator_ok
+        && !items.is_empty()
+        && items.iter().all(is_text_atom) =>
+    {
+      Some(text_face)
+    }
+    _ => None,
+  }
+}
+
 fn column_layout_svg(
   args: &[Expr],
-  text_items: Option<&[bool]>,
+  text_items: Option<&[ColumnItemKind]>,
 ) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -42617,6 +42690,9 @@ fn column_layout_svg(
       /// nested row or grid of text carries the same blank margin around
       /// its lines as a text item.
       picture: bool,
+      /// A `Row` of plain text set on one line stacks like a line of text;
+      /// the flag tells whether it is in the proportional text face.
+      text_line: Option<bool>,
     },
     /// The item, and whether it is a plain `Text[…]` display (set in the
     /// proportional text face rather than the column's monospace default).
@@ -42625,7 +42701,8 @@ fn column_layout_svg(
 
   let cells: Vec<Cell> = items
     .iter()
-    .map(|item| {
+    .enumerate()
+    .map(|(i, item)| {
       // A `Pane[content, {w, h}]` item reserves its whole `w`×`h` area,
       // with the content placed in it by the pane's `Alignment`.
       if let Some(svg) = fixed_size_pane_svg(item) {
@@ -42635,6 +42712,7 @@ fn column_layout_svg(
           width: w,
           height: h,
           picture: true,
+          text_line: None,
         };
       }
       let (resolved, shows_text) = resolve_display_item_face(item);
@@ -42646,6 +42724,9 @@ fn column_layout_svg(
             width: w,
             height: h,
             picture: true,
+            text_line: text_items
+              .and_then(|t| t.get(i))
+              .and_then(|k| k.text_line),
           }
         }
         // A raster image is a picture, drawn at its own size like any other
@@ -42659,6 +42740,7 @@ fn column_layout_svg(
             width: w,
             height: h,
             picture: true,
+            text_line: None,
           }
         }
         _ => match nested_layout_svg(&resolved)
@@ -42672,6 +42754,12 @@ fn column_layout_svg(
               width: w,
               height: h,
               picture: is_framed_box(&resolved),
+              // A caller that drew the items ahead has told what each was.
+              text_line: match text_items {
+                Some(kinds) => kinds.get(i).and_then(|k| k.text_line),
+                None => one_line_text_row(&resolved)
+                  .map(|face| face || shows_text || is_text_display_item(item)),
+              },
             }
           }
           None => {
@@ -42700,7 +42788,7 @@ fn column_layout_svg(
     .enumerate()
     .map(|(i, c)| match c {
       Cell::Svg { picture, .. } => text_items
-        .and_then(|t| t.get(i).copied())
+        .and_then(|t| t.get(i).map(|k| k.text))
         .unwrap_or_else(|| {
           !*picture
             && !items
@@ -42798,6 +42886,7 @@ fn column_layout_svg(
           width: w,
           height: h,
           picture: true,
+          text_line: None,
         }
       }
       _ => cell,
@@ -42811,6 +42900,13 @@ fn column_layout_svg(
     .enumerate()
     .map(|(i, c)| {
       let natural = match c {
+        // A one-line text `Row` in the text face takes the text line
+        // pitch, as a plain string in its place does.
+        Cell::Svg {
+          height,
+          text_line: Some(true),
+          ..
+        } => (*height - pad_y).max(0.0) * TEXT_FACE_LINE_PITCH,
         Cell::Svg { height, .. } => *height,
         Cell::Text(e, plain) => {
           let (style, fs) = text_style(e, font_size);
@@ -42845,7 +42941,7 @@ fn column_layout_svg(
   let text_margin = pad_y + (1.0 - 0.93) * font_size;
   let margin = |i: usize| {
     let text = text_items
-      .and_then(|t| t.get(i).copied())
+      .and_then(|t| t.get(i).map(|k| k.text))
       .unwrap_or(!matches!(cells[i], Cell::Svg { picture: true, .. }));
     if text { text_margin } else { 0.0 }
   };
@@ -42858,7 +42954,12 @@ fn column_layout_svg(
     .map(|i| match explicit_spacing {
       Some(s) => s * font_size - f64::midpoint(margin(i - 1), margin(i)),
       None => match (&cells[i - 1], &cells[i]) {
-        (Cell::Svg { .. }, Cell::Svg { .. }) => 6.0,
+        // A one-line text `Row` carries its own leading like a text line.
+        (Cell::Svg { text_line: a, .. }, Cell::Svg { text_line: b, .. })
+          if a.is_none() && b.is_none() =>
+        {
+          6.0
+        }
         _ => 0.0,
       },
     })
@@ -43012,8 +43113,10 @@ fn column_layout_svg(
         // child's viewBox or none of it lands inside the cell.
         let view_box = parse_svg_dimensions(child)
           .map_or_else(|| format!("0 0 {cw} {ch}"), |p| p.view_box);
+        // A text line's padded box is centered on its (shorter) row.
+        let y_off = y_cursor + (h.min(*ch) - ch) / 2.0;
         svg.push_str(&format!(
-          "<svg x=\"{x_off:.1}\" y=\"{y_cursor:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
+          "<svg x=\"{x_off:.1}\" y=\"{y_off:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
         svg.push_str(strip_svg_wrapper(child));
         svg.push_str("</svg>\n");
