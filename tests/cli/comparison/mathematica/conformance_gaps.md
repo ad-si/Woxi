@@ -11069,3 +11069,18 @@ the earlier primitive winning the near-tie. But Woxi already draws exactly
 coplanar faces later-on-top, as in Wolfram. With that rule, a depth tie would
 put the outer surface on top, so the cause is unconfirmed. Not yet checked
 against wolframscript.
+
+### A compiled function called with symbolic vector arguments
+
+`cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., SameTest ->
+(Abs[#1 - #2] < 10^-6 &)]]` called as `cf[{x, y, z}]` issues
+`CompiledFunction::cfta` in wolframscript, then evaluates the uncompiled body
+with x, y and z left as symbols. The symbolic `FixedPoint` never satisfies the
+`SameTest`, so the kernel never returns, even inside
+`TimeConstrained[…, 10]` (verified for more than 120 s). Because
+`ContourPlot3D[cf[{x, y, z}], …]` evaluates its body with the variables still
+free, it hangs the same way. Woxi deliberately leaves the symbolic call
+unevaluated, so the plot samples the compiled function numerically and
+returns a `Graphics3D`. The unit test
+`compiled_vector_argument_iteration_is_not_run_symbolically` is in
+`EXACT_EXPR_SKIP`.
