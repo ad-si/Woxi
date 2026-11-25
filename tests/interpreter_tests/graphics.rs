@@ -70837,6 +70837,59 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn bare_letterboxed_plot_label_stays_above_the_drawing() {
+    // A bare drawing of automatic shape that is flatter than the
+    // `ImageSize -> {w, h}` box is centered below the label, and the label
+    // sits right above the drawing, whatever the spare height is.
+    let title_and_top = |height: u32| {
+      let svg = export_svg(&format!(
+        "Graphics[{{Red, Polygon[{{{{0, 0}}, {{4, 0}}, {{4, 1}}, {{0, 1}}}}]}}, \
+         PlotLabel -> \"T\", ImageSize -> {{400, {height}}}]"
+      ));
+      let attr = |tag: &str, name: &str| -> String {
+        tag
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap()
+          .to_string()
+      };
+      let end = svg.find(">T</text>").expect("title");
+      let title = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let title_y: f64 = attr(title, " y").parse().unwrap();
+      let group = &svg[svg.find("<g transform=\"translate(").unwrap()..];
+      let shift: f64 = group
+        .split("translate(")
+        .nth(1)
+        .and_then(|s| s.split(')').next())
+        .and_then(|s| s.split(',').nth(1))
+        .and_then(|s| s.parse().ok())
+        .unwrap();
+      let polygon = &svg[svg.find("<polygon").unwrap()..];
+      let top = attr(polygon, "points")
+        .split_whitespace()
+        .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+        .fold(f64::INFINITY, f64::min)
+        + shift;
+      (title_y, top)
+    };
+    for height in [200, 350, 500] {
+      let (title_y, top) = title_and_top(height);
+      let gap = top - title_y;
+      assert!(
+        (0.0..14.0).contains(&gap),
+        "height {height}: title baseline {title_y}, drawing top {top}"
+      );
+      // Label and drawing are centered together in the box.
+      let middle = f64::from(height) / 2.0;
+      assert!(
+        (top - middle).abs() < 60.0,
+        "height {height}: drawing top {top}"
+      );
+    }
+  }
+
+  #[test]
   fn show_spans_only_the_axes_the_first_plot_shows_in_full() {
     // `{{0, 3}, All}`: the x range stays the first plot's, the y range
     // reaches the later plot's curve.
