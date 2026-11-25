@@ -3323,9 +3323,11 @@ fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(split_radicand_content(result))
 }
 
-/// Drop the solutions of a single equation in one unknown that make one of
-/// its denominators vanish: `(x^2 - 1)/(x - 1) == 2` is undefined at
-/// `x == 1`, which only the cancelled numerator `x + 1 - 2` has as a root.
+/// Drop the solutions of a single equation in one unknown that make the
+/// denominator of its difference vanish. As in Wolfram, the difference is
+/// brought over a common denominator with common factors cancelled first,
+/// so a removable singularity is no pole: `(x^2 - 1)/(x - 1) == 2` has the
+/// solution `x == 1`, but `x/(x - 1) == 1` has none.
 fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
   let (Some(eq), Some(Expr::Identifier(var))) = (args.first(), args.get(1))
   else {
@@ -3340,16 +3342,28 @@ fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
     }
     _ => return result,
   };
-  let mut denominators = Vec::new();
-  for side in sides {
-    collect_denominator_sums(side, var, &mut denominators);
-  }
   let Expr::List(solutions) = &result else {
     return result;
   };
-  if denominators.is_empty() {
-    return result;
-  }
+  let difference = crate::helpers::call(
+    "Plus",
+    vec![
+      sides[0].clone(),
+      crate::helpers::call("Times", vec![Expr::Integer(-1), sides[1].clone()]),
+    ],
+  );
+  let denominator =
+    crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+      "Denominator",
+      vec![crate::helpers::call(
+        "Together",
+        vec![crate::helpers::call("Rationalize", vec![difference])],
+      )],
+    ));
+  let denominators: Vec<Expr> = match denominator {
+    Ok(den) if super::eliminate::contains_var(&den, var) => vec![den],
+    _ => return result,
+  };
   let vanishes = |value: &Expr| {
     denominators.iter().any(|den| {
       let at = crate::syntax::substitute_variable(den, var, value);

@@ -5848,12 +5848,13 @@ mod solve {
     );
     assert_eq!(
       interpret("Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]").unwrap(),
-      "{{x -> -0.5}}"
+      "{{x -> -0.5}, {x -> 1.}}"
     );
   }
 
-  // Cancelling the whole denominator leaves the numerator to solve, and a
-  // root where the original denominator vanishes is no solution.
+  // The difference is brought over a common denominator with its common
+  // factors cancelled, so a removable singularity is a solution; a root of
+  // the cancelled denominator is none.
   #[test]
   fn exact_equation_with_removable_pole() {
     assert_eq!(
@@ -5864,11 +5865,24 @@ mod solve {
       interpret("Solve[(x^2 - 1)/(x - 1) == y, x]").unwrap(),
       "{{x -> -1 + y}}"
     );
-    assert_eq!(interpret("Solve[(x^2 - 1)/(x - 1) == 2, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Solve[(x^2 - 1)/(x - 1) == 2, x]").unwrap(),
+      "{{x -> 1}}"
+    );
     assert_eq!(
       interpret("Solve[(x^2 - 1)/(x - 1) == 2 x^2, x]").unwrap(),
-      "{{x -> -1/2}}"
+      "{{x -> -1/2}, {x -> 1}}"
     );
+    assert_eq!(
+      interpret("Solve[(x^3 - 1)/(x - 1) == 3, x]").unwrap(),
+      "{{x -> -2}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 - x)/(x^2 - 1) == 1/2, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(interpret("Solve[x/(x - 1) == 1, x]").unwrap(), "{}");
+    assert_eq!(interpret("Solve[1/x == 0, x]").unwrap(), "{}");
   }
 
   // A polynomial with arbitrary-precision coefficients is solved
