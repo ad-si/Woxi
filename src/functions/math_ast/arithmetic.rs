@@ -4275,20 +4275,25 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         matches!(exp, Expr::Integer(1))
           && (matches!(base, Expr::Identifier(_)) || is_sum(base))
       };
+      // Whether the two mention a common symbol, also inside exponents
+      // (`E^(I x)`), which polynomial `Variables` would not report.
       let common_variable = |p: &Expr, q: &Expr| {
-        let vars = |e: &Expr| -> Vec<String> {
-          match crate::evaluator::evaluate_function_call_ast(
-            "Variables",
-            std::slice::from_ref(e),
-          ) {
-            Ok(Expr::List(ref vs)) => {
-              vs.iter().map(crate::syntax::expr_to_string).collect()
+        fn symbols(e: &Expr, out: &mut Vec<String>) {
+          match e {
+            Expr::Identifier(name) => {
+              if !crate::functions::predicate_ast::is_numeric_q(e) {
+                out.push(name.clone());
+              }
             }
-            _ => Vec::new(),
+            _ => crate::syntax::expr_children(e)
+              .into_iter()
+              .for_each(|c| symbols(c, out)),
           }
-        };
-        let vp = vars(p);
-        vars(q).iter().any(|v| vp.contains(v))
+        }
+        let (mut sp, mut sq) = (Vec::new(), Vec::new());
+        symbols(p, &mut sp);
+        symbols(q, &mut sq);
+        sq.iter().any(|v| sp.contains(v))
       };
       if ((power_of_sum(base_a, &exp_a) && plain(base_b, &exp_b))
         || (power_of_sum(base_b, &exp_b) && plain(base_a, &exp_a)))

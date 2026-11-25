@@ -5441,12 +5441,19 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
         collect_variables(item, vars);
       }
     }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => collect_power_variables(expr, left, right, vars),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      collect_power_variables(expr, &args[0], &args[1], vars);
+    }
     Expr::BinaryOp { op, left, right } => {
       match op {
         BinaryOperator::Plus
         | BinaryOperator::Minus
         | BinaryOperator::Times
-        | BinaryOperator::Power
         | BinaryOperator::Divide => {
           collect_variables(left, vars);
           collect_variables(right, vars);
@@ -5476,6 +5483,22 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
     _ => {
       vars.push(expr.clone());
     }
+  }
+}
+
+/// A power with a numeric exponent contributes the variables of its base;
+/// one with a symbolic exponent is a variable as a whole (`x^n`), unless its
+/// base is a number, which makes it no polynomial variable at all (`E^x`).
+fn collect_power_variables(
+  expr: &Expr,
+  base: &Expr,
+  exp: &Expr,
+  vars: &mut Vec<Expr>,
+) {
+  if crate::functions::predicate_ast::is_numeric_q(exp) {
+    collect_variables(base, vars);
+  } else if !crate::functions::predicate_ast::is_numeric_q(base) {
+    vars.push(expr.clone());
   }
 }
 
