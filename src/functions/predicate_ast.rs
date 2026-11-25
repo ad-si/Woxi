@@ -1346,6 +1346,20 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     current_level: i64,
     heads: bool,
   ) -> bool {
+    // A rendered graphic nested in the expression is searched through the
+    // symbolic `Graphics[…]` it was built from.
+    if let Expr::Graphics { .. } = expr
+      && let Some(symbolic) =
+        crate::evaluator::part_extraction::graphics_symbolic_form(expr)
+    {
+      return search_at_levels(
+        &symbolic,
+        pattern,
+        level_spec,
+        current_level,
+        heads,
+      );
+    }
     if current_level >= level_spec.0
       && current_level <= level_spec.1
       && crate::functions::list_helpers_ast::matches_pattern_ast(expr, pattern)
@@ -1605,6 +1619,14 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::evaluator::dispatch::complex_and_special::canonical_operator_call(
           expr,
         );
+      &canonical
+    } else if let Expr::Graphics { .. } = expr
+      && let Some(symbolic) =
+        crate::evaluator::part_extraction::graphics_symbolic_form(expr)
+    {
+      // A rendered graphic nested in the expression is searched through
+      // the symbolic `Graphics[…]` it was built from.
+      canonical = symbolic;
       &canonical
     } else {
       expr

@@ -161,4 +161,74 @@ mod container_layout {
     .unwrap();
     assert_eq!(out, "True");
   }
+
+  /// The x positions of the vertical divider lines of a one-row grid.
+  fn vertical_dividers(svg: &str) -> Vec<f64> {
+    let attr = |line: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = line.find(&key).unwrap() + key.len();
+      line[start..start + line[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    let mut xs: Vec<f64> = svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+      .map(|l| attr(l, "x1"))
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    xs
+  }
+
+  /// The widths of the two columns of `Grid[{{"iiii", "MMMM"}}, …]` drawn
+  /// under `wrap` (a format string with `{}` for the grid).
+  fn narrow_and_wide_column(wrap: &str, opts: &str) -> (f64, f64) {
+    let grid = format!(
+      "Grid[{{{{\"iiii\", \"MMMM\"}}}}, Dividers -> All, Spacings -> 0{opts}]"
+    );
+    let xs = vertical_dividers(&export_svg(&wrap.replace("{}", &grid)));
+    assert_eq!(xs.len(), 3, "{xs:?}");
+    (xs[1] - xs[0], xs[2] - xs[1])
+  }
+
+  #[test]
+  fn label_styled_grid_sizes_columns_in_the_proportional_face() {
+    // Plain output text is laid out at a fixed advance per character.
+    let (narrow, wide) = narrow_and_wide_column("{}", "");
+    assert_eq!(narrow, wide);
+    // `"Label"` text is proportional: four `i` take far less room than
+    // four `M`, at the style's own size and at an explicit one.
+    for wrap in ["Style[{}, \"Label\"]", "Style[{}, \"Label\", 16]"] {
+      let (narrow, wide) = narrow_and_wide_column(wrap, "");
+      assert!(narrow < wide * 0.5, "{wrap}: {narrow} vs {wide}");
+    }
+    // The same through `BaseStyle`, and for a grid nested in a styled one.
+    let (narrow, wide) =
+      narrow_and_wide_column("{}", ", BaseStyle -> \"Label\"");
+    assert!(narrow < wide * 0.5, "{narrow} vs {wide}");
+    let (narrow, wide) =
+      narrow_and_wide_column("Style[Grid[{{{}}, {\"z\"}}], \"Label\", 16]", "");
+    assert!(narrow < wide * 0.5, "{narrow} vs {wide}");
+  }
+
+  #[test]
+  fn label_styled_grid_keeps_string_cells_evenly_spaced() {
+    // With a 0.3 em gap between columns, a short string beside a long one
+    // in the same column must not drift away from its neighbor: the gap
+    // between the columns' text follows the glyphs, not a character count.
+    let svg = export_svg(
+      "Style[Grid[{{\"WWWW\", \"=\", \"1.500\"}}, \
+       Spacings -> {{1 -> 1, 2 -> .3, 3 -> .3, 4 -> 1}, Automatic}], \"Label\", 16]",
+    );
+    let centers: Vec<f64> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .map(|t| t[..t.find('"').unwrap()].parse().unwrap())
+      .collect();
+    assert_eq!(centers.len(), 3, "{svg:.2000}");
+    // Half of "WWWW" (about 3.4 em wide at 16 px) plus the gap and half of
+    // "=" separate the first two centers.
+    assert!(centers[1] - centers[0] > 30.0, "{centers:?}");
+    assert!(centers[2] - centers[1] < 40.0, "{centers:?}");
+  }
 }
