@@ -5338,12 +5338,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // (`Dynamic[If[ok, Text[a], Text[b]]]`) is pre-rendered like a `Text`
   // item, keeping its wrapper so the layout sets it in the proportional
   // text face; the display pipeline would peel it to bare monospace text.
+  // A fixed-size `Pane` value (`Dynamic[Pane[Text[Grid[…]], {w, h}]]`) is
+  // laid out like a `Pane` item too: it keeps its box, and the `Text` in it
+  // keeps the text face its grid cells are measured in.
   let released = match expr {
     syntax::Expr::FunctionCall { name, args }
       if is_visual_mode() && name == "Dynamic" && !args.is_empty() =>
     {
       let value = functions::graphics::dynamic_current_value(expr);
-      if functions::graphics::is_text_display_item(&value) {
+      if functions::graphics::is_text_display_item(&value)
+        || is_fixed_size_pane_through_text_style(&value)
+      {
         return render_inline_display_wrapper(&value);
       }
       Some(value)

@@ -2462,3 +2462,70 @@ mod list_of_typeset_matrices {
     assert!(breaks_line(&svg[two..three]), "{svg}");
   }
 }
+
+mod inline_box_line_breaks {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// A saved definition wraps the source of an inline `\!\(\*…\)` box over
+  /// several lines. Those line breaks lie inside the box escape, so a grid
+  /// cell holding such a string typesets the box on one line (exactly as
+  /// the unwrapped spelling does) instead of breaking it into lines of raw
+  /// `StyleBox[…]` source.
+  #[test]
+  fn line_breaks_inside_an_inline_box_escape_do_not_break_the_cell() {
+    let cell = |t: &str| {
+      format!("Grid[{{{{TraditionalForm[HoldForm[a {t}/b]], \"|\"}}}}]")
+    };
+    let wrapped = svg_of(&cell(
+      r#""\!\(\*\nStyleBox[\"t\",\nFontSlant->\"Italic\"]\)""#,
+    ));
+    let unwrapped =
+      svg_of(&cell(r#""\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)""#));
+    assert!(!wrapped.contains("StyleBox"), "{wrapped}");
+    let size = |svg: &str| svg[..svg.find('>').unwrap()].to_string();
+    assert_eq!(size(&wrapped), size(&unwrapped));
+  }
+
+  /// A line break outside any box escape still starts a new line.
+  #[test]
+  fn line_break_outside_an_inline_box_escape_still_breaks_the_cell() {
+    let svg = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "x\ny"/b]]}}]"#);
+    let one_line = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "xy"/b]]}}]"#);
+    let height = |svg: &str| {
+      let h = svg.find("height=\"").unwrap() + 8;
+      svg[h..h + svg[h..].find('"').unwrap()]
+        .parse::<f64>()
+        .unwrap()
+    };
+    assert!(height(&svg) > height(&one_line), "{svg}");
+  }
+
+  /// A `Dynamic` layout item showing a fixed-size `Pane` of `Text` is laid
+  /// out like the `Pane` item itself: the grid inside measures its text
+  /// cells in the proportional text face, not at the monospace advance.
+  #[test]
+  fn dynamic_fixed_size_pane_of_text_keeps_the_text_face() {
+    let layout = |item: &str| {
+      clear_state();
+      let result =
+        interpret_with_stdout(&format!("Column[{{Graphics[Disk[]], {item}}}]"))
+          .unwrap();
+      result.graphics.unwrap()
+    };
+    let pane = r#"Pane[Text[Grid[{{"a long caption:  ", "x"}}]], {400, 60}]"#;
+    let second_cell_x = |svg: &str| {
+      let at = svg.find(">x<").unwrap();
+      let tag = &svg[svg[..at].rfind("<text").unwrap()..at];
+      let x = tag.find("x=\"").unwrap() + 3;
+      tag[x..x + tag[x..].find('"').unwrap()].to_string()
+    };
+    let plain = layout(pane);
+    let dynamic = layout(&format!("Dynamic[{pane}]"));
+    assert_eq!(second_cell_x(&dynamic), second_cell_x(&plain), "{dynamic}");
+  }
+}

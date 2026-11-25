@@ -21510,11 +21510,14 @@ fn spacer_size(e: &Expr) -> Option<f64> {
 
 /// The lines of a `RowBox`'s items, split at each line break inside a
 /// string item; `None` when no string of the row holds a line break.
+///
+/// A line break inside an inline `\!\(…\)` box escape is no line of the
+/// text: it is where a saved definition wrapped the box source
+/// (`"\!\(\*\nStyleBox[…]\)"`), and the escape typesets as one box.
 fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
-  if !items
-    .iter()
-    .any(|item| matches!(item, Expr::String(s) if s.contains('\n')))
-  {
+  if !items.iter().any(|item| {
+    matches!(item, Expr::String(s) if split_outside_box_escapes(s).len() > 1)
+  }) {
     return None;
   }
   let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
@@ -21527,7 +21530,9 @@ fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
         } else {
           s.as_str()
         };
-        for (i, piece) in text.split('\n').enumerate() {
+        for (i, piece) in
+          split_outside_box_escapes(text).into_iter().enumerate()
+        {
           if i > 0 {
             lines.push(Vec::new());
           }
@@ -21548,6 +21553,33 @@ fn row_box_lines(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
     }
   }
   Some(lines)
+}
+
+/// Split `text` at each line break that lies outside every `\(…\)` box
+/// group, in either spelling (the backslash escapes or the private-use
+/// markers a parsed string carries).
+fn split_outside_box_escapes(text: &str) -> Vec<&str> {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN};
+  let mut pieces = Vec::new();
+  let mut depth = 0usize;
+  let mut start = 0;
+  let mut prev_backslash = false;
+  for (i, c) in text.char_indices() {
+    match c {
+      _ if c == BOX_OPEN => depth += 1,
+      _ if c == BOX_CLOSE => depth = depth.saturating_sub(1),
+      '(' if prev_backslash => depth += 1,
+      ')' if prev_backslash => depth = depth.saturating_sub(1),
+      '\n' if depth == 0 => {
+        pieces.push(&text[start..i]);
+        start = i + 1;
+      }
+      _ => {}
+    }
+    prev_backslash = c == '\\' && !prev_backslash;
+  }
+  pieces.push(&text[start..]);
+  pieces
 }
 
 /// Lines of boxes stacked top to bottom, each centered on the widest; the
