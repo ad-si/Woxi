@@ -2,6 +2,9 @@
 
 # Unreleased
 
+- `Text` (and a text `Inset`) in `Graphics` is set at 10 points when no
+    style gives a size, as wolframscript and the front end draw it, instead
+    of 14 points; labels are measured, wrapped and padded for at that size.
 - A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
     is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
     and a `PlotStyle` opacity on colored cells, and evaluates each point

@@ -4457,7 +4457,7 @@ mod interpreter_tests {
     // instead of the text wrapped to the pane's width.
     clear_state();
     let svg = interpret(
-      "ExportString[Graphics[Text[Pane[\"alpha beta gamma delta epsilon zeta\", 100], {0, 0}]], \"SVG\"]",
+      "ExportString[Graphics[Text[Pane[\"alpha beta gamma delta epsilon zeta\", 60], {0, 0}]], \"SVG\"]",
     )
     .unwrap();
     assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
@@ -4479,7 +4479,7 @@ mod interpreter_tests {
   fn test_graphics_text_pane_of_style_applies_its_directives() {
     // Regression: in `Text[Pane[Style[str, TextAlignment -> Left, size],
     // w], pos]` the `Style` inside the `Pane` was ignored: the label kept
-    // the default 14-point font, its lines stayed centered, and it wrapped
+    // the default font size, its lines stayed centered, and it wrapped
     // as if set in that default font.
     clear_state();
     let svg = interpret(
@@ -5187,7 +5187,7 @@ mod interpreter_tests {
     // starts at the anchor and extends to its right.
     assert!(
       svg.contains(
-        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-0.000 50.00 50.00)\""
+        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"10\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-0.000 50.00 50.00)\""
       ),
       "unrotated offset in the wrong place: {svg}"
     );
@@ -5196,7 +5196,7 @@ mod interpreter_tests {
     // upward, along the rotated baseline, instead of to its right.
     assert!(
       svg.contains(
-        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-90.000 50.00 50.00)\""
+        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"10\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-90.000 50.00 50.00)\""
       ),
       "offset was not rotated along with direction: {svg}"
     );
