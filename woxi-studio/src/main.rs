@@ -12,7 +12,7 @@ use iced::widget::operation::focus;
 use iced::widget::{
   Column, Row, button, checkbox, column, container, image, mouse_area, opaque,
   pick_list, radio, rich_text, row, rule, scrollable, slider, space, stack,
-  svg, text, text_editor,
+  svg, text, text_editor, tooltip,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -20,6 +20,9 @@ use iced::{
 };
 
 use notebook::{Cell, CellEntry, CellGroup, CellStyle, Notebook};
+
+/// Widest a `Tooltip` label is shown before its text wraps, in pixels.
+const TOOLTIP_MAX_WIDTH: f32 = 340.0;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -4427,16 +4430,40 @@ const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 /// plus its value readout.
 const SIDE_PANEL_CONTROL_WIDTH: f32 = 230.0;
 
+/// The choice a bare two-state domain shows as *checked*, if it is a domain
+/// the FrontEnd draws as a checkbox at all:
+///
+/// * a boolean domain — `{True, False}` in either order — is checked on
+///   `True`;
+/// * the numeric pair `{0, 1}`, the off/on domain `Checkbox[x, {0, 1}]`
+///   takes, is checked on `1`. A Demonstration whose
+///   `{{init, 1, "initialization"}, {0, 1}}` control the stored Wolfram
+///   snapshots draw as a checked box beside its caption (never a `0 | 1`
+///   setter bar) pins this down. Only the ascending pair is automatic:
+///   `{1, 0}` keeps its two buttons unless `ControlType -> Checkbox` asks
+///   for a positional `Checkbox[x, {1, 0}]`.
+fn checkbox_on_choice(values: &[String]) -> Option<&'static str> {
+  if values.len() != 2 {
+    return None;
+  }
+  let has = |wanted: &str| values.iter().any(|v| v == wanted);
+  if has("True") && has("False") {
+    Some("True")
+  } else if values[0] == "0" && values[1] == "1" {
+    Some("1")
+  } else {
+    None
+  }
+}
+
 /// Whether a discrete control renders as a checkbox. The Wolfram FrontEnd
-/// shows a checkbox for a bare boolean domain — `{v, {True, False}}` in
-/// either order — rather than a two-button setter. Labeling the choices
-/// (`{False -> "scaling function", True -> "wavelet"}`) asks for those
-/// labels to be shown, so such a domain stays a SetterBar whose buttons
-/// carry them; a checkbox would have nowhere to put them.
+/// shows a checkbox for a bare two-state domain (see
+/// [`checkbox_on_choice`]) rather than a two-button setter. Labeling the
+/// choices (`{False -> "scaling function", True -> "wavelet"}`) asks for
+/// those labels to be shown, so such a domain stays a SetterBar whose
+/// buttons carry them; a checkbox would have nowhere to put them.
 fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
-  values.len() == 2
-    && values.iter().any(|v| v == "True")
-    && values.iter().any(|v| v == "False")
+  checkbox_on_choice(values).is_some()
     && value_labels.len() == values.len()
     && value_labels.iter().zip(values).all(|(label, v)| label == v)
 }
@@ -4444,9 +4471,10 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// How a discrete control draws as a checkbox, if it does: whether the box
 /// is checked, and the display label a toggle sends (the other choice).
 ///
-/// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
-/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`),
-/// and stays checked on `True` when `ControlType -> Checkbox` is spelled out
+/// A bare two-state domain (see `renders_as_checkbox`) is checked on its
+/// "on" choice — `True`, or `1` for the `{0, 1}` pair — unless a
+/// `PopupMenu`/`SetterBar` type was forced (`other_type`), and stays
+/// checked there when `ControlType -> Checkbox` is spelled out
 /// (`{color, {True, False}, ControlType -> Checkbox}`), as the FrontEnd
 /// draws it. An explicit `ControlType -> Checkbox` over any other two
 /// choices (`{1, 0}`, `{None, All}`) follows `Checkbox[x, {v1, v2}]`: the
@@ -4470,12 +4498,13 @@ fn discrete_checkbox_state(
   if other_type || !renders_as_checkbox(values, value_labels) {
     return None;
   }
+  let on = checkbox_on_choice(values)?;
   let checked =
-    !has_overflow && values.get(current_index).is_some_and(|v| v == "True");
+    !has_overflow && values.get(current_index).is_some_and(|v| v == on);
   let other_label = value_labels
     .iter()
     .zip(values)
-    .find(|(_, v)| (*v == "True") != checked)
+    .find(|(_, v)| (*v == on) != checked)
     .map(|(l, _)| l.clone());
   Some((checked, other_label))
 }
@@ -5749,35 +5778,59 @@ fn render_manipulate_widget<'a>(
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
-    let picture: Element<'_, Message> = if state.button_regions.is_empty() {
-      svg_widget.into()
-    } else {
-      // Pressable `Button` cells drawn inside the picture: overlay a
-      // transparent clickable area on each, running its held action.
-      let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
-      for region in &state.button_regions {
-        layers.push(
-          container(
-            button(space::Space::new())
-              .width(region.width)
-              .height(region.height)
-              .style(|_, _| button::Style::default())
-              .on_press(Message::ManipulateDisplayAction(
-                cell_idx,
-                region.action.clone(),
-              )),
-          )
-          .padding(iced::Padding {
-            top: region.y,
-            left: region.x,
-            right: 0.0,
-            bottom: 0.0,
-          })
-          .into(),
-        );
-      }
-      stack(layers).into()
-    };
+    let picture: Element<'_, Message> =
+      if state.button_regions.is_empty() && state.tooltip_regions.is_empty() {
+        svg_widget.into()
+      } else {
+        // Pressable `Button` cells drawn inside the picture: overlay a
+        // transparent clickable area on each, running its held action.
+        let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
+        for region in &state.button_regions {
+          layers.push(
+            container(
+              button(space::Space::new())
+                .width(region.width)
+                .height(region.height)
+                .style(|_, _| button::Style::default())
+                .on_press(Message::ManipulateDisplayAction(
+                  cell_idx,
+                  region.action.clone(),
+                )),
+            )
+            .padding(iced::Padding {
+              top: region.y,
+              left: region.x,
+              right: 0.0,
+              bottom: 0.0,
+            })
+            .into(),
+          );
+        }
+        // `Tooltip`-wrapped shapes: an inert area over each shows its label
+        // while the pointer rests on it.
+        for region in &state.tooltip_regions {
+          layers.push(
+            container(tooltip(
+              space::Space::new()
+                .width(region.width.max(1.0))
+                .height(region.height.max(1.0)),
+              container(text(region.text.clone()).size(12))
+                .max_width(TOOLTIP_MAX_WIDTH)
+                .padding(6)
+                .style(container::bordered_box),
+              tooltip::Position::FollowCursor,
+            ))
+            .padding(iced::Padding {
+              top: region.y,
+              left: region.x,
+              right: 0.0,
+              bottom: 0.0,
+            })
+            .into(),
+          );
+        }
+        stack(layers).into()
+      };
     // A `ClickPane` hands its handler the position of each click; an
     // `EventHandler` gets the pointer's presses, drags and releases.
     let picture: Element<'_, Message> =
@@ -25548,7 +25601,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       &s(&["False", "True"]),
       &s(&["False", "True"])
     ));
-    assert!(!renders_as_checkbox(&s(&["0", "1"]), &s(&["0", "1"])));
+    // The off/on pair `{0, 1}` is a checkbox too (see
+    // `numeric_zero_one_domain_renders_as_a_checkbox`), but only in that
+    // order, and only while its choices carry no labels of their own.
+    assert!(renders_as_checkbox(&s(&["0", "1"]), &s(&["0", "1"])));
+    assert!(!renders_as_checkbox(&s(&["1", "0"]), &s(&["1", "0"])));
+    assert!(!renders_as_checkbox(&s(&["0", "1"]), &s(&["off", "on"])));
     assert!(!renders_as_checkbox(
       &s(&["True", "False", "None"]),
       &s(&["True", "False", "None"])
@@ -25592,6 +25650,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// A bare `{0, 1}` domain is the off/on pair `Checkbox[x, {0, 1}]` takes,
+  /// and the FrontEnd draws it as a checkbox checked on `1` — the stored
+  /// snapshots of the Demonstrations that switch a cellular automaton's
+  /// initial cell with `{{init, 1, "initialization"}, {0, 1}}` show a
+  /// checked box beside the caption. Regression: Woxi drew a two-button
+  /// `0 | 1` setter bar, because only `{True, False}` counted as two-state.
+  #[test]
+  fn numeric_zero_one_domain_renders_as_a_checkbox() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[init + steps, {{init, 1, \"initialization\"}, {0, 1}}, \
+       {{steps, 3, \"steps\"}, Range[0, 4]}, \
+       {{mix, 0, \"mix\"}, {0 -> \"off\", 1 -> \"on\"}}, \
+       {{flip, 1, \"flip\"}, {1, 0}}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let kind = |state: &manipulate::ManipulateState, idx: usize| {
+      let manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        checkbox,
+        popup,
+        setter_bar,
+        overflow,
+        ..
+      } = &state.controls[idx]
+      else {
+        panic!("expected a discrete control at {idx}");
+      };
+      discrete_checkbox_state(
+        values,
+        value_labels,
+        *current_index,
+        *checkbox,
+        *popup || *setter_bar,
+        overflow.is_some(),
+      )
+    };
+    // `init = 1` is the checked state, and clearing the box binds `0`.
+    assert_eq!(kind(&state, 0), Some((true, Some("0".to_string()))));
+    assert!(state.select_discrete(0, "0"));
+    assert_eq!(kind(&state, 0), Some((false, Some("1".to_string()))));
+
+    // The neighboring controls keep their buttons: five numeric choices are
+    // a setter bar, a labeled `{0, 1}` pair must show its own labels, and
+    // the descending `{1, 0}` pair is no automatic checkbox.
+    assert_eq!(kind(&state, 1), None);
+    assert_eq!(kind(&state, 2), None);
+    assert_eq!(kind(&state, 3), None);
   }
 
   /// An explicit `ControlType -> RadioButtonBar` keeps its row of radio

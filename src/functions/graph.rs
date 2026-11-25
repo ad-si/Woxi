@@ -1130,6 +1130,22 @@ fn graph_render(
     }
     pts
   };
+  // `AspectRatio -> r` over a computed layout reshapes the layout itself:
+  // the embedding is stretched to the asked height-to-width ratio and the
+  // picture then keeps its natural proportions, so the vertex markers stay
+  // round (stretching the finished picture instead smeared them into
+  // ellipses). The picture's window is then cut to the same ratio around
+  // the layout (see the end), which also gives a layout with no width or
+  // no height — a single chain — its room.
+  let layout_aspect = aspect_ratio
+    .as_ref()
+    .filter(|_| layout_is_computed)
+    .and_then(crate::functions::math_ast::try_eval_to_f64)
+    .filter(|ratio| *ratio > 0.0);
+  let positions = match layout_aspect {
+    Some(ratio) => stretch_layout_to_aspect_ratio(positions, ratio),
+    None => positions,
+  };
   // The caller's units of an internal point, and the transform taking
   // graphics drawn in the caller's units onto the internal scale.
   let to_caller = |(x, y): (f64, f64)| {
@@ -1715,6 +1731,9 @@ fn graph_render(
     (coord_scale, coord_center)
   };
 
+  // The widest vertex label, in points, for the room it needs beside the
+  // window of a layout stretched to an `AspectRatio`.
+  let mut widest_label = 0.0_f64;
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
@@ -1827,6 +1846,11 @@ fn graph_render(
       // pre-stringifying it) so a structured name like `Subscript[x, 1]`
       // still typesets instead of showing its literal head name.
       let styled = call("Style", vec![label, Expr::Integer(10)]);
+      widest_label =
+        widest_label.max(crate::functions::plot_padding::text_width(
+          &crate::functions::graphics::graphics_text_content(&styled),
+          10.0,
+        ));
       // On an explicit `"CircularEmbedding"` an automatically placed label
       // sits outside the circle, in line with its vertex's spoke.
       let spoke = (x - layout_center.0, y - layout_center.1);
@@ -1882,15 +1906,15 @@ fn graph_render(
     primitives.push(e);
   }
   let content = Expr::List(primitives.into());
-  // A graph is drawn at Wolfram's 360-point default unless the caller
-  // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
-  // wide, short strip and has to get one.
-  let image_size_opt = rule_expr(
-    id_expr("ImageSize"),
-    image_size.unwrap_or(Expr::Integer(360)),
-  );
-
-  let mut graphics_args = vec![content, image_size_opt];
+  // The caller's `ImageSize` — `LayeredGraphPlot[…, ImageSize -> {200, 50}]`
+  // asks for a wide, short strip and has to get one.
+  let mut graphics_args = vec![content];
+  // Left unsized, the picture takes the automatic size of any graphic:
+  // 360 points wide, or less when that would make a tall, narrow drawing
+  // (a single chain of a layered plot) run past the height limit.
+  if let Some(size) = image_size {
+    graphics_args.push(rule_expr(id_expr("ImageSize"), size));
+  }
   // The title is the picture's own `PlotLabel`, set above the plot area in
   // the default label style, as `GraphPlot` returns it.
   if let Some(label) = plot_label {
@@ -1899,6 +1923,60 @@ fn graph_render(
   if let Some(bg) = background {
     graphics_args.push(rule_expr(id_expr("Background"), bg));
   }
+  // The window around a layout stretched to an `AspectRatio`: as many
+  // units tall per unit of width as the picture is, so nothing in it is
+  // distorted.
+  let mut layout_window = false;
+  let shown_range = shown_range.or_else(|| {
+    let ratio = layout_aspect?;
+    let corners: Vec<(f64, f64)> =
+      positions.iter().map(|&p| to_caller(p)).collect();
+    let span = |f: fn(&(f64, f64)) -> f64| {
+      corners
+        .iter()
+        .map(f)
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+          (lo.min(v), hi.max(v))
+        })
+    };
+    let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+    let width = (x1 - x0).max((y1 - y0) / ratio);
+    if !(width.is_finite() && width > 1e-9) {
+      return None;
+    }
+    // Room for the vertex markers and arrowheads on the outline.
+    let half_width = width / 2.0
+      + LAYOUT_WINDOW_MARGIN * width
+      + 2.0 * vertex_radius / coord_scale;
+    let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+    layout_window = true;
+    Some(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(
+        vec![
+          pair(cx - half_width, cx + half_width),
+          pair(cy - half_width * ratio, cy + half_width * ratio),
+        ]
+        .into(),
+      ),
+    ))
+  });
+  // That window is exact, so the vertex labels — set up and to the right
+  // of their markers at a fixed size — get their room as padding there.
+  if layout_window && widest_label > 0.0 {
+    let side = Expr::Real(widest_label + LABEL_PADDING_PT);
+    let line = Expr::Real(10.0 + LABEL_PADDING_PT);
+    graphics_args.push(rule_expr(
+      id_expr("ImagePadding"),
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(LABEL_PADDING_PT), side].into()),
+          Expr::List(vec![Expr::Real(LABEL_PADDING_PT), line].into()),
+        ]
+        .into(),
+      ),
+    ));
+  }
   if let Some(range) = shown_range {
     graphics_args.push(range);
   }
@@ -1906,6 +1984,48 @@ fn graph_render(
     graphics_args.push(rule_expr(id_expr("AspectRatio"), ratio));
   }
   graphics_ast(&graphics_args)
+}
+
+/// The blank margin around a layout stretched to an `AspectRatio`, as a
+/// fraction of the layout's width.
+const LAYOUT_WINDOW_MARGIN: f64 = 0.04;
+
+/// The gap, in points, between a vertex label and the picture's edge.
+const LABEL_PADDING_PT: f64 = 6.0;
+
+/// Stretch a layout about its center so its bounding box is `ratio` times
+/// as tall as it is wide, keeping its larger extent. A layout without
+/// width or height is returned unchanged.
+fn stretch_layout_to_aspect_ratio(
+  positions: Vec<(f64, f64)>,
+  ratio: f64,
+) -> Vec<(f64, f64)> {
+  let bounds = |f: fn(&(f64, f64)) -> f64| {
+    positions
+      .iter()
+      .map(f)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      })
+  };
+  let (x0, x1) = bounds(|p| p.0);
+  let (y0, y1) = bounds(|p| p.1);
+  let (w, h) = (x1 - x0, y1 - y0);
+  if !(w > 1e-9 && h > 1e-9) {
+    return positions;
+  }
+  // Shrink one direction rather than grow the other, so the layout keeps
+  // the extent the vertex sizes are derived from.
+  let (sx, sy) = if h / w > ratio {
+    (1.0, ratio * w / h)
+  } else {
+    (h / (ratio * w), 1.0)
+  };
+  let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+  positions
+    .into_iter()
+    .map(|(x, y)| (cx + (x - cx) * sx, cy + (y - cy) * sy))
+    .collect()
 }
 
 /// A `VertexSize` setting.

@@ -2850,6 +2850,14 @@ differences:
   Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
   `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
   are not covered.
+- A second variable the equations never differentiate in
+  (`NDSolve[{D[z[t, s], t, t] == …, z[0, s] == s, …}, z, {t, …}, {s, …}]`)
+  is a parameter: the ODEs of a uniform grid of its values (51 points or
+  more, sized like a space grid from the initial profiles) are integrated
+  as one system (`src/functions/ode_ast/param_family.rs`). WL's grid in the
+  parameter differs, so values between grid points do, visibly once the
+  family is chaotic
+  (SensitiveDependenceOnInitialConditionsInASimpleThreeBodyProb).
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -6541,6 +6549,13 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+- `Labeled[plot, label, Top]` keeps its picture at full size; Wolfram
+  reduces it the way it reduces a picture nested in any other layout. In a
+  `GraphicsGrid` cell the difference shows: Wolfram's plot takes under half
+  the cell's width while its label spans the cell, where Woxi's plot fills
+  about three quarters of it. (Measured off a stored front-end rendering of
+  `GraphicsGrid[{{Labeled[ListPlot[…], Row[{…}], Top], …}}, ImageSize ->
+  600]`, not re-verified against wolframscript.)
 
 ### `Column` item heights with `ItemSize` and large text
 
@@ -11005,6 +11020,16 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### Filling stems of `ListPlot` points beyond the plot range
+
+A point outside the plot range is not drawn, and Woxi drops its
+`Filling -> Axis` stem with it. In a saved snapshot of
+`ListPlot[data, Filling -> Axis]` whose series grow out of an automatic
+range, Wolfram still draws a stem running to the range edge for a few of the
+clipped points (the first two past the last visible point of a series, and
+the final one) but not for the ones in between. Which clipped points keep
+their stem has not been checked against wolframscript.
 
 ### `FaceForm` on round solids
 

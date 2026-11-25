@@ -371,6 +371,48 @@ mod row_visual_mode {
     assert!(styled > one * 1.5, "one = {one}, styled = {styled}");
   }
 
+  /// The lines a `\n` breaks a row into are centered on the block, the way
+  /// a multi-line label over a plot (`Labeled[plot, Row[{"title\nMSE = ",
+  /// mse}], Top]`) centers its short last line.
+  /// Regression: every line hung flush left, so a short one started at the
+  /// block's left edge instead of under the middle of the long one.
+  #[test]
+  fn row_newline_lines_are_centered_on_the_block() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Row[{\"long first line here\\nshort = \", 1.5, \"\\nx = \", 2.5}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    // Each line is a nested `<svg x=… width=…>`; the first (widest) one
+    // sets the block width, and every shorter line is centered in it.
+    let lines: Vec<(f64, f64)> = svg
+      .match_indices("<svg x=\"")
+      .map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let attr = |name: &str| -> f64 {
+          let start =
+            tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[start..start + tag[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        (attr("x"), attr("width"))
+      })
+      .collect();
+    assert_eq!(lines.len(), 3, "one nested svg per line: {svg}");
+    let block = lines[0].1;
+    for (x, w) in &lines {
+      assert!(
+        (x - (block - w) / 2.0).abs() < 0.6,
+        "line at x = {x} of width {w} is not centered in {block}: {svg}"
+      );
+    }
+    // The short lines really are shorter, so centering moved them.
+    assert!(lines[2].0 > 1.0, "last line still flush left: {svg}");
+  }
+
   /// A newline in the middle of a prose string (a blank line between
   /// paragraphs) also breaks the row, while the one-character-per-line
   /// stack of a typeset fraction stays one block.
@@ -784,6 +826,69 @@ fn row_of_buttons_in_grid_cell_draws_plates() {
     2,
     "one plate per button: {svg}"
   );
+}
+
+/// A `TogglerBar[Dynamic[var], choices]` draws as one plate per choice —
+/// raised for the selected ones, flat gray for the others — instead of its
+/// source text, and each plate carries the hit region whose press toggles
+/// that choice in the bound list.
+#[test]
+fn toggler_bar_draws_a_plate_per_choice() {
+  clear_state();
+  let svg = interpret(
+    r#"picked = {1, 3}; ExportString[TogglerBar[Dynamic[picked], {1 -> "one", 2 -> "two", 3 -> "three"}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("TogglerBar"), "source leaked: {svg}");
+  assert_eq!(svg.matches("fill=\"#FDFDFD\"").count(), 2, "{svg}");
+  assert_eq!(svg.matches("fill=\"#EDEDED\"").count(), 1, "{svg}");
+  let actions: Vec<String> = svg
+    .split("id=\"")
+    .skip(1)
+    .filter_map(|rest| {
+      woxi::functions::graphics::button_action_from_hit_id(
+        &rest[..rest.find('"')?],
+      )
+    })
+    .collect();
+  assert_eq!(actions.len(), 3, "{svg}");
+  // Pressing the unselected choice adds it; pressing a selected one
+  // removes it.
+  interpret(&actions[1]).unwrap();
+  assert_eq!(interpret("picked").unwrap(), "{1, 3, 2}");
+  interpret(&actions[0]).unwrap();
+  assert_eq!(interpret("picked").unwrap(), "{3, 2}");
+}
+
+/// The bar is drawn the same way as an item of a `Column` (it was printed
+/// as its source there), with choices given by a variable.
+#[test]
+fn toggler_bar_in_a_column_draws_its_plates() {
+  clear_state();
+  let svg = interpret(
+    r#"picked = {2}; names = {1 -> "one", 2 -> "two"}; ExportString[Column[{"choose:", TogglerBar[Dynamic[picked], names]}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(!svg.contains("TogglerBar"), "source leaked: {svg}");
+  assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
+  assert_eq!(svg.matches("fill=\"#EDEDED\"").count(), 1, "{svg}");
+}
+
+/// A script stacked over the separator of a `Row` (`a` → `b` with the rule
+/// number over the arrow) needs room above the line: the row grows so the
+/// script is not cut off at its top edge.
+#[test]
+fn row_with_stacked_separator_script_has_headroom() {
+  clear_state();
+  let height = |code: &str| {
+    let svg = interpret(code).unwrap();
+    woxi::functions::graphics::parse_svg_wh(&svg).1
+  };
+  let stacked =
+    height(r#"ExportString[Row[{"a", "b"}, Overscript["→", 3]], "SVG"]"#);
+  let plain = height(r#"ExportString[Row[{"a", "b"}, "→"], "SVG"]"#);
+  assert!(stacked > plain, "{stacked} vs {plain}");
 }
 
 /// A text-labeled `Button[label, action]` drawn as a `Row` item (an
@@ -1341,4 +1446,26 @@ fn graphics_row_image_size_label_wraps_at_its_width() {
   assert!(!svg.contains("aaaa aaaa aaaa"), "wrapped too wide: {svg}");
   let x = first_start_text_x(&svg);
   assert!((x - 139.5).abs() < 1.0, "left edge at {x}: {svg}");
+}
+
+/// A `Row` of `Button`s wider than the `Pane` holding it breaks between
+/// buttons onto further lines instead of running off the pane's edge, where
+/// the buttons past it could not be reached.
+#[test]
+fn row_of_buttons_wraps_at_the_pane_width() {
+  clear_state();
+  let height = |code: &str| -> f64 {
+    let svg = interpret(code).unwrap();
+    assert_eq!(svg.matches("id=\"woxi-btn-").count(), 5, "{svg}");
+    woxi::functions::graphics::parse_svg_wh(&svg).1
+  };
+  let row = r#"Row[Table[Button[name, x = name], {name, {"alpha", "beta", "gamma", "delta", "epsilon"}}]]"#;
+  let narrow = height(&format!(
+    "ExportString[Pane[Column[{{{row}}}], 150], \"SVG\"]"
+  ));
+  let wide = height(&format!(
+    "ExportString[Pane[Column[{{{row}}}], 900], \"SVG\"]"
+  ));
+  assert!(wide < 30.0, "a pane wide enough keeps one line: {wide}");
+  assert!(narrow > 2.0 * wide, "the narrow pane must break the row");
 }

@@ -745,6 +745,11 @@ pub(crate) fn symbol_body_value(body: &Expr, vars: &[String]) -> Option<Expr> {
     })
     .ok();
   }
+  // Only a symbol can stand for a stored expression; any other body is
+  // left alone without copying it (this runs once per plot sample).
+  if !matches!(body, Expr::Identifier(_)) {
+    return None;
+  }
   let mut current = body.clone();
   let mut resolved = false;
   for _ in 0..8 {
@@ -1672,7 +1677,9 @@ pub(crate) fn split_into_segments(
 /// Finite segments of `points` with every y clamped into `[y_min, y_max]`.
 /// A filled region keeps covering the plot area where the curve itself has
 /// left the plot range, so it follows the clamped curve instead of the
-/// clipped one.
+/// clipped one. Where a stretch of the curve crosses a range edge, the
+/// crossing point is added first, so the clamped outline leaves the curve
+/// exactly where the curve leaves the range, however sparse the samples.
 pub(crate) fn clamp_segments_to_y_range(
   points: &[(f64, f64)],
   y_min: f64,
@@ -1681,10 +1688,25 @@ pub(crate) fn clamp_segments_to_y_range(
   split_into_segments(points)
     .into_iter()
     .map(|seg| {
-      seg
-        .into_iter()
-        .map(|(x, y)| (x, y.clamp(y_min, y_max)))
-        .collect()
+      let mut out: Vec<(f64, f64)> = Vec::with_capacity(seg.len());
+      for (i, &(x, y)) in seg.iter().enumerate() {
+        if i > 0 {
+          let (px, py) = seg[i - 1];
+          // The edges this stretch crosses, in the order it meets them.
+          let mut crossings: Vec<f64> = [y_min, y_max]
+            .into_iter()
+            .filter(|&edge| (py - edge) * (y - edge) < 0.0)
+            .map(|edge| (edge - py) / (y - py))
+            .collect();
+          crossings.sort_by(f64::total_cmp);
+          for t in crossings {
+            let cy = (py + (y - py) * t).clamp(y_min, y_max);
+            out.push((px + (x - px) * t, cy));
+          }
+        }
+        out.push((x, y.clamp(y_min, y_max)));
+      }
+      out
     })
     .collect()
 }
@@ -6631,6 +6653,25 @@ fn generate_svg_with_options(
   } else {
     0.0
   };
+  // The room, in display points, the title takes above the top padding. The
+  // plotting area is laid out in what is left below it, so a title never
+  // costs the area its `AspectRatio`: a two-line `PlotLabel` over a square
+  // plot in a fixed `ImageSize -> {w, h}` narrows the plot along with
+  // shortening it instead of squashing it.
+  let stacked_below =
+    usize::from(has_top_label) + usize::from(axes_label_y.is_some());
+  let title_room = {
+    let stacked =
+      lone_title + stacked_title_room(opts.plot_label.as_ref(), sf) as f64 / sf;
+    // A lone `PlotLabel` sits above the padding: a top padding too small
+    // to hold it gives up plotting area instead of letting the title run
+    // into the frame (or, with no room at all, off the image).
+    if stacked_below == 0 {
+      stacked.max(decorations.title)
+    } else {
+      stacked
+    }
+  };
   if let Some(ar) = opts
     .aspect_ratio
     .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
@@ -6640,7 +6681,7 @@ fn generate_svg_with_options(
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h =
-        plot_w * ar + (pad_bottom + pad_top + lone_title) * sf;
+        plot_w * ar + (pad_bottom + pad_top + title_room) * sf;
       svg_height =
         ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
@@ -6661,30 +6702,19 @@ fn generate_svg_with_options(
     Some(padding) => {
       let [pad_left, pad_right, pad_bottom, pad_top] = padding;
       let m = padded_margins(
-        [pad_left, pad_right, pad_bottom, pad_top + lone_title],
+        [pad_left, pad_right, pad_bottom, pad_top + title_room],
         (render_width, render_height),
         opts.aspect_ratio,
         opts.aspect_full,
         sf,
       );
-      let stacked_below =
-        usize::from(has_top_label) + usize::from(axes_label_y.is_some());
       let top = m.top as i32
-        + stacked_title_room(opts.plot_label.as_ref(), sf)
         + stacked_label_shortfall(
           opts.plot_label.as_ref(),
           stacked_below,
           m.top as i32,
           sf,
         );
-      // A lone `PlotLabel` sits above the padding: a top padding too small
-      // to hold it gives up plotting area instead of letting the title run
-      // into the frame (or, with no room at all, off the image).
-      let top = if stacked_below == 0 && decorations.title > 0.0 {
-        top.max(((padding[3] + decorations.title) * sf).ceil() as i32)
-      } else {
-        top
-      };
       (top, m.bottom, m.left, 0u32, m.right, 0u32)
     }
     None => (
@@ -17596,21 +17626,24 @@ pub(crate) fn parse_plot_legends(
           {
             crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => match crate::functions::graphics::structured_label_svg(&item) {
-            Some(svg) => format!(
-              "{}{svg}",
-              crate::functions::graphics::STYLED_LABEL_MARKER
-            ),
-            // A mathematical label (`W[u]`) is set in TraditionalForm,
-            // with italic letters, like an axis label.
-            None => {
-              crate::functions::graphics::traditional_math_axis_label(&item)
-                .or_else(|| {
-                  crate::functions::graphics::styled_axis_label(&item)
-                })
-                .unwrap_or_else(|| expr_to_string(&item))
+          _ => {
+            match crate::functions::graphics::structured_legend_label_svg(&item)
+            {
+              Some(svg) => format!(
+                "{}{svg}",
+                crate::functions::graphics::STYLED_LABEL_MARKER
+              ),
+              // A mathematical label (`W[u]`) is set in TraditionalForm,
+              // with italic letters, like an axis label.
+              None => {
+                crate::functions::graphics::traditional_math_axis_label(&item)
+                  .or_else(|| {
+                    crate::functions::graphics::styled_axis_label(&item)
+                  })
+                  .unwrap_or_else(|| expr_to_string(&item))
+              }
             }
-          },
+          }
         })
         .collect();
       (labels, false, false, LegendPosition::Right)

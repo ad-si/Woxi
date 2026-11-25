@@ -1164,6 +1164,13 @@ enum Primitive {
     hex: String,
   },
   ClickGroupEnd,
+  /// Opens a `<g>` carrying the hex-encoded hover label of a
+  /// `Tooltip[prim, label]`; the primitives up to the matching
+  /// [`Primitive::TooltipGroupEnd`] are the shape the label belongs to.
+  TooltipGroupStart {
+    hex: String,
+  },
+  TooltipGroupEnd,
   PointSingle {
     x: f64,
     y: f64,
@@ -1397,7 +1404,10 @@ impl Primitive {
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
       Self::TextPrim { style, .. } => Some(style),
-      Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
+      Self::ClickGroupStart { .. }
+      | Self::ClickGroupEnd
+      | Self::TooltipGroupStart { .. }
+      | Self::TooltipGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
       | Self::InsetGraphic { .. } => None,
@@ -4592,11 +4602,20 @@ fn collect_primitives(
           }
           None => collect_primitives(&args[0], style, prims, errors),
         },
-        // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
-        // form. Only the first argument is rendered — the label must not
-        // leak into the graphic.
+        // `Tooltip[g, label]` draws `g` only — the label must not leak into
+        // the graphic. Its text is recorded on a group around `g`'s shapes,
+        // so a live widget can show it while the pointer is over them.
         "Tooltip" if !args.is_empty() => {
-          collect_primitives(&args[0], style, prims, errors);
+          let label = args.get(1).map_or_default(tooltip_label_text);
+          if label.trim().is_empty() {
+            collect_primitives(&args[0], style, prims, errors);
+          } else {
+            prims.push(Primitive::TooltipGroupStart {
+              hex: hex_encode(&label),
+            });
+            collect_primitives(&args[0], style, prims, errors);
+            prims.push(Primitive::TooltipGroupEnd);
+          }
         }
         // `Mouseover[g, hover]` draws `g`; the hover appearance replaces it
         // only while the pointer is over it, so a static picture must not
@@ -7617,10 +7636,13 @@ pub(crate) fn popup_menu_cell_svg(args: &[Expr]) -> String {
 /// the standard 14-point text metric, with Wolfram's padding around it.
 fn button_plate_size(label: &str) -> (f64, f64) {
   const CHAR_W: f64 = 8.4;
-  const PAD_X: f64 = 12.0;
+  const PAD_X: f64 = BUTTON_PLATE_PAD_X;
   let w = label.chars().count() as f64 * CHAR_W + 2.0 * PAD_X;
   (w.max(28.0), 26.0)
 }
+
+/// The horizontal padding between a button plate's edge and its label.
+const BUTTON_PLATE_PAD_X: f64 = 12.0;
 
 /// The pixel size a `Button[label, action, ImageSize -> …]` option asks
 /// for: a single number is the width (the height follows the content, so it
@@ -7751,15 +7773,40 @@ fn button_text_plate_svg(args: &[Expr]) -> String {
     }
     inner = &sargs[0];
   }
-  let label = graphics_text_content(&args[0]);
   let font = styled.then_some(&text_style);
-  let natural = button_plate_size_styled(&label, font);
-  let plate = match size {
-    Some((w, h)) => {
-      button_plate_svg_styled(&label, w, h.unwrap_or(natural.1), font)
-    }
-    None => button_plate_svg_styled(&label, natural.0, natural.1, font),
+  // A `Column` label stacks its items as lines of the plate, which is as
+  // wide as the longest of them.
+  let (lines, column) = button_label_lines(&args[0]);
+  let mut natural = (0.0_f64, 0.0_f64);
+  for line in &lines {
+    let (w, h) = button_plate_size_styled(&graphics_text_content(line), font);
+    natural = (natural.0.max(w), h);
+  }
+  natural.1 += (lines.len() - 1) as f64 * BUTTON_PLATE_LINE_HEIGHT;
+  let markup: Vec<String> =
+    lines.iter().map(button_label_line_markup).collect();
+  // A script stacked over its base rises above the line; the label stays
+  // centered, so the plate grows both ways.
+  let label_size = font.map_or(14.0, |f| f.font_size);
+  natural.1 += 2.0
+    * markup
+      .iter()
+      .map(|m| {
+        crate::functions::plot_padding::stacked_script_room(m, label_size)
+      })
+      .fold(0.0, f64::max);
+  let (w, h) = match size {
+    Some((w, h)) => (w, h.unwrap_or(natural.1)),
+    None => natural,
   };
+  let plate = button_plate_svg_lines(
+    &markup,
+    w,
+    h,
+    font,
+    button_is_pressed(args),
+    column,
+  );
   let background = args
     .iter()
     .skip(2)
@@ -7821,6 +7868,25 @@ fn button_plate_svg_styled(
   h: f64,
   font: Option<&StyleState>,
 ) -> String {
+  button_plate_svg_lines(&[svg_escape(label)], w, h, font, false, false)
+}
+
+/// The height one more line of a multi-line button label adds to its plate.
+const BUTTON_PLATE_LINE_HEIGHT: f64 = 18.0;
+
+/// A `Button` plate of an explicit pixel size holding one text line per
+/// entry of `lines` (inline SVG markup, already escaped). A single line is
+/// centered; the lines of a `Column` label are set flush left when
+/// `left_aligned`. `pressed` draws the flat gray plate of `Appearance ->
+/// "Pressed"` instead of the raised white one.
+fn button_plate_svg_lines(
+  lines: &[String],
+  w: f64,
+  h: f64,
+  font: Option<&StyleState>,
+  pressed: bool,
+  left_aligned: bool,
+) -> String {
   let (size, fill, face) = match font {
     Some(f) => {
       let mut face = String::new();
@@ -7834,17 +7900,88 @@ fn button_plate_svg_styled(
     }
     None => ("14".to_string(), "#000000".to_string(), String::new()),
   };
-  format!(
+  let (plate_fill, plate_stroke) = if pressed {
+    (BUTTON_PRESSED_FILL, BUTTON_PRESSED_FILL)
+  } else {
+    ("#FDFDFD", "#BFBFBF")
+  };
+  let (anchor, x) = if left_aligned {
+    ("start", BUTTON_PLATE_PAD_X)
+  } else {
+    ("middle", w / 2.0)
+  };
+  let first_y = h / 2.0
+    - (lines.len().saturating_sub(1)) as f64 * BUTTON_PLATE_LINE_HEIGHT / 2.0;
+  let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
-     </svg>\n",
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"{plate_fill}\" stroke=\"{plate_stroke}\" stroke-width=\"1\"/>\n",
     w - 1.0,
     h - 1.0,
-    w / 2.0,
-    h / 2.0,
-    svg_escape(label)
-  )
+  );
+  for (i, line) in lines.iter().enumerate() {
+    out.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"{anchor}\" dominant-baseline=\"central\">{line}</text>\n",
+      first_y + i as f64 * BUTTON_PLATE_LINE_HEIGHT,
+    ));
+  }
+  out.push_str("</svg>\n");
+  out
+}
+
+/// The plate color of a button drawn with `Appearance -> "Pressed"` (and of
+/// the unselected choices of a `TogglerBar`).
+const BUTTON_PRESSED_FILL: &str = "#EDEDED";
+
+/// Whether a `Button[label, action, opts…]` asks for `Appearance ->
+/// "Pressed"`. The option value is held with the rest of the button, so a
+/// condition (`If[MemberQ[picked, k], "Pressed", Automatic]`) is evaluated
+/// here.
+fn button_is_pressed(button_args: &[Expr]) -> bool {
+  button_args.iter().skip(2).any(|o| {
+    matches!(option_kv(o), Some(("Appearance", value))
+    if matches!(
+      evaluate_expr_to_expr(value),
+      Ok(Expr::String(ref v)) if v == "Pressed"
+    ))
+  })
+}
+
+/// The text lines of a button label: the items of a `Column[{…}]` label
+/// (seen through `Text` and `Style` wrappers), any other label as its one
+/// line. The flag says whether the label was a `Column`.
+fn button_label_lines(label: &Expr) -> (Vec<Expr>, bool) {
+  let mut inner = label;
+  loop {
+    match inner {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Text" | "Style") && !args.is_empty() =>
+      {
+        inner = &args[0];
+      }
+      Expr::FunctionCall { name, args } if name == "Column" => {
+        if let Some(Expr::List(items)) = args.first()
+          && !items.is_empty()
+        {
+          return (items.to_vec(), true);
+        }
+        break;
+      }
+      _ => break,
+    }
+  }
+  (vec![label.clone()], false)
+}
+
+/// One line of a button label as inline SVG markup: the plain text, or —
+/// for a label typeset with a stacked script (`Overscript[arrow, k]`) —
+/// the markup that sets the script over its base.
+fn button_label_line_markup(line: &Expr) -> String {
+  let markup = expr_to_svg_markup(line);
+  if markup.contains("data-stack=") {
+    markup
+  } else {
+    svg_escape(&graphics_text_content(line))
+  }
 }
 
 /// The value a `Dynamic[x, …]` control is showing: `x` evaluated. Any other
@@ -8438,6 +8575,40 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     return Some(inset_text(&targs[0], pos, args));
   }
   None
+}
+
+/// The font size, in points, a graphic sets the text of a display inset
+/// into it in: a graphic's base style is smaller than a notebook cell's.
+const GRAPHICS_INSET_FONT_SIZE: i128 = 10;
+
+/// A laid-out display (`Grid`, `Column`, `Row`, `TableForm`, a `Framed` or
+/// `Panel` box) as an `Inset` shows it: set in the graphic's own font size
+/// rather than the notebook's, so a table of readouts takes the room it
+/// does in the front end. Text that sets its own size keeps it, and any
+/// other object is returned as it is.
+pub(crate) fn inset_display_in_graphics_font(obj: &Expr) -> Expr {
+  let is_display = matches!(
+    strip_style_wrappers(obj),
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "Grid" | "Column" | "Row" | "TableForm" | "Framed" | "Panel"
+        )
+  );
+  if !is_display {
+    return obj.clone();
+  }
+  call(
+    "Style",
+    vec![
+      obj.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("FontSize".to_string())),
+        replacement: Box::new(Expr::Integer(GRAPHICS_INSET_FONT_SIZE)),
+      },
+    ],
+  )
 }
 
 /// The label drawn for `Inset[obj, pos, …, BaseStyle -> s]` when `obj` is a
@@ -9170,7 +9341,8 @@ fn inset_primitives(
       // locators on it, so inset it is that picture, not its source text.
       || (name == "LocatorPane" && call_args.len() >= 2) =>
     {
-      rendered = crate::evaluator::expr_to_svg(call);
+      rendered =
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(call));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     // A `Panel` — e.g. a readout table of computed values a diagram carries
@@ -9180,7 +9352,8 @@ fn inset_primitives(
       name,
       args: call_args,
     } if name == "Panel" && !call_args.is_empty() => {
-      rendered = crate::evaluator::expr_to_svg(call);
+      rendered =
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(call));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     _ => None,
@@ -9575,6 +9748,27 @@ fn layout_holds_grid(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// A graphics label's `body` set in the face the label is drawn in: the
+/// family its style names, or else the graphic's proportional text face —
+/// the one a one-line label beside it uses — rather than the monospace face
+/// of typeset output, whose wider advances would spread the label's text
+/// away from the grid it captions.
+fn in_label_face(body: &Expr, style: &StyleState) -> Expr {
+  if style.font_family.is_empty() {
+    return in_text_face(body);
+  }
+  call(
+    "Style",
+    vec![
+      body.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+        replacement: Box::new(Expr::String(style.font_family.clone())),
+      },
+    ],
+  )
 }
 
 /// The picture of a `Row`/`Column` label holding a `Grid`, with its natural
@@ -10326,7 +10520,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   };
   if frame_opts.is_empty()
     && let Some(offset) = picture_offset
-    && let Some((svg, w, h)) = layout_grid_picture(&colored_body)
+    && layout_holds_grid(&colored_body)
+    && let Some((svg, w, h)) =
+      layout_grid_picture(&in_label_face(&colored_body, &local_style))
     && let Some((x, y, scaled)) = args.get(1).and_then(expr_to_anchor)
   {
     let (svg, w, h) = align_inset_picture(svg, w, h, offset);
@@ -11703,7 +11899,10 @@ fn include_arc_extent(
 fn primitive_bbox(prim: &Primitive) -> BBox {
   let mut bb = BBox::empty();
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => {}
     Primitive::PointSingle { x, y, .. } => {
       bb.include_point(*x, *y);
     }
@@ -12031,9 +12230,10 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -12370,9 +12570,10 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -12645,9 +12846,10 @@ fn scale_primitive(
     }
   };
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -16434,7 +16636,12 @@ fn render_primitive(
     Primitive::ClickGroupStart { hex } => {
       out.push_str(&format!("<g id=\"{BUTTON_HIT_ID_PREFIX}{hex}\">\n"));
     }
-    Primitive::ClickGroupEnd => out.push_str("</g>\n"),
+    Primitive::TooltipGroupStart { hex } => {
+      out.push_str(&format!("<g id=\"{TOOLTIP_HIT_ID_PREFIX}{hex}\">\n"));
+    }
+    Primitive::ClickGroupEnd | Primitive::TooltipGroupEnd => {
+      out.push_str("</g>\n");
+    }
     Primitive::ShiftedLine { segments, style } => {
       let line = Primitive::Line {
         segments: segments
@@ -18351,7 +18558,10 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
 
   for prim in primitives {
     match prim {
-      Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
+      Primitive::ClickGroupStart { .. }
+      | Primitive::ClickGroupEnd
+      | Primitive::TooltipGroupStart { .. }
+      | Primitive::TooltipGroupEnd => {}
       Primitive::PointSingle { x, y, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::point_box(*x, *y));
@@ -19356,8 +19566,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let fs = style.font_size;
-      let longest = text_visible_line_lengths(text).into_iter().max();
-      let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;
+      let text_w = text_label_range_width(text, style);
       let text_h = text.split('\n').count() as f64 * fs;
       // `Offset[…]` / `Scaled[{dx, dy}, pos]` anchors shift the label off
       // its base point.
@@ -26193,11 +26402,13 @@ fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
 
 /// Whether a box string is a symbol spelt with one letter (`x`, `ω`, `π`),
 /// which `TraditionalForm` sets in italics; the double-struck `ⅇ`/`ⅈ`/`ⅆ`
-/// stay upright.
+/// and the capital Greek letters (`Γ`, `Ο`, `Ω`) stay upright.
 fn is_single_letter_symbol(s: &str) -> bool {
   let mut chars = s.chars();
   matches!((chars.next(), chars.next()), (Some(c), None)
-    if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
+    if c.is_alphabetic()
+      && !('\u{2145}'..='\u{2149}').contains(&c)
+      && !('\u{391}'..='\u{3A9}').contains(&c))
 }
 
 /// Infix box tokens drawn with a space on either side: relations,
@@ -27784,6 +27995,14 @@ pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
   structured_label_svg_impl(expr, 14.0, true)
 }
 
+/// [`structured_label_svg`] for a legend entry, set in the picture's
+/// proportional text face: a legend's plain labels are drawn in that face,
+/// so a two-dimensional one (a hat over a letter, a fraction) has to match
+/// them instead of coming out in the typeset monospace face beside them.
+pub(crate) fn structured_legend_label_svg(expr: &Expr) -> Option<String> {
+  structured_label_svg(&in_text_face(expr))
+}
+
 /// [`structured_label_svg`] typeset at a base font size of `size` points,
 /// at the top script level.
 pub(crate) fn structured_label_svg_sized(
@@ -28717,9 +28936,6 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
   }
 }
 
-/// The visible character count of each line of a graphics label, with any
-/// inline box notation (`\!\(\*SubscriptBox[…]\)`) counted as the
-/// characters it draws rather than its markup.
 /// The image padding `[left, right, bottom, top]` a bare picture of total
 /// `width` and drawing shape `aspect` (height / width) needs so that its
 /// horizontal `Text` labels fit beside a drawing of plot range `bb`, or
@@ -28801,16 +29017,53 @@ fn text_overflow_padding(
   pad.iter().any(|&p| p > 0.0).then_some(pad)
 }
 
-fn text_visible_line_lengths(text: &str) -> Vec<usize> {
-  let plain;
-  let text = match text.strip_prefix(STYLED_LABEL_MARKER) {
-    Some(markup) => {
-      plain = crate::functions::chart::svg_markup_visible_text(markup);
-      plain.as_str()
-    }
-    None => text,
+/// How wide a horizontal `Text` label is taken to be when an automatic
+/// plot range grows to hold it: the advance of its glyphs (a bold label a
+/// little wider). A flat per-character guess overestimated ordinary
+/// mixed-case labels by a quarter, shrinking the whole drawing to leave
+/// room the labels never used.
+///
+/// The label is positioned by Wolfram's label face but drawn in the
+/// embedded one, whose glyphs run a little wider; the room is the wider of
+/// the two measures, so the drawn label is not cut off at the picture's
+/// edge.
+///
+/// Inline box notation (`\!\(\*SubscriptBox[…]\)`) is measured by the
+/// characters it draws rather than its markup.
+fn text_label_range_width(text: &str, style: &StyleState) -> f64 {
+  let fs = style.font_size;
+  if let Some(markup) = text.strip_prefix(STYLED_LABEL_MARKER) {
+    return crate::functions::plot_padding::text_width(markup, fs);
+  }
+  let bold = if style.font_weight == "bold" {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
   };
-  text.split('\n').map(box_string_visible_len).collect()
+  let line_width = |line: &str| {
+    label_line_width_em(line).max(label_line_width(
+      line,
+      crate::functions::plot_padding::atkinson_width_em,
+    ))
+  };
+  let has_boxes = text.contains(crate::functions::string_ast::BOX_START)
+    || text.contains("\\!\\(");
+  text
+    .split('\n')
+    .map(|line| {
+      if has_boxes {
+        let norm = normalize_box_markers(line);
+        let cs: Vec<char> = norm.chars().collect();
+        let plain: String =
+          parse_box_units(&cs).iter().map(box_expr_to_plain).collect();
+        line_width(&plain)
+      } else {
+        line_width(line)
+      }
+    })
+    .fold(0.0, f64::max)
+    * fs
+    * bold
 }
 
 /// Number of visible characters a box-notation label occupies, ignoring the
@@ -30846,6 +31099,48 @@ fn merged_plot_labels(
   Some(Expr::List(entries.into()))
 }
 
+/// The `PlotRangePadding` a plot drew itself with, as `{{Scaled[l],
+/// Scaled[r]}, {Scaled[b], Scaled[t]}}`: the margins between its data
+/// extent and its displayed range, each as a fraction of the displayed
+/// span. `None` when the plot reports no data extent or shows less than
+/// all of it.
+fn plot_source_range_padding(ps: &crate::syntax::PlotSource) -> Option<Expr> {
+  // A plot that does not report its data extent is measured from the
+  // points of its series.
+  let (data_x, data_y) = ps.plot_range.or_else(|| {
+    let extent = |pick: fn(&(f64, f64)) -> f64| {
+      let values = || {
+        ps.series
+          .iter()
+          .flat_map(|s| s.points.iter().map(pick))
+          .filter(|v| v.is_finite())
+      };
+      let lo = values().reduce(f64::min)?;
+      Some((lo, values().reduce(f64::max)?))
+    };
+    Some((extent(|p| p.0)?, extent(|p| p.1)?))
+  })?;
+  let data_x = ps.data_x_range.unwrap_or(data_x);
+  let side = |(dlo, dhi): (f64, f64), (rlo, rhi): (f64, f64)| {
+    let span = rhi - rlo;
+    let (below, above) = ((dlo - rlo) / span, (rhi - dhi) / span);
+    (span.is_finite()
+      && span > 0.0
+      && (0.0..0.5).contains(&below)
+      && (0.0..0.5).contains(&above))
+    .then(|| {
+      let scaled = |f: f64| Expr::FunctionCall {
+        name: "Scaled".to_string(),
+        args: vec![Expr::Real(f)].into(),
+      };
+      Expr::List(vec![scaled(below), scaled(above)].into())
+    })
+  };
+  Some(Expr::List(
+    vec![side(data_x, ps.x_range)?, side(data_y, ps.y_range)?].into(),
+  ))
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
@@ -31622,6 +31917,22 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             **replacement = Expr::List(axes.into());
           }
         }
+      }
+      // A `PlotRange -> All` spans everything shown, measured afresh from
+      // the merged primitives, and would be padded like a bare `Graphics`.
+      // The result keeps the leading plot's options, its `PlotRangePadding`
+      // among them, so pad by the fractions that plot left around its own
+      // data.
+      let spans_all = merged_options.iter().any(|o| {
+        matches!(option_name_value(o), Some(("PlotRange", v))
+          if matches!(v.as_ref(), Expr::Identifier(s) if s == "All"))
+      });
+      if spans_all
+        && !has_option(&merged_options, "PlotRangePadding")
+        && let Some(ps) = plot_sources.first()
+        && let Some(padding) = plot_source_range_padding(ps)
+      {
+        merged_options.push(rule_expr(id_expr("PlotRangePadding"), padding));
       }
       // A plot clips what it draws to its range (`PlotRangeClipping ->
       // True`), so a layer reaching past it is cut at the frame instead of
@@ -33272,6 +33583,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       if name == "Button" && args.len() >= 2 =>
     {
       button_cell_svg(args)
+    }
+    // A bare `TogglerBar[Dynamic[var], choices]` cell draws as its row of
+    // toggle plates.
+    Expr::FunctionCall { name, args }
+      if name == "TogglerBar"
+        && args.len() >= 2
+        && togglerbar_svg(args).is_some() =>
+    {
+      togglerbar_svg(args)?
     }
     // A bare `Trigger[Dynamic[var], range]` cell draws as its play button.
     Expr::FunctionCall { name, args }
@@ -39018,6 +39338,47 @@ pub(crate) fn button_hit_rect(
   )
 }
 
+/// Prefix of the `id` on the group holding the shapes of a
+/// `Tooltip[g, label]` primitive; the rest of the id is the hex-encoded
+/// plain text of the label (see [`tooltip_label_text`]). A live widget (Woxi
+/// Studio) shows that text while the pointer is over the group.
+pub const TOOLTIP_HIT_ID_PREFIX: &str = "woxi-tip-";
+
+/// Decode the label text of a [`TOOLTIP_HIT_ID_PREFIX`] id.
+pub fn tooltip_text_from_hit_id(id: &str) -> Option<String> {
+  decode_hit_id_hex(id.strip_prefix(TOOLTIP_HIT_ID_PREFIX)?)
+}
+
+/// The plain text of a `Tooltip` label: strings as they are, a `Column`'s
+/// items on lines of their own, a `Row`'s items side by side (around its
+/// separator), wrappers that only style or frame their content looked
+/// through, and anything else in its output form.
+pub fn tooltip_label_text(label: &Expr) -> String {
+  let items = |list: &Expr| -> Vec<String> {
+    match list {
+      Expr::List(items) => items.iter().map(tooltip_label_text).collect(),
+      other => vec![tooltip_label_text(other)],
+    }
+  };
+  match label {
+    Expr::String(s) => s.clone(),
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Column" => items(&args[0]).join("\n"),
+        "Row" => {
+          let sep = args.get(1).map_or_default(tooltip_label_text);
+          items(&args[0]).join(&sep)
+        }
+        "Text" | "Framed" | "Pane" | "Panel" | "Item" | "Tooltip"
+        | "Labeled" => tooltip_label_text(&args[0]),
+        wrapper if is_style_wrapper(wrapper) => tooltip_label_text(&args[0]),
+        _ => crate::syntax::expr_to_output(label),
+      }
+    }
+    other => crate::syntax::expr_to_output(other),
+  }
+}
+
 /// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.
 pub fn button_action_from_hit_id(id: &str) -> Option<String> {
   decode_hit_id_hex(id.strip_prefix(BUTTON_HIT_ID_PREFIX)?)
@@ -42210,6 +42571,13 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Button" if args.len() >= 2 => {
         return Some(button_cell_svg(&args));
       }
+      // A `TogglerBar[Dynamic[var], choices]` item draws as its row of
+      // toggle plates rather than its source text.
+      "TogglerBar" if args.len() >= 2 => {
+        if let Some(svg) = togglerbar_svg(&args) {
+          return Some(svg);
+        }
+      }
       // A `Trigger[Dynamic[var], {from, to}]` control item is drawn as its
       // play button (its sweep needs a live widget).
       "Trigger" if args.len() >= 2 => return Some(button_plate_svg("▶")),
@@ -43053,14 +43421,32 @@ fn column_layout_svg(
   // A text-labeled `Button` without an explicit `ImageSize` stretches to
   // the column's width, as the FrontEnd lays out a button stacked above a
   // wider item (a "play" button over a plot).
+  // An item drawn with the blank margin of a text line (see `text_layouts`)
+  // fills the column between those margins, not over them.
+  // (A column that also stacks a picture drops those margins.)
+  let stacks_picture = cells
+    .iter()
+    .enumerate()
+    .any(|(i, c)| matches!(c, Cell::Svg { .. }) && !text_layout(i));
+  let stretched_width = |i: usize| {
+    if text_layout(i) && !stacks_picture {
+      col_width - 2.0 * edge_pad
+    } else {
+      col_width
+    }
+  };
   let cells: Vec<Cell> = cells
     .into_iter()
     .zip(items.iter())
-    .map(|(cell, item)| match (&cell, resolve_display_item(item)) {
-      (Cell::Svg { width, .. }, Expr::FunctionCall { ref name, ref args })
-        if name == "Button"
+    .enumerate()
+    .map(
+      |(i, (cell, item))| match (&cell, resolve_display_item(item)) {
+        (
+          Cell::Svg { width, .. },
+          Expr::FunctionCall { ref name, ref args },
+        ) if name == "Button"
           && args.len() >= 2
-          && *width < col_width
+          && *width < stretched_width(i)
           && button_image_size(args).is_none()
           && !matches!(args[0], Expr::Image { .. })
           && !matches!(
@@ -43068,24 +43454,25 @@ fn column_layout_svg(
             Expr::FunctionCall { name: inner, .. }
               if inner == "Graphics" || inner == "Graphics3D"
           ) =>
-      {
-        let mut stretched = args.to_vec();
-        stretched.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-          replacement: Box::new(Expr::Real(col_width)),
-        });
-        let svg = button_cell_svg(&stretched);
-        let (w, h) = parse_svg_wh(&svg);
-        Cell::Svg {
-          svg,
-          width: w,
-          height: h,
-          picture: true,
-          text_line: None,
+        {
+          let mut stretched = args.to_vec();
+          stretched.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+            replacement: Box::new(Expr::Real(stretched_width(i))),
+          });
+          let svg = button_cell_svg(&stretched);
+          let (w, h) = parse_svg_wh(&svg);
+          Cell::Svg {
+            svg,
+            width: w,
+            height: h,
+            picture: true,
+            text_line: None,
+          }
         }
-      }
-      _ => cell,
-    })
+        _ => cell,
+      },
+    )
     .collect();
 
   // Per-row heights
@@ -43105,8 +43492,13 @@ fn column_layout_svg(
         Cell::Svg { height, .. } => *height,
         Cell::Text(e, plain) => {
           let (style, fs) = text_style(e, font_size);
-          let lines = markup_lines(&expr_to_svg_markup(style.content))
-            .map_or(1, |l| l.len());
+          let markup = expr_to_svg_markup(style.content);
+          let lines = markup_lines(&markup).map_or(1, |l| l.len());
+          // A script stacked over its base (`Overscript[arrow, k]`) rises
+          // above the line, which is centered in its row: the row grows
+          // both ways so the script clears the item above.
+          let stack_room = 2.0
+            * crate::functions::plot_padding::stacked_script_room(&markup, fs);
           // A line in the proportional text face of a `Text[…]` display
           // takes the front end's text line pitch (12 pt labels stack about
           // 15.3 pt apart); the monospace typeset face keeps its padded box.
@@ -43114,11 +43506,12 @@ fn column_layout_svg(
             .font_family
             .as_deref()
             .map_or(*plain, is_text_face_family);
-          if in_text_face {
-            fs * lines as f64 * TEXT_FACE_LINE_PITCH
-          } else {
-            fs * lines as f64 + pad_y
-          }
+          stack_room
+            + if in_text_face {
+              fs * lines as f64 * TEXT_FACE_LINE_PITCH
+            } else {
+              fs * lines as f64 + pad_y
+            }
         }
       };
       item_size_entry_at(item_size_h, i, n_items)
@@ -43803,8 +44196,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       })
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
-    // them.
-    return stacked_boxes_svg(rows, "Left");
+    // them, each centered on the block — a multi-line `Row` label over a
+    // plot (`Labeled[…, Row[{"title\ncoefficients = ", …}], Top]`) centers
+    // its short lines rather than hanging them flush left. A row given an
+    // explicit `ImageSize` keeps its lines flush left in that fixed box
+    // and never reaches here (it has more than one argument).
+    return stacked_boxes_svg(rows, "Center");
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
@@ -44163,9 +44560,33 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         axis: Some(a),
         ..
       } if v_align == "center" => 2.0 * a.max(height - a),
-      _ => cell_height(c),
+      // A script stacked over its base (`Overscript[arrow, k]`) rises
+      // above the line; the line stays centered, so it grows both ways.
+      Cell::Text {
+        markup,
+        height,
+        size,
+        ..
+      } => {
+        height
+          + 2.0
+            * crate::functions::plot_padding::stacked_script_room(markup, *size)
+      }
+      Cell::Svg { .. } => cell_height(c),
     })
     .fold(font_size + pad_y, f64::max);
+  // The same holds for a stacked script in the separator between items.
+  let total_h = match &separator {
+    Separator::Text(text, _) if cells.len() > 1 => total_h.max(
+      font_size
+        + pad_y
+        + 2.0
+          * crate::functions::plot_padding::stacked_script_room(
+            text, font_size,
+          ),
+    ),
+    _ => total_h,
+  };
   let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
   let svg_w = canvas_w.ceil().max(1.0) as u32;
@@ -44693,9 +45114,20 @@ fn framed_box_to_svg(
       } else {
         (None, 0.0, 0.0)
       }
-    } else if let Expr::Graphics { svg, .. } = content {
+    } else if let Expr::Graphics { svg, is_3d, .. } = content {
       let (w, h) = parse_svg_wh(svg);
-      (Some(svg.clone()), w, h)
+      // A plot without a `Background` of its own is transparent, so the
+      // frame's `Background` shows through behind it.
+      let transparent = bg_fill.is_some()
+        && !*is_3d
+        && !graphics_options(content)
+          .is_some_and(|options| sets_background(&options));
+      let svg = if transparent {
+        strip_plot_background_plate(svg)
+      } else {
+        svg.clone()
+      };
+      (Some(svg), w, h)
     } else if let Expr::Image {
       width,
       height,
@@ -53496,6 +53928,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     "Row"
       | "Column"
       | "Grid"
+      | "TableForm"
       | "TabView"
       | "PaneSelector"
       | "OpenerView"
@@ -53614,10 +54047,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // item is below — a row cell can itself be a `PaneSelector`/`Row`/
       // `Column` grouping further controls (the Demonstrations idiom of a
       // custom Grid-based control panel), not just a bare `Control`/`Button`.
-      Expr::List(row) if name == "Grid" => {
+      Expr::List(row) if name == "Grid" || name == "TableForm" => {
         let cells: Vec<Expr> = row.iter().cloned().collect();
         if let Some(cell) = grid_row_captioned_control(&cells) {
-          match control_group_items(&cell) {
+          match nested_control_group_items(&cell) {
             Some(nested) => out.extend(nested),
             None => out.push(layout_control_leaf(&cell)),
           }
@@ -53638,7 +54071,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
             vec![cell.clone()]
           };
           for factor in &factors {
-            match control_group_items(factor) {
+            match nested_control_group_items(factor) {
               Some(nested) => out.extend(nested),
               None => out.push(layout_control_leaf(factor)),
             }
@@ -53646,7 +54079,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         }
       }
       // Nested layout containers flatten recursively.
-      other => match control_group_items(other) {
+      other => match nested_control_group_items(other) {
         Some(nested) => out.extend(nested),
         None => out.push(layout_control_leaf(other)),
       },
@@ -53654,6 +54087,24 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   flush_caption(&mut caption, &mut out);
   Some(out)
+}
+
+/// One nested item of a control layout, flattened into control rows.
+///
+/// Same as [`control_group_items`], except that a bare list holding a
+/// `Control[…]` is a column of items rather than a leaf: a `Grid`/
+/// `TableForm` cell (and a `Column`/`Row` item) is commonly written that
+/// way — `TableForm[{{{Control[…], Control[…]}, {Control[…]}}}]` stacks
+/// each cell's controls — and without this such a cell would be kept as
+/// one display element, stringifying its controls into inert text and
+/// leaving their variables unbound.
+fn nested_control_group_items(item: &Expr) -> Option<Vec<Expr>> {
+  match item {
+    Expr::List(_) if expr_contains_call(item, &["Control"]) => {
+      control_group_items(&call1("Column", item.clone()))
+    }
+    _ => control_group_items(item),
+  }
 }
 
 /// A `PaneSelector[{…}, sel]` selector is commonly written `Dynamic[var]`
@@ -63835,6 +64286,50 @@ fn togglerbar_node(
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
 ) -> Option<DisplayNode> {
+  let bar = togglerbar_choices(args)?;
+  let buttons = bar
+    .choices
+    .into_iter()
+    .map(|choice| DisplayNode::Toggler {
+      label: Box::new(display_expr_to_node(
+        &choice.label,
+        bindings,
+        probes,
+        ons,
+      )),
+      mutation: choice.mutation,
+      selected: choice.selected,
+      enabled: bar.enabled,
+      checkbox,
+    })
+    .collect();
+  Some(if bar.vertical {
+    DisplayNode::Column(buttons)
+  } else {
+    DisplayNode::Row(buttons)
+  })
+}
+
+/// One choice of a `TogglerBar[Dynamic[…], choices]`.
+struct TogglerBarChoice {
+  label: Expr,
+  /// Wolfram source toggling the choice's membership in the bound list.
+  mutation: String,
+  selected: bool,
+}
+
+/// The choices of a `TogglerBar[Dynamic[…], choices, opts…]` with the state
+/// each one shows and the code a press runs.
+struct TogglerBarChoices {
+  choices: Vec<TogglerBarChoice>,
+  enabled: bool,
+  vertical: bool,
+}
+
+/// Resolve the arguments of a `TogglerBar`/`CheckboxBar` (see
+/// [`togglerbar_node`]) into its choices; `None` when they don't have that
+/// shape.
+fn togglerbar_choices(args: &[Expr]) -> Option<TogglerBarChoices> {
   let Some(Expr::FunctionCall {
     name: dname,
     args: dargs,
@@ -63886,7 +64381,7 @@ fn togglerbar_node(
       .collect::<Vec<_>>()
       .join(", ")
   );
-  let mut buttons = Vec::with_capacity(choices.len());
+  let mut bar_choices = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
       Expr::Rule {
@@ -63927,12 +64422,10 @@ fn togglerbar_node(
         format!("{target} = ({setter_code})[{toggled}]")
       }
     };
-    buttons.push(DisplayNode::Toggler {
-      label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
+    bar_choices.push(TogglerBarChoice {
+      label: label.clone(),
       mutation,
       selected,
-      enabled,
-      checkbox,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -63954,11 +64447,45 @@ fn togglerbar_node(
       && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
         || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
   });
-  Some(if vertical {
-    DisplayNode::Column(buttons)
-  } else {
-    DisplayNode::Row(buttons)
+  Some(TogglerBarChoices {
+    choices: bar_choices,
+    enabled,
+    vertical,
   })
+}
+
+/// A `TogglerBar[Dynamic[var], choices, opts…]` drawn inside a picture (an
+/// item of a `Column`/`Row`/`Grid`, or exported on its own): one button
+/// plate per choice, raised for the selected choices and flat for the
+/// others, each carrying the hit region whose press toggles its choice in a
+/// live widget. This is the `Button` drawing — the bar is a row of them.
+pub(crate) fn togglerbar_svg(args: &[Expr]) -> Option<String> {
+  let bar = togglerbar_choices(args)?;
+  let buttons: Vec<Expr> = bar
+    .choices
+    .iter()
+    .map(|choice| {
+      let action = crate::syntax::string_to_expr(&choice.mutation)
+        .unwrap_or_else(|_| id_expr("Null"));
+      let mut button = vec![choice.label.clone(), action];
+      if !choice.selected {
+        button.push(rule_expr(
+          id_expr("Appearance"),
+          Expr::String("Pressed".to_string()),
+        ));
+      }
+      if !bar.enabled {
+        button.push(rule_expr(id_expr("Enabled"), id_expr("False")));
+      }
+      call("Button", button)
+    })
+    .collect();
+  let items = Expr::List(buttons.into());
+  if bar.vertical {
+    Some(crate::evaluator::expr_to_svg(&call("Column", vec![items])))
+  } else {
+    row_to_svg(std::slice::from_ref(&items))
+  }
 }
 
 /// Build a `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[…]` display:

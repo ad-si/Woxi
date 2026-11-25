@@ -158,6 +158,26 @@ mod legends {
       );
     }
   }
+
+  /// A legend entry that has to be typeset as a picture (a hat over a
+  /// letter, written as inline box notation) is set in the same
+  /// proportional text face as the plain entries beside it.
+  /// Regression: the typeset entry came out in the monospace box face, so
+  /// its letters were wider and spaced differently from its neighbor's.
+  #[test]
+  fn typeset_legend_entry_uses_the_text_face() {
+    let svg = svg_of(
+      r#"ListPlot[{{{1, 2}}, {{2, 3}}}, PlotLegends -> {Row[{Style["x", Italic], "(k)"}], "\!\(\*OverscriptBox[\(x\), \(^\)]\)(k)"}]"#,
+    );
+    assert!(
+      svg.contains(">^</text>"),
+      "the hat is not typeset over the letter: {svg}"
+    );
+    assert!(
+      !svg.contains("monospace"),
+      "a legend entry is set in the box face: {svg}"
+    );
+  }
 }
 
 mod image_size {

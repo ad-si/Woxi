@@ -1489,13 +1489,16 @@ fn render_item(
         // anew at that width; a plot is inset transparently.
         let object = crate::evaluator::evaluate_expr_to_expr(&args[0])
           .unwrap_or_else(|_| args[0].clone());
+        // A table or boxed display is set in the plot's own font size.
+        let shown =
+          crate::functions::graphics::inset_display_in_graphics_font(&object);
         let width = args.get(3).and_then(|s| match point2(s) {
           // A `{w, h}` box keeps the object's own aspect ratio: it is
           // scaled to the largest size that fits inside the box.
           Some((w, h)) => {
             let (bw, bh) = (area.rx(w) / area.scale, area.ry(h) / area.scale);
             let natural = crate::functions::graphics::svg_natural_size(
-              &crate::evaluator::expr_to_svg(&object),
+              &crate::evaluator::expr_to_svg(&shown),
             );
             Some(crate::functions::graphics::fit_inset_box(bw, bh, natural).0)
           }
@@ -1508,7 +1511,7 @@ fn render_item(
         let svg = if let Some((svg, _, _)) = relaid {
           svg
         } else {
-          let svg = crate::evaluator::expr_to_svg(&object);
+          let svg = crate::evaluator::expr_to_svg(&shown);
           match &object {
             Expr::Graphics { is_3d: false, .. } => {
               crate::functions::graphics::strip_plot_background_plate(&svg)

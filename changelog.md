@@ -5,6 +5,27 @@
 - `Text` (and a text `Inset`) in `Graphics` is set at 10 points when no
     style gives a size, as wolframscript and the front end draw it, instead
     of 14 points; labels are measured, wrapped and padded for at that size.
+- `RevolutionPlot3D` draws every curve of a nested curve list
+    (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
+    picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels
+    its axes with `AxesLabel` and pads its automatic range by
+    `Scaled[0.05]`, so ticks at the surface's extremes are drawn.
+- `FaceGrids` are drawn by the surface plots (`Plot3D`,
+    `RevolutionPlot3D`, …) as well as `Graphics3D`, and `FaceGridsStyle`
+    sets their color and thickness.
+- `Tooltip[shape, label]` inside a `Graphics` records its label on the
+    drawn shape, and Woxi Studio shows it while the pointer rests on the
+    shape in a Manipulate's picture — diagrams that explain their parts
+    through tooltips are readable again.
+- Curves whose coordinates come from a piecewise complex map
+    (`ParametricPlot[{Re[f[t + I b]], Im[f[t + I b]]}, …]` with `f` an
+    `If` or `Piecewise` over `Re`/`Im`) are sampled with compiled machine
+    arithmetic rather than evaluated symbolically per point, which draws
+    such plots several times faster.
+- `Show[plot, Graphics[…]]` of a plot spanning `PlotRange -> All` keeps
+    the margin the plot left around its own data instead of the narrower
+    padding of a bare `Graphics`, so the picture stays the size the plot
+    drew itself in.
 - A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
     is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
     and a `PlotStyle` opacity on colored cells, and evaluates each point
