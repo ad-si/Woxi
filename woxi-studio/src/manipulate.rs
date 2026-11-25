@@ -3173,9 +3173,12 @@ impl ManipulateState {
         *current = current.clamp(*min, *max);
       }
       let (min, max) = (*min, *max);
-      if new_step.is_none()
-        && (new_min.is_some() || new_max.is_some())
-        && self.default_step_controls.iter().any(|n| n == name)
+      // A step of 0 is a pane variant that gives none (see
+      // `variant_dynamic_bounds`): the slider moves by its automatic step.
+      if (*new_step == Some(0.0)
+        || (new_step.is_none()
+          && (new_min.is_some() || new_max.is_some())
+          && self.default_step_controls.iter().any(|n| n == name)))
         && let Some(ControlState::Continuous { step, is_real, .. }) =
           self.controls.iter_mut().find(|c| {
             matches!(c, ControlState::Continuous { name: n, .. } if n == name)
@@ -7060,6 +7063,46 @@ mod tests {
         assert_eq!(state.control_is_visible[i], pane == side, "`{name}`");
       }
     }
+  }
+
+  /// One variable with a slider per `PaneSelector` pane, only the first of
+  /// which gives a step: the stepless pane's slider moves freely over its
+  /// own range. Regression: the first pane's step of 1 stuck to every pane.
+  #[test]
+  fn stepless_pane_variant_drops_the_step_of_a_stepped_one() {
+    let code = r#"Manipulate[
+      Text[k],
+      Control[{{mode, 1, ""}, {1 -> "whole", 2 -> "free"}}],
+      PaneSelector[{
+        1 -> Control[{{k, 20, ""}, 5, 50, 1}],
+        2 -> Control[{{k, 20, ""}, 5, 30}]
+      }, Dynamic@mode]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = ManipulateState::from_expr(&expr)
+      .expect("the paned sliders should build a ManipulateState");
+    let slider = |state: &ManipulateState| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Continuous {
+            name,
+            min,
+            max,
+            step,
+            ..
+          } if name == "k" => Some((*min, *max, *step)),
+          _ => None,
+        })
+        .expect("`k` must be a slider")
+    };
+    assert_eq!(slider(&state), (5.0, 50.0, 1.0));
+    state.apply_saved_variables(&[("mode".to_string(), "2".to_string())]);
+    assert_eq!(slider(&state), (5.0, 30.0, 0.25));
+    state.apply_saved_variables(&[("mode".to_string(), "1".to_string())]);
+    assert_eq!(slider(&state), (5.0, 50.0, 1.0));
   }
 
   /// A `Dynamic@Column` control area whose second row is a nested

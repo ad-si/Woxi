@@ -172,15 +172,58 @@ pub fn parse(
   WolframParser::parse_wolfram(input)
 }
 
-// Global RNG state: None = use the thread-local rand::rng(), Some = use seeded ChaCha8Rng
+/// The generator behind a seeded random stream: the pseudo-random ChaCha8
+/// generator `SeedRandom[n]` selects, or a quasi-random (low-discrepancy)
+/// sequence picked with `SeedRandom[n, Method -> {"MKL", Method -> …}]`.
+#[derive(Clone, Debug)]
+pub enum SeededRng {
+  Pseudo(Box<ChaCha8Rng>),
+  Quasi(crate::functions::math_ast::QuasiRng),
+}
+
+impl rand::TryRng for SeededRng {
+  type Error = std::convert::Infallible;
+
+  fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_next_u32(),
+      SeededRng::Quasi(r) => r.try_next_u32(),
+    }
+  }
+
+  fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_next_u64(),
+      SeededRng::Quasi(r) => r.try_next_u64(),
+    }
+  }
+
+  fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_fill_bytes(dst),
+      SeededRng::Quasi(r) => r.try_fill_bytes(dst),
+    }
+  }
+}
+
+// Global RNG state: None = use the thread-local rand::rng(), Some = use the
+// seeded generator.
 thread_local! {
-    static SEEDED_RNG: crate::epoch::EpochCell<Option<ChaCha8Rng>> = const { crate::epoch::EpochCell::new(None) };
+    static SEEDED_RNG: crate::epoch::EpochCell<Option<SeededRng>> = const { crate::epoch::EpochCell::new(None) };
 }
 
 /// Seed the global RNG with a specific seed value (SeedRandom[n]).
 pub fn seed_rng(seed: u64) {
   SEEDED_RNG.with(|rng| {
-    *rng.borrow_mut() = Some(ChaCha8Rng::seed_from_u64(seed));
+    *rng.borrow_mut() =
+      Some(SeededRng::Pseudo(Box::new(ChaCha8Rng::seed_from_u64(seed))));
+  });
+}
+
+/// Make a quasi-random sequence the global generator, restarting it.
+pub fn set_quasi_rng(generator: crate::functions::math_ast::QuasiRng) {
+  SEEDED_RNG.with(|rng| {
+    *rng.borrow_mut() = Some(SeededRng::Quasi(generator));
   });
 }
 
@@ -193,12 +236,12 @@ pub fn unseed_rng() {
 
 /// Snapshot the current RNG state (used by `BlockRandom` to localize any
 /// `SeedRandom` calls made inside its body).
-pub fn snapshot_rng_state() -> Option<ChaCha8Rng> {
+pub fn snapshot_rng_state() -> Option<SeededRng> {
   SEEDED_RNG.with(|rng| rng.borrow().clone())
 }
 
 /// Restore a previously snapshotted RNG state (see [`snapshot_rng_state`]).
-pub fn restore_rng_state(state: Option<ChaCha8Rng>) {
+pub fn restore_rng_state(state: Option<SeededRng>) {
   SEEDED_RNG.with(|rng| {
     *rng.borrow_mut() = state;
   });
@@ -4035,9 +4078,9 @@ fn keep_frame_boxes(
   result
 }
 
-/// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
-/// wrappers.
-fn is_text_column(expr: &syntax::Expr) -> bool {
+/// Whether `expr` is a `Column[…]` or a `Grid[…]`, possibly under
+/// `Style[…, directives]` wrappers.
+fn is_text_layout(expr: &syntax::Expr) -> bool {
   let mut current = expr;
   while let syntax::Expr::FunctionCall { name, args } = current
     && name == "Style"
@@ -4047,7 +4090,8 @@ fn is_text_column(expr: &syntax::Expr) -> bool {
   }
   matches!(
     current,
-    syntax::Expr::FunctionCall { name, .. } if name == "Column"
+    syntax::Expr::FunctionCall { name, .. }
+      if name == "Column" || name == "Grid"
   )
 }
 
@@ -4112,13 +4156,15 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
-          // A `Column` layout, styled or not
+          // A `Column` or `Grid` layout, styled or not
           // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`,
-          // `Text[Column[{Grid[…], Grid[…]}]]`) is drawn in the proportional
-          // text face, so the text of its items (numbers and subscripted
-          // symbols included) is not left in the monospace face of a bare
+          // `Text[Column[{Grid[…], Grid[…]}]]`,
+          // `Text[Grid[{{Column[{label, picture}], …}}]]`) is drawn in the
+          // proportional text face, so the text of its items (numbers and
+          // subscripted symbols included, and the labels of the layouts in
+          // its cells) is not left in the monospace face of a bare
           // `Column`'s `Row`s and grid cells.
-          if is_text_column(&content) {
+          if is_text_layout(&content) {
             let in_face = render_visual_display_pipeline(
               &functions::graphics::in_text_face(&content),
             );
@@ -7228,15 +7274,6 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
   })
 }
 
-/// Convert a single numeric token in Wolfram backtick notation to its typeset
-/// notebook display form. Returns `None` when `token` is not a number with a
-/// precision marker, so symbol context names like `` Global` `` (which start
-/// with a letter) are left untouched.
-///
-/// - A machine real (bare backtick, `` 2.` ``) just loses the marker → `2.`.
-/// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
-///   precision in significant figures → `3.14`.
-/// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
 /// How many significant digits Wolfram shows of an arbitrary-precision
 /// number with these decimal `digits` (unsigned, plain or compact
 /// `d.ddde<k>`) and precision `prec`: `Ceiling[prec - Log10[m]]` for the
@@ -7260,6 +7297,15 @@ pub(crate) fn bigfloat_shown_digits(digits: &str, prec: f64) -> usize {
   ((prec - mantissa.log10() - 1e-9).ceil() as i64).max(1) as usize
 }
 
+/// Convert a single numeric token in Wolfram backtick notation to its typeset
+/// notebook display form. Returns `None` when `token` is not a number with a
+/// precision marker, so symbol context names like `` Global` `` (which start
+/// with a letter) are left untouched.
+///
+/// - A machine real (bare backtick, `` 2.` ``) just loses the marker → `2.`.
+/// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
+///   precision in significant figures → `3.14`.
+/// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
 fn precision_number_display(token: &str) -> Option<String> {
   // Numeric leaves start with a digit (negatives are wrapped in a RowBox
   // with a separate "-" token, so the magnitude leaf is unsigned).

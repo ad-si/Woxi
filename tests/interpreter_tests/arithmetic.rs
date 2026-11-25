@@ -3332,9 +3332,14 @@ mod infinity_arithmetic {
        6.66666666666666666666666666666667`20.*^-50001, \
        0``-49980.47712125472, 20., True}"
     );
+    // WL's last bit differs (`-480.17609125905574`), so the accuracy is
+    // pinned to ten decimals.
     assert_eq!(
-      interpret("{Accuracy[1.5`20*^500], 1.5`20*^50 - 1.5`20*^50}").unwrap(),
-      "{-480.1760912590557, 0``-30.477121254719663}"
+      interpret(
+        "{Round[Accuracy[1.5`20*^500], 10^-10], 1.5`20*^50 - 1.5`20*^50}"
+      )
+      .unwrap(),
+      "{-4801760912591/10000000000, 0``-30.477121254719663}"
     );
     assert_eq!(
       interpret("N[Exp[1.*^6] - Exp[1.*^6]/2]").unwrap(),
@@ -8457,6 +8462,53 @@ mod cases {
     );
   }
 
+  /// StandardForm sets a one-argument `Transpose`, `ConjugateTranspose` and
+  /// `Conjugate` as a postfix superscript mark instead of spelling out the
+  /// head; the two-argument `Transpose` keeps its function form.
+  #[test]
+  fn standard_form_postfix_marks() {
+    assert_case("ToBoxes[Transpose[m]]", "SuperscriptBox[m, \u{F3C7}]");
+    assert_case(
+      "ToBoxes[ConjugateTranspose[m]]",
+      "SuperscriptBox[m, \u{F3C9}]",
+    );
+    assert_case("ToBoxes[Conjugate[z]]", "SuperscriptBox[z, *]");
+    assert_case(
+      "ToBoxes[f[Transpose[g[a]]]]",
+      "RowBox[{f, [, SuperscriptBox[RowBox[{g, [, a, ]}], \u{F3C7}], ]}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[m, {2, 1, 3}]]",
+      "RowBox[{Transpose, [, RowBox[{m, ,, RowBox[{{, RowBox[{2, ,, 1, ,, 3}], }}]}], ]}]",
+    );
+  }
+
+  /// An operator expression is bracketed before it takes a postfix mark,
+  /// and a marked expression is bracketed as a power base.
+  #[test]
+  fn standard_form_postfix_marks_bracket_compound_bases() {
+    assert_case(
+      "ToBoxes[Transpose[a + b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[a b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], *]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a^2]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, 2], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a]^2]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], 2]",
+    );
+    assert_case(
+      "ToBoxes[ConjugateTranspose[Transpose[a]]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], \u{F3C9}]",
+    );
+  }
+
   /// `HoldForm` draws as its content, so a held sum, product or power used
   /// as a power base or a factor is parenthesized like the bare expression:
   /// `HoldForm[a b/c]^2` sets as `(a b/c)²`, not as `a b/c` with only the
@@ -9089,6 +9141,33 @@ mod cases {
     assert_case(
       "ToString[a - 2 b/3, TraditionalForm]",
       "DisplayForm[FormBox[RowBox[{a, -, FractionBox[RowBox[{2,  , b}], 3]}], TraditionalForm]]",
+    );
+  }
+
+  /// A complex number in a larger sum is one parenthesized term, subtracted
+  /// when its real part is negative, like a complex coefficient: `x + (2 +
+  /// 3 i)`, `x - (2 - 3 i)`. A sum that is only a complex number is not.
+  #[test]
+  fn traditional_form_sum_with_complex_constant_term() {
+    assert_case(
+      "ToString[x + (2 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, +, RowBox[{(, RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[z^3 + (-1 + I) z + (-1 + I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[z, 3], -, RowBox[{RowBox[{(, RowBox[{1, -, \u{F74E}}], )}],  , z}], -, RowBox[{(, RowBox[{1, -, \u{F74E}}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x^2 + (-2.5 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[x, 2], -, RowBox[{(, RowBox[{2.5`, -, RowBox[{3.`,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[2 + 3 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x - 2 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, -, RowBox[{2,  , \u{F74E}}]}], TraditionalForm]]",
     );
   }
 
@@ -17205,6 +17284,28 @@ mod polynomial_form_typesetting {
     assert_eq!(
       interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> True], TraditionalForm]").unwrap(),
       "FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ], TraditionalForm]"
+    );
+  }
+
+  /// The box text of the string is FullForm (the tag function as
+  /// `Function[PolynomialForm[Slot[1], …]]`), as wolframscript writes it.
+  #[test]
+  fn traditional_form_string_box_text_is_full_form() {
+    assert_eq!(
+      interpret("ToString[ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> False]]], InputForm]").unwrap(),
+      "\"\\!\\(\\*FormBox[TagBox[RowBox[{\\\"1\\\", \\\"+\\\", RowBox[{\\\"3\\\", \\\" \\\", \\\"x\\\"}], \\\"+\\\", SuperscriptBox[\\\"x\\\", \\\"2\\\"]}], Function[PolynomialForm[Slot[1], Rule[TraditionalOrder, False]]]], TraditionalForm]\\)\""
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[TraditionalForm[NumberForm[1.5, 3]]], InputForm]"
+      )
+      .unwrap(),
+      "\"\\!\\(\\*FormBox[TagBox[InterpretationBox[StyleBox[\\\"\\\\\\\"1.5\\\\\\\"\\\", Rule[ShowStringCharacters, False]], 1.5`, Rule[AutoDelete, True]], Function[NumberForm[Slot[1], 3]]], TraditionalForm]\\)\""
+    );
+    // Displayed, the box expression reads back in OutputForm.
+    assert_eq!(
+      interpret("ToString[TraditionalForm[NumberForm[1.5, 3]]]").unwrap(),
+      "DisplayForm[FormBox[TagBox[InterpretationBox[StyleBox[\"1.5\", ShowStringCharacters -> False], 1.5, AutoDelete -> True], NumberForm[#1, 3] & ], TraditionalForm]]"
     );
   }
 

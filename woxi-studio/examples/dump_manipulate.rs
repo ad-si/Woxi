@@ -18,6 +18,11 @@
 //! Set `TICKS=40` to press play and advance the animation that many ticks;
 //! the control values (and, with `svg-out-dir`, the picture as
 //! `widget-<n>-ticks.svg`) are dumped afterwards.
+//! Set `PRESS_PICTURE=k` to press the k-th `Button` drawn inside the
+//! picture; the variables are dumped afterwards.
+//! Set `PRESS_BUTTONS=1` to press every control-panel button in turn, or
+//! `PRESS_BUTTONS="Solve,Reset"` to press only the buttons with those labels;
+//! the variables are dumped after each press.
 
 use std::path::PathBuf;
 
@@ -111,6 +116,14 @@ fn main() {
     let code = woxi::notebook::strip_cell_context_prefix(
       reconstructed.as_deref().unwrap_or(cell.content.trim()),
     );
+    // Like the Studio, unprotect the following dump's `$CellContext``
+    // names before the source runs, even when the source's own
+    // `Initialization` is what defines them.
+    if let Some(next) = all_cells.get(idx + 1)
+      && next.style == CellStyle::Output
+    {
+      unprotect_context_symbols(&next.content);
+    }
     for stmt in woxi::split_into_statements(&code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);
@@ -135,7 +148,6 @@ fn main() {
         && let Some(init) =
           woxi::notebook::extract_saved_initialization(&next.content)
       {
-        unprotect_context_symbols(&next.content);
         let _ = woxi::interpret(&init);
       }
       let Some(state) = manipulate::ManipulateState::from_expr(&expr) else {
@@ -339,14 +351,31 @@ fn main() {
           println!("wrote {}", out.display());
         }
       }
+      if let Some(k) = std::env::var("PRESS_PICTURE")
+        .ok()
+        .and_then(|k| k.parse::<usize>().ok())
+        && let Some(region) = state.button_regions.get(k)
+      {
+        let action = region.action.clone();
+        println!("picture button {k}: {action}");
+        state.apply_button_action(&action);
+        println!("error={:?}", state.error);
+        for (n, v) in &state.state {
+          println!("  {n} = {v}");
+        }
+      }
       if std::env::var("PRESS_BUTTONS").is_ok() {
         let mut st = state;
         let actions: Vec<String> = st
           .controls
           .iter()
           .filter_map(|c| match c {
-            manipulate::ControlState::Button { action, .. } => {
-              Some(action.clone())
+            manipulate::ControlState::Button { action, label, .. } => {
+              let want = std::env::var("PRESS_BUTTONS").unwrap_or_default();
+              (want.is_empty()
+                || want == "1"
+                || want.split(',').any(|w| w == label))
+              .then(|| action.clone())
             }
             _ => None,
           })
@@ -359,6 +388,9 @@ fn main() {
             st.text_output,
             st.error
           );
+          for (n, v) in &st.state {
+            println!("  {n} = {v}");
+          }
         }
       }
       println!();

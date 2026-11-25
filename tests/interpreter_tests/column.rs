@@ -535,10 +535,13 @@ mod column_visual_mode {
     .unwrap();
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
-    // 120 / (14 * 0.6) = 14 characters per line.
+    // The `Text` sets the prose in the proportional text face, measured
+    // glyph by glyph against the 120 pt width; the newline still starts
+    // its own line.
     assert!(!svg.contains("alpha beta gamma"), "{svg}");
     assert!(svg.contains(">alpha beta<"), "{svg}");
-    assert!(svg.contains(">second<"), "{svg}");
+    assert!(svg.contains(">second paragraph<"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
     assert!(svg.contains("font-style=\"italic\""), "{svg}");
   }
 

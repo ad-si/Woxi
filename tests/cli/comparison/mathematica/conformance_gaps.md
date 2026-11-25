@@ -2151,6 +2151,26 @@ woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0
 Systems of two or more such equations are solved by Gaussian elimination
 and are not affected.
 
+### `ColorFunction` of a `ParametricPlot` curve: the fourth argument
+
+```sh
+woxi eval 'ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6}, ColorFunction -> (Hue[#4] &)], "SVG"]'
+```
+
+wolframscript hands a curve's `ColorFunction` four arguments, as it does a
+region's `x, y, u, v` (a `Function[{x, y, u, v}, …]` colors a curve without a
+`Function::fpct` message). Woxi passes `u` again as the fourth; what
+wolframscript passes there has **not been verified**.
+
+### `NSolve` of a system with radicals: order inferred from one system
+
+Woxi sorts the solutions of a radical system descending by the values of
+its radicals, then of its variables. The rule is inferred from the
+equilibria of the restricted three-body problem (where the published output
+of a Demonstration shows `Last` picking the point between the masses); the
+complete wolframscript order of that list, and of other radical systems,
+has **not been verified**.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh
@@ -4252,6 +4272,27 @@ built-in in one namespace — `Needs` on a context that ships with the language
 is a no-op — so the name works either way, which makes Woxi a superset here
 rather than a mismatch. Writing the `Needs` makes the two agree; there is no
 way to make Woxi *withhold* the symbol without giving up the flat namespace.
+
+A package with its own context is different: `GraphUtilities`VertexList[…]`
+before any `Needs["GraphUtilities`"]` stays unevaluated in both.
+
+### GraphUtilities` functions that shadow System symbols, loaded in an earlier input
+
+```sh
+printf 'Needs["GraphUtilities`"]\nPrint[GraphUtilities`VertexList[{a -> b}]]\n' > t.wls
+wolframscript -file t.wls
+# VertexList::shdw: Symbol VertexList appears in multiple contexts …
+# VertexList[{a -> b}]
+woxi run t.wls
+# {a, b}
+```
+
+With the `Needs` in the *same* input (`Needs["GraphUtilities`"];
+GraphUtilities`VertexList[{a -> b}]`) wolframscript answers `{a, b}` too. Loaded
+by an earlier input, every package function whose name is also a System
+symbol (`VertexList`, `ClosenessCentrality`, `AdjacencyMatrix`) stays
+unevaluated after a `::shdw` warning. Woxi evaluates them however the package
+was loaded, so the unit tests write the `Needs` into the same input.
 
 ### `Unevaluated` comes off for some heads and not others
 
@@ -6856,6 +6897,10 @@ neighborhood range, so it does not share the other filters' validation.
 More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
 systemic across `ImageTake`, `ImagePartition` and `DistanceTransform`.
+The hypothesis tests share it: `FisherRatioTest[a, b, 1, "TestStatistic"]`
+gives `FisherRatioTest::argb` (WL: `nonopt` … beyond position 3), and
+`VarianceEquivalenceTest[{a, b}, "TestStatistic", All]` stays unevaluated
+without WL's `nonopt` … beyond position 2.
 
 ### FindThreshold implements only the default method
 
@@ -7824,6 +7869,12 @@ method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
 reproducible stream (a key derived from the method is mixed into the seed),
 but none of them reproduces the named algorithm's numbers or statistical
 quirks. **Not reproducible.**
+The quasi-random methods `{"MKL", Method -> {"Sobol" | "Niederreiter",
+"Dimension" -> d}}` are the exception: they draw the actual low-discrepancy
+sequences (Bratley–Fox direction numbers, base-2 Niederreiter matrices,
+Gray-code order). Not yet checked against wolframscript: whether Intel MKL's
+streams start at the origin as Woxi's do (or skip it), use the same free
+choices in the Niederreiter matrices beyond dimension 2, and ignore the seed.
 
 ### Performance
 
@@ -10974,6 +11025,14 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 `TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
+
+### Lone Latin letters in plot label strings
+
+Saved snapshots show a lowercase Greek letter standing alone as a word of a
+`PlotLabel` string (`"Outside μ ± ϵ: "`) in italics, and Woxi sets those in
+italics too. Whether the front end does the same for a lone Latin letter of
+a label string (the `a` of `"a plot"`) has not been verified against
+`wolframscript`, so Woxi keeps Latin letters in strings upright.
 
 ### A one-letter string subscripted in a graphics label is drawn upright
 

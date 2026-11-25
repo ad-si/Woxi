@@ -9434,10 +9434,11 @@ fn mathml_escape_str(s: &str) -> String {
 // Wolfram private-use Unicode characters for box syntax.
 // These are used internally in strings; InputForm converts them to \!, \(, \*, \).
 /// Render a box tree the way the box-syntax escape notation spells it:
-/// like `InputForm`, except that a rule inside a box — the shape every box
-/// option takes — is written out as `Rule[lhs, rhs]` rather than with the
-/// `->` operator, matching wolframscript's
-/// `ToString[Style[…], TraditionalForm]`.
+/// in `FullForm` — a box option is `Rule[lhs, rhs]`, a tag function is
+/// `Function[NumberForm[Slot[1], 3]]` and a machine real carries its
+/// backtick (`1.5\``) — except that a list keeps its braces and a string
+/// its characters, matching
+/// wolframscript's `ToString[Style[…], TraditionalForm]`.
 pub fn linear_syntax_box_text(expr: &Expr) -> String {
   let parts = |args: &[Expr]| -> String {
     args
@@ -9481,7 +9482,9 @@ pub fn linear_syntax_box_text(expr: &Expr) -> String {
       format!("{name}[{}]", parts(args))
     }
     Expr::List(items) => format!("{{{}}}", parts(items)),
-    other => crate::syntax::expr_to_input_form(other),
+    // A box string keeps its characters (`"π"`, not FullForm's `"\[Pi]"`).
+    Expr::String(_) => crate::syntax::expr_to_input_form(expr),
+    other => crate::functions::expr_form::full_form_text(other),
   }
 }
 

@@ -11016,14 +11016,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ExprForm::Input,
         );
       }
-      // Named slot Slot["name"] displays as #name (matching wolframscript).
-      if name == "Slot"
-        && args.len() == 1
-        && let Expr::String(key) = &args[0]
-        && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && key.chars().all(|c| c.is_ascii_alphanumeric())
-      {
-        return format!("#{key}");
+      if let Some(text) = slot_call_text(name, args) {
+        return text;
       }
       // `Part[base, i, …]` prints with double brackets, not as a call.
       if name == "Part" && !args.is_empty() {
@@ -16870,20 +16864,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("{open} {} {close}", parts.join(", "))
     }
-    // Named slot Slot["name"] displays as #name (matching wolframscript),
-    // mirroring the format_expr arm. Must precede the generic FunctionCall
-    // arm below, which would otherwise render it as `Slot["name"]`.
+    // Slots written as calls display in slot notation, mirroring the
+    // format_expr arm. Must precede the generic FunctionCall arm below,
+    // which would otherwise render them as `Slot[…]`.
     Expr::FunctionCall { name, args }
-      if name == "Slot"
-        && args.len() == 1
-        && matches!(&args[0], Expr::String(key)
-          if key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-            && key.chars().all(|c| c.is_ascii_alphanumeric())) =>
+      if let Some(text) = slot_call_text(name, args) =>
     {
-      match &args[0] {
-        Expr::String(key) => format!("#{key}"),
-        _ => unreachable!(),
-      }
+      text
     }
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
@@ -21113,10 +21100,44 @@ fn rule_calls_as_arrows(text: &str) -> String {
   out
 }
 
+/// The slot notation of a slot written as a call, as wolframscript prints
+/// it: `Slot[2]` as `#2`, `Slot["name"]` as `#name`, `SlotSequence[3]` as
+/// `##3`. An argument the notation cannot spell (`Slot[-1]`, `Slot[x]`)
+/// keeps the call form.
+fn slot_call_text(name: &str, args: &[Expr]) -> Option<String> {
+  match (name, args) {
+    ("Slot", [Expr::Integer(n)]) if *n >= 0 => Some(format!("#{n}")),
+    ("Slot", [Expr::String(key)])
+      if key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.chars().all(|c| c.is_ascii_alphanumeric()) =>
+    {
+      Some(format!("#{key}"))
+    }
+    ("SlotSequence", [Expr::Integer(n)]) if *n >= 0 => Some(format!("##{n}")),
+    _ => None,
+  }
+}
+
 /// Convert a string containing Wolfram box-syntax Unicode markers to the
 /// `DisplayForm[<box>]` representation used in OutputForm.
 /// The box expression is shown with quoted atoms unquoted.
 fn box_string_to_display_form(s: &str) -> String {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  // A string that is one flat box expression — the `\!\(\*FormBox[…]\)`
+  // that `ToString[TraditionalForm[…]]` produces, written in FullForm —
+  // displays the way wolframscript shows it: the box expression read back
+  // and printed in OutputForm (`Function[f[Slot[1]]]` as `f[#1] & `,
+  // `1.5\`` as `1.5`, `Rule[a, b]` as `a -> b`).
+  let prefix: String = [BOX_START, BOX_OPEN, BOX_SEP].iter().collect();
+  if let Some(inner) = s
+    .strip_prefix(prefix.as_str())
+    .and_then(|rest| rest.strip_suffix(BOX_CLOSE))
+    && !inner.contains([BOX_START, BOX_OPEN, BOX_SEP, BOX_CLOSE])
+    && let Ok(boxes) = string_to_expr(inner)
+    && !matches!(boxes, Expr::Raw(_))
+  {
+    return format!("DisplayForm[{}]", expr_to_output(&boxes));
+  }
   // A box segment displays as `DisplayForm[<box expression>]`; the prose
   // around it (`"value to test against \!\(\*SubscriptBox[…]\)"`) stays put.
   crate::functions::string_ast::split_inline_boxes(s)

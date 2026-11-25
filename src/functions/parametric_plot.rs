@@ -586,6 +586,11 @@ fn color_function_series(
     if let Some(r) = r {
       let sr = scale(r, r_min, r_max);
       args.push(Expr::Real(if scaling.0 { sr } else { r }));
+    } else {
+      // ParametricPlot supplies `x, y, u, v` whether it draws a curve or a
+      // region, so a four-parameter `Function[{x, y, u, v}, …]` applies to
+      // a curve too. A curve has no second parameter; it gets `u` again.
+      args.push(args[2].clone());
     }
     let call = Expr::CurriedCall {
       func: Box::new(cf.clone()),

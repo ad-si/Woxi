@@ -139,6 +139,109 @@ mod container_layout {
     assert_eq!(plots, 2);
   }
 
+  /// A `Column` given an alignment or options halves its automatically
+  /// sized pictures like a bare `Column[{…}]`, also when it is a cell of a
+  /// `Grid` shown as `Text`.
+  #[test]
+  fn column_with_options_draws_pictures_at_half_size() {
+    let m = "ArrayPlot[{{1, 0, 1}, {0, 1, 0}}]";
+    for column in [
+      format!("Column[{{\"label\", {m}}}, Center]"),
+      format!("Column[{{\"label\", {m}}}, Alignment -> Center]"),
+      "Column[{\"label\", Plot[x, {x, 0, 1}]}, Alignment -> Right]".to_string(),
+      format!("Text[Column[{{\"label\", {m}}}, Alignment -> Center]]"),
+      format!(
+        "Text[Grid[{{{{Column[{{\"label\", {m}}}, Alignment -> Center]}}}}]]"
+      ),
+    ] {
+      let svg = export_svg(&column);
+      let widths: Vec<f64> = cell_widths(&svg)
+        .iter()
+        .filter_map(|w| w.parse().ok())
+        .collect();
+      assert!(widths.contains(&180.0), "{column}: {widths:?}");
+      assert!(widths.iter().all(|w| *w < 200.0), "{column}: {widths:?}");
+    }
+    // An explicit `ImageSize` is kept.
+    let svg = export_svg(
+      "Column[{\"label\", Plot[x, {x, 0, 1}, ImageSize -> 300]}, \
+       Alignment -> Center]",
+    );
+    assert_eq!(root_size(&svg).0, "300");
+  }
+
+  /// The font family of the `<text>` element showing `label`.
+  fn label_font(svg: &str, label: &str) -> String {
+    let end = svg.find(&format!(">{label}<")).expect("label is drawn");
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let start = tag.find("font-family=\"").unwrap() + 13;
+    tag[start..start + tag[start..].find('"').unwrap()].to_string()
+  }
+
+  /// `Text[Grid[…]]` as a whole output sets the labels of the columns in
+  /// its cells in the proportional text face, like every other cell.
+  #[test]
+  fn text_grid_output_sets_column_labels_in_the_text_face() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Text[Grid[{{Column[{\"above\", ArrayPlot[{{1, 0}, {0, 1}}]}, \
+       Alignment -> Center], \"beside\"}}]]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("the grid is a graphic");
+    let beside = label_font(&svg, "beside");
+    assert!(!beside.contains("mono"), "{beside}");
+    assert_eq!(label_font(&svg, "above"), beside, "{svg}");
+  }
+
+  /// A `Row` in the text face is as wide as its text with the thin gaps
+  /// between the digit groups of a long number, so the last digits are not
+  /// cut off by the row's box.
+  #[test]
+  fn text_row_makes_room_for_digit_group_gaps() {
+    let width = |n: &str| -> f64 {
+      root_size(&export_svg(&format!("Text[Row[{{\"n: \", {n}}}]]")))
+        .0
+        .parse()
+        .unwrap()
+    };
+    // Seven digits in three groups are wider than seven digits that are
+    // not grouped (a four-digit and a three-digit number side by side
+    // would be), by the two gaps of 0.18 em at 14 pt.
+    let grouped = width("1234567");
+    let per_digit = width("7777") - width("777");
+    let ungrouped = width("777") + 4.0 * per_digit;
+    assert!(
+      grouped >= ungrouped + 2.0 * 0.18 * 14.0 - 1.5,
+      "{grouped} {ungrouped}"
+    );
+    // Four digits are not grouped and take no gap.
+    assert!((width("7777") - width("777") - per_digit).abs() < 1.5);
+  }
+
+  /// A picture centered in a wider grid column sits on a whole pixel, so
+  /// the crisp-edged frame lines of a plot are not lost between pixels.
+  #[test]
+  fn centered_grid_pictures_sit_on_whole_pixels() {
+    // Columns one pixel apart in width: one of the two pictures would be
+    // centered at a half-pixel offset.
+    for wide in [201, 202] {
+      let svg = export_svg(&format!(
+        "Grid[{{{{Graphics[Disk[], ImageSize -> 100]}}, \
+         {{Graphics[Disk[], ImageSize -> {{{wide}, 20}}]}}}}]"
+      ));
+      let xs: Vec<f64> = svg
+        .match_indices("<svg x=\"")
+        .map(|(i, _)| {
+          let rest = &svg[i + 8..];
+          rest[..rest.find('"').unwrap()].parse().unwrap()
+        })
+        .collect();
+      assert_eq!(xs.len(), 2, "{svg}");
+      assert!(xs.iter().all(|x| x.fract() == 0.0), "{wide}: {xs:?}");
+    }
+  }
+
   #[test]
   fn grid_cells_are_a_fixed_gap_apart() {
     // wolframscript: 206x106 for 100x50 pictures in a 2x2 grid.
