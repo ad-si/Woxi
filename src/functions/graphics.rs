@@ -19271,6 +19271,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && requested_aspect > 0.0)
     .then(|| svg_h / requested_aspect)
     .filter(|&w| w < svg_w);
+  // A bare drawing flatter than the box is centered in the room below the
+  // `PlotLabel`, which stays right above the drawing instead of at the top
+  // edge of the picture.
+  if !fit_frame_to_data
+    && explicit_size
+    && size_names_height
+    && aspect_ratio.is_none()
+    && !aspect_ratio_full
+    && image_padding.is_none()
+    && requested_aspect.is_finite()
+    && requested_aspect > 0.0
+  {
+    title_shift += ((svg_h - svg_w * requested_aspect) / 2.0).max(0.0);
+  }
   let total_width = svg_w + margin_left + margin_right;
   let total_width = if capped_tall {
     (total_width - 4e-3).ceil()
