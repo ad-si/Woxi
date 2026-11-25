@@ -1389,7 +1389,7 @@ pub fn evaluate_expr_to_expr_inner(
 ) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::List(items) | Expr::FunctionCall { args: items, .. }
-      if items.is_shared() =>
+      if items.is_shared() || items.is_tree() =>
     {
       evaluate_reusing_fixed_point(expr, items)
     }
@@ -1397,8 +1397,9 @@ pub fn evaluate_expr_to_expr_inner(
   }
 }
 
-/// Evaluate an expression whose elements or arguments are a shared list
-/// (a large stored value, or one substituted out of a definition).
+/// Evaluate an expression whose elements or arguments are a shared or
+/// tree-backed list (a large stored value, one substituted out of a
+/// definition, or one grown by `AppendTo`).
 ///
 /// Wolfram re-evaluates a stored value on every read but skips the work
 /// when nothing it could depend on changed since it was last found to be
@@ -1439,7 +1440,7 @@ fn evaluate_reusing_fixed_point(
 /// Whether every symbol `expr` mentions, heads included, is protected, and
 /// it is built only from numbers, strings, symbols, lists, calls and
 /// operators.
-fn mentions_only_protected_symbols(expr: &Expr) -> bool {
+pub(crate) fn mentions_only_protected_symbols(expr: &Expr) -> bool {
   fn go(e: &Expr, seen: &mut Vec<String>) -> bool {
     let mut check = |name: &String| {
       seen.contains(name)
@@ -2699,11 +2700,35 @@ fn evaluate_expr_to_expr_uncached(
           // and clone the result once for the return value. Avoids the
           // O(N) clone-on-read that the previous get(...).cloned() path
           // paid on every iteration of a `Do[AppendTo[xs, …], …]` loop.
+          // A stored value that is known to be evaluated stays so with one
+          // more evaluated element: the mark the mutation drops is put
+          // back, or every read between two `AppendTo`s of a loop would
+          // evaluate the whole accumulated list again.
+          let epochs_before = (
+            crate::epoch::current_epoch(),
+            crate::epoch::current_protected_epoch(),
+          );
+          let remark = |items: &crate::ExprList, mark_before: u64| {
+            if mark_before == 0 {
+              return;
+            }
+            if mark_before == epochs_before.1
+              && mentions_only_protected_symbols(&elem)
+            {
+              items.mark_evaluated(crate::epoch::current_protected_epoch());
+            } else if (mark_before == epochs_before.0
+              || mark_before == epochs_before.1)
+              && !crate::syntax::mentions_symbol(&elem, var_name)
+            {
+              items.mark_evaluated(crate::epoch::current_epoch());
+            }
+          };
           let mutated = ENV.with(|e| -> Option<Expr> {
-            let mut env = e.borrow_mut();
+            let mut env = e.borrow_mut_own_value(var_name);
             match env.get_mut(var_name) {
               Some(StoredValue::ExprVal(stored)) => match stored {
                 Expr::List(items) => {
+                  let mark_before = items.evaluated_at();
                   if is_append {
                     items.push_back(elem.clone());
                   } else {
@@ -2712,17 +2737,22 @@ fn evaluate_expr_to_expr_uncached(
                   // Share a large list first so the clone returned to the
                   // caller is O(1) instead of a copy of the whole array.
                   share_large_lists(stored, 0);
+                  if let Expr::List(items) = &*stored {
+                    remark(items, mark_before);
+                  }
                   Some(stored.clone())
                 }
                 Expr::FunctionCall {
                   name: _,
                   args: fn_args,
                 } => {
+                  let mark_before = fn_args.evaluated_at();
                   if is_append {
                     fn_args.push_back(elem.clone());
                   } else {
                     fn_args.push_front(elem.clone());
                   }
+                  remark(fn_args, mark_before);
                   Some(stored.clone())
                 }
                 _ => None,
