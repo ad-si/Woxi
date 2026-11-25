@@ -5432,6 +5432,12 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   {
     return rendered;
   }
+  // So is a `Graph3D[…]`, drawn in space.
+  if matches!(&expr, syntax::Expr::FunctionCall { name, .. } if name == "Graph3D")
+    && let Some(rendered) = functions::graph::graph3d_render(&expr)
+  {
+    return rendered;
+  }
   render_graphics_fc_if_needed(expr)
 }
 
@@ -6459,6 +6465,16 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // directly, so it does not depend on this auto-render step.
       if let Ok(rendered) = functions::graph::graph_ast(args)
         && let syntax::Expr::Graphics { ref svg, .. } = rendered
+      {
+        capture_graphics(svg);
+      }
+      expr
+    }
+    syntax::Expr::FunctionCall { name, .. } if name == "Graph3D" => {
+      // Like `Graph`: the picture is captured for the graphical surfaces
+      // and the expression keeps its textual echo.
+      if let Some(syntax::Expr::Graphics { ref svg, .. }) =
+        functions::graph::graph3d_render(&expr)
       {
         capture_graphics(svg);
       }
