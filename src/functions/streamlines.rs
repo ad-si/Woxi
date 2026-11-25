@@ -185,7 +185,10 @@ pub(crate) fn even_streamlines(
 
   // Grow streamline `line` from `seed` in one direction (`sign` = ±1),
   // placing each point as it goes; stops at the border, where the flow
-  // stalls, or on coming too close to another streamline.
+  // stalls, or on coming too close to another streamline. A streamline
+  // that comes back round to its own seed (a closed orbit) is closed
+  // there, as Wolfram draws it, instead of stopping short of its start
+  // and leaving a gap in the loop; the second result says it closed.
   let trace =
     |grid: &mut Occupancy, line: usize, seed: (f64, f64), sign: f64| {
       let mut points = Vec::new();
@@ -200,6 +203,13 @@ pub(crate) fn even_streamlines(
         };
         let (nu, nv) = (u + sign * du * step, v + sign * dv * step);
         let index = sign as i64 * k as i64;
+        if k as i64 > skip
+          && (nu - seed.0).hypot(nv - seed.1) < d_test
+          && (u - seed.0) * du * sign + (v - seed.1) * dv * sign < 0.0
+        {
+          points.push(seed);
+          return (points, true);
+        }
         if !in_bounds(nu, nv)
           || grid.crowded(nu, nv, d_test, Some((line, index, skip)))
         {
@@ -214,7 +224,7 @@ pub(crate) fn even_streamlines(
         points.push((nu, nv));
         (u, v) = (nu, nv);
       }
-      points
+      (points, false)
     };
 
   let mut lines: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -237,8 +247,12 @@ pub(crate) fn even_streamlines(
       line,
       index: 0,
     });
-    let forward = trace(grid, line, seed, 1.0);
-    let backward = trace(grid, line, seed, -1.0);
+    let (forward, closed) = trace(grid, line, seed, 1.0);
+    let backward = if closed {
+      Vec::new()
+    } else {
+      trace(grid, line, seed, -1.0).0
+    };
     let mut points: Vec<(f64, f64)> = backward.into_iter().rev().collect();
     points.push(seed);
     points.extend(forward);
@@ -296,4 +310,27 @@ pub(crate) fn even_streamlines(
     .filter(|points| points.len() > 1)
     .map(|points| points.into_iter().map(|(u, v)| to_data(u, v)).collect())
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// The streamlines of a rotation are closed circles: each one that comes
+  /// back round to its seed ends exactly there, instead of stopping half a
+  /// separation short and leaving a gap in the ring.
+  #[test]
+  fn closed_orbits_close_at_their_seed() {
+    let field =
+      SampledField::sample(|x, y| Some((-y, x)), (-3.0, 3.0), (-3.0, 3.0), 64);
+    let lines = even_streamlines(&field, 1.0 / 20.0);
+    let closed = lines
+      .iter()
+      .filter(|l| {
+        let (a, b) = (l[0], l[l.len() - 1]);
+        (a.0 - b.0).hypot(a.1 - b.1) < 1e-9
+      })
+      .count();
+    assert!(closed >= 5, "{closed} closed of {}", lines.len());
+  }
 }

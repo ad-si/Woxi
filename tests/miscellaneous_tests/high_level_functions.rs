@@ -4942,7 +4942,8 @@ mod high_level_functions {
       )
       .unwrap();
       assert!(svg.starts_with("<svg"), "should be SVG markup: {svg}");
-      assert!(svg.contains('\u{222B}'), "∫ rendered: {svg}");
+      // The integral sign is drawn as a path, not as a font glyph.
+      assert!(svg.contains("stroke-linecap=\"round\""), "∫ drawn: {svg}");
       // The differential renders as plain (italicized) "d" rather than the
       // literal `\[DifferentialD]` glyph (U+2146, "ⅆ"): that Mathematical
       // Alphanumeric Symbols codepoint has no glyph in most non-Mathematica

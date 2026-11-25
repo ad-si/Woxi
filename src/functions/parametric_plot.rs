@@ -2139,7 +2139,12 @@ fn parametric_region_layer(
       }
     }
   }
-  let tolerance = 0.005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
+  // Tight enough that a curved edge of the region is cut into chords
+  // that no longer leave a visible sliver between the faces and the
+  // finely sampled boundary line drawn over them (Wolfram's annulus
+  // `{r Cos[t], r Sin[t]}` with `PlotPoints -> 20` ends up with four
+  // chords per grid cell along its arcs).
+  let tolerance = 0.0005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
 
   // One quad per (possibly refined) cell of the `g`-point grid over
   // `[ua, ub] x [va, vb]`; a cell with a point the body could not be
@@ -2684,8 +2689,9 @@ impl PolarAxesSpec {
     })
   }
 
-  /// The primitives drawn under the curve, and the half-width of the square
-  /// plot range that holds the axes and their labels. `r_max` is the
+  /// The grid drawn under the curve, the axes (with their ticks and
+  /// labels) drawn over it, and the half-width of the square plot range
+  /// that holds the axes and their labels. `r_max` is the
   /// distance of the curve's bounding box's farthest corner from the origin.
   ///
   /// As in Wolfram, the angular axis is a circle at the first radial tick
@@ -2694,7 +2700,7 @@ impl PolarAxesSpec {
   /// and a circle at every radial tick inside the axis; and the radial
   /// axis runs up from the origin with ticks every major and fifth of a
   /// major on its right, labeled at the majors.
-  fn prolog(&self, r_max: f64) -> (Vec<Expr>, f64) {
+  fn primitives(&self, r_max: f64) -> (Vec<Expr>, Vec<Expr>, f64) {
     use crate::functions::plot_axes::{AxisScale, AxisTicks};
     use std::f64::consts::PI;
     let ticks = AxisTicks::new(
@@ -2747,7 +2753,7 @@ impl PolarAxesSpec {
         ));
       }
     }
-    items.push(Expr::List(grid.into()));
+    let under = vec![Expr::List(grid.into())];
 
     // The angular axis: the circle, its outward ticks and their labels.
     let mut axis =
@@ -2813,7 +2819,7 @@ impl PolarAxesSpec {
       }
       items.push(Expr::List(radial.into()));
     }
-    (items, extent)
+    (under, items, extent)
   }
 }
 
@@ -2920,8 +2926,11 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let corner = |(lo, hi): (f64, f64)| lo.abs().max(hi.abs());
     let r_max = corner(data_x).hypot(corner(data_y));
     let r_max = if r_max.is_finite() { r_max } else { 1.0 };
-    let (prolog, extent) = axes.prolog(r_max);
-    plot_opts.prolog.extend(prolog);
+    // As in Wolfram, the grid lies under the curve and the axes with
+    // their labels over it (but under an `Epilog` of the call's own).
+    let (grid, axes, extent) = axes.primitives(r_max);
+    plot_opts.prolog.extend(grid);
+    plot_opts.epilog.splice(0..0, axes);
     plot_opts.axes = (false, false);
     plot_opts.clip_overlays = false;
     data_x = (-extent, extent);
