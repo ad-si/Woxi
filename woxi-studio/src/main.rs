@@ -15212,6 +15212,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     assert!(stored_output_editor(&plain).is_none());
   }
 
+  /// A bitmap pasted into a sentence of a Text cell (a Demonstration's
+  /// Details showing a logo next to its description) opens as the prose
+  /// followed by the picture. Regression: the inline picture cell was
+  /// dropped, leaving "…the emblem: ." with nothing to look at.
+  #[test]
+  fn text_cell_inline_raster_picture_opens_as_a_stored_graphic() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell["Details", "Subsection"],
+Cell[TextData[{
+ "Here is the emblem: ",
+ Cell[BoxData[
+  GraphicsBox[
+   TagBox[RasterBox[CompressedData["
+1:PAYLOAD
+     "], {{0, 2.}, {3., 0}}, {0, 255},
+     ColorFunction->RGBColor],
+    BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+    Selectable->False],
+   ImageSize->{3., 2.},
+   PlotRange->{{0, 3.}, {0, 2.}}]], ExpressionUUID->
+  "00000000-0000-0000-0000-000000000003"],
+ "."
+}], "Text", CellID->7]
+}, Open  ]]
+}]"##
+      .replace("PAYLOAD", "eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRIzUBCklBmKT8jJoSEA0jISfA==");
+    let nb = woxi::notebook::parse_notebook(&nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let shown: Vec<(CellStyle, String, bool)> = editors
+      .iter()
+      .map(|e| {
+        let text = if e.stored_graphic {
+          String::new()
+        } else {
+          e.content.text().trim().to_string()
+        };
+        (e.style, text, e.stored_graphic)
+      })
+      .collect();
+    assert_eq!(
+      shown,
+      vec![
+        (CellStyle::Subsection, "Details".to_string(), false),
+        (CellStyle::Text, "Here is the emblem:".to_string(), false),
+        (CellStyle::Output, String::new(), true),
+      ]
+    );
+    let svg = editors[2].graphics_svg.as_deref().expect("the picture");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
+  }
+
   #[test]
   fn demonstration_compatibility_checkboxes_render_as_a_card() {
     // The metadata cells at the end of every Demonstration submission
