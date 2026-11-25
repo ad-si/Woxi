@@ -10949,3 +10949,13 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### Filling stems of `ListPlot` points beyond the plot range
+
+A point outside the plot range is not drawn, and Woxi drops its
+`Filling -> Axis` stem with it. In a saved snapshot of
+`ListPlot[data, Filling -> Axis]` whose series grow out of an automatic
+range, Wolfram still draws a stem running to the range edge for a few of the
+clipped points (the first two past the last visible point of a series, and
+the final one) but not for the ones in between. Which clipped points keep
+their stem has not been checked against wolframscript.
