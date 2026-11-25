@@ -7754,6 +7754,12 @@ method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
 reproducible stream (a key derived from the method is mixed into the seed),
 but none of them reproduces the named algorithm's numbers or statistical
 quirks. **Not reproducible.**
+The quasi-random methods `{"MKL", Method -> {"Sobol" | "Niederreiter",
+"Dimension" -> d}}` are the exception: they draw the actual low-discrepancy
+sequences (Bratley–Fox direction numbers, base-2 Niederreiter matrices,
+Gray-code order). Not yet checked against wolframscript: whether Intel MKL's
+streams start at the origin as Woxi's do (or skip it), use the same free
+choices in the Niederreiter matrices beyond dimension 2, and ignore the seed.
 
 ### Performance
 
