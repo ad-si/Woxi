@@ -30076,6 +30076,7 @@ pub(crate) fn log_scaled_plot_source(
   };
   let mut scaled = ps.clone();
   for s in &mut scaled.series {
+    s.own_y_range = s.own_y_range.map(range_y);
     s.points.iter_mut().for_each(|p| *p = point(*p));
     s.mesh_full_points.iter_mut().for_each(|p| *p = point(*p));
     filling(&mut s.filling);
@@ -30251,6 +30252,15 @@ fn svg_tick_label_expr(label: &str) -> Expr {
   }
 }
 
+/// The y range a plot source cuts its curves at: the plot's own range, not
+/// the padded one it is drawn in.
+fn plot_source_clip_y_range(ps: &crate::syntax::PlotSource) -> (f64, f64) {
+  ps.plot_range
+    .map(|(_, y)| y)
+    .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
+    .unwrap_or(ps.y_range)
+}
+
 /// The drawing primitives a rendered plot's sampled series stand for —
 /// filled regions, the series color and thickness, and the `Line` /
 /// `Point` the samples make up. `Show` merges these with the primitives of
@@ -30273,11 +30283,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   // The curves are cut at the plot's own range, not at the padded one it
   // is drawn in: the `PlotRangePadding` margin stays blank, as in a plot
   // drawn on its own (and in Wolfram).
-  let clip_y = ps
-    .plot_range
-    .map(|(_, y)| y)
-    .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
-    .unwrap_or(ps.y_range);
+  let source_clip_y = plot_source_clip_y_range(ps);
   // Every fill (and scatter stem) is gathered first and emitted before
   // any series' curve or points, as in the Wolfram Language's own plot
   // output: a `Filling -> {1 -> {2}}` area must not paint over the line
@@ -30290,6 +30296,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     if si < skip_until {
       continue;
     }
+    // A series merged in from another plot is cut at that plot's range.
+    let clip_y = sd
+      .own_y_range
+      .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
+      .unwrap_or(source_clip_y);
     // Filled region (Filling -> …) as a Polygon underneath the curve,
     // wrapped in its own list so the fill color/opacity directives
     // don't leak onto the line drawn after it. FillingStyle appearance
@@ -31719,7 +31730,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           *j += offset;
         }
       };
+      let own_y_range = plot_source_clip_y_range(ps);
       all_series.extend(ps.series.iter().cloned().map(|mut s| {
+        s.own_y_range.get_or_insert(own_y_range);
         shift(&mut s.filling);
         s.extra_fills.iter_mut().for_each(|f| shift(&mut f.filling));
         s
@@ -31947,8 +31960,13 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // The `PlotRange` the log plot was given names data values; a range
-    // given to `Show` itself is already in the picture's `Log` space.
-    if (log_x || log_y) && !show_sets_plot_range {
+    // given to `Show` itself is already in the picture's `Log` space, and
+    // so is the one of a leading raw `Graphics` (a log plot stored as its
+    // `Log`-space primitives with `Charting`ScaledTicks`).
+    if (log_x || log_y)
+      && !show_sets_plot_range
+      && first_graphic_is_plot == Some(true)
+    {
       for opt in &mut merged_options {
         if let Expr::Rule {
           pattern,
