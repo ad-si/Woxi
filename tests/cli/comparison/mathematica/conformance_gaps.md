@@ -155,6 +155,27 @@ wolframscript -code 'ToString[{a^Xor[b, c], Xor[b, c]!, Hold[Xor[a, b] + c]}, In
 # {a^(Xor[b, c]), (Xor[b, c])!, Hold[(Xor[a, b]) + c]}
 ```
 
+### A held `Rational[n, d]` call prints as the fraction
+
+Woxi stores a rational number as a `Rational[n, d]` call, so the literal call
+held unevaluated cannot be told apart from the number:
+`Hold[Rational[1, 2]]` prints `Hold[1/2]` (WL: `Hold[Rational[1, 2]]`) and
+`Hold[Rational[1, 2]] === Hold[1/2]` is `True` (WL: `False`).
+
+### `DateString` of a year beyond the machine range
+
+WL's date code overflows for machine-integer years of about `10^15` and more
+(`DateString[{10^16, 4, 15}, "ISODate"]` is `"1874919424-04-15"`), and a
+bignum year gets a leading `+` (`"+200000000000000000007-04-15"`) and, when
+negative, a day one off. Woxi keeps such dates unevaluated. **Not
+reproducible** (overflow artifacts).
+
+### `NumberForm` around a product with a rational coefficient
+
+`ToBoxes[NumberForm[x/3, 3]]` is `TagBox[FractionBox["x", <3>], …]` in WL;
+Woxi boxes the coefficient as its own fraction, `RowBox[{FractionBox[<1>,
+<3>], " ", "x"}]`.
+
 ### A nested `Plus`/`Times` operand is not bracketed
 
 `Times` and `Plus` only flatten once they evaluate, so a *held* expression can
