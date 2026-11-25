@@ -139,6 +139,22 @@ Woxi prints `Hold[{1, 2}?f]` in both. A `Graph`'s options are the same story:
 InputForm wraps them in a `List` (and reorders them into its own canonical
 order), the printed form does not.
 
+The same holds for `FullForm`: `FullForm[a || Xor[b, c]]` prints
+`FullForm[a || Xor[b, c]]` (Woxi too), while `ToString[…, InputForm]` of it is
+`FullForm[a || (Xor[b, c])]` — a comparison of the two is a harness artifact.
+
+### A logical connective as the operand of `^`, `!`, `;;` or a held `+`
+
+InputForm brackets `Xor`/`Nand`/`Nor`/`Xnor`/`Equivalent` calls by their
+operator's precedence (215). Woxi does so under `&&`, `||`, `!`, an evaluated
+`+`/`*`, unary minus, comparisons and a call head, but not yet as a `Power`
+operand, a `Factorial` operand, a `Span` side, or a term of a held `Plus`:
+
+```sh
+wolframscript -code 'ToString[{a^Xor[b, c], Xor[b, c]!, Hold[Xor[a, b] + c]}, InputForm]'
+# {a^(Xor[b, c]), (Xor[b, c])!, Hold[(Xor[a, b]) + c]}
+```
+
 ### A nested `Plus`/`Times` operand is not bracketed
 
 `Times` and `Plus` only flatten once they evaluate, so a *held* expression can

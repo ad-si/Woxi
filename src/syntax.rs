@@ -10232,6 +10232,12 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
     } => Some(39),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Not" if args.len() == 1 => Some(20),
+      // The connectives with an operator of their own (215) print as calls
+      // in InputForm but keep that operator's binding: `a + (Xor[b, c])`,
+      // `(Nand[a, b]) == c`, `-(Xor[a, b])` — not as a side of `->` or `|`.
+      "Xor" | "Nand" | "Nor" | "Xnor" | "Equivalent" if connective_parens() => {
+        Some(19)
+      }
       "Dot" if args.len() >= 2 => Some(40),
       "NonCommutativeMultiply" if args.len() >= 2 => Some(44),
       "Map" | "Apply" | "MapApply" | "MapAll" if args.len() == 2 => Some(49),
@@ -16346,8 +16352,14 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
-      // Span keeps its head form inside FullForm (see `full_form_inner`).
-      format!("FullForm[{}]", full_form_inner(&args[0]))
+      // Span keeps its head form inside a displayed FullForm (see
+      // `full_form_inner`). `ToString[…, InputForm]` writes the content as
+      // plain InputForm instead: `FullForm[{1 ;; 4, a*(Xor[b, c])}]`.
+      if in_to_string() && in_true_input_form() {
+        format!("FullForm[{}]", expr_to_input_form(&args[0]))
+      } else {
+        format!("FullForm[{}]", full_form_inner(&args[0]))
+      }
     }
     // BaseForm: InputForm shows BaseForm[n, base] structure (not subscript notation)
     Expr::FunctionCall { name, args }
