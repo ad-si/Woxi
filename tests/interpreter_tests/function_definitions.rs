@@ -317,6 +317,25 @@ mod conditional_definitions {
   }
 }
 
+mod set_list_call_target {
+  use super::*;
+
+  /// `Set[List[a, b], …]` is the destructuring `{a, b} = …`, whether the
+  /// list was written as braces or built as a `List[…]` call.
+  #[test]
+  fn list_call_destructures_like_braces() {
+    clear_state();
+    assert_eq!(
+      interpret("a = 1; b = 2; Set[List[a, b], {3, 4}]; {a, b}").unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret("g = {1, 2}; Set[List[g], {{7, 8}}]; g").unwrap(),
+      "{7, 8}"
+    );
+  }
+}
+
 mod set_delayed {
   use super::*;
 

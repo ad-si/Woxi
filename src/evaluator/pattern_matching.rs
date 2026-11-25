@@ -7254,13 +7254,12 @@ fn apply_replace_all_multi_ast_impl(
         if let Expr::Identifier(sym) = pattern
           && sym == name
         {
+          // The renamed call is not evaluated here: the replacement is
+          // structural and the whole result is evaluated once afterwards,
+          // so a holding head the rules put around it still sees it as
+          // written (`f[Hold[g], v] /. {f -> Set, Hold -> List}` assigns
+          // to `g` rather than to its value).
           return match replacement {
-            Expr::Identifier(h) if !held => {
-              evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: h.clone(),
-                args: new_args.into(),
-              })
-            }
             Expr::Identifier(h) => Ok(Expr::FunctionCall {
               name: h.clone(),
               args: new_args.into(),
