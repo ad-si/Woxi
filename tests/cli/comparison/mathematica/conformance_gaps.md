@@ -2850,6 +2850,14 @@ differences:
   Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
   `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
   are not covered.
+- A second variable the equations never differentiate in
+  (`NDSolve[{D[z[t, s], t, t] == …, z[0, s] == s, …}, z, {t, …}, {s, …}]`)
+  is a parameter: the ODEs of a uniform grid of its values (51 points or
+  more, sized like a space grid from the initial profiles) are integrated
+  as one system (`src/functions/ode_ast/param_family.rs`). WL's grid in the
+  parameter differs, so values between grid points do, visibly once the
+  family is chaotic
+  (SensitiveDependenceOnInitialConditionsInASimpleThreeBodyProb).
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
