@@ -259,9 +259,12 @@ pub struct ThemeColors {
   pub text_muted: &'static str,
   pub stroke_default: &'static str,
   pub axis_stroke: &'static str,
+  /// Default tick label text. Wolfram's SVG export sets every label of a
+  /// plot (ticks, `PlotLabel`, `AxesLabel`, `FrameLabel`, chart labels) in
+  /// `GrayLevel[0.25]`, a shade darker than the `GrayLevel[0.4]` axes.
   pub tick_label_fill: &'static str,
-  /// Default `PlotLabel` text: Wolfram draws plot titles in
-  /// `GrayLevel[0.4]` unless `LabelStyle` or the label sets a color.
+  /// Default `PlotLabel` text, `GrayLevel[0.25]` unless `LabelStyle` or
+  /// the label sets a color.
   pub plot_label_fill: &'static str,
   pub table_header_bg: &'static str,
   pub table_row_num_bg: &'static str,
@@ -278,8 +281,8 @@ const LIGHT_THEME: ThemeColors = ThemeColors {
   text_muted: "#888",
   stroke_default: "black",
   axis_stroke: "#666666",
-  tick_label_fill: "#555555",
-  plot_label_fill: "#666666",
+  tick_label_fill: "#404040",
+  plot_label_fill: "#404040",
   table_header_bg: "#f0f0f0",
   table_row_num_bg: "#eef2f7",
   table_row_num_header_bg: "#dde4ed",
@@ -507,6 +510,28 @@ const ARROWHEAD_SHAPE: [(f64, f64); 13] = [
 /// How far back from the tip (in head lengths) the default head's notch
 /// sits — where Wolfram stops the shaft.
 const ARROWHEAD_NOTCH: f64 = 0.90770;
+
+/// The screen polygon of Wolfram's default arrowhead: its tip at `tip`,
+/// pointing along the unit vector `dir`, `head_len` pixels long. A 3D
+/// line `Arrow` draws this same flat head, turned to face the viewer.
+pub(crate) fn default_arrowhead_polygon(
+  tip: (f64, f64),
+  dir: (f64, f64),
+  head_len: f64,
+) -> Vec<(f64, f64)> {
+  let (hx, hy) = dir;
+  // `(px, py)` is the screen normal to the right of the direction.
+  let (px, py) = (-hy, hx);
+  std::iter::once((0.0, 0.0))
+    .chain(ARROWHEAD_SHAPE.iter().copied())
+    .map(|(along, side)| {
+      (
+        tip.0 + (hx * along + px * side) * head_len,
+        tip.1 + (hy * along + py * side) * head_len,
+      )
+    })
+    .collect()
+}
 
 /// Shorten a screen polyline by `start` pixels at its first end and `end`
 /// pixels at its last, measured along the path.
@@ -867,17 +892,11 @@ fn segment_arrowheads_svg(
     let t = h.position.clamp(0.0, 1.0);
     let (tip_x, tip_y) = (from.0 + t * dx, from.1 + t * dy);
     let dir = h.size.signum();
-    let (hx, hy) = (ux * dir, uy * dir);
-    // `(px, py)` is the screen normal to the right of the direction.
-    let (px, py) = (-hy, hx);
-    let pts: Vec<String> = std::iter::once((0.0, 0.0))
-      .chain(ARROWHEAD_SHAPE.iter().copied())
-      .map(|(along, side)| {
-        let x = tip_x + (hx * along + px * side) * head_len;
-        let y = tip_y + (hy * along + py * side) * head_len;
-        format!("{x:.2},{y:.2}")
-      })
-      .collect();
+    let pts: Vec<String> =
+      default_arrowhead_polygon((tip_x, tip_y), (ux * dir, uy * dir), head_len)
+        .into_iter()
+        .map(|(x, y)| format!("{x:.2},{y:.2}"))
+        .collect();
     out.push_str(&format!(
       "<polygon points=\"{}\" fill=\"{fill}\"{extra}/>\n",
       pts.join(" ")
@@ -1877,7 +1896,7 @@ pub(crate) fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
 // ── Color parsing ────────────────────────────────────────────────────────
 
 /// Parse a hex color string like "#RRGGBB" or "#RGB" into a Color.
-fn parse_hex_color(s: &str) -> Option<Color> {
+pub(crate) fn parse_hex_color(s: &str) -> Option<Color> {
   let s = s.strip_prefix('#')?;
   match s.len() {
     6 => {
@@ -2525,6 +2544,73 @@ pub(crate) fn point_legend_svg(args: &[Expr]) -> Option<String> {
   marker_legend_svg(args, true)
 }
 
+/// A geometric marker glyph — filled or empty circle, square, up/down
+/// triangle or diamond — drawn as a shape centered on `(cx, cy)`, at the
+/// size the glyph has in Wolfram's font at font size `em`. The fallback
+/// fonts that carry these glyphs draw them at very different sizes (a
+/// bullet-sized `●`), so a marker drawn as text would not match.
+/// `None` for any other glyph.
+fn geometric_glyph_svg(
+  glyph: &str,
+  cx: f64,
+  cy: f64,
+  em: f64,
+  color: &str,
+) -> Option<String> {
+  let mut chars = glyph.chars();
+  let (Some(ch), None) = (chars.next(), chars.next()) else {
+    return None;
+  };
+  let (filled, shape) = match ch {
+    '\u{25CF}' => (true, 'o'),
+    '\u{25CB}' => (false, 'o'),
+    '\u{25A0}' => (true, 's'),
+    '\u{25A1}' => (false, 's'),
+    '\u{25B2}' => (true, '^'),
+    '\u{25B3}' => (false, '^'),
+    '\u{25BC}' => (true, 'v'),
+    '\u{25BD}' => (false, 'v'),
+    '\u{25C6}' => (true, 'd'),
+    '\u{25C7}' => (false, 'd'),
+    _ => return None,
+  };
+  let paint = if filled {
+    format!("fill=\"{color}\"")
+  } else {
+    format!(
+      "fill=\"none\" stroke=\"{color}\" stroke-width=\"{:.3}\"",
+      em * 0.06
+    )
+  };
+  let polygon = |pts: &[(f64, f64)]| {
+    let pts: Vec<String> = pts
+      .iter()
+      .map(|(x, y)| format!("{:.3},{:.3}", cx + x * em, cy + y * em))
+      .collect();
+    format!("<polygon points=\"{}\" {paint}/>", pts.join(" "))
+  };
+  // Half extents in ems, as measured from Wolfram's glyphs.
+  Some(match shape {
+    'o' => format!(
+      "<circle cx=\"{cx:.3}\" cy=\"{cy:.3}\" r=\"{:.3}\" {paint}/>",
+      0.305 * em
+    ),
+    's' => polygon(&[
+      (-0.206, -0.206),
+      (0.206, -0.206),
+      (0.206, 0.206),
+      (-0.206, 0.206),
+    ]),
+    '^' => polygon(&[(0.0, -0.263), (0.264, 0.263), (-0.264, 0.263)]),
+    'v' => polygon(&[(0.0, 0.263), (0.264, -0.263), (-0.264, -0.263)]),
+    _ => polygon(&[(0.0, -0.28), (0.28, 0.0), (0.0, 0.28), (-0.28, 0.0)]),
+  })
+}
+
+/// The height (in printer's points) of a `PointLegend` marker sample, and
+/// the font size of a glyph marker drawn in it.
+const POINT_LEGEND_MARKER_SIZE: f64 = 12.5;
+
 /// A legend column of color markers (squares, or disks when `round`)
 /// beside their labels.
 fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
@@ -2599,26 +2685,39 @@ fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
       }
       _ => None,
     };
-    let marker = if let Some(glyph) = glyph {
-      format!(
-        "<text x=\"{c}\" y=\"{c}\" font-size=\"10\" fill=\"{color}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>",
-        svg_escape(&glyph),
-        c = swatch / 2.0,
-      )
+    // Wolfram's point-legend samples are 12.5 points high: a glyph marker
+    // is that size of text centered in a 20-point-wide box, the default
+    // marker a `PointSize[0.5]` disk in a 10-point-wide one.
+    let (w, h, marker) = if let Some(glyph) = glyph {
+      let (w, h) = (20.0, POINT_LEGEND_MARKER_SIZE);
+      let marker = geometric_glyph_svg(&glyph, w / 2.0, h / 2.0, h, &color)
+        .unwrap_or_else(|| {
+          format!(
+            "<text x=\"{cx}\" y=\"{cy}\" font-size=\"{h}\" fill=\"{color}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>",
+            svg_escape(&glyph),
+            cx = w / 2.0,
+            cy = h / 2.0,
+          )
+        });
+      (w, h, marker)
     } else if round {
-      format!(
-        "<circle cx=\"{c}\" cy=\"{c}\" r=\"{r}\" fill=\"{color}\"{fill_opacity}/>",
-        c = swatch / 2.0,
-        r = swatch / 4.0,
-      )
+      let (w, h) = (10.0, POINT_LEGEND_MARKER_SIZE);
+      let marker = format!(
+        "<circle cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" fill=\"{color}\"{fill_opacity}/>",
+        cx = w / 2.0,
+        cy = h / 2.0,
+        r = w / 4.0,
+      );
+      (w, h, marker)
     } else {
       // Wolfram's swatch: an 8-point square edged in translucent black.
-      format!(
+      let marker = format!(
         "<rect x=\"3\" y=\"3\" width=\"8\" height=\"8\" fill=\"{color}\"{fill_opacity} {edge} stroke-width=\"1\"/>",
-      )
+      );
+      (swatch, swatch, marker)
     };
     let swatch_svg = format!(
-      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\">{marker}</svg>",
+      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">{marker}</svg>",
     );
     let swatch_item = Expr::Graphics {
       svg: swatch_svg,
@@ -8013,7 +8112,9 @@ fn is_chart_svg(svg: &str) -> bool {
 }
 
 /// `Inset[obj, pos, opos, size]`'s `size` argument: `{w, h}`, a single
-/// number (both sides), or absent/`Automatic` (the object's natural size).
+/// number (reported for both sides; see [`parse_inset_layout_size`] for the
+/// width-only reading layout uses), or absent/`Automatic` (the object's
+/// natural size).
 /// Given in the coordinate system of the enclosing graphic, regardless of
 /// whether `pos` is a plain point or a `Scaled`/`ImageScaled` fraction.
 fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
@@ -8045,6 +8146,27 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
       },
     },
     None => (None, None),
+  }
+}
+
+/// [`parse_inset_target_size`] for laying the object out: a single number
+/// `w` is the object's width, and its height follows from the object's own
+/// aspect ratio (`Inset[card, pos, opos, 2]` shows a 1 × 1.5 card 2 wide
+/// and 3 tall, not squeezed into a 2 × 2 box).
+fn parse_inset_layout_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
+  let size = parse_inset_target_size(args);
+  let scalar = match args.get(3) {
+    Some(Expr::FunctionCall { name, args: sa })
+      if name == "Scaled" && sa.len() == 1 =>
+    {
+      !matches!(&sa[0], Expr::List(_))
+    }
+    Some(spec) => !matches!(spec, Expr::List(_)),
+    None => false,
+  };
+  match size {
+    (Some(w), Some(_)) if scalar => (Some(w), None),
+    other => other,
   }
 }
 
@@ -8501,6 +8623,19 @@ fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
     args.iter().take_while(|e| !is_option(e)).collect();
   let mut text_args: Vec<Expr> =
     positional.iter().take(3).map(|e| (*e).clone()).collect();
+  // A missing or `Automatic` position is `Center`, the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`), not `Text`'s origin.
+  let center = || {
+    call(
+      "Scaled",
+      vec![Expr::List(vec![Expr::Real(0.5), Expr::Real(0.5)].into())],
+    )
+  };
+  match text_args.get(1) {
+    None if !text_args.is_empty() => text_args.push(center()),
+    Some(Expr::Identifier(a)) if a == "Automatic" => text_args[1] = center(),
+    _ => {}
+  }
   // `dirs` is either the pair `{{dx, dy}, {ex, ey}}` of the object's axis
   // directions or just the x direction `{dx, dy}`.
   let x_direction = match positional.get(4) {
@@ -9018,12 +9153,18 @@ fn inset_primitives(
     && let Some(dims) = parse_svg_dimensions(svg)
     && let Some((x, y, scaled)) = anchor
   {
-    let (target_w, target_h) = parse_inset_target_size(args);
     // A plot is inset transparently, and laid out anew at an explicit
     // size (see `plot_inset_at_width`).
     let plot = match peel_style_wrapper(&args[0]) {
       g @ Expr::Graphics { is_3d: false, .. } => Some(g),
       _ => None,
+    };
+    // A plot is laid out anew into the box a single-number size spans; any
+    // other picture (an image) takes that number as its width.
+    let (target_w, target_h) = if plot.is_some() {
+      parse_inset_target_size(args)
+    } else {
+      parse_inset_layout_size(args)
     };
     let plot_background = plot.and_then(graphics_options).is_some_and(|o| {
       o.iter().any(|o| {
@@ -9178,8 +9319,8 @@ fn inset_primitives(
   let (cx, cy) = (f64::midpoint(fx0, fx1), f64::midpoint(fy0, fy1));
   let (w, h) = (fx1 - fx0, fy1 - fy0);
 
-  // `size` may be `{w, h}`, a single number (both sides), or Automatic.
-  let (target_w, target_h) = parse_inset_target_size(args);
+  // `size` may be `{w, h}`, a single number (the width), or Automatic.
+  let (target_w, target_h) = parse_inset_layout_size(args);
   let sx = match target_w {
     Some(tw) if w > 0.0 => tw / w,
     _ => 1.0,
@@ -13179,6 +13320,21 @@ fn emit_polygon_vertex_gradient(
     ));
     return;
   }
+  // Wolfram blends a polygon over the fan of triangles from its first
+  // vertex whenever that fan covers it exactly once: a convex polygon, or
+  // one star-shaped around its first vertex (a shaded disk drawn as a fan
+  // around an off-center highlight, as `ThermometerGauge`'s bulb).
+  if holes.is_empty()
+    && colors.len() == points.len()
+    && is_fan_from_first_vertex(points)
+  {
+    let triangles: Vec<[usize; 3]> =
+      (1..points.len() - 1).map(|i| [0, i, i + 1]).collect();
+    emit_vertex_color_triangles(
+      out, points, colors, &triangles, opacity, bb, svg_w, svg_h,
+    );
+    return;
+  }
   // An outline that crosses itself, or runs around a second loop from a
   // corner it already visited, is filled by the even-odd rule like any
   // other polygon: only the regions it winds around an odd number of
@@ -13234,28 +13390,16 @@ fn emit_polygon_vertex_gradient(
     }
     hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
   }
-  // Wolfram blends a convex polygon over the fan of triangles from its
-  // first vertex; anything else is ear-clipped. (A self-crossing outline
-  // never gets here: it is split into its even-odd regions above.)
-  let convex = holes.is_empty() && points.len() >= 3 && {
-    let n = points.len();
-    let turn = |i: usize| {
-      let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
-      (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
-    };
-    let turns: Vec<f64> = (0..n).map(turn).collect();
-    turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
-  };
-  let triangles: Vec<[usize; 3]> = if convex {
-    (1..points.len() - 1).map(|i| [0, i, i + 1]).collect()
-  } else {
+  // Anything the first vertex's fan does not cover is ear-clipped. (A
+  // self-crossing outline never gets here: it is split into its even-odd
+  // regions above.)
+  let triangles: Vec<[usize; 3]> =
     crate::functions::polygon_holes::triangulate_with_holes(
       &all_pts,
       &outer_indices,
       &hole_indices,
     )
-    .triangles
-  };
+    .triangles;
   emit_vertex_color_triangles(
     out,
     &all_pts,
@@ -13268,8 +13412,52 @@ fn emit_polygon_vertex_gradient(
   );
 }
 
+/// Whether the fan of triangles `(p0, p_i, p_{i+1})` covers the polygon
+/// exactly once: seen from its first vertex, the rest of the outline turns
+/// one way only (degenerate, zero-area steps allowed) through at most one
+/// full turn. Convex polygons qualify, as does any polygon star-shaped
+/// around its first vertex.
+fn is_fan_from_first_vertex(points: &[(f64, f64)]) -> bool {
+  if points.len() < 3 {
+    return false;
+  }
+  let p0 = points[0];
+  // An outline that passes through its first vertex again before its end
+  // starts another loop there (`polygon_holes::even_odd_regions` decides
+  // how that is filled); only a closing repeat of it is harmless.
+  if points[1..points.len() - 1].contains(&p0) {
+    return false;
+  }
+  let mut sign = 0.0_f64;
+  let mut sweep = 0.0;
+  for w in points[1..].windows(2) {
+    let (a, b) = (
+      (w[0].0 - p0.0, w[0].1 - p0.1),
+      (w[1].0 - p0.0, w[1].1 - p0.1),
+    );
+    let cross = a.0 * b.1 - a.1 * b.0;
+    let dot = a.0 * b.0 + a.1 * b.1;
+    let scale = a.0.hypot(a.1) * b.0.hypot(b.1);
+    if scale == 0.0 || cross.abs() <= 1e-12 * scale {
+      // A zero-area step: along a ray from p0, or back over it.
+      if dot < 0.0 {
+        return false;
+      }
+      continue;
+    }
+    if sign == 0.0 {
+      sign = cross.signum();
+    } else if cross.signum() != sign {
+      return false;
+    }
+    sweep += cross.abs().atan2(dot);
+  }
+  sign != 0.0 && sweep <= std::f64::consts::TAU + 1e-9
+}
+
 /// Draw `triangles` (indices into `all_pts`) with their corner colors
-/// blended across each one, as finely faceted flat-colored pieces.
+/// blended across each one: by a linear gradient where that is exact,
+/// else as finely faceted flat-colored pieces.
 #[allow(clippy::too_many_arguments)]
 fn emit_vertex_color_triangles(
   out: &mut String,
@@ -13322,43 +13510,74 @@ fn emit_vertex_color_triangles(
   } else {
     1.0
   };
-  let mut emit_tri = |p0: (f64, f64),
-                      c0: Color,
-                      p1: (f64, f64),
-                      c1: Color,
-                      p2: (f64, f64),
-                      c2: Color| {
+  // A triangle with its corners on screen, filled with `paint` (a color
+  // or a gradient) at opacity `alpha`.
+  let polygon = |out: &mut String,
+                 s: [(f64, f64); 3],
+                 paint: &str,
+                 alpha: f64| {
+    // An opaque facet is outlined in its own paint, so the anti-aliased
+    // edges of neighboring facets do not leave light seams between them.
+    let fill_opacity = if alpha < 1.0 {
+      format!(" fill-opacity=\"{alpha}\"")
+    } else {
+      format!(
+        " stroke=\"{paint}\" stroke-width=\"0.5\" stroke-linejoin=\"round\""
+      )
+    };
+    let [(sx0, sy0), (sx1, sy1), (sx2, sy2)] = s;
+    out.push_str(&format!(
+      "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{paint}\"{fill_opacity}/>\n",
+    ));
+  };
+  // Blending fully opaque corners can round the alpha just below 1.
+  let snap_alpha = |a: f64| if a > 1.0 - 1e-9 { 1.0 } else { a };
+  let emit_tri = |out: &mut String,
+                  p0: (f64, f64),
+                  c0: Color,
+                  p1: (f64, f64),
+                  c1: Color,
+                  p2: (f64, f64),
+                  c2: Color| {
     // Average the three corner colors (two lerps: midpoint of the first
     // pair, then 1/3 of the way to the third — equivalent to (c0+c1+c2)/3),
     // then fold in the shape's own `Opacity[…]`, exactly as the flat-fill
     // path folds it into `effective_face_color`.
     let avg = c0.lerp(c1, 0.5).lerp(c2, 1.0 / 3.0);
-    let avg = avg.with_alpha(avg.a * opacity);
-    // Blending fully opaque corners can round the alpha just below 1.
-    let avg = if avg.a > 1.0 - 1e-9 {
-      avg.with_alpha(1.0)
-    } else {
-      avg
-    };
-    let (sx0, sy0) = screen(p0);
-    let (sx1, sy1) = screen(p1);
-    let (sx2, sy2) = screen(p2);
-    // An opaque facet is outlined in its own color, so the anti-aliased
-    // edges of neighboring facets do not leave light seams between them.
-    let fill_opacity = if avg.a < 1.0 {
-      format!(" fill-opacity=\"{}\"", avg.a)
-    } else {
-      format!(
-        " stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"",
-        avg.to_svg_rgb()
-      )
-    };
-    out.push_str(&format!(
-      "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{}\"{}/>\n",
-      avg.to_svg_rgb(),
-      fill_opacity,
-    ));
+    let alpha = snap_alpha(avg.a * opacity);
+    polygon(
+      out,
+      [screen(p0), screen(p1), screen(p2)],
+      &avg.to_svg_rgb(),
+      alpha,
+    );
   };
+  // A triangle whose corner colors change along one screen direction
+  // only (a shade of one color, as on a lit bulb) is exactly one linear
+  // gradient; flat facets would show their steps as bands. `false` when
+  // the colors (or their opacities) do not allow that.
+  let mut gradients = crate::functions::smooth_shading::GradientDefs::default();
+  let mut emit_linear =
+    |out: &mut String, p: [(f64, f64); 3], c: [Color; 3]| {
+      use crate::functions::smooth_shading::LinearPaint;
+      if c.iter().any(|k| (k.a - c[0].a).abs() > 1e-9) {
+        return false;
+      }
+      let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+      let rgb = c.map(|k| (byte(k.r), byte(k.g), byte(k.b)));
+      let s = p.map(screen);
+      let mut definition = String::new();
+      let paint = match gradients.linear_paint(&mut definition, s, rgb) {
+        Some(LinearPaint::Gradient(url)) => url,
+        Some(LinearPaint::Flat) => {
+          c[0].lerp(c[1], 0.5).lerp(c[2], 1.0 / 3.0).to_svg_rgb()
+        }
+        Some(LinearPaint::NotLinear) | None => return false,
+      };
+      out.push_str(&definition);
+      polygon(out, s, &paint, snap_alpha(c[0].a * opacity));
+      true
+    };
   // A facet wholly beyond one edge of the picture cannot be seen.
   let offscreen = |ps: [(f64, f64); 3]| {
     let s = ps.map(screen);
@@ -13373,6 +13592,9 @@ fn emit_vertex_color_triangles(
       continue;
     }
     let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
+    if emit_linear(out, tri_p, tri_c) {
+      continue;
+    }
     let subdiv = ((subdiv as f64 * scale).round() as usize).max(2);
     let n = subdiv as f64;
     for row in 0..subdiv {
@@ -13385,12 +13607,12 @@ fn emit_vertex_color_triangles(
         let (p10, c10) = at(&tri_p, &tri_c, u1, v0);
         let (p01, c01) = at(&tri_p, &tri_c, u0, v1);
         if !offscreen([p00, p10, p01]) {
-          emit_tri(p00, c00, p10, c10, p01, c01);
+          emit_tri(out, p00, c00, p10, c10, p01, c01);
         }
         if col + row < subdiv - 1 {
           let (p11, c11) = at(&tri_p, &tri_c, u1, v1);
           if !offscreen([p10, p11, p01]) {
-            emit_tri(p10, c10, p11, c11, p01, c01);
+            emit_tri(out, p10, c10, p11, c11, p01, c01);
           }
         }
       }
@@ -13427,8 +13649,17 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
 }
 
 /// The `stroke-linecap` value for an `Arrow`/curve stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap.
-fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap. A dashed
+/// stroke always has butt caps, whatever its `CapForm`: Wolfram's SVG
+/// export draws every dash flat-ended, its zero-length dots (`Dotted`,
+/// `Dashing[{0, d}]`) as one-pixel ticks.
+fn stroke_linecap_attr(
+  cap_form: Option<LineCapKind>,
+  dashing: Option<&Vec<f64>>,
+) -> &'static str {
+  if dashing.is_some() {
+    return "butt";
+  }
   match cap_form {
     Some(LineCapKind::Round) => "round",
     Some(LineCapKind::Square) => "square",
@@ -13477,10 +13708,13 @@ fn degenerate_line_dot(
 /// with square caps unless a `CapForm` says otherwise: each end extends
 /// half the line's thickness past its endpoint, so a short thick segment
 /// (a tick mark) is as wide as its stroke plus its length.
-fn line_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+fn line_linecap_attr(
+  cap_form: Option<LineCapKind>,
+  dashing: Option<&Vec<f64>>,
+) -> &'static str {
   match cap_form {
-    None => "square",
-    some => stroke_linecap_attr(some),
+    None if dashing.is_none() => "square",
+    some => stroke_linecap_attr(some, dashing),
   }
 }
 
@@ -16171,7 +16405,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = line_linecap_attr(style.cap_form);
+      let cap = line_linecap_attr(style.cap_form, style.dashing.as_ref());
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
@@ -16301,7 +16535,7 @@ fn render_primitive(
             ));
           }
         } else {
-          let cap = line_linecap_attr(style.cap_form);
+          let cap = line_linecap_attr(style.cap_form, style.dashing.as_ref());
           out.push_str(&format!(
             "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{} stroke-linecap=\"{cap}\"/>\n",
             color.to_svg_rgb(),
@@ -16755,7 +16989,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       out.push_str(&format!(
         "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}{}/>\n",
         coord_x(sx, bb, svg_w),
@@ -16780,7 +17014,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
 
       // The path in screen pixels, with its cumulative arc length, so a
@@ -16920,11 +17154,21 @@ fn render_primitive(
           cut_end += sw / 2.0;
         }
       }
-      let shaft = if cut_start + cut_end > 0.0 {
+      let mut shaft = if cut_start + cut_end > 0.0 {
         trim_screen_path(&screen, cut_start, cut_end)
       } else {
         screen.clone()
       };
+      // A forward head at the very start of the arrow sits behind it, and
+      // Wolfram runs the shaft on back through it — by the length of the
+      // first segment, out to the picture's edge as a rule — so the line
+      // shows through the head's notch instead of starting at its tip.
+      if heads.iter().any(|&(t, _, dir)| t <= 0.0 && dir > 0.0)
+        && cut_start == 0.0
+        && let [(x0, y0), (x1, y1), ..] = shaft[..]
+      {
+        shaft.insert(0, (2.0 * x0 - x1, 2.0 * y0 - y1));
+      }
 
       // Draw the line
       if shaft.len() >= 2 {
@@ -16949,17 +17193,14 @@ fn render_primitive(
         let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
           continue;
         };
-        let (ux, uy) = (ux * dir, uy * dir);
-        // `(px, py)` is the screen normal to the right of the direction.
-        let (px, py) = (-uy, ux);
-        let pts: Vec<String> = std::iter::once((0.0, 0.0))
-          .chain(ARROWHEAD_SHAPE.iter().copied())
-          .map(|(along, side)| {
-            let x = tip_x + (ux * along + px * side) * head_len;
-            let y = tip_y + (uy * along + py * side) * head_len;
-            format!("{x:.2},{y:.2}")
-          })
-          .collect();
+        let pts: Vec<String> = default_arrowhead_polygon(
+          (tip_x, tip_y),
+          (ux * dir, uy * dir),
+          head_len,
+        )
+        .into_iter()
+        .map(|(x, y)| format!("{x:.2},{y:.2}"))
+        .collect();
         out.push_str(&format!(
           "<polygon points=\"{}\" fill=\"{}\"{}/>\n",
           pts.join(" "),
@@ -17482,7 +17723,7 @@ fn render_primitive(
         return;
       }
 
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = stroke_linecap_attr(style.cap_form, style.dashing.as_ref());
       out.push_str(&format!(
         "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"{cap}\"{}{}/>\n",
         d,
@@ -17560,6 +17801,12 @@ fn render_primitive(
       let cell_w = (x_max - x_min) / ncols as f64;
       let cell_h = (y_max - y_min) / nrows as f64;
 
+      // The cells abut along fractional pixel positions: anti-aliased one
+      // by one, each shared edge would be covered only partly by both
+      // cells, letting the background through as a grid of light seams.
+      // Drawn with crisp edges they tile the pixels exactly, as the
+      // pixelated `<image>` of a large raster does.
+      out.push_str("<g shape-rendering=\"crispEdges\">\n");
       // Row 0 in Wolfram is at the bottom (y_min), so iterate bottom-to-top
       for (ri, row) in data.iter().enumerate() {
         let y = y_min + ri as f64 * cell_h;
@@ -17583,6 +17830,7 @@ fn render_primitive(
           ));
         }
       }
+      out.push_str("</g>\n");
     }
     // A screen-space icon (e.g. a Locator's appearance) centered on its
     // data-space anchor: embed the pre-rendered SVG at its pixel size.
@@ -18141,6 +18389,11 @@ pub fn graphics_option_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Math inside a picture keeps its italics even when the picture is drawn
+  // as part of an SVG export of a larger expression.
+  if export_upright_letters() {
+    return with_export_upright_letters(false, || graphics_ast(args));
+  }
   let args = &graphics_option_args(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
@@ -18872,6 +19125,35 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             grown.y_min = grown.y_min.min(y - r / ky);
             grown.y_max = grown.y_max.max(y + r / ky);
           }
+        }
+      }
+    }
+    // A thick line keeps its stroke whole inside an automatic range: the
+    // picture reaches at least half the stroke width past every vertex,
+    // whatever the line's `CapForm` (Wolfram widens a 30-point line's
+    // margins to 15 points even under `PlotRangePadding -> None`).
+    for prim in &primitives {
+      let Primitive::Line {
+        segments, style, ..
+      } = prim
+      else {
+        continue;
+      };
+      let r = thickness_px(style.thickness, &bb, svg_width as f64) / 2.0;
+      if !(r.is_finite() && r > 0.0) {
+        continue;
+      }
+      for &(x, y) in segments.iter().flatten() {
+        if !(x.is_finite() && y.is_finite()) {
+          continue;
+        }
+        if plot_range_x.is_none() {
+          grown.x_min = grown.x_min.min(x - r / kx);
+          grown.x_max = grown.x_max.max(x + r / kx);
+        }
+        if plot_range_y.is_none() {
+          grown.y_min = grown.y_min.min(y - r / ky);
+          grown.y_max = grown.y_max.max(y + r / ky);
         }
       }
     }
@@ -20337,6 +20619,54 @@ fn large_operator_scale(s: &str) -> Option<f64> {
   }
 }
 
+/// An integral sign `∫ ∬ ∭ ∮` drawn inside a `w` × `h` box (font size
+/// `fs`): one slanted stem with hooked ends per integral, the contour
+/// integral's ring around the middle. `None` for any other string.
+fn integral_sign_path(s: &str, w: f64, h: f64, fs: f64) -> Option<String> {
+  let (count, ring) = match s {
+    "\u{222B}" => (1, false),
+    "\u{222C}" => (2, false),
+    "\u{222D}" => (3, false),
+    "\u{222E}" => (1, true),
+    _ => return None,
+  };
+  let sw = (fs * 0.06).max(0.6);
+  // The stems share the box: each one narrower when there are several.
+  let stem_w = w / (1.0 + 0.45 * (count - 1) as f64);
+  let step = stem_w * 0.45;
+  let mut d = String::new();
+  for k in 0..count {
+    let x0 = k as f64 * step;
+    let p = |u: f64, v: f64| format!("{:.2} {:.2}", x0 + u * stem_w, v * h);
+    d.push_str(&format!(
+      "M {} C {} {} {} L {} C {} {} {} ",
+      p(0.86, 0.09),
+      p(0.80, 0.01),
+      p(0.62, 0.0),
+      p(0.57, 0.12),
+      p(0.43, 0.88),
+      p(0.38, 1.0),
+      p(0.20, 0.99),
+      p(0.14, 0.91),
+    ));
+  }
+  let mut out = format!(
+    "<path d=\"{}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linecap=\"round\"/>",
+    d.trim_end()
+  );
+  if ring {
+    out.push_str(&format!(
+      "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{:.2}\"/>",
+      w / 2.0,
+      h / 2.0,
+      w * 0.3,
+      h * 0.13,
+      sw * 0.8,
+    ));
+  }
+  Some(out)
+}
+
 /// True if `s` is a single Latin letter, which TraditionalForm renders as an
 /// italic math variable.
 fn is_math_italic_atom(s: &str) -> bool {
@@ -20410,7 +20740,9 @@ fn operator_space(s: &str) -> f64 {
     | "\u{F523}" | "\u{29E6}" | "\u{2208}" | "\u{2209}" | "\u{220B}"
     | "\u{2282}" | "\u{2283}" | "\u{2286}" | "\u{2287}" | "\u{2284}"
     | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
-    "\u{2192}" | "\u{29F4}" | "\u{21A6}" => 0.60,
+    // Rule and function arrows, whether a box holds the drawn `→`/`⧴`/`↦`
+    // or the private-use `\[Rule]`/`\[RuleDelayed]` StandardForm writes.
+    "\u{2192}" | "\u{29F4}" | "\u{21A6}" | "\u{F522}" | "\u{F51F}" => 0.60,
     "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.44,
     // The word operator of `x mod 2`.
     "mod" => 0.34,
@@ -20750,6 +21082,19 @@ impl BoxLayout {
       let glyph_ascent = fs * 0.72;
       let glyph_descent = fs * 0.28;
       let w = fs * 0.62;
+      // Integral signs are drawn as paths: no embedded font has them, and
+      // the system fonts that do draw them far taller than this box (a
+      // glyph overhanging the top of the picture is cut off).
+      if let Some(path) =
+        integral_sign_path(s, w, glyph_ascent + glyph_descent, fs)
+      {
+        return Self {
+          width: w,
+          height: glyph_ascent + glyph_descent,
+          baseline: glyph_ascent,
+          elements: path,
+        };
+      }
       let escaped = svg_escape(s);
       return Self {
         width: w,
@@ -20895,6 +21240,7 @@ impl BoxLayout {
     // slanted), so surrounding layout is unaffected.
     let style_attr = if is_math_italic_atom(s)
       && !BOX_UPRIGHT_TEXT.with(std::cell::Cell::get)
+      && !export_upright_letters()
     {
       " font-style=\"italic\""
     } else {
@@ -20946,6 +21292,12 @@ thread_local! {
   /// a string is literal text, so its single letters are not math variables
   /// and stay upright.
   static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while exporting an expression that is not a picture to SVG.
+  /// Wolfram's SVG export of typeset math draws its single-letter symbols
+  /// upright — `Export["f.svg", TraditionalForm[x^2]]` shows an upright x —
+  /// whereas the same math inside graphics (a `PlotLabel`, a `Text`
+  /// primitive) and every raster export keep them italic.
+  static EXPORT_UPRIGHT_LETTERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
   /// Set while drawing the content of a `Text[expr]` outside graphics.
   /// Wolfram sets math inside text one script level down (a text style's
   /// `ScriptLevel -> 1`), so even an outermost fraction there is drawn at
@@ -20963,6 +21315,28 @@ pub(crate) fn with_inline_text_math<R>(f: impl FnOnce() -> R) -> R {
   }
   let _restore = Restore(BOX_INLINE_TEXT_MATH.with(|c| c.replace(true)));
   f()
+}
+
+/// Run `f` with [`EXPORT_UPRIGHT_LETTERS`] set to `upright`, restoring it
+/// after.
+pub(crate) fn with_export_upright_letters<R>(
+  upright: bool,
+  f: impl FnOnce() -> R,
+) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      EXPORT_UPRIGHT_LETTERS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(EXPORT_UPRIGHT_LETTERS.with(|c| c.replace(upright)));
+  f()
+}
+
+/// Whether automatic math-variable italics are off (see
+/// [`EXPORT_UPRIGHT_LETTERS`]).
+pub(crate) fn export_upright_letters() -> bool {
+  EXPORT_UPRIGHT_LETTERS.with(std::cell::Cell::get)
 }
 
 /// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
@@ -25683,6 +26057,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // A quoted string is literal text, upright whatever the form.
       if unquoted.len() == s.len()
         && SINGLE_LETTER_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
         && is_single_letter_symbol(unquoted)
       {
         return format!(
@@ -26666,7 +27041,10 @@ pub(crate) fn plot_label_picture_svg(
 /// number ", Framed[n, Background -> Yellow]}]`, the boxed value standing
 /// out from the words around it — typeset as a picture, so each frame is
 /// drawn (with its background and frame color) around its part of the
-/// line instead of being dropped from the text.
+/// line instead of being dropped from the text. A label that is itself
+/// `Framed` (`Style[Framed[time], 14]`), or that a `Style` shades with a
+/// `Background` (`Style[label, Background -> Yellow]`), is set the same
+/// way, so its box and shading are drawn behind the title text.
 fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   fn holds_frame(e: &Expr) -> bool {
     match e {
@@ -26677,13 +27055,51 @@ fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
       _ => false,
     }
   }
+  fn style_sets_background(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        args[1..].iter().any(|opt| {
+          matches!(
+            opt,
+            Expr::Rule { pattern, replacement }
+              | Expr::RuleDelayed { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background")
+                && !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          )
+        }) || style_sets_background(&args[0])
+      }
+      _ => false,
+    }
+  }
   let body = peel_style_wrapper(expr);
   let Expr::FunctionCall { name, args } = body else {
-    return None;
+    // A plain string or number under a shading `Style`.
+    if !style_sets_background(expr)
+      || !matches!(body, Expr::String(_) | Expr::Integer(_) | Expr::Real(_))
+    {
+      return None;
+    }
+    return inline_frame_layout(expr);
   };
-  if name != "Row" || !args.iter().any(holds_frame) {
+  // A framed picture is not running text; it keeps its own path.
+  let framed = name == "Framed"
+    && !args.is_empty()
+    && !matches!(&args[0], Expr::Graphics { .. } | Expr::Image { .. })
+    && !matches!(&args[0], Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" || name == "Image");
+  let row_with_frame = name == "Row" && args.iter().any(holds_frame);
+  let shaded_text = name == "Row" && style_sets_background(expr);
+  if !(framed || row_with_frame || shaded_text) {
     return None;
   }
+  inline_frame_layout(expr)
+}
+
+/// Typeset a `PlotLabel` (see [`plot_label_inline_frame_svg`]) through the
+/// box layout in the graphic's sans-serif text face.
+fn inline_frame_layout(expr: &Expr) -> Option<(String, f64, f64)> {
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -28698,6 +29114,16 @@ pub(crate) fn mesh_region_graphics_prims(region: &Expr) -> Option<Vec<Expr>> {
           ]
           .into(),
         );
+        // A labeled vertex is marked by its point, as Wolfram draws it:
+        // in the points' `MeshCellStyle`, else the default mesh color.
+        if dim == 0.0 {
+          let color = mesh_cell_styles(&opts)[0]
+            .clone()
+            .unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr());
+          prims.push(Expr::List(
+            vec![color, call1("Point", position.clone())].into(),
+          ));
+        }
         prims.push(Expr::List(
           vec![
             Color::gray(0.0).to_expr(),
@@ -38878,6 +39304,23 @@ fn resolve_layout_cell(item: &Expr) -> Expr {
   };
   if matches!(&value, Expr::FunctionCall { name, .. } if name == "Dynamic") {
     dynamic_current_value(&value)
+  } else if is_user_call
+    && match &value {
+      Expr::FunctionCall { name, .. } => name == "Graphics",
+      Expr::Graphics {
+        structure: Some(inner),
+        ..
+      } => {
+        matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Graphics")
+      }
+      _ => false,
+    }
+  {
+    // A user function returning a picture (`picture[clip_] :=
+    // Graphics[…]`) is laid out like the `Graphics[…]` it builds: drawn
+    // again at the cell's size, so its labels and lines keep their own
+    // sizes instead of shrinking with a picture scaled down to fit.
+    value
   } else {
     target
   }
@@ -39103,7 +39546,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             std::slice::from_ref(item),
             (w.round() as i128).max(1),
             None,
-            true,
+            false,
           )
         })
         .collect();
@@ -39127,7 +39570,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let fit = (GRAPHICS_ROW_AUTO_WIDTH - fixed_gaps) / (n + (n - 1.0) * gap);
       per_cell_w = per_cell_w.min((fit.round() as i128).max(1));
     }
-    render_items_at_size(items, per_cell_w, per_cell_h, true)
+    render_items_at_size(items, per_cell_w, per_cell_h, false)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -39208,7 +39651,7 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     let (per_cell_w, per_cell_h) = layout_cell_size(&opts, 1, items.len(), 1);
-    render_items_at_size(items, per_cell_w, per_cell_h, true)
+    render_items_at_size(items, per_cell_w, per_cell_h, false)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -40693,6 +41136,19 @@ fn strip_text_wrappers(mut e: &Expr) -> &Expr {
   e
 }
 
+/// `e` without the one-argument `TraditionalForm[…]`/`StandardForm[…]`
+/// wrappers around it: they only say how the content is typeset, so a
+/// layout inside one is still that layout.
+fn strip_form_wrappers(mut e: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = e
+    && matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+    && args.len() == 1
+  {
+    e = &args[0];
+  }
+  e
+}
+
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -40885,13 +41341,19 @@ pub(crate) fn style_pushed_into_layout(
     // (Any other styled `Row` item is already set inline as it is.)
     // A one-argument `Text[…]` between the two (`Style[Text[Column[…]],
     // 14]`) only marks its content as text, so it comes off here too.
+    // A form wrapper around the vertical layout
+    // (`Style[TraditionalForm[Grid[…]], 10]`) stays on it: the merged
+    // `Style` still sees the layout through it.
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
       && let Some(first) = args.first()
-      && let content @ Expr::FunctionCall { name: head, .. } =
-        strip_text_wrappers(first)
+      && let content = strip_text_wrappers(first)
+      && let Expr::FunctionCall { name: head, .. } =
+        strip_form_wrappers(content)
       && (matches!(head.as_str(), "Column" | "Grid" | "TextGrid")
-        || (head == "Row" && extract_cell_style(e).font_size.is_some()))
+        || (head == "Row"
+          && std::ptr::eq(strip_form_wrappers(content), content)
+          && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
@@ -49732,7 +50194,7 @@ fn spec_declares_control_type(items: &[Expr]) -> bool {
 /// setting their type once. A list value assigns one type per control, in the
 /// order the specs appear (`ControlType -> {Slider, PopupMenu}`); controls
 /// past the end of the list keep their default. `Automatic` means "decide as
-/// usual", so it is left off entirely.
+/// usual", so it is left off entirely, while `None` hides the control.
 fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
   let global = items.iter().find_map(|it| {
     let (Expr::Rule {
@@ -49774,7 +50236,18 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
         },
         None => global.clone(),
       };
-      if !matches!(&control_type, Expr::Identifier(s) if is_control_type_name(s) && s != "Automatic")
+      // `None` hides the variable's control, leaving it a bound state
+      // value (`ControlType -> {None, None}` for counters that buttons
+      // drive). A button type drives no variable, so a variable spec given
+      // one gets no control of its own either.
+      let control_type = match &control_type {
+        Expr::Identifier(s) if s == "Button" || s == "ButtonBar" => {
+          id_expr("None")
+        }
+        _ => control_type,
+      };
+      if !matches!(&control_type, Expr::Identifier(s)
+          if (is_control_type_name(s) && s != "Automatic") || s == "None")
         || spec_declares_control_type(spec)
       {
         return item;
@@ -49782,7 +50255,10 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
       let extended: Vec<Expr> = spec
         .iter()
         .cloned()
-        .chain(std::iter::once(rule_expr(id_expr("ControlType"), control_type)))
+        .chain(std::iter::once(rule_expr(
+          id_expr("ControlType"),
+          control_type,
+        )))
         .collect();
       Expr::List(extended.into())
     })
@@ -49967,8 +50443,12 @@ pub fn manipulate_locator_markers(
 }
 
 /// Wrap a Manipulate body so the given Locator controls (see
-/// [`manipulate_locator_markers`]) show as markers on the first 2D graphic
-/// the body returns, the way Wolfram places a Manipulate's Locators. The
+/// [`manipulate_locator_markers`]) show as markers on the outermost 2D
+/// graphic the body returns, the way Wolfram places a Manipulate's Locators
+/// — a graphic nested inside it (an `Inset` picture) never takes them.
+/// `Sort` orders positions shortest first, so an enclosing graphic wins
+/// over the ones it contains.
+/// The
 /// markers join the graphic's `Epilog`, so they neither move its plot range
 /// nor hide its own epilog; a result with no graphic is returned unchanged.
 /// Each variable may hold one point or a list of points.
@@ -49994,8 +50474,9 @@ pub fn locator_marker_body(
     .join(", ");
   format!(
     "Module[{{woxiRes = ({body}), woxiPos, woxiGraphic}}, \
-     woxiPos = FirstPosition[woxiRes, _Graphics, None, Heads -> False]; \
-     If[woxiPos === None, woxiRes, \
+     woxiPos = Position[woxiRes, _Graphics, Heads -> False]; \
+     If[woxiPos === {{}}, woxiRes, \
+     woxiPos = First[Sort[woxiPos]]; \
      woxiGraphic = If[woxiPos === {{}}, woxiRes, Extract[woxiRes, woxiPos]]; \
      woxiGraphic = Show[woxiGraphic, Epilog -> \
      Join[Flatten[{{Lookup[Options[woxiGraphic, Epilog], Epilog, {{}}]}}], \
@@ -56698,6 +57179,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Plus" if contains_presentation_head(expr) => {
         joined_label_runs(args, " + ", false, italic)
       }
+      // `Cross[a, b]` typesets as the infix `a×b`, which is what a label's
+      // `\[Cross]` between two box atoms reads back as
+      // (`9\[Cross]\*SuperscriptBox[\(10\), \(9\)]` is `9×10⁹`).
+      "Cross" if args.len() >= 2 => {
+        joined_label_runs(args, "\u{00D7}", true, italic)
+      }
       _ => output_run(italic),
     },
     Expr::BinaryOp {
@@ -57166,7 +57653,7 @@ fn label_is_compound(expr: &Expr) -> bool {
       "Row" | "Column" | "GraphicsRow" | "GraphicsColumn" => {
         matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
       }
-      "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
+      "Plus" | "Subtract" | "Times" | "Divide" | "Cross" => args.len() > 1,
       _ => false,
     },
     _ => false,
@@ -58157,17 +58644,19 @@ fn parse_manipulate_control(
   }
 
   // Head can be either a plain symbol `u` or `{u, uinit}` / `{u, uinit, ulbl}`.
-  let plain_run = |s: String| {
+  // A control without a caption is labeled with its variable, typeset the
+  // way the FrontEnd sets a symbol in a Manipulate panel: a one-letter
+  // name (`t`, `θ`, `μ`) in italics, a longer one (`m1`, `speed`) upright.
+  let default_run = |n: &str| {
+    let s = default_control_label(n);
     vec![LabelRun {
+      italic: is_single_letter_symbol(&s),
       text: s,
-      italic: false,
       ..Default::default()
     }]
   };
   let (name, explicit_initial, label_runs) = match &items[0] {
-    Expr::Identifier(n) => {
-      (n.clone(), None, plain_run(default_control_label(n)))
-    }
+    Expr::Identifier(n) => (n.clone(), None, default_run(n)),
     Expr::List(head_items) if !head_items.is_empty() => {
       let n = match &head_items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -58188,7 +58677,7 @@ fn parse_manipulate_control(
           }
           _ => manipulate_label_runs(other, false),
         },
-        None => plain_run(default_control_label(&n)),
+        None => default_run(&n),
       };
       (n, init, lbl)
     }
@@ -62286,6 +62775,21 @@ fn display_expr_to_node(
       // keeps the layout instead of flattening the grid into one text line.
       "Style" | "StyleForm" if !args.is_empty() => {
         match style_wrapped_block_layout(&args[0], bindings) {
+          // A typeset layout (`Style[TraditionalForm[Grid[…]], 9]`) is drawn
+          // as the styled picture it is, at the size its `Style` asks for.
+          Some(inner)
+            if !std::ptr::eq(strip_form_wrappers(&inner), &raw const inner) =>
+          {
+            static_leaf_node(
+              &call(
+                name.as_str(),
+                std::iter::once(inner)
+                  .chain(args[1..].iter().cloned())
+                  .collect(),
+              ),
+              bindings,
+            )
+          }
           Some(inner) => display_expr_to_node(&inner, bindings, probes, ons),
           // A styled graphic (`Style[Graphics[…], opts]`) is a picture, not
           // caption text: the label machinery would reduce it to nothing.
@@ -62437,7 +62941,9 @@ fn style_wrapped_block_layout(
     }
     other => other.clone(),
   };
-  is_block_layout(&released).then_some(released)
+  // A form wrapper (`TraditionalForm[Grid[…]]`) only says how the layout
+  // is typeset.
+  is_block_layout(strip_form_wrappers(&released)).then_some(released)
 }
 
 /// Whether `expr` is an evaluated graphics container (`Graphics[…]`,

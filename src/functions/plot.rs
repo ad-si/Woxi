@@ -90,9 +90,39 @@ pub(crate) fn plot_theme()
       RGBColor(0xFF, 0xFF, 0xFF), // white background
       RGBColor(0x66, 0x66, 0x66), // dark gray axes
       RGBColor(0xCC, 0xCC, 0xCC), // light gray origin lines
-      "#666",                     // axis label fill
+      "#404040",                  // tick label fill (GrayLevel[0.25])
       "#333",                     // default text fill
     )
+  }
+}
+
+/// The theme's tick label color ([`plot_theme`]'s label fill) as a
+/// plotters color.
+pub(crate) fn theme_label_rgb() -> RGBColor {
+  let (_, gray, _, label_fill, _) = plot_theme();
+  crate::functions::graphics::parse_hex_color(label_fill).map_or(gray, |c| {
+    let (r, g, b) = color_to_rgb8(c);
+    RGBColor(r, g, b)
+  })
+}
+
+/// The theme's axis and tick-mark gray, as an SVG color.
+pub(crate) fn theme_axis_hex() -> &'static str {
+  if crate::is_dark_mode() {
+    "#999"
+  } else {
+    "#666"
+  }
+}
+
+/// The stroke of tick marks whose labels are drawn in `label_fill`: the
+/// theme's axis gray when the labels keep the theme's (darker) label
+/// gray, else the labels' own color (a `LabelStyle`).
+pub(crate) fn theme_mark_stroke(label_fill: &str) -> &str {
+  if label_fill == plot_theme().3 {
+    theme_axis_hex()
+  } else {
+    label_fill
   }
 }
 
@@ -1428,17 +1458,26 @@ fn plot_range_requests_all_y(value: &Expr) -> bool {
 
 /// Which axes a `PlotRange` value asks to show the whole extent of, outliers
 /// included: both for `All`, one for `All` in its slot of `{xrange, yrange}`.
+/// An `All` end of a `{min, All}` pair reaches out to the whole extent of
+/// its axis too: `PlotRange -> {0, All}` keeps the y outliers, and
+/// `{{0, All}, {0, 1}}` the x ones.
 pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  // `All`, or a `{min, max}` pair with an `All` end.
+  let reaches_all = |e: &Expr| {
+    is_all(e)
+      || matches!(e, Expr::List(ends) if ends.len() == 2
+        && is_y_only_pair(ends) && ends.iter().any(is_all))
+  };
   match &val {
     e if is_all(e) => (true, true),
-    // `{ymin, All}` opens only an end of the y range.
+    // `{ymin, All}` opens an end of the y range only.
     Expr::List(items) if items.len() == 2 && is_y_only_pair(items) => {
-      (false, false)
+      (false, items.iter().any(is_all))
     }
     Expr::List(items) if items.len() == 2 => {
-      (is_all(&items[0]), is_all(&items[1]))
+      (reaches_all(&items[0]), reaches_all(&items[1]))
     }
     _ => (false, false),
   }
@@ -5077,6 +5116,7 @@ pub(crate) fn explicit_ticks_svg(
   tick_font_pt: f64,
 ) -> String {
   let mut out = String::new();
+  let mark_stroke = theme_mark_stroke(label_fill);
   let axis_y = plot_y0 + plot_h;
   let tick_len = sf * 5.0;
   let tick_font = sf * tick_font_pt;
@@ -5088,7 +5128,7 @@ pub(crate) fn explicit_ticks_svg(
       let px = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
       if !hidden_edges.bottom {
         out.push_str(&format!(
-          "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+          "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{mark_stroke}\" stroke-width=\"{sf:.1}\"/>\n",
           axis_y - tick_len,
         ));
       }
@@ -5119,7 +5159,7 @@ pub(crate) fn explicit_ticks_svg(
       let py = plot_y0 + plot_h - (pos - y_min) / (y_max - y_min) * plot_h;
       if !hidden_edges.left {
         out.push_str(&format!(
-          "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+          "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{mark_stroke}\" stroke-width=\"{sf:.1}\"/>\n",
           plot_x0 + tick_len,
         ));
       }
@@ -6624,7 +6664,7 @@ fn generate_svg_with_options(
   let (theme_bg, theme_gray, _, label_fill, _) = plot_theme();
   // `FrameStyle` and `FrameTicksStyle` paint each frame edge, its tick
   // marks and its tick labels.
-  let frame_paints = frame_edge_paints(opts, theme_gray);
+  let frame_paints = frame_edge_paints(opts, theme_gray, theme_label_rgb());
   let dark_gray = theme_gray;
   let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
     FontStyle::Bold
@@ -9629,6 +9669,11 @@ pub(crate) fn render_merged_plot_source(
     merged_plot_source_options(source);
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
+  } else if !overrides.aspect_automatic && opts.aspect_ratio.is_none() {
+    // The ratio the shown plot was drawn with (a `ContourPlot`'s square
+    // frame) stays when `Show` only resizes it: `Show[plot, ImageSize ->
+    // {w, h}]` letterboxes that shape rather than stretching it.
+    opts.aspect_ratio = source.aspect_ratio;
   }
   opts.aspect_automatic = overrides.aspect_automatic;
   opts.log_x = source.log_x;
@@ -12504,7 +12549,11 @@ pub(crate) fn generate_bubble_chart_svg(
         }
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(("sans-serif", sf * 18.0).into_font().color(&dark_gray))
+      .label_style(
+        ("sans-serif", sf * 18.0)
+          .into_font()
+          .color(&theme_label_rgb()),
+      )
       .set_tick_mark_size(LabelAreaPosition::Left, tick)
       .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
       .draw()
@@ -14004,7 +14053,7 @@ pub(crate) fn generate_histogram_svg(
         show: (true, true),
         ticks: opts.ticks.then_some((&x_ticks, &y_ticks)),
         sf,
-        axis_color: label_fill,
+        axis_color: theme_mark_stroke(label_fill),
         label_fill,
         axes_style: &[None, None],
         ticks_style: &[None, None],
@@ -16278,24 +16327,28 @@ pub(crate) struct FrameEdgePaint {
 /// its `FrameStyle` (else the theme's `gray` at one display pixel); the
 /// tick marks their `FrameTicksStyle` over the `FrameStyle`; the labels the
 /// color of the `FrameTicksStyle`, else of the `FrameStyle`, else of the
-/// `LabelStyle`.
+/// `LabelStyle`, else the theme's `label_gray` (Wolfram sets tick labels a
+/// shade darker than the frame).
 pub(crate) fn frame_edge_paints(
   opts: &PlotOptions,
   gray: RGBColor,
+  label_gray: RGBColor,
 ) -> [FrameEdgePaint; 4] {
   let rgb = |c: WoxiColor| {
     let (r, g, b) = color_to_rgb8(c);
     RGBColor(r, g, b)
   };
   let width = |t: f64| ((t * RESOLUTION_SCALE as f64).round() as u32).max(1);
+  // Wolfram strokes a plot's frame and its tick marks half a point wide
+  // (as the field plots' frames already are).
+  let default_width = RESOLUTION_SCALE / 2;
   std::array::from_fn(|edge| {
     let frame = opts.frame_styles[edge].as_ref();
     let ticks = opts.frame_ticks_styles[edge].as_ref();
     let frame_color = frame.and_then(|s| s.color);
     let tick_color = ticks.and_then(|s| s.color).or(frame_color);
-    let line_width = frame
-      .and_then(|s| s.thickness)
-      .map_or(RESOLUTION_SCALE, width);
+    let line_width =
+      frame.and_then(|s| s.thickness).map_or(default_width, width);
     FrameEdgePaint {
       line: frame_color.map_or(gray, rgb),
       line_width,
@@ -16303,10 +16356,10 @@ pub(crate) fn frame_edge_paints(
       mark_width: ticks
         .and_then(|s| s.thickness)
         .or(frame.and_then(|s| s.thickness))
-        .map_or(RESOLUTION_SCALE, width) as f64,
+        .map_or(default_width, width) as f64,
       label: tick_color
         .or(opts.label_style.and_then(|s| s.color))
-        .map_or(gray, rgb),
+        .map_or(label_gray, rgb),
     }
   })
 }

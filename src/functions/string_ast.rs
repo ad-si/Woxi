@@ -10469,7 +10469,7 @@ pub fn to_expression_ast_as(
 }
 
 /// Box heads `boxes_to_input` reads.
-fn box_input_head(name: &str) -> bool {
+pub(crate) fn box_input_head(name: &str) -> bool {
   matches!(
     name,
     "RowBox"
@@ -10503,7 +10503,7 @@ fn graphics_box_to_input(e: &Expr) -> Option<String> {
   }
 }
 
-fn boxes_to_input(e: &Expr) -> Option<String> {
+pub(crate) fn boxes_to_input(e: &Expr) -> Option<String> {
   // A picture typed into an input line (`x = <picture>` stores it as
   // `RowBox[{"x", "=", Graphics3DBox[…]}]`) reads as the graphics it shows.
   if let Some(text) = graphics_box_to_input(e) {

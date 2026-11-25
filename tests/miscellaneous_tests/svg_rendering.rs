@@ -2311,8 +2311,9 @@ mod tests {
 
     #[test]
     fn frame_true_draws_thin_four_sided_border() {
-      // Frame -> True draws a single closed rectangle (5 points) at 1px
-      // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
+      // Frame -> True draws a single closed rectangle (5 points) half a
+      // point wide, as Wolfram does (stroke-width = RESOLUTION_SCALE / 2 =
+      // 5 in viewBox units).
       let svg = woxi::interpret(
         r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True], "SVG"]"#,
       )
@@ -2320,9 +2321,9 @@ mod tests {
       // Find the thick frame polyline and confirm it is a closed 5-point rect.
       let frame = svg
         .lines()
-        .find(|l| l.contains("stroke-width=\"10\"") && l.contains("points="))
+        .find(|l| l.contains("stroke-width=\"5\"") && l.contains("points="))
         .unwrap_or_else(|| {
-          panic!("no frame polyline at stroke-width 10: {svg}")
+          panic!("no frame polyline at stroke-width 5: {svg}")
         });
       let pts = frame
         .split("points=\"")
@@ -2816,16 +2817,15 @@ mod tests {
     #[test]
     fn string_letters_in_a_fraction_stay_upright() {
       // A string is literal text: its single letters are not math
-      // variables, so they stay upright in a typeset fraction, while a
-      // one-letter symbol is still set in italics.
+      // variables, so they stay upright in a typeset fraction. Exported to
+      // SVG on its own (not inside a picture), a one-letter symbol is
+      // upright as well, as in Wolfram's SVG export.
       let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
       assert!(svg.contains(">a</text>"), "{svg}");
       assert!(!svg.contains("italic"), "string letters upright: {svg}");
       let svg = svg_of("Grid[{{a/b}}]");
-      assert!(
-        svg.contains("font-style=\"italic\""),
-        "symbols italic: {svg}"
-      );
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "exported symbols upright: {svg}");
       // Inline subscript boxes inside a string are literal text too.
       let svg = svg_of(
         "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
@@ -4847,6 +4847,32 @@ mod tests {
           svg.contains(&format!(">{name}<")),
           "every vertex is labeled with its own name: {svg}"
         );
+      }
+    }
+
+    /// A `Text` label the rendering function draws keeps its font size:
+    /// mapping it from the caller's units onto the drawing moves the label
+    /// without stretching its glyphs, also when the graph falls apart into
+    /// several components that are packed side by side.
+    #[test]
+    fn vertex_rendering_function_text_keeps_its_font_size() {
+      for graph in ["{1 -> 2, 2 -> 3}", "{1 -> 2, 3 -> 3, 4 -> 5, 6 -> 5}"] {
+        let svg = svg_of(&format!(
+          r#"GraphPlot[{graph}, DirectedEdges -> True,
+             VertexRenderingFunction -> (Text[#2, #1, Background -> White] &)]"#
+        ));
+        let labels: Vec<&str> = svg
+          .split("<text")
+          .skip(1)
+          .map(|t| t.split('>').next().unwrap_or(""))
+          .collect();
+        assert!(!labels.is_empty(), "{svg}");
+        for label in labels {
+          assert!(
+            !label.contains("matrix("),
+            "{graph}: the label is moved, not resized: {label}"
+          );
+        }
       }
     }
 

@@ -4257,9 +4257,11 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   let specs = specs.trim();
   let specs_inner = specs.strip_prefix('{')?.strip_suffix('}')?.trim();
   // The compiled `"Options" :> {…}` clause carries the widget-level caption
-  // (`FrameLabel -> …`) shown with the output; it is the only option the
-  // reconstruction keeps.
-  let frame_label = extract_arrow_value(box_dump, "Options")
+  // (`FrameLabel -> …`) shown with the output and the Manipulate-level
+  // `ControlType -> …` (one type per control, `None` hiding the state
+  // variables buttons drive); those are the options the reconstruction
+  // keeps.
+  let kept_options: Vec<String> = extract_arrow_value(box_dump, "Options")
     .map(clean)
     .and_then(|opts| {
       let inner = opts
@@ -4267,20 +4269,26 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
         .strip_prefix('{')?
         .strip_suffix('}')?
         .to_string();
-      split_top_level_commas(&inner)
-        .into_iter()
-        .map(|part| part.trim().to_string())
-        .find(|part| {
-          part
-            .strip_prefix("FrameLabel")
-            .is_some_and(|r| r.trim_start().starts_with("->"))
-        })
-    });
+      Some(
+        split_top_level_commas(&inner)
+          .into_iter()
+          .map(|part| part.trim().to_string())
+          .filter(|part| {
+            ["FrameLabel", "ControlType"].iter().any(|name| {
+              part
+                .strip_prefix(name)
+                .is_some_and(|r| r.trim_start().starts_with("->"))
+            })
+          })
+          .collect(),
+      )
+    })
+    .unwrap_or_default();
   let mut args = vec![body];
   if !specs_inner.is_empty() {
     args.push(specs_inner.to_string());
   }
-  args.extend(frame_label);
+  args.extend(kept_options);
   Some(format!("Manipulate[{}]", args.join(", ")))
 }
 
@@ -9577,6 +9585,27 @@ yf4GL4DwC5VA4w
     assert_eq!(
       src,
       "Manipulate[Plot[a*Sin[x], {x, 0, 2 Pi}], {{a, 2, \"amplitude\"}, 1, 5}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_keeps_control_type_option() {
+    // Regression: the compiled `"Options" :> {ControlType -> {…}}` clause
+    // was dropped, so a rebuilt widget turned the hidden state variables a
+    // button drives into degenerate sliders — and since the rebuild then had
+    // more controls than the live source, it replaced the live widget.
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`n$$, \n\
+      \"Specifications\" :> {Button[\"step\", $CellContext`n$$++], \
+      {$CellContext`n$$, 0, 0}, {$CellContext`log$$, Null}}, \n\
+      \"Options\" :> {ControlType -> {None, None}, \
+      AutorunSequencing -> {1}}]]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[n, Button[\"step\", n++], {n, 0, 0}, {log, Null}, \
+       ControlType -> {None, None}]"
     );
   }
 

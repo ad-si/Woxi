@@ -4987,6 +4987,31 @@ mod tests {
   /// variable, which is bound once. A `NumberForm[…]^"∘"` cell typesets as
   /// formatted digits with a raised degree sign, and a `StringForm` cell
   /// with its slots filled by formatted numbers.
+  /// Regression: a control-panel display `Dynamic[Style[TraditionalForm[
+  /// Grid[m, Frame -> All]], 9]]` was flattened into one line of text runs
+  /// instead of drawing the framed grid.
+  #[test]
+  fn styled_traditional_form_grid_display_draws_the_grid() {
+    let code = r#"
+      Manipulate[n,
+        {n, 1, 5, 1},
+        {{m, {{1, 2, 3}, {4, 5, 6}}}, ControlType -> None},
+        Dynamic[Style[TraditionalForm[Grid[m, Frame -> All]], 9]]]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.display_trees.len(), 1, "{:?}", state.display_trees);
+    let DisplayNode::Static { svg: Some(svg), .. } = &state.display_trees[0]
+    else {
+      panic!("display is not a picture: {:?}", state.display_trees[0]);
+    };
+    // The 2x3 grid's frame: three horizontal and four vertical rules.
+    assert_eq!(svg.matches("<line").count(), 7, "{svg}");
+    // Its cells are set at the style's size.
+    assert!(svg.contains("font-size=\"9.0\""), "{svg}");
+  }
+
   #[test]
   fn user_function_custom_control_shows_live_readout() {
     let code = r#"
@@ -8055,6 +8080,23 @@ mod tests {
     assert!(!dump.contains('^'), "{dump}");
     assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
+  /// A caption whose fraction has a `\[Cross]` product with a typeset power
+  /// below it (`\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)`, a unit
+  /// such as coulombs per 9×10⁹) reads `C/(9×10⁹)`: the box code after the
+  /// `\*` inside the group is a superscript, and `Cross` is the infix `×`
+  /// rather than a `Cross[…]` call.
+  #[test]
+  fn control_label_typesets_cross_product_with_power_in_fraction() {
+    let code = r#"Manipulate[c, {{c, 1, "charge q/\!\(\*FractionBox[\(C\), \(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]\)"}, -1, 1},
+      {{d, 1, "\!\(\*RowBox[{\"a\", \"\[Cross]\", \"b\"}]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("Cross["), "{dump}");
+    assert!(dump.contains("label: \"charge q/C/(9×10⁹)\""), "{dump}");
+    assert!(dump.contains("label: \"a×b\""), "{dump}");
   }
 
   /// A setter choice captioned with a plain typeset fraction

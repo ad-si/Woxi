@@ -629,7 +629,11 @@ mod interpreter_tests {
     )
     .unwrap();
     let svg = r.graphics.expect("the formula must be drawn");
-    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    // The integral sign is drawn as a path.
+    assert!(
+      svg.contains("stroke-linecap=\"round\""),
+      "integral sign missing: {svg}"
+    );
     assert!(!svg.contains("TraditionalForm"), "{svg}");
     assert!(svg.contains("bold"), "Bold style missing: {svg}");
   }
@@ -1969,9 +1973,8 @@ mod interpreter_tests {
     // Regression: Plot3D[…, PlotLabel -> Style[Framed[TraditionalForm[expr]],
     // …]] (the pattern the "Complex Exponential and Logarithm Functions"
     // Demonstration's Manipulate uses) printed the literal `Framed[…]`
-    // wrapper text instead of typesetting the boxed content. SVG text
-    // markup has no room to draw the frame's border, so the fix typesets
-    // the content plain rather than leaking the head.
+    // wrapper text instead of typesetting the boxed content. The label is
+    // typeset as a picture, so the frame's border is drawn around it.
     clear_state();
     let svg = interpret_with_stdout(
       "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
@@ -1985,8 +1988,12 @@ mod interpreter_tests {
       "Framed PlotLabel must not leak its literal head:\n{svg}"
     );
     assert!(
-      svg.contains("Re(") || svg.contains("Re["),
+      svg.contains(">Re<") && svg.contains(">(<"),
       "Framed PlotLabel should still typeset its content:\n{svg}"
+    );
+    assert!(
+      svg.contains("<rect x=\"0.5\" y=\"0.5\""),
+      "Framed PlotLabel should draw its frame:\n{svg}"
     );
   }
 

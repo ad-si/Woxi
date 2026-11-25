@@ -1051,10 +1051,8 @@ mod layout_display {
       "PointLegend[{Red, Blue}, {\"a\", \"b\"}, \
        LegendMarkers -> {\"\\[FilledSquare]\", \"\\[FilledUpTriangle]\"}]",
     );
-    assert!(
-      svg.contains("\u{25A0}") && svg.contains("\u{25B2}"),
-      "{svg}"
-    );
+    // Geometric glyphs are drawn as shapes of their size.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
     let svg = svg_of(
       "SwatchLegend[{Red, Blue}, {\"a\", \"b\"}, LegendLabel -> \"Colors\"]",
     );
@@ -1467,6 +1465,56 @@ mod layout_display {
         "failed singular exponent {power}: {value}"
       );
     }
+  }
+
+  /// `DateListPlot`'s `Axes -> Automatic` draws no axis line at y = 0
+  /// while the plot is framed, and the axes once `Frame -> False`.
+  #[test]
+  fn date_list_plot_automatic_axes_follow_the_frame() {
+    let data = "{Table[Sin[k/3.],{k,30}],Table[Cos[k/3.],{k,30}]},{2021,1,1}";
+    let framed = svg_of(&format!("DateListPlot[{data}]"));
+    assert_eq!(framed, svg_of(&format!("DateListPlot[{data},Axes->False]")));
+    assert_eq!(
+      framed,
+      svg_of(&format!("DateListPlot[{data},Axes->Automatic]"))
+    );
+    assert_ne!(framed, svg_of(&format!("DateListPlot[{data},Axes->True]")));
+    let frameless = svg_of(&format!("DateListPlot[{data},Frame->False]"));
+    assert_eq!(
+      frameless,
+      svg_of(&format!("DateListPlot[{data},Frame->False,Axes->True]"))
+    );
+    assert_ne!(
+      frameless,
+      svg_of(&format!("DateListPlot[{data},Frame->False,Axes->False]"))
+    );
+  }
+
+  /// Exporting typeset math (not a picture) to SVG sets its single-letter
+  /// symbols upright, as Wolfram's SVG export does; inside graphics they
+  /// stay italic, and an explicit `Italic` style is kept.
+  #[test]
+  fn svg_export_of_math_sets_single_letters_upright() {
+    for expr in [
+      "TraditionalForm[x^2 + y]",
+      "x^2 + y",
+      "Column[{TraditionalForm[HoldForm[f[x] == a b]]}]",
+      "TraditionalForm[HoldForm[Overscript[f, \"^\"][w]]]",
+    ] {
+      assert!(
+        !svg_of(expr).contains("font-style=\"italic\""),
+        "{expr} exported italic letters"
+      );
+    }
+    assert!(
+      svg_of("Graphics[Text[TraditionalForm[x^2 + y]]]")
+        .contains("font-style=\"italic\"")
+    );
+    assert!(
+      svg_of("Column[{x, Graphics[Text[TraditionalForm[x^2 + y]]]}]")
+        .contains("font-style=\"italic\"")
+    );
+    assert!(svg_of("Style[\"x\", Italic]").contains("italic"));
   }
 
   #[test]

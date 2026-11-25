@@ -10256,6 +10256,47 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// Regression: the variables a button drives were declared as `{n, 0, 0}`
+  /// and `{log, {}}` specs and hidden by a Manipulate-level
+  /// `ControlType -> {None, None}` list. The `None` entries were ignored, so
+  /// the variables became sliders/choosers instead of state the button's
+  /// writes are kept in.
+  #[test]
+  fn control_type_list_none_entries_keep_button_driven_state() {
+    let code = r#"Manipulate[
+      Row[{n, ": ", log}],
+      Button["draw", n = n + 1; AppendTo[log, 10 n]],
+      Button["reset", n = 0; log = {}],
+      {n, 0, 0}, {log, {}},
+      ControlType -> {None, None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the button panel should build a ManipulateState");
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .map(manipulate::ControlState::name)
+      .collect();
+    assert_eq!(names, ["", ""], "only the two buttons are controls");
+    let draw = match &state.controls[0] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      other => panic!("expected the draw button, got {other:?}"),
+    };
+    state.apply_button_action(&draw);
+    state.apply_button_action(&draw);
+    let value = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| panic!("{name} must stay hidden state"))
+    };
+    assert_eq!(value("n"), "2");
+    assert_eq!(value("log"), "{10, 20}");
+  }
+
   /// Regression: a control row `Row[{"label", ButtonBar[…], "label",
   /// ButtonBar[…]}]` mixing captions with several `ButtonBar`s was kept as one
   /// static heading whose text was the raw `ButtonBar[…]` source. Each bar must
