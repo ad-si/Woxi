@@ -21095,13 +21095,29 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
 
     // Turning the blue opacity down to zero empties those cells without
     // erasing them: no blue face shows (a fully transparent face paints
-    // nothing at all), but every outline survives.
+    // nothing at all), but every outline survives. Neighboring cells share
+    // faces, and an opaque face covered by an identical later one is left
+    // out, so the opaque sheet draws each shared edge once while the
+    // transparent one may draw it twice: compare the distinct edges, with
+    // each segment's ends taken in either order.
     let outlines = |svg: &str| {
+      let attr = |l: &str, name: &str| -> String {
+        l.split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .unwrap_or("")
+          .to_string()
+      };
       svg
         .lines()
         .filter(|l| l.starts_with("<line"))
         .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
-        .count()
+        .map(|l| {
+          let a = (attr(l, "x1"), attr(l, "y1"));
+          let b = (attr(l, "x2"), attr(l, "y2"));
+          if a <= b { (a, b) } else { (b, a) }
+        })
+        .collect::<std::collections::BTreeSet<_>>()
     };
     set(&mut widget, 4, 0.0);
     widget.reevaluate();
@@ -21112,6 +21128,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
       hidden.iter().all(|l| l.contains("opacity=\"0\"")),
       "no blue face may show through: {hidden:?}"
     );
+    assert!(!outlines(&sheet).is_empty(), "the cells are outlined");
     assert_eq!(
       outlines(&hollow),
       outlines(&sheet),
