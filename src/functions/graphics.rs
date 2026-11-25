@@ -53535,6 +53535,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     "Row"
       | "Column"
       | "Grid"
+      | "TableForm"
       | "TabView"
       | "PaneSelector"
       | "OpenerView"
@@ -53653,10 +53654,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // item is below — a row cell can itself be a `PaneSelector`/`Row`/
       // `Column` grouping further controls (the Demonstrations idiom of a
       // custom Grid-based control panel), not just a bare `Control`/`Button`.
-      Expr::List(row) if name == "Grid" => {
+      Expr::List(row) if name == "Grid" || name == "TableForm" => {
         let cells: Vec<Expr> = row.iter().cloned().collect();
         if let Some(cell) = grid_row_captioned_control(&cells) {
-          match control_group_items(&cell) {
+          match nested_control_group_items(&cell) {
             Some(nested) => out.extend(nested),
             None => out.push(layout_control_leaf(&cell)),
           }
@@ -53677,7 +53678,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
             vec![cell.clone()]
           };
           for factor in &factors {
-            match control_group_items(factor) {
+            match nested_control_group_items(factor) {
               Some(nested) => out.extend(nested),
               None => out.push(layout_control_leaf(factor)),
             }
@@ -53685,7 +53686,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         }
       }
       // Nested layout containers flatten recursively.
-      other => match control_group_items(other) {
+      other => match nested_control_group_items(other) {
         Some(nested) => out.extend(nested),
         None => out.push(layout_control_leaf(other)),
       },
@@ -53693,6 +53694,24 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   flush_caption(&mut caption, &mut out);
   Some(out)
+}
+
+/// One nested item of a control layout, flattened into control rows.
+///
+/// Same as [`control_group_items`], except that a bare list holding a
+/// `Control[…]` is a column of items rather than a leaf: a `Grid`/
+/// `TableForm` cell (and a `Column`/`Row` item) is commonly written that
+/// way — `TableForm[{{{Control[…], Control[…]}, {Control[…]}}}]` stacks
+/// each cell's controls — and without this such a cell would be kept as
+/// one display element, stringifying its controls into inert text and
+/// leaving their variables unbound.
+fn nested_control_group_items(item: &Expr) -> Option<Vec<Expr>> {
+  match item {
+    Expr::List(_) if expr_contains_call(item, &["Control"]) => {
+      control_group_items(&call1("Column", item.clone()))
+    }
+    _ => control_group_items(item),
+  }
 }
 
 /// A `PaneSelector[{…}, sel]` selector is commonly written `Dynamic[var]`
