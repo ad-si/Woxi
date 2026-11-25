@@ -7203,6 +7203,63 @@ mod graphics {
         );
       }
 
+      // A flat automatic range (a horizontal line alone) opens up to
+      // `{-1, 1}` around 0, or from 0 to twice its value, before an explicit
+      // `PlotRangePadding` pads it — as it does under the default padding.
+      // It stayed zero-high, so the line sat on the picture's top edge.
+      #[test]
+      fn flat_automatic_range_opens_up_before_padding() {
+        for (y, padding) in [(0, "Scaled[0.05]"), (4, "None"), (-4, "0")] {
+          let svg = export_svg(&format!(
+            "Graphics[{{Line[{{{{-100, {y}}}, {{100, {y}}}}}], \
+             Point[{{0, {y}}}]}}, PlotRangePadding -> {padding}, \
+             AspectRatio -> Full, ImageSize -> {{200, 100}}]"
+          ));
+          let (_, cy) = point_px(&svg);
+          assert!(
+            (45.0..55.0).contains(&cy),
+            "y = {y}, padding {padding}: expected the line mid-height, cy={cy}"
+          );
+        }
+      }
+
+      // `Show[plot, …, AspectRatio -> Full]` with an `ImageSize -> {w, h}`
+      // stretches the drawing over the whole picture, like the plot alone
+      // does: the `Full` was dropped, leaving a 1/GoldenRatio drawing in a
+      // square picture.
+      #[test]
+      fn show_with_full_aspect_ratio_fills_the_image_size() {
+        // A plot on its own keeps the requested height.
+        let svg = export_svg(
+          "Show[Plot[3 x, {x, -100, 100}], ImageSize -> {280, 280}, \
+           AspectRatio -> Full]",
+        );
+        assert!(
+          svg.starts_with("<svg width=\"280\" height=\"280\""),
+          "{}",
+          &svg[..60]
+        );
+        // Layered with primitives, the curve runs from the bottom of the
+        // picture to its top.
+        let svg = export_svg(
+          "Show[Plot[3 x, {x, -100, 100}], Graphics[Point[{100, 300}]], \
+           ImageSize -> {280, 280}, AspectRatio -> Full]",
+        );
+        let (_, cy) = point_px(&svg);
+        assert!(cy < 20.0, "expected the point near the top, cy={cy}");
+        let start_y: f64 = svg
+          .split("<polyline points=\"")
+          .nth(1)
+          .and_then(|s| s.split([' ', '"']).next())
+          .and_then(|xy| xy.split(',').nth(1))
+          .and_then(|y| y.parse().ok())
+          .expect("the curve's first point");
+        assert!(
+          start_y > 250.0,
+          "expected the curve to start near the bottom, y={start_y}"
+        );
+      }
+
       // Each axis entry may independently be a single amount or a
       // `{low, high}` pair: `{None, {Scaled[1], Scaled[1]}}` leaves x
       // unpadded and pads y to `{-1, 2}`.
