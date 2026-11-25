@@ -1611,6 +1611,19 @@ fn is_text_inset(obj: &Expr) -> bool {
       matches!(&args[0], Expr::List(items)
         if !items.is_empty() && items.iter().all(is_text_inset))
     }
+    // A `Row` of text runs (strings, computed numbers, styled or scripted
+    // pieces) is one line of text, so a `Column` of such rows is a text
+    // block rather than a picture.
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      matches!(&args[0], Expr::List(parts)
+        if !parts.is_empty()
+          && parts.iter().all(|p| {
+            matches!(
+              crate::functions::graphics::strip_style_wrappers(p),
+              Expr::Integer(_) | Expr::Real(_)
+            ) || is_text_inset(p)
+          }))
+    }
     Expr::FunctionCall { name, args } => {
       matches!(
         name.as_str(),
