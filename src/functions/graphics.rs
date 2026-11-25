@@ -26926,7 +26926,10 @@ pub(crate) fn plot_label_picture_svg(
 /// number ", Framed[n, Background -> Yellow]}]`, the boxed value standing
 /// out from the words around it — typeset as a picture, so each frame is
 /// drawn (with its background and frame color) around its part of the
-/// line instead of being dropped from the text.
+/// line instead of being dropped from the text. A label that is itself
+/// `Framed` (`Style[Framed[time], 14]`), or that a `Style` shades with a
+/// `Background` (`Style[label, Background -> Yellow]`), is set the same
+/// way, so its box and shading are drawn behind the title text.
 fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   fn holds_frame(e: &Expr) -> bool {
     match e {
@@ -26937,13 +26940,51 @@ fn plot_label_inline_frame_svg(expr: &Expr) -> Option<(String, f64, f64)> {
       _ => false,
     }
   }
+  fn style_sets_background(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        args[1..].iter().any(|opt| {
+          matches!(
+            opt,
+            Expr::Rule { pattern, replacement }
+              | Expr::RuleDelayed { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background")
+                && !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          )
+        }) || style_sets_background(&args[0])
+      }
+      _ => false,
+    }
+  }
   let body = peel_style_wrapper(expr);
   let Expr::FunctionCall { name, args } = body else {
-    return None;
+    // A plain string or number under a shading `Style`.
+    if !style_sets_background(expr)
+      || !matches!(body, Expr::String(_) | Expr::Integer(_) | Expr::Real(_))
+    {
+      return None;
+    }
+    return inline_frame_layout(expr);
   };
-  if name != "Row" || !args.iter().any(holds_frame) {
+  // A framed picture is not running text; it keeps its own path.
+  let framed = name == "Framed"
+    && !args.is_empty()
+    && !matches!(&args[0], Expr::Graphics { .. } | Expr::Image { .. })
+    && !matches!(&args[0], Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" || name == "Image");
+  let row_with_frame = name == "Row" && args.iter().any(holds_frame);
+  let shaded_text = name == "Row" && style_sets_background(expr);
+  if !(framed || row_with_frame || shaded_text) {
     return None;
   }
+  inline_frame_layout(expr)
+}
+
+/// Typeset a `PlotLabel` (see [`plot_label_inline_frame_svg`]) through the
+/// box layout in the graphic's sans-serif text face.
+fn inline_frame_layout(expr: &Expr) -> Option<(String, f64, f64)> {
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let boxes = crate::strip_number_precision_markers(&boxes);
