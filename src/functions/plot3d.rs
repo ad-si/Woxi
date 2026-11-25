@@ -7877,6 +7877,9 @@ struct FaceFormOverride {
   base_color: Option<(u8, u8, u8)>,
   /// The opacity set by plain directives, for non-face primitives.
   base_opacity: f64,
+  /// Whether a plain color directive followed the `FaceForm`. A round
+  /// solid (`Sphere`, `Cylinder`, `Cone`) is then drawn in that color.
+  recolored: bool,
 }
 
 impl StyleState3D {
@@ -7894,6 +7897,7 @@ impl StyleState3D {
   fn set_plain_color(&mut self, rgb: (u8, u8, u8)) {
     if let Some(fo) = &mut self.face_form {
       fo.base_color = Some(rgb);
+      fo.recolored = true;
       if fo.color.is_none() {
         self.color = Some(rgb);
         self.back_color = None;
@@ -8194,6 +8198,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       opacity: face_opacity,
       base_color,
       base_opacity,
+      recolored: false,
     });
     style.back_color = match args.get(1) {
       Some(back) => {
@@ -10376,6 +10381,17 @@ fn collect_3d_primitives(
     | Primitive3D::Text3D { style, .. } = prim
     {
       style.without_face_form();
+    }
+    // A plain color given after the `FaceForm` is the one a round solid
+    // takes: `{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+    // cylinder between yellow polygons.
+    if let Primitive3D::Sphere { style, .. }
+    | Primitive3D::Cylinder { style, .. }
+    | Primitive3D::Cone { style, .. } = prim
+      && style.face_form.as_ref().is_some_and(|fo| fo.recolored)
+    {
+      style.without_face_form();
+      style.back_color = None;
     }
   }
 }
@@ -12679,6 +12695,33 @@ fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
     .collect()
 }
 
+/// For a box of zero thickness along exactly one axis, the index (in
+/// `tessellate_cuboid`'s face order) of the one face to draw: of the two
+/// faces lying in the same plane, the one turned toward the viewer, so the
+/// sheet shows its front color from either side. The other four faces
+/// have no area.
+fn flat_cuboid_visible_face(
+  p_min: &Point3D,
+  p_max: &Point3D,
+  camera: &Camera,
+) -> Option<usize> {
+  let lo = [p_min.x, p_min.y, p_min.z];
+  let hi = [p_max.x, p_max.y, p_max.z];
+  let flat: Vec<usize> = (0..3).filter(|&i| lo[i] == hi[i]).collect();
+  let &[axis] = &flat[..] else {
+    return None;
+  };
+  let center = Point3D {
+    x: f64::midpoint(lo[0], hi[0]),
+    y: f64::midpoint(lo[1], hi[1]),
+    z: f64::midpoint(lo[2], hi[2]),
+  };
+  let toward = camera.toward_viewer(center);
+  // Faces come as bottom, top (z), front, back (y), left, right (x).
+  let first = [4, 2, 0][axis];
+  Some(first + usize::from(toward[axis] > 0.0))
+}
+
 fn hidden_cuboid_faces(
   prims: &[Primitive3D],
 ) -> std::collections::HashSet<(u8, [i64; 5])> {
@@ -12693,7 +12736,14 @@ fn hidden_cuboid_faces(
     } = prim
       && style.opacity >= 1.0
     {
-      for (axis, hi, key) in cuboid_face_keys(p_min, p_max) {
+      let keys = cuboid_face_keys(p_min, p_max);
+      for (i, (axis, hi, key)) in keys.into_iter().enumerate() {
+        // A box of zero thickness along an axis has its own two faces in
+        // one plane. They are its whole visible surface, not an interior
+        // wall between two boxes.
+        if keys[i ^ 1].2 == key {
+          continue;
+        }
         if seen.contains(&(axis, !hi, key)) {
           hidden.insert((axis, key));
         }
@@ -12754,24 +12804,27 @@ pub(crate) fn tessellate_cuboid(
     }, // 7
   ];
   vec![
+    // Each face is wound counterclockwise seen from outside the box, so
+    // its normal points outward and `FaceForm[front, back]` paints the
+    // outside with the front color.
     // Bottom
-    (v[0], v[1], v[2]),
-    (v[0], v[2], v[3]),
+    (v[0], v[2], v[1]),
+    (v[0], v[3], v[2]),
     // Top
-    (v[4], v[6], v[5]),
-    (v[4], v[7], v[6]),
+    (v[4], v[5], v[6]),
+    (v[4], v[6], v[7]),
     // Front
-    (v[0], v[5], v[1]),
-    (v[0], v[4], v[5]),
+    (v[0], v[1], v[5]),
+    (v[0], v[5], v[4]),
     // Back
-    (v[2], v[7], v[3]),
-    (v[2], v[6], v[7]),
+    (v[2], v[3], v[7]),
+    (v[2], v[7], v[6]),
     // Left
-    (v[0], v[3], v[7]),
-    (v[0], v[7], v[4]),
+    (v[0], v[7], v[3]),
+    (v[0], v[4], v[7]),
     // Right
-    (v[1], v[5], v[6]),
-    (v[1], v[6], v[2]),
+    (v[1], v[6], v[5]),
+    (v[1], v[2], v[6]),
   ]
 }
 
@@ -15248,7 +15301,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style,
         } => {
           let mut tris = tessellate_cuboid(p_min, p_max);
-          if style.opacity >= 1.0 && !hidden_faces.is_empty() {
+          if let Some(keep) = flat_cuboid_visible_face(p_min, p_max, &camera) {
+            tris.drain(..2 * keep);
+            tris.truncate(2);
+          } else if style.opacity >= 1.0 && !hidden_faces.is_empty() {
             let keys = cuboid_face_keys(p_min, p_max);
             let mut face = 0;
             tris.retain(|_| {

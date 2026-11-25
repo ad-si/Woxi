@@ -10862,3 +10862,14 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### `FaceForm` on round solids
+
+Woxi lets `FaceForm[front, back]` color `Sphere`, `Cylinder` and `Cone`
+unless a plain color directive follows it, in which case the round solid
+takes that color (`{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+cylinder). A saved snapshot confirms only that last case. Whether Wolfram
+ignores `FaceForm` on round solids altogether, including with no later
+color, has not been checked against wolframscript. Wolfram also lets the two
+coincident faces of a zero-thickness `Cuboid` z-fight (speckles of front
+and back color); Woxi draws the sheet in its front color.

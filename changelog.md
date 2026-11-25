@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
+    way to draw a ground plane) is filled instead of drawn as a bare
+    outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes
+    the front color, not the back one, and a plain color after the
+    `FaceForm` colors a `Sphere`, `Cylinder` or `Cone`.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms

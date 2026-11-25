@@ -75419,3 +75419,137 @@ mod steep_crossings_and_chart_options {
     }
   }
 }
+
+// `FaceForm[front, back]` on boxes and round solids. A `Cuboid`'s faces
+// used to be wound inward, so its outside took the back color; a box of zero
+// thickness lost its two flat faces altogether (each hid the other as an
+// "interior wall"); and a plain color after the `FaceForm` did not reach a
+// `Cylinder`.
+mod face_form_on_boxes_and_round_solids {
+  use super::*;
+
+  /// The fill of every `<polygon>`, in paint order.
+  fn polygon_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<polygon")
+      .skip(1)
+      .map(|rest| {
+        let start = rest.find("fill=\"").unwrap() + 6;
+        let end = start + rest[start..].find('"').unwrap();
+        rest[start..end].to_string()
+      })
+      .collect()
+  }
+
+  /// `(r, g, b)` of an `rgb(r,g,b)` fill.
+  fn rgb(fill: &str) -> (u8, u8, u8) {
+    let inner = fill
+      .strip_prefix("rgb(")
+      .and_then(|s| s.strip_suffix(')'))
+      .unwrap_or_else(|| panic!("not an rgb fill: {fill}"));
+    let c: Vec<u8> = inner.split(',').map(|v| v.parse().unwrap()).collect();
+    (c[0], c[1], c[2])
+  }
+
+  /// The front color (yellow, lit) has red in it; the back color (green)
+  /// has none.
+  fn is_front(fill: &str) -> bool {
+    rgb(fill).0 > 0
+  }
+
+  #[test]
+  fn cuboid_outside_takes_front_color() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{FaceForm[Yellow, Green], Cuboid[]}, Boxed -> False]",
+    );
+    let fills = polygon_fills(&svg);
+    assert_eq!(fills.len(), 12);
+    // The three faces toward the viewer show the front color, the three
+    // far ones (seen from inside) the back color, and a near face is
+    // painted last.
+    assert_eq!(fills.iter().filter(|f| is_front(f)).count(), 6, "{fills:?}");
+    assert!(is_front(&fills[11]), "{fills:?}");
+    assert!(!is_front(&fills[0]), "{fills:?}");
+  }
+
+  #[test]
+  fn flat_cuboid_is_a_filled_sheet_from_either_side() {
+    for view in ["{1.3, -2.4, 2}", "{1.3, -2.4, -2}"] {
+      for corners in [
+        "{0, 0, 0}, {2, 1, 0}",
+        "{2, 0.25, 0.5}, {2, 0.75, 2}",
+        "{0, 1, 0}, {2, 1, 3}",
+      ] {
+        clear_state();
+        let svg = export_svg(&format!(
+          "Graphics3D[{{FaceForm[Yellow, Green], Cuboid[{corners}]}}, \
+           Boxed -> False, ViewPoint -> {view}]"
+        ));
+        let fills = polygon_fills(&svg);
+        assert_eq!(fills.len(), 2, "{corners} from {view}: {fills:?}");
+        assert!(
+          fills.iter().all(|f| is_front(f)),
+          "{corners} from {view}: {fills:?}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn flat_cuboid_without_face_form_is_filled() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Red, Cuboid[{-1, -1, 0}, {1, 1, 0}]}, Boxed -> False]",
+    );
+    let fills = polygon_fills(&svg);
+    assert_eq!(fills.len(), 2);
+    assert!(fills.iter().all(|f| rgb(f).0 > rgb(f).1));
+  }
+
+  #[test]
+  fn boxes_sharing_a_wall_still_hide_it() {
+    clear_state();
+    let two = polygon_fills(&export_svg(
+      "Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 1}], Cuboid[{1, 0, 0}, {2, 1, 1}]}]",
+    ));
+    // Two boxes of six faces each, less the wall between them.
+    assert_eq!(two.len(), 2 * (12 - 2));
+  }
+
+  #[test]
+  fn plain_color_after_face_form_colors_a_cylinder() {
+    clear_state();
+    let cap_fills = |directives: &str| -> Vec<(u8, u8, u8)> {
+      polygon_fills(&export_svg(&format!(
+        "Graphics3D[{{{directives}, Cylinder[{{{{0, 0, 0}}, {{0, 0.3, 0}}}}, 1]}}]"
+      )))
+      .iter()
+      .filter(|f| f.starts_with("rgb("))
+      .map(|f| rgb(f))
+      .collect()
+    };
+    let white = cap_fills("White");
+    assert_ne!(white, []);
+    assert_eq!(cap_fills("FaceForm[Yellow, Green], White"), white);
+    // Without a later color the `FaceForm` still colors the cylinder.
+    let yellow = cap_fills("FaceForm[Yellow, Green]");
+    assert_ne!(yellow, white);
+    assert!(yellow.iter().all(|c| c.2 == 0), "{yellow:?}");
+  }
+
+  #[test]
+  fn plain_color_after_face_form_leaves_polygons_to_the_face_form() {
+    clear_state();
+    let svg = |directives: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{{directives}, \
+         Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, {{0, 1, 0}}}}]}}]"
+      ))
+    };
+    assert_eq!(
+      svg("FaceForm[Yellow, Green], White"),
+      svg("FaceForm[Yellow, Green]")
+    );
+  }
+}
