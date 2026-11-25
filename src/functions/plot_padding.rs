@@ -244,7 +244,7 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
 /// line of markup — the thin gaps between the digit groups of a long number
 /// (`1<tspan dx="0.18em">234</tspan>…`), which widen the line beyond its
 /// visible characters.
-fn tspan_shift_em(line: &str) -> f64 {
+pub(crate) fn tspan_shift_em(line: &str) -> f64 {
   const OPEN: &str = "<tspan dx=\"";
   line
     .match_indices(OPEN)

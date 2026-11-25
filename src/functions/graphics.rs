@@ -44783,12 +44783,16 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         // The default sans face (`Text[…]`, or `sans-serif` by name) is
         // drawn in the embedded Atkinson Hyperlegible Next, whose digits
         // and blanks run wider than Arial's: measured by Arial's advances,
-        // a centered part spills into its neighbors.
-        crate::functions::plot_padding::exported_text_extent(
+        // a centered part spills into its neighbors. The thin gaps
+        // between the digit groups of a long number are `dx` shifts
+        // rather than glyphs, so they are added on top.
+        (crate::functions::plot_padding::exported_text_extent(
           &markup,
           st.font_size,
         )
-        .1 * bold
+        .1 + crate::functions::plot_padding::tspan_shift_em(&markup)
+          * st.font_size)
+          * bold
       } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
