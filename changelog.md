@@ -2,6 +2,8 @@
 
 # Unreleased
 
+- Woxi Studio windows show the Woxi app icon in the title bar and
+    taskbar instead of the platform's generic default icon.
 - `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`
     search a long text in one pass: a pattern that is absent or sparse in a
     few hundred kilobytes took seconds, the search restarting at every
