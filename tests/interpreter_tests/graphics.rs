@@ -71854,6 +71854,74 @@ mod graphics3d_point_depth {
     assert!(svg[..dot].contains("<line"), "far edges come first");
     assert!(svg[dot..].contains("<line"), "near edges come after");
   }
+
+  /// The faces drawn after the first `<circle>` of `svg` that reach into
+  /// the inner part of its disc.
+  fn faces_over_dot(svg: &str) -> Vec<String> {
+    let dot_at = svg.find("<circle").expect("the point is drawn");
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = tag.find(&key).unwrap() + key.len();
+      let end = start + tag[start..].find('"').unwrap();
+      tag[start..end].parse().unwrap()
+    };
+    let circle = &svg[dot_at..dot_at + svg[dot_at..].find("/>").unwrap()];
+    let (cx, cy, r) =
+      (attr(circle, "cx"), attr(circle, "cy"), attr(circle, "r"));
+    let seg_dist = |(ax, ay): (f64, f64), (bx, by): (f64, f64)| {
+      let (dx, dy) = (bx - ax, by - ay);
+      let len2 = dx * dx + dy * dy;
+      let t = if len2 > 0.0 {
+        (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      (ax + t * dx - cx).hypot(ay + t * dy - cy)
+    };
+    svg[dot_at..]
+      .match_indices("<polygon points=\"")
+      .filter_map(|(i, key)| {
+        let rest = &svg[dot_at + i + key.len()..];
+        let pts: Vec<(f64, f64)> = rest[..rest.find('"').unwrap()]
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let reaches_in = (0..pts.len())
+          .any(|k| seg_dist(pts[k], pts[(k + 1) % pts.len()]) < 0.7 * r);
+        reaches_in.then(|| rest[..rest.find("/>").unwrap()].to_string())
+      })
+      .collect()
+  }
+
+  // Regression: a big dot floating above a surface was placed in the draw
+  // order by its center alone, so the surface faces next to that center
+  // (behind the dot, but drawn later) were painted over part of its disc.
+  #[test]
+  fn faces_behind_a_dot_are_drawn_before_its_whole_disc() {
+    for (x, y) in [("0", "0"), ("2", "2"), ("-2.5", "0"), ("1", "-2")] {
+      let svg = export_svg(&format!(
+        "Show[Plot3D[(u^2 + v^2)/2, {{u, -3, 3}}, {{v, -3, 3}}], \
+         Graphics3D[{{PointSize[0.06], Orange, \
+         Point[{{{x}, {y}, ({x}^2 + {y}^2)/2 + 1.5}}]}}]]"
+      ));
+      let over = faces_over_dot(&svg);
+      assert!(over.is_empty(), "dot at {x}, {y}: {over:?}");
+    }
+  }
+
+  #[test]
+  fn a_dot_under_a_surface_stays_hidden_by_it() {
+    // Below a dome seen from above, the faces in front of the dot's center
+    // still come after it.
+    let svg = export_svg(
+      "Show[Plot3D[4 - (u^2 + v^2)/2, {u, -2, 2}, {v, -2, 2}], \
+       Graphics3D[{PointSize[0.06], Point[{0, 0, 1}]}]]",
+    );
+    assert!(!faces_over_dot(&svg).is_empty(), "{svg}");
+  }
 }
 
 mod surface_default_mesh {
