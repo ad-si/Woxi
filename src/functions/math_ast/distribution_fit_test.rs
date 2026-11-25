@@ -595,53 +595,10 @@ fn test_label(name: &str) -> String {
 }
 
 fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
-  let header = Expr::List(
-    vec![
-      Expr::String(String::new()),
-      str_expr("Statistic"),
-      str_expr("P\u{2010}Value"),
-    ]
-    .into(),
-  );
-  let row = Expr::List(
-    vec![
-      Expr::String(test_label(name)),
-      Expr::Real(stat),
-      Expr::Real(p),
-    ]
-    .into(),
-  );
-  let at_second = || {
-    Expr::List(
-      vec![call(
-        "Rule",
-        vec![Expr::Integer(2), call1("GrayLevel", Expr::Real(0.7))],
-      )]
-      .into(),
-    )
-  };
-  let grid = call(
-    "Grid",
-    vec![
-      Expr::List(vec![header, row].into()),
-      call(
-        "Rule",
-        vec![
-          id_expr("Alignment"),
-          Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
-        ],
-      ),
-      call(
-        "Rule",
-        vec![
-          id_expr("Dividers"),
-          Expr::List(vec![at_second(), at_second()].into()),
-        ],
-      ),
-      call("Rule", vec![id_expr("Spacings"), id_expr("Automatic")]),
-    ],
-  );
-  call("Style", vec![grid, str_expr("DialogStyle")])
+  super::statistics::hypothesis_test_table(
+    &["Statistic", "P\u{2010}Value"],
+    vec![(test_label(name), vec![Expr::Real(stat), Expr::Real(p)])],
+  )
 }
 
 /// Build the `HypothesisTestData[<|…|>]` association: `"FittedDistribution"`,

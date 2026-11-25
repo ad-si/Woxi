@@ -124,6 +124,25 @@ mod mann_whitney_test {
     );
   }
 
+  // The conclusion is a nested `Row` and the tables are styled grids, as
+  // in every hypothesis test.
+  #[test]
+  fn conclusion_and_table_structure() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[MannWhitneyTest[{Range[40], Range[30] + 22.5}, -3.1, \"TestConclusion\", SignificanceLevel -> 0.01], InputForm]").unwrap(),
+      "Row[{\"The null hypothesis that \", Row[{\"the \", \"median\", \" difference is \", -3.1, \" \"}], \"is rejected at the \", Row[{1., \" percent level \"}], Row[{\"based on the \", \"Mann\u{2010}Whitney\", \" test.\"}]}]"
+    );
+    assert_eq!(
+      interpret("ToString[MannWhitneyTest[{{1, 2, 3, 4}, {2.5, 7, 8}}, 0, \"PValueTable\"], InputForm]").unwrap(),
+      "Style[Grid[{{\"\", \"P\u{2010}Value\"}, {\"Mann\u{2010}Whitney\", 0.11428571428571428}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
+    );
+    assert_eq!(
+      interpret("ToString[VarianceEquivalenceTest[{{1, 2, 3, 4.}, {2, 5, 1, 7.}}, \"TestDataTable\"], InputForm]").unwrap(),
+      "Style[Grid[{{\"\", \"Statistic\", \"P\u{2010}Value\"}, {\"Fisher Ratio\", 0.2197802197802198, 0.24515718875293802}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
+    );
+  }
+
   #[test]
   fn invalid_input_stays_unevaluated_with_a_message() {
     clear_state();

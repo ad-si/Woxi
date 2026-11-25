@@ -18,7 +18,8 @@
 
 use crate::InterpreterError;
 use crate::functions::math_ast::{
-  Alternative, HypothesisTestSettings, erfc_f64, try_eval_to_f64,
+  Alternative, HypothesisTestSettings, erfc_f64, hypothesis_test_conclusion,
+  hypothesis_test_table, try_eval_to_f64,
 };
 use crate::helpers::{call, str_expr, unevaluated};
 use crate::syntax::Expr;
@@ -101,11 +102,10 @@ pub fn mann_whitney_test_ast(
 
   let shifted: Vec<f64> = x.iter().map(|v| v - mu0).collect();
   let test = MannWhitney::new(&shifted, &y, settings.alternative);
-  let level = significance_level_text(&opts);
+  let level = significance_level_percent(&opts);
   let mut results = Vec::with_capacity(properties.len());
   for property in &properties {
-    let Some(value) =
-      test.property(property, &settings, &mu0_expr, level.as_str())
+    let Some(value) = test.property(property, &settings, &mu0_expr, &level)
     else {
       return Ok(unevaluated(NAME, full_args));
     };
@@ -136,7 +136,7 @@ fn two_samples(data: &Expr) -> Option<(Vec<f64>, Vec<f64>)> {
 
 /// The level in the conclusion text, in percent: `100 α` as Wolfram prints
 /// it (`5` for the default 1/20, `1.` for `SignificanceLevel -> 0.01`).
-fn significance_level_text(opts: &[(String, Expr)]) -> String {
+fn significance_level_percent(opts: &[(String, Expr)]) -> Expr {
   let given = opts
     .iter()
     .rev()
@@ -148,12 +148,12 @@ fn significance_level_text(opts: &[(String, Expr)]) -> String {
   let alpha = given.unwrap_or_else(|| {
     call("Rational", vec![Expr::Integer(1), Expr::Integer(20)])
   });
-  let percent = crate::evaluator::evaluate_expr_to_expr(&call(
+
+  crate::evaluator::evaluate_expr_to_expr(&call(
     "Times",
     vec![Expr::Integer(100), alpha],
   ))
-  .unwrap_or(Expr::Integer(5));
-  crate::syntax::expr_to_string(&percent)
+  .unwrap_or(Expr::Integer(5))
 }
 
 struct MannWhitney {
@@ -271,7 +271,7 @@ impl MannWhitney {
     property: &str,
     settings: &HypothesisTestSettings,
     mu0: &Expr,
-    level: &str,
+    level: &Expr,
   ) -> Option<Expr> {
     let statistic = Expr::Real(self.statistic());
     let p = self.p_value();
@@ -298,17 +298,25 @@ impl MannWhitney {
           Alternative::Less => "greater than or equal to ",
           Alternative::Greater => "less than or equal to ",
         };
-        let verdict = if p_f64 < settings.alpha {
-          "is rejected"
-        } else {
-          "is not rejected"
-        };
-        str_expr(&format!(
-          "The null hypothesis that the median difference is {hypothesis}{} \
-           {verdict} at the {level} percent level based on the \
-           Mann\u{2010}Whitney test.",
-          crate::syntax::expr_to_string(mu0)
-        ))
+        let null_hypothesis = call(
+          "Row",
+          vec![Expr::List(
+            vec![
+              str_expr("the "),
+              str_expr("median"),
+              str_expr(&format!(" difference is {hypothesis}")),
+              mu0.clone(),
+              str_expr(" "),
+            ]
+            .into(),
+          )],
+        );
+        hypothesis_test_conclusion(
+          null_hypothesis,
+          p_f64 < settings.alpha,
+          level.clone(),
+          "Mann\u{2010}Whitney",
+        )
       }
       "TestDataTable" => {
         table(&["Statistic", "P\u{2010}Value"], vec![statistic, p])
@@ -320,51 +328,9 @@ impl MannWhitney {
   }
 }
 
-/// `Grid[{{"", headers…}, {"Mann‐Whitney", values…}}, …]`, the layout of
-/// the hypothesis tests' tables.
+/// The hypothesis-test table of the one Mann‐Whitney row.
 fn table(headers: &[&str], values: Vec<Expr>) -> Expr {
-  let mut header = vec![str_expr("")];
-  header.extend(headers.iter().map(|h| str_expr(h)));
-  let mut row = vec![str_expr("Mann\u{2010}Whitney")];
-  row.extend(values);
-  let rule = |name: &str, value: Expr| {
-    call("Rule", vec![Expr::Identifier(name.to_string()), value])
-  };
-  let divider = || {
-    call(
-      "Rule",
-      vec![Expr::Integer(2), call("GrayLevel", vec![Expr::Real(0.7)])],
-    )
-  };
-  call(
-    "Grid",
-    vec![
-      Expr::List(
-        vec![Expr::List(header.into()), Expr::List(row.into())].into(),
-      ),
-      rule(
-        "Alignment",
-        Expr::List(
-          vec![
-            Expr::Identifier("Left".to_string()),
-            Expr::Identifier("Automatic".to_string()),
-          ]
-          .into(),
-        ),
-      ),
-      rule(
-        "Dividers",
-        Expr::List(
-          vec![
-            Expr::List(vec![divider()].into()),
-            Expr::List(vec![divider()].into()),
-          ]
-          .into(),
-        ),
-      ),
-      rule("Spacings", Expr::Identifier("Automatic".to_string())),
-    ],
-  )
+  hypothesis_test_table(headers, vec![("Mann\u{2010}Whitney".into(), values)])
 }
 
 /// How many of the `C(n1 + n2, n1)` orderings of two tie-free samples give
