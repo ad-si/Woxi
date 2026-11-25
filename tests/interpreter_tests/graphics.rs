@@ -3917,23 +3917,30 @@ mod graphics {
 
     /// A label's inline box notation is measured by the characters it
     /// draws, not by its `\!\(\*SubscriptBox[…]\)` markup, when the plot
-    /// range grows to fit the label.
+    /// range grows to fit the label: the subscript is set a little smaller
+    /// than the same digit on the line, so the drawing keeps at most a
+    /// hair more room.
     #[test]
     fn label_box_notation_is_measured_by_visible_characters() {
-      let rect = |label: &str| {
+      let rect_width = |label: &str| -> f64 {
         let svg = export_svg(&format!(
           "Graphics[{{Rectangle[{{0, 0}}, {{2, 2}}], Text[{label}, {{2, 1}}]}}]"
         ));
         svg
           .split("<rect x=")
           .nth(2)
-          .and_then(|s| s.split("fill").next())
-          .unwrap_or_default()
-          .to_string()
+          .and_then(|s| {
+            s.split("width=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .unwrap_or_else(|| panic!("no rectangle in {svg}"))
       };
-      assert_eq!(
-        rect("\"mol \\!\\(\\*SubscriptBox[\\(N\\), \\(2\\)]\\) per min\""),
-        rect("\"mol N2 per min\"")
+      let boxed = rect_width(
+        "\"mol \\!\\(\\*SubscriptBox[\\(N\\), \\(2\\)]\\) per min\"",
+      );
+      let plain = rect_width("\"mol N2 per min\"");
+      assert!(
+        boxed >= plain && boxed < plain * 1.01,
+        "boxed {boxed} vs plain {plain}"
       );
     }
 
@@ -65962,9 +65969,9 @@ mod surface_vertex_colors {
         .and_then(|r| r.split('"').next())
         .and_then(|w| w.parse().ok())
         .unwrap();
-      // 18 characters at the default 14 pt are about 150 px wide.
+      // The label's glyphs add up to about 105 px at the default 14 pt.
       assert!(
-        tx - 75.0 >= -0.5 && tx + 75.0 <= width + 0.5,
+        tx - 52.0 >= -0.5 && tx + 52.0 <= width + 0.5,
         "{side} label cut off: x = {tx}, width = {width}"
       );
     }
@@ -67022,6 +67029,63 @@ mod text_wider_than_canvas {
     let xs = text_xs(&svg);
     assert_eq!(xs.len(), 3, "{svg}");
     assert!(xs[2] - xs[1] > 400.0, "labels collapsed: {xs:?}");
+  }
+}
+
+mod text_label_room_follows_glyph_widths {
+  use super::*;
+
+  /// The drawn width of the unit-high bar a picture holds two overhanging
+  /// labels beside: 4 data units wide, so a quarter of it is the scale.
+  fn bar_width(label: &str, style: &str) -> f64 {
+    let svg = interpret(&format!(
+      r#"ExportString[Graphics[{{Rectangle[{{0, 0}}, {{4, 1}}], Style[Text["{label}", {{-2, 0.5}}], 15{style}], Style[Text["{label}", {{6, 0.5}}], 15{style}]}}, ImageSize -> {{400, 400}}], "SVG"]"#
+    ))
+    .unwrap();
+    svg
+      .split("<rect x=\"")
+      .skip(1)
+      .find(|part| !part.starts_with("0\""))
+      .and_then(|part| {
+        part
+          .split("width=\"")
+          .nth(1)?
+          .split('"')
+          .next()?
+          .parse()
+          .ok()
+      })
+      .unwrap_or_else(|| panic!("no bar in {svg}"))
+  }
+
+  // The room an automatic range leaves for a label is the label's own
+  // width, not a flat allowance per character: a flat one drew a labeled
+  // flow sheet an eighth smaller than Wolfram does
+  // (OperationOfARectifyingColumn).
+  #[test]
+  fn narrow_glyphs_leave_the_drawing_more_room_than_wide_ones() {
+    let narrow = bar_width("illiilliilliilli", "");
+    let wide = bar_width("MWMWMWMWMWMWMWMW", "");
+    assert!(narrow > wide * 1.3, "narrow {narrow} vs wide {wide}");
+  }
+
+  #[test]
+  fn mixed_case_label_takes_less_than_a_flat_per_character_guess() {
+    // Labels centered 8 units apart, each sticking out by half its width:
+    // 8 s + w = 400. At 0.6 em a character w would be 16 * 9 = 144.
+    let label = "feed of the tank";
+    let scale = bar_width(label, "") / 4.0;
+    let flat = (400.0 - label.len() as f64 * 15.0 * 0.6) / 8.0;
+    assert!(scale > flat * 1.08, "scale {scale} vs flat guess {flat}");
+    // The labels still fit: their room is at least 0.4 em a character.
+    assert!(400.0 - 8.0 * scale > label.len() as f64 * 15.0 * 0.4);
+  }
+
+  #[test]
+  fn bold_label_takes_more_room_than_a_regular_one() {
+    let regular = bar_width("feed of the tank", "");
+    let bold = bar_width("feed of the tank", ", Bold");
+    assert!(bold < regular, "bold {bold} vs regular {regular}");
   }
 }
 
