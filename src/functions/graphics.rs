@@ -9447,6 +9447,27 @@ fn layout_holds_grid(expr: &Expr) -> bool {
   }
 }
 
+/// A graphics label's `body` set in the face the label is drawn in: the
+/// family its style names, or else the graphic's proportional text face —
+/// the one a one-line label beside it uses — rather than the monospace face
+/// of typeset output, whose wider advances would spread the label's text
+/// away from the grid it captions.
+fn in_label_face(body: &Expr, style: &StyleState) -> Expr {
+  if style.font_family.is_empty() {
+    return in_text_face(body);
+  }
+  call(
+    "Style",
+    vec![
+      body.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+        replacement: Box::new(Expr::String(style.font_family.clone())),
+      },
+    ],
+  )
+}
+
 /// The picture of a `Row`/`Column` label holding a `Grid`, with its natural
 /// width and height — `None` for any other label.
 pub(crate) fn layout_grid_picture(expr: &Expr) -> Option<(String, f64, f64)> {
@@ -10145,7 +10166,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   };
   if frame_opts.is_empty()
     && let Some(offset) = picture_offset
-    && let Some((svg, w, h)) = layout_grid_picture(&colored_body)
+    && layout_holds_grid(&colored_body)
+    && let Some((svg, w, h)) =
+      layout_grid_picture(&in_label_face(&colored_body, &local_style))
     && let Some((x, y, scaled)) = args.get(1).and_then(expr_to_anchor)
   {
     let (svg, w, h) = align_inset_picture(svg, w, h, offset);
