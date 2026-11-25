@@ -15656,6 +15656,68 @@ mod plot3d {
       );
     }
 
+    /// A table inset into a plot or a graphic is set in the graphic's 10pt
+    /// font, not the notebook's 14pt one, so its `ItemSize` columns (in
+    /// ems) take the room they do in the front end.
+    #[test]
+    fn an_inset_grid_is_set_in_the_graphics_font_size() {
+      let font_size_of = |svg: &str, label: &str| -> String {
+        let text = svg
+          .split("<text ")
+          .find(|t| t.contains(&format!(">{label}<")))
+          .unwrap_or_else(|| panic!("the cell {label}"));
+        text
+          .split_once("font-size=\"")
+          .and_then(|(_, r)| r.split_once('"'))
+          .expect("a font size")
+          .0
+          .to_string()
+      };
+      let grid = "Grid[{{\"ab\", \"cd\"}, {\"ef\", \"gh\"}}, Frame -> All, \
+                  ItemSize -> 6]";
+      let alone = export_svg(grid);
+      let in_plot = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Epilog -> {{Inset[{grid}, {{0.5, 0.5}}]}}]"
+      ));
+      let in_graphics =
+        export_svg(&format!("Graphics[{{Circle[], Inset[{grid}, {{0, 0}}]}}]"));
+      assert_eq!(font_size_of(&alone, "ab"), "14");
+      for svg in [&in_plot, &in_graphics] {
+        for label in ["ab", "cd", "ef", "gh"] {
+          assert_eq!(font_size_of(svg, label), "10", "{label}");
+        }
+      }
+      // The columns shrink with the font: the inset table is narrower
+      // than the same table in a notebook cell.
+      let table_width = |svg: &str| -> f64 {
+        svg
+          .split("<line ")
+          .filter_map(|l| {
+            l.split_once(" x2=\"")
+              .and_then(|(_, r)| r.split_once('"'))
+              .and_then(|(v, _)| v.parse::<f64>().ok())
+          })
+          .fold(0.0, f64::max)
+      };
+      let nested = in_graphics
+        .split("<svg ")
+        .nth(2)
+        .expect("the inset table's own picture");
+      assert!(
+        table_width(nested) < 0.8 * table_width(&alone),
+        "{} vs {}",
+        table_width(nested),
+        table_width(&alone)
+      );
+      // Text that sets its own size keeps it.
+      let sized = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> {Inset[Grid[{{Style[\"ab\", 18], \
+         \"cd\"}}, Frame -> All], {0.5, 0.5}]}]",
+      );
+      assert_eq!(font_size_of(&sized, "ab"), "18");
+      assert_eq!(font_size_of(&sized, "cd"), "10");
+    }
+
     /// `Text[Framed[…]]` in a `Graphics` leaves `Framed`'s margins (5pt
     /// unless `FrameMargins` says otherwise) between the text and the
     /// border, as Wolfram does, instead of hugging the glyphs.

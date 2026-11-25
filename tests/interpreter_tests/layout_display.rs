@@ -588,6 +588,33 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// Regression: a plot inside `Framed[…, Background -> color]` painted
+  /// its own opaque plate over the frame's fill. A plot without a
+  /// `Background` is transparent, so the frame's color shows behind it.
+  #[test]
+  fn framed_background_shows_behind_a_plot() {
+    let plate = "<rect x=\"0\" y=\"0\" ";
+    for plot in [
+      "Plot[Sin[x], {x, 0, 6}]",
+      "ListPlot[{1, 3, 2}]",
+      "ListLinePlot[{1, 3, 2}, ImageSize -> {300, 200}]",
+    ] {
+      let svg = svg_of(&format!("Framed[{plot}, Background -> LightBlue]"));
+      assert!(svg.contains("fill=\"rgb(222,240,255)\""), "{plot}: {svg}");
+      assert!(!svg.contains(plate), "{plot}: {svg}");
+      // Without a frame fill the plot is embedded as it is drawn alone.
+      let svg = svg_of(&format!("Framed[{plot}]"));
+      assert!(svg.contains(plate), "{plot}: {svg}");
+    }
+    // A plot's own `Background` stays in front of the frame's.
+    let svg = svg_of(
+      "Framed[Plot[Sin[x], {x, 0, 6}, Background -> Yellow], \
+       Background -> LightBlue]",
+    );
+    assert!(svg.contains("fill=\"rgb(222,240,255)\""), "{svg}");
+    assert!(svg.contains(plate), "{svg}");
+  }
+
   /// Regression: a `Text` under a `Style` inside `Framed`
   /// (`Framed[Style[Text[Grid[…]], 24]]`, a score board) printed the
   /// `Text[…]` call as source instead of drawing its content.
