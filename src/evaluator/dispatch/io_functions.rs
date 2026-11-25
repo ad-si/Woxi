@@ -9272,6 +9272,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         String::new()
       }
     }
+    Expr::FunctionCall { name: g_name, .. } if g_name == "Graph3D" => {
+      if let Some(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::graph::graph3d_render(expr)
+      {
+        svg_data.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
     Expr::FunctionCall {
       name: rg_name,
       args: rg_args,

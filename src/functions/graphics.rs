@@ -38071,6 +38071,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "MatrixPlot"
       // Graphs / trees / meshes
       | "Graph"
+      | "Graph3D"
       | "TreeForm"
       | "TreePlot"
       | "TreeGraph"

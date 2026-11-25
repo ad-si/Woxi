@@ -9491,6 +9491,96 @@ mod find_shortest_tour {
   }
 
   #[test]
+  fn graph3d_of_an_edge_list_is_drawn_in_space() {
+    // No coordinates given: the vertices get a spring embedding, each a
+    // sphere, each edge a line.
+    assert_eq!(
+      interpret(
+        "svg = ExportString[Graph3D[{1 <-> 2, 2 <-> 3, 3 <-> 1}], \"SVG\"]; \
+         {StringContainsQ[svg, \"<polygon\"], \
+          StringContainsQ[svg, \"<polyline\"], \
+          StringContainsQ[svg, \"Graph3D\"]}"
+      )
+      .unwrap(),
+      "{True, True, False}"
+    );
+  }
+
+  #[test]
+  fn graph3d_honors_image_size_and_styles() {
+    assert_eq!(
+      interpret(
+        "svg = ExportString[Graph3D[{1 <-> 2, 2 <-> 3}, \
+           EdgeStyle -> Red, ImageSize -> {210, 200}], \"SVG\"]; \
+         {StringContainsQ[svg, \"width=\\\"210\\\" height=\\\"200\\\"\"], \
+          StringContainsQ[svg, \"stroke=\\\"rgb(255,0,0)\\\"\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn graph3d_draws_parallel_edges_side_by_side() {
+    // Two edges between the same vertices are two distinct lines.
+    assert_eq!(
+      interpret(
+        "lines[g_] := Length[DeleteDuplicates[StringCases[ExportString[g, \
+           \"SVG\"], \"<polyline points=\\\"\" ~~ Shortest[p__] ~~ \"\\\"\" :> p]]]; \
+         {lines[Graph3D[{1 <-> 2}]], lines[Graph3D[{1 <-> 2, 1 <-> 2}]]}"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn graph3d_is_a_picture_inside_a_grid() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Grid[{{Graph3D[{a <-> b}], \
+           Graph3D[{a <-> b, b <-> c}]}}], \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn graph3d_of_a_non_graph_stays_symbolic() {
+    assert_eq!(
+      interpret(
+        "ExportString[Graph3D[x], \"SVG\"] // StringContainsQ[\"Graph3D\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn vertex_style_and_size_rules_take_patterns() {
+    // `{"H", _} -> …` names every vertex of that shape, in 2D and in 3D.
+    assert_eq!(
+      interpret(
+        "g = {{\"C\", 1} <-> {\"H\", 1}, {\"C\", 1} <-> {\"H\", 2}}; \
+         o = {VertexStyle -> {{\"H\", _} -> Red}, \
+           VertexSize -> {{\"C\", _} -> 0.5}}; \
+         flat = ExportString[Graph[g, o], \"SVG\"]; \
+         radii = ToExpression[StringCases[flat, \
+           \"rx=\\\"\" ~~ Shortest[r__] ~~ \"\\\"\" :> r]]; \
+         {StringCount[flat, \"fill=\\\"rgb(255,0,0)\\\"\"], \
+          radii[[1]] > 5 radii[[2]], radii[[2]] == radii[[3]], \
+          StringContainsQ[ExportString[Graph3D[g, o], \"SVG\"], \
+            \"rgb(255,0,0)\"], \
+          StringContainsQ[ExportString[Graph3D[g], \"SVG\"], \
+            \"rgb(255,0,0)\"]}"
+      )
+      .unwrap(),
+      "{2, True, True, True, False}"
+    );
+  }
+
+  #[test]
   fn square_exact_length_and_order() {
     assert_eq!(
       interpret("FindShortestTour[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap(),
@@ -9910,6 +10000,24 @@ mod canonical_graph {
     assert_eq!(
       interpret("EdgeList[CanonicalGraph[Graph[{1 -> 2, 2 -> 3}]]]").unwrap(),
       "{2 \u{f3d5} 3, 3 \u{f3d5} 1}"
+    );
+  }
+
+  #[test]
+  fn interchangeable_vertices_do_not_exhaust_the_search() {
+    // A triangle and a square, five leaves on each of their vertices: the
+    // 35 leaves start out in one cell that only individualization splits,
+    // and the leaves of one vertex can be labeled in 5! equivalent orders.
+    // Whichever leaf the vertex order offers first, the form is the same.
+    assert_eq!(
+      interpret(
+        "e = Join[{1 <-> 2, 2 <-> 3, 3 <-> 1, 4 <-> 5, 5 <-> 6, 6 <-> 7, \
+           7 <-> 4}, Flatten[Table[v <-> 10 v + k, {v, 7}, {k, 5}]]]; \
+         g = Graph[e]; h = Graph[Reverse[VertexList[g]], Reverse[e]]; \
+         CanonicalGraph[g] === CanonicalGraph[h]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 

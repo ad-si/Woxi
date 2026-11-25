@@ -111,6 +111,53 @@ mod evaluation_reuse {
     }
 
     #[test]
+    fn part_assignment_reaches_a_stored_value() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "r = Table[f[a, i], {i, 20}]; r; a = {1, 2}; r; a[[1]] = 7; r[[3]]"
+        )
+        .unwrap(),
+        "f[{7, 2}, 3]"
+      );
+    }
+
+    #[test]
+    fn delayed_own_value_reaches_a_stored_value() {
+      clear_state();
+      assert_eq!(
+        interpret("r = Table[f[b, i], {i, 20}]; r; b := 3; r[[2]]").unwrap(),
+        "f[3, 2]"
+      );
+    }
+
+    #[test]
+    fn a_later_definition_reaches_an_appended_list() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "x = Table[g[i], {i, 20}]; x; AppendTo[x, g[21]]; x; \
+           g[n_] := n; Total[x]"
+        )
+        .unwrap(),
+        "231"
+      );
+    }
+
+    #[test]
+    fn a_later_own_value_reaches_an_appended_element() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "x = Table[UndirectedEdge[i, 1], {i, 20}]; x; x = Append[x, q]; \
+           x; q = 5; Last[x]"
+        )
+        .unwrap(),
+        "5"
+      );
+    }
+
+    #[test]
     fn memoized_value_sees_later_definitions() {
       clear_state();
       assert_eq!(
@@ -163,6 +210,48 @@ mod evaluation_reuse {
         elapsed.as_secs() < 2,
         "1000 reads of a 455-term sum took {elapsed:?}"
       );
+    }
+
+    // A list of symbolic records (graph edges) that only protected symbols
+    // occur in: reading it between the unrelated assignments of a loop must
+    // not evaluate its 20000 records again each time.
+    fn reads_between(assignments: &str) -> std::time::Duration {
+      clear_state();
+      interpret(
+        "x = Table[UndirectedEdge[{\"H\", i}, {\"C\", 1}], {i, 20000}]; \
+         a = {{1, 2}};",
+      )
+      .unwrap();
+      let start = std::time::Instant::now();
+      interpret(&format!("Do[{assignments}; Length[x], {{i, 300}}]")).unwrap();
+      start.elapsed()
+    }
+
+    #[test]
+    fn reading_a_list_between_part_assignments_is_cheap() {
+      let elapsed = reads_between("a[[1, 1]] -= 1");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+      assert_eq!(interpret("a").unwrap(), "{{-299, 2}}");
+    }
+
+    #[test]
+    fn reading_a_list_between_delayed_assignments_is_cheap() {
+      let elapsed = reads_between("b := i");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+    }
+
+    #[test]
+    fn reading_a_list_between_appends_is_cheap() {
+      let elapsed = reads_between("x = Append[x, i]");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+      assert_eq!(interpret("{Length[x], Last[x]}").unwrap(), "{20300, 300}");
+    }
+
+    #[test]
+    fn reading_a_list_between_append_tos_is_cheap() {
+      let elapsed = reads_between("AppendTo[x, UndirectedEdge[i, 1]]");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+      assert_eq!(interpret("Last[x]").unwrap(), "300 <-> 1");
     }
 
     #[test]
