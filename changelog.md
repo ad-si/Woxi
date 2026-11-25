@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- Machine results far past the machine range stay numbers: `Exp[30000.]`
+    is `6.83…*^13028` and `Exp[1.*^9]` is `8.00…*^434294481` instead of
+    `Infinity` (the limit rose from a decimal exponent of 10^4 to 6*10^8).
+    A product of an underflowed and an overflowed factor is therefore `0.`
+    rather than `Indeterminate`, so a plotted curve such as
+    `E^-a (E^a - 1)` no longer breaks off where `E^a` overflows. Numbers
+    with huge exponents are stored compactly, so arithmetic on them takes
+    the same time as on any other arbitrary-precision number.
 - A `Framed` around a captioned picture (`Framed[Labeled[graphic, …]]`) or,
     under `Text`, around a table (`Text[Framed[Grid[…]]]`) keeps its border
     in notebook output instead of showing the bare content.

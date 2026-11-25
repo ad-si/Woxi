@@ -4806,10 +4806,12 @@ fn decimal_string_to_base_string(
   if !(2..=36).contains(&base) {
     return None;
   }
-  let decimal = decimal.trim();
+  let decimal = crate::functions::math_ast::numerical::plain_bigfloat_digits(
+    decimal.trim(),
+  );
   let (neg, decimal) = match decimal.strip_prefix('-') {
     Some(rest) => (true, rest),
-    None => (false, decimal),
+    None => (false, &*decimal),
   };
   let (int_str, frac_str) = match decimal.split_once('.') {
     Some((i, f)) => (i, f),
@@ -6052,6 +6054,26 @@ fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
     ("", trimmed)
   };
   let prec_digits = prec.round() as i64;
+  // Compact storage (`d.ddd…e<exponent>`): round the mantissa and keep the
+  // exponent, renormalizing when the rounding carries into a new digit.
+  if let Some((mantissa, exponent)) =
+    crate::functions::math_ast::numerical::split_compact_digits(body)
+  {
+    if prec_digits <= 0 {
+      return format!("{sign}{mantissa}*^{exponent}");
+    }
+    let keep = prec_digits as usize;
+    let fixed = crate::round_significant(mantissa, keep);
+    let (int_part, frac_part) =
+      fixed.split_once('.').unwrap_or((fixed.as_str(), ""));
+    let all: String = format!("{int_part}{frac_part}")
+      .chars()
+      .take(keep)
+      .collect();
+    let (first, rest) = all.split_at(1);
+    let exponent = exponent + int_part.len() as i64 - 1;
+    return format!("{sign}{first}.{rest}*^{exponent}");
+  }
   if prec_digits > 0 {
     let fixed = crate::round_significant(body, prec_digits as usize);
     let text =
@@ -16701,7 +16723,10 @@ fn url_encode_with(
     Expr::String(s) => Expr::String(percent_encode_with(s, charset)),
     Expr::Integer(n) => Expr::String(n.to_string()),
     Expr::Real(f) => Expr::String(format!("{f}")),
-    Expr::BigFloat(digits, _) => Expr::String(digits.clone()),
+    Expr::BigFloat(digits, _) => Expr::String(
+      crate::functions::math_ast::numerical::plain_bigfloat_digits(digits)
+        .into_owned(),
+    ),
     Expr::Identifier(id) if id == "None" => Expr::String(String::new()),
     Expr::FunctionCall { name, .. } if name == "Missing" => {
       Expr::String(String::new())

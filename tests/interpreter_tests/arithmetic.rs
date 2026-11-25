@@ -3278,6 +3278,111 @@ mod infinity_arithmetic {
     );
   }
 
+  // A machine result far past the machine range is still a number: it is
+  // stored with its exponent instead of every decimal digit, so it stays
+  // cheap however large the exponent is.
+  #[test]
+  fn machine_overflow_far_past_the_machine_range_stays_a_number() {
+    assert_eq!(
+      interpret("Exp[30000.]").unwrap(),
+      "6.83057237791488419327351`11.47746851547134*^13028"
+    );
+    assert_eq!(
+      interpret("Exp[1.*^9]").unwrap(),
+      "8.002981770660972533`6.954589770191003*^434294481"
+    );
+    assert_eq!(
+      interpret("10.^30000.").unwrap(),
+      "1.`11.115252826771878*^30000"
+    );
+    assert_eq!(
+      interpret("2.^1.*^6").unwrap(),
+      "9.9006562292958982506979236163018810186`10.113764309145864*^301029"
+    );
+    assert_eq!(
+      interpret("-1 + E^1.*^9").unwrap(),
+      "8.002981770660972533`6.954589770191003*^434294481"
+    );
+    assert_eq!(interpret("Head[Exp[1.*^6]]").unwrap(), "Real");
+  }
+
+  // An underflowed factor annihilates an overflowed one: the product is
+  // `0.`, not the `Indeterminate` that `0. * Infinity` would be.
+  #[test]
+  fn underflow_times_overflow_is_zero() {
+    assert_eq!(interpret("E^-30000.*(-1 + E^30000.)").unwrap(), "0.");
+    assert_eq!(interpret("E^-1.*^9*(-1 + E^1.*^9)").unwrap(), "0.");
+    assert_eq!(
+      interpret("Table[E^(-E^x) (E^(E^x) - 1), {x, {1., 7., 12., 20.}}]")
+        .unwrap(),
+      "{0.9340119641546875, 0., 0., 0.}"
+    );
+  }
+
+  #[test]
+  fn arithmetic_on_numbers_with_huge_exponents() {
+    assert_eq!(
+      interpret(
+        "x = 1.5`20*^50000; {x > 10^50000, x < 10^50001, Sqrt[x], 1/x, \
+         x - x, Precision[x], x === 1.5`20*^50000}"
+      )
+      .unwrap(),
+      "{True, True, \
+       1.2247448713915890490986420373529`20.30102999566398*^25000, \
+       6.66666666666666666666666666666667`20.*^-50001, \
+       0``19.522878745280337, 20., True}"
+    );
+    assert_eq!(
+      interpret("N[Exp[1.*^6] - Exp[1.*^6]/2]").unwrap(),
+      "1.516607698401043772543`9.47746851547134*^434294"
+    );
+    assert_eq!(
+      interpret("Log[Exp[1.*^6]]").unwrap(),
+      "999999.999999999999999999999867420751412`15.954589770191003"
+    );
+    assert_eq!(
+      interpret("SetPrecision[1.5`20*^10002, Infinity] == 15*10^10001")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn huge_exponent_literals_and_display() {
+    assert_eq!(
+      interpret("InputForm[{1.*^50000, 1.5`20*^-50000, -2.5`20*^123456}]")
+        .unwrap(),
+      "InputForm[{1.`15.954589770191005*^50000, 1.5`20.*^-50000, \
+       -2.5`20.*^123456}]"
+    );
+    assert_eq!(
+      interpret("ToString[1.5`20*^50000]").unwrap(),
+      "                        50000\n1.5000000000000000000 10"
+    );
+    assert_eq!(
+      interpret("ToString[TeXForm[1.5`3*^10005]] // StringLength").unwrap(),
+      "10007"
+    );
+  }
+
+  // Past the range of the arbitrary-precision type itself.
+  #[test]
+  fn results_past_the_arbitrary_precision_range_overflow() {
+    assert_eq!(interpret("Exp[2.*^9]").unwrap(), "Infinity");
+    assert_eq!(interpret("Exp[1.*^9]*Exp[1.*^9]").unwrap(), "Overflow[]");
+    assert_eq!(interpret("Exp[1.*^9]^2").unwrap(), "Overflow[]");
+    assert_eq!(interpret("Exp[1.*^9]^-2").unwrap(), "Underflow[]");
+  }
+
+  // The value lies outside the machine range; this used to panic.
+  #[test]
+  fn mantissa_exponent_beyond_machine_range_does_not_panic() {
+    assert_eq!(
+      interpret("MantissaExponent[1.5`20*^5000]").unwrap(),
+      "MantissaExponent[1.5`20.*^5000]"
+    );
+  }
+
   #[test]
   fn machine_overflow_in_products_sums_and_powers() {
     assert_eq!(

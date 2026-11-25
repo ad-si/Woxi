@@ -15398,6 +15398,18 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
   let d = if negative { &digits[1..] } else { digits };
   let prefix = if negative { "-" } else { "" };
 
+  // Compact storage (`d.ddd…e<exponent>`) is already in scientific form.
+  if let Some((mantissa, exponent)) =
+    crate::functions::math_ast::numerical::split_compact_digits(d)
+  {
+    let keep = (prec.ceil() as usize).max(1) + 1;
+    let mantissa: String = mantissa.chars().take(keep.max(2)).collect();
+    return BigFloatDisplay {
+      mantissa: format!("{prefix}{mantissa}"),
+      exponent: Some(exponent),
+    };
+  }
+
   let dot_pos = d.find('.');
   let int_part = if let Some(dp) = dot_pos { &d[..dp] } else { d };
   let frac_part = if let Some(dp) = dot_pos {

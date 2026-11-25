@@ -2881,6 +2881,10 @@ pub fn dispatch_math_functions(
           vec![Expr::Integer(0), Expr::Integer(0)].into(),
         )));
       }
+      // A value outside the machine range has no machine logarithm.
+      if !val_num.is_finite() {
+        return Some(Ok(unevaluated("MantissaExponent", args)));
+      }
       let e = (val_num.abs().ln() / base_num.ln()).floor() as i128 + 1;
       // Whether the result should be a numeric Real or stay symbolic:
       // any inexact (Real/BigFloat) component forces a Real result.

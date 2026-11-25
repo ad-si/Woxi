@@ -1869,4 +1869,19 @@ mod column_plot_label {
     let tag = title_tag(&svg, "top");
     assert_eq!(attr(tag, "font-size"), "200", "{svg}");
   }
+
+  // Where one factor of the plotted function underflows and another leaves
+  // the machine range, the function is `0.` and the curve carries on to the
+  // end of the range instead of breaking off at an `Indeterminate`.
+  #[test]
+  fn curve_continues_where_a_factor_overflows() {
+    assert_eq!(
+      interpret(
+        "Max[Cases[Plot[E^(-E^x) (E^(E^x) - 1), {x, 0, 20}], \
+         Line[p_] :> p[[All, 1]], Infinity]] > 19.9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
