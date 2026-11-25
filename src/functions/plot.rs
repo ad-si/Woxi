@@ -6452,6 +6452,25 @@ fn generate_svg_with_options(
   } else {
     0.0
   };
+  // The room, in display points, the title takes above the top padding. The
+  // plotting area is laid out in what is left below it, so a title never
+  // costs the area its `AspectRatio`: a two-line `PlotLabel` over a square
+  // plot in a fixed `ImageSize -> {w, h}` narrows the plot along with
+  // shortening it instead of squashing it.
+  let stacked_below =
+    usize::from(has_top_label) + usize::from(axes_label_y.is_some());
+  let title_room = {
+    let stacked =
+      lone_title + stacked_title_room(opts.plot_label.as_ref(), sf) as f64 / sf;
+    // A lone `PlotLabel` sits above the padding: a top padding too small
+    // to hold it gives up plotting area instead of letting the title run
+    // into the frame (or, with no room at all, off the image).
+    if stacked_below == 0 {
+      stacked.max(decorations.title)
+    } else {
+      stacked
+    }
+  };
   if let Some(ar) = opts
     .aspect_ratio
     .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
@@ -6461,7 +6480,7 @@ fn generate_svg_with_options(
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h =
-        plot_w * ar + (pad_bottom + pad_top + lone_title) * sf;
+        plot_w * ar + (pad_bottom + pad_top + title_room) * sf;
       svg_height =
         ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
@@ -6482,30 +6501,19 @@ fn generate_svg_with_options(
     Some(padding) => {
       let [pad_left, pad_right, pad_bottom, pad_top] = padding;
       let m = padded_margins(
-        [pad_left, pad_right, pad_bottom, pad_top + lone_title],
+        [pad_left, pad_right, pad_bottom, pad_top + title_room],
         (render_width, render_height),
         opts.aspect_ratio,
         opts.aspect_full,
         sf,
       );
-      let stacked_below =
-        usize::from(has_top_label) + usize::from(axes_label_y.is_some());
       let top = m.top as i32
-        + stacked_title_room(opts.plot_label.as_ref(), sf)
         + stacked_label_shortfall(
           opts.plot_label.as_ref(),
           stacked_below,
           m.top as i32,
           sf,
         );
-      // A lone `PlotLabel` sits above the padding: a top padding too small
-      // to hold it gives up plotting area instead of letting the title run
-      // into the frame (or, with no room at all, off the image).
-      let top = if stacked_below == 0 && decorations.title > 0.0 {
-        top.max(((padding[3] + decorations.title) * sf).ceil() as i32)
-      } else {
-        top
-      };
       (top, m.bottom, m.left, 0u32, m.right, 0u32)
     }
     None => (

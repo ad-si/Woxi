@@ -16248,6 +16248,51 @@ mod plot3d {
       assert!(frame_top < 3249.0);
     }
 
+    /// A `PlotLabel` over an explicit `ImagePadding` in a fixed
+    /// `ImageSize -> {w, h}` takes its room before the plotting area is
+    /// laid out, so the area keeps its `AspectRatio` (narrower and centered)
+    /// instead of only losing height and coming out stretched.
+    #[test]
+    fn plot_label_above_image_padding_keeps_the_aspect_ratio() {
+      for label in ["\"t\"", "Column[{\"a\", \"b\"}]", "\"a\\nb\\nc\""] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, PlotRange -> {{{{0, 1}}, {{0, 1}}}}, \
+           PlotRangePadding -> None, Frame -> True, AspectRatio -> 1, \
+           ImageSize -> {{375, 375}}, \
+           ImagePadding -> {{{{20, 20}}, {{20, 50}}}}, PlotLabel -> {label}]"
+        ));
+        assert!(svg.starts_with("<svg width=\"375\" height=\"375\""));
+        // The curve y = x runs corner to corner of the plotting area.
+        let curve = svg
+          .split("points=\"")
+          .skip(1)
+          .map(|s| s.split_once('"').unwrap().0.trim())
+          .max_by_key(|s| s.len())
+          .unwrap();
+        let pts: Vec<(f64, f64)> = curve
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let span = |f: fn(&(f64, f64)) -> f64| {
+          let vals = pts.iter().map(f);
+          vals.clone().fold(f64::MIN, f64::max) - vals.fold(f64::MAX, f64::min)
+        };
+        let (w, h) = (span(|p| p.0), span(|p| p.1));
+        assert!((w - h).abs() < 20.0, "{label}: area {w} x {h} not square");
+        // The title's band leaves less than the 305 pt the padding does.
+        assert!(h < 3000.0, "{label}: area {h} tall ignores the title");
+        // Centered between the 20 pt side paddings.
+        let (left, right) = (
+          pts.iter().map(|p| p.0).fold(f64::MAX, f64::min),
+          3750.0 - pts.iter().map(|p| p.0).fold(f64::MIN, f64::max),
+        );
+        assert!((left - right).abs() < 20.0, "{label}: {left} vs {right}");
+      }
+    }
+
     #[test]
     fn plot_plot_label() {
       insta::assert_snapshot!(export_svg(
