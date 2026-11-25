@@ -842,6 +842,40 @@ mod pattern_matching {
       assert_eq!(interpret("m[[1]] /. {m -> {5, 6}}").unwrap(), "5");
     }
 
+    /// Renaming heads is structural: a call the rules rename is not
+    /// evaluated before the head the rules put around it sees it, so a
+    /// holding head keeps it as written.
+    #[test]
+    fn list_of_rules_renames_heads_without_evaluating_them() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = {1, 2}; SetAttributes[s, HoldFirst]; \
+           f[Hold[g], 3] /. {f -> s, Hold -> h}"
+        )
+        .unwrap(),
+        "s[h[g], 3]"
+      );
+      assert_eq!(
+        interpret("{f[1, 2], k[4]} /. {f -> Plus, k -> Sqrt}").unwrap(),
+        "{3, 2}"
+      );
+    }
+
+    /// `f[Hold[g], v] /. {f -> Set, Hold -> List}` assigns `v`'s element
+    /// to `g` itself (a self-modifying button action idiom).
+    #[test]
+    fn list_of_rules_builds_an_assignment_to_a_held_symbol() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = {1, 2}; f[Hold[g], {{3, 4, 5}}] /. {f -> Set, Hold -> List}; g"
+        )
+        .unwrap(),
+        "{3, 4, 5}"
+      );
+    }
+
     #[test]
     fn list_of_rules_applied_in_order() {
       // First matching rule wins

@@ -14993,6 +14993,25 @@ mod held_syntax_output_form {
     assert_eq!(interpret(r#"Hold[#2 @ "s"]"#).unwrap(), "Hold[#2[s]]");
     assert_eq!(interpret("Hold[(a + b) @ c]").unwrap(), "Hold[(a + b)[c]]");
   }
+
+  /// A slot written as a call prints in slot notation, held or not; an
+  /// argument the notation cannot spell keeps the call form.
+  #[test]
+  fn slot_calls_print_as_slots() {
+    assert_eq!(
+      interpret(
+        "Hold[Slot[0], Slot[3], SlotSequence[0], SlotSequence[2], \
+         Slot[\"ab\"], Slot[-1], Slot[x]]"
+      )
+      .unwrap(),
+      "Hold[#0, #3, ##0, ##2, #ab, Slot[-1], Slot[x]]"
+    );
+    assert_eq!(interpret("Function[f[Slot[1]]]").unwrap(), "f[#1] & ");
+    assert_eq!(
+      interpret("ToString[Hold[Slot[2], SlotSequence[3]], InputForm]").unwrap(),
+      "Hold[#2, ##3]"
+    );
+  }
 }
 
 // Precedence-aware printing and parsing of held operator trees, found by

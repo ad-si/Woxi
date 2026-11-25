@@ -1362,6 +1362,12 @@ fn evaluate_function_call_ast_inner(
       _ => {}
     }
   }
+  // `GraphUtilities\`` is not autoloaded: until `Needs`/`Get` loads it, a
+  // qualified call (`GraphUtilities\`VertexList[…]`) stays unevaluated, as
+  // in wolframscript.
+  if name.starts_with("GraphUtilities`") && !package_loaded("GraphUtilities`") {
+    return Ok(unevaluated(name, args));
+  }
   if name == "GraphUtilities`ExpressionTreePlot" && !args.is_empty() {
     return crate::functions::tree_form::expression_tree_plot_ast(args);
   }

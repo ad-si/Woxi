@@ -55,10 +55,90 @@ pub fn bump_epoch() {
 /// Record that the own value of the symbol `name` changed: only results
 /// that could mention it are invalidated when it is unprotected.
 pub fn bump_epoch_for_own_value(name: &str) {
+  record_own_value_assignment(name);
   if crate::evaluator::pattern_matching::is_symbol_protected(name) {
     bump_epoch();
   } else {
     EPOCH.with(|e| e.set(fresh_epoch()));
+  }
+}
+
+/// How many own-value assignments the log of recent ones keeps.
+const OWN_VALUE_LOG_LEN: usize = 32;
+
+thread_local! {
+  /// Counts own-value assignments, so an evaluation can tell whether one
+  /// happened while it ran.
+  static OWN_VALUE_SEQ: Cell<u64> = const { Cell::new(0) };
+  /// The most recent own-value assignments, as (sequence number, name hash).
+  static OWN_VALUE_LOG: RefCell<std::collections::VecDeque<(u64, u64)>> =
+    const { RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn symbol_name_hash(name: &str) -> u64 {
+  use std::hash::{Hash, Hasher};
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  name.hash(&mut hasher);
+  hasher.finish()
+}
+
+fn record_own_value_assignment(name: &str) {
+  let seq = OWN_VALUE_SEQ.with(|s| {
+    let next = s.get() + 1;
+    s.set(next);
+    next
+  });
+  let hash = symbol_name_hash(name);
+  OWN_VALUE_LOG.with(|log| {
+    let mut log = log.borrow_mut();
+    if log.len() == OWN_VALUE_LOG_LEN {
+      log.pop_front();
+    }
+    log.push_back((seq, hash));
+  });
+}
+
+/// The sequence number of the latest own-value assignment, to pass to
+/// [`own_values_assigned_since`] later.
+pub fn own_value_seq() -> u64 {
+  OWN_VALUE_SEQ.with(Cell::get)
+}
+
+/// Which symbols got an own value assigned since `seq` was read.
+pub enum AssignedSince {
+  /// No assignment happened.
+  Nothing,
+  /// The symbols whose name hashes these are (see [`assigned_symbol`]).
+  Symbols(Vec<u64>),
+  /// More assignments than the log keeps: any symbol may have changed.
+  Any,
+}
+
+pub fn own_values_assigned_since(seq: u64) -> AssignedSince {
+  if own_value_seq() == seq {
+    return AssignedSince::Nothing;
+  }
+  OWN_VALUE_LOG.with(|log| {
+    let log = log.borrow();
+    match log.front() {
+      Some(&(oldest, _)) if oldest <= seq + 1 => AssignedSince::Symbols(
+        log
+          .iter()
+          .filter(|(s, _)| *s > seq)
+          .map(|(_, h)| *h)
+          .collect(),
+      ),
+      _ => AssignedSince::Any,
+    }
+  })
+}
+
+/// Whether the symbol `name` is among the `assigned` ones.
+pub fn assigned_symbol(assigned: &AssignedSince, name: &str) -> bool {
+  match assigned {
+    AssignedSince::Nothing => false,
+    AssignedSince::Symbols(hashes) => hashes.contains(&symbol_name_hash(name)),
+    AssignedSince::Any => true,
   }
 }
 

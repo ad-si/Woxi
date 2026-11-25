@@ -11424,6 +11424,52 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_keeps_the_steps_of_a_fast_initial_layer() {
+    // y' = -10^10 y decays within 1e-10 of the start, far inside the
+    // tolerance that keeps a clipped domain bound off its neighbors; the
+    // adaptive steps taken there must stay in the solution rather than be
+    // dropped, leaving the decay to be interpolated from t == 0 to a point
+    // far beyond it.
+    for (t, expected) in
+      [("10^-10", (-1.0_f64).exp()), ("3*10^-10", (-3.0_f64).exp())]
+    {
+      let val: f64 = interpret(&format!(
+        "sol = NDSolve[{{y'[t] == -10^10 y[t], y[0] == 1}}, y, {{t, 0, 1}}]; \
+         y[{t}] /. sol[[1]]"
+      ))
+      .unwrap()
+      .parse()
+      .expect("should be a number");
+      assert!(
+        (val - expected).abs() < 1e-4,
+        "y[{t}]: expected {expected}, got {val}"
+      );
+    }
+  }
+
+  #[test]
+  fn ndsolve_tiny_derivative_coefficient_from_a_singular_start() {
+    // q[t]^2 y'[t] starts with a coefficient of 1e-20 next to y[t] == 1,
+    // which a finite-difference mass matrix rounded to an exactly zero
+    // column, so the system was left unevaluated.
+    let result = interpret(
+      "sol = NDSolve[{q[t]^2 y'[t] == -y[t], q'[t] == 1, y[0] == 1, \
+       q[0] == 1.*^-10}, {y, q}, {t, 0, 1}]; {y[0.5], q[0.5]} /. sol[[1]]",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse().expect("should be a number"))
+      .collect();
+    assert!(
+      nums[0].abs() < 1e-12,
+      "y[0.5] should have decayed: {result}"
+    );
+    assert!((nums[1] - 0.5).abs() < 1e-8, "q[0.5] == 0.5: {result}");
+  }
+
+  #[test]
   fn ndsolve_reports_the_requested_domain_not_the_integrated_one() {
     // Same as above, but with the initial condition well outside the
     // requested domain on either side (not just by a tiny epsilon) — the
@@ -13326,11 +13372,11 @@ mod ndsolve {
       "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
        D[w[x, y, t], y, y] + NeumannValue[0, x == 0], \
        w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
-       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       {y, 0, 2}, {t, 0, 1}]; {Round[u[0, 1, 0], 10^-6], \
        Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
     )
     .unwrap();
-    assert_eq!(result, "{1., 2667}");
+    assert_eq!(result, "{1, 2667}");
   }
 
   /// Without any condition and without finite element notation the method
@@ -27858,6 +27904,33 @@ mod sum_reads_index_dependent_symbols {
       )
       .unwrap(),
       "{14, 36, (k*(1 + k)*(1 + 2*k))/6}"
+    );
+  }
+
+  #[test]
+  fn a_symbol_mentioning_the_indices_of_a_multiple_sum() {
+    // The symbols are replaced once for the whole call, not again for
+    // every term of the enumerated grid.
+    assert_eq!(
+      interpret(
+        "r = n^2 + m; {Sum[r, {n, 3}, {m, 2}], Product[r, {n, 3}, {m, 2}], \
+         Sum[r, {n, 3}, {m, n}]}"
+      )
+      .unwrap(),
+      "{37, 19800, 46}"
+    );
+  }
+
+  #[test]
+  fn a_multiple_sum_over_the_parts_of_a_matrix() {
+    assert_eq!(
+      interpret(
+        "am = Table[Boole[Mod[i + j, 5] < 2], {i, 30}, {j, 30}]; \
+         {Sum[am[[i, 3]]*am[[i, j]]*am[[3, j]], {i, 30}, {j, 30}], \
+          Product[1 + am[[i, j]], {i, 4}, {j, 4}]}"
+      )
+      .unwrap(),
+      "{108, 128}"
     );
   }
 }

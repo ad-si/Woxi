@@ -233,10 +233,27 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
         .into_iter()
         .map(char_width_em)
         .sum::<f64>()
+        + tspan_shift_em(line)
     })
     .fold(0.0, f64::max)
     * size
     * weight_scale(markup)
+}
+
+/// The total horizontal shift, in ems, of the `<tspan dx="…em">` runs in a
+/// line of markup — the thin gaps between the digit groups of a long number
+/// (`1<tspan dx="0.18em">234</tspan>…`), which widen the line beyond its
+/// visible characters.
+pub(crate) fn tspan_shift_em(line: &str) -> f64 {
+  const OPEN: &str = "<tspan dx=\"";
+  line
+    .match_indices(OPEN)
+    .filter_map(|(i, _)| {
+      let value = &line[i + OPEN.len()..];
+      let value = &value[..value.find('"')?];
+      value.strip_suffix("em")?.parse::<f64>().ok()
+    })
+    .sum()
 }
 
 /// How much wider Arial Bold sets a run of text than Arial Regular, on

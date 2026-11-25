@@ -3527,6 +3527,29 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
     || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
 }
 
+/// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
+/// `ConjugateTranspose`, which StandardForm sets as a superscript mark.
+fn is_postfix_marked_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if args.len() == 1
+      && matches!(name.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose"))
+}
+
+/// Whether `expr` already sets with a superscript (a power or a postfix
+/// mark), so it is bracketed before taking another postfix mark.
+fn is_superscripted_call(expr: &Expr) -> bool {
+  is_postfix_marked_call(expr)
+    || matches!(expr, Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2)
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+    )
+}
+
 /// The infix symbol StandardForm sets between the arguments of a logical,
 /// string or pattern operator head.
 fn infix_operator_symbol(head: &str) -> Option<&'static str> {
@@ -5030,13 +5053,38 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
       // unambiguously instead of 1+x² looking like 1 + x².
       let base = canonical_operator_call(&args[0]);
-      let base_box = if needs_paren_as_power_base(&base) {
-        paren_box(expr_to_box_form(&base))
-      } else {
-        expr_to_box_form(&base)
-      };
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_postfix_marked_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
+    }
+    // The conjugate, transpose and Hermitian adjoint are postfix marks in
+    // StandardForm too: `z*`, `mᵀ` (`\[Transpose]`) and `m†`
+    // (`\[ConjugateTranspose]`). A base that is
+    // an operator expression is bracketed, `(a + b)ᵀ`, `(a²)ᵀ`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Conjugate" | "Transpose" | "ConjugateTranspose"
+      ) && args.len() == 1 =>
+    {
+      let mark = match name.as_str() {
+        "Conjugate" => "*",
+        "Transpose" => "\u{F3C7}",
+        _ => "\u{F3C9}",
+      };
+      let base = canonical_operator_call(&args[0]);
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_superscripted_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
+      call("SuperscriptBox", vec![base_box, str_expr(mark)])
     }
     Expr::FunctionCall { name, args }
       if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>
@@ -6456,12 +6504,37 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
       operand,
     } => tf_flatten_additive(operand, !neg, out),
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args {
-        tf_flatten_additive(a, neg, out);
+      // A complex number inside a larger sum is one term, set in
+      // parentheses (`x + (2 + 3 i)`), not two loose ones. Woxi keeps its
+      // parts apart in the sum (`Plus[2, 3 I, x]`), so they are merged
+      // first, as FullForm shows them (a held sum keeps what was written).
+      let merged = if TF_HELD.get() {
+        args.to_vec()
+      } else {
+        crate::functions::expr_form::merge_complex_terms(args)
+      };
+      let terms: &[Expr] = if merged.len() > 1 { &merged } else { args };
+      for a in terms {
+        if merged.len() > 1 && tf_is_complex_with_real_part(a) {
+          out.push((neg, a.clone()));
+        } else {
+          tf_flatten_additive(a, neg, out);
+        }
       }
     }
     _ if tf_is_zero(expr) => {}
     _ => out.push((neg, expr.clone())),
+  }
+}
+
+/// Whether `expr` is a complex number with a nonzero real part, which Woxi
+/// stores as its `re + im I` sum.
+fn tf_is_complex_with_real_part(expr: &Expr) -> bool {
+  use crate::functions::expr_form::{ComplexParts, complex_full_form_parts};
+  match complex_full_form_parts(expr) {
+    Some(ComplexParts::Exact { re, .. }) => !matches!(re, Expr::Integer(0)),
+    Some(ComplexParts::Float { re, .. }) => re != 0.0,
+    None => false,
   }
 }
 
@@ -7097,6 +7170,16 @@ fn tf_operand(expr: &Expr) -> Expr {
   }
 }
 
+/// TraditionalForm box of one term of a sum: a complex number with a real
+/// part is parenthesized there (`x + (2 + 3 i)`, `x - (1 - i)`).
+fn tf_sum_term(expr: &Expr) -> Expr {
+  if tf_is_complex_with_real_part(expr) {
+    tf_parens(tf(expr))
+  } else {
+    tf_operand(expr)
+  }
+}
+
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -7123,7 +7206,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         if *neg {
           items.push(tf_string("-"));
         }
-        items.push(tf_operand(term));
+        items.push(tf_sum_term(term));
         continue;
       }
       let (neg, term) = match negated_term(term) {
@@ -7131,7 +7214,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         None => (*neg, term.clone()),
       };
       items.push(tf_string(if neg { "-" } else { "+" }));
-      items.push(tf_operand(&term));
+      items.push(tf_sum_term(&term));
     }
     return tf_row(items);
   }
@@ -7174,14 +7257,14 @@ fn tf_order_sum_terms(
     .enumerate()
     .map(|(i, (neg, term))| match negated_term(term) {
       Some(positive) if i == 0 => {
-        let mut b = tf_operand(term);
+        let mut b = tf_sum_term(term);
         if !tf_delete_first_minus(&mut b) {
-          b = tf_operand(&positive);
+          b = tf_sum_term(&positive);
         }
         (!*neg, b, positive)
       }
-      Some(positive) => (!*neg, tf_operand(&positive), positive),
-      None => (*neg, tf_operand(term), term.clone()),
+      Some(positive) => (!*neg, tf_sum_term(&positive), positive),
+      None => (*neg, tf_sum_term(term), term.clone()),
     })
     .collect();
   if signed.len() > 1 && !large {

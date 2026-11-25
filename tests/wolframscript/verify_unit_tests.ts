@@ -2950,6 +2950,9 @@ function main() {
     "ProteinData[\"CFL2\", \"MolecularFunctions\"]",
     "ProteinData[\"CFL2\", \"MolecularFunctions\", \"Name\"]",
     "MemberQ[ProteinData[\"Classes\"], \"ActinBinding\"]",
+    // A property the bundled table lacks: Woxi says Missing["NotAvailable"],
+    // WL has a curated value (`Quantity[18371, "Daltons"]`).
+    "ProteinData[\"CFL1\", \"MolecularWeight\"]",
     // Wolfram quirks Woxi does not reproduce: FindShortestTour refusing
     // DistanceFunction -> GeoDistance, Det/NullSpace not simplifying
     // radical/rational entries, CoordinateTransform failing on a point list,
@@ -2975,9 +2978,9 @@ function main() {
     "Cases[GraphPlot[{{Style[a -> 0, \"TraditionalForm\"] -> b, \"x\"}, {c -> b, \"y\"}}, DirectedEdges -> True, VertexLabeling -> True], Text[Style[s_String, ___], ___] :> s, Infinity]",
     "Cases[GraphPlot[{{a -> b, \"x\"}, {a -> b, \"y\"}, {c -> b, \"z\"}}, DirectedEdges -> True, VertexLabeling -> True], Text[Style[s_String, ___], ___] :> s, Infinity]",
     "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; pts = GraphPlot[edges][[1, 1]]; {Length[Union[Round[pts[[All, 2]], 0.001]]] > 6, Round[Mean[EuclideanDistance[pts[[#1]], pts[[#2]]] & @@@ (List @@@ edges)], 0.001]}",
-    "Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], Tooltip[Point[i_], l_] :> {i, l}, Infinity]",
+    "Needs[\"GraphUtilities`\"]; Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], Tooltip[Point[i_], l_] :> {i, l}, Infinity]",
     "VertexLabeling /. Options[GraphUtilities`ExpressionTreePlot]",
-    "First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]",
+    "Needs[\"GraphUtilities`\"]; First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]",
     "g = GraphPlot3D[{a -> b, b -> c}, VertexLabeling -> True, VertexRenderingFunction -> None, Method -> \"SpringEmbedding\"]; {Cases[g, Text[Style[l_, z_], i_, o_] :> {l, z, i, o}, Infinity], Length[Cases[g, _Sphere, Infinity]], Options[g]}",
     "g = GraphPlot3D[{1 -> 2, 2 -> 3}, PlotStyle -> Gray, VertexLabeling -> False, ImageSize -> 300]; {Cases[g[[1]], _GrayLevel | _Hue, Infinity], Rest[List @@ g]}",
     "Cases[LayeredGraphPlot[{1 -> 5, 2 -> 5, 3 -> 5, 4 -> 5}], Disk[p_, ___] :> p, Infinity]",
@@ -3249,6 +3252,13 @@ function main() {
   // The batch preamble's own helpers are context-qualified for the same
   // reason (see buildWolframScript).
   const SYMBOL_TABLE_SENSITIVE = /\bNames\[|\b(Un)?Protect\["[^"]*[`*]/;
+  // A case that loads a package ends its batch. The package stays loaded for
+  // the rest of the session, which changes what a later case sees: a
+  // `Needs["GraphUtilities`"]` read in an *earlier* input unit leaves
+  // `GraphUtilities`VertexList[…]` unevaluated (with `VertexList::shdw`),
+  // where the same `Needs` in the case's own unit — Woxi's fresh process —
+  // evaluates it.
+  const LOADS_PACKAGE = /\b(Needs|Get)\[|<</;
   const batches: typeof woxiResultsFiltered[] = [];
   for (const entry of woxiResultsFiltered) {
     const alone = SYMBOL_TABLE_SENSITIVE.test(entry.expr);
@@ -3257,7 +3267,8 @@ function main() {
       alone ||
       last === undefined ||
       last.length >= BATCH_SIZE ||
-      SYMBOL_TABLE_SENSITIVE.test(last[0].expr)
+      SYMBOL_TABLE_SENSITIVE.test(last[0].expr) ||
+      LOADS_PACKAGE.test(last[last.length - 1].expr)
     ) {
       batches.push([entry]);
     } else {

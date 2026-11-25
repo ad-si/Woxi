@@ -3276,6 +3276,11 @@ pub fn seed_random_with_method(
   args: &[Expr],
   method: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  if let Some(method) = method
+    && let Some(quasi) = quasi_random_method(method)
+  {
+    return seed_quasi_random(args, method, quasi);
+  }
   let stream_key = method.and_then(generator_stream_key);
   let mix = |seed: u64| match stream_key {
     // SplitMix64-style finalizer, so nearby seeds of one method do not
@@ -3311,6 +3316,88 @@ pub fn seed_random_with_method(
     _ => Err(InterpreterError::EvaluationError(
       "SeedRandom expects 0 or 1 arguments".into(),
     )),
+  }
+}
+
+/// The quasi-random sequence and its dimension that a `SeedRandom` method
+/// `{"MKL", Method -> "Sobol"}` or
+/// `{"MKL", Method -> {"Niederreiter", "Dimension" -> d}}` selects. The
+/// dimension is `None` when the `"Dimension"` option is not a positive
+/// integer within the sequence's range.
+fn quasi_random_method(
+  method: &Expr,
+) -> Option<(super::QuasiKind, Option<usize>)> {
+  let Expr::List(items) = method else {
+    return None;
+  };
+  let [
+    Expr::String(library),
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+  ] = items.as_slice()
+  else {
+    return None;
+  };
+  if library != "MKL"
+    || !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+  {
+    return None;
+  }
+  let (name, options) = match replacement.as_ref() {
+    Expr::String(name) => (name, &[][..]),
+    Expr::List(spec) => match spec.split_first() {
+      Some((Expr::String(name), options)) => (name, options),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let kind = match name.as_str() {
+    "Sobol" => super::QuasiKind::Sobol,
+    "Niederreiter" => super::QuasiKind::Niederreiter,
+    _ => return None,
+  };
+  let mut dimension = Some(1);
+  for option in options {
+    match option {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::String(o) if o == "Dimension") => {
+        dimension = match replacement.as_ref() {
+          Expr::Integer(d) if *d > 0 => Some(*d as usize),
+          _ => None,
+        };
+      }
+      _ => return None,
+    }
+  }
+  Some((kind, dimension))
+}
+
+/// `SeedRandom[seed, Method -> {"MKL", Method -> quasi}]`: restart the
+/// quasi-random sequence. The sequence is deterministic, so the seed only
+/// has to be a valid one.
+fn seed_quasi_random(
+  args: &[Expr],
+  method: &Expr,
+  (kind, dimension): (super::QuasiKind, Option<usize>),
+) -> Result<Expr, InterpreterError> {
+  if !matches!(args, [Expr::Integer(_) | Expr::String(_)]) {
+    return Err(InterpreterError::EvaluationError(
+      "SeedRandom: seed must be an integer or string".into(),
+    ));
+  }
+  match dimension.and_then(|d| super::QuasiRng::new(kind, d)) {
+    Some(generator) => {
+      crate::set_quasi_rng(generator);
+      Ok(null_expr())
+    }
+    None => Err(InterpreterError::EvaluationError(format!(
+      "SeedRandom: invalid dimension in method {}",
+      crate::syntax::expr_to_input_form(method)
+    ))),
   }
 }
 
