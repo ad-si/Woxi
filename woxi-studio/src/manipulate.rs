@@ -8311,6 +8311,48 @@ mod tests {
     assert!(dump.contains("label: \"show g₁(x) here\""), "{dump}");
   }
 
+  /// A caption that is a function call in `TraditionalForm` reads in
+  /// conventional notation — `Re(s)`, `sin(x)`, `|x|` — rather than as the
+  /// bracketed source `Re[s]`.
+  #[test]
+  fn control_label_typesets_traditional_function_call() {
+    for (label, expected) in [
+      ("TraditionalForm@Re[s]", "Re(s)"),
+      ("TraditionalForm[Sin[x]]", "sin(x)"),
+      ("TraditionalForm[Abs[x]]", "|x|"),
+      ("TraditionalForm[Zeta[s]]", "ζ(s)"),
+      ("TraditionalForm[g[x, y]]", "g(x, y)"),
+      ("TraditionalForm[Sqrt[x]]", "√x"),
+      ("TraditionalForm[x^2]", "x²"),
+      ("TraditionalForm[Sin[x]^2]", "sin²(x)"),
+    ] {
+      let code = format!(
+        "Manipulate[Plot[a x, {{x, 0, 1}}], {{{{a, 0, {label}}}, 0, 1}}]"
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let state =
+        ManipulateState::from_expr(&expr).expect("widget should build");
+      let c = state.controls.iter().find(|c| c.name() == "a").unwrap();
+      let dump = format!("{c:?}");
+      assert!(
+        dump.contains(&format!("label: {expected:?}")),
+        "{label}: {dump}"
+      );
+    }
+    // The one-letter argument is set in italics, the function name upright.
+    let code = "Manipulate[Plot[a x, {x, 0, 1}], {{a, 0, TraditionalForm[Re[s]]}, 0, 1}]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(
+      dump.contains(r#"text: "Re", italic: false"#)
+        && dump.contains(r#"text: "s", italic: true"#),
+      "{dump}"
+    );
+  }
+
   /// A caption that writes a sample mean as `Subscript[OverBar[X], 1]` must
   /// typeset the bar over the letter, not leak the raw `OverBar[X]` source.
   #[test]

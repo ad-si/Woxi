@@ -1147,6 +1147,16 @@ pub(crate) fn plot_decorations(
     label_length(&opts.frame_label_top),
     label_length(&opts.frame_label_right),
   ];
+  // An upright side label (`RotateLabel -> False`) reaches its width away
+  // from the edge and its height along it.
+  if !opts.rotate_label {
+    for edge in [1, 3] {
+      if let Some(height) = d.frame_labels[edge] {
+        d.frame_labels[edge] = Some(d.frame_label_lengths[edge]);
+        d.frame_label_lengths[edge] = height;
+      }
+    }
+  }
   if d.frame_labels[0].is_none() && bottom_graphic_h > 0.0 {
     d.frame_labels[0] = Some(bottom_graphic_h);
   }
