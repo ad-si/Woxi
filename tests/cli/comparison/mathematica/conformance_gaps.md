@@ -297,6 +297,14 @@ woxi eval 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'            # 3 cos(x) +
 More samples of the order: `a + b + Sin[a]` is `a+sin(a)+b`, `3 + a + Cos[b]`
 is `a+cos(b)+3`, and `Cos[x] + Sin[x] + Tan[x]` is `sin(x)+cos(x)+tan(x)`.
 
+Terms that tie in `TraditionalFormDump`ordplus` (the same variables to the
+same powers) keep the order of the older typesetting, which is only known
+from samples: partial fractions read `1/x`, `1/(x + 2)`, `1/(x - 1)`
+(stored Demonstration output). Woxi sorts tied terms of equal power by the
+canonical order of their boxes less the numeric coefficient, which
+reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
+`Sin[x] + Sin[2 x]`) are unverified.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
@@ -1268,30 +1276,32 @@ tracking through the Gamma-ratio path starting from a machine-real argument.
 
 Overflow of `Exp[x.]`, `a.^b`, products, quotients and sums of machine reals
 is promoted to an arbitrary-precision number (up to a decimal exponent of
-10000), but not everywhere:
+6*10^8), but not everywhere:
 
 ```sh
-wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
-woxi eval 'Exp[1000] // N'             # Infinity
-
 wolframscript -code 'Exp[-1000.]'      # General::munfl: Exp[-1000.] is too small to represent as a normalized machine number; precision may be lost.
                                        # 0.
 woxi eval 'Exp[-1000.]'                # 0.  (no General::munfl)
 
-wolframscript -code 'Exp[1000.] > 10^433'   # True
-woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
-Exact input made inexact by `N` and underflow still collapse to `Infinity` /
-`0.`, and machine results beyond a decimal exponent of 10000 stay `Infinity`:
-numeric routines (limits, `NMaximize`, `FindRoot`) sample far outside the
-machine range and rely on that staying cheap. For the same reason Woxi emits
-no `General::munfl` — wolframscript's own numeric routines do not either,
-but a top-level `Exp[-1000.]` or `0.5^2000.` does. Arbitrary-precision input
-is promoted up to a decimal exponent of 10^8 (`Exp[10.`30^5]` is
-`2.8066…*^43429` in both); past that Woxi returns `Overflow[]`/`Underflow[]`
-with `General::ovfl`/`General::unfl` where wolframscript still shows a number
-(`Exp[10.`30^9]`, `10^-1100329811.`30`).
+Machine underflow collapses to `0.` without `General::munfl` —
+wolframscript's own numeric routines do not emit it either, but a top-level
+`Exp[-1000.]` or `0.5^2000.` does. Functions other than `Exp` and `Power`
+(`Cosh`, `Sinh`, `Gamma`, …) still return `Infinity` past the machine range
+(`Cosh[1000.]`), where wolframscript gives a number.
+
+The arbitrary-precision type has a 32-bit binary exponent, so numbers end
+near 10^646456993 where wolframscript's `$MaxNumber` is near
+10^1355718576299609. Past a decimal exponent of 6*10^8 a machine result is
+`Infinity` (`Exp[2.*^9]`) and an arbitrary-precision one is
+`Overflow[]`/`Underflow[]` with `General::ovfl`/`General::unfl`
+(`Exp[10.`30^10]`, `10^-1100329811.`30`), where wolframscript still shows a
+number.
+
+`MantissaExponent` of an arbitrary-precision number outside the machine range
+stays unevaluated (`MantissaExponent[1.5`20*^5000]`), where wolframscript
+returns the mantissa and exponent.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 
@@ -2840,6 +2850,14 @@ differences:
   Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
   `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
   are not covered.
+- A second variable the equations never differentiate in
+  (`NDSolve[{D[z[t, s], t, t] == …, z[0, s] == s, …}, z, {t, …}, {s, …}]`)
+  is a parameter: the ODEs of a uniform grid of its values (51 points or
+  more, sized like a space grid from the initial profiles) are integrated
+  as one system (`src/functions/ode_ast/param_family.rs`). WL's grid in the
+  parameter differs, so values between grid points do, visibly once the
+  family is chaotic
+  (SensitiveDependenceOnInitialConditionsInASimpleThreeBodyProb).
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -5990,14 +6008,49 @@ projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
 
-A square picture without a `PlotRange` or `ViewPoint` contradicts the
-outline fit as well. A Demonstration's `Manipulate` shows a plain
-`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
-in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
-draw the plane about 323 px wide, with the origin at the center of the
-picture. That matches the sphere framing (Woxi: 320 px), not the outline
-fit that Woxi applies (398 px). Unlike the tall building, this box is
-nearly as wide as it is tall, and the picture is square. Unverified with
+An unboxed scene without a `PlotRange` or `ViewPoint` in a picture of fixed
+width and height is framed by the shape of its box. A compact box (longest
+side at most 2.25 times the shortest, contents not flat) is sphere-framed. A
+Demonstration's `Manipulate` shows a plain `Boxed -> False` `Graphics3D` at
+`ImageSize -> {400, 400}`: a 2 × 4 plane in z = 0 crossed by a vertical
+arrow from z = -2 to z = 2. Its snapshots draw the plane about 323 px wide
+(Woxi: 322 px; the fit to the contents gave 398 px). Another one draws the
+five Platonic solids at `ImageSize -> {80, 80}`: a unit cube spans
+65.5 × 71.5 px and a tetrahedron of edge 1 spans 49 × 42.5 px, off center
+(Woxi: 66.5 × 72 and 50.5 × 44, each solid 2–3 % larger than in the
+snapshot). An elongated box (the tall building above, a thin
+3.4 × 3.4 × 39 cylinder that fills 95–98 % of a 150 × 150 picture) and
+flat contents are fitted to the frame by their contents. The limit of 2.25
+lies between the plane's 2 × 4 × 4 box and the building's 4 × 4 × 10 one.
+Whether the shape of the box is really what decides is unverified with
+wolframscript. A cylinder about as wide as it is tall (8 × 8 × 7.06) at
+`ImageSize -> {150, 150}` now spans 94 % of the frame, just under the
+95–98 % of that Demonstration's snapshots.
+
+A second square picture agrees. A Demonstration's `Manipulate` shows an
+unboxed `Graphics3D` of polygons at `ImageSize -> {400, 400}`, from the
+default camera and with no `PlotRange`. The polygons form a triangular
+prism cut into tetrahedra and prisms, in a 1.2 × 1.2 × 1 box. Its
+snapshot draws the scene about 314 × 276 pt. That is the sphere-framed
+size (Woxi with `SphericalRegion -> True`: 314 × 279). The outline fit
+draws it 398 × 354, so the scene touches the picture's edges. Fitting the
+scene's box outline instead of its contents (as a `Boxed -> True` picture
+does) gives 350 × 311, which does not match either. Three rules were tried
+and each contradicts an earlier snapshot:
+
+- Sphere-framing every square unboxed picture in a `Manipulate` breaks the
+  fixed-volume cylinders at `ImageSize -> {150, 150}` (see
+  `an_unboxed_scene_without_a_set_view_fills_a_pinned_picture`). They fill
+  95–98 % of the frame, but sphere framing draws the thin one at 84 %.
+- Sphere-framing every unboxed picture no taller than wide also breaks the
+  stepped stack of cuboids at `ImageSize -> {400, 300}`, which keeps the
+  outline fit.
+- A rule based on how compact the box is breaks the 8 × 8 × 7 cylinder. It
+  also fills its frame.
+
+The two sphere-framed scenes are built from `Polygon`s (and an `Arrow`).
+The outline-fitted ones are `Cylinder`s and `Cuboid`s. It is not known
+whether that difference matters. None of these cases has been checked with
 wolframscript.
 
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
@@ -6496,6 +6549,13 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+- `Labeled[plot, label, Top]` keeps its picture at full size; Wolfram
+  reduces it the way it reduces a picture nested in any other layout. In a
+  `GraphicsGrid` cell the difference shows: Wolfram's plot takes under half
+  the cell's width while its label spans the cell, where Woxi's plot fills
+  about three quarters of it. (Measured off a stored front-end rendering of
+  `GraphicsGrid[{{Labeled[ListPlot[…], Row[{…}], Top], …}}, ImageSize ->
+  600]`, not re-verified against wolframscript.)
 
 ### `Column` item heights with `ItemSize` and large text
 
@@ -7689,7 +7749,11 @@ this area are artifacts of that.
 
 Wolfram uses a proprietary generator, Woxi uses ChaCha8; no seed produces the
 same sequence. Verify determinism and distribution instead.
-**Not reproducible.**
+`SeedRandom[n, Method -> m]` likewise draws from ChaCha8: each non-default
+method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
+reproducible stream (a key derived from the method is mixed into the seed),
+but none of them reproduces the named algorithm's numbers or statistical
+quirks. **Not reproducible.**
 
 ### Performance
 
@@ -10808,6 +10872,16 @@ matches a saved Wolfram snapshot. The flat-axis rule and the direction of
 the tick marks were not checked against `wolframscript` (none was available
 in the session).
 
+### Label position of 3D axes crossing at an `AxesOrigin`
+
+With an explicit `AxesOrigin` in a `Graphics3D` (or a 3D plot), Woxi puts
+each `AxesLabel` at the end of its axis farther from the viewer, a fixed
+distance off the axis on the side of the tick marks. A saved Wolfram
+snapshot (default `ViewPoint`, `AxesOrigin -> {0, 0, 0}`) shows the labels
+at those ends and on that side, but the rule choosing the end (it could
+also be the end farther from the crossing point) and the exact offset were
+not checked against `wolframscript` (none was available in the session).
+
 ### `NDSolve`StateData` prints its registry index
 
 An `NDSolve`StateData` object is a mutable handle (`NDSolve`Iterate`
@@ -10949,3 +11023,29 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### `FaceForm` on round solids
+
+Woxi lets `FaceForm[front, back]` color `Sphere`, `Cylinder` and `Cone`
+unless a plain color directive follows it, in which case the round solid
+takes that color (`{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+cylinder). A saved snapshot confirms only that last case. Whether Wolfram
+ignores `FaceForm` on round solids altogether, including with no later
+color, has not been checked against wolframscript. Wolfram also lets the two
+coincident faces of a zero-thickness `Cuboid` z-fight (speckles of front
+and back color); Woxi draws the sheet in its front color.
+
+### A slightly shrunk copy of a solid drawn under the original
+
+A scene that draws a copy of a solid scaled by `0.998` about its center in
+one color, and then the solid itself (opened into frame-shaped faces by a
+`GraphicsComplex` rewrite) in a second color, under a distant camera
+(`ViewPoint -> {0, 100, 71}`, `ViewAngle -> 0.008`). Woxi draws the outer surface on top, as the geometry says, so the frames
+cover the shrunk copy. All four of Wolfram's saved snapshots of such a scene
+show only the shrunk copy's color and its edges. Even the frames' own edges
+are hidden; only a few hairline slivers of the outer surface show along
+silhouettes. That looks like depth-buffer precision under a far camera, with
+the earlier primitive winning the near-tie. But Woxi already draws exactly
+coplanar faces later-on-top, as in Wolfram. With that rule, a depth tie would
+put the outer surface on top, so the cause is unconfirmed. Not yet checked
+against wolframscript.
