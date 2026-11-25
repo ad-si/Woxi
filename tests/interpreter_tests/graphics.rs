@@ -14900,12 +14900,14 @@ mod plot3d {
     }
 
     /// An unboxed scene in a picture of fixed width and height, with no
-    /// camera option and no `PlotRange`, is fitted to its own contents:
+    /// camera option and no `PlotRange`, fills the picture:
     /// a Demonstration's snapshots of a cylinder of fixed volume at
     /// `ImageSize -> {150, 150}` fill 95–98 % of the frame whether the
     /// cylinder is tall and thin or short and wide. That holds inside a
-    /// `Manipulate` frame too. Neither the sphere around the box nor the
-    /// box outline is used for the fit.
+    /// `Manipulate` frame too. An elongated box is fitted to its own
+    /// contents (the sphere around a thin cylinder would shrink it to
+    /// 84 %); a compact one is framed by the sphere around its contents,
+    /// which a cylinder about as wide as it is tall nearly fills.
     #[test]
     fn an_unboxed_scene_without_a_set_view_fills_a_pinned_picture() {
       let cylinder = |r: f64, opts: &str| {
@@ -14922,7 +14924,7 @@ mod plot3d {
         ] {
           let longer = w.max(h);
           assert!(
-            (144.0..=150.0).contains(&longer),
+            (140.0..=150.0).contains(&longer),
             "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
           );
         }
@@ -14940,6 +14942,80 @@ mod plot3d {
           "r = {r}: {viewed:?} vs {sphere:?}"
         );
       }
+    }
+
+    /// An unboxed scene of compact shape with the default camera is framed
+    /// by the sphere around its contents in a picture of fixed width and
+    /// height, like `SphericalRegion -> True`, instead of being blown up to
+    /// touch the edges. Wolfram's snapshots of the five Platonic solids at
+    /// `ImageSize -> {80, 80}` draw a unit cube 0.82 × 0.89 of the frame
+    /// and a tetrahedron of edge 1 only 0.61 × 0.53. A plane crossed by an
+    /// arrow (a 2 × 4 × 4 box) at `ImageSize -> {400, 400}` is 323 px wide.
+    /// An elongated box keeps the fit to its contents, and so does a
+    /// picture given only a width.
+    #[test]
+    fn a_compact_unboxed_scene_is_sphere_framed_in_a_pinned_picture() {
+      let scene = |prims: &str, size: &str, opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[{{{prims}}}, Boxed -> False, ImageSize -> {size}{opts}]"
+        ))
+      };
+      let close = |got: (f64, f64), want: (f64, f64), tol: f64| {
+        (got.0 / want.0 - 1.0).abs() < tol && (got.1 / want.1 - 1.0).abs() < tol
+      };
+      let tetrahedron = "PolyhedronData[\"Tetrahedron\", \"Faces\"]";
+      for (prims, size, measured) in [
+        ("Cuboid[{0, 0, 0}]", "{80, 80}", (65.5, 71.5)),
+        (tetrahedron, "{80, 80}", (49.0, 42.5)),
+        (
+          "PolyhedronData[\"Octahedron\", \"Faces\"]",
+          "{80, 80}",
+          (69.0, 63.5),
+        ),
+        (
+          "PolyhedronData[\"Icosahedron\", \"Faces\"]",
+          "{80, 80}",
+          (70.0, 69.0),
+        ),
+        (
+          "PolyhedronData[\"Dodecahedron\", \"Faces\"]",
+          "{80, 80}",
+          (75.5, 77.5),
+        ),
+      ] {
+        let auto = scene(prims, size, "");
+        assert!(
+          close(auto, measured, 0.05),
+          "{prims}: expected about {measured:?}, got {auto:?}"
+        );
+        // The same framing as an explicit `SphericalRegion -> True`, also
+        // inside a `Manipulate` frame.
+        let sphere = scene(prims, size, ", SphericalRegion -> True");
+        let framed = woxi::with_manipulate_frame(|| scene(prims, size, ""));
+        assert!(close(auto, sphere, 1e-9), "{prims}: {auto:?} vs {sphere:?}");
+        assert!(close(framed, sphere, 1e-9), "{prims}: {framed:?}");
+        // `SphericalRegion -> False` asks for the fit to the frame.
+        let fitted = scene(prims, size, ", SphericalRegion -> False");
+        assert!(
+          fitted.0.max(fitted.1) > 77.0,
+          "{prims}: expected the frame filled, got {fitted:?}"
+        );
+      }
+      // The plane is the widest part of the picture (the arrow is a line).
+      let plane = scene(
+        "Polygon[{{-1, -2, 0}, {1, -2, 0}, {1, 2, 0}, {-1, 2, 0}}], \
+         Arrow[{{0, 0, -2}, {0, 0, 2}}]",
+        "{400, 400}",
+        "",
+      );
+      assert!((plane.0 - 323.0).abs() < 5.0, "got {plane:?}");
+      // A tall 4 × 4 × 10 building still fills its 300 × 400 picture.
+      let building = scene("Cuboid[{0, 0, 0}, {4, 4, 10}]", "{300, 400}", "");
+      assert!(building.1 > 380.0, "got {building:?}");
+      // A picture given only a width keeps the fit to the box outline.
+      let wide = scene(tetrahedron, "80", "");
+      let pinned = scene(tetrahedron, "{80, 80}", "");
+      assert!(wide.0 > 1.05 * pinned.0, "got {wide:?} vs {pinned:?}");
     }
 
     /// A cylinder's round cap is drawn as a smooth circle, not a visible

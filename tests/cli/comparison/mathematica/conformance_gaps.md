@@ -6000,15 +6000,24 @@ projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
 
-A square picture without a `PlotRange` or `ViewPoint` contradicts the
-outline fit as well. A Demonstration's `Manipulate` shows a plain
-`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
-in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
-draw the plane about 323 px wide, with the origin at the center of the
-picture. That matches the sphere framing (Woxi: 320 px), not the outline
-fit that Woxi applies (398 px). Unlike the tall building, this box is
-nearly as wide as it is tall, and the picture is square. Unverified with
-wolframscript.
+An unboxed scene without a `PlotRange` or `ViewPoint` in a picture of fixed
+width and height is framed by the shape of its box. A compact box (longest
+side at most 2.25 times the shortest, contents not flat) is sphere-framed. A
+Demonstration's `Manipulate` shows a plain `Boxed -> False` `Graphics3D` at
+`ImageSize -> {400, 400}`: a 2 × 4 plane in z = 0 crossed by a vertical
+arrow from z = -2 to z = 2. Its snapshots draw the plane about 323 px wide
+(Woxi: 322 px; the fit to the contents gave 398 px). Another one draws the
+five Platonic solids at `ImageSize -> {80, 80}`: a unit cube spans
+65.5 × 71.5 px and a tetrahedron of edge 1 spans 49 × 42.5 px, off center
+(Woxi: 66.5 × 72 and 50.5 × 44, each solid 2–3 % larger than in the
+snapshot). An elongated box (the tall building above, a thin
+3.4 × 3.4 × 39 cylinder that fills 95–98 % of a 150 × 150 picture) and
+flat contents are fitted to the frame by their contents. The limit of 2.25
+lies between the plane's 2 × 4 × 4 box and the building's 4 × 4 × 10 one.
+Whether the shape of the box is really what decides is unverified with
+wolframscript. A cylinder about as wide as it is tall (8 × 8 × 7.06) at
+`ImageSize -> {150, 150}` now spans 94 % of the frame, just under the
+95–98 % of that Demonstration's snapshots.
 
 A second square picture agrees. A Demonstration's `Manipulate` shows an
 unboxed `Graphics3D` of polygons at `ImageSize -> {400, 400}`, from the

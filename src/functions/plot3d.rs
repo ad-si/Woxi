@@ -13737,6 +13737,19 @@ fn point_disk_padding(
   pad
 }
 
+/// The radius of the largest `Point` dot in the scene, 0 without any.
+fn largest_point_dot_radius(prims: &[Primitive3D]) -> f64 {
+  prims
+    .iter()
+    .filter_map(|prim| match prim {
+      Primitive3D::Point3DPrim { points, style } if !points.is_empty() => {
+        Some(point_dot_radius(style))
+      }
+      _ => None,
+    })
+    .fold(0.0, f64::max)
+}
+
 thread_local! {
   /// Diagonal of the box of the `Graphics3D` currently being collected (its
   /// explicit `PlotRange`, else the extent of its contents), which an
@@ -14790,8 +14803,34 @@ fn resolve_scaled_sphere_radii(
 
 /// The world-coordinate bounding box of a set of 3D primitives, as
 /// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
-/// to bound.
+/// to bound. An axis the contents do not extend along (a flat polygon, a
+/// vertical line) is given a range as Wolfram does: from 0 to twice the
+/// value (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
 fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
+  let widen = |(lo, hi): (f64, f64)| {
+    if lo.is_finite() && hi.is_finite() && range_is_flat((lo, hi)) {
+      let c = f64::midpoint(lo, hi);
+      if c == 0.0 {
+        (-1.0, 1.0)
+      } else {
+        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
+      }
+    } else {
+      (lo, hi)
+    }
+  };
+  primitives_extent(prims).map(widen)
+}
+
+/// Whether the contents do not extend along an axis whose range is
+/// `(lo, hi)` (a flat polygon, a vertical line).
+fn range_is_flat((lo, hi): (f64, f64)) -> bool {
+  hi - lo <= 1e-12 * lo.abs().max(1.0)
+}
+
+/// The bounding box of a set of 3D primitives as the contents span it: an
+/// axis they do not extend along keeps its zero-width range.
+fn primitives_extent(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   let mut x3_min = f64::INFINITY;
   let mut x3_max = f64::NEG_INFINITY;
   let mut y3_min = f64::INFINITY;
@@ -14968,27 +15007,7 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
     }
   }
-  // An axis the contents do not extend along (a flat polygon, a vertical
-  // line) is given a range as Wolfram does: from 0 to twice the value
-  // (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
-  let widen = |(lo, hi): (f64, f64)| {
-    if lo.is_finite() && hi.is_finite() && hi - lo <= 1e-12 * lo.abs().max(1.0)
-    {
-      let c = f64::midpoint(lo, hi);
-      if c == 0.0 {
-        (-1.0, 1.0)
-      } else {
-        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
-      }
-    } else {
-      (lo, hi)
-    }
-  };
-  [
-    widen((x3_min, x3_max)),
-    widen((y3_min, y3_max)),
-    widen((z3_min, z3_max)),
-  ]
+  [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
 }
 
 /// How much wider than the sphere's projected circle a sphere-framed
@@ -14998,6 +15017,14 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
 /// one morphing surface) all draw it 0.90–0.91× as large as the bare circle
 /// fit, while one with `ImagePadding -> 20` fills the padded region.
 const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
+
+/// Longest-to-shortest side ratio up to which an invisible box counts as
+/// compact and is sphere-framed in a picture of fixed size (see its use in
+/// `graphics3d_ast`). Wolfram's snapshots put the limit between a
+/// 2 × 4 × 4 box (a plane crossed by an arrow, sphere-framed at
+/// `ImageSize -> {400, 400}`) and a 4 × 4 × 10 one (a tall building
+/// filling a 300 × 400 picture).
+const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
@@ -16437,6 +16464,35 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let view_box_side =
     (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
+  // An invisible box of compact shape (no side much longer than another)
+  // around an automatic range is sphere-framed in a picture of fixed width
+  // and height, even with the default camera: Wolfram's snapshots of the
+  // five Platonic solids, each an unboxed `Graphics3D` at
+  // `ImageSize -> {80, 80}`, draw a unit cube 0.82 × 0.89 of the frame
+  // and a tetrahedron 0.61 × 0.53, off center, as the sphere around the
+  // contents gives (within 3 %), not filling the frame. An elongated box
+  // (a thin 3.4 × 3.4 × 39 cylinder, a tall 4 × 4 × 10 building) keeps
+  // the fit to its contents below, and so do flat contents, whose box is
+  // only as thick as the range Wolfram makes up for it (a planar net of
+  // dots at `ImageSize -> {350, 400}` reaches the picture's edges).
+  let view_box_shortest_side =
+    (x3_max - x3_min).min(y3_max - y3_min).min(z3_max - z3_min);
+  let compact_sphere_framed = !spherical_region
+    && (!spherical_region_off
+      && !show_box
+      && !show_axes
+      && explicit_height
+      && !full_width
+      && !aspect_full
+      && aspect_ratio.is_none()
+      && view_angle.is_none()
+      && plot_range.is_none()
+      && partial_range.is_none()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && view_box_shortest_side > 0.0
+      && view_box_side <= COMPACT_BOX_MAX_SIDE_RATIO * view_box_shortest_side);
+  let spherical_region = spherical_region || compact_sphere_framed;
+
   // Build box corners
   let box_corners = [
     Point3D {
@@ -16696,10 +16752,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Point` on the outline of the scene keeps its disk inside the picture
   // rather than being cut in half by the edge. A Demonstration's unboxed
   // net of `PointSize[Large]` control points at `ImageSize -> {350, 400}`
-  // leaves the same margin of one dot radius on all four sides.
-  if fit_contents && image_padding.is_none() && plot_region.is_none() {
-    let pad =
-      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max]);
+  // leaves the same margin of one dot radius on all four sides. The same
+  // goes for a compact scene framed by the sphere around its contents:
+  // its outermost dots sit on that sphere, which may touch any side.
+  if (fit_contents || compact_sphere_framed)
+    && image_padding.is_none()
+    && plot_region.is_none()
+  {
+    let pad = if compact_sphere_framed {
+      [largest_point_dot_radius(&prims); 4]
+    } else {
+      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max])
+    };
     if pad.iter().any(|p| *p > 0.0) {
       image_padding = Some(pad);
     }
