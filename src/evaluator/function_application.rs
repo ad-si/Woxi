@@ -4744,8 +4744,14 @@ fn transform_geometric_region(
     {
       rebuild(vec![map(&prim[0])?])
     }
+    // A ball or disk under anything but a translation is an ellipsoid
+    // `Ellipsoid[c', A.DiagonalMatrix[r^2].Transpose[A]]`, `A` the linear
+    // part — except a disk under a similarity, which stays a disk of radius
+    // `Sqrt[s^2 r^2]` (`2 Sqrt[r^2]`). Spheres and circles map under a
+    // similarity only.
     "Sphere" | "Ball" | "Disk" | "Circle"
-      if (name == "Disk" || name == "Circle") == (dim == 2)
+      if (name == "Disk" || name == "Circle") <= (dim == 2)
+        && (name == "Sphere") <= (dim == 3)
         && (dim == 2 || dim == 3)
         && prim.len() <= 2 =>
     {
@@ -4755,13 +4761,73 @@ fn transform_geometric_region(
         None => Expr::List(vec![Expr::Integer(0); dim].into()),
       };
       let radius = prim.get(1).cloned().unwrap_or(Expr::Integer(1));
-      if matches!(radius, Expr::List(_)) {
-        return Ok(None);
-      }
-      let Some(s) = similarity_scale(matrix) else {
+      let radii: Vec<Expr> = match &radius {
+        Expr::List(rs) if rs.len() == dim && name == "Disk" => rs.to_vec(),
+        Expr::List(_) => return Ok(None),
+        r => vec![r.clone(); dim],
+      };
+      let Some(linear) = rows[..dim]
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) if cells.len() == dim + 1 => {
+            Some(cells[..dim].to_vec())
+          }
+          _ => None,
+        })
+        .collect::<Option<Vec<Vec<Expr>>>>()
+      else {
         return Ok(None);
       };
-      rebuild(vec![map(&center)?, scale_radius(&radius, s)?])
+      let identity = linear.iter().enumerate().all(|(i, row)| {
+        row.iter().enumerate().all(
+          |(j, c)| matches!(c, Expr::Integer(k) if *k == i128::from(i == j)),
+        )
+      });
+      if identity {
+        return rebuild(vec![map(&center)?, radius]);
+      }
+      let square = |e: Expr| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![e, Expr::Integer(2)].into(),
+      };
+      if similarity_scale(matrix).is_some()
+        && !matches!(radius, Expr::List(_))
+        && name != "Ball"
+      {
+        // The squared scale is that of the first column.
+        let column: Vec<Expr> =
+          linear.iter().map(|row| square(row[0].clone())).collect();
+        let scaled = evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![times(vec![plus(column), square(radius.clone())])].into(),
+        })?;
+        return rebuild(vec![map(&center)?, scaled]);
+      }
+      if name != "Ball" && name != "Disk" {
+        return Ok(None);
+      }
+      let a =
+        Expr::List(linear.into_iter().map(|r| Expr::List(r.into())).collect());
+      let squares = Expr::List(radii.into_iter().map(square).collect());
+      let shape = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![
+          a.clone(),
+          Expr::FunctionCall {
+            name: "DiagonalMatrix".to_string(),
+            args: vec![squares].into(),
+          },
+          Expr::FunctionCall {
+            name: "Transpose".to_string(),
+            args: vec![a].into(),
+          },
+        ]
+        .into(),
+      })?;
+      Ok(Some(evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Ellipsoid".to_string(),
+        args: vec![map(&center)?, shape].into(),
+      })?))
     }
     "Cylinder" | "Cone" | "CapsuleShape"
       if dim == 3

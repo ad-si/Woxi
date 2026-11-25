@@ -20975,5 +20975,6 @@ fn region_flat_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
       .collect::<Vec<_>>()
       .into(),
   );
-  Some(call1("Point", ev(call1("Reverse", call1("Sort", list)))?))
+  // The crossings come in the order of the line's segments.
+  Some(call1("Point", list))
 }

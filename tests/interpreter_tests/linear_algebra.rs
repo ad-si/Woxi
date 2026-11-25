@@ -6125,8 +6125,30 @@ mod transformation_function_apply {
       "Disk[{2, 0}, 2]"
     );
     assert_eq!(
+      interpret("ScalingTransform[{2, 2}][Disk[{1, 0}, r]]").unwrap(),
+      "Disk[{2, 0}, 2*Sqrt[r^2]]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 1}][Disk[{1, 0}, r]]").unwrap(),
+      "Disk[{2, 1}, r]"
+    );
+  }
+
+  // A ball under anything but a translation is an ellipsoid.
+  #[test]
+  fn ball_under_a_linear_map_is_an_ellipsoid() {
+    assert_eq!(
       interpret("ScalingTransform[{3, 3, 3}][Ball[{1, 0, 0}, r]]").unwrap(),
-      "Ball[{3, 0, 0}, 3*r]"
+      "Ellipsoid[{3, 0, 0}, {{9*r^2, 0, 0}, {0, 9*r^2, 0}, {0, 0, 9*r^2}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {0, 0, 1}][Ball[{1, 0, 0}, 1]]")
+        .unwrap(),
+      "Ellipsoid[{0, 1, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 1, 1}][Ball[{1, 0, 0}, 1]]").unwrap(),
+      "Ball[{2, 1, 1}, 1]"
     );
   }
 
@@ -6143,12 +6165,20 @@ mod transformation_function_apply {
     );
   }
 
-  // A non-uniform scaling does not keep a disk round, so it stays applied.
+  // A non-uniform map does not keep a disk round: it is an ellipsoid.
   #[test]
-  fn non_uniform_scaling_of_disk_stays_applied() {
+  fn non_uniform_scaling_of_disk_is_an_ellipsoid() {
     assert_eq!(
       interpret("ScalingTransform[{2, 1}][Disk[{1, 0}, 1]]").unwrap(),
-      "TransformationFunction[{{2, 0, 0}, {0, 1, 0}, {0, 0, 1}}][Disk[{1, 0}, 1]]"
+      "Ellipsoid[{2, 0}, {{4, 0}, {0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}][Disk[{1, 0}, {1, 2}]]").unwrap(),
+      "Ellipsoid[{2, 0}, {{4, 0}, {0, 36}}]"
+    );
+    assert_eq!(
+      interpret("ShearingTransform[Pi/4, {1, 0}, {0, 1}][Disk[]]").unwrap(),
+      "Ellipsoid[{0, 0}, {{2, 1}, {1, 1}}]"
     );
   }
 
