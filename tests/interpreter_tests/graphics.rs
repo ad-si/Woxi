@@ -71905,7 +71905,7 @@ mod graphics3d_point_depth {
       let svg = export_svg(&format!(
         "Show[Plot3D[(u^2 + v^2)/2, {{u, -3, 3}}, {{v, -3, 3}}], \
          Graphics3D[{{PointSize[0.06], Orange, \
-         Point[{{{x}, {y}, ({x}^2 + {y}^2)/2 + 1.5}}]}}]]"
+         Point[{{{x}, {y}, (({x})^2 + ({y})^2)/2 + 1.5}}]}}]]"
       ));
       let over = faces_over_dot(&svg);
       assert!(over.is_empty(), "dot at {x}, {y}: {over:?}");
