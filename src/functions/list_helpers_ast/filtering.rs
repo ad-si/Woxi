@@ -464,6 +464,17 @@ fn walk_parts(expr: &Expr, want_head: bool) -> (Option<Expr>, Cow<'_, [Expr]>) {
       (Some((**func).clone()), Cow::Owned(args.clone()))
     }
     Expr::List(items) => (head("List"), Cow::Borrowed(&items[..])),
+    // A rendered graphic nested inside another expression (a plot in a
+    // list, under `FullForm`, …) is walked through the symbolic
+    // `Graphics[…]` it was built from, exactly as at the top level.
+    Expr::Graphics { .. } => {
+      match &crate::evaluator::part_extraction::graphics_symbolic_form(expr) {
+        Some(Expr::FunctionCall { name, args }) => {
+          (head(name), Cow::Owned(args.clone().into()))
+        }
+        _ => (None, Cow::Borrowed(&[])),
+      }
+    }
     // `-Infinity`, stored as `Times[-1, Infinity]`, is the atom-like
     // `DirectedInfinity[-1]` to `decompose_expr`.
     Expr::FunctionCall { name, args }

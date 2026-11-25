@@ -3516,7 +3516,17 @@ fn field_plot_structure(
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
   }
-  let mut structure_args = vec![Expr::List(items.into())];
+  // A contour plot's content is a single `GraphicsComplex`, which Wolfram
+  // stores as the graphic's first argument itself (not in a list), so
+  // `First[First[plot]]` is the point table.
+  let content = match <[Expr; 1]>::try_from(items) {
+    Ok([complex]) if matches!(&complex, Expr::FunctionCall { name, .. } if name == "GraphicsComplex") => {
+      complex
+    }
+    Ok([item]) => Expr::List(vec![item].into()),
+    Err(items) => Expr::List(items.into()),
+  };
+  let mut structure_args = vec![content];
   let mut explicit = crate::functions::plot::explicit_options(args);
   // The plot's own `PlotRange` clips the *function values* — its x/y axes
   // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
@@ -4775,7 +4785,7 @@ fn contour_plot_equations(
   let structure = call(
     "Graphics",
     vec![
-      Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
+      contour_graphics_complex(&structure_items),
       Expr::List(structure_options.into()),
     ],
   );
@@ -4789,7 +4799,11 @@ fn contour_plot_equations(
     log_y: false,
     plot_range: None,
     data_x_range: None,
-    aspect_ratio: None,
+    // The frame keeps the plot's own `AspectRatio` (1 by default) and is
+    // letterboxed into an `ImageSize -> {w, h}` box, so `Show` must keep
+    // that shape rather than stretch the frame over the whole image.
+    aspect_ratio: Some(area.plot_h / area.plot_w)
+      .filter(|r| r.is_finite() && *r > 0.0),
     legends: Vec::new(),
     settles_all_range: false,
   };
@@ -5852,6 +5866,11 @@ struct VectorArrowStyle {
   /// `VectorScaling -> Automatic`: the arrow length grows with the
   /// magnitude instead of being the same for every vector.
   scaled_lengths: bool,
+  /// Vectors shorter than this draw no arrow. A sampled function drops
+  /// everything below `$MachineEpsilon` (its numerical noise); list data
+  /// (`ListVectorPlot`) drops only vectors whose squared norm is zero, so
+  /// a `1.*^-16` residue of a real-stepped `Table` still gets its arrow.
+  min_magnitude: f64,
 }
 
 /// The `VectorColorFunction` of a vector plot.
@@ -5874,6 +5893,7 @@ fn parse_vector_arrow_style(args: &[Expr], start: usize) -> VectorArrowStyle {
     color: None,
     segments: false,
     scaled_lengths: false,
+    min_magnitude: f64::EPSILON,
   };
   let opts = &args[start.min(args.len())..];
   if let Some(value) = option_rule(opts, "VectorColorFunction") {
@@ -6119,7 +6139,11 @@ fn vector_arrow_primitives(
     let &(x, y, vx, vy, mag) = v;
     let (sx, sy) = (vx * px_per_x, vy * px_per_y);
     let screen = sx.hypot(sy);
-    if mag < 1e-15 || screen <= 0.0 || !screen.is_finite() {
+    if mag < style.min_magnitude
+      || vx * vx + vy * vy == 0.0
+      || screen <= 0.0
+      || !screen.is_finite()
+    {
       continue;
     }
     // `VectorScaling -> Automatic` maps the rescaled magnitude `s` to
@@ -6204,6 +6228,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     &|x, y| evaluate_vector(body, &xvar, &yvar, x, y),
+    f64::EPSILON,
   )
 }
 
@@ -6216,9 +6241,11 @@ fn render_sampled_vector_plot(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+  min_magnitude: f64,
 ) -> Result<Expr, InterpreterError> {
   let mut opts = parse_density_contour_options(args, start);
-  let arrow_style = parse_vector_arrow_style(args, start);
+  let mut arrow_style = parse_vector_arrow_style(args, start);
+  arrow_style.min_magnitude = min_magnitude;
 
   // Framed like DensityPlot, `Scaled[0.02]` padding on every side.
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
@@ -6460,9 +6487,14 @@ pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (x_range, y_range) = vector_data_ranges(&samples);
   let field = ScatteredVectorField::new(&samples);
-  render_sampled_vector_plot(args, 1, x_range, y_range, &|x, y| {
-    field.as_ref().and_then(|f| f.at(x, y))
-  })
+  render_sampled_vector_plot(
+    args,
+    1,
+    x_range,
+    y_range,
+    &|x, y| field.as_ref().and_then(|f| f.at(x, y)),
+    0.0,
+  )
 }
 
 /// ListStreamPlot[{{{x1, y1}, {vx1, vy1}}, …}] or ListStreamPlot[array]
@@ -7068,15 +7100,14 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // smoothly between the data points instead of showing blocky pixels.
   // Every cell gets at least 8 pixels per side (within 256 to 512), so the
   // sharp bands of the triangle interpolation survive the image's scaling.
-  // `InterpolationOrder -> 0` keeps the data's cells as flat blocks.
-  let grid = if grid.len() < 64 || grid[0].len() < 64 {
+  // `InterpolationOrder -> 0` keeps the data's cells as flat blocks, at
+  // any grid size.
+  let grid = if nearest && !is_triples_data(rows) {
+    lower_node_cell_grid(&grid, 256)
+  } else if grid.len() < 64 || grid[0].len() < 64 {
     let out = |n: usize| (8 * n.saturating_sub(1)).clamp(256, 512);
     let (out_cols, out_rows) = (out(grid.len()), out(grid[0].len()));
-    if nearest {
-      nearest_node_grid(&grid, out_cols, out_rows)
-    } else {
-      resample_node_grid(&grid, out_cols, out_rows)
-    }
+    resample_node_grid(&grid, out_cols, out_rows)
   } else {
     grid
   };
@@ -7125,28 +7156,24 @@ fn interpolation_order_is_zero(opts: &[Expr]) -> bool {
   })
 }
 
-/// Upsample a node grid by taking the nearest node, so every data cell
-/// stays one flat block.
-fn nearest_node_grid(
-  grid: &[Vec<f64>],
-  out_cols: usize,
-  out_rows: usize,
-) -> Vec<Vec<f64>> {
+/// Upsample a node grid for `InterpolationOrder -> 0` matrix data: as in
+/// Wolfram, the cell between nodes `k` and `k + 1` (along each axis) is
+/// one flat block in the color of its lower node, so `n` nodes give
+/// `n - 1` cells and the last row and column of the data only bound them.
+/// Every cell gets the same whole number of pixels (at least `min_px`
+/// across the image) so the cell borders stay sharp.
+fn lower_node_cell_grid(grid: &[Vec<f64>], min_px: usize) -> Vec<Vec<f64>> {
   let cols = grid.len();
   let rows = if cols > 0 { grid[0].len() } else { 0 };
   if cols < 2 || rows < 2 {
     return grid.to_vec();
   }
-  (0..out_cols)
+  let per_cell = |cells: usize| min_px.div_ceil(cells).max(1);
+  let (px_x, px_y) = (per_cell(cols - 1), per_cell(rows - 1));
+  (0..(cols - 1) * px_x)
     .map(|i| {
-      let x = (i as f64 + 0.5) / out_cols as f64 * (cols - 1) as f64;
-      let i0 = (x.round() as usize).min(cols - 1);
-      (0..out_rows)
-        .map(|j| {
-          let y = (j as f64 + 0.5) / out_rows as f64 * (rows - 1) as f64;
-          grid[i0][(y.round() as usize).min(rows - 1)]
-        })
-        .collect()
+      let i0 = i / px_x;
+      (0..(rows - 1) * px_y).map(|j| grid[i0][j / px_y]).collect()
     })
     .collect()
 }
@@ -9553,12 +9580,27 @@ fn array_plot_ast_inset(
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
-  for opt in &args[1..] {
-    if let Expr::Rule { pattern, .. } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n)
-        if n == "ImageSize" || n == "AspectRatio")
-    {
-      structure_args.push(opt.clone());
+  // `PixelConstrained` has already fixed that size to whole pixels per
+  // cell, which the requested `ImageSize` only bounds.
+  if pixel_constrained.is_some() {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+      replacement: Box::new(Expr::List(
+        vec![
+          Expr::Integer(svg_width as i128),
+          Expr::Integer(svg_height as i128),
+        ]
+        .into(),
+      )),
+    });
+  } else {
+    for opt in &args[1..] {
+      if let Expr::Rule { pattern, .. } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n)
+          if n == "ImageSize" || n == "AspectRatio")
+      {
+        structure_args.push(opt.clone());
+      }
     }
   }
   let structure = call("Graphics", structure_args);

@@ -1760,7 +1760,7 @@ RandomInstance,"Random geometric instance",,unevaluated,12.0,1736
 TrigFactor,"Factor trig expressions (Sin+Cos and half-angle and double-angle and Sin sum-to-product and hyperbolic Sinh/Cosh families)",✅,pure,3.0,1736
 PoolingLayer,"Neural net pooling layer",,unevaluated,11.0,1737
 FindFormula,"Find formula fitting data",,unevaluated,10.2,1740
-Graph3D,"3D graph drawn at its VertexCoordinates when shown with Show",✅,pure,10.0,1740
+Graph3D,"3D graph drawn as spheres and lines at its VertexCoordinates or a spring embedding",✅,pure,10.0,1740
 NotebookDelete,"Delete notebook cells",,unevaluated,3.0,1740
 WhittakerW,"Whittaker W function E^(-z/2) z^(m+1/2) HypergeometricU[m-k+1/2 2m+1 z]",✅,pure,6.0,1741
 GeometricScene,"Geometric scene",✅,pure,12.0,1743
