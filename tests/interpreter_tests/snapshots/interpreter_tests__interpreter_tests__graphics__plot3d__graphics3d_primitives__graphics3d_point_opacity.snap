@@ -125,7 +125,7 @@ expression: "export_svg(\"Graphics3D[{Opacity[0.5], Blue, Point[{0, 0, 0}]}]\")"
 <line x1="90.9" y1="323.5" x2="100.8" y2="327.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="28.2" y1="264.9" x2="26.8" y2="256.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="351.4" y1="103.4" x2="352.8" y2="93.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<circle cx="189.7" cy="179.4" r="3.00" fill="rgb(0,0,255)" opacity="0.5"/>
+<circle cx="189.7" cy="179.4" r="1.80" fill="rgb(0,0,255)" opacity="0.5"/>
 <line x1="278.5" y1="31.2" x2="289.6" y2="33.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="100.8" y1="327.7" x2="110.8" y2="332.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="95.5" y1="35.3" x2="102.2" y2="30.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>

@@ -18955,7 +18955,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               plot_label_picture = Some((svg, w, h));
             }
             other => {
-              let lines = expr_to_svg_markup_lines(other);
+              // Set in `TraditionalForm`, so a lone lowercase Greek letter
+              // in its text is italic.
+              let lines =
+                with_label_greek_italics(|| expr_to_svg_markup_lines(other));
               if lines.iter().any(|l| !l.is_empty()) {
                 if lines.len() > 1 {
                   plot_label_alignment =
@@ -26461,6 +26464,64 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// Typesetting the text of a graphic's label (`PlotLabel`), which the
+  /// front end sets in `TraditionalForm`: a lowercase Greek letter standing
+  /// alone as a word of a string (`"Outside μ ± ϵ"`) is drawn in italics,
+  /// the way a single-letter math variable is, while the rest of the text
+  /// stays upright.
+  static LABEL_GREEK_ITALICS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`LABEL_GREEK_ITALICS`] on, restoring it afterwards.
+pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(LABEL_GREEK_ITALICS.with(|c| c.replace(true)));
+  f()
+}
+
+/// Whether `c` is a lowercase Greek letter (including the variant forms
+/// `ϑ`, `ϕ`, `ϖ`, `ϰ`, `ϱ` and `ϵ`). `π` is excluded: it reads as the
+/// constant `Pi`, which is set upright.
+fn is_lowercase_greek_letter(c: char) -> bool {
+  c != '\u{3C0}'
+    && (('\u{3B1}'..='\u{3C9}').contains(&c)
+      || matches!(
+        c,
+        '\u{3D1}' | '\u{3D5}' | '\u{3D6}' | '\u{3F0}' | '\u{3F1}' | '\u{3F5}'
+      ))
+}
+
+/// SVG-escape label text, setting each lowercase Greek letter that stands
+/// alone as a word (no letter or digit on either side) in italics.
+fn svg_escape_label_greek_italics(text: &str) -> String {
+  let chars: Vec<char> = text.chars().collect();
+  let is_word_char =
+    |i: usize| chars.get(i).is_some_and(|c| c.is_alphanumeric());
+  let mut out = String::new();
+  let mut plain = String::new();
+  for (i, &c) in chars.iter().enumerate() {
+    let lone = is_lowercase_greek_letter(c)
+      && !(i > 0 && is_word_char(i - 1))
+      && !is_word_char(i + 1);
+    if lone {
+      out.push_str(&svg_escape(&plain));
+      plain.clear();
+      out.push_str(&format!("<tspan font-style=\"italic\">{c}</tspan>"));
+    } else {
+      plain.push(c);
+    }
+  }
+  out.push_str(&svg_escape(&plain));
+  out
+}
+
 /// Run `f` with [`SINGLE_LETTER_ITALICS`] on, restoring it afterwards.
 fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
   struct Restore(bool);
@@ -26545,6 +26606,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           "<tspan font-style=\"italic\">{}</tspan>",
           svg_escape(unquoted)
         );
+      }
+      if LABEL_GREEK_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
+      {
+        return svg_escape_label_greek_italics(unquoted);
       }
       svg_escape(unquoted)
     }
@@ -34119,9 +34185,14 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
     }
     _ => Some(parse_color(expr)?),
   };
-  // The thickness and dashing the style asks for.
+  // The thickness and dashing the style asks for. A grid has no plot width
+  // for a relative `Thickness[d]` to be a fraction of, so it is `d` points,
+  // like `AbsoluteThickness[d]`.
   let style = crate::functions::plot::parse_style_directives(expr);
-  let width = style.as_ref().and_then(|s| s.thickness).unwrap_or(1.0);
+  let width = style
+    .as_ref()
+    .and_then(|s| s.thickness_fraction.or(s.thickness))
+    .unwrap_or(1.0);
   let dash = style
     .as_ref()
     .and_then(|s| s.dashing.as_ref())
@@ -41190,6 +41261,7 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
   let mut standard = false;
+  let mut in_text = false;
   while let Expr::FunctionCall { name, args } = &current {
     // `Text[Row[…]]` sets the layout in the proportional text face: it
     // comes off as the `Style` that face is, for the layout renderers.
@@ -41197,6 +41269,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       && !matches!(layout, Expr::String(_))
     {
       current = call("Style", vec![layout.clone(), family]);
+      break;
+    }
+    // `Text[Pane[Column[…], size]]`: the face of a `Text` peeled further
+    // out still sets the layout the wrappers in between hold.
+    if in_text
+      && matches!(name.as_str(), "Row" | "Column" | "Grid")
+      && matches!(args.first(), Some(Expr::List(_)))
+    {
+      current = call("Style", vec![current.clone(), text_face_family()]);
       break;
     }
     let pass_through = match name.as_str() {
@@ -41274,6 +41355,7 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
     }
     traditional |= name == "TraditionalForm";
     standard |= name == "StandardForm";
+    in_text |= name == "Text";
     // A width-only `Pane[Grid[…], w]` still breaks the grid's long text
     // cells at the pane's width when the pane itself is peeled away.
     let inner = (name == "Pane")
@@ -43273,6 +43355,13 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
       {
         is_text_atom(&args[0])
       }
+      // A script set on its base (`Subscript[N, w]`) stays on the line.
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Subscript" | "Superscript")
+          && args.len() == 2 =>
+      {
+        args.iter().all(is_text_atom)
+      }
       _ => false,
     }
   }
@@ -44504,7 +44593,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
+    // The imaginary unit of a complex number (`15 + 18 ⅈ`) and the other
+    // Letterlike Symbols math glyphs are drawn as their letter
+    // double-struck, as in every other label: the embedded faces have no
+    // glyph for them, and the fallback face draws an unrelated shape.
+    let markup = render_math_letterlike_glyphs(
+      &st.text_decoration.markup(&expr_to_svg_markup(text_item)),
+    );
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -44539,9 +44634,17 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       // narrower than the sans average: its per-character advances bound
       // it, where the average would leave a centered piece floating in a
       // gap as wide as a third of its own text.
-      if st.font_family == "sans-serif"
-        || proportional_family_scale(&st.font_family) < 1.0
-      {
+      if is_embedded_sans_family(&st.font_family) {
+        // The default sans face (`Text[…]`, or `sans-serif` by name) is
+        // drawn in the embedded Atkinson Hyperlegible Next, whose digits
+        // and blanks run wider than Arial's: measured by Arial's advances,
+        // a centered part spills into its neighbors.
+        crate::functions::plot_padding::exported_text_extent(
+          &markup,
+          st.font_size,
+        )
+        .1 * bold
+      } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
         let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
@@ -55426,7 +55529,13 @@ fn variant_dynamic_bounds(
   };
   let min_code = which(&|b| Some(b.0));
   let max_code = which(&|b| Some(b.1));
-  let step_code = which(&|b| b.2);
+  // A variant without a step moves freely: among stepped variants it
+  // gives 0, which tells the slider to take its automatic increment.
+  let step_code = bounds
+    .iter()
+    .any(|b| b.2.is_some())
+    .then(|| which(&|b| Some(b.2.unwrap_or(0.0))))
+    .flatten();
   Some((name.to_string(), min_code, max_code, step_code))
 }
 
@@ -58187,6 +58296,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       runs.extend(grouped_label_runs(operand, italic));
       runs
     }
+    // A held product (`a b c` parses as the left-nested `(a*b)*c`) is
+    // one `Times` of all its factors, set by the same code as the
+    // evaluated `Times[a, b, c]`: nesting must not parenthesize the inner
+    // product, and typeset factors sit side by side.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } if contains_presentation_head(expr) => {
+      let mut factors = Vec::new();
+      flatten_held_product(expr, &mut factors);
+      product_label_runs(&factors, italic)
+    }
     // Arithmetic joining typeset label pieces — a Demonstrations setter
     // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
     // the operands so their `Row`/`Style`/`Superscript` structure keeps
@@ -58198,16 +58319,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       if arithmetic_label_operator(*op).is_some()
         && contains_presentation_head(expr) =>
     {
-      let (mut text, group) =
-        arithmetic_label_operator(*op).unwrap_or_default();
-      // Typeset pieces multiplied together set side by side.
-      let is_styled = |e: &Expr| {
-        is_style_call(e)
-          || matches!(e, Expr::FunctionCall { name, .. } if name == "Text")
-      };
-      if text == "*" && is_styled(left) && is_styled(right) {
-        text = " ";
-      }
+      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
       let side = |e: &Expr| {
         if group {
           grouped_label_runs(e, italic)
@@ -58413,6 +58525,21 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The factors of a held product, in order: `(a*b)*c` gives `a, b, c`.
+fn flatten_held_product(expr: &Expr, factors: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_held_product(left, factors);
+      flatten_held_product(right, factors);
+    }
+    other => factors.push(other.clone()),
+  }
+}
+
 /// Runs for a `Times[…]` of typeset pieces. Reciprocal factors are the
 /// quotient's denominator, so `Row[…] Row[…]^-1` — what `Row[…]/Row[…]`
 /// evaluates to — sets as a quotient rather than as a product with a
@@ -58436,7 +58563,11 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head)
+  // A string factor is text too: `", " Style["D", Italic]` sets as
+  // `, D`, never `, *D`.
+  let sep = if numerators
+    .iter()
+    .all(|f| matches!(f, Expr::String(_)) || contains_presentation_head(f))
     || numerators.iter().any(has_script_head)
   {
     " "

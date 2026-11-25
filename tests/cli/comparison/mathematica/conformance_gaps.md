@@ -2151,6 +2151,26 @@ woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0
 Systems of two or more such equations are solved by Gaussian elimination
 and are not affected.
 
+### `ColorFunction` of a `ParametricPlot` curve: the fourth argument
+
+```sh
+woxi eval 'ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6}, ColorFunction -> (Hue[#4] &)], "SVG"]'
+```
+
+wolframscript hands a curve's `ColorFunction` four arguments, as it does a
+region's `x, y, u, v` (a `Function[{x, y, u, v}, …]` colors a curve without a
+`Function::fpct` message). Woxi passes `u` again as the fourth; what
+wolframscript passes there has **not been verified**.
+
+### `NSolve` of a system with radicals: order inferred from one system
+
+Woxi sorts the solutions of a radical system descending by the values of
+its radicals, then of its variables. The rule is inferred from the
+equilibria of the restricted three-body problem (where the published output
+of a Demonstration shows `Last` picking the point between the masses); the
+complete wolframscript order of that list, and of other radical systems,
+has **not been verified**.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh
@@ -7824,6 +7844,12 @@ method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
 reproducible stream (a key derived from the method is mixed into the seed),
 but none of them reproduces the named algorithm's numbers or statistical
 quirks. **Not reproducible.**
+The quasi-random methods `{"MKL", Method -> {"Sobol" | "Niederreiter",
+"Dimension" -> d}}` are the exception: they draw the actual low-discrepancy
+sequences (Bratley–Fox direction numbers, base-2 Niederreiter matrices,
+Gray-code order). Not yet checked against wolframscript: whether Intel MKL's
+streams start at the origin as Woxi's do (or skip it), use the same free
+choices in the Niederreiter matrices beyond dimension 2, and ignore the seed.
 
 ### Performance
 
@@ -10974,6 +11000,14 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 `TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
+
+### Lone Latin letters in plot label strings
+
+Saved snapshots show a lowercase Greek letter standing alone as a word of a
+`PlotLabel` string (`"Outside μ ± ϵ: "`) in italics, and Woxi sets those in
+italics too. Whether the front end does the same for a lone Latin letter of
+a label string (the `a` of `"a plot"`) has not been verified against
+`wolframscript`, so Woxi keeps Latin letters in strings upright.
 
 ### A one-letter string subscripted in a graphics label is drawn upright
 

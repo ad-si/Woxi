@@ -5840,6 +5840,60 @@ mod solve {
     );
   }
 
+  // A repeated root of a machine-coefficient polynomial comes back as the
+  // root itself, repeated, instead of a ring of points scattered around it.
+  #[test]
+  fn machine_polynomial_repeated_roots() {
+    assert_eq!(
+      interpret(
+        "Round[10^8 {Re[z], Im[z]} /. \
+         Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]"
+      )
+      .unwrap(),
+      "{{0, -100000000}, {0, 100000000}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^10 x /. Solve[Expand[(x - 1.1)^2 (x - 1.2)] == 0, x]]"
+      )
+      .unwrap(),
+      "{11000000000, 11000000000, 12000000000}"
+    );
+    // Repeated complex roots of a real polynomial stay conjugate pairs.
+    assert_eq!(
+      interpret(
+        "Round[10^8 x /. Solve[Expand[(x - 0.5)^3 (x^2 + x + 1)^2] == 0, x]]"
+      )
+      .unwrap(),
+      "{-50000000 - 86602540*I, -50000000 - 86602540*I, \
+       -50000000 + 86602540*I, -50000000 + 86602540*I, 50000000, 50000000, \
+       50000000}"
+    );
+    // Roots of the derivatives keep the multiplicity of the shared factor.
+    assert_eq!(
+      interpret(
+        "Table[Length[Union[Round[10^6 x /. Solve[D[Expand[(x - 2.5)^6 \
+         (x^2 + 1)], {x, k}] == 0, x]]]], {k, 5}]"
+      )
+      .unwrap(),
+      "{3, 3, 3, 3, 3}"
+    );
+  }
+
+  // Close but distinct roots are not merged.
+  #[test]
+  fn machine_polynomial_close_distinct_roots() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 x /. Solve[Expand[(x - 1)(x - 1.001)(x - 2)] == 0, x]]"
+      )
+      .unwrap(),
+      "{1000000, 1001000, 2000000}"
+    );
+  }
+
   #[test]
   fn machine_quadratic_with_removable_pole() {
     assert_eq!(
@@ -6464,6 +6518,33 @@ y^2]^3)) y}, {x, y}]; \
       .unwrap(),
       "{5, {{-1.042, 0.}, {0.4, -0.866}, {0.4, 0.866}, {0.609, 0.}, {1.26, 0.}}}"
     );
+  }
+
+  #[test]
+  fn nsolve_radical_system_orders_by_radicals_descending() {
+    // Regression: the equilibria of a system with radicals were listed
+    // descending by the first variable, so `Last` picked the outermost
+    // point. Each radical counts as an unknown ahead of the variables: the
+    // solutions run descending by the radicals' values, which puts the
+    // point between the two centers (nearest to both) last, and rounding
+    // noise in a coordinate does not reorder the symmetric pair.
+    for mu in ["0.1", "0.0123001", "0.03"] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!(
+          "mu = {mu}; s = {{x, y}} /. NSolve[{{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + \
+y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, \
+-y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + \
+y^2]^3)) y}}, {{x, y}}]; \
+d = Norm[# - {{1 - mu, 0}}] & /@ s; \
+{{Length[s], OrderedQ[Reverse[Round[d, 10.^-6]]], \
+-mu < s[[-1, 1]] < 1 - mu, Abs[s[[-1, 2]]] < 10^-9, \
+Sign[Round[s[[All, 2]], 0.001]]}}"
+        ))
+        .unwrap(),
+        "{5, True, True, True, {0, 1, -1, 0, 0}}"
+      );
+    }
   }
 
   #[test]

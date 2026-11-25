@@ -172,15 +172,58 @@ pub fn parse(
   WolframParser::parse_wolfram(input)
 }
 
-// Global RNG state: None = use the thread-local rand::rng(), Some = use seeded ChaCha8Rng
+/// The generator behind a seeded random stream: the pseudo-random ChaCha8
+/// generator `SeedRandom[n]` selects, or a quasi-random (low-discrepancy)
+/// sequence picked with `SeedRandom[n, Method -> {"MKL", Method -> …}]`.
+#[derive(Clone, Debug)]
+pub enum SeededRng {
+  Pseudo(Box<ChaCha8Rng>),
+  Quasi(crate::functions::math_ast::QuasiRng),
+}
+
+impl rand::TryRng for SeededRng {
+  type Error = std::convert::Infallible;
+
+  fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_next_u32(),
+      SeededRng::Quasi(r) => r.try_next_u32(),
+    }
+  }
+
+  fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_next_u64(),
+      SeededRng::Quasi(r) => r.try_next_u64(),
+    }
+  }
+
+  fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+    match self {
+      SeededRng::Pseudo(r) => r.try_fill_bytes(dst),
+      SeededRng::Quasi(r) => r.try_fill_bytes(dst),
+    }
+  }
+}
+
+// Global RNG state: None = use the thread-local rand::rng(), Some = use the
+// seeded generator.
 thread_local! {
-    static SEEDED_RNG: crate::epoch::EpochCell<Option<ChaCha8Rng>> = const { crate::epoch::EpochCell::new(None) };
+    static SEEDED_RNG: crate::epoch::EpochCell<Option<SeededRng>> = const { crate::epoch::EpochCell::new(None) };
 }
 
 /// Seed the global RNG with a specific seed value (SeedRandom[n]).
 pub fn seed_rng(seed: u64) {
   SEEDED_RNG.with(|rng| {
-    *rng.borrow_mut() = Some(ChaCha8Rng::seed_from_u64(seed));
+    *rng.borrow_mut() =
+      Some(SeededRng::Pseudo(Box::new(ChaCha8Rng::seed_from_u64(seed))));
+  });
+}
+
+/// Make a quasi-random sequence the global generator, restarting it.
+pub fn set_quasi_rng(generator: crate::functions::math_ast::QuasiRng) {
+  SEEDED_RNG.with(|rng| {
+    *rng.borrow_mut() = Some(SeededRng::Quasi(generator));
   });
 }
 
@@ -193,12 +236,12 @@ pub fn unseed_rng() {
 
 /// Snapshot the current RNG state (used by `BlockRandom` to localize any
 /// `SeedRandom` calls made inside its body).
-pub fn snapshot_rng_state() -> Option<ChaCha8Rng> {
+pub fn snapshot_rng_state() -> Option<SeededRng> {
   SEEDED_RNG.with(|rng| rng.borrow().clone())
 }
 
 /// Restore a previously snapshotted RNG state (see [`snapshot_rng_state`]).
-pub fn restore_rng_state(state: Option<ChaCha8Rng>) {
+pub fn restore_rng_state(state: Option<SeededRng>) {
   SEEDED_RNG.with(|rng| {
     *rng.borrow_mut() = state;
   });

@@ -10905,6 +10905,85 @@ mod plot3d {
   mod revolution_plot3d {
     use super::*;
 
+    mod boundary_style {
+      use super::*;
+
+      /// The outline lines the extracted surface (`plot[[1]]`) carries.
+      fn outline(code: &str) -> String {
+        interpret(&format!(
+          "Cases[{code}[[1]], {{t_AbsoluteThickness, s_, Line[l_]}} :> \
+           {{s, Length[l]}}, Infinity]"
+        ))
+        .unwrap()
+      }
+
+      #[test]
+      fn outlines_the_sides_of_a_partial_sweep() {
+        // A half turn is outlined along both profile ends and both cut
+        // sides: 50 segments per side of the sampling grid.
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, {k, 0, Pi}, Mesh -> None, \
+             BoundaryStyle -> Black]"
+          ),
+          "{{GrayLevel[0], 200}}"
+        );
+      }
+
+      #[test]
+      fn leaves_out_the_seam_of_a_full_turn() {
+        // A full turn closes up, so only the two rims are outlined.
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, {k, 0, 2 Pi}, Mesh -> None, \
+             BoundaryStyle -> Red]"
+          ),
+          "{{RGBColor[1, 0, 0], 100}}"
+        );
+      }
+
+      #[test]
+      fn a_style_without_a_color_draws_black() {
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+             BoundaryStyle -> AbsoluteThickness[2]]"
+          ),
+          "{{Directive[GrayLevel[0], AbsoluteThickness[2]], 100}}"
+        );
+      }
+
+      #[test]
+      fn no_outline_by_default() {
+        assert_eq!(
+          outline("RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None]"),
+          "{}"
+        );
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+             BoundaryStyle -> None]"
+          ),
+          "{}"
+        );
+      }
+
+      #[test]
+      fn the_standalone_picture_strokes_the_outline() {
+        let plain =
+          export_svg("RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None]");
+        let outlined = export_svg(
+          "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+           BoundaryStyle -> Red]",
+        );
+        assert!(!plain.contains("rgb(255,0,0)") && !plain.contains("#ff0000"));
+        assert!(
+          outlined.contains("rgb(255,0,0)") || outlined.contains("#ff0000"),
+          "the outline is drawn in red"
+        );
+      }
+    }
+
     mod basic {
       use super::*;
 
@@ -18126,7 +18205,8 @@ mod plot3d {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a
       // shifted tspan and a machine real keeps the 6 significant figures
       // the notebook front end shows — the "Power of a Test about a
-      // Binomial Parameter" Demonstration titles its plot this way.
+      // Binomial Parameter" Demonstration titles its plot this way. The
+      // lone Greek letter of a string is italic in `TraditionalForm`.
       let svg = export_svg(
         r#"Plot[x, {x, 0, 1},
              PlotLabel -> Text[Row[{"\[Alpha]", " = K(", Subscript[p, 0],
@@ -18138,7 +18218,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+          "<tspan font-style=\"italic\">α</tspan> = K(<tspan \
+           font-style=\"italic\">p</tspan><tspan \
            baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
@@ -20007,6 +20088,40 @@ mod plot3d {
       );
       let line = svg.lines().find(|l| l.contains(&applied)).unwrap();
       assert!(line.contains("font-size=\"140\""), "{line}");
+    }
+
+    /// A plot label is set in `TraditionalForm`, where a lowercase Greek
+    /// letter standing alone as a word of a string is italic while the rest
+    /// of the text — a Greek letter inside a word, `π`, a capital — stays
+    /// upright. As part of a scheduled QA routine, Woxi Studio was tested
+    /// against a randomly sampled Wolfram Demonstration notebook whose
+    /// `PlotLabel` was a `Row` of strings naming Greek parameters; its
+    /// snapshot shows them italic, Woxi drew them upright. This is a
+    /// self-authored, construct-equivalent example.
+    #[test]
+    fn plot_label_strings_set_lone_greek_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      for code in [
+        "Graphics[Circle[], PlotLabel -> \"Within α ± δ: 3\"]",
+        "Graphics[Circle[], PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Show[Graphics[Circle[]], ListPlot[{1, 2}], \
+         PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> \"Within α ± δ: 3\"]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> Style[\"Within α ± δ: 3\", Bold]]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains(&format!("Within {} ± {}: 3", italic("α"), italic("δ"))),
+          "{code}: {svg}"
+        );
+      }
+      let svg =
+        export_svg("Graphics[Circle[], PlotLabel -> \"αβ, π, Ω and γ2\"]");
+      assert!(svg.contains(">αβ, π, Ω and γ2</text>"), "{svg}");
+      // Exported text outside graphics keeps its letters upright.
+      let svg = export_svg("Style[\"Within α\", 12]");
+      assert!(!svg.contains(&italic("α")), "{svg}");
     }
 
     /// A subscripted symbol in a label is typeset in `TraditionalForm`
@@ -24894,6 +25009,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(list.contains("stroke=\"#FF0000\""), "{list}");
       assert_eq!(list, rgb);
+    }
+
+    /// Regression: a `ColorFunction` declaring four parameters (`x, y, u,
+    /// v`, as for a parametric region) was not applied to a parametric
+    /// curve, which was drawn black. It colors the curve by `u` exactly
+    /// like the three-parameter form.
+    #[test]
+    fn parametric_curve_color_function_with_four_parameters() {
+      let four = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> Function[{x, y, u, v}, Hue[u/2]]]",
+      );
+      let three = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> Function[{x, y, u}, Hue[u/2]]]",
+      );
+      assert!(!four.contains("stroke=\"#000000\""), "{four}");
+      assert_eq!(four, three);
+      let slots = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> (Hue[#3/2] &)]",
+      );
+      assert_eq!(four, slots);
     }
 
     /// Regression: `ColorFunctionScaling` rescaled a parametric curve's `x`
@@ -37402,6 +37537,42 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // `Framed@Text@Pane[Column[…], size]` (a Demonstration's readout box):
+  // the `Text` sets the column in the text face through the `Pane`, as it
+  // does standing right on the column. Regression: inside a frame the
+  // column fell back to the monospace face.
+  #[test]
+  fn framed_text_of_pane_keeps_the_text_face() {
+    clear_state();
+    let svg = export_svg(
+      "Framed@Text@Pane[Column[{Row[{\"a = \", 1.5}], Row[{\"b = \", 2}]}], \
+         ImageSize -> {100, 50}]",
+    );
+    assert!(svg.contains("sans-serif"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+  }
+
+  // A `Row` holding a `Subscript` is still one line of text, so a `Text`
+  // column stacks it at the pitch of its plain rows. Regression: such a
+  // row was stacked as a padded box, 10 pt further down per row.
+  #[test]
+  fn text_column_stacks_subscript_rows_at_the_line_pitch() {
+    clear_state();
+    let height = |code: &str| {
+      let svg = export_svg(code);
+      let rest = svg.split("height=\"").nth(1).expect("an svg height");
+      rest.split('"').next().unwrap().parse::<f64>().unwrap()
+    };
+    let plain = height(
+      "Text@Column[{Row[{\"N\", \" = \", 1}], Row[{\"M\", \" = \", 2}]}]",
+    );
+    let scripted = height(
+      "Text@Column[{Row[{Subscript[\"N\", \"n\"], \" = \", 1}], \
+         Row[{Subscript[\"N\", \"w\"], \" = \", 2}]}]",
+    );
+    assert_eq!(scripted, plain);
+  }
+
   // A `TraditionalForm` item inside a layout is typeset in conventional
   // notation — `=` for `Equal`, and a `Row` of strings/`Style`s set as the
   // text it displays — instead of being stripped down to the StandardForm
@@ -45357,6 +45528,32 @@ mod discrete_plot {
     assert_eq!(result, "-Graphics-");
   }
 
+  // Regression: a body that only reaches the variable through a symbol
+  // holding an expression (`f = 2^n`) sampled nothing, as the variable is
+  // not in the body's source for the substitution to find.
+  #[test]
+  fn body_symbol_holding_an_expression_is_sampled() {
+    clear_state();
+    let direct = export_svg("DiscretePlot[{2^n, n 2^n}, {n, 1, 4}]");
+    let stored =
+      export_svg("f = 2^n; g = n f; DiscretePlot[{f, g}, {n, 1, 4}]");
+    assert_eq!(direct.matches("<circle").count(), 8, "{direct}");
+    assert_eq!(stored, direct);
+  }
+
+  // `PlotMarkers -> {Point, size}` keeps the round dots and resizes them:
+  // 1.3 times the marker size across (`Medium` is a 10 pt marker).
+  #[test]
+  fn point_marker_size_resizes_the_dots() {
+    clear_state();
+    let medium =
+      export_svg("DiscretePlot[n, {n, 1, 3}, PlotMarkers -> {Point, Medium}]");
+    assert_eq!(medium.matches("<circle").count(), 3, "{medium}");
+    assert_eq!(medium.matches("r=\"65\"").count(), 3, "{medium}");
+    let numeric = export_svg("ListPlot[{1, 2, 3}, PlotMarkers -> {Point, 5}]");
+    assert_eq!(numeric.matches("r=\"33\"").count(), 3, "{numeric}");
+  }
+
   // Regression: DiscretePlot holds its body (like Plot), so it is evaluated
   // once per sampled point instead of once up front with `n` still symbolic
   // (which made `data[[n]]` raise `Part::pkspec1`).
@@ -52389,6 +52586,45 @@ mod manipulate {
       "missing Enabled condition: {:?}",
       spec.control_enabled
     );
+  }
+
+  /// A held caption written as a product of three or more typeset pieces
+  /// (`"speed " Superscript["m", 2] Text["/s"]`, which parses as the
+  /// left-nested `(a*b)*c`) sets its factors side by side. Regression: the
+  /// inner product was parenthesized and joined by `*`, giving
+  /// `((speed *m²)*/s)`.
+  #[test]
+  fn spec_label_held_product_sets_factors_side_by_side() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"speed \" Superscript[\"m\", 2] Superscript[\"k\", 3] \
+         Text[\"/s\"]}, {1, 2}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let label = match &spec.controls[0] {
+      ManipulateControl::Discrete { label, .. } => label.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(label, "speed  m\u{00B2} k\u{00B3} /s");
+  }
+
+  /// A string factor in a product of typeset pieces is text, set beside
+  /// its neighbor: `", " Style["D", Italic]` reads `,  D`, not `, *D`.
+  #[test]
+  fn spec_choice_label_string_times_style_has_no_star() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"\"}, {1 -> Row[{\"x\", \", \" Style[\"D\", Italic]}], \
+         2 -> \"y\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let labels = match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => value_labels.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(labels[0], "x,  D");
   }
 
   /// A caption's `Style` color may be any expression that evaluates to a
@@ -62536,7 +62772,9 @@ mod grid_text_in_graphics {
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(\*OverscriptBox[\(AB\), \(_\)] × \*OverscriptBox[\(AC\), \(_\)]\), \(2\)]\)", {0, 0}]], "SVG"]"#,
     )
     .unwrap();
-    assert!(svg.contains("(AB\u{0304}*AC\u{0304})/2"), "{svg}");
+    // Typeset factors set side by side, the same as the evaluated
+    // `Times[Overscript[…], Overscript[…]]`.
+    assert!(svg.contains("(AB\u{0304} AC\u{0304})/2"), "{svg}");
   }
 
   #[test]
@@ -71966,6 +72204,74 @@ mod graphics3d_point_depth {
     let dot = svg.find("<circle").expect("the point is drawn");
     assert!(svg[..dot].contains("<line"), "far edges come first");
     assert!(svg[dot..].contains("<line"), "near edges come after");
+  }
+
+  /// The faces drawn after the first `<circle>` of `svg` that reach into
+  /// the inner part of its disc.
+  fn faces_over_dot(svg: &str) -> Vec<String> {
+    let dot_at = svg.find("<circle").expect("the point is drawn");
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = tag.find(&key).unwrap() + key.len();
+      let end = start + tag[start..].find('"').unwrap();
+      tag[start..end].parse().unwrap()
+    };
+    let circle = &svg[dot_at..dot_at + svg[dot_at..].find("/>").unwrap()];
+    let (cx, cy, r) =
+      (attr(circle, "cx"), attr(circle, "cy"), attr(circle, "r"));
+    let seg_dist = |(ax, ay): (f64, f64), (bx, by): (f64, f64)| {
+      let (dx, dy) = (bx - ax, by - ay);
+      let len2 = dx * dx + dy * dy;
+      let t = if len2 > 0.0 {
+        (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      (ax + t * dx - cx).hypot(ay + t * dy - cy)
+    };
+    svg[dot_at..]
+      .match_indices("<polygon points=\"")
+      .filter_map(|(i, key)| {
+        let rest = &svg[dot_at + i + key.len()..];
+        let pts: Vec<(f64, f64)> = rest[..rest.find('"').unwrap()]
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let reaches_in = (0..pts.len())
+          .any(|k| seg_dist(pts[k], pts[(k + 1) % pts.len()]) < 0.7 * r);
+        reaches_in.then(|| rest[..rest.find("/>").unwrap()].to_string())
+      })
+      .collect()
+  }
+
+  // Regression: a big dot floating above a surface was placed in the draw
+  // order by its center alone, so the surface faces next to that center
+  // (behind the dot, but drawn later) were painted over part of its disc.
+  #[test]
+  fn faces_behind_a_dot_are_drawn_before_its_whole_disc() {
+    for (x, y) in [("0", "0"), ("2", "2"), ("-2.5", "0"), ("1", "-2")] {
+      let svg = export_svg(&format!(
+        "Show[Plot3D[(u^2 + v^2)/2, {{u, -3, 3}}, {{v, -3, 3}}], \
+         Graphics3D[{{PointSize[0.06], Orange, \
+         Point[{{{x}, {y}, (({x})^2 + ({y})^2)/2 + 1.5}}]}}]]"
+      ));
+      let over = faces_over_dot(&svg);
+      assert!(over.is_empty(), "dot at {x}, {y}: {over:?}");
+    }
+  }
+
+  #[test]
+  fn a_dot_under_a_surface_stays_hidden_by_it() {
+    // Below a dome seen from above, the faces in front of the dot's center
+    // still come after it.
+    let svg = export_svg(
+      "Show[Plot3D[4 - (u^2 + v^2)/2, {u, -2, 2}, {v, -2, 2}], \
+       Graphics3D[{PointSize[0.06], Point[{0, 0, 1}]}]]",
+    );
+    assert!(!faces_over_dot(&svg).is_empty(), "{svg}");
   }
 }
 
