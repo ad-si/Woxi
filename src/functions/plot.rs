@@ -148,6 +148,141 @@ fn function_params_bind(params: &Expr, var: &str) -> bool {
   }
 }
 
+/// A pure function `body &` with every part of its body that is a fixed
+/// color or number computation replaced by the value it has.
+///
+/// A `ColorFunction` is called for every cell of a plot, and typically most
+/// of it — the nested `Blend[{…}, {…}]` stops, the arithmetic placing them —
+/// does not depend on the slots at all. Only expressions built entirely from
+/// numbers, named colors and the deterministic heads listed in
+/// [`is_constant_color_head`] are folded, so nothing that could differ from
+/// one call to the next (a variable, a random number, a side effect) is
+/// touched. Anything but a `body &` function is returned as it is.
+pub(crate) fn fold_constant_color_parts(function: &Expr) -> Expr {
+  let Expr::Function { body } = function else {
+    return function.clone();
+  };
+  let (folded, constant) = fold_constant_color_expr(body);
+  let folded = if constant {
+    evaluate_expr_to_expr(&folded).unwrap_or(folded)
+  } else {
+    folded
+  };
+  Expr::Function {
+    body: Box::new(folded),
+  }
+}
+
+/// The heads [`fold_constant_color_parts`] evaluates ahead of time when all
+/// their arguments are constant.
+fn is_constant_color_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Plus"
+      | "Times"
+      | "Power"
+      | "Rational"
+      | "Sqrt"
+      | "Abs"
+      | "Min"
+      | "Max"
+      | "Mean"
+      | "Blend"
+      | "RGBColor"
+      | "GrayLevel"
+      | "Hue"
+      | "Opacity"
+      | "Darker"
+      | "Lighter"
+      | "Directive"
+  )
+}
+
+/// `expr` with its constant sub-expressions evaluated, and whether `expr`
+/// as a whole is constant (in which case it is returned unevaluated, for the
+/// caller to evaluate as part of the largest constant expression around it).
+fn fold_constant_color_expr(expr: &Expr) -> (Expr, bool) {
+  // A constant child that is more than a literal is replaced by its value
+  // once its parent turns out not to be constant.
+  let settle = |parts: Vec<(Expr, bool)>, constant: bool| -> Vec<Expr> {
+    parts
+      .into_iter()
+      .map(|(e, c)| {
+        let compound =
+          !matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_));
+        if c && compound && !constant {
+          evaluate_expr_to_expr(&e).unwrap_or(e)
+        } else {
+          e
+        }
+      })
+      .collect()
+  };
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) => (expr.clone(), true),
+    Expr::Identifier(_) => (
+      expr.clone(),
+      crate::functions::graphics::parse_color(expr).is_some(),
+    ),
+    Expr::List(items) => {
+      let parts: Vec<_> = items.iter().map(fold_constant_color_expr).collect();
+      let constant = parts.iter().all(|(_, c)| *c);
+      (Expr::List(settle(parts, constant).into()), constant)
+    }
+    Expr::FunctionCall { name, args } => {
+      let parts: Vec<_> = args.iter().map(fold_constant_color_expr).collect();
+      let constant =
+        is_constant_color_head(name) && parts.iter().all(|(_, c)| *c);
+      (
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: settle(parts, constant).into(),
+        },
+        constant,
+      )
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus
+          | crate::syntax::BinaryOperator::Times
+          | crate::syntax::BinaryOperator::Divide
+          | crate::syntax::BinaryOperator::Power
+      ) =>
+    {
+      let parts = vec![
+        fold_constant_color_expr(left),
+        fold_constant_color_expr(right),
+      ];
+      let constant = parts.iter().all(|(_, c)| *c);
+      let mut settled = settle(parts, constant).into_iter();
+      (
+        Expr::BinaryOp {
+          op: *op,
+          left: Box::new(settled.next().unwrap()),
+          right: Box::new(settled.next().unwrap()),
+        },
+        constant,
+      )
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (inner, constant) = fold_constant_color_expr(operand);
+      (
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(inner),
+        },
+        constant,
+      )
+    }
+    other => (other.clone(), false),
+  }
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);

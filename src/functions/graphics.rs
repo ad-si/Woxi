@@ -29031,6 +29031,26 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
   opts.push(opt.clone());
 }
 
+/// Merge the options one graphic carries itself into `opts`. Among those the
+/// *first* setting of a name is the one in force (`Graphics[g, Axes -> False,
+/// Axes -> True]` has no axes), so a repeated name is skipped instead of
+/// replacing the setting before it, as it would between different sources.
+fn merge_own_options<'a>(
+  opts: &mut Vec<Expr>,
+  own: impl Iterator<Item = &'a Expr>,
+) {
+  let mut seen: Vec<String> = Vec::new();
+  for opt in own {
+    if let Some((name, _)) = option_name_value(opt) {
+      if seen.iter().any(|n| n == name) {
+        continue;
+      }
+      seen.push(name.to_string());
+    }
+    merge_option(opts, opt);
+  }
+}
+
 /// Merge two PlotRange values by taking the union (min of mins, max of maxes).
 fn merge_plot_ranges(a: &Expr, b: &Expr) -> Expr {
   let (ax, ay) = parse_plot_range(a);
@@ -30544,7 +30564,12 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect::<Result<Vec<_>, _>>()?;
         evaluated.push(call(name, items));
       }
-      other => evaluated.push(other.clone()),
+      Expr::RuleDelayed { .. } => evaluated.push(a.clone()),
+      // Anything else (a `Plot[…]` call, `g /. rules`, `plots[[2]]`, …)
+      // evaluates here, once: the steps below each look at the value, and
+      // left held it would be computed again by every one of them.
+      other => evaluated
+        .push(evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone())),
     }
   }
   let args: &[Expr] = &evaluated;
@@ -30976,9 +31001,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // An option list (`Graphics[prims, {opts…}]`) is spliced so its
           // entries merge one by one: kept whole, it would sit ahead of a
           // later `Show` option and its settings would win.
-          for opt in splice_option_lists(gargs).iter().skip(1) {
-            merge_option(&mut merged_options, opt);
-          }
+          merge_own_options(
+            &mut merged_options,
+            splice_option_lists(gargs).iter().skip(1),
+          );
         }
       }
       Expr::FunctionCall { name, args: gargs }
@@ -31023,9 +31049,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // An option list (`Graphics[prims, {opts…}]`) is spliced so its
           // entries merge one by one: kept whole, it would sit ahead of a
           // later `Show` option and its settings would win.
-          for opt in splice_option_lists(gargs).iter().skip(1) {
-            merge_option(&mut merged_options, opt);
-          }
+          merge_own_options(
+            &mut merged_options,
+            splice_option_lists(gargs).iter().skip(1),
+          );
         }
       }
       Expr::Graphics {
@@ -31057,16 +31084,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           merged_primitives.push(sargs[0].clone());
           if graphic_count == 1 {
             // A plot's options are one list, `Graphics[prims, {opts}]`.
-            for opt in sargs.iter().skip(1) {
-              match opt {
-                Expr::List(opts) => {
-                  for o in opts {
-                    merge_option(&mut merged_options, o);
-                  }
-                }
-                _ => merge_option(&mut merged_options, opt),
-              }
-            }
+            merge_own_options(
+              &mut merged_options,
+              splice_option_lists(sargs).iter().skip(1),
+            );
           }
         } else if let Some(src) = source {
           // Wolfram gives the merged graphic the options of the first

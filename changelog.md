@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A two-parameter `ParametricPlot` keeps its `ColorFunction` when a `Mesh`
+    is set, draws `MeshFunctions` as level curves, honors `BoundaryStyle`
+    and a `PlotStyle` opacity on colored cells, and evaluates each point
+    once (a `PlotPoints -> 140` region no longer takes minutes). `Show`
+    evaluates a plot given to it once instead of three times and keeps the
+    first of a repeated option of the graphic (`Axes -> False`).
 - `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
     plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
     `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
