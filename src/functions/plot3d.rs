@@ -18575,10 +18575,13 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
       Expr::List(pair) if pair.len() == 2 => {
         let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
         let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-        if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
-          return None;
+        match hi.partial_cmp(&lo) {
+          Some(std::cmp::Ordering::Greater) => Some((lo, hi)),
+          // An interval of no extent cannot frame anything, so that axis
+          // falls back to the automatic range while the others stay fixed.
+          Some(std::cmp::Ordering::Equal) => None,
+          _ => return None,
         }
-        Some((lo, hi))
       }
       _ => return None,
     };
