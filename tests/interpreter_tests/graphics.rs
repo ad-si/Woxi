@@ -2057,6 +2057,97 @@ mod graphics {
       );
     }
 
+    /// `Inset[obj]` with no position (or an `Automatic` one) is
+    /// `Inset[obj, Center]`: a styled label lands in the middle of the
+    /// picture. Regression: it went to `Text`'s default, the origin, which
+    /// put a card's big centered suit symbol on its corner.
+    #[test]
+    fn a_text_inset_without_position_is_centered() {
+      let text_xy = |position: &str| -> (f64, f64) {
+        let svg = export_svg(&format!(
+          "Graphics[{{Rectangle[{{0, 0}}, {{1, 1.5}}], \
+           Inset[Style[\"Q\", 40, Red]{position}]}}]"
+        ));
+        let attr = |name: &str| -> f64 {
+          svg
+            .split("<text")
+            .nth(1)
+            .and_then(|s| s.split(&format!(" {name}=\"")).nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("no text {name}: {svg}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      let centered = text_xy(", Scaled[{0.5, 0.5}]");
+      assert_eq!(text_xy(""), centered);
+      assert_eq!(text_xy(", Automatic"), centered);
+      assert_ne!(text_xy(", {0, 0}"), centered);
+    }
+
+    /// A single-number inset size is the object's width; its height
+    /// follows from the object's own aspect ratio. Regression: the number
+    /// was used for both sides, so a tall picture was squeezed into a
+    /// square and came out narrower than asked for.
+    #[test]
+    fn a_scalar_inset_size_sets_the_width() {
+      let inset = |object: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[{object}, {{0, 0}}, {{0, 0}}, 2]}}, \
+           PlotRange -> {{{{0, 4}}, {{0, 4}}}}, ImageSize -> 400]"
+        ))
+      };
+      // The `name="value"` / `name='value'` attribute of the first element
+      // that starts with `tag` and mentions `marker`.
+      let attr = |svg: &str, tag: &str, marker: &str, name: &str| -> f64 {
+        let element = svg
+          .split(tag)
+          .skip(1)
+          .filter_map(|s| s.split('>').next())
+          .find(|e| e.contains(marker))
+          .unwrap_or_else(|| panic!("no {tag} with {marker} in {svg}"));
+        element
+          .split(&format!(" {name}="))
+          .nth(1)
+          .and_then(|s| s.get(1..))
+          .and_then(|s| s.split(['"', '\'']).next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} in {element}"))
+      };
+      // Two of the four plot units across a 400 pixel picture, and the
+      // 1 × 1.5 rectangle's own shape.
+      let check = |what: &str, w: f64, h: f64| {
+        assert!((w - 200.0).abs() < 8.0, "width of {what}: {w}");
+        assert!((h / w - 1.5).abs() < 0.05, "aspect of {what}: {w} x {h}");
+      };
+      // The image is drawn by a nested picture (its own pixel size, `<svg
+      // width='…' height='…' viewBox=…>`) placed in a padded frame (`<svg
+      // x=… width=… viewBox="0 0 vw vh">`) that the frame's `width`/`vw`
+      // scales onto the page.
+      let svg = inset("Image[Graphics[Rectangle[{0, 0}, {1, 1.5}]]]");
+      let frame_view_width = svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("viewBox=\"0 0 ").nth(1))
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("no padded frame in {svg}"));
+      let scale = attr(&svg, "<svg x=", "", "width") / frame_view_width;
+      let picture = "<svg xmlns='http://www.w3.org/2000/svg'";
+      check(
+        "the image",
+        attr(&svg, picture, "viewBox", "width") * scale,
+        attr(&svg, picture, "viewBox", "height") * scale,
+      );
+      let svg = inset("Graphics[{Red, Rectangle[{0, 0}, {1, 1.5}]}]");
+      let red = "rgb(255,0,0)";
+      check(
+        "the graphic",
+        attr(&svg, "<rect", red, "width"),
+        attr(&svg, "<rect", red, "height"),
+      );
+    }
+
     /// An inset `size` is the width of the whole chart picture, and the
     /// chart's white plate must not paint over what it overlaps — a pie
     /// inset used to fill its whole `size` and hide its neighbors.
@@ -52007,6 +52098,36 @@ mod manipulate {
       })
       .collect();
     assert_eq!(popups, [false, true, false]);
+  }
+
+  /// `None` entries of a Manipulate-level `ControlType -> {…}` list hide
+  /// their variables, leaving them bound state values a button can drive,
+  /// and so does a button type (`Button`, `ButtonBar`), which drives no
+  /// variable. Regression: both were ignored, so every such variable showed
+  /// up as a slider.
+  #[test]
+  fn spec_manipulate_level_control_type_list_hides_none_entries() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c, d}, Button[\"go\", a = 2], {a, 1, 1}, \
+       {b, 0, 5}, {c, {1, 2}}, {d, 0, 3}, \
+       ControlType -> {Button, None, SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> =
+      spec.state.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["a", "b"]);
+    let controls: Vec<String> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Button { .. } => "button".to_string(),
+        ManipulateControl::Discrete { name, .. }
+        | ManipulateControl::Continuous { name, .. } => name.clone(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(controls, ["button", "c", "d"]);
   }
 
   /// A spec that names its own control type keeps it — the Manipulate-level

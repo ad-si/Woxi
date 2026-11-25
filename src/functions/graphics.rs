@@ -8072,7 +8072,9 @@ fn is_chart_svg(svg: &str) -> bool {
 }
 
 /// `Inset[obj, pos, opos, size]`'s `size` argument: `{w, h}`, a single
-/// number (both sides), or absent/`Automatic` (the object's natural size).
+/// number (reported for both sides; see [`parse_inset_layout_size`] for the
+/// width-only reading layout uses), or absent/`Automatic` (the object's
+/// natural size).
 /// Given in the coordinate system of the enclosing graphic, regardless of
 /// whether `pos` is a plain point or a `Scaled`/`ImageScaled` fraction.
 fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
@@ -8104,6 +8106,27 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
       },
     },
     None => (None, None),
+  }
+}
+
+/// [`parse_inset_target_size`] for laying the object out: a single number
+/// `w` is the object's width, and its height follows from the object's own
+/// aspect ratio (`Inset[card, pos, opos, 2]` shows a 1 × 1.5 card 2 wide
+/// and 3 tall, not squeezed into a 2 × 2 box).
+fn parse_inset_layout_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
+  let size = parse_inset_target_size(args);
+  let scalar = match args.get(3) {
+    Some(Expr::FunctionCall { name, args: sa })
+      if name == "Scaled" && sa.len() == 1 =>
+    {
+      !matches!(&sa[0], Expr::List(_))
+    }
+    Some(spec) => !matches!(spec, Expr::List(_)),
+    None => false,
+  };
+  match size {
+    (Some(w), Some(_)) if scalar => (Some(w), None),
+    other => other,
   }
 }
 
@@ -8560,6 +8583,19 @@ fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
     args.iter().take_while(|e| !is_option(e)).collect();
   let mut text_args: Vec<Expr> =
     positional.iter().take(3).map(|e| (*e).clone()).collect();
+  // A missing or `Automatic` position is `Center`, the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`), not `Text`'s origin.
+  let center = || {
+    call(
+      "Scaled",
+      vec![Expr::List(vec![Expr::Real(0.5), Expr::Real(0.5)].into())],
+    )
+  };
+  match text_args.get(1) {
+    None if !text_args.is_empty() => text_args.push(center()),
+    Some(Expr::Identifier(a)) if a == "Automatic" => text_args[1] = center(),
+    _ => {}
+  }
   // `dirs` is either the pair `{{dx, dy}, {ex, ey}}` of the object's axis
   // directions or just the x direction `{dx, dy}`.
   let x_direction = match positional.get(4) {
@@ -9077,12 +9113,18 @@ fn inset_primitives(
     && let Some(dims) = parse_svg_dimensions(svg)
     && let Some((x, y, scaled)) = anchor
   {
-    let (target_w, target_h) = parse_inset_target_size(args);
     // A plot is inset transparently, and laid out anew at an explicit
     // size (see `plot_inset_at_width`).
     let plot = match peel_style_wrapper(&args[0]) {
       g @ Expr::Graphics { is_3d: false, .. } => Some(g),
       _ => None,
+    };
+    // A plot is laid out anew into the box a single-number size spans; any
+    // other picture (an image) takes that number as its width.
+    let (target_w, target_h) = if plot.is_some() {
+      parse_inset_target_size(args)
+    } else {
+      parse_inset_layout_size(args)
     };
     let plot_background = plot.and_then(graphics_options).is_some_and(|o| {
       o.iter().any(|o| {
@@ -9237,8 +9279,8 @@ fn inset_primitives(
   let (cx, cy) = (f64::midpoint(fx0, fx1), f64::midpoint(fy0, fy1));
   let (w, h) = (fx1 - fx0, fy1 - fy0);
 
-  // `size` may be `{w, h}`, a single number (both sides), or Automatic.
-  let (target_w, target_h) = parse_inset_target_size(args);
+  // `size` may be `{w, h}`, a single number (the width), or Automatic.
+  let (target_w, target_h) = parse_inset_layout_size(args);
   let sx = match target_w {
     Some(tw) if w > 0.0 => tw / w,
     _ => 1.0,
@@ -50079,7 +50121,7 @@ fn spec_declares_control_type(items: &[Expr]) -> bool {
 /// setting their type once. A list value assigns one type per control, in the
 /// order the specs appear (`ControlType -> {Slider, PopupMenu}`); controls
 /// past the end of the list keep their default. `Automatic` means "decide as
-/// usual", so it is left off entirely.
+/// usual", so it is left off entirely, while `None` hides the control.
 fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
   let global = items.iter().find_map(|it| {
     let (Expr::Rule {
@@ -50121,7 +50163,18 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
         },
         None => global.clone(),
       };
-      if !matches!(&control_type, Expr::Identifier(s) if is_control_type_name(s) && s != "Automatic")
+      // `None` hides the variable's control, leaving it a bound state
+      // value (`ControlType -> {None, None}` for counters that buttons
+      // drive). A button type drives no variable, so a variable spec given
+      // one gets no control of its own either.
+      let control_type = match &control_type {
+        Expr::Identifier(s) if s == "Button" || s == "ButtonBar" => {
+          id_expr("None")
+        }
+        _ => control_type,
+      };
+      if !matches!(&control_type, Expr::Identifier(s)
+          if (is_control_type_name(s) && s != "Automatic") || s == "None")
         || spec_declares_control_type(spec)
       {
         return item;
@@ -50129,7 +50182,10 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
       let extended: Vec<Expr> = spec
         .iter()
         .cloned()
-        .chain(std::iter::once(rule_expr(id_expr("ControlType"), control_type)))
+        .chain(std::iter::once(rule_expr(
+          id_expr("ControlType"),
+          control_type,
+        )))
         .collect();
       Expr::List(extended.into())
     })
