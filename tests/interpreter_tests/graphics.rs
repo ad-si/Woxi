@@ -4444,9 +4444,13 @@ mod graphics {
              VertexColors -> {{Red, Red, Red}, {Blue}}]}]",
           );
           assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
-          // The second triangle blends from blue into black corners: its
-          // facets are dark blues, not one flat color.
-          assert!(svg.contains("fill=\"rgb(0,0,2"), "{svg}");
+          // The second triangle blends from blue into black corners: a
+          // gradient between the two, not one flat color.
+          assert!(svg.contains("<stop stop-color=\"#0000ff\"/>"), "{svg}");
+          assert!(
+            svg.contains("<stop offset=\"1\" stop-color=\"#000000\"/>"),
+            "{svg}"
+          );
         }
 
         /// `Line[{seg1, seg2}, VertexColors -> {cols1, cols2}]` colors each
