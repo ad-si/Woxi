@@ -37402,6 +37402,42 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // `Framed@Text@Pane[Column[…], size]` (a Demonstration's readout box):
+  // the `Text` sets the column in the text face through the `Pane`, as it
+  // does standing right on the column. Regression: inside a frame the
+  // column fell back to the monospace face.
+  #[test]
+  fn framed_text_of_pane_keeps_the_text_face() {
+    clear_state();
+    let svg = export_svg(
+      "Framed@Text@Pane[Column[{Row[{\"a = \", 1.5}], Row[{\"b = \", 2}]}], \
+         ImageSize -> {100, 50}]",
+    );
+    assert!(svg.contains("sans-serif"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+  }
+
+  // A `Row` holding a `Subscript` is still one line of text, so a `Text`
+  // column stacks it at the pitch of its plain rows. Regression: such a
+  // row was stacked as a padded box, 10 pt further down per row.
+  #[test]
+  fn text_column_stacks_subscript_rows_at_the_line_pitch() {
+    clear_state();
+    let height = |code: &str| {
+      let svg = export_svg(code);
+      let rest = svg.split("height=\"").nth(1).expect("an svg height");
+      rest.split('"').next().unwrap().parse::<f64>().unwrap()
+    };
+    let plain = height(
+      "Text@Column[{Row[{\"N\", \" = \", 1}], Row[{\"M\", \" = \", 2}]}]",
+    );
+    let scripted = height(
+      "Text@Column[{Row[{Subscript[\"N\", \"n\"], \" = \", 1}], \
+         Row[{Subscript[\"N\", \"w\"], \" = \", 2}]}]",
+    );
+    assert_eq!(scripted, plain);
+  }
+
   // A `TraditionalForm` item inside a layout is typeset in conventional
   // notation — `=` for `Equal`, and a `Row` of strings/`Style`s set as the
   // text it displays — instead of being stripped down to the StandardForm
@@ -45354,6 +45390,32 @@ mod discrete_plot {
   fn returns_graphics() {
     let result = interpret("DiscretePlot[n, {n, 1, 3}]").unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+
+  // Regression: a body that only reaches the variable through a symbol
+  // holding an expression (`f = 2^n`) sampled nothing, as the variable is
+  // not in the body's source for the substitution to find.
+  #[test]
+  fn body_symbol_holding_an_expression_is_sampled() {
+    clear_state();
+    let direct = export_svg("DiscretePlot[{2^n, n 2^n}, {n, 1, 4}]");
+    let stored =
+      export_svg("f = 2^n; g = n f; DiscretePlot[{f, g}, {n, 1, 4}]");
+    assert_eq!(direct.matches("<circle").count(), 8, "{direct}");
+    assert_eq!(stored, direct);
+  }
+
+  // `PlotMarkers -> {Point, size}` keeps the round dots and resizes them:
+  // 1.3 times the marker size across (`Medium` is a 10 pt marker).
+  #[test]
+  fn point_marker_size_resizes_the_dots() {
+    clear_state();
+    let medium =
+      export_svg("DiscretePlot[n, {n, 1, 3}, PlotMarkers -> {Point, Medium}]");
+    assert_eq!(medium.matches("<circle").count(), 3, "{medium}");
+    assert_eq!(medium.matches("r=\"65\"").count(), 3, "{medium}");
+    let numeric = export_svg("ListPlot[{1, 2, 3}, PlotMarkers -> {Point, 5}]");
+    assert_eq!(numeric.matches("r=\"33\"").count(), 3, "{numeric}");
   }
 
   // Regression: DiscretePlot holds its body (like Plot), so it is evaluated
