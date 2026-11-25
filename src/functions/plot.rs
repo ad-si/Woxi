@@ -10499,6 +10499,18 @@ pub(crate) fn generate_bar_svg(
     .chain(look.error_bars.iter().flatten().flat_map(|&(l, h)| [l, h]))
     .fold((0.0_f64, 0.0_f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
 
+  // An explicit bottom `ImagePadding` replaces the automatic margin that
+  // otherwise stands in for the lower `Scaled[0.02]` of an automatic value
+  // range above 0.
+  let baseline_above_padding =
+    look.image_padding.is_some_and(|p| p[2].is_some())
+      && plot_range_y.is_none()
+      && look.plot_range_padding.is_none()
+      && !look.frame
+      && !look.value_axis_negated
+      && data_lo >= 0.0
+      && data_hi > 0.0;
+
   // y-axis range: explicit PlotRange overrides the auto-computed extent,
   // which anchors at 0 and leaves WL's `Scaled[0.05]` headroom above the
   // tallest bar (5% of the padded span, whose lower `Scaled[0.02]` the
@@ -10520,7 +10532,15 @@ pub(crate) fn generate_bar_svg(
   } else {
     let y_max_auto = data_hi * (1.0 + 0.05 / 0.93);
     let y_max_auto = if y_max_auto <= 0.0 { 1.0 } else { y_max_auto };
-    (0.0, y_max_auto)
+    // Under an explicit bottom `ImagePadding` the range's lower
+    // `Scaled[0.02]` is part of the plotting area, which the padding
+    // surrounds: the value axis runs on below the bars' baseline.
+    let y_min_auto = if baseline_above_padding {
+      -0.02 / 0.93 * data_hi
+    } else {
+      0.0
+    };
+    (y_min_auto, y_max_auto)
   };
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
 
@@ -10531,16 +10551,34 @@ pub(crate) fn generate_bar_svg(
   // Otherwise WL's range runs from 2% of the bars' span before the first
   // bar (where the y axis stands) to the last bar's edge; a frame pads that
   // by another `Scaled[0.02]` of it on both sides.
-  let (x_min, x_max) = plot_range_x.unwrap_or_else(|| {
-    let (first, last) = (slot.margin, n as f64 - slot.margin);
-    let lo = first - 0.02 * (last - first);
-    if look.frame {
-      let pad = 0.02 / 0.96 * (last - lo);
-      (lo - pad, last + pad)
-    } else {
-      (lo, last)
+  //
+  // The unframed chart's axes keep to the bars under an explicit x range:
+  // the value axis stands where it does without one (`AxesOrigin`), and the
+  // baseline, a line of its own, runs from there to 2% past the last bar.
+  // The explicit range is padded by `Scaled[0.02]` on both sides, like any
+  // range of a chart.
+  let (first, last) = (slot.margin, n as f64 - slot.margin);
+  let natural_lo = first - 0.02 * (last - first);
+  let explicit_x_axes = plot_range_x
+    .filter(|(lo, hi)| {
+      !look.frame && look.plot_range_padding.is_none() && hi > lo
+    })
+    .map(|(lo, hi)| {
+      let pad = 0.02 / 0.96 * (hi - lo);
+      let (lo, hi) = (lo - pad, hi + pad);
+      let axis_x = natural_lo.clamp(lo, hi);
+      let baseline_end = (last + 0.02 * (last - natural_lo)).clamp(axis_x, hi);
+      ((lo, hi), axis_x, baseline_end)
+    });
+  let (x_min, x_max) = match (explicit_x_axes, plot_range_x) {
+    (Some((range, _, _)), _) => range,
+    (None, Some(range)) => range,
+    (None, None) if look.frame => {
+      let pad = 0.02 / 0.96 * (last - natural_lo);
+      (natural_lo - pad, last + pad)
     }
-  });
+    (None, None) => (natural_lo, last),
+  };
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
   // An explicit `PlotRangePadding` pads the bars' own extent (or the
@@ -10817,6 +10855,8 @@ pub(crate) fn generate_bar_svg(
     r - 1.5 * sf
   };
   let x_axis_overrun = match (explicit_pad(0), explicit_pad(1)) {
+    // The baseline of an explicit x range ends inside the plotting area.
+    _ if explicit_x_axes.is_some() => 0.0,
     // With both sides given the plot range, including the axis' 2%
     // padding past the last bar, spans what the padding leaves.
     (Some(l), Some(r)) => {
@@ -10896,6 +10936,34 @@ pub(crate) fn generate_bar_svg(
       if need > margin_bottom + x_label_area as f64 {
         x_label_area = (need - margin_bottom).ceil() as u32;
       }
+    }
+  }
+  // Upright labels below a baseline that stands above an explicit bottom
+  // padding hang 1.75 em below it (baseline and descenders); like rotated
+  // ones, they take plotting area rather than being cut off at the image's
+  // edge when the padding and the range below 0 are too small for them.
+  if baseline_above_padding && labels_below && !has_rotated_labels {
+    let below = -y_min / (y_max - y_min);
+    let plot_h_est = match look.aspect_ratio {
+      Some(r) if !look.fixed_height => {
+        (render_width as f64
+          - margin_left
+          - legend_margin_right as f64
+          - y_label_area as f64)
+          * r
+      }
+      _ => {
+        render_height as f64
+          - top_margin as f64
+          - margin_bottom
+          - x_label_area as f64
+      }
+    }
+    .max(1.0);
+    let need = 1.75 * chart_label_font_pt * sf;
+    let deficit = need - (x_label_area as f64 + below * plot_h_est);
+    if deficit > 0.0 {
+      x_label_area += (deficit / (1.0 - below)).ceil() as u32;
     }
   }
   if let Some(r) = look.aspect_ratio {
@@ -11137,7 +11205,13 @@ pub(crate) fn generate_bar_svg(
     render_width as f64 - margin_left - margin_right - y_label_area as f64;
   let plot_h =
     render_height as f64 - margin_top - margin_bottom - x_label_area as f64;
-  let axis_y = plot_y0 + plot_h;
+  // The bars' baseline, below which the chart labels are set: the bottom
+  // of the plotting area, unless the value range runs on below 0.
+  let axis_y = if baseline_above_padding {
+    plot_y0 + plot_h * (1.0 - (0.0 - y_min) / (y_max - y_min))
+  } else {
+    plot_y0 + plot_h
+  };
   if !pictorial_bars.is_empty() {
     let to_px = |x: f64, y: f64| {
       (
@@ -11229,7 +11303,10 @@ pub(crate) fn generate_bar_svg(
     let origin = if look.frame {
       (x_min, y_min)
     } else {
-      (x_min, y_scale.origin(None, None))
+      (
+        explicit_x_axes.map_or(x_min, |(_, axis_x, _)| axis_x),
+        y_scale.origin(None, None),
+      )
     };
     let mut axes_svg = crate::functions::plot_axes::origin_axes_svg(
       &crate::functions::plot_axes::OriginAxes {
@@ -11237,7 +11314,8 @@ pub(crate) fn generate_bar_svg(
         x: x_scale,
         y: y_scale,
         origin,
-        show: (true, true),
+        // The baseline of an explicit x range is drawn below.
+        show: (explicit_x_axes.is_none(), true),
         ticks: show_ticks.then_some((&no_x_ticks, &y_ticks)),
         sf,
         axis_color: &axis_hex,
@@ -11263,6 +11341,14 @@ pub(crate) fn generate_bar_svg(
       ));
     }
     let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
+    if let Some((_, axis_x, baseline_end)) = explicit_x_axes {
+      axes_svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{axis_y:.1}\" x2=\"{:.1}\" \
+         y2=\"{axis_y:.1}\" stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+        px(axis_x),
+        px(baseline_end)
+      ));
+    }
     if show_ticks && n > 0 && look.frame {
       // A frame is ticked (inwards, on its bottom and top edges) at each
       // bar's center and, a little longer, in the middle of each gap

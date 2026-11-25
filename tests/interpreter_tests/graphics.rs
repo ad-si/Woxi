@@ -28411,26 +28411,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .collect();
       assert_eq!(bar_xs.len(), 20, "expected 20 bars");
 
-      // Plot area left edge ~197 (the y axis: the "250" labels plus their
-      // 3 pt gap), right edge ~3517 (width ~3320). With x ∈ [0, 50] in
-      // chart coordinates (bar i centered at i + 1), bar i spans [i + 0.6,
-      // i + 1.4], so the first bar starts at ~197 + 0.6/50 * 3320 ≈ 235
-      // and the last (i=19) at ~197 + 19.6/50 * 3320 ≈ 1498 — i.e. the
-      // bars only cover ~38% of the plot width.
+      // Plot area left edge ~197 (the "250" labels plus their 3 pt gap),
+      // right edge ~3585 (width ~3388). The x range {0, 50} is padded by
+      // `Scaled[0.02]` on both sides to [-1.04, 51.04]; in chart
+      // coordinates (bar i centered at i + 1) bar i spans [i + 0.6,
+      // i + 1.4], so the first bar starts at
+      // ~197 + 1.64/52.08 * 3388 ≈ 304 and the last (i=19) at
+      // ~197 + 20.64/52.08 * 3388 ≈ 1540 — i.e. the bars only cover ~38%
+      // of the plot width.
       assert!(
-        (bar_xs[0] - 235.0).abs() < 5.0,
-        "first bar x {} should be near 235",
+        (bar_xs[0] - 304.0).abs() < 5.0,
+        "first bar x {} should be near 304",
         bar_xs[0]
       );
       assert!(
-        (bar_xs[19] - 1498.0).abs() < 5.0,
-        "last bar x {} should be near 1498",
+        (bar_xs[19] - 1540.0).abs() < 5.0,
+        "last bar x {} should be near 1540",
         bar_xs[19]
       );
 
       // Bar heights follow the y override: Prime[20]=71 at y=250 should
-      // occupy 71/250 of the plot height (~2052 px: the plot area's width
-      // over GoldenRatio) ≈ 581 px.
+      // occupy 71/250 of the plot height (~2094 px: the plot area's width
+      // over GoldenRatio) ≈ 594 px.
       let last_bar_line = svg
         .lines()
         .rfind(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
@@ -28444,8 +28446,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .unwrap();
       let last_h: f64 = h_str.parse().unwrap();
       assert!(
-        (last_h - 581.0).abs() < 5.0,
-        "last bar height {last_h} should be near 581"
+        (last_h - 594.0).abs() < 5.0,
+        "last bar height {last_h} should be near 594"
       );
     }
 
@@ -71197,12 +71199,24 @@ mod bar_chart_slide_conformance {
     let h = svg_height(&svg);
     let (left, axis_y) = axis_lines(&svg);
     assert!((left - 900.0).abs() < 1.0, "{left}");
-    assert!((axis_y - (h - 60.0) * 10.0).abs() < 1.0, "{axis_y} of {h}");
+    // The padding lies below the plotting area, whose lower `Scaled[0.02]`
+    // the baseline stands above.
+    let baseline = |svg: &str, pad: f64| {
+      let bottom = (svg_height(svg) - pad) * 10.0;
+      let top = svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .map(|l| attr(l, "y1").min(attr(l, "y2")))
+        .fold(f64::INFINITY, f64::min);
+      bottom - 0.02 * (bottom - top)
+    };
+    let expected = baseline(&svg, 60.0);
+    assert!((axis_y - expected).abs() < 1.5, "{axis_y} of {h}");
     // A single number pads every side; `All` leaves a side automatic.
     let svg = export_svg("BarChart[{1, 3, 2}, ImagePadding -> 50]");
     let (left, axis_y) = axis_lines(&svg);
     assert!((left - 500.0).abs() < 1.0, "{left}");
-    assert!((axis_y - (svg_height(&svg) - 50.0) * 10.0).abs() < 1.0);
+    assert!((axis_y - baseline(&svg, 50.0)).abs() < 1.5, "{axis_y}");
     let auto = export_svg("BarChart[{1, 3, 2}]");
     let mixed = export_svg(
       "BarChart[{1, 3, 2}, ImagePadding -> {{70, All}, {All, All}}]",
@@ -71210,6 +71224,113 @@ mod bar_chart_slide_conformance {
     assert!((axis_lines(&mixed).0 - 700.0).abs() < 1.0);
     let bottom = |svg: &str| svg_height(svg) * 10.0 - axis_lines(svg).1;
     assert!((bottom(&mixed) - bottom(&auto)).abs() < 1.0);
+  }
+
+  /// The numeric attribute `name` of an SVG element.
+  fn attr(tag: &str, name: &str) -> f64 {
+    let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    tag[at..].split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// Under an explicit x `PlotRange` the value axis stays beside the first
+  /// bar instead of moving to the range's edge, and the baseline ends
+  /// shortly after the last bar. Regression: both followed the range, so
+  /// the tick labels fell into (and were cut off by) a small `ImagePadding`.
+  #[test]
+  fn bar_chart_explicit_x_range_keeps_axes_at_bars() {
+    for n in [3, 6, 10] {
+      let svg = export_svg(&format!(
+        "BarChart[Range[{n}], PlotRange -> {{{{0, {n} + 4}}, All}}, \
+         ImageSize -> 400, ImagePadding -> {{{{15, 15}}, {{8, 8}}}}]"
+      ));
+      let rects: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<rect") && l.contains("<title>"))
+        .collect();
+      assert_eq!(rects.len(), n);
+      let first_left = attr(rects[0], "x");
+      let last_right = attr(rects[n - 1], "x") + attr(rects[n - 1], "width");
+      let bar_w = attr(rects[0], "width");
+      let lines: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<line")).collect();
+      let y_axis = lines
+        .iter()
+        .find(|l| {
+          attr(l, "x1") == attr(l, "x2")
+            && attr(l, "y2") - attr(l, "y1") > 500.0
+        })
+        .unwrap();
+      let x_axis = lines
+        .iter()
+        .find(|l| {
+          attr(l, "y1") == attr(l, "y2")
+            && attr(l, "x2") - attr(l, "x1") > 500.0
+        })
+        .unwrap();
+      // The value axis: left of the first bar by less than a bar's width,
+      // and well inside the 15 pt padding (150 render units).
+      let axis_x = attr(y_axis, "x1");
+      assert!(axis_x < first_left && first_left - axis_x < bar_w, "{n}");
+      assert!(axis_x > 250.0, "{n}: {axis_x}");
+      // The baseline starts at the value axis and stops after the last
+      // bar, far from the range's right end.
+      assert!((attr(x_axis, "x1") - axis_x).abs() < 1.0, "{n}");
+      let end = attr(x_axis, "x2");
+      assert!(end > last_right && end - last_right < bar_w, "{n}: {end}");
+      assert!(end < 3850.0 - 2.0 * bar_w, "{n}: {end}");
+    }
+  }
+
+  /// An explicit bottom `ImagePadding` surrounds the plotting area, whose
+  /// automatic value range reaches `Scaled[0.02]` below 0: the value axis
+  /// runs on below the baseline. Chart labels under the baseline stay
+  /// inside the image even when that padding is smaller than they are.
+  /// Regression: the baseline sat exactly on the padding and the labels
+  /// were drawn below the image's bottom edge.
+  #[test]
+  fn bar_chart_labels_fit_above_small_bottom_padding() {
+    for (data, labels) in [
+      ("{3, 1, 2}", "{\"a\", \"b\", \"c\"}"),
+      ("{8, 8, 12, 12, 10}", "Range[0, 4]"),
+      ("{250, 100}", "{\"gy\", \"pq\"}"),
+    ] {
+      for range in ["", "PlotRange -> {{0, 8}, All}, "] {
+        let svg = export_svg(&format!(
+          "BarChart[{data}, ChartLabels -> {labels}, {range}\
+           ImageSize -> 400, ImagePadding -> {{{{15, 15}}, {{8, 8}}}}]"
+        ));
+        let h = svg_height(&svg) * 10.0;
+        let lines: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<line")).collect();
+        let y_axis = lines
+          .iter()
+          .find(|l| {
+            attr(l, "x1") == attr(l, "x2")
+              && attr(l, "y2") - attr(l, "y1") > 500.0
+          })
+          .unwrap();
+        let rect = svg
+          .lines()
+          .find(|l| l.starts_with("<rect") && l.contains("<title>"))
+          .unwrap();
+        let baseline = attr(rect, "y") + attr(rect, "height");
+        // The value axis reaches below the bars' baseline.
+        assert!(attr(y_axis, "y2") > baseline + 20.0, "{data} {range}");
+        let label_ys: Vec<f64> = svg
+          .lines()
+          .filter(|l| {
+            l.starts_with("<text") && l.contains("text-anchor=\"middle\"")
+          })
+          .map(|l| attr(l, "y"))
+          .collect();
+        assert!(!label_ys.is_empty(), "{data} {range}");
+        for y in label_ys {
+          // Baseline below the bars, descenders (a quarter em of the
+          // 10 pt font) above the image's bottom edge.
+          assert!(y > baseline && y + 25.0 <= h, "{data} {range}: {y} {h}");
+        }
+      }
+    }
   }
 
   /// A `PlotRange` reaching below 0 extends the plotting area down to it,
