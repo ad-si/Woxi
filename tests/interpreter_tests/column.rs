@@ -957,7 +957,11 @@ mod traditional_form_layout {
       assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
       assert!(!svg.contains(">Column<"), "Column call leaked: {svg}");
       assert!(!svg.contains("TemplateBox"), "box source leaked: {svg}");
-      assert!(svg.contains('∫'), "integral sign missing: {svg}");
+      // The integral sign is drawn as a path.
+      assert!(
+        svg.contains("stroke-linecap=\"round\""),
+        "integral sign missing: {svg}"
+      );
     }
   }
 }
