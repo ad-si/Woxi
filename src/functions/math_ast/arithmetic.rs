@@ -11103,6 +11103,25 @@ fn fold_complex_coefficient(
       other => factors.push(other),
     }
   }
+  // Beside a machine real, an exact numeric factor with a complex value
+  // (`Log[1 + I]`, `E^I`) is a number too: `2.5 x Log[1 + I]` is
+  // `(0.866… + 1.963… I) x`.
+  let machine = factors.iter().any(|f| matches!(f, Expr::Real(_)))
+    && !factors.iter().any(|f| matches!(f, Expr::BigFloat(..)));
+  let complex_valued = |e: &Expr| {
+    machine
+      && crate::functions::predicate_ast::is_numeric_q(e)
+      && crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(e),
+      )
+      .ok()
+      .and_then(|n| try_extract_complex_float(&n))
+      .is_some_and(|(_, im)| im != 0.0)
+  };
+  let is_nonreal_complex =
+    |e: &Expr| is_nonreal_complex(e) || complex_valued(e);
+  let is_number = |e: &Expr| is_number(e) || complex_valued(e);
   let numbers: Vec<Expr> = factors
     .iter()
     .filter(|f| is_number(f))

@@ -16775,7 +16775,29 @@ mod exact_arithmetic_fuzz_edge_cases {
         "{Head[2.5 Log[1 + I]], Head[Log[1 + I, -2.5]], 2.5 x Log[1 + I]}"
       )
       .unwrap(),
-      "{Complex, Complex, 2.5*x*Log[1 + I]}"
+      "{Complex, Complex, (0.8664339756999317 + 1.9634954084936207*I)*x}"
+    );
+    assert_eq!(
+      interpret(
+        "{2.5 x E^I, 2.5 x Sqrt[1 + I], 2.5 x Log[-2], 2 x Log[1 + I]}"
+      )
+      .unwrap(),
+      "{(1.3507557646703494 + 2.1036774620197414*I)*x, \
+       (2.7467102836695245 + 1.1377246514055683*I)*x, \
+       (1.7328679513998633 + 7.853981633974483*I)*x, 2*x*Log[1 + I]}"
+    );
+  }
+
+  // The real part of a machine complex logarithm is Log of the modulus.
+  #[test]
+  fn machine_complex_log_real_part() {
+    assert_eq!(
+      interpret("InputForm[Log[1. + I]]").unwrap(),
+      "InputForm[0.3465735902799727 + 0.7853981633974483*I]"
+    );
+    assert_eq!(
+      interpret("Log[1.*^200 + 1.*^200 I]").unwrap(),
+      "460.8635921890891 + 0.7853981633974483*I"
     );
   }
 
