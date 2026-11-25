@@ -55785,6 +55785,52 @@ mod manipulate {
     }
   }
 
+  /// A 2D slider's label keeps its styling: the italic subscript of
+  /// `Subscript["P", Style["xy", Italic]]` survives as label runs instead
+  /// of being flattened to the plain text `Pxy`. Regression: `Slider2D`
+  /// controls carried only the flattened label.
+  #[test]
+  fn control_slider2d_keeps_styled_label_runs() {
+    let expr = interpret_to_expr(
+      "Control[{{p, {1, 2}, Subscript[\"P\", Style[\"xy\", Italic]]}, \
+       {0, 0}, {5, 5}}]",
+    )
+    .unwrap();
+    let spec = extract_control_spec(&expr).expect("well-formed control");
+    let ManipulateControl::Slider2D {
+      label, label_runs, ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected Slider2D control, got {:?}", spec.controls[0]);
+    };
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(&text, label);
+    let base = label_runs.first().expect("a run for the base");
+    assert_eq!(base.text, "P");
+    assert!(!base.italic && !base.subscript);
+    let script = label_runs.last().expect("a run for the subscript");
+    assert_eq!(script.text, "xy");
+    assert!(script.italic && script.subscript);
+  }
+
+  /// A `LabelStyle` option styles a 2D slider's label like any other
+  /// control's.
+  #[test]
+  fn manipulate_label_style_applies_to_slider2d_label() {
+    let expr = interpret_to_expr(
+      "Manipulate[p, {{p, {1, 2}, \"point\"}, {0, 0}, {5, 5}}, \
+       LabelStyle -> Italic]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed spec");
+    let ManipulateControl::Slider2D { label_runs, .. } = &spec.controls[0]
+    else {
+      panic!("expected Slider2D control, got {:?}", spec.controls[0]);
+    };
+    assert!(!label_runs.is_empty());
+    assert!(label_runs.iter().all(|r| r.italic), "runs: {label_runs:?}");
+  }
+
   #[test]
   fn control_interval_slider() {
     let expr =

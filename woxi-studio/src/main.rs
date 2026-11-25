@@ -5323,6 +5323,7 @@ fn render_manipulate_widget<'a>(
       manipulate::ControlState::Slider2D {
         name: _,
         label,
+        label_runs,
         x_min,
         x_max,
         y_min,
@@ -5370,10 +5371,10 @@ fn render_manipulate_widget<'a>(
         .size(11)
         .font(Font::MONOSPACE)
         .width(iced::Length::Fixed(120.0));
-        // Empty runs → plain label; shares label_col_width so 2D-slider rows
-        // align with the other controls.
+        // Shares label_col_width so 2D-slider rows align with the other
+        // controls.
         let label_widget =
-          manipulate_label_widget(&[], label, label_col_width, enabled);
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
         let control_row = row![label_widget, sliders, value_widget]
           .align_y(Center)
           .spacing(8);
