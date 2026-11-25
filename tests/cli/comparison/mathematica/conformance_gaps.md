@@ -1299,9 +1299,24 @@ near 10^646456993 where wolframscript's `$MaxNumber` is near
 (`Exp[10.`30^10]`, `10^-1100329811.`30`), where wolframscript still shows a
 number.
 
-`MantissaExponent` of an arbitrary-precision number outside the machine range
-stays unevaluated (`MantissaExponent[1.5`20*^5000]`), where wolframscript
-returns the mantissa and exponent.
+### Last digit of the accuracy of a cancelled arbitrary-precision sum
+
+```sh
+wolframscript -code 'x = 1.5`20*^50000; x - x'   # 0``-49980.47712125473
+woxi eval 'x = 1.5`20*^50000; x - x'             # 0``-49980.47712125472
+```
+
+Woxi computes `-Log10` of the error correctly rounded. wolframscript's value
+matches `(Log2[m] + e) Log10[2]` of the binary mantissa and exponent for this
+case, but that formula misses its accuracy of `1.5`20 - 1.5`20` by one unit
+in the last place too, so the rule is not known.
+
+### Precision tags of inexact `Solve` roots
+
+`Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]` is `{{x -> -0.5`15.954589770191003},
+{x -> 1.`15.954589770191003}}` in wolframscript (machine-precision numbers
+written as arbitrary-precision ones) and `{{x -> -0.5}, {x -> 1.}}` in Woxi.
+The roots and their count agree.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 
@@ -2076,6 +2091,14 @@ a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
 
 
 ## Algebra and calculus
+
+### `Simplify[(1 - Cos[9])/9]` picks the other of two equally simple forms
+
+wolframscript gives `(2*Sin[9/2]^2)/9`, Woxi keeps `(1 - Cos[9])/9`; both
+have the same leaf count, so this is the order in which Simplify meets its
+candidates. It shows in
+`InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. {a -> 3, t -> 5}
+// Simplify`.
 
 ### `Solve` of a radical identity in one unknown finds a spurious root
 
