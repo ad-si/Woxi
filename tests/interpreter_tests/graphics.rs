@@ -47761,7 +47761,7 @@ mod manipulate {
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
-    DisplayNode, ManipulateControl, extract_animator_spec,
+    DisplayNode, ManipulateControl, SliderUnit, extract_animator_spec,
     extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
     extract_locator_pane_spec, extract_manipulate_spec, manipulate_block_code,
     manipulate_enabled_states, manipulate_initial_bindings,
@@ -48405,25 +48405,81 @@ mod manipulate {
         min,
         max,
         initial,
-        imaginary,
+        unit,
         ..
       } => {
         assert_eq!(name, "w");
         assert_eq!((*min, *max, *initial), (-2.0, 2.0, 0.0));
-        assert!(*imaginary);
+        assert_eq!(*unit, SliderUnit::Imaginary);
         assert_eq!(
-          woxi::functions::graphics::continuous_binding_code(
-            1.5, false, *imaginary
-          ),
+          woxi::functions::graphics::continuous_binding_code(1.5, false, *unit),
           "Complex[0, 3/2]"
         );
       }
       other => panic!("expected Continuous, got {other:?}"),
     }
     match &spec.controls[1] {
-      ManipulateControl::Continuous { imaginary, .. } => assert!(!*imaginary),
+      ManipulateControl::Continuous { unit, .. } => {
+        assert_eq!(*unit, SliderUnit::Plain);
+      }
       other => panic!("expected Continuous, got {other:?}"),
     }
+  }
+
+  // A range stepped in exact `Degree` multiples counts degrees: the slider
+  // binds the exact angle (`96 Degree`, not `8 Pi/15`), which reads out as
+  // `96°` the way Wolfram shows it. A range with an inexact or missing
+  // step, or bounds that are not all degree multiples, stays a plain slider.
+  #[test]
+  fn spec_degree_stepped_slider_binds_exact_angles() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, {{a, 45 Degree, \"angle\"}, 40 Degree, 170 Degree, \
+       1 Degree}, {b, 0, 90 Degree, 1/2 Degree}, {c, 10 Degree, 20 Degree}, \
+       {d, 0, Pi, Pi/4}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let fields = |i: usize| match &spec.controls[i] {
+      ManipulateControl::Continuous {
+        min,
+        max,
+        step,
+        initial,
+        unit,
+        ..
+      } => (*min, *max, *step, *initial, *unit),
+      other => panic!("expected Continuous, got {other:?}"),
+    };
+    assert_eq!(
+      fields(0),
+      (40.0, 170.0, Some(1.0), 45.0, SliderUnit::Degree)
+    );
+    assert_eq!(fields(1), (0.0, 90.0, Some(0.5), 0.0, SliderUnit::Degree));
+    assert_eq!(fields(2).4, SliderUnit::Plain);
+    assert_eq!(fields(3).4, SliderUnit::Plain);
+
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings[0], ("a".to_string(), "45*Degree".to_string()));
+    assert_eq!(bindings[1], ("b".to_string(), "0*Degree".to_string()));
+
+    use woxi::functions::graphics::continuous_binding_code;
+    let code = continuous_binding_code(96.0, false, SliderUnit::Degree);
+    assert_eq!(code, "96*Degree");
+    clear_state();
+    assert_eq!(interpret(&code).unwrap(), "96*Degree");
+    assert_eq!(
+      continuous_binding_code(22.5, false, SliderUnit::Degree),
+      "45/2*Degree"
+    );
+
+    let svg = woxi::functions::graphics::continuous_value_label_svg(
+      96.0,
+      false,
+      SliderUnit::Degree,
+    )
+    .expect("an exact angle is typeset");
+    assert!(svg.contains(">96<"), "{svg}");
+    assert!(svg.contains("\u{b0}"), "degree sign: {svg}");
   }
 
   // A slider binding an exact non-integer value reads it as a typeset
@@ -48432,7 +48488,7 @@ mod manipulate {
   #[test]
   fn exact_slider_value_readout_is_a_stacked_fraction() {
     use woxi::functions::graphics::continuous_value_label_svg;
-    let svg = continuous_value_label_svg(-7.0 / 6.0, false, false)
+    let svg = continuous_value_label_svg(-7.0 / 6.0, false, SliderUnit::Plain)
       .expect("exact rational is typeset");
     assert!(svg.contains("<line "), "fraction bar: {svg}");
     assert!(svg.contains(">7<") && svg.contains(">6<"), "{svg}");
@@ -48441,14 +48497,20 @@ mod manipulate {
     let svg = continuous_value_label_svg(
       3.0 * std::f64::consts::PI / 4.0,
       false,
-      false,
+      SliderUnit::Plain,
     )
     .expect("rational multiple of Pi is typeset");
     assert!(svg.contains("<line "), "fraction bar: {svg}");
     assert!(svg.contains("\u{3c0}"), "pi symbol: {svg}");
 
-    assert_eq!(continuous_value_label_svg(-3.0, false, false), None);
-    assert_eq!(continuous_value_label_svg(-7.0 / 6.0, true, false), None);
+    assert_eq!(
+      continuous_value_label_svg(-3.0, false, SliderUnit::Plain),
+      None
+    );
+    assert_eq!(
+      continuous_value_label_svg(-7.0 / 6.0, true, SliderUnit::Plain),
+      None
+    );
   }
 
   // Corner points given as `{re, im I}` pairs make a 2D pad over the real

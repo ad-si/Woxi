@@ -8,7 +8,9 @@
 //! that free control variables are substituted.
 
 use iced::widget::svg;
-pub use woxi::functions::graphics::{ControlOrientation, ControlPlacement};
+pub use woxi::functions::graphics::{
+  ControlOrientation, ControlPlacement, SliderUnit,
+};
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
@@ -98,9 +100,10 @@ pub enum ControlState {
     /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
     /// instead of the default horizontal `slider`.
     orientation: ControlOrientation,
-    /// The range runs along the imaginary axis; `min`/`max`/`current` hold
-    /// imaginary coefficients and the variable binds `Complex[0, current]`.
-    imaginary: bool,
+    /// The unit `min`/`max`/`current` count in (see
+    /// `woxi::functions::graphics::SliderUnit`): imaginary coefficients
+    /// binding `Complex[0, current]`, or degrees binding `current*Degree`.
+    unit: SliderUnit,
     /// The range was written high-to-low (see
     /// `ManipulateControl::Continuous::reversed`): `min`/`max` stay sorted,
     /// and the widget mirrors its track so the first bound sits on the left.
@@ -405,12 +408,12 @@ impl ControlState {
         current,
         is_real,
         exact_value,
-        imaginary,
+        unit,
         ..
       } => woxi::functions::graphics::continuous_binding_code(
         *current,
         *is_real && *exact_value != Some(*current),
-        *imaginary,
+        *unit,
       ),
       ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
@@ -490,8 +493,21 @@ impl ControlState {
         step,
         min,
         max,
+        unit,
         ..
       } => {
+        // A slider counting degrees takes an angle (`96 Degree`, or the
+        // radians of a machine real) as that many degrees.
+        if *unit == SliderUnit::Degree {
+          if let Some(q) = woxi::functions::graphics::degree_multiple(&expr) {
+            *current = q;
+            *exact_value = Some(q);
+          } else if let Some(v) = as_f64(&expr) {
+            *current = v.to_degrees();
+            *exact_value = None;
+          }
+          return;
+        }
         if let Some(v) = as_f64(&expr) {
           *current = v;
           // An exact value (`2/3` from a linked `{2/3 -> "astroid", …}`
@@ -1234,9 +1250,11 @@ pub struct ManipulateState {
   /// `(control name, icon)`. Re-rendered with the captions on every change.
   pub label_svgs: Vec<(String, LabelIcon)>,
   /// Typeset slider value readouts (see [`Self::continuous_value_icon`]),
-  /// keyed by the value's bits and whether it binds as a machine real.
+  /// keyed by the value's bits, whether it binds as a machine real, and the
+  /// slider's unit.
   /// Filled lazily from `view`, hence the interior mutability.
-  value_icons: std::cell::RefCell<Vec<((u64, bool, bool), Option<LabelIcon>)>>,
+  value_icons:
+    std::cell::RefCell<Vec<((u64, bool, SliderUnit), Option<LabelIcon>)>>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -1361,21 +1379,21 @@ impl ManipulateState {
       current,
       is_real,
       exact_value,
-      imaginary,
+      unit,
       ..
     } = ctrl
     else {
       return None;
     };
     let real = *is_real && *exact_value != Some(*current);
-    let key = (current.to_bits(), real, *imaginary);
+    let key = (current.to_bits(), real, *unit);
     if let Some((_, icon)) =
       self.value_icons.borrow().iter().find(|(k, _)| *k == key)
     {
       return icon.clone();
     }
     let icon = woxi::functions::graphics::continuous_value_label_svg(
-      *current, real, *imaginary,
+      *current, real, *unit,
     )
     .map(LabelIcon::from_svg);
     let mut cache = self.value_icons.borrow_mut();
@@ -3285,7 +3303,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         is_real,
         exact_initial,
         orientation,
-        imaginary,
+        unit,
         reversed,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
@@ -3303,7 +3321,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           is_real: *is_real,
           exact_value: exact_initial.then_some(*initial),
           orientation: *orientation,
-          imaginary: *imaginary,
+          unit: *unit,
           reversed: *reversed,
         }
       }

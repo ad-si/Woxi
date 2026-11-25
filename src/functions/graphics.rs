@@ -46900,10 +46900,10 @@ pub enum ManipulateControl {
     /// `ControlType -> VerticalSlider`: draw the slider running bottom-to-top
     /// instead of Wolfram's default left-to-right rail.
     orientation: ControlOrientation,
-    /// The range runs along the imaginary axis (`{zi, 0 I}, -2 I, 2 I`):
-    /// `min`/`max`/`initial` hold the imaginary coefficients, and the
-    /// variable binds the complex number `Complex[0, value]`.
-    imaginary: bool,
+    /// The unit `min`/`max`/`step`/`initial` count in: imaginary
+    /// coefficients for a range along the imaginary axis, degrees for one
+    /// written in `Degree` multiples (see [`SliderUnit`]).
+    unit: SliderUnit,
     /// The spec wrote its range high-to-low (`{h, -0.05, -0.5}`). `min`
     /// and `max` are stored sorted, but Wolfram draws such a slider from
     /// its first bound on the left to its second on the right, so the
@@ -47507,6 +47507,23 @@ pub enum ControlOrientation {
   #[default]
   Horizontal,
   Vertical,
+}
+
+/// The unit a continuous slider's `min`/`max`/step/value are counted in,
+/// and so how its variable binds the slider position `v`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SliderUnit {
+  /// A plain real number: the variable binds `v`.
+  #[default]
+  Plain,
+  /// A range along the imaginary axis (`{zi, 0 I}, -2 I, 2 I`): the
+  /// numbers are imaginary coefficients and the variable binds
+  /// `Complex[0, v]`.
+  Imaginary,
+  /// A range written in degrees (`{a, 40 Degree, 170 Degree, 1 Degree}`):
+  /// the numbers count degrees and the variable binds the exact angle
+  /// `v Degree`, which the readout typesets as `45°` like Wolfram does.
+  Degree,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -50905,7 +50922,7 @@ fn locator_coordinate_slider(
     is_real: !matches!(value, Expr::Integer(_)),
     exact_initial: matches!(value, Expr::Integer(_)),
     orientation: ControlOrientation::Horizontal,
-    imaginary: false,
+    unit: SliderUnit::Plain,
     reversed: false,
   })
 }
@@ -54964,6 +54981,26 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
     .map(|v| (v, true))
 }
 
+/// The exact number of degrees `q` a static Manipulate bound evaluates to
+/// when it is the angle `q Degree` (`Degree`, `40 Degree`, `45/2 Degree`,
+/// or an exact `0`, the zero angle), else `None`.
+pub fn degree_multiple(expr: &Expr) -> Option<f64> {
+  let (expr, _) = manipulate_bound_expr_deep(expr);
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  let is_degree = |e: &Expr| matches!(e, Expr::Constant(s) | Expr::Identifier(s) if s == "Degree");
+  let (n, d) = match &evaluated {
+    Expr::Integer(0) => (0, 1),
+    e if is_degree(e) => (1, 1),
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() == 2 && is_degree(&args[1]) =>
+    {
+      crate::functions::math_ast::numeric_utils::expr_to_rational(&args[0])?
+    }
+    _ => return None,
+  };
+  (d != 0).then(|| n as f64 / d as f64)
+}
+
 /// [`eval_manipulate_bound`] extended to bounds on the imaginary axis: a
 /// purely imaginary value (`-2 I`) resolves to its imaginary coefficient and
 /// is flagged (third element) so the control binds `Complex[0, value]`.
@@ -55555,7 +55592,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     is_real: false,
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
-    imaginary: false,
+    unit: SliderUnit::Plain,
     reversed: false,
   };
   Some(ManipulateSpec {
@@ -55742,7 +55779,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     is_real,
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
-    imaginary: false,
+    unit: SliderUnit::Plain,
     reversed: false,
   };
   Some(ManipulateSpec {
@@ -59980,11 +60017,11 @@ fn parse_manipulate_control(
     }
     (true, true) => {}
   }
-  let step = bounds
+  let mut step = bounds
     .get(2)
     .and_then(|e| eval_manipulate_bound(e))
     .map(|(v, _)| v);
-  let initial = match explicit_initial.as_ref() {
+  let mut initial = match explicit_initial.as_ref() {
     Some(init) => eval_manipulate_axis_bound(init).map_or(min, |(v, _, _)| v),
     None => min,
   };
@@ -60011,6 +60048,41 @@ fn parse_manipulate_control(
           && !manipulate_bound_is_inexact(bounds[0])
       }
     };
+
+  // A static range stepped in exact `Degree` multiples (`{a, 40 Degree,
+  // 170 Degree, 1 Degree}`) keeps every position an exact angle: Wolfram
+  // binds `96 Degree` and reads it out as `96°`, not `8π/15`. The slider
+  // then counts degrees and binds `v Degree`.
+  // `degree_multiple` only accepts bounds that evaluate to exact angles on
+  // their own, so such a range never follows another control and keeps no
+  // re-resolvable bound code (which would yield radians, not degrees).
+  let mut min_code = min_code;
+  let mut max_code = max_code;
+  let unit = if imaginary {
+    SliderUnit::Imaginary
+  } else {
+    let degree_counts = || {
+      if is_real {
+        return None;
+      }
+      let lo = degree_multiple(bounds[0])?;
+      let hi = degree_multiple(bounds[1])?;
+      let du = degree_multiple(bounds.get(2)?)?;
+      let init = match explicit_initial.as_ref() {
+        Some(init) => degree_multiple(init)?,
+        None => lo,
+      };
+      Some((lo, hi, du, init))
+    };
+    match degree_counts() {
+      Some((lo, hi, du, init)) => {
+        (min, max, step, initial) = (lo, hi, Some(du), init);
+        (min_code, max_code) = (None, None);
+        SliderUnit::Degree
+      }
+      None => SliderUnit::Plain,
+    }
+  };
 
   // A `Trigger`/`Animator` control is a play button sweeping its variable
   // over the range: the widget animates that variable (a Trigger starts
@@ -60096,7 +60168,7 @@ fn parse_manipulate_control(
       is_real,
       exact_initial,
       orientation,
-      imaginary,
+      unit,
       reversed,
     },
     enabled,
@@ -60219,7 +60291,7 @@ fn parse_list_element_manipulator(
       is_real,
       exact_initial: false,
       orientation: ControlOrientation::Horizontal,
-      imaginary: false,
+      unit: SliderUnit::Plain,
       reversed,
     },
   })
@@ -60623,15 +60695,11 @@ pub fn manipulate_initial_bindings(
         initial,
         is_real,
         exact_initial,
-        imaginary,
+        unit,
         ..
       } => Some((
         name.clone(),
-        continuous_binding_code(
-          *initial,
-          *is_real && !*exact_initial,
-          *imaginary,
-        ),
+        continuous_binding_code(*initial, *is_real && !*exact_initial, *unit),
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
@@ -60724,28 +60792,23 @@ fn format_f64_input(v: f64) -> String {
   }
 }
 
-/// Format an f64 as an exact InputForm literal: a whole number stays an
-/// integer and a fraction with a small denominator (`1.5`, `0.16666666666666666`)
-/// becomes the rational `3/2` / `1/6`. A continuous control whose spec is all
-/// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
-/// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
-/// A value with no small-denominator form falls back to the decimal literal.
-/// InputForm of a continuous control's value: a real number, or the
-/// complex number `Complex[0, value]` for a control along the imaginary axis.
+/// InputForm of a continuous control's value: a real number, the complex
+/// number `Complex[0, value]` for a control along the imaginary axis, or
+/// the angle `value*Degree` for one counting degrees.
 pub fn continuous_binding_code(
   value: f64,
   is_real: bool,
-  imaginary: bool,
+  unit: SliderUnit,
 ) -> String {
   let inner = if is_real {
     format_f64_real(value)
   } else {
     format_f64_exact(value)
   };
-  if imaginary {
-    format!("Complex[0, {inner}]")
-  } else {
-    inner
+  match unit {
+    SliderUnit::Plain => inner,
+    SliderUnit::Imaginary => format!("Complex[0, {inner}]"),
+    SliderUnit::Degree => format!("{inner}*Degree"),
   }
 }
 
@@ -60758,12 +60821,12 @@ pub fn continuous_binding_code(
 pub fn continuous_value_label_svg(
   value: f64,
   is_real: bool,
-  imaginary: bool,
+  unit: SliderUnit,
 ) -> Option<String> {
   if is_real {
     return None;
   }
-  let code = continuous_binding_code(value, false, imaginary);
+  let code = continuous_binding_code(value, false, unit);
   let expr = crate::syntax::string_to_expr(&code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
   match evaluated {
@@ -60772,6 +60835,12 @@ pub fn continuous_value_label_svg(
   }
 }
 
+/// Format an f64 as an exact InputForm literal: a whole number stays an
+/// integer and a fraction with a small denominator (`1.5`, `0.16666666666666666`)
+/// becomes the rational `3/2` / `1/6`. A continuous control whose spec is all
+/// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
+/// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
+/// A value with no small-denominator form falls back to the decimal literal.
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
