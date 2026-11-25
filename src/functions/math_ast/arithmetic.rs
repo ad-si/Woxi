@@ -14643,9 +14643,23 @@ fn literal_real_f64(expr: &Expr) -> Option<f64> {
 /// `1.605*10^1355718576299609` (and, by symmetry, `$MinNumber`).
 fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
   const MAX_LOG10: f64 = 1.3557185762996092e15;
-  let b = literal_real_f64(base)?;
+  // The decimal magnitude of the base. An arbitrary-precision base may lie
+  // outside the machine range, so it is read from its digit string.
+  let log10_base = if let Expr::BigFloat(..) = base {
+    let (mantissa, exponent) = scaled_parts(base)?;
+    if mantissa == 0.0 {
+      return None;
+    }
+    mantissa.abs().log10() + exponent as f64
+  } else {
+    let b = literal_real_f64(base)?;
+    if b == 0.0 || !b.is_finite() {
+      return None;
+    }
+    b.abs().log10()
+  };
   let e = literal_real_f64(exp)?;
-  if b == 0.0 || !b.is_finite() || e.is_nan() {
+  if e.is_nan() {
     return None;
   }
   // `|b| == 1` never leaves the range however large the exponent — and with
@@ -14660,7 +14674,7 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
   } else {
     MAX_LOG10
   };
-  let magnitude = e * b.abs().log10();
+  let magnitude = e * log10_base;
   #[allow(clippy::neg_cmp_op_on_partial_ord)]
   if !(magnitude.abs() > limit) {
     return None;
@@ -18115,8 +18129,10 @@ fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
   };
   match e {
     Expr::BigFloat(digits, _) => {
-      if digits.contains(['e', 'E', '*']) {
-        return digits.parse::<f64>().ok().map(decompose);
+      if let Some((mantissa, exponent)) =
+        crate::functions::math_ast::numerical::split_compact_digits(digits)
+      {
+        return Some((mantissa.parse::<f64>().ok()?, exponent));
       }
       let (neg, abs) = match digits.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -18224,6 +18240,14 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
       .fold(0.0f64, f64::max)
       .max(precision_of(sum_val))
       + max_mag.max(0.0);
+    // Digits below the error of the sum carry no information, so a sum
+    // whose largest summand is far outside the machine range needs no
+    // more than the digits that summand resolves.
+    let max_prec = if sum_error > 0.0 && sum_error.is_finite() {
+      max_prec.min((-sum_error.log10()).max(0.0) + 20.0)
+    } else {
+      max_prec
+    };
     let bits = nominal_bits(max_prec.ceil() as usize);
     if let Ok(mut cc) = crate::functions::math_ast::numerical::astro_consts() {
       let mut sum = BigFloat::from_i32(0, bits);
@@ -18619,6 +18643,12 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args {
     let factor = expr_to_bigfloat(arg, bits, rm, &mut cc)?;
     product = product.mul(&factor, bits, rm);
+  }
+  // Past the range of the number type itself.
+  if product.is_inf() {
+    return Ok(crate::functions::math_ast::numerical::out_of_range_result(
+      true,
+    ));
   }
 
   let digits = wl_fraction_digits(&product, result_prec);

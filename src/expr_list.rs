@@ -56,6 +56,8 @@ struct TreeData {
   /// The memoized flag of `cached_all`. Clones of a tree hold the same
   /// elements, so they share it; any mutation gives the tree a fresh one.
   flag: Arc<OnceLock<bool>>,
+  /// The epoch mark of `evaluated_at`, shared and reset like `flag`.
+  evaluated_at: Arc<AtomicU64>,
 }
 
 /// Payload of the shared representation: the elements plus a lazily computed
@@ -145,6 +147,7 @@ impl ExprList {
       }
       Inner::Tree(t) => {
         t.flag = Arc::default();
+        t.evaluated_at = Arc::default();
         ReprMut::Tree(t)
       }
     }
@@ -218,20 +221,23 @@ impl ExprList {
 
   /// The epoch (see `crate::epoch`) at which the expression holding this
   /// list as its elements or arguments was last found to evaluate to
-  /// itself; 0 when it never was, or the list is not shared.
+  /// itself; 0 when it never was, or the list is a plain `Vec`.
   pub fn evaluated_at(&self) -> u64 {
     match &self.inner {
       Inner::Shared(s) => s.evaluated_at.load(Ordering::Relaxed),
-      _ => 0,
+      Inner::Tree(t) => t.evaluated_at.load(Ordering::Relaxed),
+      Inner::Vec(_) => 0,
     }
   }
 
   /// Record that the expression holding this list evaluated to itself at
-  /// `epoch`. Every clone of a shared list sees the mark; it is dropped by
-  /// the next mutation. No-op for an unshared list.
+  /// `epoch`. Every clone of a shared or tree-backed list sees the mark; it
+  /// is dropped by the next mutation. No-op for a plain `Vec` list.
   pub fn mark_evaluated(&self, epoch: u64) {
-    if let Inner::Shared(s) = &self.inner {
-      s.evaluated_at.store(epoch, Ordering::Relaxed);
+    match &self.inner {
+      Inner::Shared(s) => s.evaluated_at.store(epoch, Ordering::Relaxed),
+      Inner::Tree(t) => t.evaluated_at.store(epoch, Ordering::Relaxed),
+      Inner::Vec(_) => {}
     }
   }
 
@@ -337,6 +343,7 @@ impl ExprList {
         data: v.into_iter().collect(),
         cache: OnceLock::new(),
         flag: Arc::default(),
+        evaluated_at: Arc::default(),
       }));
     }
   }
@@ -397,6 +404,7 @@ impl ExprList {
     self.upgrade_to_tree();
     if let Inner::Tree(t) = &mut self.inner {
       t.flag = Arc::default();
+      t.evaluated_at = Arc::default();
       t.data.push_front(e);
     }
   }
@@ -521,6 +529,7 @@ impl ExprList {
             data: tail,
             cache: OnceLock::new(),
             flag: Arc::default(),
+            evaluated_at: Arc::default(),
           })),
         }
       }
@@ -622,6 +631,7 @@ impl ExprList {
               data: copy,
               cache: OnceLock::new(),
               flag: Arc::default(),
+              evaluated_at: Arc::default(),
             })),
           }
         }
@@ -718,6 +728,7 @@ impl Clone for ExprList {
           data: t.data.clone(),
           cache: OnceLock::new(),
           flag: Arc::clone(&t.flag),
+          evaluated_at: Arc::clone(&t.evaluated_at),
         })),
       },
     }
