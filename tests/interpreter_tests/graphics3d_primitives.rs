@@ -3871,7 +3871,7 @@ mod range_padding {
       .filter(|p| on_box_corner(p))
       .map(|p| (p.0.round() as i64, p.1.round() as i64))
       .collect();
-    hits.sort();
+    hits.sort_unstable();
     hits.dedup();
     assert!(hits.len() >= 4, "{hits:?}\n{s}");
   }
