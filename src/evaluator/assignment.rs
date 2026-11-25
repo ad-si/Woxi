@@ -3418,14 +3418,17 @@ fn assign_part(
       // The whole association was replaced by a non-association value.
       other => StoredValue::ExprVal(other.clone()),
     };
-    crate::ENV.with(|e| e.borrow_mut().insert(var_name.clone(), new_value));
+    crate::ENV.with(|e| {
+      e.borrow_mut_own_value(&var_name)
+        .insert(var_name.clone(), new_value)
+    });
     crate::evaluator::part_extraction::note_part_assigned(&var_name);
     return Ok(rhs_value);
   }
 
   // General Part assignment: modify in-place if ExprVal, otherwise parse/modify/store
   let modified_in_place = crate::ENV.with(|e| {
-    let mut env = e.borrow_mut();
+    let mut env = e.borrow_mut_own_value(&var_name);
     if let Some(StoredValue::ExprVal(expr)) = env.get_mut(&var_name) {
       if is_sparse_array(expr) {
         return set_part_sparse(expr, &eval_indices, &rhs_value);
@@ -3469,7 +3472,7 @@ fn assign_part(
       return Err(err);
     }
     crate::ENV.with(|e| {
-      e.borrow_mut()
+      e.borrow_mut_own_value(&var_name)
         .insert(var_name.clone(), StoredValue::ExprVal(stored_expr))
     });
     crate::evaluator::part_extraction::note_part_assigned(&var_name);
@@ -3778,7 +3781,19 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         && (crate::evaluator::core_eval::is_shared_inert_list(items)
           || !crate::syntax::mentions_symbol(&rhs_value, var_name))
       {
-        items.mark_evaluated(crate::epoch::current_epoch());
+        // A value that mentions only protected symbols stays evaluated
+        // across later assignments to other symbols (an accumulator
+        // `list = Append[list, item]` read between the assignments of the
+        // loop around it), exactly as one verified on a later read does.
+        items.mark_evaluated(
+          if crate::evaluator::core_eval::mentions_only_protected_symbols(
+            &rhs_value,
+          ) {
+            crate::epoch::current_protected_epoch()
+          } else {
+            crate::epoch::current_epoch()
+          },
+        );
       }
     } else {
       // A symbol keeps its context: `cache = wcache` inside a package has to
@@ -5141,7 +5156,7 @@ pub fn set_delayed_ast(
     };
     // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed
     ENV.with(|e| {
-      e.borrow_mut()
+      e.borrow_mut_own_value(var_name)
         .insert(var_name.clone(), StoredValue::ExprVal(stored))
     });
     return Ok(null_expr());

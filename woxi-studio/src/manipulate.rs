@@ -8,7 +8,9 @@
 //! that free control variables are substituted.
 
 use iced::widget::svg;
-pub use woxi::functions::graphics::{ControlOrientation, ControlPlacement};
+pub use woxi::functions::graphics::{
+  ControlOrientation, ControlPlacement, SliderUnit,
+};
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
@@ -98,9 +100,10 @@ pub enum ControlState {
     /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
     /// instead of the default horizontal `slider`.
     orientation: ControlOrientation,
-    /// The range runs along the imaginary axis; `min`/`max`/`current` hold
-    /// imaginary coefficients and the variable binds `Complex[0, current]`.
-    imaginary: bool,
+    /// The unit `min`/`max`/`current` count in (see
+    /// `woxi::functions::graphics::SliderUnit`): imaginary coefficients
+    /// binding `Complex[0, current]`, or degrees binding `current*Degree`.
+    unit: SliderUnit,
     /// The range was written high-to-low (see
     /// `ManipulateControl::Continuous::reversed`): `min`/`max` stay sorted,
     /// and the widget mirrors its track so the first bound sits on the left.
@@ -405,12 +408,12 @@ impl ControlState {
         current,
         is_real,
         exact_value,
-        imaginary,
+        unit,
         ..
       } => woxi::functions::graphics::continuous_binding_code(
         *current,
         *is_real && *exact_value != Some(*current),
-        *imaginary,
+        *unit,
       ),
       ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
@@ -490,8 +493,21 @@ impl ControlState {
         step,
         min,
         max,
+        unit,
         ..
       } => {
+        // A slider counting degrees takes an angle (`96 Degree`, or the
+        // radians of a machine real) as that many degrees.
+        if *unit == SliderUnit::Degree {
+          if let Some(q) = woxi::functions::graphics::degree_multiple(&expr) {
+            *current = q;
+            *exact_value = Some(q);
+          } else if let Some(v) = as_f64(&expr) {
+            *current = v.to_degrees();
+            *exact_value = None;
+          }
+          return;
+        }
         if let Some(v) = as_f64(&expr) {
           *current = v;
           // An exact value (`2/3` from a linked `{2/3 -> "astroid", …}`
@@ -699,6 +715,66 @@ pub fn button_regions_of(svg: &str) -> Vec<ButtonRegion> {
           }
         }
         _ => {}
+      }
+    }
+  }
+  let mut regions = Vec::new();
+  walk(tree.root(), &mut regions);
+  regions
+}
+
+/// The shapes of a `Tooltip[g, label]` drawn inside a rendered picture:
+/// their bounding rectangle in the picture's pixel coordinates and the label
+/// text to show while the pointer is over it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TooltipRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub text: String,
+}
+
+/// Find the shapes of every `Tooltip` the renderer marked in `svg` (see
+/// `woxi::functions::graphics::TOOLTIP_HIT_ID_PREFIX`). The picture is laid
+/// out with the embedded fonts, so a tooltip on a `Text` gets the area of
+/// its glyphs. A tooltip nested in another one comes after it, so the
+/// innermost label is the one on top.
+pub fn tooltip_regions_of(svg: &str) -> Vec<TooltipRegion> {
+  use resvg::usvg;
+  use std::sync::{Arc, OnceLock};
+  use woxi::functions::graphics::{
+    TOOLTIP_HIT_ID_PREFIX, tooltip_text_from_hit_id,
+  };
+  if !svg.contains(TOOLTIP_HIT_ID_PREFIX) {
+    return Vec::new();
+  }
+  static FONTDB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+  let fontdb = FONTDB.get_or_init(|| {
+    let mut db = usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    Arc::new(db)
+  });
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let Ok(tree) = usvg::Tree::from_str(svg, &opts) else {
+    return Vec::new();
+  };
+  fn walk(group: &usvg::Group, out: &mut Vec<TooltipRegion>) {
+    for node in group.children() {
+      if let usvg::Node::Group(g) = node {
+        if let Some(text) = tooltip_text_from_hit_id(g.id()) {
+          let r = g.abs_bounding_box();
+          if r.width() > 0.0 || r.height() > 0.0 {
+            out.push(TooltipRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              text,
+            });
+          }
+        }
+        walk(g, out);
       }
     }
   }
@@ -1115,6 +1191,9 @@ pub struct ManipulateState {
   /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
   /// coordinates. The view overlays a real clickable area on each.
   pub button_regions: Vec<ButtonRegion>,
+  /// `Tooltip`-wrapped shapes drawn in the picture; the view shows a
+  /// region's label while the pointer is over it.
+  pub tooltip_regions: Vec<TooltipRegion>,
   /// `ClickPane`s drawn in the picture; a click inside one runs its handler
   /// on the click position.
   pub click_regions: Vec<ClickRegion>,
@@ -1234,9 +1313,11 @@ pub struct ManipulateState {
   /// `(control name, icon)`. Re-rendered with the captions on every change.
   pub label_svgs: Vec<(String, LabelIcon)>,
   /// Typeset slider value readouts (see [`Self::continuous_value_icon`]),
-  /// keyed by the value's bits and whether it binds as a machine real.
+  /// keyed by the value's bits, whether it binds as a machine real, and the
+  /// slider's unit.
   /// Filled lazily from `view`, hence the interior mutability.
-  value_icons: std::cell::RefCell<Vec<((u64, bool, bool), Option<LabelIcon>)>>,
+  value_icons:
+    std::cell::RefCell<Vec<((u64, bool, SliderUnit), Option<LabelIcon>)>>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -1361,21 +1442,21 @@ impl ManipulateState {
       current,
       is_real,
       exact_value,
-      imaginary,
+      unit,
       ..
     } = ctrl
     else {
       return None;
     };
     let real = *is_real && *exact_value != Some(*current);
-    let key = (current.to_bits(), real, *imaginary);
+    let key = (current.to_bits(), real, *unit);
     if let Some((_, icon)) =
       self.value_icons.borrow().iter().find(|(k, _)| *k == key)
     {
       return icon.clone();
     }
     let icon = woxi::functions::graphics::continuous_value_label_svg(
-      *current, real, *imaginary,
+      *current, real, *unit,
     )
     .map(LabelIcon::from_svg);
     let mut cache = self.value_icons.borrow_mut();
@@ -1508,6 +1589,7 @@ impl ManipulateState {
       display_trees: Vec::new(),
       graphics_handle: None,
       button_regions: Vec::new(),
+      tooltip_regions: Vec::new(),
       click_regions: Vec::new(),
       display_pane_action: None,
       mouse_region: None,
@@ -2976,6 +3058,7 @@ impl ManipulateState {
         if let Some(svg) = result.graphics {
           let handle = text_svg_handle(&svg);
           self.button_regions = button_regions_of(&svg);
+          self.tooltip_regions = tooltip_regions_of(&svg);
           self.click_regions = click_regions_of(&svg);
           self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
@@ -2988,6 +3071,7 @@ impl ManipulateState {
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
           self.button_regions.clear();
+          self.tooltip_regions.clear();
           self.click_regions.clear();
           self.mouse_region = None;
           self.typeset_output =
@@ -3009,6 +3093,7 @@ impl ManipulateState {
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
         self.button_regions.clear();
+        self.tooltip_regions.clear();
         self.click_regions.clear();
         self.mouse_region = None;
         self.text_output = None;
@@ -3285,7 +3370,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         is_real,
         exact_initial,
         orientation,
-        imaginary,
+        unit,
         reversed,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
@@ -3303,7 +3388,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           is_real: *is_real,
           exact_value: exact_initial.then_some(*initial),
           orientation: *orientation,
-          imaginary: *imaginary,
+          unit: *unit,
           reversed: *reversed,
         }
       }
@@ -4987,6 +5072,31 @@ mod tests {
   /// variable, which is bound once. A `NumberForm[…]^"∘"` cell typesets as
   /// formatted digits with a raised degree sign, and a `StringForm` cell
   /// with its slots filled by formatted numbers.
+  /// Regression: a control-panel display `Dynamic[Style[TraditionalForm[
+  /// Grid[m, Frame -> All]], 9]]` was flattened into one line of text runs
+  /// instead of drawing the framed grid.
+  #[test]
+  fn styled_traditional_form_grid_display_draws_the_grid() {
+    let code = r#"
+      Manipulate[n,
+        {n, 1, 5, 1},
+        {{m, {{1, 2, 3}, {4, 5, 6}}}, ControlType -> None},
+        Dynamic[Style[TraditionalForm[Grid[m, Frame -> All]], 9]]]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.display_trees.len(), 1, "{:?}", state.display_trees);
+    let DisplayNode::Static { svg: Some(svg), .. } = &state.display_trees[0]
+    else {
+      panic!("display is not a picture: {:?}", state.display_trees[0]);
+    };
+    // The 2x3 grid's frame: three horizontal and four vertical rules.
+    assert_eq!(svg.matches("<line").count(), 7, "{svg}");
+    // Its cells are set at the style's size.
+    assert!(svg.contains("font-size=\"9.0\""), "{svg}");
+  }
+
   #[test]
   fn user_function_custom_control_shows_live_readout() {
     let code = r#"
@@ -5511,6 +5621,46 @@ mod tests {
     let svg = state.current_svg().expect("the plot is drawn");
     // One filled head per arrow.
     assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate shows
+  /// readouts as small tables of strings and numbers with tight `Spacings`,
+  /// all under `Style[…, "Label", size]`, above a picture. Regression check:
+  /// the tables' columns follow the widths of the proportional label face,
+  /// so a narrow string is not set in a column as wide as its character
+  /// count at a fixed advance. This is a self-authored, construct-equivalent
+  /// example.
+  #[test]
+  fn label_styled_readout_table_columns_follow_glyph_widths() {
+    let code = r#"Manipulate[
+      Grid[{
+        {Style[Grid[{{"illi", "MMWM", NumberForm[t, {4, 2}]}},
+           Dividers -> All, Spacings -> 0], "Label", 16]},
+        {Graphics[Disk[{0, 0}, t], PlotRange -> 2, ImageSize -> 120]}}],
+      {{t, 1.}, 0.5, 2}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the readout is drawn");
+    let attr = |line: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = line.find(&key).expect("attribute") + key.len();
+      line[start..start + line[start..].find('"').expect("quote")]
+        .parse()
+        .expect("number")
+    };
+    let mut xs: Vec<f64> = svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+      .map(|l| attr(l, "x1"))
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    assert_eq!(xs.len(), 4, "{svg}");
+    let (narrow, wide) = (xs[1] - xs[0], xs[2] - xs[1]);
+    assert!(narrow < wide * 0.5, "{narrow} vs {wide}: {svg}");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -8055,6 +8205,23 @@ mod tests {
     assert!(!dump.contains('^'), "{dump}");
     assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
+  /// A caption whose fraction has a `\[Cross]` product with a typeset power
+  /// below it (`\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)`, a unit
+  /// such as coulombs per 9×10⁹) reads `C/(9×10⁹)`: the box code after the
+  /// `\*` inside the group is a superscript, and `Cross` is the infix `×`
+  /// rather than a `Cross[…]` call.
+  #[test]
+  fn control_label_typesets_cross_product_with_power_in_fraction() {
+    let code = r#"Manipulate[c, {{c, 1, "charge q/\!\(\*FractionBox[\(C\), \(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]\)"}, -1, 1},
+      {{d, 1, "\!\(\*RowBox[{\"a\", \"\[Cross]\", \"b\"}]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("Cross["), "{dump}");
+    assert!(dump.contains("label: \"charge q/C/(9×10⁹)\""), "{dump}");
+    assert!(dump.contains("label: \"a×b\""), "{dump}");
   }
 
   /// A setter choice captioned with a plain typeset fraction
@@ -10675,6 +10842,51 @@ mod dynamic_feedback_tests {
     state.reevaluate();
     assert_eq!(var(&state, "t"), resting);
   }
+
+  /// A body that frames a captioned `Grid` of two 3D scenes under `Text`
+  /// (`Text@Module[…; Framed@Labeled[Grid[{{Show[…], scene}}], label,
+  /// Bottom]]`) shows the frame's border, and its scenes — unboxed, pinned
+  /// to a `PlotRange` and seen from above at a fixed `ImageSize` — fill
+  /// their cells by the box outline. Regression: the border was dropped and
+  /// the scenes were framed by their sphere, at about 0.7× that size.
+  #[test]
+  fn framed_captioned_grid_of_3d_scenes_keeps_frame_and_outline_fit() {
+    let code = r#"Manipulate[
+      Text@Module[{g},
+        g = Graphics3D[{Line[{{-12, 0, 0}, {n, 0, 0}}]}, Boxed -> False,
+          PlotRange -> {{-12, 12}, {-12, 12}, {-5, 5}},
+          ViewPoint -> {0, 0, 6}, ImageSize -> {200, 200}];
+        Framed@Labeled[Grid[{{Show[g, g], g}}],
+          Style[Row[{n, " units"}], 16, Blue], Bottom]],
+      {{n, 12, "reach"}, 2, 12, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      svg.contains(r#"fill="none" stroke="black" stroke-width="1""#),
+      "the frame's border: {svg:.600}"
+    );
+    assert!(svg.contains("12 units"), "the caption: {svg:.600}");
+    // Each line runs from x = -12 to x = 12, the whole width of the range,
+    // so it spans most of its 200 px cell (sphere framing: about 135 px).
+    let spans: Vec<f64> = svg
+      .split("<polyline points=\"")
+      .skip(1)
+      .filter_map(|rest| rest.split('"').next())
+      .map(|points| {
+        let xs: Vec<f64> = points
+          .split_whitespace()
+          .filter_map(|pair| pair.split(',').next()?.parse().ok())
+          .collect();
+        xs.iter().copied().fold(f64::MIN, f64::max)
+          - xs.iter().copied().fold(f64::MAX, f64::min)
+      })
+      .collect();
+    assert!(spans.len() >= 2, "{spans:?}");
+    assert!(spans.iter().all(|w| *w > 180.0), "{spans:?}");
+  }
 }
 
 /// Which axes (`[x, y]`) of a 2D control (`Slider2D`, a `Locator` point) the
@@ -10691,5 +10903,72 @@ pub fn movable_axes(
   match [x_min != x_max, y_min != y_max] {
     [false, false] => [true, true],
     axes => axes,
+  }
+}
+
+#[cfg(test)]
+mod tooltip_region_tests {
+  use super::*;
+
+  /// `Tooltip[shape, label]` inside a Manipulate's picture: each wrapped
+  /// shape — a `Text` included — becomes a hover region carrying the label,
+  /// placed where the shape is drawn, and the regions follow the controls.
+  /// Regression: the label was dropped, so a diagram explaining its parts
+  /// through tooltips had nothing to show.
+  #[test]
+  fn tooltip_shapes_in_the_picture_become_hover_regions() {
+    let code = r#"Manipulate[
+      Graphics[{
+        Tooltip[Disk[{1, 1}, 1/2], "left dot"],
+        If[stage >= 1,
+          Tooltip[Text["note", {4, 3}],
+            Column[{Style["note", Bold], "a longer explanation"}]],
+          {}],
+        Rectangle[{2, 0}, {3, 1}]},
+        PlotRange -> {{0, 5}, {0, 4}}, ImageSize -> 250],
+      {{stage, 0, "stage"}, {0, 1}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let [dot] = &state.tooltip_regions[..] else {
+      panic!("expected one region, got {:?}", state.tooltip_regions);
+    };
+    assert_eq!(dot.text, "left dot");
+    // The disk spans x 0.5..1.5 of 0..5 on a 250 px wide picture, and sits
+    // in the lower half of it.
+    assert!((dot.x - 25.0).abs() < 2.0, "{dot:?}");
+    assert!((dot.width - 50.0).abs() < 2.0, "{dot:?}");
+    assert!((dot.height - 50.0).abs() < 2.0, "{dot:?}");
+    assert!(dot.y > 100.0, "{dot:?}");
+
+    assert!(state.select_discrete_index(0, 1));
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let [dot, note] = &state.tooltip_regions[..] else {
+      panic!("expected two regions, got {:?}", state.tooltip_regions);
+    };
+    assert_eq!(dot.text, "left dot");
+    assert_eq!(note.text, "note\na longer explanation");
+    // The text is centered on x = 4 of 0..5 (200 px), in the upper half,
+    // and its region is the size of its glyphs, not empty.
+    assert!(note.width > 10.0 && note.height > 5.0, "{note:?}");
+    let center = note.x + note.width / 2.0;
+    assert!((center - 200.0).abs() < 4.0, "{note:?}");
+    assert!(note.y + note.height < 100.0, "{note:?}");
+  }
+
+  /// A picture without any `Tooltip` has no hover regions.
+  #[test]
+  fn a_picture_without_tooltips_has_no_hover_regions() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2}]",
+    )
+    .expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.tooltip_regions.is_empty());
   }
 }

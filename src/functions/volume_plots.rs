@@ -293,8 +293,10 @@ impl PlotOptions {
   }
 
   /// The `Graphics3D` options: the user's, then the plot's defaults for
-  /// any they do not set.
-  fn graphics_options(&self, vol: &Volume) -> Vec<Expr> {
+  /// any they do not set. A `padded` plot (`SliceDensityPlot3D`,
+  /// `SliceContourPlot3D`) pads its explicit range by `Scaled[0.02]` on
+  /// each side, as Wolfram's do; `DensityPlot3D` leaves it unpadded.
+  fn graphics_options(&self, vol: &Volume, padded: bool) -> Vec<Expr> {
     let mut out = self.graphics.clone();
     let has = |k: &str| {
       out.iter().any(|o| {
@@ -314,6 +316,17 @@ impl PlotOptions {
     }
     if !has("Lighting") {
       defaults.push(rule("Lighting", Expr::String("Neutral".into())));
+    }
+    if padded && !has("PlotRangePadding") {
+      defaults.push(rule(
+        "PlotRangePadding",
+        call(
+          "Scaled",
+          vec![Expr::Real(
+            crate::functions::plot3d::AUTOMATIC_RANGE_PADDING,
+          )],
+        ),
+      ));
     }
     defaults.push(rule("PlotRange", vol.plot_range()));
     out.extend(defaults);
@@ -729,7 +742,7 @@ pub fn slice_density_plot3d_ast(
   }
   let plot = graphics3d(
     vec![vertices.complex(primitives)],
-    opts.graphics_options(&vol),
+    opts.graphics_options(&vol, true),
   );
   let plot = evaluate_expr_to_expr(&plot)?;
   Ok(Some(with_legend(plot, &opts, (lo, hi), None)))
@@ -829,7 +842,7 @@ pub fn slice_contour_plot3d_ast(
   }
   let plot = graphics3d(
     vec![vertices.complex(primitives)],
-    opts.graphics_options(&vol),
+    opts.graphics_options(&vol, true),
   );
   let plot = evaluate_expr_to_expr(&plot)?;
   Ok(Some(with_legend(
@@ -1046,7 +1059,7 @@ pub fn density_plot3d_ast(
       rule("ColorFunction", color_function),
     ],
   );
-  let mut graphics_opts = opts.graphics_options(&vol);
+  let mut graphics_opts = opts.graphics_options(&vol, false);
   graphics_opts.retain(|o| {
     !matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Lighting"))
