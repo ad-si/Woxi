@@ -27126,31 +27126,37 @@ fn simplify_extracts_common_radicals_with_negative_unit_cofactors() {
 mod simplify_list_scalar_equations {
   use super::*;
 
-  /// `Equal` leaves a list compared with a number unevaluated, but
-  /// Simplify and FullSimplify decide it: a list never equals a number.
+  /// `Equal` leaves a list compared with a number unevaluated, and so do
+  /// Simplify and FullSimplify; two lists of different lengths are decided.
   #[test]
-  fn list_never_equals_a_number() {
+  fn list_against_a_number_stays_unevaluated() {
     assert_eq!(interpret("{1, 2} == 3").unwrap(), "{1, 2} == 3");
-    assert_eq!(interpret("Simplify[{1, 2} == 3]").unwrap(), "False");
-    assert_eq!(interpret("FullSimplify[{a, b} == Pi]").unwrap(), "False");
-    assert_eq!(interpret("Simplify[Infinity == {a}]").unwrap(), "False");
+    assert_eq!(interpret("Simplify[{1, 2} == 3]").unwrap(), "{1, 2} == 3");
+    assert_eq!(
+      interpret("FullSimplify[{a, b} == Pi]").unwrap(),
+      "{a, b} == Pi"
+    );
+    assert_eq!(
+      interpret("Simplify[Infinity == {a}]").unwrap(),
+      "Infinity == {a}"
+    );
     assert_eq!(
       interpret("FullSimplify[{1., 2} != Infinity]").unwrap(),
-      "True"
+      "{1., 2} != Infinity"
     );
-    // A symbol may stand for a list, so this stays undecided.
     assert_eq!(interpret("Simplify[{a, b} == c]").unwrap(), "{a, b} == c");
+    assert_eq!(interpret("Simplify[{1, 2} == {1, 2, 3}]").unwrap(), "False");
   }
 
-  /// The decided condition of an `If` picks its branch.
+  /// The undecided condition of an `If` stays held.
   #[test]
-  fn decides_if_condition() {
+  fn keeps_if_condition() {
     assert_eq!(
       interpret(
         "r = {2.5, 1}; FullSimplify[{If[r == Infinity, 1 == 0, x == r[[1]]]}]"
       )
       .unwrap(),
-      "{x == 2.5}"
+      "{If[{2.5, 1} == Infinity, 1 == 0, x == r[[1]]]}"
     );
   }
 }
