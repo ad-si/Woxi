@@ -588,6 +588,33 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// Regression: a plot inside `Framed[…, Background -> color]` painted
+  /// its own opaque plate over the frame's fill. A plot without a
+  /// `Background` is transparent, so the frame's color shows behind it.
+  #[test]
+  fn framed_background_shows_behind_a_plot() {
+    let plate = "<rect x=\"0\" y=\"0\" ";
+    for plot in [
+      "Plot[Sin[x], {x, 0, 6}]",
+      "ListPlot[{1, 3, 2}]",
+      "ListLinePlot[{1, 3, 2}, ImageSize -> {300, 200}]",
+    ] {
+      let svg = svg_of(&format!("Framed[{plot}, Background -> LightBlue]"));
+      assert!(svg.contains("fill=\"rgb(222,240,255)\""), "{plot}: {svg}");
+      assert!(!svg.contains(plate), "{plot}: {svg}");
+      // Without a frame fill the plot is embedded as it is drawn alone.
+      let svg = svg_of(&format!("Framed[{plot}]"));
+      assert!(svg.contains(plate), "{plot}: {svg}");
+    }
+    // A plot's own `Background` stays in front of the frame's.
+    let svg = svg_of(
+      "Framed[Plot[Sin[x], {x, 0, 6}, Background -> Yellow], \
+       Background -> LightBlue]",
+    );
+    assert!(svg.contains("fill=\"rgb(222,240,255)\""), "{svg}");
+    assert!(svg.contains(plate), "{svg}");
+  }
+
   /// Regression: a `Text` under a `Style` inside `Framed`
   /// (`Framed[Style[Text[Grid[…]], 24]]`, a score board) printed the
   /// `Text[…]` call as source instead of drawing its content.
@@ -2460,5 +2487,162 @@ mod list_of_typeset_matrices {
     let (one, two, three) = (at(">1<"), at(">2<"), at(">3<"));
     assert!(!breaks_line(&svg[one..two]), "{svg}");
     assert!(breaks_line(&svg[two..three]), "{svg}");
+  }
+}
+
+mod inline_box_line_breaks {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// A saved definition wraps the source of an inline `\!\(\*…\)` box over
+  /// several lines. Those line breaks lie inside the box escape, so a grid
+  /// cell holding such a string typesets the box on one line (exactly as
+  /// the unwrapped spelling does) instead of breaking it into lines of raw
+  /// `StyleBox[…]` source.
+  #[test]
+  fn line_breaks_inside_an_inline_box_escape_do_not_break_the_cell() {
+    let cell = |t: &str| {
+      format!("Grid[{{{{TraditionalForm[HoldForm[a {t}/b]], \"|\"}}}}]")
+    };
+    let wrapped = svg_of(&cell(
+      r#""\!\(\*\nStyleBox[\"t\",\nFontSlant->\"Italic\"]\)""#,
+    ));
+    let unwrapped =
+      svg_of(&cell(r#""\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)""#));
+    assert!(!wrapped.contains("StyleBox"), "{wrapped}");
+    let size = |svg: &str| svg[..svg.find('>').unwrap()].to_string();
+    assert_eq!(size(&wrapped), size(&unwrapped));
+  }
+
+  /// A line break outside any box escape still starts a new line.
+  #[test]
+  fn line_break_outside_an_inline_box_escape_still_breaks_the_cell() {
+    let svg = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "x\ny"/b]]}}]"#);
+    let one_line = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "xy"/b]]}}]"#);
+    let height = |svg: &str| {
+      let h = svg.find("height=\"").unwrap() + 8;
+      svg[h..h + svg[h..].find('"').unwrap()]
+        .parse::<f64>()
+        .unwrap()
+    };
+    assert!(height(&svg) > height(&one_line), "{svg}");
+  }
+
+  /// A `Dynamic` layout item showing a fixed-size `Pane` of `Text` is laid
+  /// out like the `Pane` item itself: the grid inside measures its text
+  /// cells in the proportional text face, not at the monospace advance.
+  #[test]
+  fn dynamic_fixed_size_pane_of_text_keeps_the_text_face() {
+    let layout = |item: &str| {
+      clear_state();
+      let result =
+        interpret_with_stdout(&format!("Column[{{Graphics[Disk[]], {item}}}]"))
+          .unwrap();
+      result.graphics.unwrap()
+    };
+    let pane = r#"Pane[Text[Grid[{{"a long caption:  ", "x"}}]], {400, 60}]"#;
+    let second_cell_x = |svg: &str| {
+      let at = svg.find(">x<").unwrap();
+      let tag = &svg[svg[..at].rfind("<text").unwrap()..at];
+      let x = tag.find("x=\"").unwrap() + 3;
+      tag[x..x + tag[x..].find('"').unwrap()].to_string()
+    };
+    let plain = layout(pane);
+    let dynamic = layout(&format!("Dynamic[{pane}]"));
+    assert_eq!(second_cell_x(&dynamic), second_cell_x(&plain), "{dynamic}");
+  }
+}
+
+/// Color directives laid out as items are drawn as swatches.
+mod color_swatch_items {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// The `<rect …>` elements of an SVG.
+  fn rects(svg: &str) -> Vec<&str> {
+    svg
+      .match_indices("<rect")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect()
+  }
+
+  /// A color directive laid out as an item is typeset as its swatch — the
+  /// hand-made plot key `Grid[{{"water", Blue}}]` — rather than as the
+  /// `RGBColor[…]` source text.
+  #[test]
+  fn color_items_of_layouts_are_drawn_as_swatches() {
+    for layout in [
+      "Grid[{{\"key\"}, {\"first\", Red}, {\"second\", Blue}}, Frame -> True]",
+      "Row[{\"first\", Red, \"second\", Blue}]",
+      "Column[{\"first\", Red, \"second\", Blue}]",
+      "Grid[{{\"first\", Row[{Red, Blue}]}}]",
+      "Framed[Row[{\"first\", Red, Blue}]]",
+      "Text@Column[{\"first\", Row[{Graphics[Disk[], ImageSize -> 20], \
+       Grid[{{\"a\", Red}, {\"b\", Blue}}]}]}, Alignment -> Center]",
+      "Row[{\"first\", Style[Red, Bold], Style[Blue, 20]}]",
+    ] {
+      let svg = svg_of(layout);
+      assert!(!svg.contains("RGBColor"), "{layout}: {svg}");
+      let fills: Vec<&str> = rects(&svg)
+        .into_iter()
+        .filter(|r| r.contains("width=\"16\""))
+        .collect();
+      assert_eq!(fills.len(), 2, "{layout}: {svg}");
+      assert!(
+        fills[0].contains("fill=\"rgb(255,0,0)\""),
+        "{layout}: {svg}"
+      );
+      assert!(
+        fills[1].contains("fill=\"rgb(0,0,255)\""),
+        "{layout}: {svg}"
+      );
+    }
+  }
+
+  /// Every explicit color head gets a swatch, with its own color.
+  #[test]
+  fn swatches_show_the_color_of_any_color_head() {
+    let svg = svg_of("Row[{Hue[0.5], GrayLevel[0.5], Darker[Green]}]");
+    for head in ["Hue", "GrayLevel", "Darker", "RGBColor"] {
+      assert!(!svg.contains(head), "{head}: {svg}");
+    }
+    let fills = rects(&svg);
+    assert_eq!(fills.len(), 3, "{svg}");
+    assert!(fills[0].contains("fill=\"rgb(0,255,255)\""), "{svg}");
+    assert!(fills[1].contains("fill=\"rgb(128,128,128)\""), "{svg}");
+  }
+
+  /// A color on its own exports as its swatch too, and a color that only
+  /// styles text stays a directive.
+  #[test]
+  fn bare_color_exports_as_a_swatch_and_style_colors_stay_directives() {
+    let svg = svg_of("Red");
+    assert!(!svg.contains("Template"), "{svg}");
+    assert_eq!(rects(&svg).len(), 1, "{svg}");
+    let svg = svg_of("Row[{Style[\"first\", Red], \"second\"}]");
+    assert!(rects(&svg).is_empty(), "{svg}");
+    assert!(svg.contains(">first<"), "{svg}");
+  }
+
+  /// Text output is unchanged: only the drawn form has swatches.
+  #[test]
+  fn color_items_keep_their_text_form() {
+    clear_state();
+    assert_eq!(
+      interpret("Grid[{{1, Red}}]").unwrap(),
+      "Grid[{{1, RGBColor[1, 0, 0]}}]"
+    );
+    assert_eq!(
+      interpret("Row[{\"a\", Red}]").unwrap(),
+      "aRGBColor[1, 0, 0]"
+    );
   }
 }

@@ -458,6 +458,73 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
   }
 }
 
+/// The lines `FaceGrids` rules across the faces of the box `lo..hi`, each
+/// as its two end points. An automatic face is ruled at the ticks of the
+/// two axes it spans; `axis_scale` is the factor between an axis' data
+/// values and its box coordinates.
+fn face_grid_segments(
+  opts: &[Expr],
+  lo: [f64; 3],
+  hi: [f64; 3],
+  axis_scale: [f64; 3],
+) -> Vec<[[f64; 3]; 2]> {
+  let mut segments = Vec::new();
+  for (axis, side, grids) in face_grids_option(opts) {
+    let others: Vec<usize> = (0..3).filter(|&d| d != axis).collect();
+    for (k, &along) in others.iter().enumerate() {
+      let across = others[1 - k];
+      let scale = axis_scale[along];
+      let values: Vec<f64> = match &grids[k] {
+        FaceGridLines::None => Vec::new(),
+        FaceGridLines::Automatic => {
+          tick_values(lo[along] / scale, hi[along] / scale)
+        }
+        FaceGridLines::At(v) => v.clone(),
+      };
+      for v in values {
+        let c = v * scale;
+        if c < lo[along] || c > hi[along] {
+          continue;
+        }
+        let end = |far: bool| {
+          let mut p = [0.0; 3];
+          p[axis] = if side > 0.0 { hi[axis] } else { lo[axis] };
+          p[along] = c;
+          p[across] = if far { hi[across] } else { lo[across] };
+          p
+        };
+        segments.push([end(false), end(true)]);
+      }
+    }
+  }
+  segments
+}
+
+/// The stroke color and width of the `FaceGrids` lines: light gray
+/// hairlines unless `FaceGridsStyle` names a color or thickness.
+fn face_grids_style(opts: &[Expr]) -> (String, f64) {
+  let mut style = StyleState3D::default();
+  if let Some(spec) = opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FaceGridsStyle") => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }) {
+    let spec = evaluate_expr_to_expr(&spec).unwrap_or(spec);
+    apply_3d_directive(&spec, &mut style);
+  }
+  (
+    style.color.map_or_else(
+      || "rgb(217,217,217)".to_string(),
+      |(r, g, b)| format!("rgb({r},{g},{b})"),
+    ),
+    style.thickness.unwrap_or(0.5),
+  )
+}
+
 /// Where each line piece `segs[k]` goes in the draw order of `tris`
 /// (corners `verts`, already back to front): the index just past the last
 /// triangle that covers the piece's midpoint on screen without lying in
@@ -4457,6 +4524,57 @@ fn generate_svg(
     )
   };
 
+  // `FaceGrids`: lines across the faces of the box at the ticks of the two
+  // axes each face spans, cut into pieces that are depth-sorted among the
+  // triangles like the box edges.
+  let (grid_color, grid_width) = face_grids_style(options);
+  let mut grid_edges: Vec<BoxEdge> = Vec::new();
+  {
+    let lo = [x_range.0, y_range.0, z_range.0];
+    let hi = [x_range.1, y_range.1, z_range.1];
+    let in_box = |p: [f64; 3]| -> Point3D {
+      let c = |d: usize| {
+        if hi[d] > lo[d] {
+          ((p[d] - lo[d]) / (hi[d] - lo[d]) * 2.0 - 1.0) * box_ratios[d]
+        } else {
+          0.0
+        }
+      };
+      Point3D {
+        x: c(0),
+        y: c(1),
+        z: c(2),
+      }
+    };
+    for [a, b] in face_grid_segments(options, lo, hi, [1.0; 3]) {
+      let (a, b) = (in_box(a), in_box(b));
+      let lerp = |t: f64| Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        grid_edges.push(BoxEdge {
+          endpoints: [lerp(t0), lerp(t1)],
+          depth: depth(lerp(f64::midpoint(t0, t1)), camera),
+          dash_offset: 0.0,
+        });
+      }
+    }
+    grid_edges.sort_by(|a, b| b.depth.total_cmp(&a.depth));
+  }
+  let grid_edge_svg = |edge: &BoxEdge| {
+    let [(x0, y0), (x1, y1)] = edge.endpoints.map(|p| {
+      let (px, py) = project(p, camera);
+      to_svg(px, py)
+    });
+    format!(
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"{grid_color}\" stroke-width=\"{grid_width}\"/>\n"
+    )
+  };
+
   // Mesh segments are painted among the triangles too, so the surface
   // hides the parts of the mesh it covers.
   let mut sorted_mesh: Vec<&MeshLine> = mesh_lines.iter().collect();
@@ -4491,6 +4609,7 @@ fn generate_svg(
   // Merge-render triangles and box edges back-to-front (painter's algorithm)
   {
     let mut ei = 0; // index into sorted_edges
+    let mut gi = 0; // index into grid_edges
     let mut mi = 0; // index into sorted_mesh
     let mut gradients =
       crate::functions::smooth_shading::GradientDefs::default();
@@ -4502,7 +4621,12 @@ fn generate_svg(
         svg.push_str(&mesh_svg(sorted_mesh[mi]));
         mi += 1;
       }
-      // Emit any box edges that are further from the camera than this triangle
+      // Emit the face-grid pieces and box edges that are further from the
+      // camera than this triangle
+      while gi < grid_edges.len() && grid_edges[gi].depth >= tri.depth {
+        svg.push_str(&grid_edge_svg(&grid_edges[gi]));
+        gi += 1;
+      }
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
         let edge = &sorted_edges[ei];
         let (ex0, ey0) = to_svg(
@@ -4555,7 +4679,10 @@ fn generate_svg(
     for line in &sorted_mesh[mi..] {
       svg.push_str(&mesh_svg(line));
     }
-    // Emit remaining box edges (closest to viewer)
+    // Emit the remaining face-grid pieces and box edges (closest to viewer)
+    for edge in &grid_edges[gi..] {
+      svg.push_str(&grid_edge_svg(edge));
+    }
     while ei < sorted_edges.len() {
       let edge = &sorted_edges[ei];
       let (ex0, ey0) = to_svg(
@@ -5367,8 +5494,8 @@ fn draw_axes_on_box_with_ticks(
     extent.add(sx0, sy0);
     extent.add(sx1, sy1);
 
-    // The axis label sits centered on the axis, clear of the tick labels
-    // already sitting there — where Wolfram puts it.
+    // The label of an axis on a box edge sits centered on the axis, clear
+    // of the tick labels already sitting there — where Wolfram puts it.
     if let Some(label) = axes_labels[ai].as_deref().filter(|l| !l.is_empty()) {
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
       let len = (dx * dx + dy * dy).sqrt();
@@ -5414,8 +5541,21 @@ fn draw_axes_on_box_with_ticks(
           + block_shift
           + font_size as f64 * 0.5;
         let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
-        let (lx, ly) =
-          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let (lx, ly) = if crossing.is_some() {
+          // Axes crossing at an `AxesOrigin` are labeled at their end
+          // farther from the viewer, on the side of the tick marks —
+          // across the axis from the tick labels.
+          let (far_x, far_y) =
+            if depth(end, camera) > depth(axis_origin, camera) {
+              (sx1, sy1)
+            } else {
+              (sx0, sy0)
+            };
+          let reach = font_size as f64 * 1.2 + block_shift;
+          (far_x - perpx * reach * sign, far_y - perpy * reach * sign)
+        } else {
+          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign)
+        };
         let content = if lines.len() == 1 {
           lines[0].clone()
         } else {
@@ -7682,6 +7822,79 @@ fn clip_triangles_to_box(
   out
 }
 
+/// The outlined end circles of a `Cylinder` or `Cone` that the box `bounds`
+/// cuts open, as the line pieces left inside the box. `tris` is the
+/// primitive's tessellation from `tessellate_for_transform`. `None` when the
+/// primitive has no outlined rim (another primitive, `EdgeForm[]`) or none
+/// of it is inside the box.
+fn clipped_rim_lines(
+  prim: &Primitive3D,
+  tris: &[(Point3D, Point3D, Point3D)],
+  bounds: &[(f64, f64); 3],
+) -> Option<Primitive3D> {
+  let (flags, style) = match prim {
+    Primitive3D::Cylinder {
+      p1,
+      p2,
+      radius,
+      style,
+    } if style.edges => {
+      let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
+      let steps = cylinder_side_steps(len, *radius, MAX_SIDE_SUBDIVISIONS);
+      (cylinder_edge_flags(steps, CYLINDER_SIDES), style)
+    }
+    Primitive3D::Cone { style, .. } if style.edges => {
+      (cone_edge_flags(CONE_SIDES), style)
+    }
+    _ => return None,
+  };
+  // Every rim edge borders a side facet and a cap facet; it is drawn once,
+  // and consecutive edges are joined into one polyline so a dash pattern
+  // runs along the whole circle.
+  let key = |p: &Point3D| [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+  let mut seen = std::collections::HashSet::new();
+  let mut chains: Vec<Vec<Point3D>> = Vec::new();
+  for ((a, b, c), on_rim) in tris.iter().zip(&flags) {
+    let corners = [a, b, c];
+    for (e, _) in on_rim.iter().enumerate().filter(|(_, on)| **on) {
+      let (from, to) = (corners[e], corners[(e + 1) % 3]);
+      let (kf, kt) = (key(from), key(to));
+      if !seen.insert(if kf <= kt { (kf, kt) } else { (kt, kf) }) {
+        continue;
+      }
+      match chains.last_mut() {
+        Some(chain) if chain.last().map(key) == Some(kf) => chain.push(*to),
+        Some(chain) if chain.last().map(key) == Some(kt) => chain.push(*from),
+        _ => chains.push(vec![*from, *to]),
+      }
+    }
+  }
+  let segments: Vec<Vec<Point3D>> = chains
+    .iter()
+    .flat_map(|chain| clip_polyline_to_box(chain, bounds))
+    // A circle merely touching the box leaves a piece of no length.
+    .filter(|piece| {
+      piece.windows(2).any(|w| {
+        v_len([w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z]) > 1e-9
+      })
+    })
+    .collect();
+  if segments.is_empty() {
+    return None;
+  }
+  // The outline keeps the look the unclipped primitive's rim has: the
+  // `EdgeForm` color, width and dashing, opaque whatever the faces are.
+  let mut line_style = style.clone();
+  line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
+  line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
+  line_style.dashing = style.edge_dashing.clone();
+  line_style.opacity = 1.0;
+  Some(Primitive3D::Line3D {
+    segments,
+    style: line_style,
+  })
+}
+
 /// The convex polygon a plane through `p` spanned by `u` and `w` cuts out of
 /// the box. `bound` optionally adds the half plane's own edge as one more
 /// half space, so `HalfPlane` stops at its boundary line.
@@ -8181,6 +8394,9 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 /// of the bounding box, far thinner than the curves of a plot.
 const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
 
+/// The outline color of a face under the default `EdgeForm`.
+const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
+
 /// The absolute width a thickness symbol names in 3D (`Thick`,
 /// `Thickness[Large]`, …): the same widths as in 2D graphics.
 fn named_line_thickness(name: &str) -> Option<f64> {
@@ -8291,6 +8507,9 @@ struct FaceFormOverride {
   base_color: Option<(u8, u8, u8)>,
   /// The opacity set by plain directives, for non-face primitives.
   base_opacity: f64,
+  /// Whether a plain color directive followed the `FaceForm`. A round
+  /// solid (`Sphere`, `Cylinder`, `Cone`) is then drawn in that color.
+  recolored: bool,
 }
 
 impl StyleState3D {
@@ -8308,6 +8527,7 @@ impl StyleState3D {
   fn set_plain_color(&mut self, rgb: (u8, u8, u8)) {
     if let Some(fo) = &mut self.face_form {
       fo.base_color = Some(rgb);
+      fo.recolored = true;
       if fo.color.is_none() {
         self.color = Some(rgb);
         self.back_color = None;
@@ -8613,6 +8833,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       opacity: face_opacity,
       base_color,
       base_opacity,
+      recolored: false,
     });
     style.back_color = match args.get(1) {
       Some(back) => {
@@ -10834,6 +11055,17 @@ fn collect_3d_primitives(
     {
       style.without_face_form();
     }
+    // A plain color given after the `FaceForm` is the one a round solid
+    // takes: `{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+    // cylinder between yellow polygons.
+    if let Primitive3D::Sphere { style, .. }
+    | Primitive3D::Cylinder { style, .. }
+    | Primitive3D::Cone { style, .. } = prim
+      && style.face_form.as_ref().is_some_and(|fo| fo.recolored)
+    {
+      style.without_face_form();
+      style.back_color = None;
+    }
   }
 }
 
@@ -11575,10 +11807,22 @@ fn collect_3d_primitives_styled(
               },
             },
           };
+          // Likewise a single radius written as the curve's second argument
+          // (`Tube[BSplineCurve[pts, r]]`) is the tube's radius.
+          let radius_spec = args.get(1).or_else(|| match &args[0] {
+            Expr::FunctionCall { name, args: inner }
+              if name == "BSplineCurve" =>
+            {
+              inner.get(1).filter(|a| {
+                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+              })
+            }
+            _ => None,
+          });
           for pts in curves {
             let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
               rs
-            } else if let Some(spec) = args.get(1) {
+            } else if let Some(spec) = radius_spec {
               let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
               match &spec {
                 Expr::List(items) if items.len() == pts.len() => items
@@ -13148,6 +13392,33 @@ fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
     .collect()
 }
 
+/// For a box of zero thickness along exactly one axis, the index (in
+/// `tessellate_cuboid`'s face order) of the one face to draw: of the two
+/// faces lying in the same plane, the one turned toward the viewer, so the
+/// sheet shows its front color from either side. The other four faces
+/// have no area.
+fn flat_cuboid_visible_face(
+  p_min: &Point3D,
+  p_max: &Point3D,
+  camera: &Camera,
+) -> Option<usize> {
+  let lo = [p_min.x, p_min.y, p_min.z];
+  let hi = [p_max.x, p_max.y, p_max.z];
+  let flat: Vec<usize> = (0..3).filter(|&i| lo[i] == hi[i]).collect();
+  let &[axis] = &flat[..] else {
+    return None;
+  };
+  let center = Point3D {
+    x: f64::midpoint(lo[0], hi[0]),
+    y: f64::midpoint(lo[1], hi[1]),
+    z: f64::midpoint(lo[2], hi[2]),
+  };
+  let toward = camera.toward_viewer(center);
+  // Faces come as bottom, top (z), front, back (y), left, right (x).
+  let first = [4, 2, 0][axis];
+  Some(first + usize::from(toward[axis] > 0.0))
+}
+
 fn hidden_cuboid_faces(
   prims: &[Primitive3D],
 ) -> std::collections::HashSet<(u8, [i64; 5])> {
@@ -13162,7 +13433,14 @@ fn hidden_cuboid_faces(
     } = prim
       && style.opacity >= 1.0
     {
-      for (axis, hi, key) in cuboid_face_keys(p_min, p_max) {
+      let keys = cuboid_face_keys(p_min, p_max);
+      for (i, (axis, hi, key)) in keys.into_iter().enumerate() {
+        // A box of zero thickness along an axis has its own two faces in
+        // one plane. They are its whole visible surface, not an interior
+        // wall between two boxes.
+        if keys[i ^ 1].2 == key {
+          continue;
+        }
         if seen.contains(&(axis, !hi, key)) {
           hidden.insert((axis, key));
         }
@@ -13223,24 +13501,27 @@ pub(crate) fn tessellate_cuboid(
     }, // 7
   ];
   vec![
+    // Each face is wound counterclockwise seen from outside the box, so
+    // its normal points outward and `FaceForm[front, back]` paints the
+    // outside with the front color.
     // Bottom
-    (v[0], v[1], v[2]),
-    (v[0], v[2], v[3]),
+    (v[0], v[2], v[1]),
+    (v[0], v[3], v[2]),
     // Top
-    (v[4], v[6], v[5]),
-    (v[4], v[7], v[6]),
+    (v[4], v[5], v[6]),
+    (v[4], v[6], v[7]),
     // Front
-    (v[0], v[5], v[1]),
-    (v[0], v[4], v[5]),
+    (v[0], v[1], v[5]),
+    (v[0], v[5], v[4]),
     // Back
-    (v[2], v[7], v[3]),
-    (v[2], v[6], v[7]),
+    (v[2], v[3], v[7]),
+    (v[2], v[7], v[6]),
     // Left
-    (v[0], v[3], v[7]),
-    (v[0], v[7], v[4]),
+    (v[0], v[7], v[3]),
+    (v[0], v[4], v[7]),
     // Right
-    (v[1], v[5], v[6]),
-    (v[1], v[6], v[2]),
+    (v[1], v[6], v[5]),
+    (v[1], v[2], v[6]),
   ]
 }
 
@@ -13581,6 +13862,19 @@ fn point_disk_padding(
     }
   }
   pad
+}
+
+/// The radius of the largest `Point` dot in the scene, 0 without any.
+fn largest_point_dot_radius(prims: &[Primitive3D]) -> f64 {
+  prims
+    .iter()
+    .filter_map(|prim| match prim {
+      Primitive3D::Point3DPrim { points, style } if !points.is_empty() => {
+        Some(point_dot_radius(style))
+      }
+      _ => None,
+    })
+    .fold(0.0, f64::max)
 }
 
 thread_local! {
@@ -14636,8 +14930,34 @@ fn resolve_scaled_sphere_radii(
 
 /// The world-coordinate bounding box of a set of 3D primitives, as
 /// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
-/// to bound.
+/// to bound. An axis the contents do not extend along (a flat polygon, a
+/// vertical line) is given a range as Wolfram does: from 0 to twice the
+/// value (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
 fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
+  let widen = |(lo, hi): (f64, f64)| {
+    if lo.is_finite() && hi.is_finite() && range_is_flat((lo, hi)) {
+      let c = f64::midpoint(lo, hi);
+      if c == 0.0 {
+        (-1.0, 1.0)
+      } else {
+        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
+      }
+    } else {
+      (lo, hi)
+    }
+  };
+  primitives_extent(prims).map(widen)
+}
+
+/// Whether the contents do not extend along an axis whose range is
+/// `(lo, hi)` (a flat polygon, a vertical line).
+fn range_is_flat((lo, hi): (f64, f64)) -> bool {
+  hi - lo <= 1e-12 * lo.abs().max(1.0)
+}
+
+/// The bounding box of a set of 3D primitives as the contents span it: an
+/// axis they do not extend along keeps its zero-width range.
+fn primitives_extent(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   let mut x3_min = f64::INFINITY;
   let mut x3_max = f64::NEG_INFINITY;
   let mut y3_min = f64::INFINITY;
@@ -14814,27 +15134,7 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
     }
   }
-  // An axis the contents do not extend along (a flat polygon, a vertical
-  // line) is given a range as Wolfram does: from 0 to twice the value
-  // (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
-  let widen = |(lo, hi): (f64, f64)| {
-    if lo.is_finite() && hi.is_finite() && hi - lo <= 1e-12 * lo.abs().max(1.0)
-    {
-      let c = f64::midpoint(lo, hi);
-      if c == 0.0 {
-        (-1.0, 1.0)
-      } else {
-        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
-      }
-    } else {
-      (lo, hi)
-    }
-  };
-  [
-    widen((x3_min, x3_max)),
-    widen((y3_min, y3_max)),
-    widen((z3_min, z3_max)),
-  ]
+  [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
 }
 
 /// How much wider than the sphere's projected circle a sphere-framed
@@ -14844,6 +15144,14 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
 /// one morphing surface) all draw it 0.90–0.91× as large as the bare circle
 /// fit, while one with `ImagePadding -> 20` fills the padded region.
 const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
+
+/// Longest-to-shortest side ratio up to which an invisible box counts as
+/// compact and is sphere-framed in a picture of fixed size (see its use in
+/// `graphics3d_ast`). Wolfram's snapshots put the limit between a
+/// 2 × 4 × 4 box (a plane crossed by an arrow, sphere-framed at
+/// `ImageSize -> {400, 400}`) and a 4 × 4 × 10 one (a tall building
+/// filling a 300 × 400 picture).
+const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
@@ -15428,6 +15736,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // A curved solid that crosses the box is cut open along it: its
     // facets are clipped like polygons (Wolfram does not cap the cut).
+    // The end circles its `EdgeForm` outlines are kept as far as they lie
+    // inside the box.
+    let mut cut_rims: Vec<Primitive3D> = Vec::new();
     for prim in &mut prims {
       let curved = matches!(
         prim,
@@ -15449,6 +15760,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let clipped = clip_triangles_to_box(&tris, &bounds);
+      if let Some(rims) = clipped_rim_lines(prim, &tris, &bounds) {
+        cut_rims.push(rims);
+      }
       let style = primitive_style(prim).clone();
       let (smooth, outlined) = match prim {
         Primitive3D::Surface3D {
@@ -15466,6 +15780,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(
       |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
     );
+    prims.extend(cut_rims);
 
     // Points, and text anchored at a point, outside the box are not drawn
     // (e.g. a label placed above a plot whose range `Show` inherits).
@@ -15552,21 +15867,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // default size, pinned to a 100 × 100 × 20 `PlotRange` and seen from
   // `ViewPoint -> {0, 0, 1}`, spans about 110 units of the picture, as the
   // outline fit does (sphere framing would span 204).
+  // A scene that is one cell of a `Grid`, `Row`, `Column` or list rather
+  // than a picture of its own keeps the outline fit: Wolfram's snapshot of
+  // a Demonstration's `Grid` of two unboxed scenes pinned to a 24 × 24 × 10
+  // `PlotRange` at `ImageSize -> {290, 290}`, seen from `ViewPoint ->
+  // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
+  // below their `PlotLabel` does (sphere framing would span 180). The
+  // layout draws such a cell again (see `outline_fitted_cell_svg`).
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
-  let spherical_region = spherical_region
-    || (!spherical_region_off
-      && manipulate_frame
-      && explicitly_framed
-      && explicit_height
-      && aspect_ratio.is_none())
-    || (!spherical_region_off
-      && explicitly_framed
-      && !show_box
-      && explicit_height
-      && !full_width
-      && !aspect_full
-      && aspect_ratio.is_none()
-      && view_angle.is_none());
+  let automatic_sphere = !spherical_region
+    && !spherical_region_off
+    && !OUTLINE_FIT_CELL.get()
+    && explicitly_framed
+    && explicit_height
+    && aspect_ratio.is_none()
+    && (manipulate_frame
+      || (!show_box && !full_width && !aspect_full && view_angle.is_none()));
+  let spherical_region = spherical_region || automatic_sphere;
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
@@ -15787,7 +16104,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style,
         } => {
           let mut tris = tessellate_cuboid(p_min, p_max);
-          if style.opacity >= 1.0 && !hidden_faces.is_empty() {
+          if let Some(keep) = flat_cuboid_visible_face(p_min, p_max, &camera) {
+            tris.drain(..2 * keep);
+            tris.truncate(2);
+          } else if style.opacity >= 1.0 && !hidden_faces.is_empty() {
             let keys = cuboid_face_keys(p_min, p_max);
             let mut face = 0;
             tris.retain(|_| {
@@ -16271,6 +16591,35 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let view_box_side =
     (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
+  // An invisible box of compact shape (no side much longer than another)
+  // around an automatic range is sphere-framed in a picture of fixed width
+  // and height, even with the default camera: Wolfram's snapshots of the
+  // five Platonic solids, each an unboxed `Graphics3D` at
+  // `ImageSize -> {80, 80}`, draw a unit cube 0.82 × 0.89 of the frame
+  // and a tetrahedron 0.61 × 0.53, off center, as the sphere around the
+  // contents gives (within 3 %), not filling the frame. An elongated box
+  // (a thin 3.4 × 3.4 × 39 cylinder, a tall 4 × 4 × 10 building) keeps
+  // the fit to its contents below, and so do flat contents, whose box is
+  // only as thick as the range Wolfram makes up for it (a planar net of
+  // dots at `ImageSize -> {350, 400}` reaches the picture's edges).
+  let view_box_shortest_side =
+    (x3_max - x3_min).min(y3_max - y3_min).min(z3_max - z3_min);
+  let compact_sphere_framed = !spherical_region
+    && (!spherical_region_off
+      && !show_box
+      && !show_axes
+      && explicit_height
+      && !full_width
+      && !aspect_full
+      && aspect_ratio.is_none()
+      && view_angle.is_none()
+      && plot_range.is_none()
+      && partial_range.is_none()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && view_box_shortest_side > 0.0
+      && view_box_side <= COMPACT_BOX_MAX_SIDE_RATIO * view_box_shortest_side);
+  let spherical_region = spherical_region || compact_sphere_framed;
+
   // Build box corners
   let box_corners = [
     Point3D {
@@ -16530,10 +16879,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Point` on the outline of the scene keeps its disk inside the picture
   // rather than being cut in half by the edge. A Demonstration's unboxed
   // net of `PointSize[Large]` control points at `ImageSize -> {350, 400}`
-  // leaves the same margin of one dot radius on all four sides.
-  if fit_contents && image_padding.is_none() && plot_region.is_none() {
-    let pad =
-      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max]);
+  // leaves the same margin of one dot radius on all four sides. The same
+  // goes for a compact scene framed by the sphere around its contents:
+  // its outermost dots sit on that sphere, which may touch any side.
+  if (fit_contents || compact_sphere_framed)
+    && image_padding.is_none()
+    && plot_region.is_none()
+  {
+    let pad = if compact_sphere_framed {
+      [largest_point_dot_radius(&prims); 4]
+    } else {
+      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max])
+    };
     if pad.iter().any(|p| *p > 0.0) {
       image_padding = Some(pad);
     }
@@ -16800,54 +17157,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `FaceGrids`: light lines across faces of the box at the ticks of the
   // two axes each face spans.
   {
-    let lo = [x3_min, y3_min, z3_min];
-    let hi = [x3_max, y3_max, z3_max];
-    for (axis, side, grids) in face_grids_option(&args[1..]) {
-      let others: Vec<usize> = (0..3).filter(|&d| d != axis).collect();
-      for (k, &along) in others.iter().enumerate() {
-        let across = others[1 - k];
-        let scale = axis_scale[along];
-        let values: Vec<f64> = match &grids[k] {
-          FaceGridLines::None => Vec::new(),
-          FaceGridLines::Automatic => {
-            tick_values(lo[along] / scale, hi[along] / scale)
-          }
-          FaceGridLines::At(v) => v.clone(),
-        };
-        for v in values {
-          let c = v * scale;
-          if c < lo[along] || c > hi[along] {
-            continue;
-          }
-          let point = |t: f64| {
-            let mut p = [0.0; 3];
-            p[axis] = if side > 0.0 { hi[axis] } else { lo[axis] };
-            p[along] = c;
-            p[across] = lo[across] + t * (hi[across] - lo[across]);
-            Point3D {
-              x: p[0],
-              y: p[1],
-              z: p[2],
-            }
-          };
-          for s in 0..EDGE_SUBDIVISIONS {
-            let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-            sorted_edges.push(SceneEdge {
-              endpoints: [point(t0), point(t1)],
-              depth: depth(point(f64::midpoint(t0, t1)), &camera),
-              color: "rgb(217,217,217)".to_string(),
-              width: 0.5,
-              opacity: 1.0,
-              dashing: None,
-              dash_offset: 0.0,
-              dot_radius: None,
-              piece_of: None,
-              arrow_head: false,
-              end_zone: [0.0, 1.0],
-            });
-          }
-        }
+    let (grid_color, grid_width) = face_grids_style(&args[1..]);
+    for [a, b] in face_grid_segments(
+      &args[1..],
+      [x3_min, y3_min, z3_min],
+      [x3_max, y3_max, z3_max],
+      axis_scale,
+    ) {
+      let point = |t: f64| Point3D {
+        x: a[0] + t * (b[0] - a[0]),
+        y: a[1] + t * (b[1] - a[1]),
+        z: a[2] + t * (b[2] - a[2]),
+      };
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        sorted_edges.push(SceneEdge {
+          endpoints: [point(t0), point(t1)],
+          depth: depth(point(f64::midpoint(t0, t1)), &camera),
+          color: grid_color.clone(),
+          width: grid_width,
+          opacity: 1.0,
+          dashing: None,
+          dash_offset: 0.0,
+          dot_radius: None,
+          piece_of: None,
+          arrow_head: false,
+          end_zone: [0.0, 1.0],
+        });
       }
     }
   }
@@ -17362,10 +17699,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tri.opacity,
           &mut texture_ids,
         ) {
-          let edge_stroke = match tri.edge_color {
-            Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-            None => "rgb(64,64,64)".to_string(),
-          };
+          let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+          let edge_stroke = format!("rgb({er},{eg},{eb})");
           let edge_width = tri.edge_width.unwrap_or(1.0);
           let edge_alpha = edge_opacity_attr(tri.edge_opacity);
           for (e, on_outline) in tri.boundary.iter().enumerate() {
@@ -17398,10 +17733,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // the default `EdgeForm`, which stays opaque — so the outline of a
       // transparent face still shows. That is what makes
       // `{Opacity[0], Cuboid[…]}` a wireframe box.
-      let edge_stroke = match tri.edge_color {
-        Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-        None => "rgb(64,64,64)".to_string(),
-      };
+      let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+      let edge_stroke = format!("rgb({er},{eg},{eb})");
       let edge_width = tri.edge_width.unwrap_or(1.0);
       let edge_alpha = edge_opacity_attr(tri.edge_opacity);
       let fill_opacity_attr = if tri.opacity < 1.0 {
@@ -17707,7 +18040,79 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be a `Rule` (`Graphics3D[a -> b]` draws nothing but is legal) and must
   // not be read as one.
   let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  let result = crate::graphics3d_result_with_structure(svg, structure);
+  if automatic_sphere && let Expr::Graphics { svg, .. } = &result {
+    AUTOMATIC_SPHERE_FRAMED.with_borrow_mut(|keys| {
+      if keys.len() >= AUTOMATIC_SPHERE_MEMORY {
+        keys.pop_front();
+      }
+      keys.push_back(svg_hash(svg));
+    });
+  }
+  Ok(result)
+}
+
+/// How many automatically sphere-framed scenes are remembered; the oldest
+/// are forgotten first.
+const AUTOMATIC_SPHERE_MEMORY: usize = 64;
+
+thread_local! {
+  /// Set while a layout draws one of its cells again by the box outline
+  /// (see [`outline_fitted_cell_svg`]).
+  static OUTLINE_FIT_CELL: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+  /// The pictures `graphics3d_ast` framed by their sphere under the default
+  /// `SphericalRegion -> Automatic` (rather than an explicit `True`), by the
+  /// hash of their SVG.
+  static AUTOMATIC_SPHERE_FRAMED: std::cell::RefCell<std::collections::VecDeque<u64>> =
+    const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn svg_hash(svg: &str) -> u64 {
+  use std::hash::{Hash, Hasher};
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  svg.hash(&mut hasher);
+  hasher.finish()
+}
+
+/// A rendered `Graphics3D` that the default `SphericalRegion -> Automatic`
+/// framed by its sphere, drawn again by its box outline — the way it is
+/// shown as a cell of a `Grid`, `Row`, `Column` or list (see the framing
+/// rules in [`graphics3d_ast`]). `None` for any other picture.
+pub fn outline_fitted_cell_svg(expr: &Expr) -> Option<String> {
+  let Expr::Graphics {
+    svg,
+    is_3d: true,
+    structure: Some(structure),
+    ..
+  } = expr
+  else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = structure.as_ref() else {
+    return None;
+  };
+  if name != "Graphics3D"
+    || args.is_empty()
+    || !AUTOMATIC_SPHERE_FRAMED
+      .with_borrow(|keys| keys.contains(&svg_hash(svg)))
+  {
+    return None;
+  }
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      OUTLINE_FIT_CELL.set(self.0);
+    }
+  }
+  let _restore = Restore(OUTLINE_FIT_CELL.replace(true));
+  let captured = crate::captured_graphics_count();
+  let redrawn = graphics3d_ast(args);
+  crate::truncate_captured_graphics(captured);
+  match redrawn {
+    Ok(Expr::Graphics { ref svg, .. }) => Some(svg.clone()),
+    _ => None,
+  }
 }
 
 /// `Prolog -> g` / `Epilog -> g` on a `Graphics3D`: 2-D primitives drawn
@@ -19844,17 +20249,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       other => other.clone(),
     }
   };
-  let bodies_owned: Vec<Expr> = match &args[0] {
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(
-          |it| matches!(it, Expr::List(c) if (1..=3).contains(&c.len())),
-        ) =>
-    {
-      items.iter().map(unwrap_single).collect()
+  // A list whose elements are all lists is a list of curves rather than a
+  // curve, at any depth: `{{r1, z1}, {r2, z2}} /. sol` threads over the
+  // solution list and arrives as `{{{r1, z1}, {r2, z2}}}`, which Wolfram
+  // flattens into its two surfaces.
+  fn collect_curves(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|it| matches!(it, Expr::List(_))) =>
+      {
+        for it in items {
+          collect_curves(it, out);
+        }
+      }
+      other => out.push(other.clone()),
     }
-    other => vec![unwrap_single(other)],
-  };
+  }
+  let mut bodies_owned: Vec<Expr> = Vec::new();
+  collect_curves(&args[0], &mut bodies_owned);
+  let bodies_owned: Vec<Expr> =
+    bodies_owned.iter().map(unwrap_single).collect();
   let bodies: Vec<&Expr> = bodies_owned.iter().collect();
 
   // Parse t iterator
@@ -19892,6 +20307,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -19903,6 +20319,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          axes_labels = parse_axes_labels(replacement, None);
         }
         Expr::Identifier(name) if name == "RevolutionAxis" => {
           if let Some(a) = parse_revolution_axis(replacement) {
@@ -20003,6 +20422,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut global_z_min = f64::INFINITY;
   let mut global_z_max = f64::NEG_INFINITY;
   let mut global_r_max: f64 = 0.0;
+  // The distance from the revolution axis, the `r` a `ColorFunction` is
+  // handed, and the range it is scaled over.
+  let axis_distance = |p: &Point3D| -> f64 {
+    let along = p.x * axis[0] + p.y * axis[1] + p.z * axis[2];
+    (p.x - along * axis[0])
+      .hypot(p.y - along * axis[1])
+      .hypot(p.z - along * axis[2])
+  };
+  let (mut dist_min, mut dist_max) = (f64::INFINITY, f64::NEG_INFINITY);
   let (mut global_x_min, mut global_x_max) = (f64::INFINITY, f64::NEG_INFINITY);
   let (mut global_y_min, mut global_y_max) = (f64::INFINITY, f64::NEG_INFINITY);
   // The sweep is about the z axis unless `RevolutionAxis` says otherwise;
@@ -20113,6 +20541,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         global_z_min = global_z_min.min(z);
         global_z_max = global_z_max.max(z);
         global_r_max = global_r_max.max((x * x + y * y).sqrt());
+        let dist = axis_distance(&Point3D { x, y, z });
+        dist_min = dist_min.min(dist);
+        dist_max = dist_max.max(dist);
       }
     }
     grids.push(grid);
@@ -20141,6 +20572,29 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (global_y_min, global_y_max)
   });
+  // The box is that range padded by `Scaled[0.05]` on each side (none
+  // around an explicit one), as Wolfram's parametric surfaces are, so the
+  // ticks at the surface's extremes fall inside it. Colors are scaled over
+  // the range itself, unpadded.
+  let range_explicit = [x_clip.is_some(), y_clip.is_some(), z_clip.is_some()];
+  let [box_x, box_y, box_z] = {
+    let pads: [(RangePad, RangePad); 3] =
+      range_padding_option(&args[opt_start..]).unwrap_or_else(|| {
+        std::array::from_fn(|d| {
+          let pad = RangePad::Scaled(if range_explicit[d] {
+            0.0
+          } else {
+            PARAMETRIC_RANGE_PADDING
+          });
+          (pad, pad)
+        })
+      });
+    displayed_box_3d(
+      [x_range, y_range, (z_lo, z_hi)],
+      range_explicit,
+      Some(pads),
+    )
+  };
   let extent = |(lo, hi): (f64, f64)| -> f64 {
     if (hi - lo).abs() < 1e-15 {
       1.0
@@ -20166,7 +20620,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let raw_ratios = box_ratios_explicit.unwrap_or(if profile_box {
     [1.0, 1.0, 0.5 * 0.618_033_988_749_894_9]
   } else {
-    [extent(x_range), extent(y_range), extent((z_lo, z_hi))]
+    [extent(box_x), extent(box_y), extent(box_z)]
   });
   let ratio_max = raw_ratios.iter().copied().fold(0.0_f64, f64::max);
   let box_ratios = raw_ratios.map(|r| r / ratio_max);
@@ -20179,31 +20633,48 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scene = Scene::new(&camera, &args[opt_start..]);
 
   let normalize = |p: Point3D| -> Point3D {
-    let axis = |v: f64, (lo, hi): (f64, f64), r: f64| {
-      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), lo, hi) * r
+    // Clipped to the plotted range, placed in the padded box.
+    let place = |v: f64, (lo, hi): (f64, f64), boxed: (f64, f64), r: f64| {
+      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), boxed.0, boxed.1) * r
     };
     Point3D {
-      x: axis(p.x, x_range, box_ratios[0]),
-      y: axis(p.y, y_range, box_ratios[1]),
-      z: axis(p.z, (z_lo, z_hi), box_ratios[2]),
+      x: place(p.x, x_range, box_x, box_ratios[0]),
+      y: place(p.y, y_range, box_y, box_ratios[1]),
+      z: place(p.z, (z_lo, z_hi), box_z, box_ratios[2]),
     }
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
   // at the facet's center in world coordinates; it takes precedence over
   // `PlotStyle`.
-  let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
-    color_fn.is_set().then_some(())?;
-    let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
-    color_fn.style_at(
-      [
-        mid(&|p| p.x),
-        mid(&|p| p.y),
-        mid(&|p| p.z.clamp(z_lo, z_hi)),
-      ],
+  // The function is handed `x, y, z, t, θ, r`; `(ti, tj)` is where the
+  // point sits on the sampling grid, in cells.
+  let color_at = |p: Point3D, ti: f64, tj: f64| -> Option<StyleState3D> {
+    color_fn.style_with_extra_args(
+      [p.x, p.y, p.z.clamp(z_lo, z_hi)],
       [x_range, y_range, (z_lo, z_hi)],
+      &[
+        (t_min + ti * t_step, (t_min, t_max)),
+        (theta_min + tj * theta_step, (theta_min, theta_max)),
+        (axis_distance(&p), (dist_min, dist_max)),
+      ],
     )
   };
+  let facet_style =
+    |ps: [Point3D; 3], ti: f64, tj: f64| -> Option<StyleState3D> {
+      color_fn.is_set().then_some(())?;
+      let mid =
+        |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
+      color_at(
+        Point3D {
+          x: mid(&|p| p.x),
+          y: mid(&|p| p.y),
+          z: mid(&|p| p.z),
+        },
+        ti,
+        tj,
+      )
+    };
 
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
@@ -20223,7 +20694,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v2 = normalize(pp01);
 
           let normal = triangle_normal(v0, v1, v2);
-          let cf_style = facet_style([pp00, pp10, pp01]);
+          let cf_style = facet_style(
+            [pp00, pp10, pp01],
+            i as f64 + 1.0 / 3.0,
+            j as f64 + 1.0 / 3.0,
+          );
           let (color, opacity) = shade_facet(
             SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
@@ -20264,7 +20739,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v2 = normalize(pp10);
 
           let normal = triangle_normal(v0, v1, v2);
-          let cf_style = facet_style([pp11, pp01, pp10]);
+          let cf_style = facet_style(
+            [pp11, pp01, pp10],
+            i as f64 + 2.0 / 3.0,
+            j as f64 + 2.0 / 3.0,
+          );
           let (color, opacity) = shade_facet(
             SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
@@ -20453,15 +20932,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if color_fn.is_set() {
         let colors: Option<Vec<Expr>> = grid
           .iter()
-          .flatten()
-          .flatten()
-          .map(|p| {
-            let (r, g, b) = color_fn
-              .style_at(
-                [p.x, p.y, p.z.clamp(z_lo, z_hi)],
-                [x_range, y_range, (z_lo, z_hi)],
-              )?
-              .color?;
+          .enumerate()
+          .flat_map(|(i, row)| {
+            row
+              .iter()
+              .enumerate()
+              .filter_map(move |(j, cell)| cell.map(|p| (i, j, p)))
+          })
+          .map(|(i, j, p)| {
+            let (r, g, b) = color_at(p, i as f64, j as f64)?.color?;
             Some(call(
               "RGBColor",
               [r, g, b]
@@ -20551,6 +21030,26 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     ));
   }
+  // The padding the picture was drawn with: `Scaled[0.05]` around each
+  // automatic range, none around an explicit one.
+  if !names("PlotRangePadding") {
+    defaults.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(
+        range_explicit
+          .iter()
+          .map(|&explicit| {
+            if explicit {
+              id_expr("None")
+            } else {
+              call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING))
+            }
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ));
+  }
   structure_args.extend(defaults);
   // The picture below is drawn with the default camera. A plot that names
   // its own (`ViewPoint`, `ViewVertical`, `ViewVector`) is drawn from its
@@ -20571,16 +21070,20 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None,
     false,
     &camera,
-    x_range,
-    y_range,
-    (z_axis_min, z_axis_max),
+    box_x,
+    box_y,
+    if (z_lo - z_hi).abs() < 1e-15 {
+      (z_axis_min, z_axis_max)
+    } else {
+      box_z
+    },
     svg_width,
     svg_height,
     full_width,
     mesh_mode,
     show_axes,
     box_ratios,
-    &[None, None, None],
+    &axes_labels,
     !image_height_is_explicit(args),
     args,
   )?;

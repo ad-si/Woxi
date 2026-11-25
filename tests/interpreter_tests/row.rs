@@ -371,6 +371,48 @@ mod row_visual_mode {
     assert!(styled > one * 1.5, "one = {one}, styled = {styled}");
   }
 
+  /// The lines a `\n` breaks a row into are centered on the block, the way
+  /// a multi-line label over a plot (`Labeled[plot, Row[{"title\nMSE = ",
+  /// mse}], Top]`) centers its short last line.
+  /// Regression: every line hung flush left, so a short one started at the
+  /// block's left edge instead of under the middle of the long one.
+  #[test]
+  fn row_newline_lines_are_centered_on_the_block() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Row[{\"long first line here\\nshort = \", 1.5, \"\\nx = \", 2.5}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    // Each line is a nested `<svg x=… width=…>`; the first (widest) one
+    // sets the block width, and every shorter line is centered in it.
+    let lines: Vec<(f64, f64)> = svg
+      .match_indices("<svg x=\"")
+      .map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let attr = |name: &str| -> f64 {
+          let start =
+            tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[start..start + tag[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        (attr("x"), attr("width"))
+      })
+      .collect();
+    assert_eq!(lines.len(), 3, "one nested svg per line: {svg}");
+    let block = lines[0].1;
+    for (x, w) in &lines {
+      assert!(
+        (x - (block - w) / 2.0).abs() < 0.6,
+        "line at x = {x} of width {w} is not centered in {block}: {svg}"
+      );
+    }
+    // The short lines really are shorter, so centering moved them.
+    assert!(lines[2].0 > 1.0, "last line still flush left: {svg}");
+  }
+
   /// A newline in the middle of a prose string (a blank line between
   /// paragraphs) also breaks the row, while the one-character-per-line
   /// stack of a typeset fraction stays one block.
