@@ -18955,7 +18955,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               plot_label_picture = Some((svg, w, h));
             }
             other => {
-              let lines = expr_to_svg_markup_lines(other);
+              // Set in `TraditionalForm`, so a lone lowercase Greek letter
+              // in its text is italic.
+              let lines =
+                with_label_greek_italics(|| expr_to_svg_markup_lines(other));
               if lines.iter().any(|l| !l.is_empty()) {
                 if lines.len() > 1 {
                   plot_label_alignment =
@@ -26439,6 +26442,64 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// Typesetting the text of a graphic's label (`PlotLabel`), which the
+  /// front end sets in `TraditionalForm`: a lowercase Greek letter standing
+  /// alone as a word of a string (`"Outside μ ± ϵ"`) is drawn in italics,
+  /// the way a single-letter math variable is, while the rest of the text
+  /// stays upright.
+  static LABEL_GREEK_ITALICS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`LABEL_GREEK_ITALICS`] on, restoring it afterwards.
+pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(LABEL_GREEK_ITALICS.with(|c| c.replace(true)));
+  f()
+}
+
+/// Whether `c` is a lowercase Greek letter (including the variant forms
+/// `ϑ`, `ϕ`, `ϖ`, `ϰ`, `ϱ` and `ϵ`). `π` is excluded: it reads as the
+/// constant `Pi`, which is set upright.
+fn is_lowercase_greek_letter(c: char) -> bool {
+  c != '\u{3C0}'
+    && (('\u{3B1}'..='\u{3C9}').contains(&c)
+      || matches!(
+        c,
+        '\u{3D1}' | '\u{3D5}' | '\u{3D6}' | '\u{3F0}' | '\u{3F1}' | '\u{3F5}'
+      ))
+}
+
+/// SVG-escape label text, setting each lowercase Greek letter that stands
+/// alone as a word (no letter or digit on either side) in italics.
+fn svg_escape_label_greek_italics(text: &str) -> String {
+  let chars: Vec<char> = text.chars().collect();
+  let is_word_char =
+    |i: usize| chars.get(i).is_some_and(|c| c.is_alphanumeric());
+  let mut out = String::new();
+  let mut plain = String::new();
+  for (i, &c) in chars.iter().enumerate() {
+    let lone = is_lowercase_greek_letter(c)
+      && !(i > 0 && is_word_char(i - 1))
+      && !is_word_char(i + 1);
+    if lone {
+      out.push_str(&svg_escape(&plain));
+      plain.clear();
+      out.push_str(&format!("<tspan font-style=\"italic\">{c}</tspan>"));
+    } else {
+      plain.push(c);
+    }
+  }
+  out.push_str(&svg_escape(&plain));
+  out
+}
+
 /// Run `f` with [`SINGLE_LETTER_ITALICS`] on, restoring it afterwards.
 fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
   struct Restore(bool);
@@ -26523,6 +26584,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           "<tspan font-style=\"italic\">{}</tspan>",
           svg_escape(unquoted)
         );
+      }
+      if LABEL_GREEK_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
+      {
+        return svg_escape_label_greek_italics(unquoted);
       }
       svg_escape(unquoted)
     }

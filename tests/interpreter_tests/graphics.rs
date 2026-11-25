@@ -18126,7 +18126,8 @@ mod plot3d {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a
       // shifted tspan and a machine real keeps the 6 significant figures
       // the notebook front end shows — the "Power of a Test about a
-      // Binomial Parameter" Demonstration titles its plot this way.
+      // Binomial Parameter" Demonstration titles its plot this way. The
+      // lone Greek letter of a string is italic in `TraditionalForm`.
       let svg = export_svg(
         r#"Plot[x, {x, 0, 1},
              PlotLabel -> Text[Row[{"\[Alpha]", " = K(", Subscript[p, 0],
@@ -18138,7 +18139,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+          "<tspan font-style=\"italic\">α</tspan> = K(<tspan \
+           font-style=\"italic\">p</tspan><tspan \
            baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
@@ -20007,6 +20009,40 @@ mod plot3d {
       );
       let line = svg.lines().find(|l| l.contains(&applied)).unwrap();
       assert!(line.contains("font-size=\"140\""), "{line}");
+    }
+
+    /// A plot label is set in `TraditionalForm`, where a lowercase Greek
+    /// letter standing alone as a word of a string is italic while the rest
+    /// of the text — a Greek letter inside a word, `π`, a capital — stays
+    /// upright. As part of a scheduled QA routine, Woxi Studio was tested
+    /// against a randomly sampled Wolfram Demonstration notebook whose
+    /// `PlotLabel` was a `Row` of strings naming Greek parameters; its
+    /// snapshot shows them italic, Woxi drew them upright. This is a
+    /// self-authored, construct-equivalent example.
+    #[test]
+    fn plot_label_strings_set_lone_greek_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      for code in [
+        "Graphics[Circle[], PlotLabel -> \"Within α ± δ: 3\"]",
+        "Graphics[Circle[], PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Show[Graphics[Circle[]], ListPlot[{1, 2}], \
+         PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> \"Within α ± δ: 3\"]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> Style[\"Within α ± δ: 3\", Bold]]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains(&format!("Within {} ± {}: 3", italic("α"), italic("δ"))),
+          "{code}: {svg}"
+        );
+      }
+      let svg =
+        export_svg("Graphics[Circle[], PlotLabel -> \"αβ, π, Ω and γ2\"]");
+      assert!(svg.contains(">αβ, π, Ω and γ2</text>"), "{svg}");
+      // Exported text outside graphics keeps its letters upright.
+      let svg = export_svg("Style[\"Within α\", 12]");
+      assert!(!svg.contains(&italic("α")), "{svg}");
     }
 
     /// A subscripted symbol in a label is typeset in `TraditionalForm`

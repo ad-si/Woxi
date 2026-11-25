@@ -10975,6 +10975,14 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
 
+### Lone Latin letters in plot label strings
+
+Saved snapshots show a lowercase Greek letter standing alone as a word of a
+`PlotLabel` string (`"Outside μ ± ϵ: "`) in italics, and Woxi sets those in
+italics too. Whether the front end does the same for a lone Latin letter of
+a label string (the `a` of `"a plot"`) has not been verified against
+`wolframscript`, so Woxi keeps Latin letters in strings upright.
+
 ### A one-letter string subscripted in a graphics label is drawn upright
 
 A saved snapshot of `Graphics[{…, Inset[Style[Column[{Row[{Subscript["ζ",
