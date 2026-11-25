@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- Curves whose coordinates come from a piecewise complex map
+    (`ParametricPlot[{Re[f[t + I b]], Im[f[t + I b]]}, …]` with `f` an
+    `If` or `Piecewise` over `Re`/`Im`) are sampled with compiled machine
+    arithmetic rather than evaluated symbolically per point, which draws
+    such plots several times faster.
+- `Show[plot, Graphics[…]]` of a plot spanning `PlotRange -> All` keeps
+    the margin the plot left around its own data instead of the narrower
+    padding of a bare `Graphics`, so the picture stays the size the plot
+    drew itself in.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms

@@ -30128,6 +30128,48 @@ fn merged_plot_labels(
   Some(Expr::List(entries.into()))
 }
 
+/// The `PlotRangePadding` a plot drew itself with, as `{{Scaled[l],
+/// Scaled[r]}, {Scaled[b], Scaled[t]}}`: the margins between its data
+/// extent and its displayed range, each as a fraction of the displayed
+/// span. `None` when the plot reports no data extent or shows less than
+/// all of it.
+fn plot_source_range_padding(ps: &crate::syntax::PlotSource) -> Option<Expr> {
+  // A plot that does not report its data extent is measured from the
+  // points of its series.
+  let (data_x, data_y) = ps.plot_range.or_else(|| {
+    let extent = |pick: fn(&(f64, f64)) -> f64| {
+      let values = || {
+        ps.series
+          .iter()
+          .flat_map(|s| s.points.iter().map(pick))
+          .filter(|v| v.is_finite())
+      };
+      let lo = values().reduce(f64::min)?;
+      Some((lo, values().reduce(f64::max)?))
+    };
+    Some((extent(|p| p.0)?, extent(|p| p.1)?))
+  })?;
+  let data_x = ps.data_x_range.unwrap_or(data_x);
+  let side = |(dlo, dhi): (f64, f64), (rlo, rhi): (f64, f64)| {
+    let span = rhi - rlo;
+    let (below, above) = ((dlo - rlo) / span, (rhi - dhi) / span);
+    (span.is_finite()
+      && span > 0.0
+      && (0.0..0.5).contains(&below)
+      && (0.0..0.5).contains(&above))
+    .then(|| {
+      let scaled = |f: f64| Expr::FunctionCall {
+        name: "Scaled".to_string(),
+        args: vec![Expr::Real(f)].into(),
+      };
+      Expr::List(vec![scaled(below), scaled(above)].into())
+    })
+  };
+  Some(Expr::List(
+    vec![side(data_x, ps.x_range)?, side(data_y, ps.y_range)?].into(),
+  ))
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
@@ -30908,6 +30950,22 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             **replacement = Expr::List(axes.into());
           }
         }
+      }
+      // A `PlotRange -> All` spans everything shown, measured afresh from
+      // the merged primitives, and would be padded like a bare `Graphics`.
+      // The result keeps the leading plot's options, its `PlotRangePadding`
+      // among them, so pad by the fractions that plot left around its own
+      // data.
+      let spans_all = merged_options.iter().any(|o| {
+        matches!(option_name_value(o), Some(("PlotRange", v))
+          if matches!(v.as_ref(), Expr::Identifier(s) if s == "All"))
+      });
+      if spans_all
+        && !has_option(&merged_options, "PlotRangePadding")
+        && let Some(ps) = plot_sources.first()
+        && let Some(padding) = plot_source_range_padding(ps)
+      {
+        merged_options.push(rule_expr(id_expr("PlotRangePadding"), padding));
       }
       // A plot clips what it draws to its range (`PlotRangeClipping ->
       // True`), so a layer reaching past it is cut at the frame instead of

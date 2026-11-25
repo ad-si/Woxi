@@ -363,6 +363,73 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_piecewise_complex_map() {
+      // A curve given as the real and imaginary parts of a map of the
+      // plane defined piecewise by `If`: both branches are drawn, the
+      // first a half circle of radius 1/2, the second a vertical segment.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "f = If[Re[#] <= 1, Im[#] Exp[I Re[#] Pi], Im[#] + 3 + I Re[#]] &; \
+           p = ParametricPlot[{Re[f[t + I/2]], Im[f[t + I/2]]}, {t, 0, 2}]; \
+           pts = Join @@ Cases[p, Line[x_] :> x, Infinity]; \
+           {Round[MinMax[pts[[All, 1]]], 0.01], \
+            Round[MinMax[pts[[All, 2]]], 0.01], \
+            Round[MinMax[Norm /@ Select[pts, First[#] < 1 &]], 0.001]}"
+        )
+        .unwrap(),
+        "{{-0.5, 3.5}, {0., 2.}, {0.5, 0.5}}"
+      );
+    }
+
+    #[test]
+    fn show_keeps_leading_plot_range_padding_for_plot_range_all() {
+      // `Show[plot, graphics]` takes its options from the leading plot. A
+      // plot spanning `PlotRange -> All` is re-measured from everything
+      // shown, but must keep the margin the plot left around its own data
+      // rather than the narrower one of a bare `Graphics`.
+      clear_state();
+      // The curve's first sample (t = 0) is its rightmost point; return its
+      // x position as a fraction of the picture's width.
+      let right_edge = |svg: &str| -> f64 {
+        let attr = |text: &str, key: &str| -> String {
+          let start = text.find(key).unwrap() + key.len();
+          text[start..start + text[start..].find('"').unwrap()].to_string()
+        };
+        let width: f64 = attr(svg, "viewBox=\"")
+          .split(' ')
+          .nth(2)
+          .unwrap()
+          .parse()
+          .unwrap();
+        let polyline = &svg[svg.find("<polyline").unwrap()..];
+        let x: f64 = attr(polyline, "points=\"")
+          .split(',')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap();
+        x / width
+      };
+      let plot = "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+                  Axes -> False, PlotRange -> All]";
+      let alone = right_edge(&export_svg(plot));
+      let shown = right_edge(&export_svg(&format!(
+        "Show[{plot}, Graphics[Point[{{0, 0}}]], Frame -> False]"
+      )));
+      assert!(
+        (alone - shown).abs() < 0.004,
+        "plot alone reaches {alone}, shown with a point {shown}"
+      );
+      // An explicit padding given to `Show` still wins.
+      let tight = right_edge(&export_svg(&format!(
+        "Show[{plot}, Graphics[Point[{{0, 0}}]], Frame -> False, \
+         PlotRangePadding -> None]"
+      )));
+      assert!(tight > 0.99, "got {tight}");
+    }
+
+    #[test]
     fn parametric_plot_curve_slots_resolved_per_sample() {
       // Each curve is written `{{fx, fy} /. FindRoot[…]}`: it only becomes a
       // coordinate pair once the parameter is numeric, so every slot must be
