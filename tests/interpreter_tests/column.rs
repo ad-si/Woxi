@@ -1058,6 +1058,60 @@ mod column_item_size_wrapping {
     assert!(out.contains(">b</text>"), "{out}");
     assert!(out.contains("height=\"22\""), "{out}");
   }
+
+  /// A `Text[…]` item is measured in the proportional text face: a line
+  /// that fits the column in that face stays whole, although it holds more
+  /// characters than the column has monospace columns, and it stays sans.
+  #[test]
+  fn text_item_fitting_in_proportional_face_is_not_wrapped() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Column[{Text[\"the quick brown fox jumps over the lazy \
+       dog again.\"]}, ItemSize -> {30, Automatic}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      out
+        .contains(">the quick brown fox jumps over the lazy dog again.</text>"),
+      "{out}"
+    );
+    assert!(
+      !out.contains(
+        "<text x=\"6.0\" y=\"11.0\" font-family=\"Atkinson Hyperlegible Mono"
+      ),
+      "{out}"
+    );
+  }
+
+  /// A `Text[…]` item too wide for the column wraps at word boundaries by
+  /// its proportional width, keeps its own line breaks, and every line is
+  /// drawn in the text face, flush with the other items.
+  #[test]
+  fn wide_text_item_wraps_in_proportional_face() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Column[{Text[\"first line\\nthe quick brown fox jumps \
+       over the lazy dog again.\"], Text[\"x\"]}, \
+       ItemSize -> {20, Automatic}], \"SVG\"]",
+    )
+    .unwrap();
+    let lines: Vec<&str> =
+      out.lines().filter(|l| l.starts_with("<text")).collect();
+    assert_eq!(lines.len(), 4, "{out}");
+    assert!(lines[0].contains(">first line</text>"), "{out}");
+    assert!(
+      lines[1].contains(">the quick brown fox jumps over the lazy dog</text>"),
+      "{out}"
+    );
+    assert!(lines[2].contains(">again.</text>"), "{out}");
+    for line in lines {
+      assert!(line.starts_with("<text x=\"0.0\""), "{out}");
+      assert!(
+        line.contains("font-family=\"Atkinson Hyperlegible Next, sans-serif\""),
+        "{out}"
+      );
+    }
+  }
 }
 
 mod stretched_button_items {
@@ -1093,7 +1147,79 @@ mod stretched_button_items {
     .unwrap();
     let svg = r.graphics.expect("column graphic");
     let (narrow, _) = woxi::functions::graphics::parse_svg_wh(&svg);
-    assert!(plate_width(&svg) > narrow - 2.0, "{svg}");
+    assert!(plate_width(&svg) > narrow - 16.0, "{svg}");
+  }
+
+  // Regression: the stretched button took the column's whole width while
+  // being drawn after the margin a text line starts at, so its plate ran
+  // past the column's right edge and was cut off there.
+  #[test]
+  fn stretched_button_stays_inside_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a considerably longer line of text", Button["go", x = 1]}], "SVG"]"#,
+    )
+    .unwrap();
+    let (canvas, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    let at = svg.find("rx=\"4\"").expect("button plate");
+    let cell = &svg[svg[..at].rfind("<svg x=\"").unwrap()..at];
+    let x: f64 = cell
+      .split("x=\"")
+      .nth(1)
+      .and_then(|v| v[..v.find('"').unwrap()].parse().ok())
+      .unwrap();
+    assert!(x + plate_width(&svg) < canvas, "{svg}");
+  }
+
+  // `Appearance -> "Pressed"` draws the flat gray plate; the option is
+  // held with the button, so a condition deciding it is evaluated.
+  #[test]
+  fn pressed_button_draws_a_gray_plate() {
+    clear_state();
+    let pressed = interpret(
+      r#"picked = {2}; ExportString[Button["go", x = 1, Appearance -> If[MemberQ[picked, 2], "Pressed", Automatic]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(pressed.contains("fill=\"#EDEDED\""), "{pressed}");
+    let raised = interpret(
+      r#"picked = {}; ExportString[Button["go", x = 1, Appearance -> If[MemberQ[picked, 2], "Pressed", Automatic]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(raised.contains("fill=\"#FDFDFD\""), "{raised}");
+    assert!(!raised.contains("#EDEDED"), "{raised}");
+  }
+
+  // A `Column` label sets one line of the plate per item instead of
+  // running the items together on one line.
+  #[test]
+  fn column_label_stacks_its_lines_on_the_plate() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Button[Text@Column@{"first line", "second"}, x = 1], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">first line</text>"), "{svg}");
+    assert!(svg.contains(">second</text>"), "{svg}");
+    let one_line =
+      interpret(r#"ExportString[Button["first line", x = 1], "SVG"]"#).unwrap();
+    let height = |svg: &str| woxi::functions::graphics::parse_svg_wh(svg).1;
+    assert!(height(&svg) > height(&one_line), "{svg}");
+  }
+
+  // A label typeset with a script stacked over an arrow keeps the script
+  // over its base (it was flattened to `→3`) on a plate tall enough for it.
+  #[test]
+  fn overscript_label_stays_stacked_on_the_plate() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Button[Text@Style[Row[{"a", "b"}, Overscript["→", 3]], Red], x = 1], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("data-stack=\"over\">3</tspan>"), "{svg}");
+    let plain =
+      interpret(r#"ExportString[Button["a → b", x = 1], "SVG"]"#).unwrap();
+    let height = |svg: &str| woxi::functions::graphics::parse_svg_wh(svg).1;
+    assert!(height(&svg) > height(&plain), "{svg}");
   }
 
   // An explicit `ImageSize` keeps the button at its requested width.
@@ -1158,6 +1284,21 @@ mod column_text_cell_in_grid {
     let svg = grid_of_column(r#""a", "bbbbbbbbbbbb", "cc""#);
     assert!(svg.contains("text-anchor=\"start\""), "{svg}");
     assert!(!svg.contains("text-anchor=\"middle\""), "{svg}");
+  }
+
+  /// An empty second argument — the `Null` a trailing comma leaves in
+  /// `Column[{…}, ]` — sets the lines flush right, like `Right`.
+  #[test]
+  fn empty_alignment_argument_is_right_aligned() {
+    let svg = |rest: &str| {
+      interpret(&format!(
+        "ExportString[Column[{{\"a\", \"bbbbbbbbbbbb\"}}{rest}], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(svg(", "), svg(", Right"));
+    assert_eq!(svg(", Null"), svg(", Right"));
+    assert_ne!(svg(", "), svg(""));
   }
 
   /// A `FontFamily` on one line of the column reaches that line's text.
@@ -1494,12 +1635,69 @@ mod typeset_row_items_in_text_face {
     };
     let wrapped = interpret(&grid(7)).unwrap();
     let single = interpret(&grid(20)).unwrap();
+    // The label's line adds about one text line pitch (scaled down with
+    // the matrix to the column's width) to the cell's height.
     assert!(
-      root_height(&wrapped) > root_height(&single) + 14.0,
+      root_height(&wrapped) > root_height(&single) + 12.0,
       "wrapped: {wrapped}\nsingle: {single}"
     );
     // The label and the matrix are each still drawn once.
     assert_eq!(wrapped.matches(">q<").count(), 1, "{wrapped}");
     assert_eq!(wrapped.matches(">-1<").count(), 1, "{wrapped}");
+  }
+
+  /// A `Row` of plain text is one line of text: a column of such rows
+  /// stacks at the pitch of the same lines written as single strings,
+  /// in the monospace typeset face and in the `Text[…]` face alike,
+  /// instead of setting each row apart like a picture.
+  #[test]
+  fn one_line_text_rows_stack_like_text_lines() {
+    clear_state();
+    for wrap in ["", "Text@"] {
+      let rows = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{Row[{{"Width = ", 12}}], Row[{{"Depth = ", x}}], Row[{{Style["Height", Italic], " = ", 2.5}}]}}], "SVG"]"#
+      ))
+      .unwrap();
+      let lines = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{"Width = 12", "Depth = x", "Height = 2.5"}}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(root_height(&rows), root_height(&lines), "{wrap}: {rows}");
+    }
+  }
+
+  /// A text `Row` under a picture sits as close to it as a line of text
+  /// does, with no picture gap in between.
+  #[test]
+  fn one_line_text_row_under_a_graphic_has_no_picture_gap() {
+    clear_state();
+    let column = |last: &str| {
+      interpret(&format!(
+        r#"ExportString[Text@Column[{{Graphics[Disk[], ImageSize -> 50], {last}}}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      root_height(&column(r#"Row[{"Area = ", 3}]"#)),
+      root_height(&column(r#""Area = 3""#))
+    );
+  }
+
+  /// A `Row` holding a picture is still set apart from its neighbors as
+  /// a picture.
+  #[test]
+  fn rows_holding_a_picture_keep_the_picture_gap() {
+    clear_state();
+    let row = r#"Row[{"m = ", Graphics[Disk[], ImageSize -> 14]}]"#;
+    let height = |items: String| {
+      root_height(
+        &interpret(&format!(r#"ExportString[Column[{{{items}}}], "SVG"]"#))
+          .unwrap(),
+      )
+    };
+    assert_eq!(
+      height(format!("{row}, {row}")),
+      2.0 * height(row.to_string()) + 6.0
+    );
   }
 }

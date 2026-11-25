@@ -1,6 +1,6 @@
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::graphics::{Color, parse_color};
+use crate::functions::graphics::{Color, ColumnAlignment, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, LegendLayout,
@@ -310,11 +310,11 @@ pub(crate) struct StyledLabel {
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
   pub segments: Vec<LabelSegment>,
-  /// The lines of a stacked title line up at their left edges inside a
-  /// block that is itself centered, the way a `Column` (whose default
-  /// `Alignment` is `Left`) sets them. `false` centers every line on its
-  /// own, as a `Grid` does.
-  pub left_aligned: bool,
+  /// How the lines of a stacked title line up inside a block that is
+  /// itself centered: at one edge, the way a `Column` (whose default
+  /// `Alignment` is `Left`) sets them, or each centered on its own, as a
+  /// `Grid` does.
+  pub line_alignment: ColumnAlignment,
 }
 
 /// The box `Framed[…]` draws around a title or one line of it.
@@ -945,39 +945,20 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     frame: None,
     line_frames: Vec::new(),
     segments,
-    left_aligned: false,
+    line_alignment: ColumnAlignment::Center,
   })
 }
 
-/// Whether a stacked title is a `Column` whose lines line up at the left:
-/// its default `Alignment` is `Left`, and a second argument
-/// (`Column[{…}, Center]`) or an `Alignment -> …` option overrides it.
-fn column_aligns_left(expr: &Expr) -> bool {
-  let Expr::FunctionCall { name, args } = expr else {
-    return false;
-  };
-  if name != "Column" {
-    return false;
-  }
-  let mut alignment = None;
-  for arg in &args[1..] {
-    match arg {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Alignment") =>
-      {
-        alignment = Some(replacement.as_ref());
-      }
-      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {}
-      other if alignment.is_none() => alignment = Some(other),
-      _ => {}
+/// How the lines of a stacked title line up: a `Column` sets them flush
+/// left unless its second argument (`Column[{…}, Center]`) or its
+/// `Alignment -> …` option says otherwise; anything else centers each line.
+fn column_line_alignment(expr: &Expr) -> ColumnAlignment {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Column" => {
+      crate::functions::graphics::column_alignment(args)
+        .unwrap_or(ColumnAlignment::Left)
     }
-  }
-  match alignment {
-    None => true,
-    Some(Expr::Identifier(a)) => a == "Left",
-    Some(_) => false,
+    _ => ColumnAlignment::Center,
   }
 }
 
@@ -1070,7 +1051,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames,
       segments: Vec::new(),
-      left_aligned: column_aligns_left(expr),
+      line_alignment: column_line_alignment(expr),
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -1132,7 +1113,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       });
     }
   }
@@ -1158,7 +1139,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -1172,7 +1153,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
-      left_aligned: false,
+      line_alignment: ColumnAlignment::Center,
     }),
     // `Null` typesets as nothing — a label variable left unset, or an
     // option default of `Null`, must not print the word "Null".
@@ -1191,7 +1172,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
-      left_aligned: false,
+      line_alignment: ColumnAlignment::Center,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -1251,7 +1232,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments,
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -1296,7 +1277,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           frame: None,
           line_frames: Vec::new(),
           segments,
-          left_aligned: false,
+          line_alignment: ColumnAlignment::Center,
         })
       }
     }

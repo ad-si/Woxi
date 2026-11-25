@@ -2,7 +2,7 @@ use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
   box_has_fraction, box_string_to_svg, box_string_visible_len, boxes_to_svg,
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
-  layout_box, layout_to_svg, row_to_svg,
+  layout_box, layout_to_svg, row_to_svg, traditional_box_string_to_svg,
 };
 use woxi::helpers::{
   binop, bool_expr, call, call1, div2, id_expr, minus2, neg1, plus2, pow, pow2,
@@ -1558,6 +1558,39 @@ mod tests {
     fn box_string_plain_text_is_html_escaped() {
       // A label without any box notation is a safe drop-in for svg_escape.
       assert_eq!(box_string_to_svg("a < b & c"), "a &lt; b &amp; c");
+    }
+
+    #[test]
+    fn traditional_box_string_single_letter_box_symbols_are_italic() {
+      // A TraditionalForm label sets a one-letter symbol written as box
+      // code in italics, while the plain text run before it and a
+      // multi-letter script stay upright.
+      let svg = traditional_box_string_to_svg(
+        "-\\!\\(\\*SubscriptBox[\\(d\\), \\(ox\\)]\\)",
+      );
+      assert!(svg.starts_with('-'), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">d<"), "{svg}");
+      assert!(!svg.contains("italic\" baseline-shift"), "{svg}");
+      assert!(svg.contains(">ox</tspan>"), "{svg}");
+      // Plain text outside the box code is not italicized.
+      let svg = traditional_box_string_to_svg(
+        "a \\!\\(\\*SuperscriptBox[\\(b\\), \\(2\\)]\\)",
+      );
+      assert!(svg.starts_with("a "), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">b<"), "{svg}");
+    }
+
+    #[test]
+    fn plot_tick_label_italicizes_single_letter_box_symbols() {
+      let code = r#"ExportString[Plot[x, {x, 0, 1}, Ticks -> {{{0.5, "-\!\(\*SubscriptBox[\(d\), \(ox\)]\)"}}, None}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          ">-<tspan font-style=\"italic\">d</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">ox</tspan></text>"
+        ),
+        "{svg}"
+      );
     }
 
     #[test]
@@ -5410,6 +5443,90 @@ mod tests {
         svg.starts_with("<svg width=\"500\" height=\"200\""),
         "{svg:.200}"
       );
+    }
+
+    /// A captioned table in a fixed-size `Pane` takes up the pane's whole
+    /// box as well, placed in it by the pane's `Alignment`.
+    #[test]
+    fn a_labeled_table_in_a_fixed_pane_fills_the_box() {
+      let svg_for = |pane_args: &str| {
+        woxi::interpret_with_stdout(&format!(
+          r#"Pane[Labeled[Grid[{{{{"a", "b"}}, {{"c", "d"}}}}, Frame -> All], Text["cap"], Top]{pane_args}]"#
+        ))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the captioned table is a picture")
+      };
+      let bare = svg_for("");
+      assert!(!bare.starts_with("<svg width=\"420\""), "{bare:.200}");
+      for args in [
+        ", {420, 310}",
+        ", {420, 310}, Alignment -> {Center, Center}",
+        ", ImageSize -> {420, 310}",
+      ] {
+        let svg = svg_for(args);
+        assert!(
+          svg.starts_with("<svg width=\"420\" height=\"310\""),
+          "{args}: {svg:.200}"
+        );
+        assert!(svg.contains("cap"), "{args}: the caption is kept");
+      }
+      // The alignment moves the composition inside the box.
+      assert_ne!(
+        svg_for(", {420, 310}"),
+        svg_for(", {420, 310}, Alignment -> {Center, Center}")
+      );
+    }
+
+    /// Regression: a `Framed` around a captioned picture or (under `Text`)
+    /// around a table of pictures was looked through to its content, so the
+    /// notebook showed the content without its border.
+    #[test]
+    fn a_frame_around_a_captioned_picture_or_text_table_keeps_its_border() {
+      let picture = |code: &str| {
+        woxi::interpret_with_stdout(code)
+          .expect("interpret should succeed")
+          .graphics
+          .expect("the layout is a picture")
+      };
+      let width = |svg: &str| -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|rest| rest.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      };
+      let disk = "Graphics[Disk[], ImageSize -> {100, 100}]";
+      let labeled = format!(r#"Labeled[{disk}, "abc"]"#);
+      let table = format!("Grid[{{{{{disk}, {disk}}}}}]");
+      for (bare, framed_code) in [
+        (labeled.clone(), format!("Framed[{labeled}]")),
+        (labeled.clone(), format!("Text[Framed[{labeled}]]")),
+        (format!("Text[{table}]"), format!("Text[Framed[{table}]]")),
+      ] {
+        let plain = picture(&bare);
+        let framed = picture(&framed_code);
+        assert!(
+          framed.contains(r#"fill="none" stroke="black" stroke-width="1""#),
+          "{framed_code}: {framed:.400}"
+        );
+        assert!(
+          width(&framed) > width(&plain),
+          "{framed_code}: the frame adds its margins"
+        );
+        // Exactly one border, also when `Text` wraps the frame.
+        assert_eq!(
+          framed
+            .matches(r#"fill="none" stroke="black" stroke-width="1""#)
+            .count()
+            - plain
+              .matches(r#"fill="none" stroke="black" stroke-width="1""#)
+              .count(),
+          1,
+          "{framed_code}"
+        );
+      }
     }
 
     /// `Alignment -> {Center}` centers the content horizontally and keeps
