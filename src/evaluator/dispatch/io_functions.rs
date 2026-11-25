@@ -1963,7 +1963,7 @@ pub fn dispatch_io_functions(
       }
 
       if fmt == "SVG" {
-        let svg = expr_to_svg(&args[1]);
+        let svg = export_svg(&args[1]);
         // expr_to_svg returns an empty string when a graphics head fails to
         // render; fall back to the text rendering so the file stays valid SVG.
         let svg = if svg.is_empty() {
@@ -2402,7 +2402,11 @@ pub fn dispatch_io_functions(
         }
       };
       if format_str == "SVG" || format_str == "PDF" {
-        let svg = expr_to_svg(&args[0]);
+        let svg = if format_str == "SVG" {
+          export_svg(&args[0])
+        } else {
+          expr_to_svg(&args[0])
+        };
         if format_str == "PDF" {
           #[cfg(not(target_arch = "wasm32"))]
           {
@@ -8028,6 +8032,15 @@ fn pane_content_is_column(content: &Expr) -> bool {
   }
 }
 
+/// The SVG `Export`/`ExportString` writes for `expr`: its typeset math has
+/// upright single-letter symbols, unlike the same math drawn inside a
+/// picture or exported as a raster image.
+fn export_svg(expr: &Expr) -> String {
+  crate::functions::graphics::with_export_upright_letters(true, || {
+    expr_to_svg(expr)
+  })
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   // A list of typeset matrices sets each in two dimensions between the
   // braces, not as the source text of the list.
@@ -8084,8 +8097,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // Inside a list, `Grid`, `Row`, … an automatically sized picture is
     // drawn again at the container's reduced size.
     Expr::Graphics { svg: svg_data, .. } => {
-      crate::functions::container_layout::resized_graphic_svg(expr)
-        .unwrap_or_else(|| svg_data.clone())
+      crate::functions::graphics::with_export_upright_letters(false, || {
+        crate::functions::container_layout::cell_graphic_svg(expr)
+      })
+      .unwrap_or_else(|| svg_data.clone())
     }
     // `Button[label, action, …]` draws as its button, not its source.
     Expr::FunctionCall { name, args }
