@@ -11081,3 +11081,55 @@ unevaluated, so the plot samples the compiled function numerically and
 returns a `Graphics3D`. The unit test
 `compiled_vector_argument_iteration_is_not_run_symbolically` is in
 `EXACT_EXPR_SKIP`.
+
+## Unit-test conformance batch (2026-11-25)
+
+These divergences surfaced in one `make test-conformance` run against
+wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
+`NEAR_MATCH` for last-ulp cases.
+
+- **High-degree `Root`**: `Root[#^10000 - 3 #^7 + 1 &, 2]` stays unevaluated
+  in WL 15. It is not put in canonical form and `N` does nothing. `Reduce`
+  over the reals answers with `Root[{f, x0}]` approximations, or factors
+  `x^1001 + 3 x^7 + 1` through `Root[1 + 3*#1 + #1^143 &, 1, 0]^(1/7)`. Woxi
+  isolates and evaluates the roots.
+- **Inexact `Solve`/`NSolve` forms**: WL writes `0.125*(5. - 1.*Sqrt[9. -
+  32.*e])` where Woxi writes `0.625 - 0.5*Sqrt[0.5625 - 2.*e]`. WL also orders
+  NSolve rules by its own elimination order (`{y -> 0., x -> …}`) and lists
+  conjugate roots minus-first. A linear system with rational-function
+  coefficients is normalized differently.
+- **Huge-exponent bignums** (`10.^30000.`, `2.^1.*^6`, `Log[Exp[1.*^6]]`):
+  digits past the stated precision differ, and so does the last ulp of the
+  precision mark. `SetPrecision[1.5`20*^10002, Infinity]` is not exactly
+  `15*10^10001` in WL because its mantissa is binary.
+- **`DSolve`/`Integrate` forms**: WL folds `(-1 + x)*(1 + x)` into
+  `-1 + x^2` in a first-order linear solution.
+  `Derivative[1][EllipticK]` orders `EllipticK[#1]*(1 - #1)` inside the pure
+  function. `Integrate[x E^x/(1 + E^x), x]` should give
+  `x*Log[1 + E^x] + PolyLog[2, -E^x]`, but Woxi leaves it unevaluated.
+- **`NDSolve` internals**: WL's method of lines on a parameter-only "PDE"
+  uses 25 grid points and is less accurate than Woxi, and it ignores
+  `"MinPoints"`. `NDSolve`StateData` copies share state. `Plot` of an
+  `NDSolve` result re-evaluates the right-hand side. A
+  `DirichletCondition` added into the equation leaves `NDSolveValue`
+  unevaluated.
+- **Classifier queries**: `c["Method"]` on a `ClassifierFunction` returns
+  the whole classifier association in wolframscript.
+- **Entity data drift**: city ordering, CountryData figures, flags (WL:
+  `Graphics`) and descriptions, `"InfantMortalityFraction"` as a `Quantity`,
+  and ProteinData names, molecular functions and classes all differ from the
+  live knowledgebase.
+- **Other WL quirks**:
+  - `FindShortestTour[…, DistanceFunction -> GeoDistance]` stays unevaluated.
+  - `Det` of a matrix with entries like `1/(1 + Sqrt[2])` is returned
+    unsimplified.
+  - `NullSpace` does not see that `a/(1 - a) + a/(a - 1)` is zero.
+  - `CoordinateTransform["Spherical" -> "Cartesian", list]` stays
+    unevaluated.
+  - `TranslationTransform[…][Line[…]]` re-nests the point list.
+  - `ImageResize` uses nearest-neighbor when it enlarges a 1×2 image.
+  - `Normal[GraphicsComplex[…, Text["a", 3]]]` loses the coordinate.
+- **Plot internals**: a further ~110 structural plot assertions differ:
+  GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
+  sampling counts, and where directives sit (see the existing plot-internals
+  notes above).
