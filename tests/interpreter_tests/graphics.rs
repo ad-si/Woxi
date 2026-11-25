@@ -78503,13 +78503,12 @@ mod row_image_size_box {
   use super::*;
 
   fn root_size(svg: &str) -> (String, String) {
-    let open = svg.split_once('>').map(|(open, _)| open).unwrap_or(svg);
+    let open = svg.split_once('>').map_or(svg, |(open, _)| open);
     let attr = |name: &str| {
       open
         .split_once(&format!(" {name}=\""))
         .and_then(|(_, rest)| rest.split_once('"'))
-        .map(|(value, _)| value.to_string())
-        .unwrap_or_default()
+        .map_or_default(|(value, _)| value.to_string())
     };
     (attr("width"), attr("height"))
   }
