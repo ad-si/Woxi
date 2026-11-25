@@ -16474,7 +16474,16 @@ mod exp_to_trig {
     );
     assert_eq!(
       interpret("ExpToTrig[(1 + y)^2 E^(I x)]").unwrap(),
-      "(1 + y)^2*Cos[x] + I*(1 + y)^2*Sin[x]"
+      "(1 + y)^2*(Cos[x] + I*Sin[x])"
+    );
+    // A sum factor stays a factor; other factors distribute.
+    assert_eq!(
+      interpret("ExpToTrig[a (1 + y) E^(I x)]").unwrap(),
+      "a*(1 + y)*(Cos[x] + I*Sin[x])"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[E^(I x)/(1 + y)^2]").unwrap(),
+      "Cos[x]/(1 + y)^2 + (I*Sin[x])/(1 + y)^2"
     );
     assert_eq!(
       interpret("ExpToTrig[2 E^x]").unwrap(),
