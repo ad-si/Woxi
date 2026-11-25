@@ -27145,3 +27145,38 @@ fn sparse_array_dot_products() {
     assert_eq!(interpret(&code).unwrap(), expected, "{code}");
   }
 }
+
+// A structural operation that leaves a single part under a head such as
+// `Plus` or `Times` gives that part (`Plus[a]` is `a`), while a holding
+// head keeps its parts unevaluated.
+#[test]
+fn rebuilt_non_list_heads_are_evaluated() {
+  for (code, expected) in [
+    ("Take[a + b, 1]", "a"),
+    ("Drop[a + b, 1]", "b"),
+    ("Take[2 x, 1]", "2"),
+    ("Take[a b c, 2]", "a*b"),
+    ("DeleteCases[a + b, b]", "a"),
+    ("DeleteCases[a b, b]", "a"),
+    ("DeleteCases[a + b, a | b]", "0"),
+    ("DeleteCases[a b, a | b]", "1"),
+    ("DeleteCases[0. + m x, z_Real /; z == 0]", "m*x"),
+    ("DeleteCases[(a + b + c)^2, b, {2}]", "(a + c)^2"),
+    ("Pick[a + b, {True, False}]", "a"),
+    ("Pick[f[1, 2, 3], {True, False, True}]", "f[1, 3]"),
+    ("Take[f[a, b], 1]", "f[a]"),
+    ("Take[Hold[1 + 1, b], 1]", "Hold[1 + 1]"),
+    ("DeleteCases[Hold[1 + 1, b], b]", "Hold[1 + 1]"),
+    ("Take[{1, 2, 3}, 2]", "{1, 2}"),
+    // Rational and complex numbers are atoms without parts.
+    ("DeleteCases[1/2, 1]", "1/2"),
+    ("DeleteCases[1 + 2 I, 1]", "1 + 2*I"),
+    (
+      "DeleteCases[{1/2, 1, 1 + 2 I}, 1, Infinity]",
+      "{1/2, 1 + 2*I}",
+    ),
+    ("DeleteCases[(1 + 2 I) + z, 1]", "(1 + 2*I) + z"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

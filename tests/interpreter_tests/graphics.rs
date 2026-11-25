@@ -34607,6 +34607,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `Text` label whose inline box notation hangs limits on a large
+    /// operator — on its own or as a part of a `Row` — is laid out as boxes:
+    /// the sign is drawn tall with its limits at its ends, instead of the
+    /// label printing the linear `∫_a^b` or a text-sized sign.
+    #[test]
+    fn text_large_operator_limits_are_laid_out() {
+      for (label, limits) in [
+        (
+          r#""\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)""#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"area = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)", Style["f", Italic], Style[" dx", Italic]}]"#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"s = ", Style["\!\(\*UnderoverscriptBox[\(\[Sum]\), \(k\), \(n\)]\)", 16]}]"#,
+          vec!["k", "n"],
+        ),
+        (
+          r#"Row[{"\!\(\*SubscriptBox[\(\[ContourIntegral]\), \(c\)]\)", "w"}]"#,
+          vec!["c"],
+        ),
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        let at = svg
+          .find("<svg x=")
+          .unwrap_or_else(|| panic!("{label}: no label picture in {svg}"));
+        let picture = &svg[at..];
+        for limit in limits {
+          assert!(
+            picture.contains(&format!(">{limit}</text>")),
+            "{label}: limit {limit} missing in {picture}"
+          );
+        }
+        assert!(
+          !svg.contains("_a^b") && !svg.contains("Box["),
+          "{label}: linear or box source leaked: {svg}"
+        );
+      }
+      // The integral sign itself is a drawn stroke, taller than the text.
+      let svg = export_svg(
+        r#"Graphics[{Text[Row[{"v = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(0\), \(h\)]\)", "A"}], {0, 0}]}]"#,
+      );
+      assert!(svg.contains("<path d=\"M "), "no integral stroke: {svg}");
+      assert!(svg.contains(">v = </text>"), "{svg}");
+      // Ordinary scripts stay on the one-line text path.
+      let plain = export_svg(
+        r#"Graphics[{Text[Row[{"a", "\!\(\*SubsuperscriptBox[\(x\), \(0\), \(h\)]\)"}], {0, 0}]}]"#,
+      );
+      assert!(!plain.contains("<svg x="), "{plain}");
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
@@ -74785,6 +74838,7 @@ fn manipulate_frame_frames_surface_plots_by_their_sphere() {
     format!(
       "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
        {{u, 0, 2 Pi}}, {{v, 0, Pi}}, PlotPoints -> 8, Mesh -> None, \
+       PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{-1, 1}}}}, \
        ImageSize -> {{300, 300}}{opts}]"
     )
   };
@@ -74803,13 +74857,63 @@ fn manipulate_frame_frames_surface_plots_by_their_sphere() {
   );
   // The sphere around a cube-shaped box is wider than the box's outline,
   // so the surface is drawn smaller.
-  let width = |svg: &str| {
-    let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
-    xs.iter().copied().fold(f64::MIN, f64::max)
-      - xs.iter().copied().fold(f64::MAX, f64::min)
-  };
-  let ratio = width(&spherical) / width(&plain);
+  let ratio = polygon_extent(&spherical).0 / polygon_extent(&plain).0;
   assert!(ratio > 0.7 && ratio < 0.95, "{ratio}");
+}
+
+/// Width and height of everything a picture's polygons cover.
+fn polygon_extent(svg: &str) -> (f64, f64) {
+  let [x0, x1, y0, y1] = polygon_vertices(svg).iter().fold(
+    [f64::MAX, f64::MIN, f64::MAX, f64::MIN],
+    |[x0, x1, y0, y1], &(x, y)| [x0.min(x), x1.max(x), y0.min(y), y1.max(y)],
+  );
+  (x1 - x0, y1 - y0)
+}
+
+/// Inside a `Manipulate` frame, a surface left to its automatic range
+/// (`PlotRange -> All` included) is framed by the sphere that just encloses
+/// the surface — as `Graphics3D` frames such a scene — not by the sphere
+/// through the corners of its box. Regression: a Demonstration's flat
+/// spiral shell at `ImageSize -> {450, 350}` was drawn 197 px wide where
+/// Wolfram's snapshot has it 327 px wide (now 315 px), and once the box
+/// outline reached past the sphere the picture was squashed vertically.
+#[test]
+fn manipulate_frame_fits_an_automatic_range_surface_by_its_contents() {
+  // A flat ring: a 6 × 6 × 2 box whose corners lie far outside the ring.
+  let plot = |opts: &str| {
+    format!(
+      "ParametricPlot3D[{{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], \
+       Sin[v]}}, {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}, PlotPoints -> 12, \
+       Mesh -> None, Boxed -> False, Axes -> None, \
+       ImageSize -> {{450, 350}}{opts}]"
+    )
+  };
+  let framed =
+    |opts: &str| woxi::with_manipulate_frame(|| export_svg(&plot(opts)));
+  let automatic = framed("");
+  assert_eq!(framed(", PlotRange -> All"), automatic);
+  assert_eq!(framed(", PlotRange -> Automatic"), automatic);
+  // A pinned range and an explicit `SphericalRegion -> True` keep the
+  // sphere around the box, which draws the ring distinctly smaller.
+  let (width, height) = polygon_extent(&automatic);
+  for opts in [
+    ", PlotRange -> {{-3, 3}, {-3, 3}, {-1, 1}}",
+    ", SphericalRegion -> True",
+  ] {
+    let boxed = polygon_extent(&framed(opts)).0;
+    assert!(width > 1.2 * boxed, "{opts}: {width} vs {boxed}");
+  }
+  // The ring fills most of the picture without leaving it …
+  assert!(width > 300.0 && width < 450.0, "{width}");
+  assert!(height < 350.0, "{height}");
+  // … and keeps the proportions of the outline-fitted picture.
+  let (plain_width, plain_height) = polygon_extent(&export_svg(&plot("")));
+  assert!(
+    (width / height - plain_width / plain_height).abs() < 0.01,
+    "{width} x {height} vs {plain_width} x {plain_height}"
+  );
+  // `SphericalRegion -> False` still turns the sphere framing off.
+  assert_eq!(framed(", SphericalRegion -> False"), export_svg(&plot("")));
 }
 
 /// `ImagePadding` keeps a surface plot's scene out of a band around the

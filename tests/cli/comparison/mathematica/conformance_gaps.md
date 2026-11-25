@@ -5876,6 +5876,16 @@ so Woxi widens the sphere-framed view by 1.1 there. Whether that margin is
 proportional or a fixed band of about 18 px (as an automatic padding would
 be) can't be told from snapshots of one size; unverified with wolframscript.
 
+A `Manipulate` frame's *default* sphere framing of a surface with an
+automatic range (`PlotRange -> All` included) uses the sphere that just
+encloses the surface instead, as `Graphics3D` does: three snapshots of an
+unboxed spiral shell at `ImageSize -> {450, 350}` draw it 327, 339 and
+290 px wide (Woxi: 315, 315 and 290 px; the box sphere gave 197 px for the
+first). The 4–8 % shortfall of the first two is not decoded. Whether an
+explicit `SphericalRegion -> True` with an automatic range should use the
+contents sphere too is open: the morphing-surface snapshots above fit the
+box sphere, but it is not recorded whether their `PlotRange` was pinned.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box
@@ -11056,3 +11066,18 @@ the earlier primitive winning the near-tie. But Woxi already draws exactly
 coplanar faces later-on-top, as in Wolfram. With that rule, a depth tie would
 put the outer surface on top, so the cause is unconfirmed. Not yet checked
 against wolframscript.
+
+### A compiled function called with symbolic vector arguments
+
+`cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., SameTest ->
+(Abs[#1 - #2] < 10^-6 &)]]` called as `cf[{x, y, z}]` issues
+`CompiledFunction::cfta` in wolframscript, then evaluates the uncompiled body
+with x, y and z left as symbols. The symbolic `FixedPoint` never satisfies the
+`SameTest`, so the kernel never returns, even inside
+`TimeConstrained[…, 10]` (verified for more than 120 s). Because
+`ContourPlot3D[cf[{x, y, z}], …]` evaluates its body with the variables still
+free, it hangs the same way. Woxi deliberately leaves the symbolic call
+unevaluated, so the plot samples the compiled function numerically and
+returns a `Graphics3D`. The unit test
+`compiled_vector_argument_iteration_is_not_run_symbolically` is in
+`EXACT_EXPR_SKIP`.

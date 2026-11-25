@@ -3035,11 +3035,12 @@ fn find_constraint_spans(
 ) -> Vec<(usize, usize)> {
   let mut spans = Vec::new();
   let mut i = 0;
-  // The search reports the leftmost match at or after `i`, so no match
-  // starts between `i` and it: jump there instead of retrying every
-  // character, and stop once nothing matches any more. Retrying was
-  // quadratic on a long text the pattern is rare or absent in.
   while i < s.len() {
+    // The search reports the leftmost match at or after `i`, so no match
+    // starts between `i` and it: jump there instead of retrying every
+    // character, which was quadratic on a long text with sparse matches
+    // (seconds for one `StringContainsQ` on a 500 kB string). No match at
+    // all ends the scan.
     let Some(caps) = re.captures_at(s, i) else {
       break;
     };
