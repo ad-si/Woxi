@@ -11278,3 +11278,108 @@ mod vertex_coordinate_rules_drawing {
     );
   }
 }
+
+/// How a layered plot is shaped and sized.
+mod layered_plot_shape {
+  use super::*;
+
+  fn vertex_ellipses(svg: &str) -> Vec<(f64, f64)> {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let v = tag.split(&format!("{name}=\"")).nth(1).unwrap();
+      v[..v.find('"').unwrap()].parse().unwrap()
+    };
+    svg
+      .split("<ellipse")
+      .skip(1)
+      .map(|tag| (attr(tag, "rx"), attr(tag, "ry")))
+      .collect()
+  }
+
+  /// `AspectRatio -> r` reshapes the layout; the vertex markers stay
+  /// round. Regression: the finished picture was stretched instead, which
+  /// drew every vertex as an ellipse.
+  #[test]
+  fn aspect_ratio_keeps_vertices_round() {
+    let svg = interpret(
+      "ExportString[LayeredGraphPlot[{1 -> 2, 1 -> 3, 3 -> 4}, \
+       AspectRatio -> 1/3], \"SVG\"]",
+    )
+    .unwrap();
+    let vertices = vertex_ellipses(&svg);
+    assert_eq!(vertices.len(), 4, "{svg}");
+    for (rx, ry) in vertices {
+      assert!((rx - ry).abs() < 0.01, "vertex {rx} x {ry} is not round");
+    }
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(h < w / 2.0, "picture {w} x {h} ignores the aspect ratio");
+  }
+
+  /// The layout itself takes the asked proportions.
+  #[test]
+  fn aspect_ratio_stretches_the_layout() {
+    assert_eq!(
+      interpret(
+        "With[{p = Cases[LayeredGraphPlot[{1 -> 2, 1 -> 3, 3 -> 4}, \
+         AspectRatio -> 1/4], Disk[q_, ___] :> q, Infinity]}, \
+         Chop[(Max[p[[All, 2]]] - Min[p[[All, 2]]]) / \
+         (Max[p[[All, 1]]] - Min[p[[All, 1]]]) - 1/4]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  /// A single chain has no width. Regression: at the fixed 360-point
+  /// width its picture came out tens of thousands of points tall, with the
+  /// vertices as wide as the picture.
+  #[test]
+  fn single_chain_is_a_narrow_column() {
+    let svg =
+      interpret("ExportString[LayeredGraphPlot[{1 -> 2, 2 -> 3}], \"SVG\"]")
+        .unwrap();
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(h <= 432.0 && w < h, "picture is {w} x {h}");
+    for (rx, ry) in vertex_ellipses(&svg) {
+      assert!((rx - ry).abs() < 0.01 && rx < 10.0, "vertex {rx} x {ry}");
+    }
+  }
+
+  /// Under an `AspectRatio` the chain keeps the asked picture shape, with
+  /// round vertices (they were smeared across the whole width).
+  #[test]
+  fn single_chain_with_aspect_ratio_keeps_round_vertices() {
+    let svg = interpret(
+      "ExportString[LayeredGraphPlot[{1 -> 2, 2 -> 3}, AspectRatio -> 1/2], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!((h / w - 0.5).abs() < 0.01, "picture is {w} x {h}");
+    let vertices = vertex_ellipses(&svg);
+    assert_eq!(vertices.len(), 3, "{svg}");
+    for (rx, ry) in vertices {
+      assert!((rx - ry).abs() < 0.01 && rx < 10.0, "vertex {rx} x {ry}");
+    }
+  }
+
+  /// The vertex labels, set to the right of their markers, keep their room
+  /// when the layout is fitted to an `AspectRatio`: the rightmost marker
+  /// leaves at least its label's width before the picture's edge.
+  #[test]
+  fn aspect_ratio_leaves_room_for_vertex_labels() {
+    let svg = interpret(
+      "ExportString[LayeredGraphPlot[{\"top\" -> \"a long left name\", \
+       \"top\" -> \"a long right name\"}, VertexLabeling -> True, \
+       AspectRatio -> 1/2], \"SVG\"]",
+    )
+    .unwrap();
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    let rightmost = svg
+      .split("<ellipse cx=\"")
+      .skip(1)
+      .map(|t| t[..t.find('"').unwrap()].parse::<f64>().unwrap())
+      .fold(0.0, f64::max);
+    assert!(svg.contains(">a long right name<"), "{svg}");
+    assert!(w - rightmost > 70.0, "marker at {rightmost} of {w}");
+  }
+}

@@ -7452,6 +7452,48 @@ fn wrap_pane_text_at(
         proportional,
       )
     }
+    // A `Row` of nothing but `Button`s (a strip of choices generated from
+    // a list) breaks between buttons: the ones that do not fit the width
+    // move onto further lines, as the items of a row do in a notebook.
+    "Row"
+      if args.len() == 1
+        && matches!(&args[0], Expr::List(items)
+          if items.len() > 1 && items.iter().all(|i| matches!(i,
+            Expr::FunctionCall { name, args } if name == "Button" && args.len() >= 2))) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+      let mut used = 0.0;
+      for item in items {
+        let Expr::FunctionCall { args: bargs, .. } = item else {
+          return None;
+        };
+        let (w, _) = crate::functions::graphics::parse_svg_wh(
+          &crate::functions::graphics::button_svg(bargs),
+        );
+        if used + w > width && used > 0.0 {
+          lines.push(Vec::new());
+          used = 0.0;
+        }
+        used += w;
+        lines.last_mut()?.push(item.clone());
+      }
+      if lines.len() < 2 {
+        return None;
+      }
+      Some(call(
+        "Column",
+        vec![Expr::List(
+          lines
+            .into_iter()
+            .map(|line| call1("Row", Expr::List(line.into())))
+            .collect::<Vec<_>>()
+            .into(),
+        )],
+      ))
+    }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
         return None;
@@ -8087,6 +8129,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if name == "Button" && args.len() >= 2 =>
     {
       crate::functions::graphics::button_svg(args)
+    }
+    // `TogglerBar[Dynamic[var], choices]` draws as its row of toggle
+    // plates.
+    Expr::FunctionCall { name, args }
+      if name == "TogglerBar"
+        && args.len() >= 2
+        && crate::functions::graphics::togglerbar_svg(args).is_some() =>
+    {
+      crate::functions::graphics::togglerbar_svg(args).unwrap_or_default()
     }
     // `PaneSelector[{v1 -> e1, …}, sel, default]` displays only the pane
     // whose key matches `sel`, so exporting one exports that pane.

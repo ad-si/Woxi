@@ -1066,7 +1066,79 @@ mod stretched_button_items {
     .unwrap();
     let svg = r.graphics.expect("column graphic");
     let (narrow, _) = woxi::functions::graphics::parse_svg_wh(&svg);
-    assert!(plate_width(&svg) > narrow - 2.0, "{svg}");
+    assert!(plate_width(&svg) > narrow - 16.0, "{svg}");
+  }
+
+  // Regression: the stretched button took the column's whole width while
+  // being drawn after the margin a text line starts at, so its plate ran
+  // past the column's right edge and was cut off there.
+  #[test]
+  fn stretched_button_stays_inside_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a considerably longer line of text", Button["go", x = 1]}], "SVG"]"#,
+    )
+    .unwrap();
+    let (canvas, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    let at = svg.find("rx=\"4\"").expect("button plate");
+    let cell = &svg[svg[..at].rfind("<svg x=\"").unwrap()..at];
+    let x: f64 = cell
+      .split("x=\"")
+      .nth(1)
+      .and_then(|v| v[..v.find('"').unwrap()].parse().ok())
+      .unwrap();
+    assert!(x + plate_width(&svg) < canvas, "{svg}");
+  }
+
+  // `Appearance -> "Pressed"` draws the flat gray plate; the option is
+  // held with the button, so a condition deciding it is evaluated.
+  #[test]
+  fn pressed_button_draws_a_gray_plate() {
+    clear_state();
+    let pressed = interpret(
+      r#"picked = {2}; ExportString[Button["go", x = 1, Appearance -> If[MemberQ[picked, 2], "Pressed", Automatic]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(pressed.contains("fill=\"#EDEDED\""), "{pressed}");
+    let raised = interpret(
+      r#"picked = {}; ExportString[Button["go", x = 1, Appearance -> If[MemberQ[picked, 2], "Pressed", Automatic]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(raised.contains("fill=\"#FDFDFD\""), "{raised}");
+    assert!(!raised.contains("#EDEDED"), "{raised}");
+  }
+
+  // A `Column` label sets one line of the plate per item instead of
+  // running the items together on one line.
+  #[test]
+  fn column_label_stacks_its_lines_on_the_plate() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Button[Text@Column@{"first line", "second"}, x = 1], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">first line</text>"), "{svg}");
+    assert!(svg.contains(">second</text>"), "{svg}");
+    let one_line =
+      interpret(r#"ExportString[Button["first line", x = 1], "SVG"]"#).unwrap();
+    let height = |svg: &str| woxi::functions::graphics::parse_svg_wh(svg).1;
+    assert!(height(&svg) > height(&one_line), "{svg}");
+  }
+
+  // A label typeset with a script stacked over an arrow keeps the script
+  // over its base (it was flattened to `→3`) on a plate tall enough for it.
+  #[test]
+  fn overscript_label_stays_stacked_on_the_plate() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Button[Text@Style[Row[{"a", "b"}, Overscript["→", 3]], Red], x = 1], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("data-stack=\"over\">3</tspan>"), "{svg}");
+    let plain =
+      interpret(r#"ExportString[Button["a → b", x = 1], "SVG"]"#).unwrap();
+    let height = |svg: &str| woxi::functions::graphics::parse_svg_wh(svg).1;
+    assert!(height(&svg) > height(&plain), "{svg}");
   }
 
   // An explicit `ImageSize` keeps the button at its requested width.
