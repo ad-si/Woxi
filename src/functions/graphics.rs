@@ -2345,6 +2345,24 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   }
 }
 
+/// The color a display item shows as a swatch: an explicit color directive
+/// (`RGBColor[…]`, `Hue[…]`, `GrayLevel[…]`, …), possibly under `Style[…]`
+/// wrappers, which only set text attributes a swatch does not have.
+pub(crate) fn displayed_color(expr: &Expr) -> Option<Color> {
+  let mut core = expr;
+  while let Expr::FunctionCall { name, args } = core
+    && name == "Style"
+    && let Some(first) = args.first()
+  {
+    core = first;
+  }
+  if crate::is_color_function_call(core) {
+    parse_color(core)
+  } else {
+    None
+  }
+}
+
 /// Generate a single 16×16 SVG swatch for a color.
 pub(crate) fn color_swatch_svg(color: &Color) -> String {
   format!(
@@ -40494,6 +40512,21 @@ fn resolve_display_item_content(expr: &Expr) -> (Expr, bool) {
     current = unwrap_display_wrappers(&current);
   }
   current = unwrap_display_wrappers(&current);
+  // A color directive laid out as an item (`Grid[{{"water", Blue}}]`, a
+  // hand-made plot key) is typeset as its swatch, as it is on its own,
+  // rather than as the `RGBColor[…]` source text.
+  if let Some(color) = displayed_color(&current) {
+    return (
+      Expr::Graphics {
+        svg: color_swatch_svg(&color),
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      },
+      shows_text,
+    );
+  }
   // `Style[Dynamic[expr], directives…]` — the readout idiom — styles the
   // current value of `expr`; release the hold under the `Style` so the value
   // is drawn rather than the symbolic `Dynamic[…]` text.

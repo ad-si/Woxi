@@ -4435,7 +4435,7 @@ fn render_tabular_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// identifier like `Red`). Returns `true` for `RGBColor[…]`, `Hue[…]`,
 /// `GrayLevel[…]`, `Darker[…]`, `Lighter[…]`, and theme-resolved colors
 /// (`LightDarkSwitched[…]`, `ThemeColor[…]`, `SystemColor[…]`).
-fn is_color_function_call(expr: &syntax::Expr) -> bool {
+pub(crate) fn is_color_function_call(expr: &syntax::Expr) -> bool {
   matches!(
     expr,
     syntax::Expr::FunctionCall { name, .. }
