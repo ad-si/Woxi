@@ -9,7 +9,7 @@ use num_traits::{One, Signed, Zero};
 ///
 /// The denominator is positive, numerator and denominator are coprime, and
 /// zero is represented only as `0/1`.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Rational {
   pub numerator: BigInt,
   pub denominator: BigInt,
@@ -96,6 +96,20 @@ impl Rational {
   pub fn numeric_cmp(&self, other: &Self) -> Ordering {
     (&self.numerator * &other.denominator)
       .cmp(&(&other.numerator * &self.denominator))
+  }
+}
+
+/// Orders rationals by numeric value (not lexicographically by their fields).
+/// Consistent with the derived `Eq` because rationals are kept canonical.
+impl Ord for Rational {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self.numeric_cmp(other)
+  }
+}
+
+impl PartialOrd for Rational {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
   }
 }
 
@@ -204,6 +218,25 @@ mod tests {
   use proptest::test_runner::RngSeed;
 
   use super::*;
+
+  #[test]
+  fn rational_ordering_is_numeric() {
+    let r =
+      |n: i64, d: i64| Rational::new(BigInt::from(n), BigInt::from(d)).unwrap();
+    assert!(r(1, 3) < r(1, 2));
+    assert!(r(-1, 2) < r(-1, 3));
+    assert!(r(2, 3) > r(3, 5));
+    assert!(r(-7, 2) < r(-3, 1));
+    assert_eq!(r(2, 4).cmp(&r(1, 2)), Ordering::Equal);
+    let mut values =
+      vec![r(1, 2), r(1, 3), r(-1, 3), r(5, 1), r(-5, 2), r(2, 3)];
+    values.sort();
+    assert_eq!(
+      values,
+      vec![r(-5, 2), r(-1, 3), r(1, 3), r(1, 2), r(2, 3), r(5, 1)]
+    );
+    assert_eq!(values.iter().max(), Some(&r(5, 1)));
+  }
 
   #[test]
   fn rational_is_reduced_and_has_positive_denominator() {
