@@ -27765,6 +27765,14 @@ pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
   structured_label_svg_impl(expr, 14.0, true)
 }
 
+/// [`structured_label_svg`] for a legend entry, set in the picture's
+/// proportional text face: a legend's plain labels are drawn in that face,
+/// so a two-dimensional one (a hat over a letter, a fraction) has to match
+/// them instead of coming out in the typeset monospace face beside them.
+pub(crate) fn structured_legend_label_svg(expr: &Expr) -> Option<String> {
+  structured_label_svg(&in_text_face(expr))
+}
+
 /// [`structured_label_svg`] typeset at a base font size of `size` points,
 /// at the top script level.
 pub(crate) fn structured_label_svg_sized(
@@ -43842,8 +43850,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       })
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
-    // them.
-    return stacked_boxes_svg(rows, "Left");
+    // them, each centered on the block — a multi-line `Row` label over a
+    // plot (`Labeled[…, Row[{"title\ncoefficients = ", …}], Top]`) centers
+    // its short lines rather than hanging them flush left. A row given an
+    // explicit `ImageSize` keeps its lines flush left in that fixed box
+    // and never reaches here (it has more than one argument).
+    return stacked_boxes_svg(rows, "Center");
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
