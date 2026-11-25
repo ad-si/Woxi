@@ -13311,18 +13311,47 @@ mod ndsolve {
     assert_eq!(result, "{{{0., 0.2}, {0., 1.}, {0., 1.}}, 139}");
   }
 
-  /// Without any condition on its edges a rectangle keeps the zero natural
-  /// flux of the finite element method: the total heat stays what it was.
+  /// In finite element notation (a `NeumannValue` term) an edge without a
+  /// condition keeps the zero natural flux: the total heat stays what it
+  /// was.
   #[test]
   fn pde_2d_insulated_rectangle_conserves_heat() {
     let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y] + NeumannValue[0, x == 0], \
+       w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
+       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1., 2667}");
+  }
+
+  /// Without any condition and without finite element notation the method
+  /// of lines extrapolates beyond the edges, so the quadratic solution
+  /// `x^2 + y + 4 t` comes out exactly, with a warning per direction.
+  #[test]
+  fn pde_2d_without_conditions_extrapolates() {
+    let r = woxi::interpret_with_stdout(
       "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
        D[w[x, y, t], y, y], w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
        {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
        Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
     )
     .unwrap();
-    assert_eq!(result, "{1., 2667}");
+    assert_eq!(r.result, "{1., 10667}");
+    assert_eq!(
+      r.warnings,
+      ["x", "y"]
+        .iter()
+        .map(|v| format!(
+          "NDSolveValue::bcart: Warning: an insufficient number of boundary \
+           conditions have been specified for the direction of independent \
+           variable {v}. Artificial boundary effects may be present in the \
+           solution."
+        ))
+        .collect::<Vec<_>>()
+    );
   }
 
   /// `NeumannValue[g, y == 0]` is an inflow `g` per unit length of that
