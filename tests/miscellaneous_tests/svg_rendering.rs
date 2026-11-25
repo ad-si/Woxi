@@ -2,7 +2,7 @@ use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
   box_has_fraction, box_string_to_svg, box_string_visible_len, boxes_to_svg,
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
-  layout_box, layout_to_svg, row_to_svg,
+  layout_box, layout_to_svg, row_to_svg, traditional_box_string_to_svg,
 };
 use woxi::helpers::{
   binop, bool_expr, call, call1, div2, id_expr, minus2, neg1, plus2, pow, pow2,
@@ -1561,6 +1561,39 @@ mod tests {
     }
 
     #[test]
+    fn traditional_box_string_single_letter_box_symbols_are_italic() {
+      // A TraditionalForm label sets a one-letter symbol written as box
+      // code in italics, while the plain text run before it and a
+      // multi-letter script stay upright.
+      let svg = traditional_box_string_to_svg(
+        "-\\!\\(\\*SubscriptBox[\\(d\\), \\(ox\\)]\\)",
+      );
+      assert!(svg.starts_with('-'), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">d<"), "{svg}");
+      assert!(!svg.contains("italic\" baseline-shift"), "{svg}");
+      assert!(svg.contains(">ox</tspan>"), "{svg}");
+      // Plain text outside the box code is not italicized.
+      let svg = traditional_box_string_to_svg(
+        "a \\!\\(\\*SuperscriptBox[\\(b\\), \\(2\\)]\\)",
+      );
+      assert!(svg.starts_with("a "), "{svg}");
+      assert!(svg.contains("font-style=\"italic\">b<"), "{svg}");
+    }
+
+    #[test]
+    fn plot_tick_label_italicizes_single_letter_box_symbols() {
+      let code = r#"ExportString[Plot[x, {x, 0, 1}, Ticks -> {{{0.5, "-\!\(\*SubscriptBox[\(d\), \(ox\)]\)"}}, None}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          ">-<tspan font-style=\"italic\">d</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">ox</tspan></text>"
+        ),
+        "{svg}"
+      );
+    }
+
+    #[test]
     fn box_string_visible_len_ignores_box_scaffolding() {
       // Visible length counts "C", "2", "=9.78 GeV", "-3" = 13 chars — not the
       // dozens of bytes of `\!\(\*SubscriptBox…\)` scaffolding.
@@ -2311,8 +2344,9 @@ mod tests {
 
     #[test]
     fn frame_true_draws_thin_four_sided_border() {
-      // Frame -> True draws a single closed rectangle (5 points) at 1px
-      // (stroke-width = RESOLUTION_SCALE = 10 in viewBox units).
+      // Frame -> True draws a single closed rectangle (5 points) half a
+      // point wide, as Wolfram does (stroke-width = RESOLUTION_SCALE / 2 =
+      // 5 in viewBox units).
       let svg = woxi::interpret(
         r#"ExportString[ListLinePlot[{{1,2,3}}, Frame -> True], "SVG"]"#,
       )
@@ -2320,9 +2354,9 @@ mod tests {
       // Find the thick frame polyline and confirm it is a closed 5-point rect.
       let frame = svg
         .lines()
-        .find(|l| l.contains("stroke-width=\"10\"") && l.contains("points="))
+        .find(|l| l.contains("stroke-width=\"5\"") && l.contains("points="))
         .unwrap_or_else(|| {
-          panic!("no frame polyline at stroke-width 10: {svg}")
+          panic!("no frame polyline at stroke-width 5: {svg}")
         });
       let pts = frame
         .split("points=\"")
@@ -2816,16 +2850,15 @@ mod tests {
     #[test]
     fn string_letters_in_a_fraction_stay_upright() {
       // A string is literal text: its single letters are not math
-      // variables, so they stay upright in a typeset fraction, while a
-      // one-letter symbol is still set in italics.
+      // variables, so they stay upright in a typeset fraction. Exported to
+      // SVG on its own (not inside a picture), a one-letter symbol is
+      // upright as well, as in Wolfram's SVG export.
       let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
       assert!(svg.contains(">a</text>"), "{svg}");
       assert!(!svg.contains("italic"), "string letters upright: {svg}");
       let svg = svg_of("Grid[{{a/b}}]");
-      assert!(
-        svg.contains("font-style=\"italic\""),
-        "symbols italic: {svg}"
-      );
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "exported symbols upright: {svg}");
       // Inline subscript boxes inside a string are literal text too.
       let svg = svg_of(
         "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
@@ -4847,6 +4880,32 @@ mod tests {
           svg.contains(&format!(">{name}<")),
           "every vertex is labeled with its own name: {svg}"
         );
+      }
+    }
+
+    /// A `Text` label the rendering function draws keeps its font size:
+    /// mapping it from the caller's units onto the drawing moves the label
+    /// without stretching its glyphs, also when the graph falls apart into
+    /// several components that are packed side by side.
+    #[test]
+    fn vertex_rendering_function_text_keeps_its_font_size() {
+      for graph in ["{1 -> 2, 2 -> 3}", "{1 -> 2, 3 -> 3, 4 -> 5, 6 -> 5}"] {
+        let svg = svg_of(&format!(
+          r#"GraphPlot[{graph}, DirectedEdges -> True,
+             VertexRenderingFunction -> (Text[#2, #1, Background -> White] &)]"#
+        ));
+        let labels: Vec<&str> = svg
+          .split("<text")
+          .skip(1)
+          .map(|t| t.split('>').next().unwrap_or(""))
+          .collect();
+        assert!(!labels.is_empty(), "{svg}");
+        for label in labels {
+          assert!(
+            !label.contains("matrix("),
+            "{graph}: the label is moved, not resized: {label}"
+          );
+        }
       }
     }
 

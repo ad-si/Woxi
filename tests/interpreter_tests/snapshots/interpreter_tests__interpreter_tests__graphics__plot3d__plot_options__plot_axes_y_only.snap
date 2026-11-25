@@ -25,13 +25,13 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {False, True}]\")"
 <line x1="232.4" y1="205.8" x2="256.4" y2="205.8" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="232.4" y1="15.6" x2="256.4" y2="15.6" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="232.4" y1="2013.3" x2="272.4" y2="2013.3" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="202.4" y="2048.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1.0</text>
+<text x="202.4" y="2048.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1.0</text>
 <line x1="232.4" y1="1537.7" x2="272.4" y2="1537.7" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="202.4" y="1572.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.5</text>
+<text x="202.4" y="1572.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-0.5</text>
 <line x1="232.4" y1="1062.0" x2="272.4" y2="1062.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="202.4" y="1096.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.0</text>
+<text x="202.4" y="1096.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.0</text>
 <line x1="232.4" y1="586.4" x2="272.4" y2="586.4" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="202.4" y="621.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="202.4" y="621.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.5</text>
 <line x1="232.4" y1="110.7" x2="272.4" y2="110.7" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="202.4" y="145.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="202.4" y="145.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 </svg>

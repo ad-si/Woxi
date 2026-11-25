@@ -194,20 +194,27 @@ pub(crate) fn closed_convex_interior(tris: &[[Point3D; 3]]) -> Option<Point3D> {
   Some(c)
 }
 
-/// Bends a vertex normal so the vertex faces the viewer (along `toward`)
-/// the same way as its triangle, whose normal is `face`. Near a silhouette
-/// an averaged normal can tip past the edge of view; lit as-is it would
-/// be flipped to the other side and light the rim from behind.
-pub(crate) fn orient_vertex_normal(
+/// `normal` turned to the side of the triangle whose normal is `face`.
+fn align_with_face(normal: Vec3, face: Vec3) -> Vec3 {
+  if dot(normal, face) < 0.0 {
+    [-normal[0], -normal[1], -normal[2]]
+  } else {
+    normal
+  }
+}
+
+/// Bends a vertex normal, aligned with its triangle's normal `face`, so
+/// the vertex faces the viewer (along `toward`, from the vertex) on the
+/// triangle's side `side` (`1.0`: the side `face` points to). Near a
+/// silhouette an averaged normal can tip past the edge of view; lit as-is
+/// it would be flipped to the other side and light the rim from behind.
+fn orient_vertex_normal(
   normal: Vec3,
   face: Vec3,
   toward: Vec3,
+  side: f64,
 ) -> Vec3 {
-  let mut n = normal;
-  if dot(n, face) < 0.0 {
-    n = [-n[0], -n[1], -n[2]];
-  }
-  let side = if dot(face, toward) < 0.0 { -1.0 } else { 1.0 };
+  let mut n = align_with_face(normal, face);
   let along = dot(n, toward) * side;
   let min = 1e-3;
   if along < min {
@@ -232,34 +239,60 @@ pub(crate) type ExactNormal<'a> =
 /// The lit color at each corner of the triangles of one smooth surface.
 /// `exact` gives the surface's true normals (an analytic primitive);
 /// otherwise normals are averaged from the faces. `shade(i, normal,
-/// point)` lights corner `point` of triangle `i`; `toward` points at the
-/// viewer.
+/// point)` lights corner `point` of triangle `i`; `toward(point)` points
+/// from a point at the viewer (for a perspective camera it differs across
+/// the scene: the eye sees past the rim of a sphere off to one side).
 pub(crate) fn corner_colors(
   tris: &[[Point3D; 3]],
   exact: Option<ExactNormal>,
-  toward: Vec3,
+  toward: &dyn Fn(Point3D) -> Vec3,
   mut shade: impl FnMut(usize, Vec3, Point3D) -> (u8, u8, u8),
 ) -> Vec<[(u8, u8, u8); 3]> {
+  let centroid = |t: &[Point3D; 3]| Point3D {
+    x: (t[0].x + t[1].x + t[2].x) / 3.0,
+    y: (t[0].y + t[1].y + t[2].y) / 3.0,
+    z: (t[0].z + t[1].z + t[2].z) / 3.0,
+  };
   let faces: Vec<Vec3> = tris
     .iter()
     .map(|t| {
-      normalize(cross(sub(t[1], t[0]), sub(t[2], t[0]))).unwrap_or(toward)
+      normalize(cross(sub(t[1], t[0]), sub(t[2], t[0])))
+        .unwrap_or_else(|| toward(centroid(t)))
     })
     .collect();
   let normals: Vec<[Vec3; 3]> = match exact {
-    Some(f) => tris
-      .iter()
-      .zip(&faces)
-      .enumerate()
-      .map(|(i, (t, &face))| {
-        let centroid = Point3D {
-          x: (t[0].x + t[1].x + t[2].x) / 3.0,
-          y: (t[0].y + t[1].y + t[2].y) / 3.0,
-          z: (t[0].z + t[1].z + t[2].z) / 3.0,
-        };
-        t.map(|p| normalize(f(i, p, face, centroid)).unwrap_or(face))
-      })
-      .collect(),
+    Some(f) => {
+      let exact: Vec<[Option<Vec3>; 3]> = tris
+        .iter()
+        .zip(&faces)
+        .enumerate()
+        .map(|(i, (t, &face))| {
+          let centroid = Point3D {
+            x: (t[0].x + t[1].x + t[2].x) / 3.0,
+            y: (t[0].y + t[1].y + t[2].y) / 3.0,
+            z: (t[0].z + t[1].z + t[2].z) / 3.0,
+          };
+          t.map(|p| normalize(f(i, p, face, centroid)))
+        })
+        .collect();
+      // A corner without a known normal (a zero vector) is lit with the
+      // normal averaged from the faces around it.
+      let averaged = exact
+        .iter()
+        .any(|n| n.iter().any(Option::is_none))
+        .then(|| vertex_normals(tris));
+      exact
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| {
+          [0, 1, 2].map(|c| {
+            n[c].unwrap_or_else(|| {
+              averaged.as_ref().map_or(faces[i], |a| a[i][c])
+            })
+          })
+        })
+        .collect()
+    }
     None => vertex_normals(tris),
   };
   tris
@@ -268,8 +301,34 @@ pub(crate) fn corner_colors(
     .zip(faces)
     .enumerate()
     .map(|(i, ((t, n), face))| {
-      [0, 1, 2]
-        .map(|c| shade(i, orient_vertex_normal(n[c], face, toward), t[c]))
+      // Whether the triangle faces the eye is settled where it sits.
+      let views = t.map(toward);
+      let mut side = if dot(face, toward(centroid(t))) < 0.0 {
+        -1.0
+      } else {
+        1.0
+      };
+      // A facet turned away from the eye whose surface turns toward it
+      // at one of its corners, or comes within the facet's own spread of
+      // normals of doing so, lies on the smooth surface's silhouette: what
+      // shows of it (a sliver past the facets in front) is the rim of the
+      // outer side seen edge-on, not the inner side, which lit the rim of
+      // a sphere cut open by a `PlotRange` in dark slivers. A facet seen
+      // from behind well away from a silhouette (the inside of a bowl,
+      // through its opening) keeps its inner side.
+      if side < 0.0 {
+        let aligned = n.map(|v| align_with_face(v, face));
+        let spread = aligned
+          .iter()
+          .map(|&v| dot(cross(v, face), cross(v, face)).sqrt())
+          .fold(0.0, f64::max);
+        if (0..3).any(|c| dot(aligned[c], views[c]) > -spread) {
+          side = 1.0;
+        }
+      }
+      [0, 1, 2].map(|c| {
+        shade(i, orient_vertex_normal(n[c], face, views[c], side), t[c])
+      })
     })
     .collect()
 }
@@ -449,6 +508,17 @@ pub(crate) fn fit_gradient(
 /// filled flat.
 const FLAT_SPREAD: u8 = 2;
 
+/// A triangle's fill by [`GradientDefs::linear_paint`].
+pub(crate) enum LinearPaint {
+  /// One color (the corners' mean) is as good as a gradient.
+  Flat,
+  /// The `url(#…)` of a linear gradient.
+  Gradient(String),
+  /// The channels change along different directions, which no single
+  /// linear gradient reproduces.
+  NotLinear,
+}
+
 /// The gradients one SVG document defines, so a gradient used twice is
 /// written once.
 #[derive(Default)]
@@ -527,6 +597,28 @@ impl GradientDefs {
     pts: [(f64, f64); 3],
     colors: [(u8, u8, u8); 3],
   ) -> Option<String> {
+    match self.linear_paint(out, pts, colors)? {
+      LinearPaint::Flat => None,
+      LinearPaint::Gradient(paint) => Some(paint),
+      LinearPaint::NotLinear => {
+        let (id, definition) = rgb_triangle_pattern(pts, colors)?;
+        out.push_str(&definition);
+        Some(format!("url(#{id})"))
+      }
+    }
+  }
+
+  /// How a triangle with screen corners `pts` and corner colors `colors`
+  /// is filled by at most one linear gradient: flat in the corners' mean
+  /// color, by a gradient (written to `out` the first time it is needed),
+  /// or not at all, when the color changes along more than one direction.
+  /// `None` for a degenerate triangle.
+  pub(crate) fn linear_paint(
+    &mut self,
+    out: &mut String,
+    pts: [(f64, f64); 3],
+    colors: [(u8, u8, u8); 3],
+  ) -> Option<LinearPaint> {
     // Corners within a couple of levels of each other: a flat fill in
     // their mean is off by at most one level, which no one sees, and
     // saves the gradient.
@@ -536,19 +628,17 @@ impl GradientDefs {
     };
     if spread(|c| c.0).max(spread(|c| c.1)).max(spread(|c| c.2)) <= FLAT_SPREAD
     {
-      return None;
+      return Some(LinearPaint::Flat);
     }
     let c = colors
       .map(|(r, g, b)| [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0]);
     let fit = fit_gradient(pts, c)?;
     if fit.rms_error > 2.0 {
-      let (id, definition) = rgb_triangle_pattern(pts, colors)?;
-      out.push_str(&definition);
-      return Some(format!("url(#{id})"));
+      return Some(LinearPaint::NotLinear);
     }
     let (c1, c2) = (hex(fit.from_color), hex(fit.to_color));
     if c1 == c2 {
-      return None;
+      return Some(LinearPaint::Flat);
     }
     let body = format!(
       "x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\"><stop stop-color=\"{c1}\"/><stop offset=\"1\" stop-color=\"{c2}\"/>",
@@ -569,7 +659,7 @@ impl GradientDefs {
         "<linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" {body}</linearGradient>"
       );
     }
-    Some(format!("url(#{id})"))
+    Some(LinearPaint::Gradient(format!("url(#{id})")))
   }
 }
 
@@ -585,6 +675,60 @@ mod tests {
     let fit = fit_gradient(pts, colors).unwrap();
     assert!(fit.rms_error < 1e-9);
     assert!((fit.from.1 - fit.to.1).abs() < 1e-9);
+  }
+
+  /// A perspective eye sees past the rim of a sphere off to one side: a
+  /// triangle there faces the eye although it faces away from the view
+  /// direction at the center. Its corners are lit as seen from where it
+  /// sits, not turned to their back (which drew a dark sliver along the
+  /// rim).
+  #[test]
+  fn corners_face_the_eye_where_they_sit() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // In the plane x = 0, facing +x.
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 1.0, 0.0), p(0.0, 0.0, 1.0)]];
+    let mut lit = Vec::new();
+    corner_colors(&tris, None, &|_| [1.0, 0.0, 0.2], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert_eq!(lit.len(), 3);
+    assert!(lit.iter().all(|n| n[0] > 0.9), "{lit:?}");
+  }
+
+  /// A facet turned (just) away from the eye whose surface turns toward
+  /// the eye at its corners straddles the silhouette of the smooth
+  /// surface: its corners are lit on the outer side, as the surface
+  /// there is, not bent to the facet's back (which the lighting then
+  /// flipped to the inner side, darkening the rim).
+  #[test]
+  fn silhouette_facets_are_lit_on_the_outer_side() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // Face normal (0, 1, -0.1): away from the eye along +z.
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 0.1, 1.0), p(1.0, 0.0, 0.0)]];
+    let exact = |_: usize, _: Point3D, _: Vec3, _: Point3D| [0.0, 1.0, 0.2];
+    let mut lit = Vec::new();
+    corner_colors(&tris, Some(&exact), &|_| [0.0, 0.0, 1.0], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert_eq!(lit.len(), 3);
+    assert!(lit.iter().all(|n| n[1] > 0.9 && n[2] > 0.1), "{lit:?}");
+  }
+
+  /// A facet turned away from the eye on a surface that turns away too
+  /// (the inside of a bowl seen through its opening) keeps its back side.
+  #[test]
+  fn facets_seen_from_behind_stay_on_their_back() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let tris = [[p(0.0, 0.0, 0.0), p(0.0, 0.1, 1.0), p(1.0, 0.0, 0.0)]];
+    let exact = |_: usize, _: Point3D, _: Vec3, _: Point3D| [0.0, 1.0, -0.2];
+    let mut lit = Vec::new();
+    corner_colors(&tris, Some(&exact), &|_| [0.0, 0.0, 1.0], |_, n, _| {
+      lit.push(n);
+      (0, 0, 0)
+    });
+    assert!(lit.iter().all(|n| n[2] < 0.0), "{lit:?}");
   }
 
   #[test]

@@ -2293,19 +2293,26 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::n_expectation_ast(&args[..2]));
     }
     "SeedRandom" if args.len() <= 2 => {
-      // `Method -> …` only selects the generator algorithm; the seed
-      // itself is what determines reproducibility here.
-      let positional = match args {
-        [seed, Expr::Rule { pattern, .. }] if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
-          std::slice::from_ref(seed)
+      // `Method -> m` selects the generator, whose stream the seed picks.
+      let is_method =
+        |p: &Expr| matches!(p, Expr::Identifier(n) if n == "Method");
+      let (positional, method) = match args {
+        [
+          seed,
+          Expr::Rule {
+            pattern,
+            replacement,
+          },
+        ] if is_method(pattern) => {
+          (std::slice::from_ref(seed), Some(replacement.as_ref()))
         }
         // `SeedRandom[Method -> m]` reseeds from the time, like `SeedRandom[]`.
-        [Expr::Rule { pattern, .. }] if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
-          &[]
-        }
-        _ => args,
+        [Expr::Rule { pattern, .. }] if is_method(pattern) => (&[][..], None),
+        _ => (args, None),
       };
-      return Some(crate::functions::math_ast::seed_random_ast(positional));
+      return Some(crate::functions::math_ast::seed_random_with_method(
+        positional, method,
+      ));
     }
     "Clip" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::clip_ast(args));

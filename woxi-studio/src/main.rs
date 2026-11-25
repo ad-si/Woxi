@@ -10256,6 +10256,47 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// Regression: the variables a button drives were declared as `{n, 0, 0}`
+  /// and `{log, {}}` specs and hidden by a Manipulate-level
+  /// `ControlType -> {None, None}` list. The `None` entries were ignored, so
+  /// the variables became sliders/choosers instead of state the button's
+  /// writes are kept in.
+  #[test]
+  fn control_type_list_none_entries_keep_button_driven_state() {
+    let code = r#"Manipulate[
+      Row[{n, ": ", log}],
+      Button["draw", n = n + 1; AppendTo[log, 10 n]],
+      Button["reset", n = 0; log = {}],
+      {n, 0, 0}, {log, {}},
+      ControlType -> {None, None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the button panel should build a ManipulateState");
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .map(manipulate::ControlState::name)
+      .collect();
+    assert_eq!(names, ["", ""], "only the two buttons are controls");
+    let draw = match &state.controls[0] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      other => panic!("expected the draw button, got {other:?}"),
+    };
+    state.apply_button_action(&draw);
+    state.apply_button_action(&draw);
+    let value = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| panic!("{name} must stay hidden state"))
+    };
+    assert_eq!(value("n"), "2");
+    assert_eq!(value("log"), "{10, 20}");
+  }
+
   /// Regression: a control row `Row[{"label", ButtonBar[…], "label",
   /// ButtonBar[…]}]` mixing captions with several `ButtonBar`s was kept as one
   /// static heading whose text was the raw `ButtonBar[…]` source. Each bar must
@@ -15169,6 +15210,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
       ..cell
     };
     assert!(stored_output_editor(&plain).is_none());
+  }
+
+  /// A bitmap pasted into a sentence of a Text cell (a Demonstration's
+  /// Details showing a logo next to its description) opens as the prose
+  /// followed by the picture. Regression: the inline picture cell was
+  /// dropped, leaving "…the emblem: ." with nothing to look at.
+  #[test]
+  fn text_cell_inline_raster_picture_opens_as_a_stored_graphic() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell["Details", "Subsection"],
+Cell[TextData[{
+ "Here is the emblem: ",
+ Cell[BoxData[
+  GraphicsBox[
+   TagBox[RasterBox[CompressedData["
+1:PAYLOAD
+     "], {{0, 2.}, {3., 0}}, {0, 255},
+     ColorFunction->RGBColor],
+    BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+    Selectable->False],
+   ImageSize->{3., 2.},
+   PlotRange->{{0, 3.}, {0, 2.}}]], ExpressionUUID->
+  "00000000-0000-0000-0000-000000000003"],
+ "."
+}], "Text", CellID->7]
+}, Open  ]]
+}]"##
+      .replace("PAYLOAD", "eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRIzUBCklBmKT8jJoSEA0jISfA==");
+    let nb = woxi::notebook::parse_notebook(&nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let shown: Vec<(CellStyle, String, bool)> = editors
+      .iter()
+      .map(|e| {
+        let text = if e.stored_graphic {
+          String::new()
+        } else {
+          e.content.text().trim().to_string()
+        };
+        (e.style, text, e.stored_graphic)
+      })
+      .collect();
+    assert_eq!(
+      shown,
+      vec![
+        (CellStyle::Subsection, "Details".to_string(), false),
+        (CellStyle::Text, "Here is the emblem:".to_string(), false),
+        (CellStyle::Output, String::new(), true),
+      ]
+    );
+    let svg = editors[2].graphics_svg.as_deref().expect("the picture");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
   }
 
   #[test]
