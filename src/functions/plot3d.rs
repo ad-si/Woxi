@@ -13821,12 +13821,17 @@ fn scene_image_width() -> f64 {
 
 /// The radius in pixels of the dot a 3D `Point` is drawn as. A relative
 /// `PointSize` is measured against the same length as a relative
-/// `Thickness` (see `scene_image_width`).
+/// `Thickness` (see `scene_image_width`). Without one, a point takes
+/// Wolfram's 3D default, `PointSize[0.01]`.
 fn point_dot_radius(style: &StyleState3D) -> f64 {
-  style.point_size.map_or(3.0, |ps| {
-    crate::functions::graphics::point_radius(ps, scene_image_width())
-  })
+  crate::functions::graphics::point_radius(
+    style.point_size.unwrap_or(DEFAULT_POINT_SIZE_3D),
+    scene_image_width(),
+  )
 }
+
+/// The `PointSize` a 3D `Point` gets when no directive sets one.
+const DEFAULT_POINT_SIZE_3D: f64 = 0.01;
 
 /// The room each side of the picture (`[left, right, bottom, top]`)
 /// needs for the disks of the `Point`s that reach that side of the
@@ -28130,11 +28135,22 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // sampled surface (`PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`), so
     // a `Show` of it frames the scene by that box — under sphere framing,
     // by the sphere around the box rather than around the contents.
-    let names_plot_range = structure_args.iter().any(|o| {
+    // `PlotRange -> All` (or `Automatic`) is an automatic range too: it
+    // resolves to the surface's extent and is padded like an unnamed one,
+    // so a `Show` led by such a plot frames the padded box.
+    let is_plot_range = |o: &Expr| {
       matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
-    });
+    };
     let extents = [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)];
+    if extents.iter().all(|(lo, hi)| hi > lo) {
+      structure_args.retain(|o| {
+        !(is_plot_range(o)
+          && matches!(o, Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. }
+            if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All" || v == "Automatic")))
+      });
+    }
+    let names_plot_range = structure_args.iter().any(is_plot_range);
     if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
       let range = extents
         .iter()
