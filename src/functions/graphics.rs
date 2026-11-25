@@ -18854,8 +18854,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let fs = style.font_size;
-      let longest = text_visible_line_lengths(text).into_iter().max();
-      let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;
+      let text_w = text_label_range_width(text, style);
       let text_h = text.split('\n').count() as f64 * fs;
       // `Offset[…]` / `Scaled[{dx, dy}, pos]` anchors shift the label off
       // its base point.
@@ -28034,9 +28033,6 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
   }
 }
 
-/// The visible character count of each line of a graphics label, with any
-/// inline box notation (`\!\(\*SubscriptBox[…]\)`) counted as the
-/// characters it draws rather than its markup.
 /// The image padding `[left, right, bottom, top]` a bare picture of total
 /// `width` and drawing shape `aspect` (height / width) needs so that its
 /// horizontal `Text` labels fit beside a drawing of plot range `bb`, or
@@ -28118,16 +28114,53 @@ fn text_overflow_padding(
   pad.iter().any(|&p| p > 0.0).then_some(pad)
 }
 
-fn text_visible_line_lengths(text: &str) -> Vec<usize> {
-  let plain;
-  let text = match text.strip_prefix(STYLED_LABEL_MARKER) {
-    Some(markup) => {
-      plain = crate::functions::chart::svg_markup_visible_text(markup);
-      plain.as_str()
-    }
-    None => text,
+/// How wide a horizontal `Text` label is taken to be when an automatic
+/// plot range grows to hold it: the advance of its glyphs (a bold label a
+/// little wider). A flat per-character guess overestimated ordinary
+/// mixed-case labels by a quarter, shrinking the whole drawing to leave
+/// room the labels never used.
+///
+/// The label is positioned by Wolfram's label face but drawn in the
+/// embedded one, whose glyphs run a little wider; the room is the wider of
+/// the two measures, so the drawn label is not cut off at the picture's
+/// edge.
+///
+/// Inline box notation (`\!\(\*SubscriptBox[…]\)`) is measured by the
+/// characters it draws rather than its markup.
+fn text_label_range_width(text: &str, style: &StyleState) -> f64 {
+  let fs = style.font_size;
+  if let Some(markup) = text.strip_prefix(STYLED_LABEL_MARKER) {
+    return crate::functions::plot_padding::text_width(markup, fs);
+  }
+  let bold = if style.font_weight == "bold" {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
   };
-  text.split('\n').map(box_string_visible_len).collect()
+  let line_width = |line: &str| {
+    label_line_width_em(line).max(label_line_width(
+      line,
+      crate::functions::plot_padding::atkinson_width_em,
+    ))
+  };
+  let has_boxes = text.contains(crate::functions::string_ast::BOX_START)
+    || text.contains("\\!\\(");
+  text
+    .split('\n')
+    .map(|line| {
+      if has_boxes {
+        let norm = normalize_box_markers(line);
+        let cs: Vec<char> = norm.chars().collect();
+        let plain: String =
+          parse_box_units(&cs).iter().map(box_expr_to_plain).collect();
+        line_width(&plain)
+      } else {
+        line_width(line)
+      }
+    })
+    .fold(0.0, f64::max)
+    * fs
+    * bold
 }
 
 /// Number of visible characters a box-notation label occupies, ignoring the
