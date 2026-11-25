@@ -803,7 +803,7 @@ fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .any(|s| matches!(s, Expr::List(rules) if rules.len() < vars.len()))
     && let Some(found) = try_nsolve_numeric_system(args)
   {
-    return Ok(sort_nsolve_solutions(found));
+    return Ok(sort_radical_system_solutions(&args[0], found));
   }
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
   // its own head — unless a numeric multi-seed search below finds real
@@ -845,7 +845,7 @@ fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if finite.is_empty()
         && let Some(found) = try_nsolve_numeric_system(args)
       {
-        return Ok(sort_nsolve_solutions(found));
+        return Ok(sort_radical_system_solutions(&args[0], found));
       }
       Expr::List(finite.into())
     }
@@ -865,7 +865,7 @@ fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && !sols.is_empty()
         && let Some(found) = try_nsolve_numeric_system(args)
       {
-        return Ok(sort_nsolve_solutions(found));
+        return Ok(sort_radical_system_solutions(&args[0], found));
       }
       Expr::List(holding.into())
     }
@@ -1316,6 +1316,148 @@ fn sort_nsolve_solutions(expr: Expr) -> Expr {
     });
   }
   Expr::List(items_vec.into())
+}
+
+/// The radicals `base^(1/q)` that `expr` is built from — one for every
+/// square root and every power with a fractional exponent `p/q` — in order
+/// of first appearance, each listed once.
+fn radical_generators(expr: &Expr, out: &mut Vec<Expr>) {
+  let power = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  };
+  let generator = if let Some(base) = is_sqrt(expr) {
+    Some((base.clone(), 2))
+  } else if let Some((base, exponent)) = power
+    && let Ok(Expr::Integer(q)) = crate::evaluator::evaluate_function_call_ast(
+      "Denominator",
+      std::slice::from_ref(exponent),
+    )
+    && q > 1
+  {
+    Some((base.clone(), q))
+  } else {
+    None
+  };
+  if let Some((base, q)) = generator {
+    let radical = Expr::FunctionCall {
+      name: "Power".into(),
+      args: vec![
+        base,
+        Expr::FunctionCall {
+          name: "Rational".into(),
+          args: vec![Expr::Integer(1), Expr::Integer(q)].into(),
+        },
+      ]
+      .into(),
+    };
+    let text = crate::syntax::expr_to_string(&radical);
+    if !out.iter().any(|r| crate::syntax::expr_to_string(r) == text) {
+      out.push(radical);
+    }
+  }
+  for child in crate::syntax::expr_children(expr) {
+    radical_generators(child, out);
+  }
+}
+
+/// Each solution of `solutions` with its sort key: the values of
+/// `radicals` at it, followed by the values of its variables. `None` unless
+/// every solution is a list of rules with real values.
+fn radical_sort_keys(
+  radicals: &[Expr],
+  solutions: &Expr,
+) -> Option<Vec<(Vec<f64>, Expr)>> {
+  let Expr::List(items) = solutions else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| {
+      let Expr::List(rules) = item else {
+        return None;
+      };
+      let point: Vec<(&Expr, &Expr, f64)> = rules
+        .iter()
+        .map(|rule| {
+          let Expr::Rule {
+            pattern,
+            replacement,
+          } = rule
+          else {
+            return None;
+          };
+          let value = try_eval_to_f64(replacement)?;
+          Some((pattern.as_ref(), replacement.as_ref(), value))
+        })
+        .collect::<Option<_>>()?;
+      let mut key: Vec<f64> = radicals
+        .iter()
+        .map(|radical| {
+          let substituted =
+            point.iter().fold(radical.clone(), |e, (var, v, _)| {
+              substitute_expr(&e, var, v)
+            });
+          crate::quietly(|| {
+            crate::evaluator::evaluate_function_call_ast("N", &[substituted])
+          })
+          .ok()
+          .and_then(|v| try_eval_to_f64(&v))
+          .filter(|v| v.is_finite())
+          .unwrap_or(0.0)
+        })
+        .collect();
+      key.extend(point.iter().map(|(_, _, value)| *value));
+      Some((key, item.clone()))
+    })
+    .collect()
+}
+
+/// Order the solutions of a system with radicals.
+///
+/// wolframscript solves such a system as a polynomial one in which every
+/// radical is a further unknown, placed ahead of the requested variables,
+/// and lists the roots descending by those unknowns (see
+/// [`sort_nsolve_solutions`]). So the solutions are sorted descending by
+/// the values their radicals take, then by the variables themselves. (Ground
+/// truth: the equilibria of the restricted three-body problem, where `Last`
+/// selects the collinear point between the two masses — the one nearest
+/// to both.) Values that agree to rounding count as equal, so that the
+/// noise of the numeric search does not decide the order.
+///
+/// A system without radicals keeps the order of [`sort_nsolve_solutions`].
+fn sort_radical_system_solutions(eqns: &Expr, solutions: Expr) -> Expr {
+  let mut radicals = Vec::new();
+  radical_generators(eqns, &mut radicals);
+  let keyed = if radicals.is_empty() {
+    None
+  } else {
+    radical_sort_keys(&radicals, &solutions)
+  };
+  let Some(mut keyed) = keyed else {
+    return sort_nsolve_solutions(solutions);
+  };
+  let scale = 1.0
+    + keyed
+      .iter()
+      .flat_map(|(key, _)| key.iter())
+      .fold(0.0f64, |m, v| m.max(v.abs()));
+  let grid = 1e-9 * scale;
+  keyed.sort_by(|(a, _), (b, _)| {
+    a.iter()
+      .zip(b)
+      .map(|(a, b)| (b / grid).round().total_cmp(&(a / grid).round()))
+      .find(|o| o.is_ne())
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  Expr::List(keyed.into_iter().map(|(_, item)| item).collect())
 }
 
 /// Try to solve a quadratic equation using Kahan's numerically stable formula.

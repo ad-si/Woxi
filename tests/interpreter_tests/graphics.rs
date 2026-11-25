@@ -24896,6 +24896,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(list, rgb);
     }
 
+    /// Regression: a `ColorFunction` declaring four parameters (`x, y, u,
+    /// v`, as for a parametric region) was not applied to a parametric
+    /// curve, which was drawn black. It colors the curve by `u` exactly
+    /// like the three-parameter form.
+    #[test]
+    fn parametric_curve_color_function_with_four_parameters() {
+      let four = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> Function[{x, y, u, v}, Hue[u/2]]]",
+      );
+      let three = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> Function[{x, y, u}, Hue[u/2]]]",
+      );
+      assert!(!four.contains("stroke=\"#000000\""), "{four}");
+      assert_eq!(four, three);
+      let slots = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6},          ColorFunction -> (Hue[#3/2] &)]",
+      );
+      assert_eq!(four, slots);
+    }
+
     /// Regression: `ColorFunctionScaling` rescaled a parametric curve's `x`
     /// over the explicit `PlotRange`, so a curve filling only part of a wide
     /// plot never reached either end of the gradient. Like `Plot`, the

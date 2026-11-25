@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `ParametricPlot` applies a `ColorFunction` that declares four
+    parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
+    region; the curve was drawn black.
+- `NSolve` lists the solutions of a system with radicals descending by
+    the values of its radicals (each one a further unknown ahead of the
+    variables), so `Last` of the equilibria of a restricted three-body
+    problem is the point between the two masses, as in wolframscript.
 - Woxi Studio windows show the Woxi app icon in the title bar and
     taskbar instead of the platform's generic default icon.
 - `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`
