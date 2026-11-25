@@ -908,9 +908,10 @@ fn exact_numbers_coincide(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
     Ok(Expr::BigFloat(digits, _)) => {
       // `1.23…*^-97` is beyond f64's range for very small differences.
       let (mantissa, exponent) =
-        digits.split_once("*^").unwrap_or((digits.as_str(), "0"));
+        crate::functions::math_ast::numerical::split_compact_digits(digits)
+          .unwrap_or((digits.as_str(), 0));
       let mantissa: f64 = mantissa.parse().unwrap_or(f64::NAN);
-      let exponent: i32 = exponent.parse().unwrap_or(0);
+      let exponent = exponent as i32;
       if mantissa == 0.0 {
         0.0
       } else {

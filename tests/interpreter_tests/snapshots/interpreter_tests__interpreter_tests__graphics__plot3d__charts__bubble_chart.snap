@@ -14,19 +14,19 @@ expression: "export_svg(\"BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]\")"
 </g>
 <rect x="0" y="0" width="340.78" height="340.78" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="38.21" y1="340.78" x2="38.21" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="38.21" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1.0</text>
+<text x="38.21" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1.0</text>
 <line x1="83.76" y1="340.78" x2="83.76" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="83.76" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1.5</text>
+<text x="83.76" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1.5</text>
 <line x1="129.31" y1="340.78" x2="129.31" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="129.31" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2.0</text>
+<text x="129.31" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2.0</text>
 <line x1="174.86" y1="340.78" x2="174.86" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="174.86" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2.5</text>
+<text x="174.86" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2.5</text>
 <line x1="220.42" y1="340.78" x2="220.42" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="220.42" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">3.0</text>
+<text x="220.42" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">3.0</text>
 <line x1="265.97" y1="340.78" x2="265.97" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="265.97" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">3.5</text>
+<text x="265.97" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">3.5</text>
 <line x1="311.52" y1="340.78" x2="311.52" y2="336.78" stroke="#666666" stroke-width="0.5"/>
-<text x="311.52" y="352.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">4.0</text>
+<text x="311.52" y="352.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">4.0</text>
 <line x1="1.77" y1="340.78" x2="1.77" y2="338.38" stroke="#666666" stroke-width="0.5"/>
 <line x1="10.88" y1="340.78" x2="10.88" y2="338.38" stroke="#666666" stroke-width="0.5"/>
 <line x1="19.99" y1="340.78" x2="19.99" y2="338.38" stroke="#666666" stroke-width="0.5"/>
@@ -97,19 +97,19 @@ expression: "export_svg(\"BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]\")"
 <line x1="329.74" y1="0" x2="329.74" y2="2.40" stroke="#666666" stroke-width="0.5"/>
 <line x1="338.85" y1="0" x2="338.85" y2="2.40" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="302.57" x2="4.00" y2="302.57" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="306.04" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2.0</text>
+<text x="-3.00" y="306.04" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2.0</text>
 <line x1="0" y1="257.02" x2="4.00" y2="257.02" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="260.49" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2.5</text>
+<text x="-3.00" y="260.49" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2.5</text>
 <line x1="0" y1="211.47" x2="4.00" y2="211.47" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="214.93" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">3.0</text>
+<text x="-3.00" y="214.93" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">3.0</text>
 <line x1="0" y1="165.92" x2="4.00" y2="165.92" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="169.38" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">3.5</text>
+<text x="-3.00" y="169.38" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">3.5</text>
 <line x1="0" y1="120.36" x2="4.00" y2="120.36" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="123.83" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">4.0</text>
+<text x="-3.00" y="123.83" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">4.0</text>
 <line x1="0" y1="74.81" x2="4.00" y2="74.81" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="78.28" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">4.5</text>
+<text x="-3.00" y="78.28" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">4.5</text>
 <line x1="0" y1="29.26" x2="4.00" y2="29.26" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="32.73" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">5.0</text>
+<text x="-3.00" y="32.73" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">5.0</text>
 <line x1="0" y1="339.01" x2="2.40" y2="339.01" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="329.90" x2="2.40" y2="329.90" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="320.79" x2="2.40" y2="320.79" stroke="#666666" stroke-width="0.5"/>
