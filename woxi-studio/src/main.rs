@@ -12,7 +12,7 @@ use iced::widget::operation::focus;
 use iced::widget::{
   Column, Row, button, checkbox, column, container, image, mouse_area, opaque,
   pick_list, radio, rich_text, row, rule, scrollable, slider, space, stack,
-  svg, text, text_editor,
+  svg, text, text_editor, tooltip,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -20,6 +20,9 @@ use iced::{
 };
 
 use notebook::{Cell, CellEntry, CellGroup, CellStyle, Notebook};
+
+/// Widest a `Tooltip` label is shown before its text wraps, in pixels.
+const TOOLTIP_MAX_WIDTH: f32 = 340.0;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5775,35 +5778,59 @@ fn render_manipulate_widget<'a>(
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
-    let picture: Element<'_, Message> = if state.button_regions.is_empty() {
-      svg_widget.into()
-    } else {
-      // Pressable `Button` cells drawn inside the picture: overlay a
-      // transparent clickable area on each, running its held action.
-      let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
-      for region in &state.button_regions {
-        layers.push(
-          container(
-            button(space::Space::new())
-              .width(region.width)
-              .height(region.height)
-              .style(|_, _| button::Style::default())
-              .on_press(Message::ManipulateDisplayAction(
-                cell_idx,
-                region.action.clone(),
-              )),
-          )
-          .padding(iced::Padding {
-            top: region.y,
-            left: region.x,
-            right: 0.0,
-            bottom: 0.0,
-          })
-          .into(),
-        );
-      }
-      stack(layers).into()
-    };
+    let picture: Element<'_, Message> =
+      if state.button_regions.is_empty() && state.tooltip_regions.is_empty() {
+        svg_widget.into()
+      } else {
+        // Pressable `Button` cells drawn inside the picture: overlay a
+        // transparent clickable area on each, running its held action.
+        let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
+        for region in &state.button_regions {
+          layers.push(
+            container(
+              button(space::Space::new())
+                .width(region.width)
+                .height(region.height)
+                .style(|_, _| button::Style::default())
+                .on_press(Message::ManipulateDisplayAction(
+                  cell_idx,
+                  region.action.clone(),
+                )),
+            )
+            .padding(iced::Padding {
+              top: region.y,
+              left: region.x,
+              right: 0.0,
+              bottom: 0.0,
+            })
+            .into(),
+          );
+        }
+        // `Tooltip`-wrapped shapes: an inert area over each shows its label
+        // while the pointer rests on it.
+        for region in &state.tooltip_regions {
+          layers.push(
+            container(tooltip(
+              space::Space::new()
+                .width(region.width.max(1.0))
+                .height(region.height.max(1.0)),
+              container(text(region.text.clone()).size(12))
+                .max_width(TOOLTIP_MAX_WIDTH)
+                .padding(6)
+                .style(container::bordered_box),
+              tooltip::Position::FollowCursor,
+            ))
+            .padding(iced::Padding {
+              top: region.y,
+              left: region.x,
+              right: 0.0,
+              bottom: 0.0,
+            })
+            .into(),
+          );
+        }
+        stack(layers).into()
+      };
     // A `ClickPane` hands its handler the position of each click; an
     // `EventHandler` gets the pointer's presses, drags and releases.
     let picture: Element<'_, Message> =

@@ -1147,6 +1147,13 @@ enum Primitive {
     hex: String,
   },
   ClickGroupEnd,
+  /// Opens a `<g>` carrying the hex-encoded hover label of a
+  /// `Tooltip[prim, label]`; the primitives up to the matching
+  /// [`Primitive::TooltipGroupEnd`] are the shape the label belongs to.
+  TooltipGroupStart {
+    hex: String,
+  },
+  TooltipGroupEnd,
   PointSingle {
     x: f64,
     y: f64,
@@ -1380,7 +1387,10 @@ impl Primitive {
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
       Self::TextPrim { style, .. } => Some(style),
-      Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
+      Self::ClickGroupStart { .. }
+      | Self::ClickGroupEnd
+      | Self::TooltipGroupStart { .. }
+      | Self::TooltipGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
       | Self::InsetGraphic { .. } => None,
@@ -4573,11 +4583,20 @@ fn collect_primitives(
           }
           None => collect_primitives(&args[0], style, prims, errors),
         },
-        // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
-        // form. Only the first argument is rendered — the label must not
-        // leak into the graphic.
+        // `Tooltip[g, label]` draws `g` only — the label must not leak into
+        // the graphic. Its text is recorded on a group around `g`'s shapes,
+        // so a live widget can show it while the pointer is over them.
         "Tooltip" if !args.is_empty() => {
-          collect_primitives(&args[0], style, prims, errors);
+          let label = args.get(1).map_or_default(tooltip_label_text);
+          if label.trim().is_empty() {
+            collect_primitives(&args[0], style, prims, errors);
+          } else {
+            prims.push(Primitive::TooltipGroupStart {
+              hex: hex_encode(&label),
+            });
+            collect_primitives(&args[0], style, prims, errors);
+            prims.push(Primitive::TooltipGroupEnd);
+          }
         }
         // `Mouseover[g, hover]` draws `g`; the hover appearance replaces it
         // only while the pointer is over it, so a static picture must not
@@ -11684,7 +11703,10 @@ fn include_arc_extent(
 fn primitive_bbox(prim: &Primitive) -> BBox {
   let mut bb = BBox::empty();
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => {}
     Primitive::PointSingle { x, y, .. } => {
       bb.include_point(*x, *y);
     }
@@ -12012,9 +12034,10 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -12351,9 +12374,10 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -12626,9 +12650,10 @@ fn scale_primitive(
     }
   };
   match prim {
-    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
-      prim.clone()
-    }
+    Primitive::ClickGroupStart { .. }
+    | Primitive::ClickGroupEnd
+    | Primitive::TooltipGroupStart { .. }
+    | Primitive::TooltipGroupEnd => prim.clone(),
     Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
       segments: segments
         .iter()
@@ -16415,7 +16440,12 @@ fn render_primitive(
     Primitive::ClickGroupStart { hex } => {
       out.push_str(&format!("<g id=\"{BUTTON_HIT_ID_PREFIX}{hex}\">\n"));
     }
-    Primitive::ClickGroupEnd => out.push_str("</g>\n"),
+    Primitive::TooltipGroupStart { hex } => {
+      out.push_str(&format!("<g id=\"{TOOLTIP_HIT_ID_PREFIX}{hex}\">\n"));
+    }
+    Primitive::ClickGroupEnd | Primitive::TooltipGroupEnd => {
+      out.push_str("</g>\n");
+    }
     Primitive::ShiftedLine { segments, style } => {
       let line = Primitive::Line {
         segments: segments
@@ -18332,7 +18362,10 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
 
   for prim in primitives {
     match prim {
-      Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
+      Primitive::ClickGroupStart { .. }
+      | Primitive::ClickGroupEnd
+      | Primitive::TooltipGroupStart { .. }
+      | Primitive::TooltipGroupEnd => {}
       Primitive::PointSingle { x, y, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::point_box(*x, *y));
@@ -39063,6 +39096,47 @@ pub(crate) fn button_hit_rect(
     "<rect id=\"{BUTTON_HIT_ID_PREFIX}{}\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0.001\"/>",
     hex_encode(action)
   )
+}
+
+/// Prefix of the `id` on the group holding the shapes of a
+/// `Tooltip[g, label]` primitive; the rest of the id is the hex-encoded
+/// plain text of the label (see [`tooltip_label_text`]). A live widget (Woxi
+/// Studio) shows that text while the pointer is over the group.
+pub const TOOLTIP_HIT_ID_PREFIX: &str = "woxi-tip-";
+
+/// Decode the label text of a [`TOOLTIP_HIT_ID_PREFIX`] id.
+pub fn tooltip_text_from_hit_id(id: &str) -> Option<String> {
+  decode_hit_id_hex(id.strip_prefix(TOOLTIP_HIT_ID_PREFIX)?)
+}
+
+/// The plain text of a `Tooltip` label: strings as they are, a `Column`'s
+/// items on lines of their own, a `Row`'s items side by side (around its
+/// separator), wrappers that only style or frame their content looked
+/// through, and anything else in its output form.
+pub fn tooltip_label_text(label: &Expr) -> String {
+  let items = |list: &Expr| -> Vec<String> {
+    match list {
+      Expr::List(items) => items.iter().map(tooltip_label_text).collect(),
+      other => vec![tooltip_label_text(other)],
+    }
+  };
+  match label {
+    Expr::String(s) => s.clone(),
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Column" => items(&args[0]).join("\n"),
+        "Row" => {
+          let sep = args.get(1).map_or_default(tooltip_label_text);
+          items(&args[0]).join(&sep)
+        }
+        "Text" | "Framed" | "Pane" | "Panel" | "Item" | "Tooltip"
+        | "Labeled" => tooltip_label_text(&args[0]),
+        wrapper if is_style_wrapper(wrapper) => tooltip_label_text(&args[0]),
+        _ => crate::syntax::expr_to_output(label),
+      }
+    }
+    other => crate::syntax::expr_to_output(other),
+  }
 }
 
 /// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.

@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Tooltip[shape, label]` inside a `Graphics` records its label on the
+    drawn shape, and Woxi Studio shows it while the pointer rests on the
+    shape in a Manipulate's picture — diagrams that explain their parts
+    through tooltips are readable again.
 - Curves whose coordinates come from a piecewise complex map
     (`ParametricPlot[{Re[f[t + I b]], Im[f[t + I b]]}, …]` with `f` an
     `If` or `Piecewise` over `Re`/`Im`) are sampled with compiled machine
