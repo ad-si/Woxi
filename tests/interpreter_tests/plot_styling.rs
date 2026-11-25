@@ -948,7 +948,10 @@ mod epilog_inset_column_of_rows {
        Row[{\"first \", 40, \" units\"}], Row[{\"second \", 2.5}]}], \
        {0.4, 0.8}]}]",
     );
-    assert!(svg.contains("fill=\"rgb(170,0,0)\">first 40 units<tspan"), "{svg}");
+    assert!(
+      svg.contains("fill=\"rgb(170,0,0)\">first 40 units<tspan"),
+      "{svg}"
+    );
     assert!(svg.contains(">second 2.5</tspan>"), "{svg}");
     assert!(!svg.contains("monospace"), "{svg}");
   }
@@ -959,7 +962,10 @@ mod epilog_inset_column_of_rows {
       "Plot[x, {x, 0, 1}, Epilog -> Style[Inset[Column[{\
        Row[{\"a \", Style[\"b\", Blue]}], \"plain\"}], {0.4, 0.8}], Larger]]",
     );
-    assert!(svg.contains("<tspan fill=\"rgb(0,0,255)\">b</tspan>"), "{svg}");
+    assert!(
+      svg.contains("<tspan fill=\"rgb(0,0,255)\">b</tspan>"),
+      "{svg}"
+    );
     assert!(svg.contains(">plain</tspan>"), "{svg}");
     assert!(!svg.contains("monospace"), "{svg}");
   }

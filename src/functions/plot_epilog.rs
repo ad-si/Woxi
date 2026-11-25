@@ -1616,13 +1616,13 @@ fn is_text_inset(obj: &Expr) -> bool {
     // block rather than a picture.
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(parts)
-        if !parts.is_empty()
-          && parts.iter().all(|p| {
-            matches!(
-              crate::functions::graphics::strip_style_wrappers(p),
-              Expr::Integer(_) | Expr::Real(_)
-            ) || is_text_inset(p)
-          }))
+      if !parts.is_empty()
+        && parts.iter().all(|p| {
+          matches!(
+            crate::functions::graphics::strip_style_wrappers(p),
+            Expr::Integer(_) | Expr::Real(_)
+          ) || is_text_inset(p)
+        }))
     }
     Expr::FunctionCall { name, args } => {
       matches!(
