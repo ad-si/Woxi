@@ -9066,6 +9066,33 @@ mod cases {
     );
   }
 
+  /// A complex number in a larger sum is one parenthesized term, subtracted
+  /// when its real part is negative, like a complex coefficient: `x + (2 +
+  /// 3 i)`, `x - (2 - 3 i)`. A sum that is only a complex number is not.
+  #[test]
+  fn traditional_form_sum_with_complex_constant_term() {
+    assert_case(
+      "ToString[x + (2 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, +, RowBox[{(, RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[z^3 + (-1 + I) z + (-1 + I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[z, 3], -, RowBox[{RowBox[{(, RowBox[{1, -, \u{F74E}}], )}],  , z}], -, RowBox[{(, RowBox[{1, -, \u{F74E}}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x^2 + (-2.5 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[x, 2], -, RowBox[{(, RowBox[{2.5`, -, RowBox[{3.`,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[2 + 3 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x - 2 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, -, RowBox[{2,  , \u{F74E}}]}], TraditionalForm]]",
+    );
+  }
+
   // A balanced `(...)` group inside box-notation is taken as a
   // single unit by the surrounding operator. wolframscript:
   // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",

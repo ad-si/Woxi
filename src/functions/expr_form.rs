@@ -148,7 +148,7 @@ fn flatten_part(expr: &Expr) -> (&Expr, Vec<Expr>) {
 /// terms of `x + 2 + 3 I` apart (`Plus[2, x, 3 I]`), but a sum holds one
 /// complex number, `Plus[Complex[2, 3], x]`, so the numeric terms are merged
 /// and lead when one of them is non-real.
-fn merge_complex_terms(args: &[Expr]) -> Vec<Expr> {
+pub(crate) fn merge_complex_terms(args: &[Expr]) -> Vec<Expr> {
   use crate::functions::predicate_ast::is_complex_number;
   let is_number = |e: &Expr| {
     matches!(

@@ -6139,10 +6139,18 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
       operand,
     } => tf_flatten_additive(operand, !neg, out),
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args {
-        // A complex number inside a larger sum is one term, set in
-        // parentheses (`x + (2 + 3 i)`), not two loose ones.
-        if tf_is_complex_with_real_part(a) {
+      // A complex number inside a larger sum is one term, set in
+      // parentheses (`x + (2 + 3 i)`), not two loose ones. Woxi keeps its
+      // parts apart in the sum (`Plus[2, 3 I, x]`), so they are merged
+      // first, as FullForm shows them (a held sum keeps what was written).
+      let merged = if TF_HELD.get() {
+        args.to_vec()
+      } else {
+        crate::functions::expr_form::merge_complex_terms(args)
+      };
+      let terms: &[Expr] = if merged.len() > 1 { &merged } else { args };
+      for a in terms {
+        if merged.len() > 1 && tf_is_complex_with_real_part(a) {
           out.push((neg, a.clone()));
         } else {
           tf_flatten_additive(a, neg, out);
