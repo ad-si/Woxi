@@ -1160,6 +1160,21 @@ mod column_text_cell_in_grid {
     assert!(!svg.contains("text-anchor=\"middle\""), "{svg}");
   }
 
+  /// An empty second argument — the `Null` a trailing comma leaves in
+  /// `Column[{…}, ]` — sets the lines flush right, like `Right`.
+  #[test]
+  fn empty_alignment_argument_is_right_aligned() {
+    let svg = |rest: &str| {
+      interpret(&format!(
+        "ExportString[Column[{{\"a\", \"bbbbbbbbbbbb\"}}{rest}], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(svg(", "), svg(", Right"));
+    assert_eq!(svg(", Null"), svg(", Right"));
+    assert_ne!(svg(", "), svg(""));
+  }
+
   /// A `FontFamily` on one line of the column reaches that line's text.
   #[test]
   fn item_font_family_is_kept() {

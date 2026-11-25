@@ -5577,22 +5577,26 @@ pub(crate) fn plot_labels_svg(
         sf,
       ));
     }
-    // A `Column` title lines its rows up at their left edges, the block
-    // as a whole centered over the plot; every other title centers each
-    // line on its own.
-    let (tx, anchor) = if sl.left_aligned
-      && !sl.extra_lines.is_empty()
-      && sl.segments.is_empty()
+    // A `Column` title lines its rows up at one edge (the left one unless
+    // it asks otherwise), the block as a whole centered over the plot;
+    // every other title centers each line on its own.
+    let alignment = if sl.extra_lines.is_empty() || !sl.segments.is_empty() {
+      crate::functions::graphics::ColumnAlignment::Center
+    } else {
+      sl.line_alignment
+    };
+    let anchor = alignment.text_anchor();
+    let tx = if alignment == crate::functions::graphics::ColumnAlignment::Center
     {
+      cx
+    } else {
       let bold = if sl.bold {
         plot_padding::BOLD_WIDTH_SCALE
       } else {
         1.0
       };
       let w = sl.widest_line_width(fs / sf, 1.0) * sf * bold;
-      (cx - w / 2.0, "start")
-    } else {
-      (cx, "middle")
+      alignment.anchor_x(cx, w)
     };
     // A plain string with line breaks stacks its lines too.
     let body = if sl.markup.is_none()
