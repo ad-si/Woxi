@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A large `Point` in a 3D picture is drawn whole over the surface faces
+    behind it: a marker floating above a `Plot3D` surface was placed in
+    the depth order by its center alone, so the faces next to it were
+    painted over part of its disc.
 - `RevolutionPlot3D` draws every curve of a nested curve list
     (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
     picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels
