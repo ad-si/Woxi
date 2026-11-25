@@ -74,14 +74,37 @@ fn main() -> iced::Result {
 #[cfg(target_os = "linux")]
 const APPLICATION_ID: &str = "woxi-studio";
 
+/// The app icon (also used for the macOS bundle and the docs favicon),
+/// embedded so the title bar and taskbar show it instead of the
+/// platform's generic default window icon.
+const APP_ICON_PNG: &[u8] = include_bytes!("../../images/favicon.png");
+
+fn app_icon() -> Option<iced::window::Icon> {
+  iced::window::icon::from_file_data(APP_ICON_PNG, None).ok()
+}
+
 fn window_settings() -> iced::window::Settings {
   iced::window::Settings {
+    icon: app_icon(),
     #[cfg(target_os = "linux")]
     platform_specific: iced::window::settings::PlatformSpecific {
       application_id: String::from(APPLICATION_ID),
       ..Default::default()
     },
     ..Default::default()
+  }
+}
+
+#[cfg(test)]
+mod window_icon_tests {
+  use super::*;
+
+  /// Without an explicit icon, Windows and X11 show a generic default
+  /// window icon (https://github.com/ad-si/Woxi/issues/2942).
+  #[test]
+  fn window_has_app_icon() {
+    assert!(app_icon().is_some(), "embedded app icon must decode");
+    assert!(window_settings().icon.is_some());
   }
 }
 

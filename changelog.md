@@ -2,6 +2,8 @@
 
 # Unreleased
 
+- Woxi Studio windows show the Woxi app icon in the title bar and
+    taskbar instead of the platform's generic default icon.
 - `RevolutionPlot3D` draws every curve of a nested curve list
     (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
     picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels
