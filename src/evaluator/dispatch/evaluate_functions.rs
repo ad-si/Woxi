@@ -6237,6 +6237,37 @@ fn evaluate_function_call_ast_inner(
     }
     let mut args_vec: Vec<Expr> =
       args.iter().map(rewrite_two_way_rules).collect();
+    // `Graph[edges, {opt -> value, …}]`: the options given as one list.
+    // A list of rules after a list could also be the edges of a vertex
+    // list, so it is read as options only when the first list holds edges
+    // and no rule starts at one of their endpoints.
+    if let [Expr::List(edges), Expr::List(rules)] = args_vec.as_slice()
+      && !edges.is_empty()
+      && !rules.is_empty()
+    {
+      let endpoints: Option<Vec<Expr>> = edges
+        .iter()
+        .map(|e| {
+          crate::functions::graph::edge_endpoints(e).map(|(u, v, _)| [u, v])
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|pairs| pairs.into_iter().flatten().collect());
+      if let Some(endpoints) = endpoints
+        && rules.iter().all(|r| match r {
+          Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+            matches!(pattern.as_ref(), Expr::Identifier(_))
+              && !endpoints.iter().any(|v| {
+                crate::evaluator::pattern_matching::expr_equal(v, pattern)
+              })
+          }
+          _ => false,
+        })
+      {
+        let options: Vec<Expr> = rules.to_vec();
+        args_vec.truncate(1);
+        args_vec.extend(options);
+      }
+    }
     // An edge list given as pairs of positive integers, `{{1, 2}, {2, 3}}`,
     // is a list of undirected edges (in the edge position only: a vertex
     // list of pairs stays a list of vertices).
