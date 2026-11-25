@@ -15575,15 +15575,25 @@ mod inverse_laplace_transform {
   fn symbolic_coefficients_via_apart() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
-      "a^(-2) - Cos[a*t]/a^2"
+      "(1 - Cos[a*t])/a^2"
     );
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
-      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+      "(1 - Cos[Pi*t])/Pi^2"
     );
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
-      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+      "(1 - E^(-(Pi*t)))/Pi"
+    );
+    // The common symbolic factor comes out at its lowest power; a numeric
+    // one stays in the terms.
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 (s^2 + a^2)), s, t]").unwrap(),
+      "(a*t - Sin[a*t])/a^3"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + 2)), s, t]").unwrap(),
+      "1/2 - 1/(2*E^(2*t))"
     );
   }
 
