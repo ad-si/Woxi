@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`
+    search a long text in one pass: a pattern that is absent or sparse in a
+    few hundred kilobytes took seconds, the search restarting at every
+    character.
 - `Text` (and a text `Inset`) in `Graphics` is set at 10 points when no
     style gives a size, as wolframscript and the front end draw it, instead
     of 14 points; labels are measured, wrapped and padded for at that size.

@@ -3035,22 +3035,30 @@ fn find_constraint_spans(
 ) -> Vec<(usize, usize)> {
   let mut spans = Vec::new();
   let mut i = 0;
+  // The search reports the leftmost match at or after `i`, so no match
+  // starts between `i` and it: jump there instead of retrying every
+  // character, and stop once nothing matches any more. Retrying was
+  // quadratic on a long text the pattern is rare or absent in.
   while i < s.len() {
-    if let Some(caps) = re.captures_at(s, i)
-      && let Some(m) = caps.get(0)
-      && m.start() == i
-      && !m.as_str().is_empty()
-      && caps_satisfy_constraints(&caps, constraints)
-    {
+    let Some(caps) = re.captures_at(s, i) else {
+      break;
+    };
+    let Some(m) = caps.get(0) else {
+      break;
+    };
+    if m.start() > i {
+      i = m.start();
+      continue;
+    }
+    let ch = s[i..].chars().next().unwrap();
+    if !m.as_str().is_empty() && caps_satisfy_constraints(&caps, constraints) {
       spans.push((m.start(), m.end()));
-      let ch = s[i..].chars().next().unwrap();
       i = if overlapping {
         i + ch.len_utf8()
       } else {
         m.end()
       };
     } else {
-      let ch = s[i..].chars().next().unwrap();
       i += ch.len_utf8();
     }
   }

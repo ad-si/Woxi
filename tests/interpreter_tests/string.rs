@@ -2434,6 +2434,26 @@ mod ignore_case {
     );
   }
 
+  /// Searching a long text for a pattern that is absent or sparse is one
+  /// pass over it. It used to restart the search at every character, which
+  /// took seconds on a few hundred kilobytes (an exported SVG) and would
+  /// take minutes on this two megabyte string.
+  #[test]
+  fn string_search_in_a_long_text_is_linear() {
+    assert_eq!(
+      interpret(
+        "s = StringRepeat[\"abcdefghij\", 200000]; \
+         {StringContainsQ[s, \"zz\"], StringContainsQ[s, \"ja\"], \
+          StringCount[s, \"ja\"], StringCount[s <> \"zz\", \"zz\"], \
+          StringPosition[s <> \"zzz\", \"zz\"], \
+          StringPosition[s <> \"zzz\", \"zz\", Overlaps -> False]}"
+      )
+      .unwrap(),
+      "{False, True, 199999, 1, {{2000001, 2000002}, {2000002, 2000003}}, \
+       {{2000001, 2000002}}}"
+    );
+  }
+
   #[test]
   fn string_contains_q_case_sensitive() {
     assert_eq!(
