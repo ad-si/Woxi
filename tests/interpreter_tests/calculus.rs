@@ -10866,7 +10866,8 @@ mod ndsolve {
 
   /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
   /// between two nodes it holds the value of the right node, at a node the
-  /// node's own value, and its derivative is zero.
+  /// node's own value (the first node takes the second's), and its
+  /// derivative is zero. Exact data gives exact values at any query point.
   #[test]
   fn interpolation_order_zero_is_a_step_function() {
     clear_state();
@@ -10877,12 +10878,20 @@ mod ndsolve {
          {f[0], f[1/2], f[1], f[1.5], f[2.9], f[3], f'[1.5]}"
       )
       .unwrap(),
-      "{0, 1, 1, 4., 9., 9, 0}"
+      "{1, 1, 1, 4, 9, 9, 0}"
     );
     assert_eq!(
       interpret("Interpolation[{2, 3, 5, 7}, InterpolationOrder -> 0][2.5]")
         .unwrap(),
-      "5."
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "h = Interpolation[{{0, 0}, {1, 1.5}, {2, 4}}, \
+         InterpolationOrder -> 0]; {h[0.5], h[1.5], h[1/2]}"
+      )
+      .unwrap(),
+      "{1.5, 4., 1.5}"
     );
     assert_eq!(
       interpret(
