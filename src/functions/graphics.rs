@@ -32980,7 +32980,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // An automatically sized picture is drawn at the reduced size of the
     // layout it sits in.
     Expr::Graphics { svg, .. } => {
-      crate::functions::container_layout::resized_graphic_svg(cell)
+      crate::functions::container_layout::cell_graphic_svg(cell)
         .unwrap_or_else(|| svg.clone())
     }
     // A raster image is drawn at its display size (its `ImageSize`, else

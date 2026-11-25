@@ -4008,6 +4008,33 @@ fn keep_fixed_pane_box(
   ))
 }
 
+/// `rendered` with the frames of the `Framed[content, options…]` boxes
+/// around it drawn again, innermost first (`frames` lists their options
+/// from the outside in). The passes that look through `Pane`/`Panel`/
+/// `Framed` wrappers to the table or captioned picture inside draw that
+/// content alone; a `Framed` among the wrappers still shows its border in a
+/// notebook.
+fn keep_frame_boxes(
+  frames: &[Vec<syntax::Expr>],
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let mut result = rendered;
+  for options in frames.iter().rev() {
+    let syntax::Expr::Graphics { svg, .. } = &result else {
+      return result;
+    };
+    let mut framed_args = vec![result.clone()];
+    framed_args.extend(options.iter().cloned());
+    let Some(framed) = functions::graphics::framed_to_svg(&framed_args) else {
+      return result;
+    };
+    // The framed picture replaces the bare one the cell would show.
+    remove_captured_graphics(svg);
+    result = graphics_result(framed);
+  }
+  result
+}
+
 /// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
 /// wrappers.
 fn is_text_column(expr: &syntax::Expr) -> bool {
@@ -4038,6 +4065,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // `Text[Pane[Grid[…], size]]`: the pane only sizes the table, so it
       // is drawn as the table it wraps.
       let mut content = args[0].clone();
+      // The options of each `Framed` looked through, from the outside in:
+      // its border is drawn around the table again below.
+      let mut frames: Vec<Vec<syntax::Expr>> = Vec::new();
       while let syntax::Expr::FunctionCall {
         name: wrapper,
         args: wrapped,
@@ -4050,6 +4080,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
             if matches!(n.as_str(), "Grid" | "TextGrid" | "Pane" | "Panel" | "Framed")
         )
       {
+        if wrapper == "Framed" {
+          frames.push(wrapped[1..].to_vec());
+        }
         content = inner.clone();
       }
       // A paragraph of words joined from styled boxes (`Style[word, color,
@@ -4097,7 +4130,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         })
       }) {
         graphics @ syntax::Expr::Graphics { .. } => {
-          keep_fixed_pane_box(&expr, graphics)
+          let framed = keep_frame_boxes(&frames, graphics);
+          keep_fixed_pane_box(&expr, framed)
         }
         _ => expr,
       }
@@ -4348,6 +4382,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         ) =>
     {
       match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } if name == "Framed" => {
+          keep_frame_boxes(&[args[1..].to_vec()], graphics)
+        }
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }

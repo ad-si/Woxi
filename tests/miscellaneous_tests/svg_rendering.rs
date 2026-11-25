@@ -5445,6 +5445,57 @@ mod tests {
       );
     }
 
+    /// Regression: a `Framed` around a captioned picture or (under `Text`)
+    /// around a table of pictures was looked through to its content, so the
+    /// notebook showed the content without its border.
+    #[test]
+    fn a_frame_around_a_captioned_picture_or_text_table_keeps_its_border() {
+      let picture = |code: &str| {
+        woxi::interpret_with_stdout(code)
+          .expect("interpret should succeed")
+          .graphics
+          .expect("the layout is a picture")
+      };
+      let width = |svg: &str| -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|rest| rest.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      };
+      let disk = "Graphics[Disk[], ImageSize -> {100, 100}]";
+      let labeled = format!(r#"Labeled[{disk}, "abc"]"#);
+      let table = format!("Grid[{{{{{disk}, {disk}}}}}]");
+      for (bare, framed_code) in [
+        (labeled.clone(), format!("Framed[{labeled}]")),
+        (labeled.clone(), format!("Text[Framed[{labeled}]]")),
+        (format!("Text[{table}]"), format!("Text[Framed[{table}]]")),
+      ] {
+        let plain = picture(&bare);
+        let framed = picture(&framed_code);
+        assert!(
+          framed.contains(r#"fill="none" stroke="black" stroke-width="1""#),
+          "{framed_code}: {framed:.400}"
+        );
+        assert!(
+          width(&framed) > width(&plain),
+          "{framed_code}: the frame adds its margins"
+        );
+        // Exactly one border, also when `Text` wraps the frame.
+        assert_eq!(
+          framed
+            .matches(r#"fill="none" stroke="black" stroke-width="1""#)
+            .count()
+            - plain
+              .matches(r#"fill="none" stroke="black" stroke-width="1""#)
+              .count(),
+          1,
+          "{framed_code}"
+        );
+      }
+    }
+
     /// `Alignment -> {Center}` centers the content horizontally and keeps
     /// it at the top, like `Alignment -> {Center, Top}`.
     #[test]

@@ -72969,6 +72969,59 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   }
 }
 
+/// Regression: an unboxed scene of fixed size with a pinned `PlotRange` or
+/// an explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or
+/// list keeps the outline fit, also inside a `Manipulate` frame. Wolfram's
+/// snapshot of a Demonstration's `Grid` of two such scenes (a 24 × 24 × 10
+/// range seen from `{0, 0, 6}` at `ImageSize -> {290, 290}`) draws them
+/// about 1.4× as large as the sphere framing Woxi gave them.
+#[test]
+fn pinned_3d_scene_in_a_layout_cell_fits_its_outline() {
+  let scene = |extra: &str| {
+    format!(
+      "Graphics3D[{{Line[{{{{-12, 0, 0}}, {{12, 0, 0}}}}],        Line[{{{{0, -12, 0}}, {{0, 12, 0}}}}]}}, Boxed -> False,        PlotRange -> {{{{-12, 12}}, {{-12, 12}}, {{-5, 5}}}},        ViewPoint -> {{0, 0, 6}}, ImageSize -> {{290, 290}}{extra}]"
+    )
+  };
+  // On its own the scene is still framed by its sphere.
+  assert_eq!(
+    export_svg(&scene("")),
+    export_svg(&scene(", SphericalRegion -> True"))
+  );
+  for layout in [
+    "Grid[{{#, #}}]",
+    "Row[{#, #}]",
+    "Column[{#, #}]",
+    "{#, #}",
+    "Labeled[Grid[{{#}}], \"label\", Bottom]",
+  ] {
+    let cell = |extra: &str| layout.replace('#', &scene(extra));
+    let automatic = export_svg(&cell(""));
+    let outline = export_svg(&cell(", SphericalRegion -> False"));
+    let sphere = export_svg(&cell(", SphericalRegion -> True"));
+    assert_ne!(outline, sphere, "{layout}");
+    assert_eq!(automatic, outline, "{layout}");
+    assert_eq!(
+      woxi::with_manipulate_frame(|| export_svg(&cell(""))),
+      woxi::with_manipulate_frame(|| {
+        export_svg(&cell(", SphericalRegion -> False"))
+      }),
+      "{layout} in a Manipulate frame"
+    );
+    // An explicit `SphericalRegion -> True` is kept in a cell.
+    assert_ne!(sphere, automatic, "{layout}");
+  }
+  // The same holds for a scene assigned to a variable before it is laid out
+  // and for a `Show` of several scenes.
+  let held = |extra: &str| {
+    export_svg(&format!(
+      "Module[{{g = {}}}, Grid[{{{{Show[g, g], g}}}}]]",
+      scene(extra)
+    ))
+  };
+  assert_eq!(held(""), held(", SphericalRegion -> False"));
+  assert_ne!(held(""), held(", SphericalRegion -> True"));
+}
+
 /// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
 /// `ViewPoint` at `ImageSize -> {w, h}` fits its box outline to the frame,
 /// also when drawn as a `Manipulate` frame (a tall building of stacked

@@ -8078,7 +8078,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // drawn again at the container's reduced size.
     Expr::Graphics { svg: svg_data, .. } => {
       crate::functions::graphics::with_export_upright_letters(false, || {
-        crate::functions::container_layout::resized_graphic_svg(expr)
+        crate::functions::container_layout::cell_graphic_svg(expr)
       })
       .unwrap_or_else(|| svg_data.clone())
     }
