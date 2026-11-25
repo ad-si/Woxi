@@ -5309,6 +5309,20 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
 }
 
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // A `Text[…]` item of a layout sets its math one script level down, as
+  // the same `Text` does on its own (see `render_visual_display_pipeline`).
+  if matches!(expr, syntax::Expr::FunctionCall { name, args }
+    if name == "Text" && args.len() == 1)
+  {
+    functions::graphics::with_inline_text_math(|| {
+      render_inline_display_wrapper_impl(expr)
+    })
+  } else {
+    render_inline_display_wrapper_impl(expr)
+  }
+}
+
+fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
   // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
   // `Text[…]`: the text face covers the styled content.
   if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
