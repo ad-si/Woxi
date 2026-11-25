@@ -29170,6 +29170,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// A chart's axis and frame labels keep their styling, like a plot's:
+    /// they used to be flattened to plain text.
+    #[test]
+    fn chart_axis_labels_keep_their_styling() {
+      for chart in ["BarChart", "Histogram"] {
+        for option in ["AxesLabel", "FrameLabel"] {
+          let svg = export_svg(&format!(
+            r#"{chart}[{{1, 2, 2, 3}}, {option} -> {{Style["k", Italic], Row[{{"frequency(", Style["k", Italic], ")"}}]}}]"#
+          ));
+          assert!(
+            svg.contains(r#"><tspan font-style="italic">k</tspan></text>"#),
+            "{chart} {option}: x label is not italic"
+          );
+          assert!(
+            svg.contains(
+              r#">frequency(<tspan font-style="italic">k</tspan>)</text>"#
+            ),
+            "{chart} {option}: y label lost its styled part"
+          );
+        }
+      }
+    }
+
+    /// A mathematical chart label is set in TraditionalForm italics, a
+    /// string one upright.
+    #[test]
+    fn chart_axis_labels_set_symbols_in_italics() {
+      let svg = export_svg(r#"BarChart[{1, 2, 3}, AxesLabel -> {x, "count"}]"#);
+      assert!(svg.contains(r#"<tspan font-style="italic">x</tspan>"#));
+      assert!(svg.contains(">count</text>"));
+    }
+
     #[test]
     fn bar_chart_all_labels() {
       insta::assert_snapshot!(export_svg(
@@ -72410,12 +72442,17 @@ mod bar_chart_slide_conformance {
 
   /// The `font-size` of the first `<text>` whose content is `content`.
   fn font_size_of(svg: &str, content: &str) -> f64 {
-    let close = format!(">{content}</text>");
+    // A styled label carries its styling on a `<tspan>` around the text.
+    let closes = [
+      format!(">{content}</text>"),
+      format!(">{content}</tspan></text>"),
+    ];
     let line = svg
       .lines()
-      .find(|l| l.contains(&close))
+      .find(|l| closes.iter().any(|close| l.contains(close)))
       .unwrap_or_else(|| panic!("no text {content:?} in {svg}"));
-    let at = line.find("font-size=\"").unwrap() + "font-size=\"".len();
+    // The last size on the line is the one the text itself is set at.
+    let at = line.rfind("font-size=\"").unwrap() + "font-size=\"".len();
     line[at..].split('"').next().unwrap().parse().unwrap()
   }
 
