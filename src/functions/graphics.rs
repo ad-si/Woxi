@@ -18015,7 +18015,7 @@ fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
       // `Automatic` shows the axis (positioned automatically), e.g. the
       // common `Axes -> {Automatic, False}` form.
       Expr::Identifier(s) if s == "True" || s == "Automatic" => Some(true),
-      Expr::Identifier(s) if s == "False" => Some(false),
+      Expr::Identifier(s) if s == "False" || s == "None" => Some(false),
       _ => None,
     }
   }
@@ -18025,7 +18025,7 @@ fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
     Expr::Identifier(s) if s == "True" || s == "Automatic" => {
       Some((true, true))
     }
-    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::Identifier(s) if s == "False" || s == "None" => Some((false, false)),
     Expr::List(items) if items.len() == 2 => {
       let x_axis = parse_bool(&items[0])?;
       let y_axis = parse_bool(&items[1])?;

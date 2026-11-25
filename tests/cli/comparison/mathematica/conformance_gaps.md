@@ -5858,6 +5858,16 @@ so Woxi widens the sphere-framed view by 1.1 there. Whether that margin is
 proportional or a fixed band of about 18 px (as an automatic padding would
 be) can't be told from snapshots of one size; unverified with wolframscript.
 
+A `Manipulate` frame's *default* sphere framing of a surface with an
+automatic range (`PlotRange -> All` included) uses the sphere that just
+encloses the surface instead, as `Graphics3D` does: three snapshots of an
+unboxed spiral shell at `ImageSize -> {450, 350}` draw it 327, 339 and
+290 px wide (Woxi: 315, 315 and 290 px; the box sphere gave 197 px for the
+first). The 4–8 % shortfall of the first two is not decoded. Whether an
+explicit `SphericalRegion -> True` with an automatic range should use the
+contents sphere too is open: the morphing-surface snapshots above fit the
+box sphere, but it is not recorded whether their `PlotRange` was pinned.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box

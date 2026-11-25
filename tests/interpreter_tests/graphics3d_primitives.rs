@@ -38,6 +38,33 @@ mod solids {
     assert_eq!(with("False").matches("<text").count(), 0);
   }
 
+  /// `Axes -> None` hides the axes of a 3D scene exactly like
+  /// `Axes -> False`. Regression: only `False` was recognized, so the 3D
+  /// plot functions (whose axes default to on) kept drawing them, and
+  /// `ListPointPlot3D` / `ListLinePlot3D` ignored the option altogether.
+  #[test]
+  fn axes_none_hides_the_axes() {
+    for plot in [
+      "Graphics3D[Sphere[], Axes -> {}]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, Axes -> {}]",
+      "ParametricPlot3D[{Cos[u] (2 + Cos[v]), Sin[u] (2 + Cos[v]), Sin[v]}, \
+        {u, 0, 2 Pi}, {v, 0, 2 Pi}, PlotPoints -> 8, Axes -> {}]",
+      "ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 6}, Axes -> {}]",
+      "ListPlot3D[{{1, 2}, {3, 4}}, Axes -> {}]",
+      "ListPointPlot3D[{{1, 2, 3}, {3, 4, 1}, {2, 2, 2}}, Axes -> {}]",
+      "ListLinePlot3D[{{1, 2, 3}, {2, 3, 1}, {3, 1, 2}}, Axes -> {}]",
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+        {z, -1, 1}, PlotPoints -> 6, Axes -> {}]",
+      "RevolutionPlot3D[t^2, {t, 0, 1}, PlotPoints -> 6, Axes -> {}]",
+    ] {
+      let with = |axes: &str| svg(&plot.replace("{}", axes));
+      let none = with("None");
+      assert_eq!(none.matches("<text").count(), 0, "{plot}");
+      assert_eq!(none, with("False"), "{plot}");
+      assert!(with("True").matches("<text").count() > 3, "{plot}");
+    }
+  }
+
   #[test]
   fn scaled_polygon_coordinates_use_the_scene_bounds() {
     assert_eq!(
