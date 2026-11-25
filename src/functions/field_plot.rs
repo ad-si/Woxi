@@ -4789,7 +4789,11 @@ fn contour_plot_equations(
     log_y: false,
     plot_range: None,
     data_x_range: None,
-    aspect_ratio: None,
+    // The frame keeps the plot's own `AspectRatio` (1 by default) and is
+    // letterboxed into an `ImageSize -> {w, h}` box, so `Show` must keep
+    // that shape rather than stretch the frame over the whole image.
+    aspect_ratio: Some(area.plot_h / area.plot_w)
+      .filter(|r| r.is_finite() && *r > 0.0),
     legends: Vec::new(),
     settles_all_range: false,
   };

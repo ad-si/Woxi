@@ -4578,6 +4578,43 @@ mod graphics {
       assert!(height(&svg) > height(&label(" ")) + 10.0, "{svg}");
     }
 
+    /// A `PlotLabel` that is itself `Framed` (under a `Style` with a
+    /// `Background`) draws the frame and the shading behind its text,
+    /// rather than dropping both and printing only the bare text.
+    #[test]
+    fn plot_label_framed_draws_frame_and_background() {
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[Framed[\"10:45\"], 14, \
+         Background -> RGBColor[1, 0.5, 0]]]",
+      );
+      assert!(!svg.contains("Framed"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,128,0)\""), "{svg}");
+      assert!(svg.contains("stroke-width=\"0.5\""), "{svg}");
+      assert!(svg.contains("font-size=\"14.0\""), "{svg}");
+      assert!(svg.contains(">10:45<"), "{svg}");
+
+      // A bare frame draws its box with no shading.
+      let plain = export_svg("Graphics[Disk[], PlotLabel -> Framed[\"abc\"]]");
+      assert!(plain.contains("<rect x=\"0.5\" y=\"0.5\""), "{plain}");
+      assert!(plain.contains(">abc<"), "{plain}");
+
+      // A `Style` that only shades the text draws the shading, no frame.
+      let shaded = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[\"abc\", Background -> Yellow]]",
+      );
+      assert!(shaded.contains("fill=\"rgb(255,255,0)\""), "{shaded}");
+      assert!(!shaded.contains("<rect x=\"0.5\" y=\"0.5\""), "{shaded}");
+      assert!(shaded.contains(">abc<"), "{shaded}");
+
+      // A label with neither stays a plain line of title text.
+      let text =
+        export_svg("Graphics[Disk[], PlotLabel -> Style[\"abc\", 14]]");
+      assert!(
+        text.contains("<tspan font-size=\"14\">abc</tspan>"),
+        "{text}"
+      );
+    }
+
     /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
     /// On a `Graphics` (including a `Show` of several) it still takes up the
     /// title's line, unlike `None`.
@@ -51062,15 +51099,51 @@ mod manipulate {
           *orientation,
           woxi::functions::graphics::ControlOrientation::Horizontal
         );
-        // Unlabeled control → a single upright run of the variable name.
+        // Unlabeled control → a single run of the variable name, italic
+        // because the name is one letter.
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
-        assert!(!label_runs[0].italic);
+        assert!(label_runs[0].italic);
         // {x, 0, 10} is all exact integers, so x stays exact throughout.
         assert!(!is_real);
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  /// An unlabeled control shows its variable the way the FrontEnd sets a
+  /// symbol: a one-letter name (Latin or Greek) in italics, a longer name
+  /// upright. Regression: every default label was upright, so `{θ, 0, 1}`
+  /// and `{μ, 0, 1}` sliders read `θ`/`μ` instead of `𝜃`/`𝜇`.
+  #[test]
+  fn spec_default_label_italic_for_single_letter_names() {
+    let expr = interpret_to_expr(
+      "Manipulate[{θ, μ, m1, speed, b}, {{θ, 0.5}, 0, 1}, {μ, 0, 1}, \
+       {{m1, 0.5}, 0, 1}, {speed, 0, 1}, {{b, 0.2}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let runs: Vec<(String, bool)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { label_runs, .. } => {
+          assert_eq!(label_runs.len(), 1, "{label_runs:?}");
+          (label_runs[0].text.clone(), label_runs[0].italic)
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      runs,
+      vec![
+        ("θ".to_string(), true),
+        ("μ".to_string(), true),
+        ("m1".to_string(), false),
+        ("speed".to_string(), false),
+        ("b".to_string(), true),
+      ]
+    );
   }
 
   fn first_continuous_label(code: &str) -> String {
@@ -57983,6 +58056,31 @@ mod color_data_indexed {
          {{p, {0, 0}}, Locator, Appearance -> \"Labeled\"}]"
       ),
       vec![("p".to_string(), None)]
+    );
+  }
+
+  // A Manipulate's Locator markers join the outermost graphic its body
+  // returns, never a picture nested inside it (an `Inset` graphic), which
+  // a post-order `FirstPosition` search would find first.
+  #[test]
+  fn manipulate_locator_markers_join_the_outermost_graphic() {
+    clear_state();
+    let markers = vec![("pt".to_string(), None)];
+    let wrap = |body: &str| {
+      woxi::functions::graphics::locator_marker_body(body, &markers)
+    };
+    interpret("pt = {1, 0}").unwrap();
+    let nested = wrap(
+      "Graphics[{Inset[Graphics[Disk[], PlotRange -> 3]], Circle[]}, \
+       PlotRange -> 2]",
+    );
+    assert_eq!(
+      interpret(&format!("Options[{nested}, Epilog]")).unwrap(),
+      "{Epilog -> {Locator[{1, 0}]}}"
+    );
+    assert_eq!(
+      interpret(&format!("FreeQ[{nested}[[1, 1, 1]], Locator]")).unwrap(),
+      "True"
     );
   }
 
@@ -75530,6 +75628,63 @@ mod grid_item_trailing_line_break {
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\\n\"}, {\"b\"}}]")),
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\"}, {\"b\"}}]"))
     );
+  }
+}
+
+/// A ContourPlot keeps its square frame (`AspectRatio -> 1`) letterboxed
+/// into a wider `ImageSize -> {w, h}` box; `Show` of it, alone or with
+/// other graphics, must keep that shape instead of stretching the frame
+/// over the whole image.
+mod show_keeps_contour_plot_aspect_ratio {
+  use super::*;
+
+  /// The horizontal extent of the longest polyline (the plotted curve) as
+  /// a fraction of the picture's viewBox width.
+  fn curve_width_fraction(svg: &str) -> f64 {
+    let vb = svg.split("viewBox=\"0 0 ").nth(1).unwrap();
+    let vb_w: f64 = vb.split_whitespace().next().unwrap().parse().unwrap();
+    let longest = svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|p| {
+        let pts = p.split("points=\"").nth(1)?;
+        let pts = &pts[..pts.find('"')?];
+        let xs: Vec<f64> = pts
+          .split_whitespace()
+          .filter_map(|xy| xy.split(',').next()?.parse().ok())
+          .collect();
+        Some(xs)
+      })
+      .max_by_key(Vec::len)
+      .unwrap();
+    let min = longest.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = longest.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (max - min) / vb_w
+  }
+
+  const PLOT: &str = "ContourPlot[x^2 + y^2 == 1, {x, -1, 1}, {y, 0, 3}, \
+                      ImageSize -> {500, 350}]";
+
+  #[test]
+  fn standalone_frame_is_square() {
+    let f = curve_width_fraction(&export_svg(PLOT));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_image_size_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, ImageSize -> {{500, 350}}]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_graphics_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, Graphics[Point[{{0, 1}}]]]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
   }
 }
 

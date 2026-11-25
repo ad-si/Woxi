@@ -1141,22 +1141,8 @@ fn graph_render(
   let transformed = coord_scale != 1.0 || coord_center != (0.0, 0.0);
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-  let to_internal = |layer: Expr| -> Expr {
-    if !transformed {
-      return layer;
-    }
-    call(
-      "Scale",
-      vec![
-        call(
-          "Translate",
-          vec![layer, pair(-coord_center.0, -coord_center.1)],
-        ),
-        pair(coord_scale, coord_scale),
-        pair(0.0, 0.0),
-      ],
-    )
-  };
+  let to_internal =
+    |layer: Expr| to_internal_units(layer, coord_scale, coord_center);
   if let Some(directed) = legacy_plot {
     // The picture keeps the caller's own `VertexCoordinates` units.
     let coords: Vec<(f64, f64)> =
@@ -3927,6 +3913,11 @@ fn linear_layout(n: usize) -> Vec<(f64, f64)> {
 
 /// `layer`, drawn in the caller's units, mapped onto the internal drawing
 /// scale: internal = (caller - `center`) * `scale`.
+///
+/// The map is spelled with `Translate` and `Scale` rather than a
+/// `GeometricTransformation` matrix: those move a `Text` without resizing
+/// its glyphs, so a label drawn by a `VertexRenderingFunction` keeps its
+/// font size however large or small the layout is.
 fn to_internal_units(layer: Expr, scale: f64, center: (f64, f64)) -> Expr {
   if scale == 1.0 && center == (0.0, 0.0) {
     return layer;
@@ -3934,16 +3925,11 @@ fn to_internal_units(layer: Expr, scale: f64, center: (f64, f64)) -> Expr {
   let row =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
   call(
-    "GeometricTransformation",
+    "Scale",
     vec![
-      layer,
-      Expr::List(
-        vec![
-          Expr::List(vec![row(scale, 0.0), row(0.0, scale)].into()),
-          row(-center.0 * scale, -center.1 * scale),
-        ]
-        .into(),
-      ),
+      call("Translate", vec![layer, row(-center.0, -center.1)]),
+      row(scale, scale),
+      row(0.0, 0.0),
     ],
   )
 }

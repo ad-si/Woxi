@@ -4850,6 +4850,32 @@ mod tests {
       }
     }
 
+    /// A `Text` label the rendering function draws keeps its font size:
+    /// mapping it from the caller's units onto the drawing moves the label
+    /// without stretching its glyphs, also when the graph falls apart into
+    /// several components that are packed side by side.
+    #[test]
+    fn vertex_rendering_function_text_keeps_its_font_size() {
+      for graph in ["{1 -> 2, 2 -> 3}", "{1 -> 2, 3 -> 3, 4 -> 5, 6 -> 5}"] {
+        let svg = svg_of(&format!(
+          r#"GraphPlot[{graph}, DirectedEdges -> True,
+             VertexRenderingFunction -> (Text[#2, #1, Background -> White] &)]"#
+        ));
+        let labels: Vec<&str> = svg
+          .split("<text")
+          .skip(1)
+          .map(|t| t.split('>').next().unwrap_or(""))
+          .collect();
+        assert!(!labels.is_empty(), "{svg}");
+        for label in labels {
+          assert!(
+            !label.contains("matrix("),
+            "{graph}: the label is moved, not resized: {label}"
+          );
+        }
+      }
+    }
+
     /// Directives the rendering function sets are scoped to its own
     /// vertex and do not bleed into the next one.
     #[test]
