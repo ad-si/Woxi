@@ -7887,7 +7887,7 @@ fn clipped_rim_lines(
   let mut line_style = style.clone();
   line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
   line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
-  line_style.dashing = style.edge_dashing.clone();
+  line_style.dashing.clone_from(&style.edge_dashing);
   line_style.opacity = 1.0;
   Some(Primitive3D::Line3D {
     segments,

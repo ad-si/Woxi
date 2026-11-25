@@ -44553,7 +44553,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           + 2.0
             * crate::functions::plot_padding::stacked_script_room(markup, *size)
       }
-      _ => cell_height(c),
+      Cell::Svg { .. } => cell_height(c),
     })
     .fold(font_size + pad_y, f64::max);
   // The same holds for a stacked script in the separator between items.

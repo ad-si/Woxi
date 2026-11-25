@@ -6375,7 +6375,8 @@ mod graphics {
         )))
       };
       let dist = |p: (f64, f64), x: f64, y: f64| (p.0 - x).hypot(p.1 - y);
-      let mid = |s: [f64; 4]| ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+      let mid =
+        |s: [f64; 4]| (f64::midpoint(s[0], s[2]), f64::midpoint(s[1], s[3]));
       let above = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}");
       assert_eq!(above.len(), 3, "{above:?}");
       for (s, label) in &above {
