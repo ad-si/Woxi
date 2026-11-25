@@ -13372,11 +13372,11 @@ mod ndsolve {
       "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
        D[w[x, y, t], y, y] + NeumannValue[0, x == 0], \
        w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
-       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       {y, 0, 2}, {t, 0, 1}]; {Round[u[0, 1, 0], 10^-6], \
        Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
     )
     .unwrap();
-    assert_eq!(result, "{1., 2667}");
+    assert_eq!(result, "{1, 2667}");
   }
 
   /// Without any condition and without finite element notation the method

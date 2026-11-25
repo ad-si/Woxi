@@ -138,8 +138,10 @@ mod mann_whitney_test {
       "Style[Grid[{{\"\", \"P\u{2010}Value\"}, {\"Mann\u{2010}Whitney\", 0.11428571428571428}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
     );
     assert_eq!(
-      interpret("ToString[VarianceEquivalenceTest[{{1, 2, 3, 4.}, {2, 5, 1, 7.}}, \"TestDataTable\"], InputForm]").unwrap(),
-      "Style[Grid[{{\"\", \"Statistic\", \"P\u{2010}Value\"}, {\"Fisher Ratio\", 0.2197802197802198, 0.24515718875293802}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
+      // WL's ratio and p-value differ in the last bit, so the table's
+      // reals are rounded to twelve decimals.
+      interpret("ToString[VarianceEquivalenceTest[{{1, 2, 3, 4.}, {2, 5, 1, 7.}}, \"TestDataTable\"] /. r_Real :> N[Round[r, 10^-12]], InputForm]").unwrap(),
+      "Style[Grid[{{\"\", \"Statistic\", \"P\u{2010}Value\"}, {\"Fisher Ratio\", 0.21978021978, 0.245157188753}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
     );
   }
 

@@ -3332,9 +3332,14 @@ mod infinity_arithmetic {
        6.66666666666666666666666666666667`20.*^-50001, \
        0``-49980.47712125472, 20., True}"
     );
+    // WL's last bit differs (`-480.17609125905574`), so the accuracy is
+    // pinned to ten decimals.
     assert_eq!(
-      interpret("{Accuracy[1.5`20*^500], 1.5`20*^50 - 1.5`20*^50}").unwrap(),
-      "{-480.1760912590557, 0``-30.477121254719663}"
+      interpret(
+        "{Round[Accuracy[1.5`20*^500], 10^-10], 1.5`20*^50 - 1.5`20*^50}"
+      )
+      .unwrap(),
+      "{-4801760912591/10000000000, 0``-30.477121254719663}"
     );
     assert_eq!(
       interpret("N[Exp[1.*^6] - Exp[1.*^6]/2]").unwrap(),
@@ -17279,6 +17284,28 @@ mod polynomial_form_typesetting {
     assert_eq!(
       interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> True], TraditionalForm]").unwrap(),
       "FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ], TraditionalForm]"
+    );
+  }
+
+  /// The box text of the string is FullForm (the tag function as
+  /// `Function[PolynomialForm[Slot[1], …]]`), as wolframscript writes it.
+  #[test]
+  fn traditional_form_string_box_text_is_full_form() {
+    assert_eq!(
+      interpret("ToString[ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> False]]], InputForm]").unwrap(),
+      "\"\\!\\(\\*FormBox[TagBox[RowBox[{\\\"1\\\", \\\"+\\\", RowBox[{\\\"3\\\", \\\" \\\", \\\"x\\\"}], \\\"+\\\", SuperscriptBox[\\\"x\\\", \\\"2\\\"]}], Function[PolynomialForm[Slot[1], Rule[TraditionalOrder, False]]]], TraditionalForm]\\)\""
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[TraditionalForm[NumberForm[1.5, 3]]], InputForm]"
+      )
+      .unwrap(),
+      "\"\\!\\(\\*FormBox[TagBox[InterpretationBox[StyleBox[\\\"\\\\\\\"1.5\\\\\\\"\\\", Rule[ShowStringCharacters, False]], 1.5`, Rule[AutoDelete, True]], Function[NumberForm[Slot[1], 3]]], TraditionalForm]\\)\""
+    );
+    // Displayed, the box expression reads back in OutputForm.
+    assert_eq!(
+      interpret("ToString[TraditionalForm[NumberForm[1.5, 3]]]").unwrap(),
+      "DisplayForm[FormBox[TagBox[InterpretationBox[StyleBox[\"1.5\", ShowStringCharacters -> False], 1.5, AutoDelete -> True], NumberForm[#1, 3] & ], TraditionalForm]]"
     );
   }
 

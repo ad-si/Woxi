@@ -2753,8 +2753,13 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("MusicNotation", id("Automatic")),
     ],
     // The pre-version-6 graph drawing options on top of `Graphics`'s,
-    // in alphabetical order like every option list.
-    "GraphUtilities`ExpressionTreePlot" => {
+    // in alphabetical order like every option list — once the package is
+    // loaded; before that the symbol has none.
+    "GraphUtilities`ExpressionTreePlot"
+      if crate::packages_list()
+        .iter()
+        .any(|pkg| pkg == "GraphUtilities`") =>
+    {
       let mut opts: Vec<Expr> = builtin_default_options("Graphics")
         .into_iter()
         .filter(|o| {

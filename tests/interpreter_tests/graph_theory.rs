@@ -5293,7 +5293,8 @@ mod graph_predicates {
     ] {
       assert_eq!(
         interpret(&format!(
-          "With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
+          "Needs[\"GraphUtilities`\"]; \
+           With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
            With[{{c = First[GraphUtilities`HamiltonianCycles[Rule @@@ e]]}}, \
            {{Sort[c] === Range[Max[e]], \
            And @@ (MemberQ[e, {{#1, #2}} | {{#2, #1}}] & @@@ \
@@ -9212,15 +9213,36 @@ mod graph_utilities_package {
     );
   }
 
-  // The package's VertexList and ClosenessCentrality only exist once it is
-  // loaded in an *earlier* input: read in the same line as the `Needs`, the
-  // names are created before it runs (wolframscript leaves them unevaluated).
+  // Woxi evaluates the package's VertexList and ClosenessCentrality however
+  // the `Needs` came. wolframscript only does when the `Needs` is in the same
+  // input: loaded by an earlier one, the two (and every other package
+  // function shadowing a System symbol) stay unevaluated with `::shdw` (see
+  // conformance_gaps.md).
   #[test]
   fn vertex_list_of_rule_list() {
     interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),
       "{a, b, c}"
+    );
+  }
+
+  /// The package is not autoloaded: before `Needs`, a qualified call stays
+  /// unevaluated and the plot has no options.
+  #[test]
+  fn functions_stay_unevaluated_until_loaded() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{GraphUtilities`VertexList[{a -> b}], \
+         GraphUtilities`WeakComponents[{1 -> 2}], \
+         Head[GraphUtilities`ExpressionTreePlot[f[a]]], \
+         Options[GraphUtilities`ExpressionTreePlot]}"
+      )
+      .unwrap(),
+      "{GraphUtilities`VertexList[{a -> b}], \
+       GraphUtilities`WeakComponents[{1 -> 2}], \
+       GraphUtilities`ExpressionTreePlot, {}}"
     );
   }
 
@@ -9245,18 +9267,18 @@ mod graph_utilities_package {
     let g = "{{a -> b, 1}, {b -> c, 1}, {c -> a, 1}, {d -> e, 2}, \
              {e -> f, 2}, {f -> d, 2}, {c -> d, 3}}";
     assert_eq!(
-      interpret(&format!("GraphUtilities`CommunityStructurePartition[{g}]"))
+      interpret(&format!("Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructurePartition[{g}]"))
         .unwrap(),
       "{{a, b, c}, {d, e, f}}"
     );
     assert_eq!(
-      interpret(&format!("GraphUtilities`CommunityStructureAssignment[{g}]"))
+      interpret(&format!("Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructureAssignment[{g}]"))
         .unwrap(),
       "{1, 1, 1, 2, 2, 2}"
     );
     assert_eq!(
       interpret(
-        "GraphUtilities`CommunityStructureAssignment[{f -> e, e -> d, d -> f, \
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructureAssignment[{f -> e, e -> d, d -> f, \
          d -> c, c -> b, b -> a, a -> c}]"
       )
       .unwrap(),
@@ -9337,6 +9359,7 @@ mod graph_utilities_package {
   fn expression_tree_plot_labels_vertices_by_index() {
     let etp =
       "GraphUtilities`ExpressionTreePlot[Or[\"x\", And[\"y\", Not[\"z\"]]]]";
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(&format!(
         "Cases[{etp}, Text[Framed[Style[HoldForm[a_], ___], ___], i_] :> i -> a, Infinity]"
@@ -9366,7 +9389,7 @@ mod graph_utilities_package {
   fn expression_tree_plot_without_labels_draws_points() {
     assert_eq!(
       interpret(
-        "Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], \
+        "Needs[\"GraphUtilities`\"]; Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], \
          Tooltip[Point[i_], l_] :> {i, l}, Infinity]"
       )
       .unwrap(),
@@ -9384,6 +9407,7 @@ mod graph_utilities_package {
       VertexRenderingFunction -> (vf[##] &), \
       EdgeRenderingFunction -> (ef[##] &), ImageSize -> 100, \
       PlotLabel -> \"t\"]";
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(&format!("Cases[{g}, _vf, Infinity]")).unwrap(),
       "{vf[{0.5, 1.}, f, 1], vf[{0., 0.}, HoldForm[a], 2], \
@@ -9414,14 +9438,14 @@ mod graph_utilities_package {
   fn expression_tree_plot_position_and_level() {
     assert_eq!(
       interpret(
-        "First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]"
+        "Needs[\"GraphUtilities`\"]; First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]"
       )
       .unwrap(),
       "{{0., 0.5}, {1., 1.}, {1., 0.}}"
     );
     assert_eq!(
       interpret(
-        "Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Top, 1], \
+        "Needs[\"GraphUtilities`\"]; Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Top, 1], \
          Text[Framed[Style[HoldForm[x_], ___], ___], _] :> Hold[x], Infinity]"
       )
       .unwrap(),

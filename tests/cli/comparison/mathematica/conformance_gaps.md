@@ -4273,6 +4273,27 @@ is a no-op — so the name works either way, which makes Woxi a superset here
 rather than a mismatch. Writing the `Needs` makes the two agree; there is no
 way to make Woxi *withhold* the symbol without giving up the flat namespace.
 
+A package with its own context is different: `GraphUtilities`VertexList[…]`
+before any `Needs["GraphUtilities`"]` stays unevaluated in both.
+
+### GraphUtilities` functions that shadow System symbols, loaded in an earlier input
+
+```sh
+printf 'Needs["GraphUtilities`"]\nPrint[GraphUtilities`VertexList[{a -> b}]]\n' > t.wls
+wolframscript -file t.wls
+# VertexList::shdw: Symbol VertexList appears in multiple contexts …
+# VertexList[{a -> b}]
+woxi run t.wls
+# {a, b}
+```
+
+With the `Needs` in the *same* input (`Needs["GraphUtilities`"];
+GraphUtilities`VertexList[{a -> b}]`) wolframscript answers `{a, b}` too. Loaded
+by an earlier input, every package function whose name is also a System
+symbol (`VertexList`, `ClosenessCentrality`, `AdjacencyMatrix`) stays
+unevaluated after a `::shdw` warning. Woxi evaluates them however the package
+was loaded, so the unit tests write the `Needs` into the same input.
+
 ### `Unevaluated` comes off for some heads and not others
 
 The wrapper is stripped where it was verified to matter — the arithmetic and
@@ -6876,6 +6897,10 @@ neighborhood range, so it does not share the other filters' validation.
 More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
 systemic across `ImageTake`, `ImagePartition` and `DistanceTransform`.
+The hypothesis tests share it: `FisherRatioTest[a, b, 1, "TestStatistic"]`
+gives `FisherRatioTest::argb` (WL: `nonopt` … beyond position 3), and
+`VarianceEquivalenceTest[{a, b}, "TestStatistic", All]` stays unevaluated
+without WL's `nonopt` … beyond position 2.
 
 ### FindThreshold implements only the default method
 
