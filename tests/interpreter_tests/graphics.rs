@@ -5457,7 +5457,8 @@ mod graphics {
         "Row[{\"M = \", NumberForm[MatrixForm[{{1.5, 2}, {2, 1}}], {3, 2}]}]",
         "Column[{\"values\", Grid[{{1, 2}, {3, 4}}]}]",
       ] {
-        let svg = export_svg(&format!("Graphics[{{Red, Text[{label}, {{0, 0}}]}}]"));
+        let svg =
+          export_svg(&format!("Graphics[{{Red, Text[{label}, {{0, 0}}]}}]"));
         assert!(!svg.contains("monospace"), "{label}: {svg}");
         // The proportional face sets the same text narrower than the
         // label typeset on its own.
