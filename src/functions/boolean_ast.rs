@@ -3017,6 +3017,95 @@ fn bc_decision_tree(variables: &[Expr], table: &[bool]) -> Expr {
   )
 }
 
+/// The `"BDT"` form of a truth table: the reduced decision diagram with
+/// complement edges (a node is stored in its regular form, the one true
+/// when every variable is, and its negation is an edge to it), written out
+/// as `(v && then) || ( !v && else)`. A complemented child prints as the
+/// negation of its regular node — `(a && X) || ( !a &&  !X)` for
+/// `Xor[a, b, c]` — and a complemented root pushes its negation into both
+/// children. `True`/`False` children collapse their branch.
+fn bc_binary_decision_tree(variables: &[Expr], table: &[bool]) -> Expr {
+  fn and(parts: Vec<Expr>) -> Expr {
+    let mut flat = Vec::new();
+    for p in parts {
+      match p {
+        Expr::Identifier(ref s) if s == "True" => {}
+        Expr::FunctionCall { ref name, ref args } if name == "And" => {
+          flat.extend(args.iter().cloned());
+        }
+        other => flat.push(other),
+      }
+    }
+    if flat.len() == 1 {
+      flat.pop().unwrap()
+    } else {
+      call("And", flat)
+    }
+  }
+  fn is_false(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(s) if s == "False")
+  }
+  // The first variable the table depends on, and its two cofactors.
+  fn split<'a>(
+    variables: &'a [Expr],
+    table: &'a [bool],
+  ) -> Option<(&'a Expr, &'a [Expr], &'a [bool], &'a [bool])> {
+    let (first, rest) = variables.split_first()?;
+    let (low, high) = table.split_at(table.len() / 2);
+    if low == high {
+      return split(rest, low);
+    }
+    Some((first, rest, high, low))
+  }
+  // A node written out from its two (already rendered) children.
+  fn node(var: &Expr, then: Expr, els: Expr) -> Expr {
+    let mut terms = Vec::new();
+    if !is_false(&then) {
+      terms.push(and(vec![var.clone(), then]));
+    }
+    if !is_false(&els) {
+      terms.push(and(vec![call("Not", vec![var.clone()]), els]));
+    }
+    match terms.len() {
+      0 => bool_expr(false),
+      1 => terms.pop().unwrap(),
+      _ => call("Or", terms),
+    }
+  }
+  // A child edge: a constant, a regular node, or the negation of one.
+  fn child(variables: &[Expr], table: &[bool]) -> Expr {
+    if table.iter().all(|v| *v) {
+      return bool_expr(true);
+    }
+    if table.iter().all(|v| !*v) {
+      return bool_expr(false);
+    }
+    if *table.last().unwrap() {
+      regular(variables, table)
+    } else {
+      let negated: Vec<bool> = table.iter().map(|v| !v).collect();
+      call("Not", vec![regular(variables, &negated)])
+    }
+  }
+  fn regular(variables: &[Expr], table: &[bool]) -> Expr {
+    let (var, rest, high, low) =
+      split(variables, table).expect("a non-constant table");
+    node(var, child(rest, high), child(rest, low))
+  }
+  if table.iter().all(|v| *v) || table.iter().all(|v| !*v) {
+    return bool_expr(table[0]);
+  }
+  if *table.last().unwrap() {
+    return regular(variables, table);
+  }
+  // A complemented root: its negation goes into both children.
+  let negated: Vec<bool> = table.iter().map(|v| !v).collect();
+  let (var, rest, high, low) =
+    split(variables, &negated).expect("a non-constant table");
+  let flip = |t: &[bool]| t.iter().map(|v| !v).collect::<Vec<bool>>();
+  node(var, child(rest, &flip(high)), child(rest, &flip(low)))
+}
+
 /// Drop the clauses a normal form does not need. Distributing a DNF into a
 /// CNF leaves consensus clauses behind — `(b || c)` in
 /// `(!a || b) && (a || c) && (b || c)` — which subsumption alone cannot see.
@@ -3147,16 +3236,14 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A DNF is a Nand of Nands, a CNF a Nor of Nors.
     "NAND" => normalize_not(&bc_to_sheffer(&dnf(), "Or", "And", "Nand")),
     "NOR" => normalize_not(&bc_to_sheffer(&cnf()?, "And", "Or", "Nor")),
-    // "BDT" (binary decision tree) is the same Shannon decomposition as
-    // "IF".
     "ANF" | "IF" | "BDT" => {
       let Some(table) = &table else {
         return Ok(unevaluated("BooleanConvert", args));
       };
-      let built = if form == "ANF" {
-        bc_algebraic_normal_form(&variables, table)
-      } else {
-        bc_decision_tree(&variables, table)
+      let built = match form.as_str() {
+        "ANF" => bc_algebraic_normal_form(&variables, table),
+        "BDT" => bc_binary_decision_tree(&variables, table),
+        _ => bc_decision_tree(&variables, table),
       };
       normalize_not(&built)
     }

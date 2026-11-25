@@ -699,6 +699,121 @@ static PROPERTIES: &[&str] = &[
   "VertexTypes",
 ];
 
+/// Every property wolframscript's `ChemicalData["Properties"]` lists. One
+/// of these the bundled table lacks is `Missing["NotAvailable"]`; any other
+/// name is no property at all (`ChemicalData::notprop`).
+const WL_PROPERTIES: &[&str] = &[
+  "AcidityConstants",
+  "AdjacencyMatrix",
+  "AlternateNames",
+  "AtomPositions",
+  "AutoignitionPoint",
+  "BeilsteinNumber",
+  "BlackStructureDiagram",
+  "BoilingPoint",
+  "BondTally",
+  "BoundaryMeshRegion",
+  "CASNumber",
+  "CHBlackStructureDiagram",
+  "CHColorStructureDiagram",
+  "CIDNumber",
+  "Codons",
+  "ColorStructureDiagram",
+  "CombustionHeat",
+  "CompoundFormulaDisplay",
+  "CompoundFormulaString",
+  "CriticalPressure",
+  "CriticalTemperature",
+  "Density",
+  "DielectricConstant",
+  "DOTHazardClass",
+  "DOTNumbers",
+  "EdgeRules",
+  "EdgeTypes",
+  "EGECNumber",
+  "ElementMassFraction",
+  "ElementTally",
+  "ElementTypes",
+  "EUNumber",
+  "FlashPoint",
+  "FormalCharges",
+  "FormattedName",
+  "GmelinNumber",
+  "HBondAcceptorCount",
+  "HBondDonorCount",
+  "HenryLawConstant",
+  "HildebrandSolubility",
+  "InChI",
+  "IonEquivalents",
+  "Ions",
+  "IonTally",
+  "IsoelectricPoint",
+  "IsomericSMILES",
+  "IUPACName",
+  "LogAcidityConstant",
+  "LowerExplosiveLimit",
+  "MDLNumber",
+  "MeltingPoint",
+  "Memberships",
+  "MeshRegion",
+  "MolarMass",
+  "MolarVolume",
+  "MolecularFormulaDisplay",
+  "MolecularFormulaString",
+  "MolecularMass",
+  "MoleculePlot",
+  "Name",
+  "NFPAFireRating",
+  "NFPAHazards",
+  "NFPAHealthRating",
+  "NFPALabel",
+  "NFPAReactivityRating",
+  "NonHydrogenCount",
+  "NonStandardIsotopeCount",
+  "NonStandardIsotopeNumbers",
+  "NonStandardIsotopeTally",
+  "NSCNumber",
+  "OdorThreshold",
+  "OdorType",
+  "PartitionCoefficient",
+  "pH",
+  "Phase",
+  "RefractiveIndex",
+  "Region",
+  "Resistivity",
+  "RotatableBondCount",
+  "RTECSClasses",
+  "RTECSNumber",
+  "SideChainAcidityConstant",
+  "SMILES",
+  "Solubility",
+  "SpaceFillingMoleculePlot",
+  "StandardName",
+  "StickMoleculePlot",
+  "StructureGraph",
+  "SurfaceTension",
+  "TautomerCount",
+  "ThermalConductivity",
+  "TopologicalPolarSurfaceArea",
+  "UpperExplosiveLimit",
+  "VanDerWaalsConstants",
+  "VaporDensity",
+  "VaporizationHeat",
+  "VaporPressure",
+  "VertexCoordinates",
+  "VertexTypes",
+  "Viscosity",
+];
+
+/// The `head::notprop` message of a curated-data function asked for a
+/// property it does not have.
+pub(crate) fn emit_notprop(head: &str, prop: &str) {
+  crate::emit_message(&format!(
+    "{head}::notprop: \"{prop}\" is not a known property for {head}. Use \
+     {head}[\"Properties\"] for a list of properties."
+  ));
+}
+
 fn notent(spec: &Expr) {
   crate::emit_message(&format!(
     "ChemicalData::notent: {} is not a known entity, class or tag for \
@@ -735,6 +850,12 @@ pub fn chemical_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     [spec, Expr::String(prop)] => {
       if let Some(c) = find(spec) {
+        if !PROPERTIES.contains(&prop.as_str())
+          && !WL_PROPERTIES.contains(&prop.as_str())
+        {
+          emit_notprop("ChemicalData", prop);
+          return Ok(unevaluated("ChemicalData", args));
+        }
         property(c, prop)
       } else {
         notent(spec);

@@ -7237,6 +7237,29 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
 /// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
 ///   precision in significant figures → `3.14`.
 /// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
+/// How many significant digits Wolfram shows of an arbitrary-precision
+/// number with these decimal `digits` (unsigned, plain or compact
+/// `d.ddde<k>`) and precision `prec`: `Ceiling[prec - Log10[m]]` for the
+/// mantissa `1 <= m < 10`. That is `prec` for an integer precision, but
+/// `9.8696…` at precision `19.699` shows 19 digits and `1.1…` at `19.4`
+/// shows 20.
+pub(crate) fn bigfloat_shown_digits(digits: &str, prec: f64) -> usize {
+  let body = digits.split('e').next().unwrap_or(digits);
+  let significant: String = body
+    .chars()
+    .filter(char::is_ascii_digit)
+    .skip_while(|c| *c == '0')
+    .take(17)
+    .collect();
+  let mantissa = match significant.split_at_checked(1) {
+    Some((first, rest)) if !first.is_empty() => {
+      format!("{first}.{rest}").parse::<f64>().unwrap_or(1.0)
+    }
+    _ => 1.0,
+  };
+  ((prec - mantissa.log10() - 1e-9).ceil() as i64).max(1) as usize
+}
+
 fn precision_number_display(token: &str) -> Option<String> {
   // Numeric leaves start with a digit (negatives are wrapped in a RowBox
   // with a separate "-" token, so the magnitude leaf is unsigned).
@@ -7267,8 +7290,7 @@ fn precision_number_display(token: &str) -> Option<String> {
   // (`N[Pi]` → `3.14159`, `0.1 + 0.2` → `0.3`), so round to 6 and trim.
   let body = match prec_spec.parse::<f64>() {
     Ok(prec) => {
-      let digits = (prec.round() as i64).max(1) as usize;
-      round_significant(mantissa, digits)
+      round_significant(mantissa, bigfloat_shown_digits(mantissa, prec))
     }
     Err(_) => drop_trailing_frac_zeros(&round_significant(mantissa, 6)),
   };

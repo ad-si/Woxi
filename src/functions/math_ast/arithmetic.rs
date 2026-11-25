@@ -4275,20 +4275,25 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         matches!(exp, Expr::Integer(1))
           && (matches!(base, Expr::Identifier(_)) || is_sum(base))
       };
+      // Whether the two mention a common symbol, also inside exponents
+      // (`E^(I x)`), which polynomial `Variables` would not report.
       let common_variable = |p: &Expr, q: &Expr| {
-        let vars = |e: &Expr| -> Vec<String> {
-          match crate::evaluator::evaluate_function_call_ast(
-            "Variables",
-            std::slice::from_ref(e),
-          ) {
-            Ok(Expr::List(ref vs)) => {
-              vs.iter().map(crate::syntax::expr_to_string).collect()
+        fn symbols(e: &Expr, out: &mut Vec<String>) {
+          match e {
+            Expr::Identifier(name) => {
+              if !crate::functions::predicate_ast::is_numeric_q(e) {
+                out.push(name.clone());
+              }
             }
-            _ => Vec::new(),
+            _ => crate::syntax::expr_children(e)
+              .into_iter()
+              .for_each(|c| symbols(c, out)),
           }
-        };
-        let vp = vars(p);
-        vars(q).iter().any(|v| vp.contains(v))
+        }
+        let (mut sp, mut sq) = (Vec::new(), Vec::new());
+        symbols(p, &mut sp);
+        symbols(q, &mut sq);
+        sq.iter().any(|v| sp.contains(v))
       };
       if ((power_of_sum(base_a, &exp_a) && plain(base_b, &exp_b))
         || (power_of_sum(base_b, &exp_b) && plain(base_a, &exp_a)))
@@ -11098,6 +11103,25 @@ fn fold_complex_coefficient(
       other => factors.push(other),
     }
   }
+  // Beside a machine real, an exact numeric factor with a complex value
+  // (`Log[1 + I]`, `E^I`) is a number too: `2.5 x Log[1 + I]` is
+  // `(0.866… + 1.963… I) x`.
+  let machine = factors.iter().any(|f| matches!(f, Expr::Real(_)))
+    && !factors.iter().any(|f| matches!(f, Expr::BigFloat(..)));
+  let complex_valued = |e: &Expr| {
+    machine
+      && crate::functions::predicate_ast::is_numeric_q(e)
+      && crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(e),
+      )
+      .ok()
+      .and_then(|n| try_extract_complex_float(&n))
+      .is_some_and(|(_, im)| im != 0.0)
+  };
+  let is_nonreal_complex =
+    |e: &Expr| is_nonreal_complex(e) || complex_valued(e);
+  let is_number = |e: &Expr| is_number(e) || complex_valued(e);
   let numbers: Vec<Expr> = factors
     .iter()
     .filter(|f| is_number(f))
@@ -14763,7 +14787,39 @@ fn log_quotient_for_base(base: &Expr, exp: &Expr) -> Option<Expr> {
   None
 }
 
+/// The arbitrary-precision real `c` of a purely imaginary `c I`.
+fn bigfloat_imaginary_coefficient(e: &Expr) -> Option<&Expr> {
+  let is_i = |x: &Expr| matches!(x, Expr::Identifier(n) if n == "I");
+  let (a, b) = match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  match (a, b) {
+    (c @ Expr::BigFloat(..), i) | (i, c @ Expr::BigFloat(..)) if is_i(i) => {
+      Some(c)
+    }
+    _ => None,
+  }
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // An arbitrary-precision imaginary base `c I` to an integer power is
+  // `c^n I^n`, its precision that of the real power:
+  // `(0.5`30 I)^2` is `-0.25`29.699`.
+  if let Expr::Integer(_) = exp
+    && let Some(c) = bigfloat_imaginary_coefficient(base)
+  {
+    let real_power = power_two(c, exp)?;
+    let unit_power = power_two(&Expr::Identifier("I".to_string()), exp)?;
+    return times_ast(&[real_power, unit_power]);
+  }
   // An arbitrary-precision complex base keeps its precision:
   // `(2.1`30 + 0.3`30 I)^-1`.
   if super::numeric_utils::contains_inexact_real(base)
@@ -18118,7 +18174,7 @@ use super::numerical::MACHINE_PRECISION_DIGITS;
 /// Split a numeric expression into `(m, k)` with value `m·10^k`, so that
 /// arbitrary-precision numbers beyond the f64 range (whose digit strings
 /// run to hundreds of digits) can still be compared and combined.
-fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
+pub(crate) fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
   let decompose = |f: f64| {
     if f == 0.0 || !f.is_finite() {
       (f, 0)
@@ -18267,8 +18323,12 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
           .map_or(sum_val, at_scale);
         // A sum below its own error is a zero of that accuracy:
         // N[Pi, 30] - N[Pi, 20] is 0``19.5.
+        // The error is scaled by `10^-scale`.
         if sum_error > 0.0 && value.abs() <= sum_error {
-          return Expr::BigFloat("0".to_string(), -sum_error.log10());
+          return Expr::BigFloat(
+            "0".to_string(),
+            -sum_error.log10() - scale as f64,
+          );
         }
         let result_prec = precision_of(value);
         let digits = wl_fraction_digits(&sum, result_prec);

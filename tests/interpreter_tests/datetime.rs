@@ -163,13 +163,21 @@ mod date_string_time_zone {
     );
   }
 
-  // A list of strings without any format element is not a format.
+  // A list of strings without any format element is its literal text.
   #[test]
-  fn date_string_list_without_format_elements_stays_unevaluated() {
+  fn date_string_list_without_format_elements_is_literal() {
+    clear_state();
+    assert_eq!(interpret("DateString[{\"a\", \":\"}]").unwrap(), "a:");
+  }
+
+  // Years before the common era: `5 BC` in the date forms, a signed
+  // four-digit year in the ISO ones; positive ISO years are padded too.
+  #[test]
+  fn date_string_years_before_common_era() {
     clear_state();
     assert_eq!(
-      interpret("DateString[{\"a\", \":\"}]").unwrap(),
-      "DateString[{a, :}]"
+      interpret("{DateString[{5, 4, 15}, \"ISODate\"], DateString[{-12345, 4, 15}, \"ISODate\"], DateString[{-5, 4, 15}, {\"Year\"}], DateString[{-5, 4, 15}, \"ISODateTime\"], DateString[{-5, 4, 15}], DateString[{-5, 4, 15}, {\"ISOYear\", \" \", \"YearShort\"}]}").unwrap(),
+      "{0005-04-15, -12345-04-15, 5 BC, -0005-04-15T00:00:00, Mon 15 Apr 5 BC 00:00:00, -0005 05}"
     );
   }
 }

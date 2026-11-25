@@ -73,11 +73,34 @@ mod infix_text_mode {
     clear_state();
     assert_eq!(
       interpret(r#"ToBoxes[Infix[{a, b}, "+"]]"#).unwrap(),
-      "RowBox[{a, +, b}]"
+      "InterpretationBox[RowBox[{a, +, b}], a+b, Editable -> False]"
     );
     assert_eq!(
       interpret(r#"ToString[ToBoxes[Infix[{a, b}, "+"]], InputForm]"#).unwrap(),
-      r#"RowBox[{"a", "+", "b"}]"#
+      r#"InterpretationBox[RowBox[{"a", "+", "b"}], Infix[{a, b}, "+"], Editable -> False]"#
+    );
+    // A sum operand is bracketed; `Infix[f[a, b, c]]` puts `~f~` between.
+    assert_eq!(
+      interpret(r#"ToString[{ToBoxes[Infix[{a + b, c}, "*"]], ToBoxes[Infix[f[a, b]]]}, InputForm]"#).unwrap(),
+      r#"{InterpretationBox[RowBox[{RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}], "*", "c"}], Infix[{a + b, c}, "*"], Editable -> False], InterpretationBox[RowBox[{"a", " ", "~", "f", "~", " ", "b"}], Infix[f[a, b]], Editable -> False]}"#
+    );
+    // With a precedence the wrapper boxes as a plain call.
+    assert_eq!(
+      interpret(r#"ToBoxes[Infix[{a, b}, "~", 300, Left]]"#).unwrap(),
+      r#"RowBox[{Infix, [, RowBox[{RowBox[{{, RowBox[{a, ,, b}], }}], ,, "~", ,, 300, ,, Left}], ]}]"#
+    );
+  }
+
+  #[test]
+  fn prefix_and_postfix_boxes_and_text() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[{ToBoxes[Prefix[f[x]]], ToBoxes[Postfix[f[x], "!"]], ToBoxes[Prefix[f[a b]]]}, InputForm]"#).unwrap(),
+      r#"{InterpretationBox[RowBox[{"f", "@", "x"}], Prefix[f[x]], Editable -> False], InterpretationBox[RowBox[{"x", "!"}], Postfix[f[x], "!"], Editable -> False], InterpretationBox[RowBox[{"f", "@", RowBox[{"(", RowBox[{"a", " ", "b"}], ")"}]}], Prefix[f[a*b]], Editable -> False]}"#
+    );
+    assert_eq!(
+      interpret(r#"{ToString[Prefix[f[x]]], ToString[Postfix[f[a + b]]], ToString[Prefix[f[x], "!"]], ToString[Prefix[f[a + b]]]}"#).unwrap(),
+      "{f@ x, a + b // f, !x, f@ (a + b)}"
     );
   }
 
