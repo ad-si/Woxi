@@ -41021,6 +41021,19 @@ fn strip_text_wrappers(mut e: &Expr) -> &Expr {
   e
 }
 
+/// `e` without the one-argument `TraditionalForm[…]`/`StandardForm[…]`
+/// wrappers around it: they only say how the content is typeset, so a
+/// layout inside one is still that layout.
+fn strip_form_wrappers(mut e: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = e
+    && matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+    && args.len() == 1
+  {
+    e = &args[0];
+  }
+  e
+}
+
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -41213,13 +41226,19 @@ pub(crate) fn style_pushed_into_layout(
     // (Any other styled `Row` item is already set inline as it is.)
     // A one-argument `Text[…]` between the two (`Style[Text[Column[…]],
     // 14]`) only marks its content as text, so it comes off here too.
+    // A form wrapper around the vertical layout
+    // (`Style[TraditionalForm[Grid[…]], 10]`) stays on it: the merged
+    // `Style` still sees the layout through it.
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
       && let Some(first) = args.first()
-      && let content @ Expr::FunctionCall { name: head, .. } =
-        strip_text_wrappers(first)
+      && let content = strip_text_wrappers(first)
+      && let Expr::FunctionCall { name: head, .. } =
+        strip_form_wrappers(content)
       && (matches!(head.as_str(), "Column" | "Grid" | "TextGrid")
-        || (head == "Row" && extract_cell_style(e).font_size.is_some()))
+        || (head == "Row"
+          && std::ptr::eq(strip_form_wrappers(content), content)
+          && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
@@ -62627,6 +62646,21 @@ fn display_expr_to_node(
       // keeps the layout instead of flattening the grid into one text line.
       "Style" | "StyleForm" if !args.is_empty() => {
         match style_wrapped_block_layout(&args[0], bindings) {
+          // A typeset layout (`Style[TraditionalForm[Grid[…]], 9]`) is drawn
+          // as the styled picture it is, at the size its `Style` asks for.
+          Some(inner)
+            if !std::ptr::eq(strip_form_wrappers(&inner), &raw const inner) =>
+          {
+            static_leaf_node(
+              &call(
+                name.as_str(),
+                std::iter::once(inner)
+                  .chain(args[1..].iter().cloned())
+                  .collect(),
+              ),
+              bindings,
+            )
+          }
           Some(inner) => display_expr_to_node(&inner, bindings, probes, ons),
           // A styled graphic (`Style[Graphics[…], opts]`) is a picture, not
           // caption text: the label machinery would reduce it to nothing.
@@ -62778,7 +62812,9 @@ fn style_wrapped_block_layout(
     }
     other => other.clone(),
   };
-  is_block_layout(&released).then_some(released)
+  // A form wrapper (`TraditionalForm[Grid[…]]`) only says how the layout
+  // is typeset.
+  is_block_layout(strip_form_wrappers(&released)).then_some(released)
 }
 
 /// Whether `expr` is an evaluated graphics container (`Graphics[…]`,
