@@ -4008,6 +4008,33 @@ fn keep_fixed_pane_box(
   ))
 }
 
+/// `rendered` with the frames of the `Framed[content, options…]` boxes
+/// around it drawn again, innermost first (`frames` lists their options
+/// from the outside in). The passes that look through `Pane`/`Panel`/
+/// `Framed` wrappers to the table or captioned picture inside draw that
+/// content alone; a `Framed` among the wrappers still shows its border in a
+/// notebook.
+fn keep_frame_boxes(
+  frames: &[Vec<syntax::Expr>],
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let mut result = rendered;
+  for options in frames.iter().rev() {
+    let syntax::Expr::Graphics { svg, .. } = &result else {
+      return result;
+    };
+    let mut framed_args = vec![result.clone()];
+    framed_args.extend(options.iter().cloned());
+    let Some(framed) = functions::graphics::framed_to_svg(&framed_args) else {
+      return result;
+    };
+    // The framed picture replaces the bare one the cell would show.
+    remove_captured_graphics(svg);
+    result = graphics_result(framed);
+  }
+  result
+}
+
 /// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
 /// wrappers.
 fn is_text_column(expr: &syntax::Expr) -> bool {
@@ -4038,6 +4065,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // `Text[Pane[Grid[…], size]]`: the pane only sizes the table, so it
       // is drawn as the table it wraps.
       let mut content = args[0].clone();
+      // The options of each `Framed` looked through, from the outside in:
+      // its border is drawn around the table again below.
+      let mut frames: Vec<Vec<syntax::Expr>> = Vec::new();
       while let syntax::Expr::FunctionCall {
         name: wrapper,
         args: wrapped,
@@ -4050,6 +4080,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
             if matches!(n.as_str(), "Grid" | "TextGrid" | "Pane" | "Panel" | "Framed")
         )
       {
+        if wrapper == "Framed" {
+          frames.push(wrapped[1..].to_vec());
+        }
         content = inner.clone();
       }
       // A paragraph of words joined from styled boxes (`Style[word, color,
@@ -4097,7 +4130,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         })
       }) {
         graphics @ syntax::Expr::Graphics { .. } => {
-          keep_fixed_pane_box(&expr, graphics)
+          let framed = keep_frame_boxes(&frames, graphics);
+          keep_fixed_pane_box(&expr, framed)
         }
         _ => expr,
       }
@@ -4350,6 +4384,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // A `Pane[…, {w, h}]` of fixed size still reserves its whole box,
       // with the composition placed in it by the pane's `Alignment`.
       match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } if name == "Framed" => {
+          keep_frame_boxes(&[args[1..].to_vec()], graphics)
+        }
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
         }
@@ -5342,12 +5379,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // (`Dynamic[If[ok, Text[a], Text[b]]]`) is pre-rendered like a `Text`
   // item, keeping its wrapper so the layout sets it in the proportional
   // text face; the display pipeline would peel it to bare monospace text.
+  // A fixed-size `Pane` value (`Dynamic[Pane[Text[Grid[…]], {w, h}]]`) is
+  // laid out like a `Pane` item too: it keeps its box, and the `Text` in it
+  // keeps the text face its grid cells are measured in.
   let released = match expr {
     syntax::Expr::FunctionCall { name, args }
       if is_visual_mode() && name == "Dynamic" && !args.is_empty() =>
     {
       let value = functions::graphics::dynamic_current_value(expr);
-      if functions::graphics::is_text_display_item(&value) {
+      if functions::graphics::is_text_display_item(&value)
+        || is_fixed_size_pane_through_text_style(&value)
+      {
         return render_inline_display_wrapper(&value);
       }
       Some(value)
@@ -5849,13 +5891,13 @@ pub(crate) fn column_svg_with_rendered_items(
       .unwrap_or_else(|| args.to_vec());
   // Which items are text rather than pictures, told before drawing them
   // turns every one into a picture.
-  let mut text_items: Option<Vec<bool>> = None;
+  let mut text_items: Option<Vec<functions::graphics::ColumnItemKind>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
     text_items = Some(
       items
         .iter()
-        .map(|item| {
-          !matches!(
+        .map(|item| functions::graphics::ColumnItemKind {
+          text: !matches!(
             item,
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
@@ -5863,7 +5905,8 @@ pub(crate) fn column_svg_with_rendered_items(
             // A `Framed` box is drawn edge to edge — its frame is its
             // outline, with no blank line margin around it to take out
             // of an explicit spacing.
-            && !functions::graphics::is_framed_box(item)
+            && !functions::graphics::is_framed_box(item),
+          text_line: functions::graphics::one_line_text_row(item),
         })
         .collect(),
     );
@@ -7227,6 +7270,9 @@ fn precision_number_display(token: &str) -> Option<String> {
 /// figure its precision claims (`N[28, 6]` → `28.0000`, `3.14`5` → `3.1400`).
 pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
   let prec = prec.max(1);
+  // A compactly stored number is laid out digit by digit like any other.
+  let mantissa =
+    &*functions::math_ast::numerical::plain_bigfloat_digits(mantissa);
   let (int_s, frac_s) = match mantissa.find('.') {
     Some(i) => (&mantissa[..i], &mantissa[i + 1..]),
     None => (mantissa, ""),
