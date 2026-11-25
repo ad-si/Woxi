@@ -6402,14 +6402,7 @@ fn expr_to_tex_inner(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => tex_real(*f),
-    Expr::BigFloat(digits, prec) => {
-      // TeX rendering of a precision-tagged BigFloat uses the
-      // plain decimal digits (no `…` precision marker), padded
-      // with trailing zeros to show all `prec` significant
-      // digits. wolframscript's `-14.`3 // TeXForm` → `-14.0`
-      // (3 sig digits = "14" + "0").
-      pad_bigfloat_to_precision(digits, *prec)
-    }
+    Expr::BigFloat(digits, prec) => tex_bigfloat(expr, digits, *prec),
     Expr::String(s) => format!("\\text{{{}}}", tex_escape_text(s)),
     // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
     Expr::Raw(s) => format!("\\text{{{s}}}"),
@@ -6942,6 +6935,59 @@ fn tex_real(f: f64) -> String {
         None => raw,
       }
     }
+  }
+}
+
+/// TeX rendering of a precision-tagged BigFloat: its decimal digits (no
+/// precision marker), padded with trailing zeros to show all `prec`
+/// significant digits (`-14.`3` → `-14.0`). As for a machine real, a
+/// magnitude from `10^6` on is written `1.50\times 10^6`, and one below
+/// `10^-5` as its InputForm text inside a `\text{…}`.
+fn tex_bigfloat(expr: &Expr, digits: &str, prec: f64) -> String {
+  let (sign, abs) = match digits.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", digits),
+  };
+  let (mantissa, shift) =
+    crate::functions::math_ast::numerical::split_compact_digits(abs)
+      .unwrap_or((abs, 0));
+  let (int_part, frac_part) =
+    mantissa.split_once('.').unwrap_or((mantissa, ""));
+  let int_trim = int_part.trim_start_matches('0');
+  // The significant digits and the decimal exponent of the first of them.
+  let (sig, exponent) = if int_trim.is_empty() {
+    let frac_trim = frac_part.trim_start_matches('0');
+    let zeros = (frac_part.len() - frac_trim.len()) as i64;
+    (frac_trim.to_string(), -(zeros + 1))
+  } else {
+    (format!("{int_trim}{frac_part}"), int_trim.len() as i64 - 1)
+  };
+  let exponent = exponent + shift;
+  if sig.is_empty() || (-5..=5).contains(&exponent) {
+    return pad_bigfloat_to_precision(digits, prec);
+  }
+  if exponent < -5 {
+    let text = crate::syntax::expr_to_input_form(expr)
+      .replace('`', "$\\grave{ }$")
+      .replace('^', "${}^{\\wedge}$");
+    return format!("\\text{{{text}}}");
+  }
+  let n = (prec.round().max(1.0)) as usize;
+  let lead: String = sig.chars().take(n + 2).collect();
+  let scaled = format!("{}.{}", &lead[..1], &lead[1..]);
+  let mut rounded = crate::round_significant(&scaled, n);
+  let mut exponent = exponent;
+  // Rounding up may carry into a new leading digit (`9.99` → `10.0`).
+  if rounded.starts_with("10") {
+    let all: String = rounded.chars().filter(char::is_ascii_digit).collect();
+    rounded = format!("1.{}", &all[1..n.max(1)]);
+    exponent += 1;
+  }
+  let exponent = exponent.to_string();
+  if exponent.len() == 1 {
+    format!("{sign}{rounded}\\times 10^{exponent}")
+  } else {
+    format!("{sign}{rounded}\\times 10^{{{exponent}}}")
   }
 }
 

@@ -18123,7 +18123,7 @@ use super::numerical::MACHINE_PRECISION_DIGITS;
 /// Split a numeric expression into `(m, k)` with value `m·10^k`, so that
 /// arbitrary-precision numbers beyond the f64 range (whose digit strings
 /// run to hundreds of digits) can still be compared and combined.
-fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
+pub(crate) fn scaled_parts(e: &Expr) -> Option<(f64, i64)> {
   let decompose = |f: f64| {
     if f == 0.0 || !f.is_finite() {
       (f, 0)
@@ -18272,8 +18272,12 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
           .map_or(sum_val, at_scale);
         // A sum below its own error is a zero of that accuracy:
         // N[Pi, 30] - N[Pi, 20] is 0``19.5.
+        // The error is scaled by `10^-scale`.
         if sum_error > 0.0 && value.abs() <= sum_error {
-          return Expr::BigFloat("0".to_string(), -sum_error.log10());
+          return Expr::BigFloat(
+            "0".to_string(),
+            -sum_error.log10() - scale as f64,
+          );
         }
         let result_prec = precision_of(value);
         let digits = wl_fraction_digits(&sum, result_prec);

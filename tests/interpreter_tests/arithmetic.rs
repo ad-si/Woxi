@@ -3330,7 +3330,11 @@ mod infinity_arithmetic {
       "{True, True, \
        1.2247448713915890490986420373529`20.30102999566398*^25000, \
        6.66666666666666666666666666666667`20.*^-50001, \
-       0``19.522878745280337, 20., True}"
+       0``-49980.47712125472, 20., True}"
+    );
+    assert_eq!(
+      interpret("{Accuracy[1.5`20*^500], 1.5`20*^50 - 1.5`20*^50}").unwrap(),
+      "{-480.1760912590557, 0``-30.477121254719663}"
     );
     assert_eq!(
       interpret("N[Exp[1.*^6] - Exp[1.*^6]/2]").unwrap(),
@@ -3361,7 +3365,16 @@ mod infinity_arithmetic {
     );
     assert_eq!(
       interpret("ToString[TeXForm[1.5`3*^10005]] // StringLength").unwrap(),
-      "10007"
+      "21"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[TeXForm[#]] & /@ {1.5`3*^5, 1.5`3*^7, 123.456`10*^100, \
+         1.5`20*^-7}"
+      )
+      .unwrap(),
+      "{150000., 1.50\\times 10^7, 1.234560000\\times 10^{102}, \
+       \\text{1.5$\\grave{ }$20.*${}^{\\wedge}$-7}}"
     );
   }
 
@@ -3374,12 +3387,25 @@ mod infinity_arithmetic {
     assert_eq!(interpret("Exp[1.*^9]^-2").unwrap(), "Underflow[]");
   }
 
-  // The value lies outside the machine range; this used to panic.
+  // The value lies outside the machine range; this used to panic. The
+  // mantissa keeps the precision of the number.
   #[test]
   fn mantissa_exponent_beyond_machine_range_does_not_panic() {
     assert_eq!(
       interpret("MantissaExponent[1.5`20*^5000]").unwrap(),
-      "MantissaExponent[1.5`20.*^5000]"
+      "{0.15`20., 5001}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[-1.5`20*^-5000]").unwrap(),
+      "{-0.15`20., -4999}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[1.5`20]").unwrap(),
+      "{0.15`20., 1}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[1.5`20*^5000, 2]").unwrap(),
+      "{0.58456564020360417067573715749585715928`20., 16611}"
     );
   }
 

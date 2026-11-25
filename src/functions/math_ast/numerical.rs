@@ -4947,13 +4947,14 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // precision *is* the accuracy (Wolfram stores `0``a` as a 0 with
     // accuracy a, which we represent as a BigFloat whose precision field
     // already holds a — see the parser).
-    Expr::BigFloat(digits, prec) => {
-      let val: f64 = digits.parse().unwrap_or(0.0);
-      let prec_f = *prec;
-      if val == 0.0 {
-        return Ok(Expr::Real(prec_f));
+    Expr::BigFloat(_, prec) => {
+      // The magnitude may lie far outside the machine range (`1.5`20*^500`).
+      match super::arithmetic::scaled_parts(&args[0]) {
+        Some((m, k)) if m != 0.0 => {
+          Ok(Expr::Real(*prec - (m.abs().log10() + k as f64)))
+        }
+        _ => Ok(Expr::Real(*prec)),
       }
-      Ok(Expr::Real(prec_f - val.abs().log10()))
     }
     Expr::Identifier(name)
       if name == "Infinity"

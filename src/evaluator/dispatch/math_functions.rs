@@ -2869,6 +2869,26 @@ pub fn dispatch_math_functions(
       } else {
         10.0
       };
+      // An arbitrary-precision number keeps its precision in the mantissa,
+      // and may lie far outside the machine range: its exponent comes from
+      // its decimal digits.
+      if matches!(&args[0], Expr::BigFloat(..))
+        && (args.len() == 1
+          || !matches!(&args[1], Expr::Real(_) | Expr::BigFloat(..)))
+        && let Some((m, k)) = crate::functions::math_ast::scaled_parts(&args[0])
+        && m != 0.0
+      {
+        let log_b = (m.abs().log10() + k as f64) / base_num.log10();
+        let e = log_b.floor() as i128 + 1;
+        let base_expr = args.get(1).cloned().unwrap_or(Expr::Integer(10));
+        let mantissa = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+          args[0].clone(),
+          pow(base_expr, Expr::Integer(-e)),
+        ]));
+        return Some(
+          mantissa.map(|m| Expr::List(vec![m, Expr::Integer(e)].into())),
+        );
+      }
       // Numerically evaluate the value to compute the exponent.
       let val_num: f64 = match try_eval_to_f64(&args[0]) {
         Some(v) => v,
