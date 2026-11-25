@@ -10927,10 +10927,10 @@ mod cases {
   fn to_boxes_fraction_sum_numerator() {
     // Issue #299: (1+x)/10 rendered as `1 (1+x)` over 10 — the unit factor
     // from Rational[1,10]'s numerator leaked into the box-form numerator.
-    // A rational coefficient of a sum is set in front of it: `1/10 (1 + x)`.
+    // A flat numerator stays over the denominator: `(1 + x)/10`.
     assert_case(
       r#"ToBoxes[(1 + x)/10]"#,
-      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
+      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
     );
   }
   #[test]
@@ -10961,7 +10961,7 @@ mod cases {
   fn to_boxes_fraction_explicit_one_times_sum() {
     assert_case(
       r#"ToBoxes[1 (1 + x)/10]"#,
-      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
+      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
     );
   }
   // A negative product inside a sum puts its sign on the operator, with no
@@ -15908,7 +15908,13 @@ mod box_code_inside_linear_syntax_group {
   fn box_escape_after_atoms_is_a_nested_box() {
     assert_eq!(
       interpret(r#"FullForm[\(a\*SuperscriptBox["x", "2"] + b\)]"#).unwrap(),
-      "FullForm[RowBox[{a, SuperscriptBox[x, 2], +, b}]]"
+      "FullForm[RowBox[{RowBox[{a, SuperscriptBox[x, 2]}], +, b}]]"
+    );
+    // The row groups by its operators: the loosest splits it, a leading
+    // sign binds the factor after it.
+    assert_eq!(
+      interpret(r#"{FullForm[\(a b + c\)], FullForm[\(a == b + c d\)], FullForm[\(-a b\)], FullForm[\(-a + b\)], FullForm[\(a - b - c\)]}"#).unwrap(),
+      "{FullForm[RowBox[{RowBox[{a, b}], +, c}]], FullForm[RowBox[{a, ==, RowBox[{b, +, RowBox[{c, d}]}]}]], FullForm[RowBox[{RowBox[{-, a}], b}]], FullForm[RowBox[{RowBox[{-, a}], +, b}]], FullForm[RowBox[{a, -, b, -, c}]]}"
     );
     assert_eq!(
       interpret(

@@ -13912,18 +13912,30 @@ fn data_distribution_pdf_cdf(
   x: &Expr,
   cumulative: bool,
 ) -> Option<Expr> {
-  let exact = data_distribution_parts(dargs)
-    .and_then(|parts| Some((parts, as_exact_frac(x)?)));
-  let Some(((weights, values), xf)) = exact else {
+  // Exact data gives an exact probability, also at a machine point.
+  let Some((weights, values)) = data_distribution_parts(dargs) else {
     return data_distribution_pdf_cdf_numeric(dargs, x, cumulative);
+  };
+  let exact_x = as_exact_frac(x);
+  let machine_x = if exact_x.is_none() {
+    Some(try_eval_to_f64(x)?)
+  } else {
+    None
   };
   let mut num: i128 = 0;
   let mut den: i128 = 1;
   for (w, v) in weights.iter().zip(values.iter()) {
+    let ordering = match (exact_x, machine_x) {
+      (Some(xf), _) => frac_cmp(*v, xf),
+      (None, Some(xf)) => (v.0 as f64 / v.1 as f64)
+        .partial_cmp(&xf)
+        .unwrap_or(std::cmp::Ordering::Greater),
+      _ => return None,
+    };
     let include = if cumulative {
-      frac_cmp(*v, xf) != std::cmp::Ordering::Greater
+      ordering != std::cmp::Ordering::Greater
     } else {
-      *v == xf
+      ordering == std::cmp::Ordering::Equal
     };
     if include {
       num = num * w.1 + w.0 * den;
@@ -13958,13 +13970,23 @@ fn data_distribution_pdf_cdf_numeric(
   let (weights, values) = empirical_points(dargs)?;
   let xf = try_eval_to_f64(x)?;
   let mut total = 0.0;
+  let mut included = 0;
   for (w, v) in weights.iter().zip(values.iter()) {
     let (w, v) = (try_eval_to_f64(w)?, try_eval_to_f64(v)?);
     if (cumulative && v <= xf) || (!cumulative && v == xf) {
       total += w;
+      included += 1;
     }
   }
-  Some(Expr::Real(total))
+  // No mass is the exact 0, and the CDF from the largest value on the
+  // exact 1.
+  Some(if included == 0 {
+    Expr::Integer(0)
+  } else if cumulative && included == values.len() {
+    Expr::Integer(1)
+  } else {
+    Expr::Real(total)
+  })
 }
 
 // ─── ProductDistribution ─────────────────────────────────────────────

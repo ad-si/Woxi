@@ -2620,14 +2620,34 @@ fn is_date_format_element(s: &str) -> bool {
   )
 }
 
-/// True for a list of strings that is a format specification rather than a
-/// date: it holds at least one format element, and every other entry is a
-/// literal separator string, e.g. `{"Hour", ":", "Minute"}`. Such a list
-/// with no date formats the current date.
+/// True for a list of strings, which is a format specification rather than a
+/// date: format elements and literal separator strings, e.g.
+/// `{"Hour", ":", "Minute"}`. Such a list with no date formats the current
+/// date; one with no format element at all is just its literal text
+/// (`DateString[{"a", ":"}]` is `"a:"`).
 fn is_format_list(e: &Expr) -> bool {
   matches!(e, Expr::List(items)
-    if items.iter().all(|i| matches!(i, Expr::String(_)))
-      && items.iter().any(|i| matches!(i, Expr::String(s) if is_known_date_format(s))))
+    if !items.is_empty() && items.iter().all(|i| matches!(i, Expr::String(_))))
+}
+
+/// A year as the date formats write it: a year before the common era as
+/// `5 BC`.
+fn display_year(y: i64) -> String {
+  if y < 0 {
+    format!("{} BC", -y)
+  } else {
+    y.to_string()
+  }
+}
+
+/// A year as the ISO formats write it: at least four digits, signed before
+/// the common era (`0005`, `-0005`).
+fn iso_year(y: i64) -> String {
+  if y < 0 {
+    format!("-{:04}", -y)
+  } else {
+    format!("{y:04}")
+  }
 }
 
 /// DateString[date, format] — format a date as a string
@@ -2812,7 +2832,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         day_name_short(dow),
         d,
         month_name_short(m),
-        y,
+        display_year(y),
         h,
         min,
         sec as i64
@@ -2824,7 +2844,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       day_name_short(dow),
       d,
       month_name_short(m),
-      y,
+      display_year(y),
     )));
   }
 
@@ -2838,11 +2858,16 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ISODateTime" => {
           return Ok(Expr::String(format!(
             "{}-{:02}-{:02}T{:02}:{:02}:{:02}",
-            y, m, d, h, min, sec as i64
+            iso_year(y),
+            m,
+            d,
+            h,
+            min,
+            sec as i64
           )));
         }
         "ISODate" => {
-          return Ok(Expr::String(format!("{y}-{m:02}-{d:02}")));
+          return Ok(Expr::String(format!("{}-{m:02}-{d:02}", iso_year(y))));
         }
         "DateTime" => {
           return Ok(Expr::String(format!(
@@ -2850,7 +2875,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             day_name(dow),
             d,
             month_name(m),
-            y,
+            display_year(y),
             h,
             min,
             sec as i64
@@ -2862,7 +2887,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             day_name_short(dow),
             d,
             month_name_short(m),
-            y,
+            display_year(y),
             h,
             min,
             sec as i64
@@ -2874,7 +2899,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             day_name(dow),
             d,
             month_name(m),
-            y
+            display_year(y)
           )));
         }
         "DateShort" => {
@@ -2883,7 +2908,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             day_name_short(dow),
             d,
             month_name_short(m),
-            y
+            display_year(y)
           )));
         }
         "Time" => {
@@ -2906,8 +2931,8 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for spec in &format_specs {
     if let Expr::String(s) = spec {
       match s.as_str() {
-        "Year" => result.push_str(&format!("{y}")),
-        "YearShort" => result.push_str(&format!("{:02}", y % 100)),
+        "Year" => result.push_str(&display_year(y)),
+        "YearShort" => result.push_str(&format!("{:02}", y.abs() % 100)),
         "Month" => result.push_str(&format!("{m:02}")),
         "MonthName" => result.push_str(month_name(m)),
         "MonthNameShort" => result.push_str(month_name_short(m)),
@@ -2954,7 +2979,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // wolframscript's "ISOYear" is the calendar year, not the ISO
         // week-numbering one — 2024-12-31 gives "2024" even though its week
         // belongs to ISO year 2025.
-        "ISOYear" => result.push_str(&format!("{y}")),
+        "ISOYear" => result.push_str(&iso_year(y)),
         // Both week forms are the zero-padded ISO week number.
         "Week" | "WeekShort" => {
           result.push_str(&format!("{:02}", iso_week(y, m, d)));

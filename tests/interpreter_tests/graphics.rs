@@ -38270,10 +38270,11 @@ mod matrix_form {
     clear_state();
     assert_eq!(
       interpret("ToBoxes[TranslationTransform[{a, b}]]").unwrap(),
-      "RowBox[{TransformationFunction, [, RowBox[{(, GridBox[{{1, 0, a}, \
-       {0, 1, b}, {0, 0, 1}}, GridBoxDividers -> {Columns -> {{False}}, \
-       ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
-       RowsIndexed -> {-2 -> True}}], )}], ]}]"
+      "RowBox[{TransformationFunction, [, RowBox[{(, TagBox[GridBox[{{1, 0, a}, \
+       {0, 1, b}, {0, 0, 1}}, AutoDelete -> False, GridBoxDividers -> \
+       {Columns -> {{False}}, ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
+       RowsIndexed -> {-2 -> True}}, GridBoxItemSize -> {Columns -> \
+       {{Automatic}}, Rows -> {{Automatic}}}], #1 & ], )}], ]}]"
     );
     let svg = interpret(
       "ExportString[Row[{\"H = \", MatrixForm[TranslationTransform[{a, b}]]}], \
@@ -67910,9 +67911,12 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(boxes.contains("RowBox[{(, GridBox[{{"), "{boxes}");
-    assert!(boxes.contains("}}], )}], NumberForm]"), "{boxes}");
-    assert!(boxes.contains("StyleBox[2.12, "), "{boxes}");
-    assert!(boxes.contains("StyleBox[-4.00, "), "{boxes}");
+    assert!(
+      boxes.contains("}}], )}], NumberForm[#1, {3, 2}] & ]"),
+      "{boxes}"
+    );
+    assert!(boxes.contains("StyleBox[\"2.12\", "), "{boxes}");
+    assert!(boxes.contains("StyleBox[\"-4.00\", "), "{boxes}");
     assert!(!boxes.contains("RowBox[{{"), "{boxes}");
     // `ScientificForm` threads into the grid the same way.
     let sci = interpret(
@@ -67920,7 +67924,7 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(sci.contains("RowBox[{(, GridBox[{{"), "{sci}");
-    assert!(sci.contains("ScientificForm]"), "{sci}");
+    assert!(sci.contains("ScientificForm[#1, 2] & ]"), "{sci}");
   }
 
   /// A `Text` label `Row[{"A = ", TraditionalForm[NumberForm[m, {3, 2}]]}]`
@@ -73818,15 +73822,32 @@ mod styled_math_typesetting {
 mod rational_coefficient_boxes {
   use super::*;
 
+  // The rational coefficient leads as a fraction once the product's boxes
+  // nest a `RowBox` in a `RowBox`; a flatter product stays over the
+  // denominator.
   #[test]
   fn rational_coefficient_of_a_sum_is_a_leading_fraction() {
     assert_eq!(
       interpret("ToBoxes[(a + b)/12]").unwrap(),
-      "RowBox[{FractionBox[1, 12],  , RowBox[{(, RowBox[{a, +, b}], )}]}]"
+      "FractionBox[RowBox[{a, +, b}], 12]"
     );
     assert_eq!(
       interpret("ToBoxes[3 (a + b) c/4]").unwrap(),
-      "RowBox[{FractionBox[3, 4],  , RowBox[{RowBox[{(, RowBox[{a, +, b}], )}],  , c}]}]"
+      "RowBox[{FractionBox[3, 4],  , RowBox[{(, RowBox[{a, +, b}], )}],  , c}]"
+    );
+    assert_eq!(
+      interpret(
+        "{ToBoxes[3 (a + b)/4], ToBoxes[Sqrt[a + b]/4], ToBoxes[3 x y/4]}"
+      )
+      .unwrap(),
+      "{FractionBox[RowBox[{3,  , RowBox[{(, RowBox[{a, +, b}], )}]}], 4], FractionBox[SqrtBox[RowBox[{a, +, b}]], 4], FractionBox[RowBox[{3,  , x,  , y}], 4]}"
+    );
+    assert_eq!(
+      interpret(
+        "{ToBoxes[(a + b)^2/4], ToBoxes[f[a b]/4], ToBoxes[(a b + c)/4]}"
+      )
+      .unwrap(),
+      "{RowBox[{FractionBox[1, 4],  , SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], 2]}], RowBox[{FractionBox[1, 4],  , RowBox[{f, [, RowBox[{a,  , b}], ]}]}], RowBox[{FractionBox[1, 4],  , RowBox[{(, RowBox[{RowBox[{a,  , b}], +, c}], )}]}]}"
     );
     // A symbolic denominator or a plain product stays one fraction.
     assert_eq!(
@@ -73837,10 +73858,10 @@ mod rational_coefficient_boxes {
   }
 
   #[test]
-  fn rational_coefficient_of_a_row_is_a_leading_fraction() {
+  fn rational_coefficient_of_a_row_stays_a_fraction() {
     assert_eq!(
       interpret("ToBoxes[Row[{\"(\", a + b, \")\"}]/24]").unwrap(),
-      "RowBox[{FractionBox[1, 24],  , TemplateBox[{\"(\", RowBox[{a, +, b}], \")\"}, RowDefault]}]"
+      "FractionBox[TemplateBox[{\"(\", RowBox[{a, +, b}], \")\"}, RowDefault], 24]"
     );
   }
 
@@ -74793,7 +74814,10 @@ fn row_label_with_rational_part_stacks_the_fraction_inline() {
 fn number_form_of_rational_boxes_as_fraction() {
   clear_state();
   let boxes = interpret("ToBoxes[NumberForm[14/3, {3, 2}]]").unwrap();
-  assert!(boxes.contains("FractionBox[14, 3]"), "{boxes}");
+  assert!(
+    boxes.contains("FractionBox[InterpretationBox[StyleBox[\"14\""),
+    "{boxes}"
+  );
   assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
 }
 

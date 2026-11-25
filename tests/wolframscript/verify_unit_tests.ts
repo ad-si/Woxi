@@ -896,6 +896,13 @@ const NEAR_MATCH = new Set([
   "QPochhammer[0.3 + 0.2 I, 0.5 I]",
   "ToString[{Erfc[1.], Erfc[2.5], Erfc[1.1630871536766743], InverseErf[0.9], InverseErfc[0.1], InverseErfc[1.9]}, InputForm]",
   "RecurrenceTable[{y[n + 1] + z[n + 1] == y[n] - 3 z[n] + 7, y[n] + 2 z[n] == 1, y[0] == 0.5, z[0] == 0.25}, {y, z}, {n, 0, 2}]",
+  // Woxi's double is the correctly rounded one; wolframscript is an ulp or
+  // two off (2026-11-25 batch).
+  "Root[#^2 - 2. &, 2]",
+  "NIntegrate[X + Y, {X, 0, 1}, {Y, 0, X}]",
+  "data = Table[{k 10^-17, k^2}, {k, 0, 6}]; f = Interpolation[data]; g = Interpolation[data, InterpolationOrder -> 1]; {Abs[f[2.5*^-17] - 6.25] < 10^-12, g[1.5*^-17], f[3*^-17], g[3.*^-17]}",
+  "y = N[Range[3000]]; r = ListCorrelate[y, y, {1, 1}, 0]; {Length[r], First[r], Last[r]}",
+  "Block[{$MinPrecision = 25}, Precision[N[E, 30]^1000]]",
 ]);
 
 /**
@@ -2864,6 +2871,263 @@ function main() {
     // Root[{f, x0}] keeps an ~20-digit x0 in wolframscript (cataloged under
     // "Transcendental Root[{f, x0}] objects").
     "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}",
+    // WL 15 leaves very-high-degree Root objects unevaluated (no canonical
+    // index form, N does nothing) and Reduce answers with Root[{f, x0}]
+    // approximations; Woxi isolates and evaluates the roots.
+    "Reduce[x^10000 - 3 x^7 + 1 == 0, x, Reals]",
+    "Reduce[x^1001 + 3 x^7 + 1 == 0, x, Reals]",
+    "Reduce[x^1001 - 3 x^8 + 2 x == 0, x, Reals]",
+    "Reduce[x^1002 - x^1001 - 3 x^9 + x^8 + 2 x^7 == 0, x, Reals]",
+    "Root[#^10000 - 3 #^7 + 1 &, 2]",
+    "N[Root[#^10000 - 3 #^7 + 1 &, 1]] == N[(1/3)^(1/7)]",
+    "Round[10^6 (N[Root[#^10000 - 3 #^7 + 1 &, 2]] - 1)]",
+    // Inexact-coefficient Solve/NSolve: wolframscript's factored float forms
+    // (0.125*(5. - 1.*Sqrt[…])), its rule order {y -> …, x -> …} and its
+    // conjugate-root order come from its numeric pipeline; values agree.
+    "Solve[x (1 - x) (x - 0.25) == 0.5 e x, x]",
+    "Solve[-2. x^2 + x + a == 0, x]",
+    "NSolve[{y == 0., (x - 0.6743742537909496)^2 + (y - 0.2685912942633248)^2 == 0.2685912942633248^2}, {x, y}]",
+    "NSolve[{y == 2. x, x^2 + y^2 == -1.}, {x, y}]",
+    "Solve[{a/(1 - a) x + y == 1, x - y/(a + 1) == 2}, {x, y}]",
+    // Huge-exponent bignums: digits beyond the stated precision (and the last
+    // ulp of the precision mark) differ between the two arbitrary-precision
+    // kernels; SetPrecision of a binary mantissa is not an exact decimal in
+    // WL.
+    "10.^30000.",
+    "2.^1.*^6",
+    "-1 + E^1.*^9",
+    "N[Exp[1.*^6] - Exp[1.*^6]/2]",
+    "Log[Exp[1.*^6]]",
+    "SetPrecision[1.5`20*^10002, Infinity] == 15*10^10001",
+    "Exp[10.`30^5]",
+    "Exp[-10.`30^5]",
+    // Symbolic result forms: DSolve combining (-1 + x)(1 + x) into -1 + x^2,
+    // Times order of EllipticK[#1] vs (1 - #1) inside a pure function, and
+    // the unimplemented x*Log[1 + E^x] + PolyLog[2, -E^x] antiderivative
+    // (cataloged in conformance_gaps.md).
+    "DSolve[z[x]/(2 (x - 1)) + z[x]/(2 (x + 1)) + 4 z'[x] == x, z[x], x]",
+    "Derivative[1][EllipticK]",
+    "Integrate[x E^x/(1 + E^x), x]",
+    // NDSolve numerics/internals: wolframscript's method-of-lines grid (25
+    // points, coarser accuracy), its Plot re-evaluation counts,
+    // NDSolve`StateData reference semantics, and its unevaluated
+    // DirichletCondition-in-equation form; Woxi's solution is the more
+    // accurate one.
+    "g[t_?NumericQ] := (calls++; t); calls = 0; NDSolve[{y'[t] == g[t], y[0] == 0}, y, {t, 0, 1}]; single = calls; calls = 0; Plot[(y /. First[NDSolve[{y'[t] == g[t], y[0] == 0}, y, {t, 0, 1}]])[x], {x, 0, 1}]; {single > 0, calls == single}",
+    "w = 3*^15; s = NDSolve[{x'[t] == u[t], u'[t] == -w^2 x[t], x[0] == 1, u[0] == 0}, {x, u}, {t, 0, 5*^-15}]; Max[Table[Abs[(x[t] /. s[[1]]) - Cos[w t]], {t, 0, 5*^-15, 1.3*^-17}]] < 10^-6",
+    "u = NDSolveValue[{D[w[t, x], t] == D[w[t, x], x, x] + DirichletCondition[w[t, x] == 0, x == 0] + DirichletCondition[w[t, x] == 0, x == 1], w[0, x] == Sin[Pi x]}, w, {t, 0, 0.1}, {x, 0, 1}]; Round[{u[0.1, 0.5], u[0.1, 0.25]}, 10^-3] == Round[Exp[-Pi^2 0.1] {1, Sin[Pi/4]}, 10^-3]",
+    "f = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1 + a}, u, {t, 0, 2}, {a, 0, 3}]; {Head[f], f[\"Domain\"], Last[Dimensions[f[\"ValuesOnGrid\"]]], Abs[f[1.5, 2.] - 3 Exp[-3.]] < 10^-6, Abs[f[0.7, 0.33] - 1.33 Exp[-0.231]] < 10^-6}",
+    "sol = NDSolve[{D[x[t, k], t, t] == -k^2 x[t, k], x[0, k] == 1, Derivative[1, 0][x][0, k] == 0}, x, {t, 0, 3}, {k, 1, 2}]; Abs[(x[2., 1.5] /. sol[[1]]) - Cos[3.]] < 10^-6",
+    "sol = NDSolve[{D[x[t, k], t] == y[t, k], D[y[t, k], t] == -k^2 x[t, k], x[0, k] == 1, y[0, k] == 0}, {x, y}, {t, 0, 3}, {k, 1, 2}]; Max[Abs[({x[2., 1.5], y[2., 1.5]} /. sol[[1]]) - {Cos[3.], -1.5 Sin[3.]}]] < 10^-6",
+    "h = NDSolveValue[{D[u[t, a], t] == -u[t, a], u[0, a] == Exp[-200 (a - 1)^2]}, u, {t, 0, 1}, {a, 0, 2}]; {Last[Dimensions[h[\"ValuesOnGrid\"]]], Abs[h[1., 1.03] - Exp[-1. - 200 0.03^2]] < 10^-4}",
+    "h = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1}, u, {t, 0, 1}, {a, 0, 2}, \"MinPoints\" -> 101]; Last[Dimensions[h[\"ValuesOnGrid\"]]]",
+    "f = NDSolveValue[{D[u[t, a], t] == -a u[t, a], u[0, a] == 1 + a}, u, {t, 0, 2}, {a, 0, 3}]; {Abs[Derivative[1, 0][f][1.5, 2.] + 6 Exp[-3.]] < 10^-5, Abs[Derivative[0, 1][f][1.5, 2.] + 3.5 Exp[-3.]] < 10^-5, Abs[Derivative[1, 0][f][0., 3.] + 12.] < 10^-2, Abs[Derivative[1, 0][f][2., 0.] - 0.] < 10^-4}",
+    "R = 1/80; {b, d} = NDSolveValue[{2 (1 - (r/R)^2) D[cb[x, r], x] - 5*10^-6/(r + 10^-6) D[r D[cb[x, r], r], r] == NeumannValue[-(cb[x, r] - cd[x, r])/100, r == -R] + NeumannValue[-(cb[x, r] - cd[x, r])/100, r == R], cb[0, r] == 1, -D[cd[x, r], x] == (cb[x, r] - cd[x, r])/10, cd[25, r] == 0}, {cb, cd}, {x, 0, 25}, {r, -R, R}]; v = Table[b[x, r], {x, {1, 5, 25}}, {r, {-R/2, 0, R/2}}]; {Max[v] <= 1, v[[1, 2]] > v[[2, 2]] > v[[3, 2]] > 0, 0 < d[0, 0] < 1}",
+    "u = NDSolveValue[{D[w[x, y, t], t] == D[w[x, y, t], x, x] + D[w[x, y, t], y, y], w[x, y, 0] == Sin[Pi x] Sin[Pi y], DirichletCondition[w[x, y, t] == 0, x == 0 || x == 1 || y == 0 || y == 1]}, w, {x, 0, 1}, {y, 0, 1}, {t, 0, 0.2}]; {Head[u], Round[1000 u[0.5, 0.5, 0.1]], Round[1000 Exp[-2 Pi^2 0.1]], Round[10^4 u[0.25, 0.5, 0.2]], Round[10^4 Exp[-2 Pi^2 0.2] Sin[Pi/4]]}",
+    "s = NDSolve[{y'[t] == x[t], x'[t] == -y[t], y[0] == 1, x[0] == 0}, {y[t], x[t], y'[t]}, {t, 0, 1}]; Round[10^6 ({y[t], y'[t]} /. First[s] /. t -> 0.5)]",
+    "s = NDSolve[{Derivative[0, 1][u][1, t] == u[2, t], Derivative[0, 1][u][2, t] == -u[1, t], u[1, 0] == 1, u[2, 0] == 0}, {u[1, t], u[2, t], Derivative[0, 1][u][1, t]}, {t, 0, 1}]; Round[10^6 (Derivative[0, 1][u][1, t] /. First[s] /. t -> 0.5)]",
+    "s = First[NDSolve`ProcessEquations[{x'[t] == x[t], x[0] == 1}, {x}, t]]; s2 = s; NDSolve`Iterate[s2, 1]; Chop[(x[1] /. NDSolve`ProcessSolutions[s]) - E, 10^-5]",
+    // ClassifierFunction internals: wolframscript returns the whole
+    // ClassifierFunction association for c["Method"]/c["Classes"] queries.
+    "c = Classify[{3 -> \"z\", 1 -> \"x\", 2 -> \"y\", 3.2 -> \"z\"}, Method -> \"NearestNeighbors\"]; {c[\"Classes\"], c[\"Method\"]}",
+    "c = Classify[{1, 2, 3, 10, 11, 12} -> {0, 0, 0, 1, 1, 1}]; {c[1.5], c[11.5], c[{0, 20}], c[\"Method\"]}",
+    // Curated entity data drift (CityData ordering, CountryData
+    // figures/flags/descriptions, ProteinData names and GO terms) between
+    // Woxi's bundled tables and the live Wolfram knowledgebase.
+    "CityData[{All, \"China\"}][[;; 2]]",
+    "Map[With[{v = CountryData[\"Germany\", #]}, {Head[v], 0 < v < 1}] &, {\"PovertyFraction\", \"UnemploymentFraction\", \"InfantMortalityFraction\", \"GiniIndex\"}]",
+    "EntityValue[Entity[\"Country\", \"Germany\"], \"LifeExpectancy\"] === CountryData[\"Germany\", \"LifeExpectancy\"]",
+    "CountryData[\"UnitedStatesMinorOutlyingIslands\", \"BirthRateFraction\"]",
+    "CountryData[\"UnitedStates\", {\"Population\", 2008}]",
+    "Union[Head /@ CountryData[All, \"Flag\"]]",
+    "Head[Entity[\"Country\", \"Japan\"][\"Flag\"]]",
+    "Union[ImageQ /@ CountryData[\"Europe\", \"Flag\"]]",
+    "CountryData[\"France\", \"FlagDescription\"]",
+    "Count[CountryData[All, \"FlagDescription\"], _String] > 230",
+    "CountryData[\"Reunion\", \"FlagDescription\"]",
+    "ProteinData[\"CFL1\", \"Name\"]",
+    "StringLength[ProteinData[\"CFL1\", \"Sequence\"]] == ProteinData[\"CFL1\", \"SequenceLength\"]",
+    "ProteinData[\"CFL2\", \"MolecularFunctions\"]",
+    "ProteinData[\"CFL2\", \"MolecularFunctions\", \"Name\"]",
+    "MemberQ[ProteinData[\"Classes\"], \"ActinBinding\"]",
+    // Wolfram quirks Woxi does not reproduce: FindShortestTour refusing
+    // DistanceFunction -> GeoDistance, Det/NullSpace not simplifying
+    // radical/rational entries, CoordinateTransform failing on a point list,
+    // FittedModel::dof leaving RSquared unevaluated, TranslationTransform
+    // re-nesting a Line, ImageResize's nearest-neighbor upscale,
+    // Normal[GraphicsComplex] dropping Text coordinates.
+    "{Head[First[#]], Last[#]} &[FindShortestTour[{{37.2, -93.3}, {42.1, -72.6}, {39.8, -89.6}, {40.7, -74.0}}, DistanceFunction -> GeoDistance]]",
+    "Det[{{1/(1 + Sqrt[2]), 1}, {1, 1/(1 - Sqrt[2])}}]",
+    "Det[{{(1 - Sqrt[5])/4, 1/2, (-3 + Sqrt[5] - 8/(1 + Sqrt[5]))/4}, {1/2, 1/2 + 1/(1 + Sqrt[5]), 1/(1 + Sqrt[5])}, {(-1 - Sqrt[5])/4, (-1 + Sqrt[5])/4, 1/2}}]",
+    "NullSpace[{{1, a}, {a/(1 - a) + a/(a - 1), 0}}]",
+    "Rest /@ CoordinateTransform[\"Spherical\" -> \"Cartesian\", {{1, Pi/2, 0}, {2, 0, 0}}]",
+    "fm = NonlinearModelFit[{{0.078, 2.5}, {0.176, 4.7}, {0.33, 7.2}}, {p (x^q + x^r), q < 1}, {{p, 13.}, {q, 0.5}, {r, 2.5}}, x]; {Round[10^6 {p, q} /. fm[\"BestFitParameters\"]], (r > 10 && r < 1000) /. fm[\"BestFitParameters\"], Round[10^6 fm[\"RSquared\"]], $MessageList}",
+    "TranslationTransform[{1, 2}][Line[{{0, 0}, {1, 1}}]]",
+    "ImageData[ImageResize[Image[{{0., 1.}}], {4, 1}]]",
+    "Normal[GraphicsComplex[{{0, 0}, {1, 2}, {3, 4}}, {Text[\"a\", 3], Text[2, 2, {-1, 0}]}]]",
+    // Plot internals (2026-11-25 batch): primitive layout,
+    // GraphicsComplex/List wrappers, option lists, legend structures,
+    // sampling counts and per-primitive styling differ from wolframscript's
+    // (see the Plot internals note above).
+    "g = DistributionChart[{{0, 1, 1, 2, 2, 2, 2, 3, 9}, {5, 5, 6}}, ChartElementFunction -> \"HistogramDensity\"]; {Length[Cases[g, _Polygon, Infinity]], Cases[g, Rectangle[{x0_, y0_}, {x1_, y1_}] :> Round[{x1 - x0, y0, y1}, 0.01], Infinity]}",
+    "Cases[GraphPlot[{{1 -> 2, \"x\"}, {2 -> 3, \"y\"}, {3 -> 1, \"z\"}}, EdgeRenderingFunction -> ({Line[#1]} &)], _Text, Infinity]",
+    "Cases[GraphPlot[{{1 -> 2, \"x\"}, {2 -> 3, \"y\"}, {3 -> 1, \"z\"}}, EdgeRenderingFunction -> ({Line[#1], Text[#3, Mean[#1]]} &)], Text[s_, _] :> s, Infinity]",
+    "Cases[GraphPlot[{{Style[a -> 0, \"TraditionalForm\"] -> b, \"x\"}, {c -> b, \"y\"}}, DirectedEdges -> True, VertexLabeling -> True], Text[Style[s_String, ___], ___] :> s, Infinity]",
+    "Cases[GraphPlot[{{a -> b, \"x\"}, {a -> b, \"y\"}, {c -> b, \"z\"}}, DirectedEdges -> True, VertexLabeling -> True], Text[Style[s_String, ___], ___] :> s, Infinity]",
+    "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; pts = GraphPlot[edges][[1, 1]]; {Length[Union[Round[pts[[All, 2]], 0.001]]] > 6, Round[Mean[EuclideanDistance[pts[[#1]], pts[[#2]]] & @@@ (List @@@ edges)], 0.001]}",
+    "Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], Tooltip[Point[i_], l_] :> {i, l}, Infinity]",
+    "VertexLabeling /. Options[GraphUtilities`ExpressionTreePlot]",
+    "First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]",
+    "g = GraphPlot3D[{a -> b, b -> c}, VertexLabeling -> True, VertexRenderingFunction -> None, Method -> \"SpringEmbedding\"]; {Cases[g, Text[Style[l_, z_], i_, o_] :> {l, z, i, o}, Infinity], Length[Cases[g, _Sphere, Infinity]], Options[g]}",
+    "g = GraphPlot3D[{1 -> 2, 2 -> 3}, PlotStyle -> Gray, VertexLabeling -> False, ImageSize -> 300]; {Cases[g[[1]], _GrayLevel | _Hue, Infinity], Rest[List @@ g]}",
+    "Cases[LayeredGraphPlot[{1 -> 5, 2 -> 5, 3 -> 5, 4 -> 5}], Disk[p_, ___] :> p, Infinity]",
+    "Cases[LayeredGraphPlot[{1 -> 4, 2 -> 4, 3 -> 4}], Disk[p_, ___] :> p, Infinity]",
+    "Cases[LayeredGraphPlot[{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 5, 2 -> 6, 3 -> 5, 3 -> 7, 4 -> 6, 4 -> 7, 5 -> 8, 6 -> 8, 7 -> 8}], Disk[p_, ___] :> p[[1]], Infinity]",
+    "e = Union[Flatten[Table[With[{p = Permutations[Range[4]][[k]]}, Table[If[p[[i]] < p[[i + 1]], p -> ReplacePart[p, {i -> p[[i + 1]], i + 1 -> p[[i]]}], Nothing], {i, 3}]], {k, 24}]]]; pts = Cases[LayeredGraphPlot[e], Disk[q_, ___] :> q, Infinity]; pos = AssociationThread[VertexList[Graph[e]], pts]; mid = (Max[pts[[All, 1]]] + Min[pts[[All, 1]]])/2; rows = GatherBy[pts, Round[#[[2]], 10.^-6] &]; {Abs[pos[{1, 2, 3, 4}][[1]] - mid] <= 1/2, Abs[pos[{4, 3, 2, 1}][[1]] - mid] <= 1/2, Length[rows], Min[Map[Min[Differences[Sort[#[[All, 1]]]] /. {} -> {1}] &, rows]] >= 1}",
+    "Union[Cases[LayeredGraphPlot[{1 -> 2, 2 -> 3}, PlotStyle -> Gray], _GrayLevel | _RGBColor, Infinity]]",
+    "Union[Cases[GraphPlot[{1 -> 2}, PlotStyle -> Gray, EdgeStyle -> Red], _GrayLevel | _RGBColor, Infinity]]",
+    "g = GraphPlot[Table[i -> Mod[i, 30] + 1, {i, 30}], VertexRenderingFunction -> (f[#1] &)]; p = Cases[g, f[q_] :> q, Infinity]; {Length[p], Round[Mean[Table[EuclideanDistance[p[[i]], p[[Mod[i, 30] + 1]]], {i, 30}]], 0.01]}",
+    "With[{p = Cases[LayeredGraphPlot[{1 -> 2, 1 -> 3, 3 -> 4}, AspectRatio -> 1/4], Disk[q_, ___] :> q, Infinity]}, Chop[(Max[p[[All, 2]]] - Min[p[[All, 2]]]) / (Max[p[[All, 1]]] - Min[p[[All, 1]]]) - 1/4]]",
+    "l = First[Cases[ParametricPlot[{Sin[7 t], Cos[3 t]}, {t, 0, 50}], Line[l_] :> l, Infinity]]; d = Differences[l]; Max[MapThread[VectorAngle, {Most[d], Rest[d]}]] < 0.27",
+    "l = First[Cases[ParametricPlot[{Exp[-t/20] Cos[t]/100, Exp[-t/20] Sin[t]}, {t, 0, 2000}, AspectRatio -> 1], Line[l_] :> l, Infinity]]; d = Differences[{100 #[[1]], #[[2]]} & /@ l]; {Max[MapThread[If[Norm[#1] > 0.01 && Norm[#2] > 0.01, VectorAngle[#1, #2], 0] &, {Most[d], Rest[d]}]] < 0.27, Length[l] < 3000}",
+    "Round[Exp[Cases[Options[Show[LogPlot[Exp[x], {x, 0, 7}, GridLines -> Automatic], Graphics[Point[{1, 1}]]], GridLines], {_, y_List} :> y, Infinity][[1]]]]",
+    "First[ArrayPlot[{{0, 1}, {1, 2}}, PlotRange -> {0, 2}]]",
+    "First[ArrayPlot[{{0, 1}, {1, 4}}, PlotRange -> 2]]",
+    "Options[Plot3D[undefinedF[x], {x, -2, 2}, {y, -2, 2}]]",
+    "Options[Plot3D[undefinedF[x], {x, -2, 2}, {y, -2, 2}, Axes -> False]]",
+    "Options[ParametricPlot3D[undefinedF[t], {t, 0, 1}]]",
+    "r = RegionPlot3D[x > -1/2 && x < 21/2 && y > -4 && y < 4 && (x - 5)^2 + (z - 5)^2 > 25, {x, -.5, 10.5}, {y, -5, 5}, {z, -.5, 5}]; pts = Select[First[First[r]], -3.5 < #[[2]] < 3.5 && 0.5 < #[[1]] < 9.5 && -0.2 < #[[3]] < 4 &]; {Length[pts] > 1000, Max[Abs[Norm[{#[[1]] - 5, #[[3]] - 5}] - 5] & /@ pts] < 0.08}",
+    "g = RegionPlot3D[x^2 + y^2 + z^2 < 1 && x + y > 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> (Directive[Green, Opacity[0.3]] &), Mesh -> None]; {Head[First[g]], Union[Cases[First[g], _RGBColor | _Opacity, Infinity]], MemberQ[List @@ First[g], VertexNormals -> _]}",
+    "Cases[Plot[x, {x, 0, 1}, PlotStyle -> Opacity[0.5]][[1]], Directive[__], Infinity]",
+    "cols = Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, ColorFunction -> 52], _RGBColor, Infinity]; {Length[DeleteDuplicates[cols]] > 10, Max[Abs[List @@ cols[[1]] - List @@ ColorData[52, 1]]] < 0.02, Max[Abs[List @@ cols[[-1]] - List @@ ColorData[52, 10]]] < 0.02}",
+    "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3, PlotStyle -> Red][[1, 2]], {___, _RGBColor, _Polygon}]",
+    "Union[Cases[ParametricPlot3D[{Cos[u], v, Sin[u]}, {u, 0, 2 Pi}, {v, 0, 1}, PlotPoints -> 3, PlotStyle -> FaceForm[Yellow, Brown]][[1, 2]], {f_FaceForm, _Polygon} :> f]]",
+    "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3][[1, 2]], Directive[_Specularity, c_RGBColor, Lighting -> _] :> c]",
+    "Cases[ParametricPlot3D[{{u, v, u v}, {u, v, 1 + u v}}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3][[1, 2, 2]], Directive[_, c_RGBColor, ___] :> c]",
+    "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Red][[1, 2]], {_AbsoluteThickness, c_, Line[segs_]} :> {c, Length[segs]}]",
+    "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Black][[1]], {t_AbsoluteThickness, _, _Line} :> t, Infinity]",
+    "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3, Mesh -> None, PlotStyle -> Red, BoundaryStyle -> AbsoluteThickness[3]][[1]], {_AbsoluteThickness, s_, _Line} :> s, Infinity]",
+    "PlotRangePadding /. Options[RevolutionPlot3D[{t, t^2}, {t, 0, 1}]]",
+    "PlotRangePadding /. Options[RevolutionPlot3D[{t, t^2}, {t, 0, 1}, PlotRange -> {0, 2}]]",
+    "Length[Union[Cases[First /@ (Cases[#, _RGBColor, Infinity] & /@ First[RevolutionPlot3D[{{t}, {-t}, {2 t}}, {t, 0, 1}]]), _RGBColor]]]",
+    "PlotRange /. Options[RevolutionPlot3D[{{Log[t + 1]}, {-Log[t + 1]}}, {t, 0, 5}, PlotRange -> 20]]",
+    "PlotRange /. Options[RevolutionPlot3D[t, {t, 0, 5}, PlotRange -> 2]]",
+    "g = RevolutionPlot3D[r, {r, 0, 1}, ColorFunction -> Function[{x, y, z}, Hue[z]]]; {Length[Cases[g, (VertexColors -> c_) :> c, Infinity][[1]]], Length[g[[1, 1]]]}",
+    "BoxRatios /. Options[RevolutionPlot3D[{t, t}, {t, 0, 1}]]",
+    "g = ParametricPlot3D[{t, 2 t, 3 t}, {t, 0, 1}, PlotPoints -> 1000]; {Length[First[Cases[g, Line[p_] :> p, Infinity]]], FreeQ[g, PlotPoints]}",
+    "Length[First[Cases[ParametricPlot3D[{t, 2 t, 3 t}, {t, 0, 1}], Line[p_] :> p, Infinity]]]",
+    "First /@ Split[Head /@ Cases[Plot[{-Sqrt[1 - x^2], Sqrt[1 - x^2]}, {x, -1, 1}, Filling -> {1 -> {2}}][[1]], _Polygon | _Line, Infinity]]",
+    "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2, x^3}, {x, 0, 1}, Filling -> {1 -> {3}, 2 -> Axis}]], _Polygon | _Line, Infinity]]",
+    "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2}, {x, 0, 1}, Filling -> {2 -> {1}}], Graphics[Point[{0, 0}]]], _Polygon | _Line, Infinity]]",
+    "Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, RegionFunction -> Function[{x, y}, x > 0]], Line[p_] :> Round[{First[p], Last[p]}, 0.001], Infinity]",
+    "pts = Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, RegionFunction -> Function[{x, y}, (x - 3/2)^2 + y^2 <= 25/4 && (x - 1/2)^2 + y^2 >= 9/4]], Line[p_] :> p, Infinity]; {Length[pts], AllTrue[Flatten[pts, 1], (#[[1]] - 3/2)^2 + #[[2]]^2 <= 25/4 + 10^-6 &]}",
+    "p = Plot[{PolyGamma[x + 1], Log[x]}, {x, 0, 5}]; g = Show[p, Graphics[Point[{1, 0}]]]; lo = Min[Cases[g, Line[pts_] :> pts[[All, 2]], Infinity]]; {Abs[lo - PlotRange[p][[2, 1]]] < 10^-9, lo > PlotRange[g][[2, 1]]}",
+    "n = 0; ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, ColorFunction -> ((n++; Blend[{Red, Blue}, #3]) &), PlotPoints -> 3, MaxRecursion -> 0]; n",
+    "p = ParametricPlot[{Cos[t], Sin[t]}, {t, 0, Pi}, PlotStyle -> Dashed, ColorFunction -> Function[{x, y, u}, Hue[u]]]; g = Show[p, Graphics[Point[{0, 0}]]]; {Count[g, _Line, Infinity], Count[g, VertexColors, Infinity]}",
+    "First[Cases[PolarPlot[1, {t, 0, 2 Pi}, ColorFunctionScaling -> False, ColorFunction -> If[1 < 2, (Hue[#4/3] &), Automatic]], _RGBColor, Infinity]]",
+    "Cases[BubbleChart[{{1, 2, 3}, {2, 3, 4}, {3, 1, 2}}, ChartStyle -> {Red, Blue}], {Directive[_, c_], Disk[p_, _]} :> {p, c}, Infinity]",
+    "f[x_?NumericQ, y_?NumericQ] := (n++; x y); {n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, MaxRecursion -> 0, PlotPoints -> 5]; n, n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, PlotPoints -> 9, MaxRecursion -> 0]; n, n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, MaxRecursion -> 0]; n}",
+    "Resampling /. Cases[First[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}]], r_Raster :> Last[r], Infinity]",
+    "c = ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLegends -> Automatic]; {Head[c], c[[2]]}",
+    "Last[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, Contours -> 3, PlotLegends -> Placed[Automatic, Below]]]",
+    "{Options[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotRange -> All], PlotRangePadding], Options[ContourPlot[x y, {x, 0, 1}, {y, 0, 1}], PlotRangePadding], Options[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotRangePadding -> None], PlotRangePadding]}",
+    "g = ContourPlot[1 - Exp[-20 x], {x, 0, 1}, {y, 0, 1}, Contours -> 9]; xs = Flatten[Cases[Normal[g], Line[p_] :> p[[All, 1]], Infinity]]; {Length[Cases[Normal[g], _Line, Infinity]], Min[xs] < 0.02, Length[DeleteDuplicates[Cases[g,            _RGBColor | _Hue, Infinity]]]}",
+    "Head[First[ContourPlot[{{x^2 - y^2, 2 x y}, {x, y}}, {x, -4, 4}, {y, -4, 4}, Contours -> {0}, ContourShading -> None]]]",
+    "Max[Abs[Flatten[Cases[Normal[ContourPlot[{2 y - 1/3}, {x, -1, 1}, {y, -1, 1}]], Line[p_] :> p[[All, 2]], Infinity]] - 1/6]] < 10^-6",
+    "g = ContourPlot[x^2 + y^2 == 4, {x, -3, 3}, {y, -3, 3}, ContourStyle -> Thick]; {Length[g], Head[g[[1]]], Head[g[[2]]], Head[Graphics[g[[1]], g[[2]]]]}",
+    "FrameLabel /. Options[ContourPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]]",
+    "cg = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, Function[{x, t}, x - t], Evaluate]; Cases[RegionPlot[cg[x, 0] < cg[y, 0], {x, -1, 1}, {y, -1, 1}][[1]], Polygon[p_] :> Length[p], Infinity] =!= {}",
+    "Round[Cases[RegionPlot[y > 0 && y < x && x + 2 y < 1, {x, -2, 2}, {y, -2, 2}, PlotPoints -> 25], Polygon[p_] :> p, Infinity], 1/1000]",
+    "Round[Cases[RegionPlot[y > 0 && (y < x && x + 2 y < 1 || y < -x && 2 y - x < 1), {x, -2, 2}, {y, -2, 2}, PlotPoints -> 25], Polygon[p_] :> Sort[p], Infinity], 1/1000]",
+    "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], Directive[RGBColor[c__], Opacity[_]] :> Round[{c}, 1/100], Infinity]",
+    "Length[Cases[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]",
+    "g = RegionPlot[{y > x, y < 2 x}, {x, 0, 1}, {y, 0, 1}][[1]]; Map[Head, Cases[g, _Polygon | _Line, Infinity]]",
+    "g = VectorPlot[{1, y}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, VectorStyle -> Arrowheads[0]]; {Length[Cases[g[[1]], _Line, Infinity]], Length[Cases[g[[1]], _Arrow, Infinity]]}",
+    "g = VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, StreamPoints -> Coarse, StreamScale -> None, StreamColorFunction -> None, StreamStyle -> Red]; {Length[Cases[g[[1]], {RGBColor[1., 0., 0.], _Line}, Infinity]] > 5, MemberQ[g[[1]], {___, RGBColor[1., 0., 0.], _Arrow}, Infinity]}",
+    "segs = SortBy[Cases[StreamPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, StreamColorFunction -> Function[{x, y}, GrayLevel[x]]], {_Arrowheads, c_, Arrow[p_]} :> {Mean[p][[1]], List @@ c}, Infinity], First]; {Round[segs[[1, 2]], 0.2], Round[segs[[-1, 2]], 0.2]}",
+    "p = ParametricPlot[{r Cos[t], r Sin[t]}, {r, 1, 2}, {t, 0, 3 Pi/2}, PlotPoints -> 20]; Length[Union[Round[Select[Flatten[Cases[p, Polygon[pts_] :> pts, Infinity], 1], Abs[Norm[#] - 2] < 10^-9 &], 10^-6]]] >= 77",
+    "Cases[ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {{1}, False}], _Line, Infinity]",
+    "m = {{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}; pts[r_] := Flatten[Cases[Normal[ListContourPlot[m, RegionFunction -> r]], Polygon[q_] :> q, Infinity], 1]; a = pts[#1 + #2 < 4 &]; b = pts[#3 > 3 &]; {Max[Total /@ a] <= 4, Max[Total /@ a] > 3.9, Min[Total /@ b] >= 4, Min[Total /@ b] < 4.1}",
+    "Cases[First[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]], _AbsoluteThickness, Infinity]",
+    "Cases[First[Plot[Sin[t], {t, 0, 3}, PlotStyle -> AbsoluteThickness[5]]], _AbsoluteThickness, Infinity]",
+    "Cases[First[PolarPlot[1, {t, 0, Pi}, PlotStyle -> {Thickness[0.006], AbsoluteThickness[3]}]], _Thickness | _AbsoluteThickness, Infinity]",
+    "Cases[First[PolarPlot[1, {t, 0, Pi}, PlotStyle -> {Thickness[0.006]}]], _Thickness | _AbsoluteThickness, Infinity]",
+    "Cases[Show[ListPolarPlot[{{0, 1}, {Pi/2, 2}}], Graphics[Circle[]]], Point[p_] :> Round[p, 0.01], Infinity]",
+    "g = ContourPlot3D[x == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> Function[{x, y, z, f}, If[y < 0.5, Red, Black]], Mesh -> None]; {Union[Cases[First[g], _RGBColor, Infinity]], FreeQ[Rest[List @@ g], ColorFunction]}",
+    "c = First[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> 3, PlotPoints -> 12]]; lines = Cases[c[[2]], Line[l_] :> l, Infinity]; xs = Union[Round[Cases[lines[[1]], {x_, _, _} :> x, {2}], 0.01]]; {Head[c], Length[lines], Length[xs], xs == -Reverse[xs]}",
+    "c = First[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> 2, MeshStyle -> {Blue, Red}, PlotPoints -> 10]]; Cases[c[[2]], {___, s_, Line[_]} :> s, Infinity]",
+    "g = ParametricPlot3D[{{{Cos[t], Sin[t], 0}, {0, Cos[t], Sin[t]}}, {Sin[t], 0, Cos[t]}}, {t, 0, 2 Pi}]; Length[Union[Cases[g, Directive[c_RGBColor, _] :> c, Infinity]]]",
+    "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, Mesh -> 0][[1]], Line[l_] :> l, Infinity]]",
+    "Head[ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}][[1]]]",
+    "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, {Head[prims], Cases[prims, _RGBColor, Infinity], Head[First[Cases[prims, _Line, Infinity]]]}]",
+    "lineA = -5 - 3*x + 2*y; Head[ContourPlot[lineA == 0, {x, -9, 9}, {y, -9, 9}][[1]]]",
+    "Options[RevolutionPlot3D[t^2, {t, 0, 2}], BoxRatios]",
+    "tube = True; r = 0.05; g = ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6}, PlotStyle -> If[tube, {Tube[r]}, Automatic]]; {Cases[g, h_Tube :> Length[h], Infinity], Count[g, _Line, Infinity]}",
+    "Options[ListPlot[{1, 2, 3}, Epilog -> {Disk[]}, Frame -> True], Frame]",
+    "g = Plot[x, {x, 0, 1}, Epilog -> {Point[{0, 0}]}]; Cases[Show[g, Epilog -> Join[Lookup[Options[g, Epilog], Epilog], {Point[{1, 1}]}]][[2]], _Rule]",
+    "MatchQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, ColorFunction -> Hue, PlotPoints -> 3][[1, 2, 2]], Lighting -> _]",
+    "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), ColorFunctionScaling -> False, PlotPoints -> 4]; Take[p[[1, 2]], {3, 4}]",
+    "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3, Mesh -> None]; Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 && 0 <= b <= 1, Infinity] // Length",
+    "InputForm[ColorData[\"Atoms\", \"Image\"][[1, 2, 9, 4]]]",
+    "{ColorData[\"Atoms\", \"Image\"][[1, 2, 7, 3]], ColorData[\"Atoms\", \"Image\"][[1, 2, 7, 4, 3, 1]]}",
+    "Count[Show[ListPlot[{1, 2, 3}, Joined -> True, PlotMarkers -> \"x\"], Graphics[{}]], _Text, Infinity]",
+    "Cases[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, ContourStyle -> {{Opacity[0.5], Red}, {Thick, Blue}}][[1]], _Directive, Infinity]",
+    "pts = Flatten[Cases[Normal[ContourPlot[(y - x^2) (y - 2 x^2) == 0, {x, -1, 1}, {y, -1, 1}]], Line[p_] :> p, Infinity], 1]; Length[Select[pts, Abs[#[[2]] - 2 #[[1]]^2] < 10^-3 && 0 < Abs[#[[1]]] < 0.08 &]] > 0",
+    "AspectRatio /. Options[Show[ListPlot[{1, 2, 3}, ImageSize -> {550, 400}], Graphics[Point[{0, 0}]]]]",
+    "Options[ListPlot3D[{{1, 2}, {2, 3}}]]",
+    "Options[ListPlot3D[{{1, 2}, {2, 3}}, Axes -> False, BoxRatios -> {1, 1, 1}]]",
+    "g = ListPlot3D[Table[i, {i, 5}, {j, 5}], Mesh -> 3, MeshFunctions -> {#3 &}]; Union[Cases[g, Line[s_] :> Flatten[s], Infinity] // Flatten // Map[g[[1, 1, #, 3]] &, #] &]",
+    "g = ListPlot3D[{{0, 0, 0}, {1, 0, 1}, {0, 1, 0}, {1, 1, 1}}, Mesh -> {{0.5}}, MeshFunctions -> {#3 &}]; MemberQ[Cases[g, Line[s_] :> Flatten[s], Infinity] // Flatten // Map[g[[1, 1, #, 3]] &, #] &, 0.5]",
+    "Cases[Plot[x^2, {x, 0, 1}, PlotStyle -> {{Red, Arrowheads[{0.05, 0.05, 0.05}]}}], _Arrowheads, Infinity]",
+    "ParametricPlot3D[{Cos[u], 2 v, Sin[u]}, {u, 2 Pi, 0.9}, {v, 1, 0}, PlotStyle -> FaceForm[Black, Blue]] === ParametricPlot3D[{Cos[u], 2 v, Sin[u]}, {u, 0.9, 2 Pi}, {v, 0, 1}, PlotStyle -> FaceForm[Black, Blue]]",
+    "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 3, -1}] === ParametricPlot3D[{Cos[t], Sin[t], t}, {t, -1, 3}]",
+    "Plot3D[x^2 - y, {x, 2, -1}, {y, 1, 0}, PlotRange -> {{0, 1}, All, All}] === Plot3D[x^2 - y, {x, -1, 2}, {y, 0, 1}, PlotRange -> {{0, 1}, All, All}]",
+    "(Ticks /. Options[RectangleChart3D[{{1, 2, 3}, {2, 1, 2}, {3, 3, 1}}]])[[2]]",
+    "Cases[Plot3D[x^2, {x, -1, 1}, {y, -1, 1}, Mesh -> None, Filling -> -3], Polygon[q_?(ArrayDepth[#] == 3 &)] :> Min[q[[All, All, 3]]], Infinity]",
+    "Cases[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, FillingStyle -> Red], {EdgeForm[], c_RGBColor, Polygon[_]} :> c, Infinity]",
+    "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}]]",
+    "PlotRange /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 2}, PlotRange -> {0, 1}]]",
+    "PlotRangePadding /. Options[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3]]",
+    "g = VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 4]; {Max[Abs[Cases[g, Arrowheads[{{s_, _}}, ___] :> s, Infinity] - 0.0525]] < 10^-9, Max[Abs[Cases[g, Tube[_, r_] :> r, Infinity] - 0.0175]] < 10^-9, Count[g, CapForm[\"Butt\"], Infinity]}",
+    "g = RevolutionPlot3D[r, {r, 0, 1}] /. Graphics3D[p_, o___] :> Graphics3D[{p, Scale[p, 1/2]}, o]; {Head[g], Head /@ g[[1]]}",
+    "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, PlotPoints -> 3, MaxRecursion -> 0][[1, 1, 1]]",
+    "g = SliceContourPlot3D[x, z == 0.5, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, Contours -> {0.25, 0.5, 0.75}, ColorFunction -> Hue, PlotPoints -> 3, PlotLegends -> Automatic]; g[[2]]",
+    "SliceDensityPlot3D[10 x, z == 0.5, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}, ColorFunction -> Hue, PlotPoints -> 3, PlotLegends -> Automatic][[2]]",
+    "g = ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> Directive[Red, Thick]]; ls = Cases[g, {___, Directive[Red, Thick], Line[l_]} :> l, Infinity]; e = Flatten[ls, 2]; {Length[ls], Length[e] > 0, AllTrue[e, Abs[#[[1]]] == 1 || Abs[#[[2]]] == 1 &], AllTrue[e, #[[3]] == 0 &]}",
+    "g = ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> Blue, RegionFunction -> Function[{x, y, z}, x^2 + y^2 < 1/4]]; e = Flatten[Cases[g, {___, Blue, Line[l_]} :> l, Infinity], 2]; {Length[e] > 0, AllTrue[e, Abs[Norm[Most[#]] - 1/2] < 10^-4 &]}",
+    "Count[ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None], _Line, Infinity]",
+    // Past astro-float's 32-bit binary exponent (~10^646456993): Woxi
+    // overflows where wolframscript still returns a bignum (cataloged under
+    // "Software arithmetic past the machine range").
+    "Exp[2.*^9]",
+    "Exp[1.*^9]*Exp[1.*^9]",
+    "Exp[1.*^9]^2",
+    "Exp[1.*^9]^-2",
+    // The zero's accuracy differs from wolframscript's by one ulp of its own
+    // Log10 rounding (-49980.47712125472 vs …473).
+    "x = 1.5`20*^50000; {x > 10^50000, x < 10^50001, Sqrt[x], 1/x, x - x, Precision[x], x === 1.5`20*^50000}",
+    // Same roots, but wolframscript tags them as ``15.95… bignums.
+    "Solve[(x^2 - 1.)/(x - 1) == 3, x]",
+    "Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]",
+    // Simplify[(1 - Cos[9])/9]: a leaf-count tie WL breaks toward 2 Sin[9/2]^2/9.
+    "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. {a -> 3, t -> 5} // Simplify",
+    // ToString[FullForm[…], InputForm] brackets the Xor; the compared
+    // top-level output agrees (`FullForm[a || Xor[b, c]]`), so this is the
+    // harness's InputForm wrapper, not a divergence.
+    "FullForm[a || Xor[b, c]]",
+    // wolframscript overflows a machine-integer year (from ~1e15) and prints
+    // its own artifact; recorded in conformance_gaps.md.
+    "DateString[{200000000000000000007, 4, 15}, \"ISODate\"]",
+    // Without a front end wolframscript's Beep[] is FrontEndObject::notavail
+    // + $Failed; Woxi beeps and returns Null like a notebook kernel.
+    "Beep[] === Null",
+    "x = Beep[]; x === Null",
+    // AnnotationRules come out in WL's internal hash order.
+    "ToString[Options[SetProperty[{Graph[Tooltip[#, #] & /@ {1, 2}, {1 -> 2}], 2}, VertexStyle -> Red]], InputForm]",
+    // A held literal Rational[n, d] call is indistinguishable from the number
+    // in Woxi's representation (conformance_gaps.md).
+    "Hold[Rational[1, 2]]",
+    "Hold[Rational[-3, 4]]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

@@ -1713,12 +1713,88 @@ fn inverse_laplace_transform(
     return Ok(result);
   }
   if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
-    crate::evaluator::evaluate_expr_to_expr(&result)
+    let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+    Ok(pull_common_symbolic_factor(&result, t).unwrap_or(result))
   } else if let Some(result) = inverse_laplace_inexact(&normalized, s, t)? {
     Ok(result)
   } else {
     Ok(unevaluated())
   }
+}
+
+/// A sum whose terms all carry a power of the same `t`-free symbol or
+/// constant has it pulled out, the lowest power in front, as wolframscript
+/// returns an inverse transform: `1/a^2 - Cos[a t]/a^2` is
+/// `(1 - Cos[a t])/a^2` and `t/a^2 - Sin[a t]/a^3` is
+/// `(a t - Sin[a t])/a^3`. Numeric factors stay in the terms.
+fn pull_common_symbolic_factor(sum: &Expr, t: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: terms } = sum else {
+    return None;
+  };
+  if name != "Plus" || terms.len() < 2 {
+    return None;
+  }
+  let is_unit = |e: &Expr| matches!(e, Expr::Identifier(n) | Expr::Constant(n) if n == "I" || n == "E");
+  // The `(base, exponent)` powers of a term with an integer exponent and a
+  // `t`-free symbol or constant base.
+  let powers = |term: &Expr| -> Vec<(Expr, i128)> {
+    let factors: Vec<Expr> = match as_func_args(term) {
+      Some(("Times", fa)) => fa.into_iter().cloned().collect(),
+      _ => vec![term.clone()],
+    };
+    factors
+      .into_iter()
+      .filter_map(|f| {
+        let (base, k) = match as_func_args(&f) {
+          Some(("Power", pa)) if pa.len() == 2 => match pa[1] {
+            Expr::Integer(k) => (pa[0].clone(), *k),
+            _ => return None,
+          },
+          _ => (f.clone(), 1),
+        };
+        (matches!(base, Expr::Identifier(_) | Expr::Constant(_))
+          && !is_unit(&base)
+          && !depends_on(&base, t))
+        .then_some((base, k))
+      })
+      .collect()
+  };
+  let all: Vec<Vec<(Expr, i128)>> = terms.iter().map(powers).collect();
+  let mut common = Vec::new();
+  for (base, _) in &all[0] {
+    let exponents: Option<Vec<i128>> = all
+      .iter()
+      .map(|ps| {
+        ps.iter()
+          .find(|(b, _)| {
+            crate::syntax::expr_to_string(b)
+              == crate::syntax::expr_to_string(base)
+          })
+          .map(|(_, k)| *k)
+      })
+      .collect();
+    let Some(exponents) = exponents else { continue };
+    if exponents.iter().all(|k| *k < 0) || exponents.iter().all(|k| *k > 0) {
+      let k = *exponents.iter().min()?;
+      common.push(pow(base.clone(), Expr::Integer(k)));
+    }
+  }
+  if common.is_empty() {
+    return None;
+  }
+  let factor = crate::evaluator::evaluate_expr_to_expr(&times(common)).ok()?;
+  let inner: Vec<Expr> = terms
+    .iter()
+    .map(|term| {
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        term.clone(),
+        pow(factor.clone(), Expr::Integer(-1)),
+      ]))
+    })
+    .collect::<Result<_, _>>()
+    .ok()?;
+  crate::evaluator::evaluate_expr_to_expr(&times(vec![factor, plus(inner)]))
+    .ok()
 }
 
 /// Machine-precision input whose exact rules don't apply directly (e.g. a

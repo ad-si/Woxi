@@ -4304,14 +4304,66 @@ mod apart {
     );
   }
 
-  // Variables that only mention the decomposition variable, like `y[x]`
-  // in `x`, stay untouched constants.
+  // Without a variable, Apart decomposes in the last kernel, the symbols
+  // ordered before the other kernels such as `y[x]` or `Sin[x]`. The rest
+  // are constants whose coefficients only get a factored denominator.
   #[test]
   fn apart_keeps_dependent_variables_constant() {
     assert_eq!(
       interpret("Apart[((x y[x])/(x^2 - 1) + 2 y'[x]) y[x]]").unwrap(),
-      "y[x]^2/(2*(-1 + x)) + y[x]^2/(2*(1 + x)) + 2*y[x]*Derivative[1][y][x]"
+      "(x*y[x]^2)/((-1 + x)*(1 + x)) + 2*y[x]*Derivative[1][y][x]"
     );
+    assert_eq!(
+      interpret("Apart[(x y[x])/(x^2 - 1), x]").unwrap(),
+      "y[x]/(2*(-1 + x)) + y[x]/(2*(1 + x))"
+    );
+  }
+
+  #[test]
+  fn apart_in_last_kernel() {
+    for (input, expected) in [
+      (
+        "Apart[(x Sin[x])/(x^2 - 1)]",
+        "(x*Sin[x])/((-1 + x)*(1 + x))",
+      ),
+      (
+        "Apart[x/(x^2 - 1) + Sin[x]]",
+        "x/((-1 + x)*(1 + x)) + Sin[x]",
+      ),
+      ("Apart[(x^2 - 1) Sin[x]/(x - 1)]", "(1 + x)*Sin[x]"),
+      (
+        "Apart[(x^3 + 1) Sin[x]/(x^2 - 1)]",
+        "((1 - x + x^2)*Sin[x])/(-1 + x)",
+      ),
+      ("Apart[Exp[x]/(x^2 - 1)]", "E^x/((-1 + x)*(1 + x))"),
+      (
+        "Apart[x Sin[x]/(x^2 - 1) + Sin[x]/(x + 1)]",
+        "((-1 + 2*x)*Sin[x])/((-1 + x)*(1 + x))",
+      ),
+      (
+        "Apart[(2 x + 2) Sin[x] + 3 x/(x - 1)]",
+        "(3*x)/(-1 + x) + 2*(1 + x)*Sin[x]",
+      ),
+      (
+        "Apart[x Exp[x]/(x^2 - 1) + y/(y^2 - 1)]",
+        "(E^x*x)/((-1 + x)*(1 + x)) + y/((-1 + y)*(1 + y))",
+      ),
+      ("Apart[x/(x^2 - 1) + y]", "x/((-1 + x)*(1 + x)) + y"),
+      ("Apart[x/(x^2 - 1) + y, y]", "x/((-1 + x)*(1 + x)) + y"),
+      (
+        "Apart[(x^3 + 1) s/(x^2 - 1), s]",
+        "(s*(1 - x + x^2))/(-1 + x)",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn variables_of_powers_with_symbolic_exponents() {
+    assert_eq!(interpret("Variables[E^x]").unwrap(), "{}");
+    assert_eq!(interpret("Variables[2^x + y]").unwrap(), "{y}");
+    assert_eq!(interpret("Variables[x^n]").unwrap(), "{x^n}");
   }
 
   // A product holding a fraction is brought over a common denominator.
@@ -5796,12 +5848,13 @@ mod solve {
     );
     assert_eq!(
       interpret("Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]").unwrap(),
-      "{{x -> -0.5}}"
+      "{{x -> -0.5}, {x -> 1.}}"
     );
   }
 
-  // Cancelling the whole denominator leaves the numerator to solve, and a
-  // root where the original denominator vanishes is no solution.
+  // The difference is brought over a common denominator with its common
+  // factors cancelled, so a removable singularity is a solution; a root of
+  // the cancelled denominator is none.
   #[test]
   fn exact_equation_with_removable_pole() {
     assert_eq!(
@@ -5812,11 +5865,24 @@ mod solve {
       interpret("Solve[(x^2 - 1)/(x - 1) == y, x]").unwrap(),
       "{{x -> -1 + y}}"
     );
-    assert_eq!(interpret("Solve[(x^2 - 1)/(x - 1) == 2, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Solve[(x^2 - 1)/(x - 1) == 2, x]").unwrap(),
+      "{{x -> 1}}"
+    );
     assert_eq!(
       interpret("Solve[(x^2 - 1)/(x - 1) == 2 x^2, x]").unwrap(),
-      "{{x -> -1/2}}"
+      "{{x -> -1/2}, {x -> 1}}"
     );
+    assert_eq!(
+      interpret("Solve[(x^3 - 1)/(x - 1) == 3, x]").unwrap(),
+      "{{x -> -2}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 - x)/(x^2 - 1) == 1/2, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(interpret("Solve[x/(x - 1) == 1, x]").unwrap(), "{}");
+    assert_eq!(interpret("Solve[1/x == 0, x]").unwrap(), "{}");
   }
 
   // A polynomial with arbitrary-precision coefficients is solved
@@ -6600,7 +6666,20 @@ y^2]^3)) y}, {x, y}]; \
     );
     assert_eq!(
       interpret("Solve[x^2 + (a + 1) x + c == 0, x]").unwrap(),
-      "{{x -> (-1 - a - Sqrt[(1 + a)^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[(1 + a)^2 - 4*c])/2}}"
+      "{{x -> (-1 - a - Sqrt[1 + 2*a + a^2 - 4*c])/2}, {x -> (-1 - a + Sqrt[1 + 2*a + a^2 - 4*c])/2}}"
+    );
+    // The discriminant is expanded unless that adds more than four leaves.
+    assert_eq!(
+      interpret("Solve[x^2 + (a + b) x + c == 0, x]").unwrap(),
+      "{{x -> (-a - b - Sqrt[(a + b)^2 - 4*c])/2}, {x -> (-a - b + Sqrt[(a + b)^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a - b) x + c == 0, x]").unwrap(),
+      "{{x -> (-a + b - Sqrt[a^2 - 2*a*b + b^2 - 4*c])/2}, {x -> (-a + b + Sqrt[a^2 - 2*a*b + b^2 - 4*c])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + (a + a^2) x + c == 0, x]").unwrap(),
+      "{{x -> (-a - a^2 - Sqrt[a^2 + 2*a^3 + a^4 - 4*c])/2}, {x -> (-a - a^2 + Sqrt[a^2 + 2*a^3 + a^4 - 4*c])/2}}"
     );
     assert_eq!(
       interpret("Solve[x (1 - x) (x - 1/4) == 1/2 e x, x]").unwrap(),
@@ -27126,31 +27205,37 @@ fn simplify_extracts_common_radicals_with_negative_unit_cofactors() {
 mod simplify_list_scalar_equations {
   use super::*;
 
-  /// `Equal` leaves a list compared with a number unevaluated, but
-  /// Simplify and FullSimplify decide it: a list never equals a number.
+  /// `Equal` leaves a list compared with a number unevaluated, and so do
+  /// Simplify and FullSimplify; two lists of different lengths are decided.
   #[test]
-  fn list_never_equals_a_number() {
+  fn list_against_a_number_stays_unevaluated() {
     assert_eq!(interpret("{1, 2} == 3").unwrap(), "{1, 2} == 3");
-    assert_eq!(interpret("Simplify[{1, 2} == 3]").unwrap(), "False");
-    assert_eq!(interpret("FullSimplify[{a, b} == Pi]").unwrap(), "False");
-    assert_eq!(interpret("Simplify[Infinity == {a}]").unwrap(), "False");
+    assert_eq!(interpret("Simplify[{1, 2} == 3]").unwrap(), "{1, 2} == 3");
+    assert_eq!(
+      interpret("FullSimplify[{a, b} == Pi]").unwrap(),
+      "{a, b} == Pi"
+    );
+    assert_eq!(
+      interpret("Simplify[Infinity == {a}]").unwrap(),
+      "Infinity == {a}"
+    );
     assert_eq!(
       interpret("FullSimplify[{1., 2} != Infinity]").unwrap(),
-      "True"
+      "{1., 2} != Infinity"
     );
-    // A symbol may stand for a list, so this stays undecided.
     assert_eq!(interpret("Simplify[{a, b} == c]").unwrap(), "{a, b} == c");
+    assert_eq!(interpret("Simplify[{1, 2} == {1, 2, 3}]").unwrap(), "False");
   }
 
-  /// The decided condition of an `If` picks its branch.
+  /// The undecided condition of an `If` stays held.
   #[test]
-  fn decides_if_condition() {
+  fn keeps_if_condition() {
     assert_eq!(
       interpret(
         "r = {2.5, 1}; FullSimplify[{If[r == Infinity, 1 == 0, x == r[[1]]]}]"
       )
       .unwrap(),
-      "{x == 2.5}"
+      "{If[{2.5, 1} == Infinity, 1 == 0, x == r[[1]]]}"
     );
   }
 }

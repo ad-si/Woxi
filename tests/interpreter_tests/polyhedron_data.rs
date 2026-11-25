@@ -461,21 +461,21 @@ mod polyhedron_data_tests {
     );
   }
 
-  // A class lists its members alphabetically — the Platonic solids too,
-  // not by face count — so a `Join` of classes keeps each block sorted.
+  // A class lists its members alphabetically, except the Platonic solids,
+  // which come by face count; a `Join` of classes keeps each block's order.
   #[test]
   fn polyhedron_data_classes_list_members_alphabetically() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
-      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
+      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
     );
     assert_eq!(
       interpret(
         "Table[With[{m = PolyhedronData[c]}, m === Sort[m]], \
-         {c, {\"Platonic\", \"Archimedean\", \"Catalan\", \"KeplerPoinsot\"}}]"
+         {c, {\"Archimedean\", \"Catalan\", \"KeplerPoinsot\"}}]"
       )
       .unwrap(),
-      "{True, True, True, True}"
+      "{True, True, True}"
     );
     assert_eq!(
       interpret(
@@ -483,7 +483,7 @@ mod polyhedron_data_tests {
          PolyhedronData[\"Archimedean\"]], {5, 7}]"
       )
       .unwrap(),
-      "{Tetrahedron, Cuboctahedron, GreatRhombicosidodecahedron}"
+      "{Icosahedron, Cuboctahedron, GreatRhombicosidodecahedron}"
     );
   }
 

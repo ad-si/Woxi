@@ -901,7 +901,10 @@ fn graph_render(
         // an optional bare default in the list).
         "VertexSize" => {
           let (rules, defaults) = split_style_rules(replacement);
-          if let Some(d) = defaults.first().and_then(parse_vertex_size) {
+          // A whole `{"Scaled", s}` is one size, not a list of defaults.
+          if let Some(d) = parse_vertex_size(replacement)
+            .or_else(|| defaults.first().and_then(parse_vertex_size))
+          {
             vertex_size_default = Some(d);
           }
           vertex_size_rules.extend(
@@ -12071,9 +12074,10 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
   };
   let (size_rules, size_defaults) =
     option("VertexSize").map_or_default(|s| split_style_rules(&s));
-  let default_radius = size_defaults
-    .first()
-    .and_then(parse_vertex_size)
+  // A whole `{"Scaled", s}` is one size, not a list of defaults.
+  let default_radius = option("VertexSize")
+    .and_then(|s| parse_vertex_size(&s))
+    .or_else(|| size_defaults.first().and_then(parse_vertex_size))
     .map_or(auto_radius, size_radius);
   let (style_rules, style_defaults) =
     option("VertexStyle").map_or_default(|s| split_style_rules(&s));
@@ -13011,21 +13015,21 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => false,
     };
+    let is_rule =
+      |r: &Expr| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. });
     let mut rules: Vec<Expr> = match &existing {
       None => Vec::new(),
       Some(Expr::Identifier(s)) if s == "Automatic" => Vec::new(),
+      // Part rules, possibly after the bare value the other parts keep.
       Some(Expr::List(items))
-        if items.iter().all(|r| {
-          matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-        }) =>
+        if items.iter().all(is_rule)
+          || (items.len() >= 2 && items[1..].iter().all(is_rule)) =>
       {
         items.to_vec()
       }
-      // One value for every part: each part now says so for itself.
-      Some(value) => slots
-        .iter()
-        .map(|slot| rule_expr(key(slot), value.clone()))
-        .collect(),
+      // One value for every part: it stays, bare, for the other parts —
+      // `{RGBColor[0, 0, 1], 2 -> RGBColor[1, 0, 0]}`.
+      Some(value) => vec![value.clone()],
     };
     let new_rule = rule_expr(key(&slots[i]), (**replacement).clone());
     match rules.iter().position(|r| names(r, i)) {

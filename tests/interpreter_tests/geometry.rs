@@ -2756,7 +2756,16 @@ mod region_nearest {
         "RegionIntersection[InfiniteLine[{{0, 0}, {1, 1}}], Line[{{0, 1}, {1, 0}, {2, 3}}]]"
       )
       .unwrap(),
-      "Point[{{3/2, 3/2}, {1/2, 1/2}}]"
+      "Point[{{1/2, 1/2}, {3/2, 3/2}}]"
+    );
+    // The crossings come in the order of the line's segments.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0, 0}, {1, 0}}], \
+         Line[{{3, 1}, {3, -1}, {1, 1}, {1, -1}}]]"
+      )
+      .unwrap(),
+      "Point[{{3, 0}, {2, 0}, {1, 0}}]"
     );
     // Skew lines in 3D never meet.
     assert_eq!(

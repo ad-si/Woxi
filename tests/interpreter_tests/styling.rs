@@ -1675,12 +1675,30 @@ mod traditional_form_notation {
   fn a_function_is_written_as_a_map() {
     assert_eq!(
       interpret("ToBoxes[Function[x, x^2], TraditionalForm]").unwrap(),
-      "FormBox[RowBox[{x, \u{21A6}, SuperscriptBox[x, 2]}], TraditionalForm]"
+      "FormBox[RowBox[{x, \u{F4A1}, SuperscriptBox[x, 2]}], TraditionalForm]"
     );
     assert_eq!(
       interpret("ToBoxes[Function[{x, y}, x + y], TraditionalForm]").unwrap(),
-      "FormBox[RowBox[{RowBox[{{, RowBox[{x, ,, y}], }}], \u{21A6}, \
+      "FormBox[RowBox[{RowBox[{{, RowBox[{x, ,, y}], }}], \u{F4A1}, \
        RowBox[{x, +, y}]}], TraditionalForm]"
+    );
+  }
+
+  // The private-use map arrow and the `Mod` template still draw as
+  // `x ↦ x²` and `x mod 7`, and the template reads back as `Mod`.
+  #[test]
+  fn map_arrow_and_mod_template_render() {
+    let svg =
+      interpret("ExportString[TraditionalForm[Function[x, x^2]], \"SVG\"]")
+        .unwrap();
+    assert!(svg.contains(">\u{21A6}<"), "{svg}");
+    let svg =
+      interpret("ExportString[TraditionalForm[Mod[x, 7]], \"SVG\"]").unwrap();
+    assert!(svg.contains(">mod<"), "{svg}");
+    assert_eq!(
+      interpret("ToExpression[ToString[Mod[2 x, 7], TraditionalForm]]")
+        .unwrap(),
+      "Mod[2*x, 7]"
     );
   }
 
@@ -1688,7 +1706,7 @@ mod traditional_form_notation {
   fn congruent_is_written_infix() {
     assert_eq!(
       interpret("ToBoxes[Congruent[Mod[x, 2], 0], TraditionalForm]").unwrap(),
-      "FormBox[RowBox[{RowBox[{x, mod, 2}], \u{2261}, 0}], TraditionalForm]"
+      "FormBox[RowBox[{TemplateBox[{x, 2}, Mod], \u{2261}, 0}], TraditionalForm]"
     );
   }
 
