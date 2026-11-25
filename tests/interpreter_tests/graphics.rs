@@ -23283,6 +23283,41 @@ mod plot3d {
       assert!(labels.contains(&"0".to_string()), "{labels:?}");
       assert!(labels.contains(&"8".to_string()), "{labels:?}");
     }
+
+    /// An `All` end of a `{min, All}` range keeps the outliers an
+    /// automatic range clips off, on the x axis as on the y axis.
+    #[test]
+    fn list_plot_plot_range_all_end_keeps_outliers() {
+      clear_state();
+      let data = "{{0, 0}, {1, 0.5}, {10, 0.6}, {1000, 0.7}, \
+                  {10^5, 0.8}, {10^6, 0.9}, {2 10^7, 0.99}}";
+      assert_eq!(
+        interpret(&format!(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, All}}, {{0, 1}}}}], PlotRange])[[1, 2]] > 2 10^7"
+        ))
+        .unwrap(),
+        "True"
+      );
+      // An `Automatic` end still clips them.
+      assert_eq!(
+        interpret(&format!(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, Automatic}}, {{0, 1}}}}], PlotRange])[[1, 2]] < 10^7"
+        ))
+        .unwrap(),
+        "True"
+      );
+      // `{ymin, All}` keeps the y outliers.
+      assert_eq!(
+        interpret(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{1, 2, 1, 2, 1, 2, 1, 2, \
+           100}, PlotRange -> {0, All}], PlotRange])[[2, 2]] >= 100"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
   }
 
   mod ternary_list_plot {
