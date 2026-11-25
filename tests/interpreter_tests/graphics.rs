@@ -67911,9 +67911,12 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(boxes.contains("RowBox[{(, GridBox[{{"), "{boxes}");
-    assert!(boxes.contains("}}], )}], NumberForm]"), "{boxes}");
-    assert!(boxes.contains("StyleBox[2.12, "), "{boxes}");
-    assert!(boxes.contains("StyleBox[-4.00, "), "{boxes}");
+    assert!(
+      boxes.contains("}}], )}], NumberForm[#1, {3, 2}] & ]"),
+      "{boxes}"
+    );
+    assert!(boxes.contains("StyleBox[\"2.12\", "), "{boxes}");
+    assert!(boxes.contains("StyleBox[\"-4.00\", "), "{boxes}");
     assert!(!boxes.contains("RowBox[{{"), "{boxes}");
     // `ScientificForm` threads into the grid the same way.
     let sci = interpret(
@@ -67921,7 +67924,7 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(sci.contains("RowBox[{(, GridBox[{{"), "{sci}");
-    assert!(sci.contains("ScientificForm]"), "{sci}");
+    assert!(sci.contains("ScientificForm[#1, 2] & ]"), "{sci}");
   }
 
   /// A `Text` label `Row[{"A = ", TraditionalForm[NumberForm[m, {3, 2}]]}]`
@@ -74789,7 +74792,10 @@ fn row_label_with_rational_part_stacks_the_fraction_inline() {
 fn number_form_of_rational_boxes_as_fraction() {
   clear_state();
   let boxes = interpret("ToBoxes[NumberForm[14/3, {3, 2}]]").unwrap();
-  assert!(boxes.contains("FractionBox[14, 3]"), "{boxes}");
+  assert!(
+    boxes.contains("FractionBox[InterpretationBox[StyleBox[\"14\""),
+    "{boxes}"
+  );
   assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
 }
 

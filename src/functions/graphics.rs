@@ -16175,6 +16175,9 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
 /// for), which a single
 /// line of text cannot show.
 fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
+  if let Some(plain_box) = script_template_box(boxes) {
+    return traditional_box_runs(&plain_box);
+  }
   let plain = |text: &str| LabelRun {
     text: text.to_string(),
     ..Default::default()
@@ -21779,6 +21782,42 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
 /// The elements of a `TemplateBox`: a list, or a `List[…]` call.
+/// The plain script box a script template stands for:
+/// `TemplateBox[{x, "3"}, "Superscript", SyntaxForm -> SuperscriptBox]`
+/// (the boxes of `Superscript[x, 3]`) is drawn as `SuperscriptBox[x, "3"]`,
+/// likewise `"Subscript"` and `"Subsuperscript"`; `TemplateBox[{m, n},
+/// "Mod"]` is the row `m mod n`. The box renderers read these templates
+/// through this.
+pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "TemplateBox" || args.len() < 2 {
+    return None;
+  }
+  let (head, arity) = match &args[1] {
+    Expr::String(t) if t == "Superscript" => ("SuperscriptBox", 2),
+    Expr::String(t) if t == "Subscript" => ("SubscriptBox", 2),
+    Expr::String(t) if t == "Subsuperscript" => ("SubsuperscriptBox", 3),
+    // `TemplateBox[{m, n}, "Mod"]` is the row `m mod n`.
+    Expr::String(t) if t == "Mod" => ("RowBox", 2),
+    _ => return None,
+  };
+  let items = template_box_items(&args[0])?;
+  if items.len() != arity {
+    return None;
+  }
+  if head == "RowBox" {
+    return Some(call1(
+      "RowBox",
+      Expr::List(
+        vec![items[0].clone(), str_expr("mod"), items[1].clone()].into(),
+      ),
+    ));
+  }
+  Some(call(head, items.to_vec()))
+}
+
 fn template_box_items(e: &Expr) -> Option<&[Expr]> {
   match e {
     Expr::List(items) => Some(items),
@@ -21980,6 +22019,9 @@ fn stack_box_lines_centered(lines: &[BoxLayout]) -> BoxLayout {
 }
 
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
+  if let Some(plain_box) = script_template_box(expr) {
+    return layout_box(&plain_box, font_size);
+  }
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
     BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
@@ -26451,6 +26493,9 @@ pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
 }
 
 pub fn boxes_to_svg(expr: &Expr) -> String {
+  if let Some(plain_box) = script_template_box(expr) {
+    return boxes_to_svg(&plain_box);
+  }
   match expr {
     // Atoms: in box form, atoms are always Expr::String
     // A string box is stored as its quoted source (`"\"A\""`) but is drawn
@@ -26924,6 +26969,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // them as expressions so the renderer recognizes them, instead of as
   // the box strings "Italic" and "FontSize -> 20" that style nothing.
   let parse_arg = |index: usize, src: &[char]| -> Expr {
+    // A template's argument list is written as the call `List[…]`: read
+    // it as the braced list it is.
+    if name == "TemplateBox"
+      && index == 0
+      && src.len() > 6
+      && src[..5].iter().collect::<String>() == "List["
+      && src[src.len() - 1] == ']'
+    {
+      let mut braced = vec!['{'];
+      braced.extend_from_slice(&src[5..src.len() - 1]);
+      braced.push('}');
+      return parse_box_to_expr(&braced);
+    }
     if name == "StyleBox" && index > 0 {
       let text: String = src.iter().collect();
       if let Ok(directive) = crate::parse_to_expr(&text) {
@@ -28811,6 +28869,9 @@ fn box_expr_to_plain(e: &Expr) -> String {
 
 /// `spaced` is false inside a script, where a limit `n=0` stays tight.
 fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
+  if let Some(plain_box) = script_template_box(e) {
+    return box_expr_to_plain_in(&plain_box, spaced);
+  }
   match e {
     // A string typeset in StandardForm is drawn without its quotes; its box
     // carries them as literal characters (`"\"f(x)\""`).
@@ -29097,6 +29158,9 @@ pub fn box_string_visible_len(s: &str) -> usize {
 /// Handles fraction markers by splitting text around nested `<svg>` elements
 /// with `<line>` for fraction bars.
 pub fn estimate_box_display_width(expr: &Expr) -> f64 {
+  if let Some(plain_box) = script_template_box(expr) {
+    return estimate_box_display_width(&plain_box);
+  }
   match expr {
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
@@ -33001,6 +33065,9 @@ fn traditional_form_two_dimensional_boxes(expr: &Expr) -> Option<Expr> {
     return None;
   }
   fn two_dimensional(e: &Expr) -> bool {
+    if script_template_box(e).is_some() {
+      return true;
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         matches!(

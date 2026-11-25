@@ -5178,7 +5178,7 @@ mod string_form {
         "ToString[ToString[Superscript[x, 3], StandardForm], InputForm]"
       )
       .unwrap(),
-      r#""\!\(\*SuperscriptBox[\"x\", \"3\"]\)""#
+      r#""\!\(\*TemplateBox[List[\"x\", \"3\"], \"Superscript\", Rule[SyntaxForm, SuperscriptBox]]\)""#
     );
     // OutputForm keeps the two-line text.
     assert_eq!(interpret("ToString[Subscript[x, 2]]").unwrap(), "x\n 2");
@@ -7534,7 +7534,7 @@ mod to_boxes {
     // fall through to the `RowBox` of its source call).
     assert_eq!(
       interpret("ToBoxes[Subsuperscript[a, 1, 23]]").unwrap(),
-      "SubsuperscriptBox[a, 1, 23]"
+      "TemplateBox[{a, 1, 23}, Subsuperscript, SyntaxForm -> SubsuperscriptBox]"
     );
     // Special rational exponents still use SqrtBox/FractionBox with SubscriptBox
     assert_eq!(
@@ -7844,7 +7844,7 @@ mod make_boxes {
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Subsuperscript[q, 1, \"*\"]]]")
         .unwrap(),
-      "TagBox[FormBox[SubsuperscriptBox[q, 1, \"*\"], TraditionalForm], \
+      "TagBox[FormBox[TemplateBox[{q, 1, \"*\"}, Subsuperscript, SyntaxForm -> SubsuperscriptBox], TraditionalForm], \
        TraditionalForm, Editable -> True]"
     );
   }
@@ -8008,11 +8008,28 @@ mod make_boxes {
   fn make_boxes_superscript() {
     assert_eq!(
       interpret("MakeBoxes[Superscript[x, 3]]").unwrap(),
-      "SuperscriptBox[x, 3]"
+      "TemplateBox[{x, 3}, Superscript, SyntaxForm -> SuperscriptBox]"
     );
     assert_eq!(
       interpret("MakeBoxes[Superscript[a, b + 1], StandardForm]").unwrap(),
-      "SuperscriptBox[a, RowBox[{b, +, 1}]]"
+      "TemplateBox[{a, RowBox[{b, +, 1}]}, Superscript, SyntaxForm -> SuperscriptBox]"
+    );
+  }
+
+  // The script templates draw as scripts and read back as the call.
+  #[test]
+  fn script_templates_render_and_read_back() {
+    let svg = interpret("ExportString[Superscript[x, 3], \"SVG\"]").unwrap();
+    assert!(svg.contains(">x<") && svg.contains(">3<"), "{svg}");
+    assert!(!svg.contains("TemplateBox"), "{svg}");
+    assert_eq!(
+      interpret("{ToExpression[ToString[Superscript[x + y, 3], StandardForm]], ToExpression[ToString[Subsuperscript[a, 1, 2], StandardForm]]}").unwrap(),
+      "{Superscript[x + y, 3], Subsuperscript[a, 1, 2]}"
+    );
+    assert_eq!(
+      interpret("ToString[ToString[Row[{a, b}], StandardForm], InputForm]")
+        .unwrap(),
+      r#""\!\(\*TemplateBox[List[\"a\", \"b\"], \"RowDefault\"]\)""#
     );
   }
 
@@ -8032,8 +8049,8 @@ mod make_boxes {
   fn make_boxes_scientific_form() {
     assert_eq!(
       interpret("MakeBoxes[ScientificForm[12345.6]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[RowBox[{1.23456,  \u{00d7} , \
-       SuperscriptBox[10, 4]}], ShowStringCharacters -> False], 12345.6, \
+      "TagBox[InterpretationBox[StyleBox[RowBox[{\"1.23456\", \u{00d7}, \
+       SuperscriptBox[10, \"4\"]}], ShowStringCharacters -> False], 12345.6, \
        AutoDelete -> True], ScientificForm]"
     );
   }
@@ -8043,8 +8060,8 @@ mod make_boxes {
     // Exponent forced to a multiple of 3, mantissa in [1, 1000).
     assert_eq!(
       interpret("MakeBoxes[EngineeringForm[12345.6]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[RowBox[{12.3456,  \u{00d7} , \
-       SuperscriptBox[10, 3]}], ShowStringCharacters -> False], 12345.6, \
+      "TagBox[InterpretationBox[StyleBox[RowBox[{\"12.3456\", \u{00d7}, \
+       SuperscriptBox[10, \"3\"]}], ShowStringCharacters -> False], 12345.6, \
        AutoDelete -> True], EngineeringForm]"
     );
   }
@@ -8054,7 +8071,7 @@ mod make_boxes {
     // An in-range real renders as a plain string (no × 10^exp factor).
     assert_eq!(
       interpret("MakeBoxes[NumberForm[12345.6]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[12345.6, ShowStringCharacters -> \
+      "TagBox[InterpretationBox[StyleBox[\"12345.6\", ShowStringCharacters -> \
        False], 12345.6, AutoDelete -> True], NumberForm]"
     );
   }
@@ -8064,8 +8081,8 @@ mod make_boxes {
     // |x| >= 10^6 switches NumberForm to 2D scientific notation.
     assert_eq!(
       interpret("MakeBoxes[NumberForm[1234567.8]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[RowBox[{1.23457,  \u{00d7} , \
-       SuperscriptBox[10, 6]}], ShowStringCharacters -> False], \
+      "TagBox[InterpretationBox[StyleBox[RowBox[{\"1.23457\", \u{00d7}, \
+       SuperscriptBox[10, \"6\"]}], ShowStringCharacters -> False], \
        1.2345678*^6, AutoDelete -> True], NumberForm]"
     );
   }
@@ -8075,8 +8092,8 @@ mod make_boxes {
     // NumberForm[x, {n, f}] pads to exactly f decimal places, no exponent.
     assert_eq!(
       interpret("MakeBoxes[NumberForm[3.14159, {6, 2}]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[3.14, ShowStringCharacters -> \
-       False], 3.14159, AutoDelete -> True], NumberForm]"
+      "TagBox[InterpretationBox[StyleBox[\"3.14\", ShowStringCharacters -> \
+       False], 3.14159, AutoDelete -> True], NumberForm[#1, {6, 2}] & ]"
     );
   }
 
@@ -8088,8 +8105,8 @@ mod make_boxes {
     let x = "\u{00d7}";
     let elem = |m: &str, e: i64, v: &str| {
       format!(
-        "InterpretationBox[StyleBox[RowBox[{{{m},  {x} , \
-         SuperscriptBox[10, {e}]}}], ShowStringCharacters -> False], {v}, \
+        "InterpretationBox[StyleBox[RowBox[{{\"{m}\", {x}, \
+         SuperscriptBox[10, \"{e}\"]}}], ShowStringCharacters -> False], {v}, \
          AutoDelete -> True]"
       )
     };
@@ -16459,19 +16476,43 @@ mod typeset_boxes_regressions {
     clear_state();
     assert_eq!(
       interpret("ToBoxes[NumberForm[-1.17539, {5, 3}]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[-1.175, ShowStringCharacters -> \
-       False], -1.17539, AutoDelete -> True], NumberForm]"
+      "TagBox[InterpretationBox[StyleBox[\"-1.175\", ShowStringCharacters -> \
+       False], -1.17539, AutoDelete -> True], NumberForm[#1, {5, 3}] & ]"
     );
     assert_eq!(
       interpret("ToBoxes[NumberForm[-0.4251, {5, 2}]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[-0.43, ShowStringCharacters -> \
-       False], -0.4251, AutoDelete -> True], NumberForm]"
+      "TagBox[InterpretationBox[StyleBox[\"-0.43\", ShowStringCharacters -> \
+       False], -0.4251, AutoDelete -> True], NumberForm[#1, {5, 2}] & ]"
     );
     assert_eq!(
       interpret("ToBoxes[NumberForm[-(0/2.), {5, 3}]]").unwrap(),
-      "TagBox[InterpretationBox[StyleBox[0.000, ShowStringCharacters -> \
-       False], 0., AutoDelete -> True], NumberForm]"
+      "TagBox[InterpretationBox[StyleBox[\"0.000\", ShowStringCharacters -> \
+       False], 0., AutoDelete -> True], NumberForm[#1, {5, 3}] & ]"
     );
+  }
+
+  /// A number-display form around an expression sets each number in it;
+  /// rationals and `PaddedForm` keep the same layers; an integer is not
+  /// auto-deleted but uneditable.
+  #[test]
+  fn number_form_boxes_of_expressions_rationals_and_padding() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[{ToBoxes[NumberForm[x + 2.5, 3]], ToBoxes[NumberForm[f[x]]], ToBoxes[ScientificForm[x, 3]]}, InputForm]").unwrap(),
+      r#"{TagBox[RowBox[{InterpretationBox[StyleBox["\"2.5\"", ShowStringCharacters -> False], 2.5, AutoDelete -> True], "+", "x"}], NumberForm[#1, 3] & ], TagBox[RowBox[{"f", "[", "x", "]"}], NumberForm], TagBox["x", ScientificForm[#1, 3] & ]}"#
+    );
+    assert_eq!(
+      interpret("ToString[ToBoxes[NumberForm[-14/3, 3]], InputForm]").unwrap(),
+      r#"TagBox[RowBox[{"-", FractionBox[InterpretationBox[StyleBox["\"14\"", ShowStringCharacters -> False], 14, Editable -> False], InterpretationBox[StyleBox["\"3\"", ShowStringCharacters -> False], 3, Editable -> False]]}], NumberForm[#1, 3] & ]"#
+    );
+    assert_eq!(
+      interpret("ToString[{ToBoxes[PaddedForm[3.5, {4, 2}]], ToBoxes[NumberForm[12, 3]]}, InputForm]").unwrap(),
+      r#"{TagBox[InterpretationBox[StyleBox["\"  3.50\"", ShowStringCharacters -> False], 3.5, AutoDelete -> True], PaddedForm[#1, {4, 2}] & ], TagBox[InterpretationBox[StyleBox["\"12\"", ShowStringCharacters -> False], 12, Editable -> False], NumberForm[#1, 3] & ]}"#
+    );
+    // Drawn, the digits show without their quotes.
+    let svg =
+      interpret("ExportString[NumberForm[-1.17539, {5, 3}], \"SVG\"]").unwrap();
+    assert!(svg.contains(">-1.175<"), "{svg}");
   }
 
   /// An arbitrary-precision value (`N[1, 4]`) under a `NumberForm` with
@@ -16484,15 +16525,15 @@ mod typeset_boxes_regressions {
         "ToBoxes[NumberForm[N[1, 4], {4, 2}, NumberPadding -> {\" \", \"0\"}]]"
       )
       .unwrap(),
-      "TagBox[InterpretationBox[StyleBox[  1.00, ShowStringCharacters -> \
-       False], 1.`4., AutoDelete -> True], NumberForm]"
+      "TagBox[InterpretationBox[StyleBox[\"  1.00\", ShowStringCharacters -> \
+       False], 1.`4., AutoDelete -> True], NumberForm[#1, {4, 2}, NumberPadding -> { , 0}] & ]"
     );
     assert_eq!(
       interpret(
         "ToBoxes[NumberForm[N[-1/3, 10], {5, 3}, NumberPadding -> {\" \", \"0\"}]] // First // First // First"
       )
       .unwrap(),
-      " -0.333"
+      "\" -0.333\""
     );
   }
 

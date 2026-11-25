@@ -8583,15 +8583,15 @@ mod cases {
   fn traditional_form_mod_is_infix() {
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[x, 7]]]"#,
-      r#"TagBox[FormBox[RowBox[{x, mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{x, 7}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[2 x, m]]]"#,
-      r#"TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, m}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{RowBox[{(, RowBox[{2,  , x}], )}], m}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[x, a + b]]]"#,
-      r#"TagBox[FormBox[RowBox[{x, mod, RowBox[{(, RowBox[{a, +, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{x, RowBox[{(, RowBox[{a, +, b}], )}]}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToExpression["\!\(\*FormBox[RowBox[{RowBox[{\"(\", RowBox[{\"2\", \" \", \"x\"}], \")\"}], \"mod\", \"7\"}], TraditionalForm]\)"]"#,

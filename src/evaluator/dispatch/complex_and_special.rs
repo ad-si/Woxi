@@ -3153,6 +3153,23 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
   }
 }
 
+/// The FrontEnd's script template for `Superscript`/`Subsuperscript`
+/// (`name`) over the boxed parts: `TemplateBox[{x, "3"}, "Superscript",
+/// SyntaxForm -> SuperscriptBox]`.
+fn script_template(name: &str, parts: Vec<Expr>) -> Expr {
+  call(
+    "TemplateBox",
+    vec![
+      Expr::List(parts.into()),
+      str_expr(name),
+      crate::helpers::rule_expr(
+        Expr::Identifier("SyntaxForm".to_string()),
+        Expr::Identifier(format!("{name}Box")),
+      ),
+    ],
+  )
+}
+
 /// The boxes of an operand of `Infix` (`infix`) or `Prefix`, bracketed when
 /// it prints with an operator of its own: a sum or a rule in both, a
 /// product only after a prefix operator (`f@(a b)`, but `a b + c`). Calls,
@@ -3910,9 +3927,23 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   // braced, comma-separated row of per-element display boxes, all wrapped in a
   // single `TagBox[..., Head]`.
   let first = args.first()?;
+  // `PaddedForm[x, …]` of a number is its padded text, `"  3.50"`.
+  if name == "PaddedForm"
+    && matches!(first, Expr::Real(_) | Expr::Integer(_))
+    && let Some(text) = string_ast::number_form_family_to_string(name, args)
+    && !text.contains('\n')
+    && !text.starts_with(name)
+  {
+    return Some(wrap_number_display_box(
+      Expr::String(format!("\"{text}\"")),
+      first,
+      name,
+      &args[1..],
+    ));
+  }
   if let Expr::List(items) = first {
     let inner_boxes = number_display_list_boxes(items, &parts_for)?;
-    return Some(wrap_list_number_display_box(inner_boxes, name));
+    return Some(wrap_list_number_display_box(inner_boxes, name, &args[1..]));
   }
   // An exact rational is left as it is by the number-display forms
   // (`NumberForm[14/3, {3, 2}]` shows `14/3`), so it typesets as the
@@ -3921,10 +3952,40 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     && args.len() <= 2
     && matches!(first, Expr::FunctionCall { name: n, args: r } if n == "Rational" && r.len() == 2)
   {
+    // Its numerator and denominator are each set in the form:
+    // `FractionBox[InterpretationBox[…"14"…], InterpretationBox[…"3"…]]`.
+    let Expr::FunctionCall { args: nd, .. } = first else {
+      unreachable!("matched as a Rational above")
+    };
+    let part = |v: &Expr| -> Option<Expr> {
+      let (mantissa, exp) = parts_for(v)?;
+      Some(number_display_inner_box(
+        scientific_value_box(&mantissa, exp),
+        v,
+      ))
+    };
+    // A negative one keeps its sign outside the fraction.
+    let (negative, numerator) = match &nd[0] {
+      Expr::Integer(n) if *n < 0 => (true, Expr::Integer(-n)),
+      other => (false, other.clone()),
+    };
+    if let (Some(n), Some(d)) = (part(&numerator), part(&nd[1])) {
+      let fraction = call("FractionBox", vec![n, d]);
+      let body = if negative {
+        row_box(vec![str_expr("-"), fraction])
+      } else {
+        fraction
+      };
+      return Some(call(
+        "TagBox",
+        vec![body, number_display_tag(name, &args[1..])],
+      ));
+    }
     return Some(wrap_number_display_box(
       expr_to_box_form(first),
       first,
       name,
+      &args[1..],
     ));
   }
   let Some((mantissa, exp)) = parts_for(first) else {
@@ -3934,6 +3995,70 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     scientific_value_box(&mantissa, exp),
     first,
     name,
+    &args[1..],
+  ))
+}
+
+/// StandardForm boxes of a number-display form around an expression that is
+/// no number itself: the expression boxed as usual, each number in it set in
+/// the form — `NumberForm[x + 2.5, 3]` is
+/// `TagBox[RowBox[{InterpretationBox[…"2.5"…], "+", "x"}], NumberForm[#1, 3] &]`.
+/// `None` for a number, a nested number-display form, or an invalid spec.
+fn symbolic_number_display_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if !matches!(name, "NumberForm" | "ScientificForm" | "EngineeringForm")
+    || args.is_empty()
+    || args.len() > 2
+    || is_number_expr(&args[0])
+    || is_number_display_call(&args[0])
+    || matches!(args[0], Expr::List(_) | Expr::String(_))
+  {
+    return None;
+  }
+  // The display box the form gives one number on its own.
+  let number_box = |v: &Expr| -> Option<Expr> {
+    let mut probe = vec![v.clone()];
+    probe.extend(args[1..].iter().cloned());
+    match &number_display_form_box(name, &probe)? {
+      Expr::FunctionCall {
+        name: tag,
+        args: inner,
+      } if tag == "TagBox" && !inner.is_empty() => Some(inner[0].clone()),
+      other => Some(other.clone()),
+    }
+  };
+  // The spec must format a number at all.
+  number_box(&Expr::Real(1.5))?;
+  fn mark(e: &Expr, number_box: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+    match e {
+      Expr::Integer(_) | Expr::Real(_) => {
+        number_box(e).map_or_else(|| e.clone(), |b| call1("RawBoxes", b))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        number_box(e).map_or_else(|| e.clone(), |b| call1("RawBoxes", b))
+      }
+      Expr::FunctionCall { name, args } => call(
+        name,
+        args.iter().map(|a| mark(a, number_box)).collect::<Vec<_>>(),
+      ),
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|a| mark(a, number_box))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      other => other.clone(),
+    }
+  }
+  let canonical = canonical_operator_call(&args[0]);
+  Some(call(
+    "TagBox",
+    vec![
+      expr_to_box_form(&mark(&canonical, &number_box)),
+      number_display_tag(name, &args[1..]),
+    ],
   ))
 }
 
@@ -3979,63 +4104,101 @@ fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   let call_expr = call(name, args.to_vec());
   match crate::functions::string_ast::to_string_ast(&[call_expr]) {
-    Ok(Expr::String(ref text)) if !text.starts_with("NumberForm") => Some(
-      wrap_number_display_box(Expr::String(text.clone()), &args[0], name),
-    ),
+    Ok(Expr::String(ref text)) if !text.starts_with("NumberForm") => {
+      Some(wrap_number_display_box(
+        Expr::String(format!("\"{text}\"")),
+        &args[0],
+        name,
+        &args[1..],
+      ))
+    }
     _ => None,
   }
 }
 
-/// Inner box for a decomposed number-display form: `String(mantissa)` when there
-/// is no `× 10^e` factor, otherwise
-/// `RowBox[{mantissa, " × ", SuperscriptBox["10", exp]}]`.
+/// Inner box for a decomposed number-display form: the quoted string
+/// `"\"mantissa\""` when there is no `× 10^e` factor, otherwise
+/// `RowBox[{"\"mantissa\"", "×", SuperscriptBox["10", "\"exp\""]}]` — the
+/// digits are strings, drawn without their quotes under the
+/// `ShowStringCharacters -> False` the box is wrapped in.
 fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
+  let quoted = |s: &str| Expr::String(format!("\"{s}\""));
   match exp {
-    None => str_expr(mantissa),
-    Some(e) => {
-      let script_box = vec![str_expr("10"), Expr::String(e.to_string())];
-      let row = vec![
-        str_expr(mantissa),
-        str_expr(" \u{00d7} "),
-        call("SuperscriptBox", script_box),
-      ];
-
-      row_box(row)
-    }
+    None => quoted(mantissa),
+    Some(e) => row_box(vec![
+      quoted(mantissa),
+      str_expr("\u{00d7}"),
+      call(
+        "SuperscriptBox",
+        vec![str_expr("10"), quoted(&e.to_string())],
+      ),
+    ]),
   }
 }
 
 /// Per-value display box (no `TagBox` head wrapper):
 /// `InterpretationBox[StyleBox[inner, ShowStringCharacters -> False], value,
-/// AutoDelete -> True]`. The interpretation/style layers are rendering
-/// pass-throughs for the SVG layout engine; they preserve the link to the
-/// original numeric `value`.
+/// AutoDelete -> True]` (`Editable -> False` for an integer value). The
+/// interpretation/style layers are rendering pass-throughs for the SVG
+/// layout engine; they preserve the link to the original numeric `value`.
 fn number_display_inner_box(inner: Expr, value: &Expr) -> Expr {
   let rule = |k: &str, v: &str| rule_expr(id_expr(k), id_expr(v));
   let style = call(
     "StyleBox",
     vec![inner, rule("ShowStringCharacters", "False")],
   );
-  call(
-    "InterpretationBox",
-    vec![style, value.clone(), rule("AutoDelete", "True")],
-  )
+  let edit = if matches!(value, Expr::Integer(_) | Expr::BigInteger(_)) {
+    rule("Editable", "False")
+  } else {
+    rule("AutoDelete", "True")
+  };
+  call("InterpretationBox", vec![style, value.clone(), edit])
+}
+
+/// The tag of a number-display form's `TagBox`: the bare head without
+/// further arguments, else the function re-applying them,
+/// `NumberForm[#1, {5, 3}] &`.
+fn number_display_tag(head: &str, rest: &[Expr]) -> Expr {
+  if rest.is_empty() {
+    return id_expr(head);
+  }
+  let mut fargs = vec![Expr::Slot(1)];
+  fargs.extend(rest.iter().cloned());
+  Expr::Function {
+    body: Box::new(call(head, fargs)),
+  }
 }
 
 /// Wrap a scalar inner display box with wolframscript's
 /// `TagBox[InterpretationBox[StyleBox[inner, ShowStringCharacters -> False],
-/// value, AutoDelete -> True], head]`, preserving the form head for `MakeBoxes`.
-fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
+/// value, AutoDelete -> True], tag]` (see `number_display_tag`), preserving
+/// the form for `MakeBoxes`.
+fn wrap_number_display_box(
+  inner: Expr,
+  value: &Expr,
+  head: &str,
+  rest: &[Expr],
+) -> Expr {
   call(
     "TagBox",
-    vec![number_display_inner_box(inner, value), id_expr(head)],
+    vec![
+      number_display_inner_box(inner, value),
+      number_display_tag(head, rest),
+    ],
   )
 }
 
 /// Wrap the per-element display boxes of a list argument with wolframscript's
-/// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], head]`.
-fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
-  call("TagBox", vec![braced_row_box(elems), id_expr(head)])
+/// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], tag]`.
+fn wrap_list_number_display_box(
+  elems: Vec<Expr>,
+  head: &str,
+  rest: &[Expr],
+) -> Expr {
+  call(
+    "TagBox",
+    vec![braced_row_box(elems), number_display_tag(head, rest)],
+  )
 }
 
 /// `RowBox[{"{", RowBox[{e1, ",", e2, …}], "}"}]`.
@@ -4412,6 +4575,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // arguments these forms leave symbolic.
   if let Expr::FunctionCall { name, args } = expr
     && let Some(boxed) = number_display_form_box(name, args)
+      .or_else(|| symbolic_number_display_box(name, args))
   {
     return boxed;
   }
@@ -4999,15 +5163,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
-    // `Superscript[x, n]` sets `n` as a raised script, exactly like the
-    // `Subscript` rule above — not as the literal call `Superscript[x, n]`.
+    // `Superscript[x, n]` sets `n` as a raised script — through the
+    // FrontEnd's script template, `TemplateBox[{x, n}, "Superscript",
+    // SyntaxForm -> SuperscriptBox]`, which the renderers draw as a
+    // `SuperscriptBox` (see `script_template_box`).
     Expr::FunctionCall { name, args }
       if name == "Superscript" && args.len() == 2 =>
     {
-      call(
-        "SuperscriptBox",
-        vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
-      )
+      script_template(name, args.iter().map(expr_to_box_form).collect())
     }
     // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
     // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
@@ -5030,10 +5193,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Subsuperscript" && args.len() == 3 =>
     {
-      call(
-        "SubsuperscriptBox",
-        args.iter().map(expr_to_box_form).collect(),
-      )
+      script_template(name, args.iter().map(expr_to_box_form).collect())
     }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
     // above/below `a` — the box form is a direct `OverscriptBox`/
@@ -5867,6 +6027,15 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
     }
     Expr::List(items) => {
       Expr::List(items.iter().map(traditional_boxes_to_standard).collect())
+    }
+    // `TemplateBox[{m, n}, "Mod"]` reads as the row `m mod n` below.
+    Expr::FunctionCall { name, args }
+      if name == "TemplateBox"
+        && matches!(args.get(1), Some(Expr::String(t)) if t == "Mod")
+        && let Some(row) =
+          crate::functions::graphics::script_template_box(boxes) =>
+    {
+      traditional_boxes_to_standard(&row)
     }
     Expr::FunctionCall { name, args } => {
       let args: Vec<Expr> =
@@ -7835,7 +8004,7 @@ fn tf_number_display_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
         tf_box("GridBox", vec![Expr::List(grid_rows.into())]),
         tf_string(")"),
       ]),
-      id_expr(name),
+      number_display_tag(name, &args[1..]),
     ],
   ))
 }
@@ -8416,7 +8585,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // Number-display forms typeset as the formatted number itself, not as a
     // `NumberForm(…)` call — `TraditionalForm[NumberForm[x, {4, 1}]]` is how a
     // Demonstration labels a readout.
-    "NumberForm" | "ScientificForm" | "EngineeringForm"
+    "NumberForm" | "ScientificForm" | "EngineeringForm" | "PaddedForm"
       if number_display_form_box(name, args).is_some() =>
     {
       number_display_form_box(name, args).unwrap()
@@ -8481,7 +8650,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         && !is_number_display_call(&args[0]) =>
     {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
-      call("TagBox", vec![tf(&formatted), id_expr(name)])
+      call("TagBox", vec![tf(&formatted), number_display_tag(name, &args[1..])])
     }
     // `PolynomialForm[p, TraditionalOrder -> False]` sets the sums of `p`
     // in their standard, ascending order instead of the descending one
@@ -9125,17 +9294,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_box("SubscriptBox", vec![tf(&args[0]), sub])
     }
     "Superscript" if args.len() == 2 => {
-      tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
+      script_template(name, vec![tf(&args[0]), tf(&args[1])])
     }
     // `SuperStar[x]` / `SuperDagger[x]` set the mark as an exponent: `x*`, `x†`.
     "SuperStar" | "SuperDagger" if args.len() == 1 => {
       let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf_string(mark)])
     }
-    "Subsuperscript" if args.len() == 3 => tf_box(
-      "SubsuperscriptBox",
-      vec![tf(&args[0]), tf(&args[1]), tf(&args[2])],
-    ),
+    "Subsuperscript" if args.len() == 3 => {
+      script_template(name, vec![tf(&args[0]), tf(&args[1]), tf(&args[2])])
+    }
     // `Overscript[a, b]` / `Underscript[a, b]` and their `OverBar`/`UnderBar`
     // accent shorthands — same `…Box` mapping as the StandardForm converter
     // (`expr_to_box_form`), just recursing through `tf` for the pieces.
@@ -9172,7 +9340,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_box("OverscriptBox", vec![tf(&args[0]), tf_string(mark)])
     }
     // `Mod[m, n]` is the infix `m mod n`, with a sum, product or negative
-    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`.
+    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`. It boxes
+    // as the FrontEnd's template, `TemplateBox[{m, n}, "Mod"]`, which the
+    // renderers draw as that row (see `script_template_box`).
     "Mod" if args.len() == 2 => {
       let operand = |e: &Expr| {
         if tf_needs_paren_factor(e) || tf_is_product_node(e) {
@@ -9181,7 +9351,13 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
           tf(e)
         }
       };
-      tf_row(vec![operand(&args[0]), tf_string("mod"), operand(&args[1])])
+      tf_box(
+        "TemplateBox",
+        vec![
+          Expr::List(vec![operand(&args[0]), operand(&args[1])].into()),
+          tf_string("Mod"),
+        ],
+      )
     }
     // `AngleBracket[a, b]` is typeset as `〈a, b〉`.
     "AngleBracket" if !args.is_empty() => {
@@ -9373,7 +9549,7 @@ fn tf(expr: &Expr) -> Expr {
           tf_enclosed("{", params.iter().map(|p| tf_string(&tf_symbol(p))), "}")
         }
       };
-      tf_row(vec![params_box, tf_string("\u{21A6}"), tf(body)])
+      tf_row(vec![params_box, tf_string("\u{F4A1}"), tf(body)])
     }
     // A replacement left unevaluated (its rules were no rules) has no
     // traditional notation: like any other built-in function without one it

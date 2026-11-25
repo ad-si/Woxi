@@ -6203,6 +6203,10 @@ fn resolve_form_wrappers(expr: &Expr) -> Expr {
 /// custom box delimiters (`<~`, `~>`, etc.) surface in the rendered
 /// TeX.
 fn box_ast_to_tex(expr: &Expr) -> String {
+  if let Some(plain_box) = crate::functions::graphics::script_template_box(expr)
+  {
+    return box_ast_to_tex(&plain_box);
+  }
   fn tex_special_chars(s: &str) -> String {
     s.replace('~', "\\sim ")
   }
@@ -9459,6 +9463,20 @@ pub fn linear_syntax_box_text(expr: &Expr) -> String {
       linear_syntax_box_text(pattern),
       linear_syntax_box_text(replacement)
     ),
+    // A template's argument list is spelled out as a call:
+    // `TemplateBox[List["a", "b"], "RowDefault"]`.
+    Expr::FunctionCall { name, args }
+      if name == "TemplateBox"
+        && let Some((Expr::List(items), rest)) = args.split_first() =>
+    {
+      let mut text = format!("TemplateBox[List[{}]", parts(items));
+      for arg in rest {
+        text.push_str(", ");
+        text.push_str(&linear_syntax_box_text(arg));
+      }
+      text.push(']');
+      text
+    }
     Expr::FunctionCall { name, args } => {
       format!("{name}[{}]", parts(args))
     }
