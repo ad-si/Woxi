@@ -12759,13 +12759,29 @@ mod ndsolve {
     assert_eq!(result, "True");
   }
 
-  /// A piecewise diffusion coefficient reads as `D[c D[w, x], x]` (the
-  /// finite element form, `D` of a piecewise constant vanishing): the
-  /// flux stays continuous across the jump, so the steady profile between
-  /// `w == 0` and `w == 1` bends at `x == 1/2` to `w == 9/10` there for
-  /// `c` jumping from 1 to 9.
+  /// In a finite element problem (here written with `DirichletCondition`)
+  /// a piecewise diffusion coefficient reads as `D[c D[w, x], x]` (`D` of
+  /// a piecewise constant vanishing): the flux stays continuous across the
+  /// jump, so the steady profile between `w == 0` and `w == 1` bends at
+  /// `x == 1/2` to `w == 9/10` there for `c` jumping from 1 to 9.
   #[test]
   fn pde_piecewise_coefficient_keeps_flux_continuous() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
+       D[w[t, x], x, x], w[0, x] == x, \
+       DirichletCondition[w[t, x] == 0, x == 0], \
+       DirichletCondition[w[t, x] == 1, x == 1]}, w, \
+       {t, 0, 5}, {x, 0, 1}]; Round[{u[5, 0.25], u[5, 0.5], u[5, 0.75]}, \
+       10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "{9/20, 9/10, 19/20}");
+  }
+
+  /// The method of lines takes `c u_xx` as it is written: the steady
+  /// state has `u_xx == 0` on both sides of the jump, a straight line.
+  #[test]
+  fn pde_piecewise_coefficient_in_method_of_lines() {
     let result = interpret(
       "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
        D[w[t, x], x, x], w[0, x] == x, w[t, 0] == 0, w[t, 1] == 1}, w, \
@@ -12773,7 +12789,7 @@ mod ndsolve {
        10^-3]",
     )
     .unwrap();
-    assert_eq!(result, "{9/20, 9/10, 19/20}");
+    assert_eq!(result, "{1/4, 1/2, 3/4}");
   }
 
   /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`

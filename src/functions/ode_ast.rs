@@ -3102,6 +3102,20 @@ fn ndsolve_pde(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
+  // Finite element notation makes it a finite element problem.
+  let finite_element_notation = eq_items.iter().any(|e| {
+    mentions_head(e, "DirichletCondition") || mentions_head(e, "NeumannValue")
+  });
+  let fem_opts;
+  let opts = if finite_element_notation && !opts.finite_element {
+    fem_opts = pde_mol::MolOptions {
+      finite_element: true,
+      ..opts.clone()
+    };
+    &fem_opts
+  } else {
+    opts
+  };
   let eq_items =
     extract_summed_dirichlet_conditions(&flatten_chained_equalities(&eq_items));
   // The solutions take their arguments in the order of the unknowns' own
