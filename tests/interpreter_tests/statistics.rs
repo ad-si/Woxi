@@ -12654,3 +12654,96 @@ mod variance_equivalence_test {
     );
   }
 }
+
+/// `SeedRandom[seed, Method -> {"MKL", Method -> {"Sobol" | "Niederreiter",
+/// "Dimension" -> d}}]` switches to a quasi-random (low-discrepancy)
+/// sequence of `d`-dimensional points.
+mod quasi_random_methods {
+  use super::*;
+
+  fn seeded(method: &str, code: &str) -> String {
+    interpret(&format!(
+      "BlockRandom[SeedRandom[1, Method -> {{\"MKL\", Method -> {method}}}]; \
+       {code}]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn sobol_points_in_two_dimensions() {
+    assert_eq!(
+      seeded("{\"Sobol\", \"Dimension\" -> 2}", "RandomReal[1, {8, 2}]"),
+      "{{0., 0.}, {0.5, 0.5}, {0.75, 0.25}, {0.25, 0.75}, \
+       {0.375, 0.375}, {0.875, 0.875}, {0.625, 0.125}, {0.125, 0.625}}"
+    );
+  }
+
+  #[test]
+  fn one_dimensional_sequence_is_van_der_corput() {
+    for name in ["\"Sobol\"", "\"Niederreiter\""] {
+      assert_eq!(
+        seeded(name, "RandomReal[{2, 4}, 8]"),
+        "{2., 3., 3.5, 2.5, 2.75, 3.75, 3.25, 2.25}"
+      );
+    }
+  }
+
+  /// The first 2^m points of two-dimensional Sobol and Niederreiter
+  /// sequences put exactly one point into every dyadic box of area 2^-m.
+  #[test]
+  fn first_two_dimensions_form_a_net() {
+    for name in ["\"Sobol\"", "\"Niederreiter\""] {
+      assert_eq!(
+        seeded(
+          &format!("{{{name}, \"Dimension\" -> 2}}"),
+          "pts = RandomReal[1, {64, 2}]; \
+           Table[Length[Union[Floor[# {2^k, 2^(6 - k)}] & /@ pts]], \
+           {k, 0, 6}]"
+        ),
+        "{64, 64, 64, 64, 64, 64, 64}",
+        "{name}"
+      );
+    }
+  }
+
+  /// Every Sobol coordinate of the first 2^m points falls into a distinct
+  /// interval of length 2^-m, in every supported dimension.
+  #[test]
+  fn every_sobol_coordinate_is_stratified() {
+    assert_eq!(
+      seeded(
+        "{\"Sobol\", \"Dimension\" -> 40}",
+        "Union[Length[Union[Floor[32 #]]] & /@ \
+         Transpose[RandomReal[1, {32, 40}]]]"
+      ),
+      "{32}"
+    );
+  }
+
+  #[test]
+  fn reseeding_restarts_the_sequence() {
+    assert_eq!(
+      interpret(
+        "m = Method -> {\"MKL\", Method -> {\"Niederreiter\", \
+         \"Dimension\" -> 3}}; \
+         SeedRandom[4, m]; a = RandomReal[1, {5, 3}]; \
+         SeedRandom[9, m]; a == RandomReal[1, {5, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn block_random_restores_the_pseudo_random_stream() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; a = RandomReal[1, 3]; SeedRandom[3]; \
+         BlockRandom[SeedRandom[1, Method -> {\"MKL\", Method -> \
+         \"Sobol\"}]; RandomReal[1, 4]]; a == RandomReal[1, 3]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
