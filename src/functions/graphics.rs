@@ -10468,29 +10468,92 @@ fn text_alignment_line_anchor(d: &Expr) -> Option<Option<&'static str>> {
 }
 
 fn column_line_anchor(content: &Expr) -> Option<&'static str> {
-  fn anchor_of(spec: &Expr) -> Option<&'static str> {
-    match spec {
-      Expr::Identifier(s) if s == "Left" => Some("start"),
-      Expr::Identifier(s) if s == "Right" => Some("end"),
-      Expr::List(items) => items.first().and_then(anchor_of),
-      _ => None,
-    }
-  }
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
   if name != "Column" {
     return None;
   }
-  args.iter().skip(1).find_map(|a| match a {
+  match column_alignment(args)? {
+    ColumnAlignment::Left => Some("start"),
+    ColumnAlignment::Right => Some("end"),
+    ColumnAlignment::Center => None,
+  }
+}
+
+/// How a `Column` lines its items up horizontally.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ColumnAlignment {
+  /// Flush left, the default of a `Column`.
+  Left,
+  /// Every item centered on its own (what a `Grid` does); the default of
+  /// a label that is not a `Column`.
+  #[default]
+  Center,
+  Right,
+}
+
+impl ColumnAlignment {
+  /// The SVG `text-anchor` that sets a line this way.
+  pub(crate) fn text_anchor(self) -> &'static str {
+    match self {
+      ColumnAlignment::Left => "start",
+      ColumnAlignment::Center => "middle",
+      ColumnAlignment::Right => "end",
+    }
+  }
+
+  /// The `x` the lines of a block `width` wide and centered on `cx` are
+  /// anchored at: the block's left edge, its middle or its right edge.
+  pub(crate) fn anchor_x(self, cx: f64, width: f64) -> f64 {
+    match self {
+      ColumnAlignment::Left => cx - width / 2.0,
+      ColumnAlignment::Center => cx,
+      ColumnAlignment::Right => cx + width / 2.0,
+    }
+  }
+}
+
+/// The horizontal alignment the arguments of a `Column` ask for — the
+/// single reader of both spellings, the positional `Column[{…}, Center]`
+/// and the option `Column[{…}, Alignment -> Center]` (which wins when both
+/// are given). Either may be a `{horizontal, vertical}` pair, and the front
+/// end also reads the string spellings (`"Center"`). `None` when the column
+/// names no alignment, which leaves it at its default, `Left`.
+///
+/// An empty second argument — `Column[{…}, ]`, i.e. `Null`, as a stray
+/// trailing comma leaves behind — sets the items flush right.
+pub(crate) fn column_alignment(args: &[Expr]) -> Option<ColumnAlignment> {
+  fn of(spec: &Expr) -> ColumnAlignment {
+    match spec {
+      Expr::Identifier(s) | Expr::String(s) if s == "Center" => {
+        ColumnAlignment::Center
+      }
+      Expr::Identifier(s) | Expr::String(s) if s == "Right" => {
+        ColumnAlignment::Right
+      }
+      Expr::Identifier(s) if s == "Null" => ColumnAlignment::Right,
+      Expr::List(parts) if !parts.is_empty() => of(&parts[0]),
+      _ => ColumnAlignment::Left,
+    }
+  }
+  let rest = args.get(1..).unwrap_or(&[]);
+  let option = rest.iter().find_map(|a| match a {
     Expr::Rule {
       pattern,
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Alignment") => {
-      anchor_of(replacement)
+      Some(of(replacement))
     }
-    other => anchor_of(other),
-  })
+    _ => None,
+  });
+  let positional = rest
+    .first()
+    .filter(|a| {
+      matches!(a, Expr::Identifier(_) | Expr::String(_) | Expr::List(_))
+    })
+    .map(of);
+  option.or(positional)
 }
 
 /// The rotation direction of `Text[expr, pos, offset, direction]`: a plain
@@ -18118,7 +18181,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
   // Whether the title's lines line up at the left (a `Column` title).
-  let mut plot_label_left = false;
+  let mut plot_label_alignment = ColumnAlignment::Center;
   // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
   // a picture with its natural width and height.
   let mut plot_label_picture: Option<(String, f64, f64)> = None;
@@ -18269,9 +18332,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other => {
               let lines = expr_to_svg_markup_lines(other);
               if lines.iter().any(|l| !l.is_empty()) {
-                plot_label_left = lines.len() > 1
-                  && crate::functions::chart::parse_styled_label(other)
-                    .is_some_and(|sl| sl.left_aligned);
+                if lines.len() > 1 {
+                  plot_label_alignment =
+                    crate::functions::chart::parse_styled_label(other)
+                      .map_or_default(|sl| sl.line_alignment);
+                }
                 plot_label = Some(lines);
               }
             }
@@ -19457,9 +19522,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
       None => title_shift,
     };
-    // A `Column` title lines its rows up at their left edges, the block
-    // as a whole centered over the picture.
-    let (tx, anchor) = if plot_label_left {
+    // A `Column` title lines its rows up at one edge (the left one unless
+    // it asks otherwise), the block as a whole centered over the picture.
+    let anchor = plot_label_alignment.text_anchor();
+    let tx = if plot_label_alignment == ColumnAlignment::Center {
+      cx
+    } else {
       let w = lines
         .iter()
         .map(|l| {
@@ -19474,9 +19542,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         w
       };
-      (cx - w / 2.0, "start")
-    } else {
-      (cx, "middle")
+      plot_label_alignment.anchor_x(cx, w)
     };
     svg.push_str(&format!(
       "<text x=\"{tx:.1}\" y=\"{:.2}\" text-anchor=\"{anchor}\" \
@@ -41961,31 +42027,9 @@ fn column_layout_svg(
   // option form (`Column[{…}, Alignment -> Center]`). Default: Left.
   // Either may be a `{horizontal, vertical}` pair (`{Center, Top}`), whose
   // first entry sets the items' horizontal alignment.
-  fn column_text_anchor(spec: &Expr) -> &'static str {
-    match spec {
-      // The front end also reads the string spellings (`"Center"`).
-      Expr::Identifier(s) | Expr::String(s) if s == "Center" => "middle",
-      Expr::Identifier(s) | Expr::String(s) if s == "Right" => "end",
-      Expr::List(parts) if !parts.is_empty() => column_text_anchor(&parts[0]),
-      _ => "start", // Left or anything else
-    }
-  }
-  let mut alignment = match args.get(1) {
-    Some(spec @ (Expr::Identifier(_) | Expr::String(_) | Expr::List(_))) => {
-      column_text_anchor(spec)
-    }
-    _ => "start",
-  };
-  for arg in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = arg
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment")
-    {
-      alignment = column_text_anchor(replacement);
-    }
-  }
+  let alignment = column_alignment(args)
+    .unwrap_or(ColumnAlignment::Left)
+    .text_anchor();
 
   // Parse optional spacing from third arg in ems (default: 0)
   // `Spacings -> s` is the option spelling of the same spacing.

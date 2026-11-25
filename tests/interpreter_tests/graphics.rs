@@ -24827,6 +24827,54 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A stacked `Column` title lines its rows up the way the column asks:
+    /// flush left by default, flush right for `Right` (positional or as
+    /// `Alignment -> Right`), each centered for `Center` — with the block as
+    /// a whole centered over the picture. An empty second argument (the
+    /// `Null` a trailing comma leaves in `Column[{…}, ]`) reads as `Right`.
+    #[test]
+    fn plot_label_column_alignment_sets_the_line_anchor() {
+      // (anchor, x) of the title line of a 200 wide picture.
+      let title = |picture: &str, column_rest: &str| -> (String, f64) {
+        let svg = export_svg(&format!(
+          "{picture}, ImageSize -> 200, PlotLabel -> \
+           Column[{{\"a\", \"bbbbbbbbbbbb\"}}{column_rest}]]"
+        ));
+        let line = svg
+          .lines()
+          .find(|l| l.contains("bbbbbbbbbbbb</tspan>"))
+          .unwrap_or_else(|| panic!("no stacked title: {svg}"));
+        let attr = |key: &str| {
+          line
+            .split_once(&format!(" {key}=\""))
+            .and_then(|(_, r)| r.split_once('"'))
+            .map(|(v, _)| v.to_string())
+            .unwrap_or_else(|| panic!("no {key} in {line}"))
+        };
+        // Every further line starts at the same x as the first.
+        let x = attr("x");
+        assert!(line.contains(&format!("<tspan x=\"{x}\"")), "{line}");
+        (attr("text-anchor"), x.parse().unwrap())
+      };
+      for picture in ["Graphics[{Circle[]}", "Plot[x, {x, 0, 1}"] {
+        let (left_anchor, left_x) = title(picture, "");
+        let (center_anchor, center_x) = title(picture, ", Center");
+        assert_eq!(left_anchor, "start", "{picture}");
+        assert_eq!(center_anchor, "middle", "{picture}");
+        assert!(left_x < center_x, "{picture}");
+        for right in [", Right", ", Alignment -> Right", ", "] {
+          let (anchor, x) = title(picture, right);
+          assert_eq!(anchor, "end", "{picture} {right:?}");
+          // The block stays centered: its right edge is as far right of
+          // the middle as its left edge is left of it.
+          assert!(
+            ((x - center_x) - (center_x - left_x)).abs() < 0.11,
+            "{picture} {right:?}: {left_x} {center_x} {x}"
+          );
+        }
+      }
+    }
+
     /// A `Grid` title of two or more columns lines its columns up instead
     /// of running each row's cells together into one line of text.
     #[test]
