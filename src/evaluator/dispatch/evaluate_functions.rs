@@ -5652,6 +5652,15 @@ fn evaluate_function_call_ast_inner(
           .iter()
           .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
           .filter(|a| !(layered && is_layer_size(a)))
+          // `GraphPlot` reads its legacy `VertexRenderingFunction` only
+          // from an immediate rule: given as `VertexRenderingFunction :>
+          // f` the setting is dropped, so the default vertices (and any
+          // `VertexLabeling` labels) are drawn.
+          .filter(|a| {
+            !(name == "GraphPlot"
+              && matches!(a, Expr::RuleDelayed { pattern, .. }
+                if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexRenderingFunction")))
+          })
           .cloned(),
       );
       // `GraphPlot[g, Method -> "CircularEmbedding"]` names the embedding
