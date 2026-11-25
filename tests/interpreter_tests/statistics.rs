@@ -12625,7 +12625,7 @@ mod variance_equivalence_test {
     assert_eq!(
       interpret(&format!(
         "{DATA} t = VarianceEquivalenceTest[{{a, b}}, \"HypothesisTestData\"]\
-         [\"TestDataTable\", All][[1, 2 ;;]]; \
+         [\"TestDataTable\", All][[1, 1, 2 ;;]]; \
          {{t[[All, 1]], Round[t[[All, 2 ;;]] - {{{{12.945763586933854, \
          0.00032064628357147187}}, {{10.668480067914118, 0.005206837142022101}}, \
          {{2.666080185441466, 0.007674138656263988}}, {{21.277686762778508, \
