@@ -17313,21 +17313,24 @@ pub(crate) fn parse_plot_legends(
           {
             crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => match crate::functions::graphics::structured_label_svg(&item) {
-            Some(svg) => format!(
-              "{}{svg}",
-              crate::functions::graphics::STYLED_LABEL_MARKER
-            ),
-            // A mathematical label (`W[u]`) is set in TraditionalForm,
-            // with italic letters, like an axis label.
-            None => {
-              crate::functions::graphics::traditional_math_axis_label(&item)
-                .or_else(|| {
-                  crate::functions::graphics::styled_axis_label(&item)
-                })
-                .unwrap_or_else(|| expr_to_string(&item))
+          _ => {
+            match crate::functions::graphics::structured_legend_label_svg(&item)
+            {
+              Some(svg) => format!(
+                "{}{svg}",
+                crate::functions::graphics::STYLED_LABEL_MARKER
+              ),
+              // A mathematical label (`W[u]`) is set in TraditionalForm,
+              // with italic letters, like an axis label.
+              None => {
+                crate::functions::graphics::traditional_math_axis_label(&item)
+                  .or_else(|| {
+                    crate::functions::graphics::styled_axis_label(&item)
+                  })
+                  .unwrap_or_else(|| expr_to_string(&item))
+              }
             }
-          },
+          }
         })
         .collect();
       (labels, false, false, LegendPosition::Right)

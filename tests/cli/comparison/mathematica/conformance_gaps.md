@@ -6418,6 +6418,13 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+- `Labeled[plot, label, Top]` keeps its picture at full size; Wolfram
+  reduces it the way it reduces a picture nested in any other layout. In a
+  `GraphicsGrid` cell the difference shows: Wolfram's plot takes under half
+  the cell's width while its label spans the cell, where Woxi's plot fills
+  about three quarters of it. (Measured off a stored front-end rendering of
+  `GraphicsGrid[{{Labeled[ListPlot[…], Row[{…}], Top], …}}, ImageSize ->
+  600]`, not re-verified against wolframscript.)
 
 ### `Column` item heights with `ItemSize` and large text
 
