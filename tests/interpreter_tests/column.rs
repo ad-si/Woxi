@@ -1058,6 +1058,60 @@ mod column_item_size_wrapping {
     assert!(out.contains(">b</text>"), "{out}");
     assert!(out.contains("height=\"22\""), "{out}");
   }
+
+  /// A `Text[…]` item is measured in the proportional text face: a line
+  /// that fits the column in that face stays whole, although it holds more
+  /// characters than the column has monospace columns, and it stays sans.
+  #[test]
+  fn text_item_fitting_in_proportional_face_is_not_wrapped() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Column[{Text[\"the quick brown fox jumps over the lazy \
+       dog again.\"]}, ItemSize -> {30, Automatic}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      out
+        .contains(">the quick brown fox jumps over the lazy dog again.</text>"),
+      "{out}"
+    );
+    assert!(
+      !out.contains(
+        "<text x=\"6.0\" y=\"11.0\" font-family=\"Atkinson Hyperlegible Mono"
+      ),
+      "{out}"
+    );
+  }
+
+  /// A `Text[…]` item too wide for the column wraps at word boundaries by
+  /// its proportional width, keeps its own line breaks, and every line is
+  /// drawn in the text face, flush with the other items.
+  #[test]
+  fn wide_text_item_wraps_in_proportional_face() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Column[{Text[\"first line\\nthe quick brown fox jumps \
+       over the lazy dog again.\"], Text[\"x\"]}, \
+       ItemSize -> {20, Automatic}], \"SVG\"]",
+    )
+    .unwrap();
+    let lines: Vec<&str> =
+      out.lines().filter(|l| l.starts_with("<text")).collect();
+    assert_eq!(lines.len(), 4, "{out}");
+    assert!(lines[0].contains(">first line</text>"), "{out}");
+    assert!(
+      lines[1].contains(">the quick brown fox jumps over the lazy dog</text>"),
+      "{out}"
+    );
+    assert!(lines[2].contains(">again.</text>"), "{out}");
+    for line in lines {
+      assert!(line.starts_with("<text x=\"0.0\""), "{out}");
+      assert!(
+        line.contains("font-family=\"Atkinson Hyperlegible Next, sans-serif\""),
+        "{out}"
+      );
+    }
+  }
 }
 
 mod stretched_button_items {

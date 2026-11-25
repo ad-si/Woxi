@@ -6527,14 +6527,25 @@ fn plain_text_item(item: &Expr) -> Option<String> {
 /// Break `text` into lines of at most `width` characters at word
 /// boundaries (a longer word keeps its own line); existing line breaks stay.
 fn wrap_text_to_width(text: &str, width: usize) -> String {
+  wrap_text_to_measure(text, width as f64, |s| s.chars().count() as f64)
+}
+
+/// Break `text` into lines no longer than `width` at word boundaries (a
+/// longer word keeps its own line), `measure` giving a string's length in
+/// the unit of `width`; existing line breaks stay.
+fn wrap_text_to_measure(
+  text: &str,
+  width: f64,
+  measure: impl Fn(&str) -> f64,
+) -> String {
   text
     .split('\n')
     .map(|line| {
       let mut lines: Vec<String> = Vec::new();
       let mut current = String::new();
       for word in line.split(' ') {
-        let needed = current.chars().count() + 1 + word.chars().count();
-        if !current.is_empty() && needed > width {
+        if !current.is_empty() && measure(&format!("{current} {word}")) > width
+        {
           lines.push(std::mem::take(&mut current));
         }
         if !current.is_empty() {
@@ -42603,6 +42614,23 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
   let new_items: Vec<Expr> = items
     .iter()
     .map(|item| match plain_text_item(item) {
+      // A `Text[…]` item is set in the proportional text face: its lines
+      // are measured glyph by glyph, and the re-flowed text stays a `Text`
+      // so it is drawn in that face.
+      Some(text) if is_text_display_item(item) => {
+        let max_px = width * 14.0;
+        let px = |s: &str| {
+          s.chars()
+            .map(crate::functions::plot_padding::char_width_em)
+            .sum::<f64>()
+            * 14.0
+        };
+        if text.split('\n').all(|line| px(line) <= max_px) {
+          return item.clone();
+        }
+        changed = true;
+        call1("Text", str_expr(&wrap_text_to_measure(&text, max_px, px)))
+      }
       Some(text) if text.chars().count() > max_chars => {
         changed = true;
         let lines = wrap_text_to_width(&text, max_chars)
