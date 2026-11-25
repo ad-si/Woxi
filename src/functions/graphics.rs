@@ -22200,8 +22200,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // nested radicals) — a lone superscript (~1.3×) stays with plain
           // glyphs so ordinary parenthesized expressions are unaffected.
           if inner_ascent + inner_descent > natural * 1.5 {
+            // A grid may come tagged (`TagBox[GridBox[…], #1 &]`).
             let around_grid = items[o_idx + 1..c_idx].iter().any(|it| {
-              matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
+              matches!(it, Expr::FunctionCall { name, args }
+                if name == "GridBox"
+                  || (name == "TagBox"
+                    && matches!(args.first(),
+                      Some(Expr::FunctionCall { name: g, .. }) if g == "GridBox")))
             });
             children[o_idx] = render_stretchy_delim(
               o,

@@ -3153,6 +3153,18 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
   }
 }
 
+/// The most `RowBox`es nested one in another along any path of a box tree.
+fn row_box_depth(boxes: &Expr) -> usize {
+  match boxes {
+    Expr::FunctionCall { name, args } => {
+      let inner = args.iter().map(row_box_depth).max().unwrap_or(0);
+      inner + usize::from(name == "RowBox")
+    }
+    Expr::List(items) => items.iter().map(row_box_depth).max().unwrap_or(0),
+    _ => 0,
+  }
+}
+
 fn row_box(row: Vec<Expr>) -> Expr {
   call1("RowBox", Expr::List(row.into()))
 }
@@ -4677,12 +4689,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       {
         let rest: Vec<Expr> =
           args[1..].iter().map(canonical_operator_call).collect();
-        // A `Row` (which may spell out its own parentheses) is set after
-        // the fraction the same way.
-        let has_sum = rest.iter().any(|f| {
-          matches!(f, Expr::FunctionCall { name, args }
-            if (name == "Plus" && args.len() >= 2) || name == "Row")
-        });
+        // The fraction goes in front once the product's boxes nest one
+        // `RowBox` in another: `(a + b)/12`, `3 x y/4`, `Sqrt[a + b]/4`
+        // stay over the denominator, `(a + b) c/4`, `f[a b]/4`,
+        // `(a + b)^2/4` and `(a b + c)/4` do not.
+        let rest_box = if rest.len() == 1 {
+          expr_to_box_form(&rest[0])
+        } else {
+          expr_to_box_form(&unevaluated("Times", &rest))
+        };
+        let has_sum = row_box_depth(&rest_box) >= 2;
         let divides = rest.iter().any(|f| match f {
           Expr::FunctionCall { name, args }
             if name == "Power" && args.len() == 2 =>
@@ -4706,18 +4722,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             "FractionBox",
             vec![str_expr(&p.to_string()), str_expr(&q.to_string())],
           );
-          let product = if rest.len() == 1 {
-            let factor = expr_to_box_form(&rest[0]);
-            if matches!(&rest[0], Expr::FunctionCall { name, .. } if name == "Row")
-            {
-              factor
-            } else {
-              paren_box(factor)
-            }
-          } else {
-            expr_to_box_form(&unevaluated("Times", &rest))
-          };
-          return row_box(vec![fraction, str_expr(" "), product]);
+          // The factors follow it in one flat row.
+          let mut parts = vec![fraction];
+          for factor in &rest {
+            parts.push(str_expr(" "));
+            parts.push(box_with_paren_if_needed(factor));
+          }
+          return row_box(parts);
         }
       }
       let (num, den) =
@@ -6091,11 +6102,32 @@ fn transformation_function_boxes(
     ]
     .into(),
   );
-  let grid = tf_box(
-    "GridBox",
+  let automatic =
+    || Expr::List(vec![Expr::List(vec![sym("Automatic")].into())].into());
+  let item_size = Expr::List(
     vec![
-      Expr::List(grid_rows.into()),
-      rule_expr(sym("GridBoxDividers"), dividers),
+      rule_expr(tf_string("Columns"), automatic()),
+      rule_expr(tf_string("Rows"), automatic()),
+    ]
+    .into(),
+  );
+  // The grid is tagged with the identity function, `#1 &`, as a notebook
+  // writes it.
+  let grid = tf_box(
+    "TagBox",
+    vec![
+      tf_box(
+        "GridBox",
+        vec![
+          Expr::List(grid_rows.into()),
+          rule_expr(sym("AutoDelete"), sym("False")),
+          rule_expr(sym("GridBoxDividers"), dividers),
+          rule_expr(sym("GridBoxItemSize"), item_size),
+        ],
+      ),
+      Expr::Function {
+        body: Box::new(Expr::Slot(1)),
+      },
     ],
   );
   Some(tf_row(vec![
