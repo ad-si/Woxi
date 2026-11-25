@@ -32378,6 +32378,54 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("fill=\"#00FFB2\""), "{svg}");
     }
 
+    /// Equal numbers are matched against immediate `ColorRules` only once
+    /// (a large matrix of a few distinct values used to match — and
+    /// evaluate — every cell on its own, several times over). Each number
+    /// still takes its own rule, a pattern rule included.
+    #[test]
+    fn matrix_plot_color_rules_repeated_values() {
+      let count = |svg: &str, fill: &str| {
+        svg
+          .matches(&format!("fill=\"{fill}\" stroke=\"none\""))
+          .count()
+      };
+      for head in ["MatrixPlot", "ArrayPlot"] {
+        let svg = export_svg(&format!(
+          "{head}[{{{{0, 1, 0, 3.5}}, {{2, 0, 1, 3.5}}}}, Frame -> False, \
+           ColorRules -> {{0 -> Yellow, 1 -> Black, 3.5 -> Blue, _ -> Red}}]"
+        ));
+        assert_eq!(count(&svg, "#FFFF00"), 3, "{head}: {svg}");
+        assert_eq!(count(&svg, "#000000"), 2, "{head}: {svg}");
+        assert_eq!(count(&svg, "#0000FF"), 2, "{head}: {svg}");
+        assert_eq!(count(&svg, "#FF0000"), 1, "{head}: {svg}");
+      }
+    }
+
+    /// A delayed `ColorRules` right-hand side is evaluated for every cell,
+    /// so equal numbers may still get different colors.
+    #[test]
+    fn matrix_plot_delayed_color_rules_evaluate_per_cell() {
+      for head in ["MatrixPlot", "ArrayPlot"] {
+        let svg = export_svg(&format!(
+          "k = 0; {head}[{{{{1, 1}}, {{1, 1}}}}, \
+           ColorRules -> {{1 :> (k++; GrayLevel[k/4])}}]"
+        ));
+        for fill in ["#404040", "#808080", "#BFBFBF"] {
+          assert!(svg.contains(&format!("fill=\"{fill}\"")), "{head}: {svg}");
+        }
+      }
+    }
+
+    /// Cells given as color directives keep their colors in a MatrixPlot.
+    #[test]
+    fn matrix_plot_color_directive_cells() {
+      let svg =
+        export_svg("MatrixPlot[{{Red, Blue}, {RGBColor[0, 1, 0], Hue[1/6]}}]");
+      for fill in ["#FF0000", "#0000FF", "#00FF00", "#FFFF00"] {
+        assert!(svg.contains(&format!("fill=\"{fill}\"")), "{svg}");
+      }
+    }
+
     #[test]
     fn array_plot_mesh() {
       // Mesh -> True draws grid lines between cells

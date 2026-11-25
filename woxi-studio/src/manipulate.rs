@@ -3049,6 +3049,9 @@ impl ManipulateState {
       {
         *step = v.abs();
       }
+      let is_trigger = self.controls.iter().any(
+        |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
+      );
       let (min, max, current) = match self.controls.iter_mut().find(|c| {
         matches!(
           c,
@@ -3064,6 +3067,7 @@ impl ManipulateState {
         }) => (min, max, current),
         _ => continue,
       };
+      let was_inside = *min <= *current && *current <= *max;
       if let Some(v) = new_min {
         *min = *v;
       }
@@ -3073,7 +3077,14 @@ impl ManipulateState {
       if *max < *min {
         std::mem::swap(min, max);
       }
-      *current = current.clamp(*min, *max);
+      // A Trigger rests on its declared initial value until it is pressed,
+      // even when that value lies outside the sweep (`{{n, 0}, 1, 50, 1,
+      // ControlType -> Trigger}` shows `n == 0` as its "not started yet"
+      // state), so only a value that was inside the old range follows the
+      // new one.
+      if !is_trigger || was_inside {
+        *current = current.clamp(*min, *max);
+      }
       let (min, max) = (*min, *max);
       if new_step.is_none()
         && (new_min.is_some() || new_max.is_some())
@@ -9133,6 +9144,56 @@ mod tests {
     assert!(state.select_discrete(speed_idx, "fast"));
     state.reevaluate();
     assert_eq!(trigger_step(&state), Some(0.1));
+  }
+
+  /// A Trigger whose initial value lies outside its sweep rests on that
+  /// value until it is pressed, also when one of its bounds is `Dynamic`.
+  /// Regression: re-resolving the dynamic bound clamped the resting value
+  /// into the range, so a body branching on the "not started yet" value
+  /// (and a sibling control `Enabled` only before the start) never saw it.
+  #[test]
+  fn trigger_rests_on_initial_value_outside_dynamic_range() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{n, size},
+        {{n, 0}, 1, Dynamic[Round[size/2]], 1, ControlType -> Trigger},
+        {{width, 2}, {1, 2, 3}, Enabled :> n == 0},
+        {{size, 20}, ControlType -> None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let trigger = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger {
+          name,
+          min,
+          max,
+          current,
+          ..
+        } if name == "n" => Some((*min, *max, *current)),
+        _ => None,
+      })
+    };
+    let width_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "width")
+      .unwrap();
+    assert_eq!(trigger(&state), Some((1.0, 10.0, 0.0)));
+    state.reevaluate();
+    assert_eq!(trigger(&state), Some((1.0, 10.0, 0.0)));
+    assert!(state.control_is_enabled[width_idx]);
+    // Pressing it starts the sweep at the lower bound.
+    state.toggle_play();
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((1.0, 10.0, 1.0)));
+    assert!(!state.control_is_enabled[width_idx]);
+    // Once inside the range the value wraps within it.
+    for _ in 0..10 {
+      state.advance_animation();
+    }
+    assert_eq!(trigger(&state), Some((1.0, 10.0, 1.0)));
   }
 
   /// A control caption written as juxtaposed strings (`"viewpoint" ""`, a
