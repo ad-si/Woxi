@@ -12801,7 +12801,15 @@ fn eval_at_large_n(expr: &Expr, var: &str, n: i128) -> Option<f64> {
   // float there so the arithmetic stays in f64 — overflowing to Infinity
   // instantly — rather than computing the giant BigInteger. Moderate probes
   // (used by the exponential-limit fallback) keep exact integer substitution.
-  let point = if n.abs() > 10_000 && contains_var_power(expr, var) {
+  let float_probe = n.abs() > 10_000 && contains_var_power(expr, var);
+  // A machine probe that far out is no evidence for an expression with
+  // exponential growth: its decaying factors underflow to `0.` and wipe
+  // out the growing ones (`(3^x + 2^x)/3^x` reads as `0.`). Those limits
+  // are probed at moderate points instead.
+  if float_probe && contains_exponential_of_var(expr, var) {
+    return None;
+  }
+  let point = if float_probe {
     Expr::Real(n as f64)
   } else {
     Expr::Integer(n)

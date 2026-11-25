@@ -6126,6 +6126,8 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
         || name == "Framed" =>
     {
       args.iter().any(lays_out_a_graphic)
+        || (matches!(name.as_str(), "Grid" | "Column" | "Row")
+          && args.first().is_some_and(holds_color_item))
     }
     // `LocatorPane[locators, body, …]` shows `body`; its own arm draws the
     // locators onto it.
@@ -6194,6 +6196,19 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
       pattern,
       replacement,
     } => lays_out_a_graphic(pattern) || lays_out_a_graphic(replacement),
+    _ => false,
+  }
+}
+
+/// True if the items of a `Grid`, `Column` or `Row` (a list, or a list of
+/// rows) include a color directive: the layout typesets it as a swatch,
+/// so it has a picture to draw.
+fn holds_color_item(items: &Expr) -> bool {
+  match items {
+    Expr::List(items) => items.iter().any(|item| match item {
+      Expr::List(_) => holds_color_item(item),
+      _ => crate::functions::graphics::displayed_color(item).is_some(),
+    }),
     _ => false,
   }
 }
@@ -8045,6 +8060,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   {
     return expr_to_svg(&image);
   }
+  // A color directive is typeset as its swatch, on its own and as an
+  // item of a layout alike.
+  if let Some(color) = crate::functions::graphics::displayed_color(expr) {
+    return crate::functions::graphics::color_swatch_svg(&color);
+  }
   match expr {
     // `TextGrid[…]` is effectively `Text[Grid[…]]`: its cells are set in
     // the proportional text face, so a column of `-1`s is only as wide as
@@ -8078,7 +8098,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // drawn again at the container's reduced size.
     Expr::Graphics { svg: svg_data, .. } => {
       crate::functions::graphics::with_export_upright_letters(false, || {
-        crate::functions::container_layout::resized_graphic_svg(expr)
+        crate::functions::container_layout::cell_graphic_svg(expr)
       })
       .unwrap_or_else(|| svg_data.clone())
     }
@@ -9285,6 +9305,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         svg_data.clone()
       } else {
         String::new()
+      }
+    }
+    Expr::FunctionCall { name: g_name, .. } if g_name == "Graph3D" => {
+      if let Some(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::graph::graph3d_render(expr)
+      {
+        svg_data.clone()
+      } else {
+        expr_text_svg(expr)
       }
     }
     Expr::FunctionCall {
