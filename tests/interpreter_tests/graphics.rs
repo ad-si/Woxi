@@ -49188,6 +49188,68 @@ mod manipulate {
     assert!(names.contains(&"g"), "{names:?}");
   }
 
+  /// A control panel laid out as `TableForm[{{…}}]` declares its controls
+  /// like a `Grid` does: `TableForm` is a table of the same rows and cells,
+  /// and a cell holding a bare list of controls is a column of them. The
+  /// whole `TableForm[…]` used to fall through as one display element, so
+  /// its controls showed up as literal `Control[…]` text and their
+  /// variables stayed unbound.
+  #[test]
+  fn spec_tableform_control_panel_declares_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[{p, q, r}, TableForm[{{{Control[{{p, False}, \
+       {True, False}}], Control[{{q, 1, \"q\"}, 0, 2, 0.1}]}, \
+       {Control[{{r, False}, {True, False}}]}}}]]",
+    )
+    .unwrap();
+    let spec =
+      extract_manipulate_spec(&expr).expect("a TableForm control panel");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert_eq!(names, vec!["p", "q", "r"]);
+    assert!(
+      spec.displays.is_empty(),
+      "the table is control layout, not a display: {:?}",
+      spec.displays
+    );
+  }
+
+  /// A `TabView` of `TableForm` control tables (the Demonstrations idiom
+  /// for a mode selector whose modes each bring their own control table,
+  /// with the tab driven by a hidden `ControlType -> None` variable)
+  /// declares every pane's controls, and each one is shown only while its
+  /// own tab is selected.
+  #[test]
+  fn spec_tabview_of_tableform_panes_declares_every_pane() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c}, TabView[{\"one\" -> TableForm[{{{Control[\
+       {{a, False}, {True, False}}], Control[{{b, 1, \"b\"}, 0, 2, 0.1}]}}}], \
+       \"two\" -> TableForm[{{{Control[{{c, False}, {True, False}}]}}}]}, \
+       Dynamic[m]], {m, 1, 2, 1, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a TabView of tables");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert_eq!(names, vec!["a", "b", "c", "m"]);
+    let condition = |var: &str| {
+      spec
+        .control_visible
+        .iter()
+        .find(|(name, _)| name == var)
+        .map(|(_, cond)| cond.clone())
+    };
+    assert_eq!(condition("a"), Some(String::from("(m) == (1)")));
+    assert_eq!(condition("b"), Some(String::from("(m) == (1)")));
+    assert_eq!(condition("c"), Some(String::from("(m) == (2)")));
+  }
+
   /// The two halves of a `Grid` control panel meet here: its span markers
   /// are dropped, and a Manipulate-level `ControlType -> {…}` assigns one
   /// type per *control*. A marker must therefore not consume a slot of
