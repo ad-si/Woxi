@@ -8889,6 +8889,54 @@ mod cases {
     );
   }
 
+  /// Terms that `ordplus` cannot tell apart (the same variable to the same
+  /// power) go by their boxes less the numeric coefficient, and a
+  /// reciprocal of a sum counts as a negative power: partial fractions read
+  /// `1/x`, `1/(x + 2)`, `1/(x - 1)` whatever their numerators are.
+  #[test]
+  fn traditional_form_orders_partial_fractions_by_denominator() {
+    let order = |code: &str| {
+      let boxes = woxi::interpret(&format!(
+        "ToString[ToBoxes[{code}, TraditionalForm], InputForm]"
+      ))
+      .unwrap();
+      // The denominators, in the order they are set.
+      let mut found: Vec<(usize, &str)> = Vec::new();
+      for (name, needle) in [
+        ("x^2", r#"SuperscriptBox["x", "2"]"#),
+        ("x", r#"" ", "x"}]"#),
+        ("x+2", r#"RowBox[{"x", "+", "2"}]"#),
+        ("x-1", r#"RowBox[{"x", "-", "1"}]"#),
+        ("x+3", r#"RowBox[{"x", "+", "3"}]"#),
+      ] {
+        if let Some(at) = boxes.find(needle) {
+          found.push((at, name));
+        }
+      }
+      found.sort_unstable();
+      found.into_iter().map(|(_, n)| n).collect::<Vec<_>>()
+    };
+    assert_eq!(order("2/(x - 1) + 3/(x + 2)"), ["x+2", "x-1"]);
+    assert_eq!(
+      order("-1/(2 x) + 2/(x - 1) - 3/(2 (x + 2))"),
+      ["x", "x+2", "x-1"]
+    );
+    assert_eq!(
+      order("-1/(2 x^2) - 11/(4 x) + 2/(x - 1) + 3/(4 (x + 2))"),
+      ["x^2", "x", "x+2", "x-1"]
+    );
+    // The numerators play no part.
+    assert_eq!(order("7/(x - 1) + 1/(5 (x + 3))"), ["x+3", "x-1"]);
+    assert_eq!(
+      woxi::interpret(
+        "ToString[ToBoxes[Apart[(5 x + 1)/((x - 1) (x + 2))], \
+         TraditionalForm], InputForm]"
+      )
+      .unwrap(),
+      r#"FormBox[RowBox[{FractionBox["3", RowBox[{"x", "+", "2"}]], "+", FractionBox["2", RowBox[{"x", "-", "1"}]]}], TraditionalForm]"#
+    );
+  }
+
   /// A `Piecewise` operand of a relation or sum is parenthesized.
   #[test]
   fn traditional_form_parenthesizes_piecewise_operand() {
