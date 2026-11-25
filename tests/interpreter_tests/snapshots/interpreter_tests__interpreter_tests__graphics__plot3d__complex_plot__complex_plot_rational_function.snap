@@ -90,14 +90,14 @@ expression: "export_svg(\"ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I
 <line x1="3585.0" y1="403.6" x2="3561.0" y2="403.6" stroke="#666666" stroke-width="5.0"/>
 <line x1="3585.0" y1="238.7" x2="3561.0" y2="238.7" stroke="#666666" stroke-width="5.0"/>
 <rect x="148.6" y="5.0" width="3436.4" height="3436.4" fill="none" stroke="#666666" stroke-width="5.0"/>
-<text x="217.3" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="1042.1" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="2691.5" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="3516.3" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
-<text x="118.6" y="3407.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="118.6" y="2582.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="118.6" y="933.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="118.6" y="108.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="217.3" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="1042.1" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="2691.5" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="3516.3" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
+<text x="118.6" y="3407.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="118.6" y="2582.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="118.6" y="933.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="118.6" y="108.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
 </svg>

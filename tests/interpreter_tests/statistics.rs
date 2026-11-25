@@ -12266,7 +12266,57 @@ mod seed_random_method_option {
     assert_eq!(
       interpret(
         "SeedRandom[7, Method -> {\"MKL\", Method -> \"MCG31\"}]; \
-         a = RandomInteger[1000, 5]; SeedRandom[7]; a == RandomInteger[1000, 5]"
+         a = RandomInteger[1000, 5]; \
+         SeedRandom[7, Method -> {\"MKL\", Method -> \"MCG31\"}]; \
+         a == RandomInteger[1000, 5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// Each generator has its own stream: the same seed under different
+  /// methods gives different numbers, while the default generator
+  /// (`"ExtendedCA"`) is the one `SeedRandom[n]` uses.
+  #[test]
+  fn methods_give_distinct_streams() {
+    let draw = |method: &str| {
+      interpret(&format!(
+        "BlockRandom[SeedRandom[5{method}]; RandomInteger[1, 40]]"
+      ))
+      .unwrap()
+    };
+    let default = draw("");
+    assert_eq!(draw(", Method -> \"ExtendedCA\""), default);
+    let methods = [
+      "Congruential",
+      "Rule30CA",
+      "MersenneTwister",
+      "Legacy",
+      "Rule50025CA",
+    ];
+    let streams: Vec<String> = methods
+      .iter()
+      .map(|m| draw(&format!(", Method -> \"{m}\"")))
+      .collect();
+    for (i, s) in streams.iter().enumerate() {
+      assert_ne!(*s, default, "{} matched the default", methods[i]);
+      for (j, t) in streams.iter().enumerate().skip(i + 1) {
+        assert_ne!(s, t, "{} matched {}", methods[i], methods[j]);
+      }
+      // Reproducible for the same seed and method.
+      assert_eq!(*s, draw(&format!(", Method -> \"{}\"", methods[i])));
+    }
+  }
+
+  #[test]
+  fn different_seeds_of_one_method_differ() {
+    assert_eq!(
+      interpret(
+        "BlockRandom[SeedRandom[1, Method -> \"Congruential\"]; \
+         RandomReal[1, 5]] =!= \
+         BlockRandom[SeedRandom[2, Method -> \"Congruential\"]; \
+         RandomReal[1, 5]]"
       )
       .unwrap(),
       "True"

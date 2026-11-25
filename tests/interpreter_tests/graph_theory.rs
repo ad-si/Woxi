@@ -1,5 +1,64 @@
 use super::*;
 
+mod edge_label_placement {
+  use super::*;
+
+  /// The `(x, y)` of the SVG text element drawing `label`.
+  fn label_xy(svg: &str, label: &str) -> (f64, f64) {
+    let at = svg.find(&format!(">{label}<")).expect(label);
+    let start = svg[..at].rfind("<text").unwrap();
+    let tag = &svg[start..at];
+    let attr = |name: &str| -> f64 {
+      let i = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+    };
+    (attr("x"), attr("y"))
+  }
+
+  fn graph_svg(label: &str) -> String {
+    interpret(&format!(
+      "ExportString[Graph[{{1 -> 2}}, VertexCoordinates -> {{{{0, 0}}, {{2, \
+       0}}}}, EdgeLabels -> {{DirectedEdge[1, 2] -> {label}}}], \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn placed_at_a_fraction_sits_above_the_edge() {
+    // Wolfram sets `Placed[label, t]` with its bottom center 2 points above
+    // the edge; an unplaced label is centered on the edge.
+    clear_state();
+    let (cx, cy) = label_xy(&graph_svg("\"lbl\""), "lbl");
+    let (px, py) = label_xy(&graph_svg("Placed[\"lbl\", 0.5]"), "lbl");
+    assert!((cx - px).abs() < 0.01, "{cx} vs {px}");
+    assert!(cy - py > 5.0, "centered at {cy}, placed at {py}");
+    // `Placed[label, {t, {ax, ay}}]` puts the given label point there:
+    // `{0.5, 1}` hangs the label from 2 points above the edge, its middle
+    // below it.
+    let (_, hy) =
+      label_xy(&graph_svg("Placed[\"lbl\", {0.5, {0.5, 1}}]"), "lbl");
+    assert!(hy - cy > 2.0, "centered at {cy}, hanging at {hy}");
+    // The named positions are centered on the edge.
+    let (ex, ey) = label_xy(&graph_svg("Placed[\"lbl\", \"End\"]"), "lbl");
+    assert!(ex > px && (ey - cy).abs() < 0.01, "{ex}, {ey}");
+  }
+
+  #[test]
+  fn labeled_edge_placed_at_a_fraction_sits_above_the_edge() {
+    clear_state();
+    let svg = |label: &str| {
+      interpret(&format!(
+        "ExportString[Graph[{{Labeled[1 -> 2, {label}]}}, VertexCoordinates \
+         -> {{{{0, 0}}, {{2, 0}}}}], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    let (_, cy) = label_xy(&svg("\"lbl\""), "lbl");
+    let (_, py) = label_xy(&svg("Placed[\"lbl\", 0.3]"), "lbl");
+    assert!(cy - py > 5.0, "centered at {cy}, placed at {py}");
+  }
+}
+
 mod connected_components {
   use super::*;
 
