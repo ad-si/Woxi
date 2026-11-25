@@ -75498,6 +75498,63 @@ mod grid_item_trailing_line_break {
   }
 }
 
+/// A ContourPlot keeps its square frame (`AspectRatio -> 1`) letterboxed
+/// into a wider `ImageSize -> {w, h}` box; `Show` of it, alone or with
+/// other graphics, must keep that shape instead of stretching the frame
+/// over the whole image.
+mod show_keeps_contour_plot_aspect_ratio {
+  use super::*;
+
+  /// The horizontal extent of the longest polyline (the plotted curve) as
+  /// a fraction of the picture's viewBox width.
+  fn curve_width_fraction(svg: &str) -> f64 {
+    let vb = svg.split("viewBox=\"0 0 ").nth(1).unwrap();
+    let vb_w: f64 = vb.split_whitespace().next().unwrap().parse().unwrap();
+    let longest = svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|p| {
+        let pts = p.split("points=\"").nth(1)?;
+        let pts = &pts[..pts.find('"')?];
+        let xs: Vec<f64> = pts
+          .split_whitespace()
+          .filter_map(|xy| xy.split(',').next()?.parse().ok())
+          .collect();
+        Some(xs)
+      })
+      .max_by_key(Vec::len)
+      .unwrap();
+    let min = longest.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = longest.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (max - min) / vb_w
+  }
+
+  const PLOT: &str = "ContourPlot[x^2 + y^2 == 1, {x, -1, 1}, {y, 0, 3}, \
+                      ImageSize -> {500, 350}]";
+
+  #[test]
+  fn standalone_frame_is_square() {
+    let f = curve_width_fraction(&export_svg(PLOT));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_image_size_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, ImageSize -> {{500, 350}}]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_graphics_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, Graphics[Point[{{0, 1}}]]]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+}
+
 mod steep_crossings_and_chart_options {
   use super::*;
 
