@@ -8440,6 +8440,40 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
   None
 }
 
+/// The font size, in points, a graphic sets the text of a display inset
+/// into it in: a graphic's base style is smaller than a notebook cell's.
+const GRAPHICS_INSET_FONT_SIZE: i128 = 10;
+
+/// A laid-out display (`Grid`, `Column`, `Row`, `TableForm`, a `Framed` or
+/// `Panel` box) as an `Inset` shows it: set in the graphic's own font size
+/// rather than the notebook's, so a table of readouts takes the room it
+/// does in the front end. Text that sets its own size keeps it, and any
+/// other object is returned as it is.
+pub(crate) fn inset_display_in_graphics_font(obj: &Expr) -> Expr {
+  let is_display = matches!(
+    strip_style_wrappers(obj),
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "Grid" | "Column" | "Row" | "TableForm" | "Framed" | "Panel"
+        )
+  );
+  if !is_display {
+    return obj.clone();
+  }
+  call(
+    "Style",
+    vec![
+      obj.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("FontSize".to_string())),
+        replacement: Box::new(Expr::Integer(GRAPHICS_INSET_FONT_SIZE)),
+      },
+    ],
+  )
+}
+
 /// The label drawn for `Inset[obj, pos, …, BaseStyle -> s]` when `obj` is a
 /// `Row` of text runs (strings, numbers and `Style`d strings), possibly
 /// inside `Style`s. A row `ImageSize -> w` breaks its runs into lines at
@@ -9170,7 +9204,8 @@ fn inset_primitives(
       // locators on it, so inset it is that picture, not its source text.
       || (name == "LocatorPane" && call_args.len() >= 2) =>
     {
-      rendered = crate::evaluator::expr_to_svg(call);
+      rendered =
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(call));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     // A `Panel` — e.g. a readout table of computed values a diagram carries
@@ -9180,7 +9215,8 @@ fn inset_primitives(
       name,
       args: call_args,
     } if name == "Panel" && !call_args.is_empty() => {
-      rendered = crate::evaluator::expr_to_svg(call);
+      rendered =
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(call));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     _ => None,
@@ -44818,9 +44854,20 @@ fn framed_box_to_svg(
       } else {
         (None, 0.0, 0.0)
       }
-    } else if let Expr::Graphics { svg, .. } = content {
+    } else if let Expr::Graphics { svg, is_3d, .. } = content {
       let (w, h) = parse_svg_wh(svg);
-      (Some(svg.clone()), w, h)
+      // A plot without a `Background` of its own is transparent, so the
+      // frame's `Background` shows through behind it.
+      let transparent = bg_fill.is_some()
+        && !*is_3d
+        && !graphics_options(content)
+          .is_some_and(|options| sets_background(&options));
+      let svg = if transparent {
+        strip_plot_background_plate(svg)
+      } else {
+        svg.clone()
+      };
+      (Some(svg), w, h)
     } else if let Expr::Image {
       width,
       height,
