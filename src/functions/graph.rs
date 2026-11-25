@@ -11809,15 +11809,9 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
     Expr::FunctionCall { name, .. } if name == "Graph" => {
       (args[0].clone(), args[1..].to_vec())
     }
-    Expr::List(_) if matches!(args.get(1), Some(Expr::List(_))) => (
-      Expr::FunctionCall {
-        name: "Graph".into(),
-        args: args.clone(),
-      },
-      Vec::new(),
-    ),
-    // `Graph3D[edges, opts…]`: `Graph` works out the vertex list (and
-    // takes in options given as one list).
+    // `Graph3D[vertices, edges, opts…]` or `Graph3D[edges, opts…]`: `Graph`
+    // tells the two apart, works out the vertex list and takes in options
+    // given as one list.
     Expr::List(_) => (
       crate::evaluator::evaluate_expr_to_expr(&call("Graph", args.to_vec()))
         .ok()?,
