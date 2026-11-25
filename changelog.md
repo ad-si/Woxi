@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
+    stays unevaluated is typeset in StandardForm as a postfix superscript
+    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
+    notebook output and picture labels, instead of the spelled-out head.
 - Woxi Studio windows show the Woxi app icon in the title bar and
     taskbar instead of the platform's generic default icon.
 - `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`

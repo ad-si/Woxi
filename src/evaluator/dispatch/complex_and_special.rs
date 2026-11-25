@@ -3457,6 +3457,29 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
     || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
 }
 
+/// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
+/// `ConjugateTranspose`, which StandardForm sets as a superscript mark.
+fn is_postfix_marked_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if args.len() == 1
+      && matches!(name.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose"))
+}
+
+/// Whether `expr` already sets with a superscript (a power or a postfix
+/// mark), so it is bracketed before taking another postfix mark.
+fn is_superscripted_call(expr: &Expr) -> bool {
+  is_postfix_marked_call(expr)
+    || matches!(expr, Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2)
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+    )
+}
+
 /// The infix symbol StandardForm sets between the arguments of a logical,
 /// string or pattern operator head.
 fn infix_operator_symbol(head: &str) -> Option<&'static str> {
@@ -4814,13 +4837,38 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
       // unambiguously instead of 1+x² looking like 1 + x².
       let base = canonical_operator_call(&args[0]);
-      let base_box = if needs_paren_as_power_base(&base) {
-        paren_box(expr_to_box_form(&base))
-      } else {
-        expr_to_box_form(&base)
-      };
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_postfix_marked_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
+    }
+    // The conjugate, transpose and Hermitian adjoint are postfix marks in
+    // StandardForm too: `z*`, `mᵀ` (`\[Transpose]`) and `m†`
+    // (`\[ConjugateTranspose]`). A base that is
+    // an operator expression is bracketed, `(a + b)ᵀ`, `(a²)ᵀ`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Conjugate" | "Transpose" | "ConjugateTranspose"
+      ) && args.len() == 1 =>
+    {
+      let mark = match name.as_str() {
+        "Conjugate" => "*",
+        "Transpose" => "\u{F3C7}",
+        _ => "\u{F3C9}",
+      };
+      let base = canonical_operator_call(&args[0]);
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_superscripted_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
+      call("SuperscriptBox", vec![base_box, str_expr(mark)])
     }
     Expr::FunctionCall { name, args }
       if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>

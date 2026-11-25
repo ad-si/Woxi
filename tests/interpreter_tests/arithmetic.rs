@@ -8431,6 +8431,53 @@ mod cases {
     );
   }
 
+  /// StandardForm sets a one-argument `Transpose`, `ConjugateTranspose` and
+  /// `Conjugate` as a postfix superscript mark instead of spelling out the
+  /// head; the two-argument `Transpose` keeps its function form.
+  #[test]
+  fn standard_form_postfix_marks() {
+    assert_case("ToBoxes[Transpose[m]]", "SuperscriptBox[m, \u{F3C7}]");
+    assert_case(
+      "ToBoxes[ConjugateTranspose[m]]",
+      "SuperscriptBox[m, \u{F3C9}]",
+    );
+    assert_case("ToBoxes[Conjugate[z]]", "SuperscriptBox[z, *]");
+    assert_case(
+      "ToBoxes[f[Transpose[g[a]]]]",
+      "RowBox[{f, [, SuperscriptBox[RowBox[{g, [, a, ]}], \u{F3C7}], ]}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[m, {2, 1, 3}]]",
+      "RowBox[{Transpose, [, RowBox[{m, ,, RowBox[{{, RowBox[{2, ,, 1, ,, 3}], }}]}], ]}]",
+    );
+  }
+
+  /// An operator expression is bracketed before it takes a postfix mark,
+  /// and a marked expression is bracketed as a power base.
+  #[test]
+  fn standard_form_postfix_marks_bracket_compound_bases() {
+    assert_case(
+      "ToBoxes[Transpose[a + b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[a b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], *]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a^2]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, 2], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a]^2]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], 2]",
+    );
+    assert_case(
+      "ToBoxes[ConjugateTranspose[Transpose[a]]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], \u{F3C9}]",
+    );
+  }
+
   /// `HoldForm` draws as its content, so a held sum, product or power used
   /// as a power base or a factor is parenthesized like the bare expression:
   /// `HoldForm[a b/c]^2` sets as `(a b/c)²`, not as `a b/c` with only the
