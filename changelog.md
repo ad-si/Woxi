@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `RevolutionPlot3D` draws every curve of a nested curve list
+    (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
+    picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels
+    its axes with `AxesLabel` and pads its automatic range by
+    `Scaled[0.05]`, so ticks at the surface's extremes are drawn.
+- `FaceGrids` are drawn by the surface plots (`Plot3D`,
+    `RevolutionPlot3D`, …) as well as `Graphics3D`, and `FaceGridsStyle`
+    sets their color and thickness.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms

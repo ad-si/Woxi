@@ -458,6 +458,73 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
   }
 }
 
+/// The lines `FaceGrids` rules across the faces of the box `lo..hi`, each
+/// as its two end points. An automatic face is ruled at the ticks of the
+/// two axes it spans; `axis_scale` is the factor between an axis' data
+/// values and its box coordinates.
+fn face_grid_segments(
+  opts: &[Expr],
+  lo: [f64; 3],
+  hi: [f64; 3],
+  axis_scale: [f64; 3],
+) -> Vec<[[f64; 3]; 2]> {
+  let mut segments = Vec::new();
+  for (axis, side, grids) in face_grids_option(opts) {
+    let others: Vec<usize> = (0..3).filter(|&d| d != axis).collect();
+    for (k, &along) in others.iter().enumerate() {
+      let across = others[1 - k];
+      let scale = axis_scale[along];
+      let values: Vec<f64> = match &grids[k] {
+        FaceGridLines::None => Vec::new(),
+        FaceGridLines::Automatic => {
+          tick_values(lo[along] / scale, hi[along] / scale)
+        }
+        FaceGridLines::At(v) => v.clone(),
+      };
+      for v in values {
+        let c = v * scale;
+        if c < lo[along] || c > hi[along] {
+          continue;
+        }
+        let end = |far: bool| {
+          let mut p = [0.0; 3];
+          p[axis] = if side > 0.0 { hi[axis] } else { lo[axis] };
+          p[along] = c;
+          p[across] = if far { hi[across] } else { lo[across] };
+          p
+        };
+        segments.push([end(false), end(true)]);
+      }
+    }
+  }
+  segments
+}
+
+/// The stroke color and width of the `FaceGrids` lines: light gray
+/// hairlines unless `FaceGridsStyle` names a color or thickness.
+fn face_grids_style(opts: &[Expr]) -> (String, f64) {
+  let mut style = StyleState3D::default();
+  if let Some(spec) = opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FaceGridsStyle") => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }) {
+    let spec = evaluate_expr_to_expr(&spec).unwrap_or(spec);
+    apply_3d_directive(&spec, &mut style);
+  }
+  (
+    style.color.map_or_else(
+      || "rgb(217,217,217)".to_string(),
+      |(r, g, b)| format!("rgb({r},{g},{b})"),
+    ),
+    style.thickness.unwrap_or(0.5),
+  )
+}
+
 /// Where each line piece `segs[k]` goes in the draw order of `tris`
 /// (corners `verts`, already back to front): the index just past the last
 /// triangle that covers the piece's midpoint on screen without lying in
@@ -4457,6 +4524,57 @@ fn generate_svg(
     )
   };
 
+  // `FaceGrids`: lines across the faces of the box at the ticks of the two
+  // axes each face spans, cut into pieces that are depth-sorted among the
+  // triangles like the box edges.
+  let (grid_color, grid_width) = face_grids_style(options);
+  let mut grid_edges: Vec<BoxEdge> = Vec::new();
+  {
+    let lo = [x_range.0, y_range.0, z_range.0];
+    let hi = [x_range.1, y_range.1, z_range.1];
+    let in_box = |p: [f64; 3]| -> Point3D {
+      let c = |d: usize| {
+        if hi[d] > lo[d] {
+          ((p[d] - lo[d]) / (hi[d] - lo[d]) * 2.0 - 1.0) * box_ratios[d]
+        } else {
+          0.0
+        }
+      };
+      Point3D {
+        x: c(0),
+        y: c(1),
+        z: c(2),
+      }
+    };
+    for [a, b] in face_grid_segments(options, lo, hi, [1.0; 3]) {
+      let (a, b) = (in_box(a), in_box(b));
+      let lerp = |t: f64| Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        grid_edges.push(BoxEdge {
+          endpoints: [lerp(t0), lerp(t1)],
+          depth: depth(lerp(f64::midpoint(t0, t1)), camera),
+          dash_offset: 0.0,
+        });
+      }
+    }
+    grid_edges.sort_by(|a, b| b.depth.total_cmp(&a.depth));
+  }
+  let grid_edge_svg = |edge: &BoxEdge| {
+    let [(x0, y0), (x1, y1)] = edge.endpoints.map(|p| {
+      let (px, py) = project(p, camera);
+      to_svg(px, py)
+    });
+    format!(
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"{grid_color}\" stroke-width=\"{grid_width}\"/>\n"
+    )
+  };
+
   // Mesh segments are painted among the triangles too, so the surface
   // hides the parts of the mesh it covers.
   let mut sorted_mesh: Vec<&MeshLine> = mesh_lines.iter().collect();
@@ -4491,6 +4609,7 @@ fn generate_svg(
   // Merge-render triangles and box edges back-to-front (painter's algorithm)
   {
     let mut ei = 0; // index into sorted_edges
+    let mut gi = 0; // index into grid_edges
     let mut mi = 0; // index into sorted_mesh
     let mut gradients =
       crate::functions::smooth_shading::GradientDefs::default();
@@ -4502,7 +4621,12 @@ fn generate_svg(
         svg.push_str(&mesh_svg(sorted_mesh[mi]));
         mi += 1;
       }
-      // Emit any box edges that are further from the camera than this triangle
+      // Emit the face-grid pieces and box edges that are further from the
+      // camera than this triangle
+      while gi < grid_edges.len() && grid_edges[gi].depth >= tri.depth {
+        svg.push_str(&grid_edge_svg(&grid_edges[gi]));
+        gi += 1;
+      }
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
         let edge = &sorted_edges[ei];
         let (ex0, ey0) = to_svg(
@@ -4555,7 +4679,10 @@ fn generate_svg(
     for line in &sorted_mesh[mi..] {
       svg.push_str(&mesh_svg(line));
     }
-    // Emit remaining box edges (closest to viewer)
+    // Emit the remaining face-grid pieces and box edges (closest to viewer)
+    for edge in &grid_edges[gi..] {
+      svg.push_str(&grid_edge_svg(edge));
+    }
     while ei < sorted_edges.len() {
       let edge = &sorted_edges[ei];
       let (ex0, ey0) = to_svg(
@@ -16800,54 +16927,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `FaceGrids`: light lines across faces of the box at the ticks of the
   // two axes each face spans.
   {
-    let lo = [x3_min, y3_min, z3_min];
-    let hi = [x3_max, y3_max, z3_max];
-    for (axis, side, grids) in face_grids_option(&args[1..]) {
-      let others: Vec<usize> = (0..3).filter(|&d| d != axis).collect();
-      for (k, &along) in others.iter().enumerate() {
-        let across = others[1 - k];
-        let scale = axis_scale[along];
-        let values: Vec<f64> = match &grids[k] {
-          FaceGridLines::None => Vec::new(),
-          FaceGridLines::Automatic => {
-            tick_values(lo[along] / scale, hi[along] / scale)
-          }
-          FaceGridLines::At(v) => v.clone(),
-        };
-        for v in values {
-          let c = v * scale;
-          if c < lo[along] || c > hi[along] {
-            continue;
-          }
-          let point = |t: f64| {
-            let mut p = [0.0; 3];
-            p[axis] = if side > 0.0 { hi[axis] } else { lo[axis] };
-            p[along] = c;
-            p[across] = lo[across] + t * (hi[across] - lo[across]);
-            Point3D {
-              x: p[0],
-              y: p[1],
-              z: p[2],
-            }
-          };
-          for s in 0..EDGE_SUBDIVISIONS {
-            let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-            sorted_edges.push(SceneEdge {
-              endpoints: [point(t0), point(t1)],
-              depth: depth(point(f64::midpoint(t0, t1)), &camera),
-              color: "rgb(217,217,217)".to_string(),
-              width: 0.5,
-              opacity: 1.0,
-              dashing: None,
-              dash_offset: 0.0,
-              dot_radius: None,
-              piece_of: None,
-              arrow_head: false,
-              end_zone: [0.0, 1.0],
-            });
-          }
-        }
+    let (grid_color, grid_width) = face_grids_style(&args[1..]);
+    for [a, b] in face_grid_segments(
+      &args[1..],
+      [x3_min, y3_min, z3_min],
+      [x3_max, y3_max, z3_max],
+      axis_scale,
+    ) {
+      let point = |t: f64| Point3D {
+        x: a[0] + t * (b[0] - a[0]),
+        y: a[1] + t * (b[1] - a[1]),
+        z: a[2] + t * (b[2] - a[2]),
+      };
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        sorted_edges.push(SceneEdge {
+          endpoints: [point(t0), point(t1)],
+          depth: depth(point(f64::midpoint(t0, t1)), &camera),
+          color: grid_color.clone(),
+          width: grid_width,
+          opacity: 1.0,
+          dashing: None,
+          dash_offset: 0.0,
+          dot_radius: None,
+          piece_of: None,
+          arrow_head: false,
+          end_zone: [0.0, 1.0],
+        });
       }
     }
   }
@@ -19844,17 +19951,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       other => other.clone(),
     }
   };
-  let bodies_owned: Vec<Expr> = match &args[0] {
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(
-          |it| matches!(it, Expr::List(c) if (1..=3).contains(&c.len())),
-        ) =>
-    {
-      items.iter().map(unwrap_single).collect()
+  // A list whose elements are all lists is a list of curves rather than a
+  // curve, at any depth: `{{r1, z1}, {r2, z2}} /. sol` threads over the
+  // solution list and arrives as `{{{r1, z1}, {r2, z2}}}`, which Wolfram
+  // flattens into its two surfaces.
+  fn collect_curves(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|it| matches!(it, Expr::List(_))) =>
+      {
+        for it in items {
+          collect_curves(it, out);
+        }
+      }
+      other => out.push(other.clone()),
     }
-    other => vec![unwrap_single(other)],
-  };
+  }
+  let mut bodies_owned: Vec<Expr> = Vec::new();
+  collect_curves(&args[0], &mut bodies_owned);
+  let bodies_owned: Vec<Expr> =
+    bodies_owned.iter().map(unwrap_single).collect();
   let bodies: Vec<&Expr> = bodies_owned.iter().collect();
 
   // Parse t iterator
@@ -19892,6 +20009,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -19903,6 +20021,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          axes_labels = parse_axes_labels(replacement, None);
         }
         Expr::Identifier(name) if name == "RevolutionAxis" => {
           if let Some(a) = parse_revolution_axis(replacement) {
@@ -20003,6 +20124,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut global_z_min = f64::INFINITY;
   let mut global_z_max = f64::NEG_INFINITY;
   let mut global_r_max: f64 = 0.0;
+  // The distance from the revolution axis, the `r` a `ColorFunction` is
+  // handed, and the range it is scaled over.
+  let axis_distance = |p: &Point3D| -> f64 {
+    let along = p.x * axis[0] + p.y * axis[1] + p.z * axis[2];
+    (p.x - along * axis[0])
+      .hypot(p.y - along * axis[1])
+      .hypot(p.z - along * axis[2])
+  };
+  let (mut dist_min, mut dist_max) = (f64::INFINITY, f64::NEG_INFINITY);
   let (mut global_x_min, mut global_x_max) = (f64::INFINITY, f64::NEG_INFINITY);
   let (mut global_y_min, mut global_y_max) = (f64::INFINITY, f64::NEG_INFINITY);
   // The sweep is about the z axis unless `RevolutionAxis` says otherwise;
@@ -20113,6 +20243,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         global_z_min = global_z_min.min(z);
         global_z_max = global_z_max.max(z);
         global_r_max = global_r_max.max((x * x + y * y).sqrt());
+        let dist = axis_distance(&Point3D { x, y, z });
+        dist_min = dist_min.min(dist);
+        dist_max = dist_max.max(dist);
       }
     }
     grids.push(grid);
@@ -20141,6 +20274,29 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (global_y_min, global_y_max)
   });
+  // The box is that range padded by `Scaled[0.05]` on each side (none
+  // around an explicit one), as Wolfram's parametric surfaces are, so the
+  // ticks at the surface's extremes fall inside it. Colors are scaled over
+  // the range itself, unpadded.
+  let range_explicit = [x_clip.is_some(), y_clip.is_some(), z_clip.is_some()];
+  let [box_x, box_y, box_z] = {
+    let pads: [(RangePad, RangePad); 3] =
+      range_padding_option(&args[opt_start..]).unwrap_or_else(|| {
+        std::array::from_fn(|d| {
+          let pad = RangePad::Scaled(if range_explicit[d] {
+            0.0
+          } else {
+            PARAMETRIC_RANGE_PADDING
+          });
+          (pad, pad)
+        })
+      });
+    displayed_box_3d(
+      [x_range, y_range, (z_lo, z_hi)],
+      range_explicit,
+      Some(pads),
+    )
+  };
   let extent = |(lo, hi): (f64, f64)| -> f64 {
     if (hi - lo).abs() < 1e-15 {
       1.0
@@ -20166,7 +20322,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let raw_ratios = box_ratios_explicit.unwrap_or(if profile_box {
     [1.0, 1.0, 0.5 * 0.618_033_988_749_894_9]
   } else {
-    [extent(x_range), extent(y_range), extent((z_lo, z_hi))]
+    [extent(box_x), extent(box_y), extent(box_z)]
   });
   let ratio_max = raw_ratios.iter().copied().fold(0.0_f64, f64::max);
   let box_ratios = raw_ratios.map(|r| r / ratio_max);
@@ -20179,31 +20335,48 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scene = Scene::new(&camera, &args[opt_start..]);
 
   let normalize = |p: Point3D| -> Point3D {
-    let axis = |v: f64, (lo, hi): (f64, f64), r: f64| {
-      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), lo, hi) * r
+    // Clipped to the plotted range, placed in the padded box.
+    let place = |v: f64, (lo, hi): (f64, f64), boxed: (f64, f64), r: f64| {
+      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), boxed.0, boxed.1) * r
     };
     Point3D {
-      x: axis(p.x, x_range, box_ratios[0]),
-      y: axis(p.y, y_range, box_ratios[1]),
-      z: axis(p.z, (z_lo, z_hi), box_ratios[2]),
+      x: place(p.x, x_range, box_x, box_ratios[0]),
+      y: place(p.y, y_range, box_y, box_ratios[1]),
+      z: place(p.z, (z_lo, z_hi), box_z, box_ratios[2]),
     }
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
   // at the facet's center in world coordinates; it takes precedence over
   // `PlotStyle`.
-  let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
-    color_fn.is_set().then_some(())?;
-    let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
-    color_fn.style_at(
-      [
-        mid(&|p| p.x),
-        mid(&|p| p.y),
-        mid(&|p| p.z.clamp(z_lo, z_hi)),
-      ],
+  // The function is handed `x, y, z, t, θ, r`; `(ti, tj)` is where the
+  // point sits on the sampling grid, in cells.
+  let color_at = |p: Point3D, ti: f64, tj: f64| -> Option<StyleState3D> {
+    color_fn.style_with_extra_args(
+      [p.x, p.y, p.z.clamp(z_lo, z_hi)],
       [x_range, y_range, (z_lo, z_hi)],
+      &[
+        (t_min + ti * t_step, (t_min, t_max)),
+        (theta_min + tj * theta_step, (theta_min, theta_max)),
+        (axis_distance(&p), (dist_min, dist_max)),
+      ],
     )
   };
+  let facet_style =
+    |ps: [Point3D; 3], ti: f64, tj: f64| -> Option<StyleState3D> {
+      color_fn.is_set().then_some(())?;
+      let mid =
+        |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
+      color_at(
+        Point3D {
+          x: mid(&|p| p.x),
+          y: mid(&|p| p.y),
+          z: mid(&|p| p.z),
+        },
+        ti,
+        tj,
+      )
+    };
 
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
@@ -20223,7 +20396,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v2 = normalize(pp01);
 
           let normal = triangle_normal(v0, v1, v2);
-          let cf_style = facet_style([pp00, pp10, pp01]);
+          let cf_style = facet_style(
+            [pp00, pp10, pp01],
+            i as f64 + 1.0 / 3.0,
+            j as f64 + 1.0 / 3.0,
+          );
           let (color, opacity) = shade_facet(
             SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
@@ -20264,7 +20441,11 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v2 = normalize(pp10);
 
           let normal = triangle_normal(v0, v1, v2);
-          let cf_style = facet_style([pp11, pp01, pp10]);
+          let cf_style = facet_style(
+            [pp11, pp01, pp10],
+            i as f64 + 2.0 / 3.0,
+            j as f64 + 2.0 / 3.0,
+          );
           let (color, opacity) = shade_facet(
             SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
@@ -20453,15 +20634,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if color_fn.is_set() {
         let colors: Option<Vec<Expr>> = grid
           .iter()
-          .flatten()
-          .flatten()
-          .map(|p| {
-            let (r, g, b) = color_fn
-              .style_at(
-                [p.x, p.y, p.z.clamp(z_lo, z_hi)],
-                [x_range, y_range, (z_lo, z_hi)],
-              )?
-              .color?;
+          .enumerate()
+          .flat_map(|(i, row)| {
+            row
+              .iter()
+              .enumerate()
+              .filter_map(move |(j, cell)| cell.map(|p| (i, j, p)))
+          })
+          .map(|(i, j, p)| {
+            let (r, g, b) = color_at(p, i as f64, j as f64)?.color?;
             Some(call(
               "RGBColor",
               [r, g, b]
@@ -20551,6 +20732,26 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     ));
   }
+  // The padding the picture was drawn with: `Scaled[0.05]` around each
+  // automatic range, none around an explicit one.
+  if !names("PlotRangePadding") {
+    defaults.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(
+        range_explicit
+          .iter()
+          .map(|&explicit| {
+            if explicit {
+              id_expr("None")
+            } else {
+              call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING))
+            }
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ));
+  }
   structure_args.extend(defaults);
   // The picture below is drawn with the default camera. A plot that names
   // its own (`ViewPoint`, `ViewVertical`, `ViewVector`) is drawn from its
@@ -20571,16 +20772,20 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None,
     false,
     &camera,
-    x_range,
-    y_range,
-    (z_axis_min, z_axis_max),
+    box_x,
+    box_y,
+    if (z_lo - z_hi).abs() < 1e-15 {
+      (z_axis_min, z_axis_max)
+    } else {
+      box_z
+    },
     svg_width,
     svg_height,
     full_width,
     mesh_mode,
     show_axes,
     box_ratios,
-    &[None, None, None],
+    &axes_labels,
     !image_height_is_explicit(args),
     args,
   )?;
