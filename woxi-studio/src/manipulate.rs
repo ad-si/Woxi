@@ -707,6 +707,66 @@ pub fn button_regions_of(svg: &str) -> Vec<ButtonRegion> {
   regions
 }
 
+/// The shapes of a `Tooltip[g, label]` drawn inside a rendered picture:
+/// their bounding rectangle in the picture's pixel coordinates and the label
+/// text to show while the pointer is over it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TooltipRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub text: String,
+}
+
+/// Find the shapes of every `Tooltip` the renderer marked in `svg` (see
+/// `woxi::functions::graphics::TOOLTIP_HIT_ID_PREFIX`). The picture is laid
+/// out with the embedded fonts, so a tooltip on a `Text` gets the area of
+/// its glyphs. A tooltip nested in another one comes after it, so the
+/// innermost label is the one on top.
+pub fn tooltip_regions_of(svg: &str) -> Vec<TooltipRegion> {
+  use resvg::usvg;
+  use std::sync::{Arc, OnceLock};
+  use woxi::functions::graphics::{
+    TOOLTIP_HIT_ID_PREFIX, tooltip_text_from_hit_id,
+  };
+  if !svg.contains(TOOLTIP_HIT_ID_PREFIX) {
+    return Vec::new();
+  }
+  static FONTDB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+  let fontdb = FONTDB.get_or_init(|| {
+    let mut db = usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    Arc::new(db)
+  });
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let Ok(tree) = usvg::Tree::from_str(svg, &opts) else {
+    return Vec::new();
+  };
+  fn walk(group: &usvg::Group, out: &mut Vec<TooltipRegion>) {
+    for node in group.children() {
+      if let usvg::Node::Group(g) = node {
+        if let Some(text) = tooltip_text_from_hit_id(g.id()) {
+          let r = g.abs_bounding_box();
+          if r.width() > 0.0 || r.height() > 0.0 {
+            out.push(TooltipRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              text,
+            });
+          }
+        }
+        walk(g, out);
+      }
+    }
+  }
+  let mut regions = Vec::new();
+  walk(tree.root(), &mut regions);
+  regions
+}
+
 /// A `ClickPane` drawn in a rendered picture: its rectangle in the picture's
 /// pixel coordinates and the coordinate system a click inside it is reported
 /// in.
@@ -1115,6 +1175,9 @@ pub struct ManipulateState {
   /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
   /// coordinates. The view overlays a real clickable area on each.
   pub button_regions: Vec<ButtonRegion>,
+  /// `Tooltip`-wrapped shapes drawn in the picture; the view shows a
+  /// region's label while the pointer is over it.
+  pub tooltip_regions: Vec<TooltipRegion>,
   /// `ClickPane`s drawn in the picture; a click inside one runs its handler
   /// on the click position.
   pub click_regions: Vec<ClickRegion>,
@@ -1508,6 +1571,7 @@ impl ManipulateState {
       display_trees: Vec::new(),
       graphics_handle: None,
       button_regions: Vec::new(),
+      tooltip_regions: Vec::new(),
       click_regions: Vec::new(),
       display_pane_action: None,
       mouse_region: None,
@@ -2976,6 +3040,7 @@ impl ManipulateState {
         if let Some(svg) = result.graphics {
           let handle = text_svg_handle(&svg);
           self.button_regions = button_regions_of(&svg);
+          self.tooltip_regions = tooltip_regions_of(&svg);
           self.click_regions = click_regions_of(&svg);
           self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
@@ -2988,6 +3053,7 @@ impl ManipulateState {
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
           self.button_regions.clear();
+          self.tooltip_regions.clear();
           self.click_regions.clear();
           self.mouse_region = None;
           self.typeset_output =
@@ -3009,6 +3075,7 @@ impl ManipulateState {
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
         self.button_regions.clear();
+        self.tooltip_regions.clear();
         self.click_regions.clear();
         self.mouse_region = None;
         self.text_output = None;
@@ -10691,5 +10758,72 @@ pub fn movable_axes(
   match [x_min != x_max, y_min != y_max] {
     [false, false] => [true, true],
     axes => axes,
+  }
+}
+
+#[cfg(test)]
+mod tooltip_region_tests {
+  use super::*;
+
+  /// `Tooltip[shape, label]` inside a Manipulate's picture: each wrapped
+  /// shape — a `Text` included — becomes a hover region carrying the label,
+  /// placed where the shape is drawn, and the regions follow the controls.
+  /// Regression: the label was dropped, so a diagram explaining its parts
+  /// through tooltips had nothing to show.
+  #[test]
+  fn tooltip_shapes_in_the_picture_become_hover_regions() {
+    let code = r#"Manipulate[
+      Graphics[{
+        Tooltip[Disk[{1, 1}, 1/2], "left dot"],
+        If[stage >= 1,
+          Tooltip[Text["note", {4, 3}],
+            Column[{Style["note", Bold], "a longer explanation"}]],
+          {}],
+        Rectangle[{2, 0}, {3, 1}]},
+        PlotRange -> {{0, 5}, {0, 4}}, ImageSize -> 250],
+      {{stage, 0, "stage"}, {0, 1}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let [dot] = &state.tooltip_regions[..] else {
+      panic!("expected one region, got {:?}", state.tooltip_regions);
+    };
+    assert_eq!(dot.text, "left dot");
+    // The disk spans x 0.5..1.5 of 0..5 on a 250 px wide picture, and sits
+    // in the lower half of it.
+    assert!((dot.x - 25.0).abs() < 2.0, "{dot:?}");
+    assert!((dot.width - 50.0).abs() < 2.0, "{dot:?}");
+    assert!((dot.height - 50.0).abs() < 2.0, "{dot:?}");
+    assert!(dot.y > 100.0, "{dot:?}");
+
+    assert!(state.select_discrete_index(0, 1));
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let [dot, note] = &state.tooltip_regions[..] else {
+      panic!("expected two regions, got {:?}", state.tooltip_regions);
+    };
+    assert_eq!(dot.text, "left dot");
+    assert_eq!(note.text, "note\na longer explanation");
+    // The text is centered on x = 4 of 0..5 (200 px), in the upper half,
+    // and its region is the size of its glyphs, not empty.
+    assert!(note.width > 10.0 && note.height > 5.0, "{note:?}");
+    let center = note.x + note.width / 2.0;
+    assert!((center - 200.0).abs() < 4.0, "{note:?}");
+    assert!(note.y + note.height < 100.0, "{note:?}");
+  }
+
+  /// A picture without any `Tooltip` has no hover regions.
+  #[test]
+  fn a_picture_without_tooltips_has_no_hover_regions() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2}]",
+    )
+    .expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.tooltip_regions.is_empty());
   }
 }

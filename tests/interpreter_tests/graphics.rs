@@ -34522,6 +34522,46 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!plain.contains("woxi-btn-"), "{plain}");
     }
 
+    // `Tooltip[shape, label]` inside a picture draws `shape` only, and
+    // records the label's plain text on a group around it so a live widget
+    // can show it on hover: a `Column` puts its items on separate lines, a
+    // `Row` sets them side by side, and styling is looked through.
+    #[test]
+    fn a_tooltip_shape_records_its_label_text() {
+      use woxi::functions::graphics::{
+        TOOLTIP_HIT_ID_PREFIX, tooltip_text_from_hit_id,
+      };
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("id=\"")
+          .skip(1)
+          .filter_map(|rest| {
+            tooltip_text_from_hit_id(rest.split('"').next().unwrap())
+          })
+          .collect()
+      };
+      let svg = export_svg(
+        "Graphics[{Tooltip[Disk[{0, 0}, 1], \"round\"],          {Red, Tooltip[Text[\"shown\", {3, 0}],          Column[{Style[\"head\", Bold], Row[{\"n = \", 2 + 3}]}]]},          Tooltip[Rectangle[{5, 0}, {6, 1}], q^2]}]",
+      );
+      assert_eq!(labels(&svg), ["round", "head\nn = 5", "q^2"], "{svg}");
+      assert!(svg.contains("<ellipse"), "the disk is drawn: {svg}");
+      assert!(svg.contains(">shown<"), "the text is drawn: {svg}");
+      assert!(!svg.contains(">round<"), "the label is not drawn: {svg}");
+      assert!(!svg.contains("Tooltip"), "not the source: {svg}");
+      // Every group that was opened is closed again.
+      assert_eq!(svg.matches("<g").count(), svg.matches("</g>").count());
+
+      // A tooltip without a label, or with an empty one, marks nothing.
+      for plain in [
+        "Graphics[Tooltip[Disk[]]]",
+        "Graphics[Tooltip[Disk[], \"\"]]",
+      ] {
+        let svg = export_svg(plain);
+        assert!(svg.contains("<ellipse"), "{svg}");
+        assert!(!svg.contains(TOOLTIP_HIT_ID_PREFIX), "{svg}");
+      }
+    }
+
     // `Button[shape, action]` used as a primitive draws `shape` and records
     // its action on a group around it, like `EventHandler`. Drawing the
     // picture must not run the held action.

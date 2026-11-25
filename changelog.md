@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Tooltip[shape, label]` inside a `Graphics` records its label on the
+    drawn shape, and Woxi Studio shows it while the pointer rests on the
+    shape in a Manipulate's picture — diagrams that explain their parts
+    through tooltips are readable again.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms
