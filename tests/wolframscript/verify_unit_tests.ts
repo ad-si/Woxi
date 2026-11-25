@@ -1417,6 +1417,13 @@ function main() {
   // while Wolfram's companion-matrix eigenvalues introduce machine-epsilon
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
+    // wolframscript never terminates: the compiled call falls back to the
+    // uncompiled FixedPoint over the free symbols x, y, z, whose SameTest is
+    // never True (not even TimeConstrained interrupts it). Woxi keeps the
+    // symbolic call unevaluated so the plot samples numerically. See
+    // "A compiled function called with symbolic vector arguments" in
+    // conformance_gaps.md.
+    "cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., SameTest -> (Abs[#1 - #2] < 10^-6 &)]]; Head[ContourPlot3D[cf[{x, y, z}], {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Contours -> {0.5}, PlotPoints -> 8]]",
     // Invalid symbolic reference recurses in the reference kernel, including
     // when run alone. See "Unit conformance follow-up (2026-11-06)" in
     // conformance_gaps.md. Retain the local unevaluated-form regression.

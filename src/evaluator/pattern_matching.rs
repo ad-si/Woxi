@@ -1483,7 +1483,104 @@ fn replace_at_depth(
         max_depth,
       )
     }
-    _ => (expr.clone(), 0),
+    // The values of an association are its level-1 parts.
+    Expr::Association(pairs) => {
+      let mut mapped = Vec::with_capacity(pairs.len());
+      let mut max_depth: i64 = 0;
+      for (key, value) in pairs {
+        let (e, d) = replace_at_depth(
+          value,
+          rules,
+          pos_level + 1,
+          min_level,
+          max_level,
+          heads_on,
+        )?;
+        max_depth = max_depth.max(d);
+        mapped.push((key.clone(), e));
+      }
+      (Expr::Association(mapped), max_depth)
+    }
+    // `h[a][b]`: the arguments of the outer call are its parts.
+    Expr::CurriedCall { func, args } => {
+      let mut mapped = Vec::with_capacity(args.len());
+      let mut max_depth: i64 = 0;
+      for item in args {
+        let (e, d) = replace_at_depth(
+          item,
+          rules,
+          pos_level + 1,
+          min_level,
+          max_level,
+          heads_on,
+        )?;
+        max_depth = max_depth.max(d);
+        mapped.push(e);
+      }
+      (
+        Expr::CurriedCall {
+          func: func.clone(),
+          args: mapped,
+        },
+        max_depth,
+      )
+    }
+    // The dedicated operator variants (`a == b`, `a -> b`, `a - b`, `!a`,
+    // `body &`) have the parts of their FullForm (`Equal[a, b]`, …). The
+    // original node is kept when no part changed.
+    _ => match crate::functions::list_helpers_ast::expr_to_head_args(expr) {
+      Some((head, args)) => {
+        let mut mapped = Vec::with_capacity(args.len());
+        let mut max_depth: i64 = 0;
+        let mut changed = false;
+        for item in &args {
+          let (e, d) = replace_at_depth(
+            item,
+            rules,
+            pos_level + 1,
+            min_level,
+            max_level,
+            heads_on,
+          )?;
+          max_depth = max_depth.max(d);
+          changed |= !expr_equal(&e, item);
+          mapped.push(e);
+        }
+        if changed {
+          let rebuilt = match expr {
+            // A comparison chain keeps its variant: its operands are the
+            // parts of `Equal[a, b]`, or every other part of a mixed
+            // chain's `Inequality[a, Less, b, LessEqual, c]`.
+            Expr::Comparison {
+              operands,
+              operators,
+            } if head != "Inequality"
+              || mapped
+                .iter()
+                .zip(&args)
+                .skip(1)
+                .step_by(2)
+                .all(|(new, old)| expr_equal(new, old)) =>
+            {
+              let step = if head == "Inequality" { 2 } else { 1 };
+              debug_assert_eq!(mapped.len(), (operands.len() - 1) * step + 1);
+              Expr::Comparison {
+                operands: mapped.into_iter().step_by(step).collect(),
+                operators: operators.clone(),
+              }
+            }
+            _ => Expr::FunctionCall {
+              name: head,
+              args: mapped.into(),
+            },
+          };
+          (rebuilt, max_depth)
+        } else {
+          (expr.clone(), max_depth)
+        }
+      }
+      None => (expr.clone(), 0),
+    },
   };
 
   let depth = 1 + max_child_depth; // Mathematica Depth (atoms = 1)

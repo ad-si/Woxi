@@ -1935,7 +1935,7 @@ mod graphics {
         assert!(t.contains("fill=\"rgb(0,0,255)\""), "{t}");
       }
       let t = tag("zzplain");
-      assert!(t.contains("font-size=\"14\""), "{t}");
+      assert!(t.contains("font-size=\"10\""), "{t}");
       assert!(t.contains("font-weight=\"normal\""), "{t}");
     }
 
@@ -5396,9 +5396,9 @@ mod graphics {
       // The drawing is what the labels leave of the 230 points.
       let clip = &svg[svg.find("<clipPath").unwrap()..];
       let drawing_w = num(clip, "width=\"");
-      assert!(drawing_w > 25.0 && drawing_w < 60.0, "{svg}");
+      assert!(drawing_w > 60.0 && drawing_w < 110.0, "{svg}");
       // The rectangle spans (almost) the whole drawing width …
-      let rect = &svg[svg.find("<rect x=\"0.").unwrap()..];
+      let rect = &svg[svg.rfind("<rect ").unwrap()..];
       let rect_w = num(rect, "width=\"");
       assert!(rect_w > 0.9 * drawing_w, "{svg}");
       // … and its edge is 5% of that width, not of the whole picture.
@@ -6375,7 +6375,8 @@ mod graphics {
         )))
       };
       let dist = |p: (f64, f64), x: f64, y: f64| (p.0 - x).hypot(p.1 - y);
-      let mid = |s: [f64; 4]| ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+      let mid =
+        |s: [f64; 4]| (f64::midpoint(s[0], s[2]), f64::midpoint(s[1], s[3]));
       let above = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}");
       assert_eq!(above.len(), 3, "{above:?}");
       for (s, label) in &above {
@@ -19084,7 +19085,7 @@ mod plot3d {
       // A row with an unstyled part keeps the label's own size, and the
       // sized part is drawn at its own size inside it.
       const PQ: &str = "p<tspan font-size=\"20\">q</tspan>";
-      assert_eq!(attr(&svg, PQ, "font-size"), "14");
+      assert_eq!(attr(&svg, PQ, "font-size"), "10");
     }
 
     /// A `Button` inside a picture draws as the button itself — a rounded
@@ -19607,7 +19608,7 @@ mod plot3d {
       assert!(label.contains("fill=\"rgb(0,0,0)\""), "{label}");
       // An unknown style name changes nothing.
       let plain = attrs("\"NoSuchStyle\"");
-      assert!(plain.contains("font-size=\"14\""), "{plain}");
+      assert!(plain.contains("font-size=\"10\""), "{plain}");
     }
 
     /// The "Label" style sets its text in a proportional sans-serif face,
@@ -34606,6 +34607,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `Text` label whose inline box notation hangs limits on a large
+    /// operator — on its own or as a part of a `Row` — is laid out as boxes:
+    /// the sign is drawn tall with its limits at its ends, instead of the
+    /// label printing the linear `∫_a^b` or a text-sized sign.
+    #[test]
+    fn text_large_operator_limits_are_laid_out() {
+      for (label, limits) in [
+        (
+          r#""\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)""#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"area = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(a\), \(b\)]\)", Style["f", Italic], Style[" dx", Italic]}]"#,
+          vec!["a", "b"],
+        ),
+        (
+          r#"Row[{"s = ", Style["\!\(\*UnderoverscriptBox[\(\[Sum]\), \(k\), \(n\)]\)", 16]}]"#,
+          vec!["k", "n"],
+        ),
+        (
+          r#"Row[{"\!\(\*SubscriptBox[\(\[ContourIntegral]\), \(c\)]\)", "w"}]"#,
+          vec!["c"],
+        ),
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        let at = svg
+          .find("<svg x=")
+          .unwrap_or_else(|| panic!("{label}: no label picture in {svg}"));
+        let picture = &svg[at..];
+        for limit in limits {
+          assert!(
+            picture.contains(&format!(">{limit}</text>")),
+            "{label}: limit {limit} missing in {picture}"
+          );
+        }
+        assert!(
+          !svg.contains("_a^b") && !svg.contains("Box["),
+          "{label}: linear or box source leaked: {svg}"
+        );
+      }
+      // The integral sign itself is a drawn stroke, taller than the text.
+      let svg = export_svg(
+        r#"Graphics[{Text[Row[{"v = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(0\), \(h\)]\)", "A"}], {0, 0}]}]"#,
+      );
+      assert!(svg.contains("<path d=\"M "), "no integral stroke: {svg}");
+      assert!(svg.contains(">v = </text>"), "{svg}");
+      // Ordinary scripts stay on the one-line text path.
+      let plain = export_svg(
+        r#"Graphics[{Text[Row[{"a", "\!\(\*SubsuperscriptBox[\(x\), \(0\), \(h\)]\)"}], {0, 0}]}]"#,
+      );
+      assert!(!plain.contains("<svg x="), "{plain}");
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
@@ -35699,7 +35753,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "font-size=\"9.8\" stroke=\"none\" xml:space=\"preserve\">2</text>"
+          "font-size=\"7.0\" stroke=\"none\" xml:space=\"preserve\">2</text>"
         ),
         "the raised exponent: {svg}"
       );
@@ -61624,9 +61678,42 @@ fn named_font_sizes_in_a_style() {
   );
   let plain = export_svg("Graphics[{Text[\"z\", {0, 0}]}, ImageSize -> 200]");
   assert!(
-    !larger.contains("font-size=\"14\"") && plain.contains("font-size=\"14\""),
+    larger.contains("font-size=\"12.5\"") && plain.contains("font-size=\"10\""),
     "Larger should grow the inherited size: {larger}"
   );
+}
+
+/// A picture's `Text` is set at 10 points unless a style asks for another
+/// size — what wolframscript's SVG export writes, and as tall as a plot's
+/// tick labels in the front end — whether the label is a string, a number
+/// from a `Table`, or placed by an `Inset`. Typeset output outside a
+/// picture keeps its own 14 point size.
+#[test]
+fn graphics_text_defaults_to_ten_points() {
+  let svg = export_svg(
+    "Graphics[{Text[\"zzlabel\", {0, 0}], Black, \
+     Table[Text[IntegerPart[7 + h], {1, h}], {h, 1, 3}], \
+     Inset[\"zzinset\", {2, 0}], Text[Style[\"zzbig\", 18], {2, 2}]}, \
+     ImageSize -> {250, 250}]",
+  );
+  let size_of = |label: &str| {
+    let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+    let tag = &svg[svg[..end].rfind("<text").expect(&svg)..end];
+    let size = tag.split("font-size=\"").nth(1).expect(tag);
+    size.split('"').next().unwrap().to_string()
+  };
+  for label in ["zzlabel", "8", "9", "10", "zzinset"] {
+    assert_eq!(size_of(label), "10", "{label}: {svg}");
+  }
+  assert_eq!(size_of("zzbig"), "18", "{svg}");
+  // The same size whatever the picture's width.
+  let wide =
+    export_svg("Graphics[{Text[\"zzlabel\", {0, 0}]}, ImageSize -> 600]");
+  assert!(wide.contains("font-size=\"10\""), "{wide}");
+  // A `Row` on its own is typeset output, not a picture's label.
+  let row = export_svg("Row[{\"zzrow\", 20}]");
+  assert!(row.contains("font-size=\"14\""), "{row}");
+  assert!(!row.contains("font-size=\"10\""), "{row}");
 }
 
 /// `Text[…]` sets its content in the graphic's own text style, so the weight
@@ -66184,9 +66271,9 @@ mod surface_vertex_colors {
         .and_then(|r| r.split('"').next())
         .and_then(|w| w.parse().ok())
         .unwrap();
-      // The label's glyphs add up to about 105 px at the default 14 pt.
+      // The label's glyphs add up to about 75 px at the default 10 pt.
       assert!(
-        tx - 52.0 >= -0.5 && tx + 52.0 <= width + 0.5,
+        tx - 37.0 >= -0.5 && tx + 37.0 <= width + 0.5,
         "{side} label cut off: x = {tx}, width = {width}"
       );
     }
@@ -74751,6 +74838,7 @@ fn manipulate_frame_frames_surface_plots_by_their_sphere() {
     format!(
       "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
        {{u, 0, 2 Pi}}, {{v, 0, Pi}}, PlotPoints -> 8, Mesh -> None, \
+       PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{-1, 1}}}}, \
        ImageSize -> {{300, 300}}{opts}]"
     )
   };
@@ -74769,13 +74857,63 @@ fn manipulate_frame_frames_surface_plots_by_their_sphere() {
   );
   // The sphere around a cube-shaped box is wider than the box's outline,
   // so the surface is drawn smaller.
-  let width = |svg: &str| {
-    let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
-    xs.iter().copied().fold(f64::MIN, f64::max)
-      - xs.iter().copied().fold(f64::MAX, f64::min)
-  };
-  let ratio = width(&spherical) / width(&plain);
+  let ratio = polygon_extent(&spherical).0 / polygon_extent(&plain).0;
   assert!(ratio > 0.7 && ratio < 0.95, "{ratio}");
+}
+
+/// Width and height of everything a picture's polygons cover.
+fn polygon_extent(svg: &str) -> (f64, f64) {
+  let [x0, x1, y0, y1] = polygon_vertices(svg).iter().fold(
+    [f64::MAX, f64::MIN, f64::MAX, f64::MIN],
+    |[x0, x1, y0, y1], &(x, y)| [x0.min(x), x1.max(x), y0.min(y), y1.max(y)],
+  );
+  (x1 - x0, y1 - y0)
+}
+
+/// Inside a `Manipulate` frame, a surface left to its automatic range
+/// (`PlotRange -> All` included) is framed by the sphere that just encloses
+/// the surface — as `Graphics3D` frames such a scene — not by the sphere
+/// through the corners of its box. Regression: a Demonstration's flat
+/// spiral shell at `ImageSize -> {450, 350}` was drawn 197 px wide where
+/// Wolfram's snapshot has it 327 px wide (now 315 px), and once the box
+/// outline reached past the sphere the picture was squashed vertically.
+#[test]
+fn manipulate_frame_fits_an_automatic_range_surface_by_its_contents() {
+  // A flat ring: a 6 × 6 × 2 box whose corners lie far outside the ring.
+  let plot = |opts: &str| {
+    format!(
+      "ParametricPlot3D[{{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], \
+       Sin[v]}}, {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}, PlotPoints -> 12, \
+       Mesh -> None, Boxed -> False, Axes -> None, \
+       ImageSize -> {{450, 350}}{opts}]"
+    )
+  };
+  let framed =
+    |opts: &str| woxi::with_manipulate_frame(|| export_svg(&plot(opts)));
+  let automatic = framed("");
+  assert_eq!(framed(", PlotRange -> All"), automatic);
+  assert_eq!(framed(", PlotRange -> Automatic"), automatic);
+  // A pinned range and an explicit `SphericalRegion -> True` keep the
+  // sphere around the box, which draws the ring distinctly smaller.
+  let (width, height) = polygon_extent(&automatic);
+  for opts in [
+    ", PlotRange -> {{-3, 3}, {-3, 3}, {-1, 1}}",
+    ", SphericalRegion -> True",
+  ] {
+    let boxed = polygon_extent(&framed(opts)).0;
+    assert!(width > 1.2 * boxed, "{opts}: {width} vs {boxed}");
+  }
+  // The ring fills most of the picture without leaving it …
+  assert!(width > 300.0 && width < 450.0, "{width}");
+  assert!(height < 350.0, "{height}");
+  // … and keeps the proportions of the outline-fitted picture.
+  let (plain_width, plain_height) = polygon_extent(&export_svg(&plot("")));
+  assert!(
+    (width / height - plain_width / plain_height).abs() < 0.01,
+    "{width} x {height} vs {plain_width} x {plain_height}"
+  );
+  // `SphericalRegion -> False` still turns the sphere framing off.
+  assert_eq!(framed(", SphericalRegion -> False"), export_svg(&plot("")));
 }
 
 /// `ImagePadding` keeps a surface plot's scene out of a band around the
@@ -75678,11 +75816,11 @@ fn graphics_text_column_lines_sized_by_their_styles() {
   assert!(svg.contains("dy=\"70\""), "{svg}");
   let svg = export_svg("Graphics[Text[Column[{\"a\", \"b\", \"c\"}], {0, 0}]]");
   assert!(
-    svg.contains("dy=\"-14\" dominant-baseline=\"central\">a</tspan>"),
+    svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
     "{svg}"
   );
   assert!(
-    svg.contains("dy=\"14\" dominant-baseline=\"central\">b</tspan>"),
+    svg.contains("dy=\"10\" dominant-baseline=\"central\">b</tspan>"),
     "{svg}"
   );
 }
@@ -76466,11 +76604,11 @@ mod traditional_form_text_scripts {
     // The exponent is set as its own smaller run (raised over its base),
     // not run into the base as `x2`.
     let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
-    assert_eq!(runs_at(&svg, "9.8"), ["2"], "{svg}");
-    assert!(runs_at(&svg, "14.0").contains(&"x".to_string()), "{svg}");
+    assert_eq!(runs_at(&svg, "7.0"), ["2"], "{svg}");
+    assert!(runs_at(&svg, "10.0").contains(&"x".to_string()), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    let scripts = runs_at(&svg, "9.8");
+    let scripts = runs_at(&svg, "7.0");
     assert!(scripts.contains(&"n".to_string()), "{svg}");
     assert!(scripts.contains(&"3".to_string()), "{svg}");
   }
@@ -76478,14 +76616,14 @@ mod traditional_form_text_scripts {
   #[test]
   fn scripts_without_glyphs_become_tspans() {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
-    let scripts = runs_at(&svg, "9.8");
+    let scripts = runs_at(&svg, "7.0");
     assert!(
       scripts.contains(&"a".to_string()) && scripts.contains(&"b".to_string()),
       "{svg}"
     );
     let svg =
       export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
-    assert_eq!(runs_at(&svg, "9.8"), ["k"], "{svg}");
+    assert_eq!(runs_at(&svg, "7.0"), ["k"], "{svg}");
   }
 }
 

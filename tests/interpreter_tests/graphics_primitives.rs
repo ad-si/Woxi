@@ -693,8 +693,8 @@ mod graphics_primitives {
     let yellow = svg.find("fill=\"rgb(255,255,0)\"").unwrap();
     let rect = &svg[svg[..yellow].rfind("<rect").unwrap()..];
     let w = attr_of(rect, "rect", "width");
-    // 16 characters of 14-point type: about 110 points of advance.
-    assert!(w > 95.0 && w < 125.0, "{w}");
+    // 16 characters of 10-point type: about 77 points of advance.
+    assert!(w > 68.0 && w < 90.0, "{w}");
   }
 
   #[test]

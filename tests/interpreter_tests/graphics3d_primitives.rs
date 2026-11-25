@@ -38,6 +38,33 @@ mod solids {
     assert_eq!(with("False").matches("<text").count(), 0);
   }
 
+  /// `Axes -> None` hides the axes of a 3D scene exactly like
+  /// `Axes -> False`. Regression: only `False` was recognized, so the 3D
+  /// plot functions (whose axes default to on) kept drawing them, and
+  /// `ListPointPlot3D` / `ListLinePlot3D` ignored the option altogether.
+  #[test]
+  fn axes_none_hides_the_axes() {
+    for plot in [
+      "Graphics3D[Sphere[], Axes -> {}]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, Axes -> {}]",
+      "ParametricPlot3D[{Cos[u] (2 + Cos[v]), Sin[u] (2 + Cos[v]), Sin[v]}, \
+        {u, 0, 2 Pi}, {v, 0, 2 Pi}, PlotPoints -> 8, Axes -> {}]",
+      "ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 6}, Axes -> {}]",
+      "ListPlot3D[{{1, 2}, {3, 4}}, Axes -> {}]",
+      "ListPointPlot3D[{{1, 2, 3}, {3, 4, 1}, {2, 2, 2}}, Axes -> {}]",
+      "ListLinePlot3D[{{1, 2, 3}, {2, 3, 1}, {3, 1, 2}}, Axes -> {}]",
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+        {z, -1, 1}, PlotPoints -> 6, Axes -> {}]",
+      "RevolutionPlot3D[t^2, {t, 0, 1}, PlotPoints -> 6, Axes -> {}]",
+    ] {
+      let with = |axes: &str| svg(&plot.replace("{}", axes));
+      let none = with("None");
+      assert_eq!(none.matches("<text").count(), 0, "{plot}");
+      assert_eq!(none, with("False"), "{plot}");
+      assert!(with("True").matches("<text").count() > 3, "{plot}");
+    }
+  }
+
   #[test]
   fn scaled_polygon_coordinates_use_the_scene_bounds() {
     assert_eq!(
@@ -2584,6 +2611,65 @@ mod smooth_shading {
     assert!(last_red < first_blue, "{colors:?}");
   }
 
+  // An opaque face lying exactly under a later opaque one is never seen, so
+  // it is not drawn at all: left in, its color bleeds through the
+  // anti-aliased seams between the triangles of the face on top. The copy
+  // may list the same corners from another start or the other way round,
+  // and may be moved onto the face by a `Translate`.
+  #[test]
+  fn opaque_face_under_an_identical_face_is_not_drawn() {
+    let alone = svg(
+      "Graphics3D[{Yellow, Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, \
+       {1, 2, 0}}]}, Boxed -> False]",
+    );
+    for under in [
+      "Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}]",
+      "Polygon[{{3, 2, 0}, {1, 2, 0}, {0, 0, 0}, {2, 0, 0}}]",
+      "Polygon[{{1, 2, 0}, {3, 2, 0}, {2, 0, 0}, {0, 0, 0}}]",
+      "Translate[Polygon[{{0, 0, 5}, {2, 0, 5}, {3, 2, 5}, {1, 2, 5}}], \
+       {0, 0, -5}]",
+      "Translate[Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}], \
+       0*{1, 2, 3}]",
+    ] {
+      let stacked = svg(&format!(
+        "Graphics3D[{{Cyan, {under}, Orange, {under}, Yellow, \
+         Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, {{3, 2, 0}}, {{1, 2, 0}}}}]}}, \
+         Boxed -> False]"
+      ));
+      assert_eq!(stacked, alone, "{under}");
+    }
+  }
+
+  // Faces that only overlap, a translucent face on top, and a copy with an
+  // outline the face on top does not repeat are all still drawn.
+  #[test]
+  fn faces_that_are_not_wholly_covered_are_kept() {
+    let quad = "Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}]";
+    let one = polygon_count(&svg(&format!(
+      "Graphics3D[{{Yellow, {quad}}}, Boxed -> False]"
+    )));
+    for scene in [
+      // Shifted within the plane.
+      format!("{{Cyan, Translate[{quad}, {{0.5, 0, 0}}], Yellow, {quad}}}"),
+      // A different polygon on the same corners but one.
+      format!(
+        "{{Cyan, Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, {{3, 2, 0}}, \
+         {{1, 3, 0}}}}], Yellow, {quad}}}"
+      ),
+      // The face on top lets the lower one show through.
+      format!("{{Cyan, {quad}, Opacity[0.5], Yellow, {quad}}}"),
+    ] {
+      let n =
+        polygon_count(&svg(&format!("Graphics3D[{scene}, Boxed -> False]")));
+      assert!(n > one, "{scene}: {n} vs {one}");
+    }
+    let outlined = svg(&format!(
+      "Graphics3D[{{EdgeForm[{{Thick, Red}}], Cyan, {quad}, EdgeForm[], \
+       Yellow, {quad}}}, Boxed -> False]"
+    ));
+    assert!(outlined.contains("stroke=\"rgb(255,0,0)\""), "{outlined}");
+  }
+
   // A translucent face lying on an opaque one stays beneath it, even when
   // it is given later: only the opaque face's color shows through.
   #[test]
@@ -3933,5 +4019,31 @@ mod range_padding {
       .unwrap(),
       "{True, True, 1}"
     );
+  }
+
+  /// A `Graphics3D` `Text` label whose inline box notation hangs limits on
+  /// a large operator is drawn as the same laid-out picture the 2D `Text`
+  /// uses (a tall sign with its limits at its ends), in the label's color
+  /// and size, while other labels of the scene stay plain text.
+  #[test]
+  fn text3d_large_operator_limits_are_laid_out() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Graphics3D[{Red, Text[Row[{"volume = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(0\), \(h\)]\)", Style["A", Italic], Style[" dy", Italic]}], {0, 0, 1}], Text[Row[{"n = ", "\!\(\*SubscriptBox[\(x\), \(1\)]\)"}], {0, 0, 0}]}, BaseStyle -> 20], "SVG"]"#,
+    )
+    .unwrap();
+    let at = svg.find("<svg x=").expect("embedded label picture");
+    let picture = &svg[at..at + svg[at..].find("</svg>").unwrap()];
+    assert!(
+      picture.contains("<path d=\"M "),
+      "no sign stroke: {picture}"
+    );
+    assert!(picture.contains("rgb(255,0,0)"), "{picture}");
+    assert!(picture.contains("font-size=\"20.0\""), "{picture}");
+    for part in [">volume = </text>", ">h</text>", ">0</text>", "> dy</text>"] {
+      assert!(picture.contains(part), "{part} missing in {picture}");
+    }
+    assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
+    assert!(svg.contains(">n = x<tspan"), "{svg}");
   }
 }

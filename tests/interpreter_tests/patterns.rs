@@ -7693,4 +7693,36 @@ mod pattern_fuzz_edge_cases {
     assert_eq!(r.result, "True");
     assert_eq!(r.stdout, "{1, 2}\n{2, 1}\n");
   }
+
+  // Replace with a level specification reaches the parts of operator forms
+  // (`a == b` is `Equal[a, b]`), of associations and of curried calls.
+  #[test]
+  fn replace_at_level_descends_into_operator_forms() {
+    for (code, expected) in [
+      ("Replace[a == b, b -> c, {1}]", "a == c"),
+      ("Replace[a -> b, b -> c, {1}]", "a -> c"),
+      ("Replace[x_ :> b, b -> c, {1}]", "x_ :> c"),
+      ("Replace[!b, b -> c, {1}]", " !c"),
+      ("Replace[b &, b -> c, {1}]", "c & "),
+      ("Replace[f[a][b], b -> c, {1}]", "f[a][c]"),
+      ("Replace[<|a -> b|>, b -> c, {1}]", "<|a -> c|>"),
+      ("Replace[<|a -> {b}|>, b -> c, {2}]", "<|a -> {c}|>"),
+      ("Replace[Hold[a == b], b -> c, {2}]", "Hold[a == c]"),
+      ("Replace[Hold[1 < x < y], x -> 2, {2}]", "Hold[1 < 2 < y]"),
+      ("Replace[Hold[a - b], b -> c, {2}]", "Hold[a - b]"),
+      ("Replace[Hold[a - b], b -> c, {3}]", "Hold[a - c]"),
+      ("Replace[Hold[a/b], b -> c, {3}]", "Hold[a/c]"),
+      (
+        "Replace[Hold[a + b == 1], p_Plus :> f[p], {2}]",
+        "Hold[f[a + b] == 1]",
+      ),
+      (
+        "Replace[a + b == d, p_Plus :> f[p], {0, Infinity}]",
+        "f[a + b] == d",
+      ),
+      ("Replace[a == b, b -> c, {2}]", "a == b"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
 }

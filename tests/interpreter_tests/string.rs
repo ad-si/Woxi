@@ -2308,6 +2308,45 @@ mod operator_form {
     assert_eq!(interpret("StringEndsQ[\"lo\"][\"Hello\"]").unwrap(), "True");
   }
 
+  /// Searching a long text for a pattern that is absent, or that only
+  /// occurs near its end, scans it once: the search jumps to the next
+  /// match instead of retrying from every character (which took minutes
+  /// on a text this size).
+  #[test]
+  fn string_search_in_a_long_text_is_linear() {
+    assert_eq!(
+      interpret(
+        "s = StringJoin[Table[\"abcdefghij\", 300000]] <> \"xyz\" <> \
+         StringJoin[Table[\"abcdefghij\", 10]]; \
+         {StringContainsQ[s, \"Graph3D\"], StringContainsQ[s, \"xyz\"], \
+          StringCount[s, \"jxyza\"], StringPosition[s, \"xyz\"], \
+          StringCount[s, \"ja\"], StringCount[s, \"jaj\"]}"
+      )
+      .unwrap(),
+      "{False, True, 1, {{3000001, 3000003}}, 300008, 0}"
+    );
+  }
+
+  /// Regression: searching a long string for a pattern that matches rarely
+  /// (or never) restarted the regex at every character, so one
+  /// `StringContainsQ` on a 500 kB string took seconds. The scan now jumps
+  /// to the next match; quadratic behavior would run this test into its
+  /// timeout.
+  #[test]
+  fn string_search_in_a_long_string_is_linear() {
+    assert_eq!(
+      interpret(
+        "s = StringJoin[Table[\"abcdefghij\", 200000]]; \
+         {StringContainsQ[s, \"xyz\"], StringFreeQ[s, \"xyz\"], \
+          StringContainsQ[s <> \"xyz\", \"xyz\"], \
+          StringContainsQ[s <> \"qq\", x_ ~~ x_], \
+          Length[StringSplit[s <> \"xyz\" <> s, \"xyz\"]]}"
+      )
+      .unwrap(),
+      "{False, True, True, True, 2}"
+    );
+  }
+
   #[test]
   fn string_contains_q_curried() {
     assert_eq!(
@@ -2431,6 +2470,26 @@ mod ignore_case {
       )
       .unwrap(),
       "True"
+    );
+  }
+
+  /// Searching a long text for a pattern that is absent or sparse is one
+  /// pass over it. It used to restart the search at every character, which
+  /// took seconds on a few hundred kilobytes (an exported SVG) and would
+  /// take minutes on this two megabyte string.
+  #[test]
+  fn string_search_in_a_long_text_is_linear() {
+    assert_eq!(
+      interpret(
+        "s = StringRepeat[\"abcdefghij\", 200000]; \
+         {StringContainsQ[s, \"zz\"], StringContainsQ[s, \"ja\"], \
+          StringCount[s, \"ja\"], StringCount[s <> \"zz\", \"zz\"], \
+          StringPosition[s <> \"zzz\", \"zz\"], \
+          StringPosition[s <> \"zzz\", \"zz\", Overlaps -> False]}"
+      )
+      .unwrap(),
+      "{False, True, 199999, 1, {{2000001, 2000002}, {2000002, 2000003}}, \
+       {{2000001, 2000002}}}"
     );
   }
 
