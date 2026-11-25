@@ -4160,11 +4160,7 @@ fn generate_svg(
   let mut svg_height = svg_height;
   // `Boxed -> False` hides only the box's edges; the axes go with
   // `Axes -> False`.
-  let show_axes = !options.iter().any(|o| {
-    matches!(o, Expr::Rule { pattern, replacement }
-      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
-        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
-  });
+  let show_axes = !axes_hidden(options);
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -4215,18 +4211,49 @@ fn generate_svg(
   // circle fills the region inside the padding; with the automatic padding
   // Wolfram leaves a margin around it, drawing the surface about
   // 1 / AUTO_PADDED_SPHERE_SPAN as large (see `conformance_gaps.md`).
+  //
+  // A `Manipulate` frame's default framing of a surface left to its
+  // automatic range uses the sphere around the box center that just
+  // encloses the surface, the one `Graphics3D` frames such a scene by (see
+  // `contents_sphere_radius`): a flat or rounded surface stays well inside
+  // the sphere through the corners of its box. Wolfram's three snapshots
+  // of a Demonstration's unboxed spiral shell (`PlotRange -> All` at
+  // `ImageSize -> {450, 350}` inside a `Manipulate`, boxes of about
+  // 6.4 × 5.3 × 1.9, 5.9 × 4.9 × 1.2 and 9.9 × 7.7 × 6.8) draw it 327, 339
+  // and 290 px wide — the contents sphere gives 315, 315 and 290 px, the
+  // box sphere 197 px for the first. An explicit `SphericalRegion -> True`
+  // keeps the box sphere its own snapshots were measured against (see
+  // `AUTO_PADDED_SPHERE_SPAN`).
+  let explicit_sphere = matches!(
+    plot_option_value(options, "SphericalRegion").as_ref(),
+    Some(Expr::Identifier(v)) if v == "True"
+  );
+  let contents_radius = worlds
+    .filter(|_| !explicit_sphere && !plot_range_is_pinned(options))
+    .map(|worlds| {
+      let center = Point3D {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      };
+      CONTENTS_SPHERE_PADDING * contents_sphere_radius(worlds, &[], center)
+    })
+    .filter(|r| *r > 0.0 && r.is_finite());
   let sphere_span = (plot_spherical_region(options)
     && view_angle_option(options).is_none())
   .then(|| {
-    let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
-    let span = spherical_region_span(
-      radius,
-      camera.perspective.as_ref().map(|p| p.distance),
-    );
-    if image_padding.is_some() {
-      span
-    } else {
-      span * AUTO_PADDED_SPHERE_SPAN
+    let distance = camera.perspective.as_ref().map(|p| p.distance);
+    let box_radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
+    match contents_radius {
+      Some(r) if r < box_radius => spherical_region_span(r, distance),
+      _ => {
+        let span = spherical_region_span(box_radius, distance);
+        if image_padding.is_some() {
+          span
+        } else {
+          span * AUTO_PADDED_SPHERE_SPAN
+        }
+      }
     }
   })
   .filter(|span| *span > 0.0 && span.is_finite());
@@ -4380,9 +4407,16 @@ fn generate_svg(
       _ => (scale, scale_y, p_cx, p_cy),
     };
   // The sphere spans the shorter side of the picture, centered on the box.
-  let (scale, p_cx, p_cy) = match sphere_span {
-    Some(span) => (inner_side / span, sphere_cx, sphere_cy),
-    None => (scale, p_cx, p_cy),
+  // Both directions share that scale (the box outline, which may reach
+  // past a contents sphere, no longer sets either one) unless an explicit
+  // `AspectRatio` stretches the picture.
+  let (scale, scale_y, p_cx, p_cy) = match sphere_span {
+    Some(span) => {
+      let sphere_scale = inner_side / span;
+      let sphere_scale_y = if stretch { scale_y } else { sphere_scale };
+      (sphere_scale, sphere_scale_y, sphere_cx, sphere_cy)
+    }
+    None => (scale, scale_y, p_cx, p_cy),
   };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
@@ -4909,6 +4943,21 @@ type TickList3D = Vec<(f64, Option<String>)>;
 /// of the other two coordinates whose edge it is drawn on; `None` keeps
 /// the automatic choice.
 type AxesEdges = [Option<[f64; 2]>; 3];
+
+/// Whether an `Axes` setting hides the axes: `Axes -> None` reads the same
+/// as `Axes -> False`.
+fn is_axes_off(setting: &str) -> bool {
+  setting == "False" || setting == "None"
+}
+
+/// Whether a plot's options turn its axes off (`Axes -> False` / `None`).
+fn axes_hidden(options: &[Expr]) -> bool {
+  options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if is_axes_off(v)))
+  })
+}
 
 /// Reads an `AxesEdge` value.
 fn parse_axes_edge(value: &Expr) -> Option<AxesEdges> {
@@ -6452,8 +6501,9 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Axes" => {
+          // `Axes -> None` hides the axes just like `Axes -> False`.
           if let Expr::Identifier(v) = replacement.as_ref()
-            && v == "False"
+            && is_axes_off(v)
           {
             show_axes = false;
           }
@@ -13366,6 +13416,117 @@ fn solid_bounding_sphere(prim: &Primitive3D) -> Option<(Point3D, f64)> {
   }
 }
 
+/// Whether two closed vertex rings trace the same polygon: the same corners
+/// (to within `eps`) in the same cyclic order, starting anywhere and running
+/// either way round.
+fn same_vertex_ring(a: &[Point3D], b: &[Point3D], eps: f64) -> bool {
+  let n = a.len();
+  if n != b.len() || n == 0 {
+    return false;
+  }
+  let close = |p: &Point3D, q: &Point3D| {
+    (p.x - q.x).abs() <= eps
+      && (p.y - q.y).abs() <= eps
+      && (p.z - q.z).abs() <= eps
+  };
+  (0..n).any(|shift| {
+    (0..n).all(|k| close(&a[k], &b[(shift + k) % n]))
+      || (0..n).all(|k| close(&a[k], &b[(shift + n - k) % n]))
+  })
+}
+
+/// Removes every opaque polygon that a later opaque polygon covers exactly.
+/// Of faces lying on one another the one given last is the one seen (see
+/// [`depth_order_edges`]), so the earlier copies add nothing to the picture.
+/// Left in, they do show: each is cut into triangles, and the anti-aliased
+/// seams between the top copy's triangles let the colors stacked beneath
+/// bleed through as hairlines across the face (solids exploded with
+/// `Translate` by a factor that starts at zero all sit on one another).
+///
+/// A covered polygon's outline is covered too only when the covering one
+/// draws the same solid outline, so a differently outlined copy is kept.
+fn drop_covered_duplicate_polygons(prims: &mut Vec<Primitive3D>) {
+  // The ring of an opaque, hole-free polygon and its style.
+  fn ring(prim: &Primitive3D) -> Option<(&[Point3D], &StyleState3D)> {
+    match prim {
+      Primitive3D::Polygon3D {
+        points,
+        holes,
+        style,
+      } if holes.is_empty()
+        && points.len() >= 3
+        && style.faces
+        && style.opacity >= 1.0 =>
+      {
+        Some((points.as_slice(), style))
+      }
+      _ => None,
+    }
+  }
+  let centroid_x = |points: &[Point3D]| {
+    points.iter().map(|p| p.x).sum::<f64>() / points.len() as f64
+  };
+  let mut candidates: Vec<(usize, f64)> = Vec::new();
+  let mut scale = 0.0_f64;
+  for (i, prim) in prims.iter().enumerate() {
+    if let Some((points, _)) = ring(prim) {
+      if points
+        .iter()
+        .any(|p| !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite()))
+      {
+        continue;
+      }
+      for p in points {
+        scale = scale.max(p.x.abs()).max(p.y.abs()).max(p.z.abs());
+      }
+      candidates.push((i, centroid_x(points)));
+    }
+  }
+  if candidates.len() < 2 {
+    return;
+  }
+  let eps = 1e-9 * scale.max(1e-300);
+  // Copies of one polygon have one centroid, so sorting by it brings them
+  // next to each other.
+  candidates.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+  let outline_covered = |under: &StyleState3D, over: &StyleState3D| {
+    !under.edges
+      || (over.edges
+        && over.edge_opacity >= 1.0
+        && over.edge_dashing.is_none()
+        && under.edge_dashing.is_none()
+        && under.edge_color == over.edge_color
+        && under.edge_width == over.edge_width)
+  };
+  let mut covered = vec![false; prims.len()];
+  for (pos, &(i, cx)) in candidates.iter().enumerate() {
+    for &(j, other_cx) in &candidates[pos + 1..] {
+      if other_cx - cx > eps {
+        break;
+      }
+      let (under, over) = (i.min(j), i.max(j));
+      if covered[under] {
+        continue;
+      }
+      let (Some((under_ring, under_style)), Some((over_ring, over_style))) =
+        (ring(&prims[under]), ring(&prims[over]))
+      else {
+        continue;
+      };
+      if same_vertex_ring(under_ring, over_ring, eps)
+        && outline_covered(under_style, over_style)
+      {
+        covered[under] = true;
+      }
+    }
+  }
+  let mut index = 0;
+  prims.retain(|_| {
+    index += 1;
+    !covered[index - 1]
+  });
+}
+
 /// The opaque, closed spheres and capped cylinders of a scene, which hide
 /// facets of other solids lying wholly inside them.
 fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
@@ -15212,6 +15373,24 @@ fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
   Some([sx0, sx1, sy0, sy1])
 }
 
+/// How much wider than the contents the sphere framing an automatic range
+/// is (see `contents_sphere_radius`): the 2 % that fits Wolfram's snapshots
+/// of sphere-framed polyhedra best.
+const CONTENTS_SPHERE_PADDING: f64 = 1.02;
+
+/// Whether a plot's options pin its range: an explicit `PlotRange` (anything
+/// but `All` / `Automatic` / `Full`) or an explicit `PlotRangePadding`.
+/// A pinned range is sphere-framed by its box, not by its contents.
+fn plot_range_is_pinned(options: &[Expr]) -> bool {
+  let automatic = |value: &Expr| {
+    matches!(value, Expr::Identifier(v)
+      if v == "All" || v == "Automatic" || v == "Full")
+  };
+  ["PlotRange", "PlotRangePadding"].iter().any(|name| {
+    plot_option_value(options, name).is_some_and(|value| !automatic(&value))
+  })
+}
+
 /// Radius of the smallest sphere around `center` that encloses every drawn
 /// point of the scene: the corners of its (tessellated) faces and the
 /// vertices of its lines, points, arrows and text anchors.
@@ -15531,7 +15710,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Axes" => match replacement.as_ref() {
-          Expr::Identifier(s) if s == "False" => show_axes = false,
+          // `Axes -> None` hides the axes just like `Axes -> False`.
+          Expr::Identifier(s) if is_axes_off(s) => show_axes = false,
           // `Axes -> Automatic` draws all three axes in 3D, the same as
           // `Axes -> True`.
           Expr::Identifier(s) if s == "True" || s == "Automatic" => {
@@ -16081,6 +16261,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
 
+  drop_covered_duplicate_polygons(&mut prims);
   let hidden_faces = hidden_cuboid_faces(&prims);
   let occluders = solid_occluders(&prims);
 
@@ -16820,7 +17001,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (unwidened it draws them 2.3 % too large).
     let contents_radius = (plot_range.is_none() && range_padding.is_none())
       .then(|| {
-        1.02 * contents_sphere_radius(&triangle_vertices, &prims, center)
+        CONTENTS_SPHERE_PADDING
+          * contents_sphere_radius(&triangle_vertices, &prims, center)
       })
       .filter(|r| *r > 0.0 && r.is_finite());
     let radius = contents_radius.map_or(box_radius, |r| r.min(box_radius));
@@ -20411,7 +20593,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
         {
-          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if is_axes_off(s) => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
           _ => {}
         },
@@ -21336,7 +21518,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
         {
-          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if is_axes_off(s) => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
           _ => {}
         },
@@ -22684,7 +22866,7 @@ fn contour3d_render(
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
         {
-          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if is_axes_off(s) => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
           _ => {}
         },
@@ -23912,6 +24094,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (svg_width, svg_height),
     full_width,
     point_size,
+    !axes_hidden(&args[1..]),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -24033,6 +24216,7 @@ fn generate_scatter_svg(
   (svg_width, svg_height): (u32, u32),
   full_width: bool,
   point_size: f64,
+  show_axes: bool,
 ) -> Result<String, InterpreterError> {
   // Find bounding box
   let mut px_min = f64::INFINITY;
@@ -24099,8 +24283,10 @@ fn generate_scatter_svg(
     ));
   }
 
-  // Draw axes first (behind points)
-  draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  // Draw axes first (behind points); `Axes -> False` leaves only the box.
+  if show_axes {
+    draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  }
 
   // Build bounding-box edge segments for depth-interleaving
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
@@ -24405,6 +24591,7 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
+    !axes_hidden(&args[1..]),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -24509,6 +24696,7 @@ fn generate_line3d_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
+  show_axes: bool,
 ) -> Result<String, InterpreterError> {
   // Find bounding box of the projected segments and the axes box
   let mut px_min = f64::INFINITY;
@@ -24575,8 +24763,10 @@ fn generate_line3d_svg(
     ));
   }
 
-  // Draw axes first (behind lines)
-  draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  // Draw axes first (behind lines); `Axes -> False` leaves only the box.
+  if show_axes {
+    draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  }
 
   // Build bounding-box edge segments for depth-interleaving
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
@@ -27412,7 +27602,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
+            Expr::Identifier(s) if is_axes_off(s) => show_axes = false,
             Expr::Identifier(s) if s == "True" => show_axes = true,
             _ => {}
           }

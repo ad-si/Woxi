@@ -27712,4 +27712,36 @@ mod reduce_sparse_real_roots {
       "69"
     );
   }
+
+  // A machine zero standing as an addend (what `0.5 m 0^2` leaves behind)
+  // marks the equation as inexact without keeping the symbolic factor of
+  // the coefficients from cancelling.
+  #[test]
+  fn solve_ignores_machine_zero_addends() {
+    for (code, expected) in [
+      (
+        "Solve[m*9.8*12 + .5 m*0^2 == m*9.8*9.5 + .5 m*v^2, v]",
+        "{{v -> -7.}, {v -> 7.}}",
+      ),
+      (
+        "u0 = 0; Solve[m*9.8*12 + .5 m*u0^2 == m*9.8*9.5 + .5 m*v^2, v]",
+        "{{v -> -7.}, {v -> 7.}}",
+      ),
+      ("Solve[0. + m x^2 == 4 m, x]", "{{x -> -2.}, {x -> 2.}}"),
+      ("Solve[0. + m x == 4 m, x]", "{{x -> 4.}}"),
+      (
+        "Solve[0. + 24 m - m v^2/2 == 0, v]",
+        "{{v -> -6.928203230275509}, {v -> 6.928203230275509}}",
+      ),
+      ("Solve[0. + x^2 == 4, x]", "{{x -> -2.}, {x -> 2.}}"),
+      ("Solve[0. + 2 x == 4, x]", "{{x -> 2.}}"),
+      (
+        "Solve[{0. + m x + y == 3 m, y == m}, {x, y}]",
+        "{{x -> 2., y -> m}}",
+      ),
+      ("Solve[m x^2 == 4 m, x]", "{{x -> -2}, {x -> 2}}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
 }

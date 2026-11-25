@@ -3038,7 +3038,8 @@ fn find_constraint_spans(
   while i < s.len() {
     // The search reports the leftmost match at or after `i`, so no match
     // starts between `i` and it: jump there instead of retrying every
-    // character (quadratic on a long text with sparse matches). No match at
+    // character, which was quadratic on a long text with sparse matches
+    // (seconds for one `StringContainsQ` on a 500 kB string). No match at
     // all ends the scan.
     let Some(caps) = re.captures_at(s, i) else {
       break;
@@ -3050,16 +3051,15 @@ fn find_constraint_spans(
       i = m.start();
       continue;
     }
+    let ch = s[i..].chars().next().unwrap();
     if !m.as_str().is_empty() && caps_satisfy_constraints(&caps, constraints) {
       spans.push((m.start(), m.end()));
-      let ch = s[i..].chars().next().unwrap();
       i = if overlapping {
         i + ch.len_utf8()
       } else {
         m.end()
       };
     } else {
-      let ch = s[i..].chars().next().unwrap();
       i += ch.len_utf8();
     }
   }
