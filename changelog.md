@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
+    plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
+    `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
+    `ContourPlot` holds its `GraphicsComplex` as the graphic's first argument,
+    so `plot[[1, 1]]` is the point table.
 - A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
     way to draw a ground plane) is filled instead of drawn as a bare
     outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes

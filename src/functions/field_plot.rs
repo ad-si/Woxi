@@ -3516,7 +3516,17 @@ fn field_plot_structure(
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
   }
-  let mut structure_args = vec![Expr::List(items.into())];
+  // A contour plot's content is a single `GraphicsComplex`, which Wolfram
+  // stores as the graphic's first argument itself (not in a list), so
+  // `First[First[plot]]` is the point table.
+  let content = match <[Expr; 1]>::try_from(items) {
+    Ok([complex]) if matches!(&complex, Expr::FunctionCall { name, .. } if name == "GraphicsComplex") => {
+      complex
+    }
+    Ok([item]) => Expr::List(vec![item].into()),
+    Err(items) => Expr::List(items.into()),
+  };
+  let mut structure_args = vec![content];
   let mut explicit = crate::functions::plot::explicit_options(args);
   // The plot's own `PlotRange` clips the *function values* — its x/y axes
   // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
@@ -4775,7 +4785,7 @@ fn contour_plot_equations(
   let structure = call(
     "Graphics",
     vec![
-      Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
+      contour_graphics_complex(&structure_items),
       Expr::List(structure_options.into()),
     ],
   );

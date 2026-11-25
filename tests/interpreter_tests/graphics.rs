@@ -29880,7 +29880,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {y, -4, 4}, Contours -> {0}, ContourShading -> None]]]"
         )
         .unwrap(),
-        "List"
+        "GraphicsComplex"
       );
       let lines = interpret(
         "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
@@ -30065,7 +30065,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            Head[Graphics[g[[1]], g[[2]]]]}"
         )
         .unwrap(),
-        "{2, List, List, Graphics}"
+        "{2, GraphicsComplex, List, Graphics}"
       );
     }
 
@@ -58520,13 +58520,13 @@ mod color_data_indexed {
     assert_eq!(
       interpret("Head[ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}][[1]]]")
         .unwrap(),
-      "List"
+      "GraphicsComplex"
     );
     assert_eq!(
       interpret(
         "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
          ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, \
-         {Head[prims[[1]]], Cases[prims, _RGBColor, Infinity], \
+         {Head[prims], Cases[prims, _RGBColor, Infinity], \
          Head[First[Cases[prims, _Line, Infinity]]]}]"
       )
       .unwrap(),
@@ -58545,7 +58545,7 @@ mod color_data_indexed {
          Head[ContourPlot[lineA == 0, {x, -9, 9}, {y, -9, 9}][[1]]]"
       )
       .unwrap(),
-      "List"
+      "GraphicsComplex"
     );
   }
 
@@ -58567,6 +58567,56 @@ mod color_data_indexed {
       )
       .unwrap(),
       "{True, 1, True, True, 1, True}"
+    );
+  }
+
+  // The `GraphicsComplex` is the graphic's first argument itself (not an
+  // element of a primitive list), so `plot[[1, 1]]` is the point table.
+  #[test]
+  fn contour_plot_first_argument_is_the_graphics_complex() {
+    clear_state();
+    for body in ["x^2 + y", "x^2 + y^2 == 1"] {
+      assert_eq!(
+        interpret(&format!(
+          "p = ContourPlot[{body}, {{x, -2, 2}}, {{y, -2, 2}}]; \
+           {{Head[First[p]], MatrixQ[p[[1, 1]]], Last[Dimensions[p[[1, 1]]]], \
+            Head[First[First[FullForm[p]]]]}}"
+        ))
+        .unwrap(),
+        "{GraphicsComplex, True, 2, GraphicsComplex}"
+      );
+    }
+  }
+
+  // A rendered plot nested inside another expression (a list, a `FullForm`
+  // wrapper, …) is searched through its symbolic form just like a bare one.
+  #[test]
+  fn structural_searches_reach_into_a_nested_plot() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, Contours -> {0.5}]; \
+         n = Length[Cases[p, _Line, Infinity]]; \
+         {n > 0, \
+          Length[Cases[{p}, _Line, Infinity]] == n, \
+          Length[Cases[FullForm[p], _Line, Infinity]] == n, \
+          Length[Cases[FullForm[FullForm[p]], _Line, Infinity]] == n, \
+          Length[Position[{p}, _Line]] == n, \
+          Count[f[p], _Line, Infinity] == n, \
+          Length[Level[{p}, {2}]] == Length[Level[p, {1}]], \
+          FreeQ[{p}, _Line], FreeQ[{p}, _Sphere], \
+          MemberQ[{p}, _Line, Infinity], MemberQ[{p}, _Sphere, Infinity]}"
+      )
+      .unwrap(),
+      "{True, True, True, True, True, True, True, False, True, True, False}"
+    );
+    assert_eq!(
+      interpret(
+        "p = Plot[x, {x, 0, 1}]; \
+         {Length[Cases[{p, p}, _Line, Infinity]], FreeQ[h[p], Line]}"
+      )
+      .unwrap(),
+      "{2, False}"
     );
   }
 
