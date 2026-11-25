@@ -168,16 +168,100 @@ pub(super) fn plain_factor_product(args: &[Expr]) -> Option<Expr> {
   {
     return None;
   }
-  let mut out: Vec<Expr> = Vec::with_capacity(factors.len() + 1);
+  let count = factors.len();
+  Some(ordered_plain_product(
+    &coeff,
+    factors.into_iter().cloned(),
+    count,
+  ))
+}
+
+/// The product of `coeff` and the `count` (at least one) `factors`, which
+/// are distinct plain factors in canonical order.
+fn ordered_plain_product(
+  coeff: &super::arithmetic::Coeff,
+  factors: impl Iterator<Item = Expr>,
+  count: usize,
+) -> Expr {
+  let mut out: Vec<Expr> = Vec::with_capacity(count + 1);
   if !coeff.is_one() {
     out.push(coeff.to_expr());
   }
-  out.extend(factors.into_iter().cloned());
-  Some(if out.len() == 1 {
+  out.extend(factors);
+  if out.len() == 1 {
     out.pop().unwrap()
   } else {
     times(out)
-  })
+  }
+}
+
+/// The canonical orders of a set of distinct plain factors that many
+/// products share (the generators of an expanded polynomial), found once
+/// instead of by sorting the factors of every product and comparing the
+/// factors of every pair of terms.
+pub(crate) struct PlainFactorOrders {
+  /// The indices of the factors in the order `Times` puts them.
+  pub(crate) times: Vec<usize>,
+  /// The rank of each factor in the order `Plus` compares the factors of
+  /// its terms by (see `plain_call_sum`). `None` unless every factor is a
+  /// call and no two of them tie.
+  pub(crate) plus_rank: Option<Vec<usize>>,
+}
+
+/// The orders of `factors`; `None` unless they are plain factors that
+/// `Times` keeps apart (see `plain_factor_product`).
+pub(crate) fn plain_factor_orders(
+  factors: &[Expr],
+) -> Option<PlainFactorOrders> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
+    return None;
+  }
+  if !factors.iter().all(is_plain_factor) {
+    return None;
+  }
+  let order_by = |cmp: fn(&Expr, &Expr) -> std::cmp::Ordering| {
+    let mut order: Vec<usize> = (0..factors.len()).collect();
+    order.sort_by(|&a, &b| cmp(&factors[a], &factors[b]));
+    order
+      .windows(2)
+      .all(|w| cmp(&factors[w[0]], &factors[w[1]]).is_lt())
+      .then_some(order)
+  };
+  let times = order_by(super::arithmetic::times_factor_order)?;
+  let plus_rank = factors
+    .iter()
+    .all(is_plain_call)
+    .then(|| order_by(super::arithmetic::wl_arg_order))
+    .flatten()
+    .map(|order| {
+      let mut rank = vec![0; factors.len()];
+      for (r, &i) in order.iter().enumerate() {
+        rank[i] = r;
+      }
+      rank
+    });
+  Some(PlainFactorOrders { times, plus_rank })
+}
+
+/// `coefficient * factors` for an exact non-zero `coefficient` and distinct
+/// plain `factors` given in canonical order (see `plain_factor_orders`): the
+/// product `Times` makes of them, without sorting them again.
+pub(crate) fn plain_product_in_order(
+  coefficient: &Expr,
+  factors: Vec<Expr>,
+) -> Option<Expr> {
+  let coeff = super::arithmetic::expr_to_coeff(coefficient)?;
+  if coeff.is_zero() || factors.is_empty() {
+    return None;
+  }
+  let count = factors.len();
+  Some(ordered_plain_product(&coeff, factors.into_iter(), count))
+}
+
+/// A call of a head without built-in meaning.
+fn is_plain_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if is_plain_symbol(name))
 }
 
 /// The terms of a sum whose arguments may themselves be sums (`Plus` is
@@ -204,12 +288,11 @@ fn sum_terms(args: &[Expr]) -> Vec<&Expr> {
   flat
 }
 
-/// The factors of a canonical product of calls of heads without built-in
-/// meaning, with an optional exact coefficient (`4*g[a, b]*g[c, d]`, or a
-/// single call). Optionally sort them the way `Plus` compares them; large
-/// sums defer that work until the factors have integer ranks.
-fn call_product_key(term: &Expr, sort: bool) -> Option<Vec<&Expr>> {
-  let factors: &[Expr] = match term {
+/// The factors of a product with an optional exact coefficient
+/// (`4*g[a, b]*g[c, d]`), or the single factor a term that is no product
+/// is.
+fn term_factors(term: &Expr) -> &[Expr] {
+  match term {
     Expr::FunctionCall { name, args } if name == "Times" => {
       match args.first() {
         Some(c) if super::arithmetic::expr_to_coeff(c).is_some() => &args[1..],
@@ -217,30 +300,132 @@ fn call_product_key(term: &Expr, sort: bool) -> Option<Vec<&Expr>> {
       }
     }
     _ => std::slice::from_ref(term),
+  }
+}
+
+/// The order `Plus` gives `terms` when every one of them is a canonical
+/// product of calls of heads without built-in meaning, as the positions of
+/// the terms; `None` when one is not, or when two of them combine.
+///
+/// `Plus` orders such terms from their last factor back, the factors taken
+/// in `wl_arg_order` (see `call_led_order`), and a term whose factors are
+/// the other's last ones first. The same few calls make up thousands of
+/// terms (an expanded trace of `g[a, b]` metric tensors), so each distinct
+/// call is ranked once — among the others in `wl_arg_order`, and in the
+/// order `Times` keeps its factors in — and the terms are checked and
+/// sorted by those ranks, where comparing the calls themselves for every
+/// pair of neighbors and of terms made such sums crawl.
+fn plain_call_term_order(terms: &[&Expr]) -> Option<Vec<usize>> {
+  use super::arithmetic::{times_factor_order, wl_arg_order};
+  let first = *terms.first()?;
+  // A call by the comparator the terms are ordered with, equivalence
+  // classes included.
+  struct Factor<'a>(&'a Expr);
+  impl PartialEq for Factor<'_> {
+    fn eq(&self, other: &Self) -> bool {
+      self.cmp(other).is_eq()
+    }
+  }
+  impl Eq for Factor<'_> {}
+  impl PartialOrd for Factor<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+      Some(self.cmp(other))
+    }
+  }
+  impl Ord for Factor<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+      wl_arg_order(self.0, other.0)
+    }
+  }
+  // ExprList's interior mutability only caches derived values. The borrowed
+  // expressions cannot change here, so wl_arg_order remains stable.
+  #[allow(clippy::mutable_key_type)]
+  let mut classes: std::collections::BTreeMap<Factor, usize> =
+    std::collections::BTreeMap::new();
+  // The class of each call already seen, by its head and where its
+  // arguments are stored: the borrowed terms stay alive throughout, so a
+  // shared call met again is the same call. No pointer is dereferenced.
+  let mut by_address: rustc_hash::FxHashMap<(*const Expr, usize, &str), usize> =
+    rustc_hash::FxHashMap::default();
+  // The classes of the factors of all terms, one term after the other,
+  // with where each term's end.
+  let mut ids: Vec<usize> = Vec::with_capacity(terms.len() * 4);
+  let mut ends: Vec<usize> = Vec::with_capacity(terms.len());
+  for term in terms {
+    let factors = term_factors(term);
+    if factors.is_empty() {
+      return None;
+    }
+    for factor in factors {
+      let Expr::FunctionCall { name, args } = factor else {
+        return None;
+      };
+      let address = (args.as_ptr(), args.len(), name.as_str());
+      let id = if let Some(&id) = by_address.get(&address) {
+        id
+      } else {
+        if !is_plain_symbol(name) {
+          return None;
+        }
+        let next = classes.len();
+        let id = *classes.entry(Factor(factor)).or_insert(next);
+        by_address.insert(address, id);
+        id
+      };
+      ids.push(id);
+    }
+    ends.push(ids.len());
+  }
+  // Rank the classes both ways.
+  let mut plus_rank = vec![0; classes.len()];
+  let mut members: Vec<&Expr> = vec![first; classes.len()];
+  for (rank, (factor, &id)) in classes.iter().enumerate() {
+    plus_rank[id] = rank;
+    members[id] = factor.0;
+  }
+  let mut in_times_order: Vec<usize> = (0..members.len()).collect();
+  in_times_order.sort_by(|&a, &b| times_factor_order(members[a], members[b]));
+  let mut times_rank = vec![0; members.len()];
+  let mut rank = 0;
+  for (i, &id) in in_times_order.iter().enumerate() {
+    if i > 0
+      && times_factor_order(members[in_times_order[i - 1]], members[id]).is_lt()
+    {
+      rank += 1;
+    }
+    times_rank[id] = rank;
+  }
+  // Every product has to be canonical: its factors strictly ascending, as
+  // `Times` leaves them (equal neighbors would merge into a power). Its
+  // key is then the ranks of its factors, the last one first.
+  let mut start = 0;
+  for &end in &ends {
+    let key = &mut ids[start..end];
+    if !key.windows(2).all(|w| times_rank[w[0]] < times_rank[w[1]]) {
+      return None;
+    }
+    for id in key.iter_mut() {
+      *id = plus_rank[*id];
+    }
+    key.sort_unstable_by(|a, b| b.cmp(a));
+    start = end;
+  }
+  let key = |term: usize| {
+    let start = if term == 0 { 0 } else { ends[term - 1] };
+    &ids[start..ends[term]]
   };
-  let is_call = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if is_plain_symbol(name));
-  if factors.is_empty()
-    || !factors.iter().all(is_call)
-    || !factors
-      .windows(2)
-      .all(|w| super::arithmetic::times_factor_order(&w[0], &w[1]).is_lt())
-  {
+  let mut order: Vec<usize> = (0..terms.len()).collect();
+  order.sort_by(|&a, &b| key(a).cmp(key(b)));
+  // Equal neighbors are like terms, which combine.
+  if order.windows(2).any(|w| key(w[0]) == key(w[1])) {
     return None;
   }
-  let mut key: Vec<&Expr> = factors.iter().collect();
-  if sort {
-    key.sort_by(|a, b| super::arithmetic::wl_arg_order(a, b));
-  }
-  Some(key)
+  Some(order)
 }
 
 /// `Plus[args]` when every term is a canonical product of calls of heads
-/// without built-in meaning and no two terms combine. `Plus` orders such
-/// terms from their last factor back, the factors taken in `wl_arg_order`
-/// (see `call_led_order`), and a term whose factors are the other's last
-/// ones first. Comparing the terms that way directly avoids building the
-/// rest of each product on every comparison, which made sorting the terms
-/// of an expanded trace of `g[a, b]` metric tensors crawl.
+/// without built-in meaning and no two terms combine (see
+/// `plain_call_term_order`).
 pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
   #[cfg(test)]
   if tests::GENERIC_ONLY.get() {
@@ -250,90 +435,112 @@ pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
   if terms.len() < 2 {
     return None;
   }
-  let rank_factors = terms.len() >= 32;
-  let mut keyed: Vec<(Vec<&Expr>, &Expr)> = terms
-    .into_iter()
-    .map(|term| Some((call_product_key(term, !rank_factors)?, term)))
-    .collect::<Option<_>>()?;
-  if rank_factors {
-    // Intern factors by the very comparator used below, including its
-    // equivalence classes. Sorting long sums then compares small integers
-    // instead of repeatedly traversing the same nested calls.
-    struct Factor<'a>(&'a Expr);
-    impl PartialEq for Factor<'_> {
-      fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
-      }
-    }
-    impl Eq for Factor<'_> {}
-    impl PartialOrd for Factor<'_> {
-      fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-      }
-    }
-    impl Ord for Factor<'_> {
-      fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        super::arithmetic::wl_arg_order(self.0, other.0)
-      }
-    }
-    // ExprList's interior mutability only caches derived values. The borrowed
-    // expressions cannot change here, so wl_arg_order remains stable.
-    #[allow(clippy::mutable_key_type)]
-    let mut ranks = std::collections::BTreeMap::new();
-    let mut identities = HashMap::new();
-    let mut ranked: Vec<_> = keyed
-      .into_iter()
-      .map(|(factors, term)| {
-        let key: Vec<usize> = factors
-          .into_iter()
-          .rev()
-          .map(|factor| {
-            let Expr::FunctionCall { name, args } = factor else {
-              unreachable!("call_product_key accepts only calls");
-            };
-            // Borrowed inputs remain alive throughout sorting. Shared calls
-            // have the same argument address; no pointer is dereferenced.
-            *identities
-              .entry((name.as_str(), args.as_ptr(), args.len()))
-              .or_insert_with(|| {
-                let next = ranks.len();
-                *ranks.entry(Factor(factor)).or_insert(next)
-              })
-          })
-          .collect();
-        (key, term)
-      })
-      .collect();
-    let mut ordered = vec![0; ranks.len()];
-    for (rank, id) in ranks.values().enumerate() {
-      ordered[*id] = rank;
-    }
-    for (key, _) in &mut ranked {
-      for id in key.iter_mut() {
-        *id = ordered[*id];
-      }
-      key.sort_unstable_by(|a, b| b.cmp(a));
-    }
-    ranked.sort_by(|(a, _), (b, _)| a.cmp(b));
-    if ranked.windows(2).any(|w| w[0].0 == w[1].0) {
-      return None;
-    }
-    return Some(plus(ranked.into_iter().map(|(_, t)| t.clone()).collect()));
+  let order = plain_call_term_order(&terms)?;
+  Some(plus(order.into_iter().map(|i| terms[i].clone()).collect()))
+}
+
+/// `plain_call_sum` for a caller that owns the terms, which are moved into
+/// the sum instead of copied (the summands of a `Sum`, each of them a long
+/// sum of its own). Hands the terms back when they are not such a sum.
+pub(crate) fn plain_call_sum_owned(args: Vec<Expr>) -> Result<Expr, Vec<Expr>> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
+    return Err(args);
   }
-  let order = |a: &[&Expr], b: &[&Expr]| {
-    a.iter()
-      .rev()
-      .zip(b.iter().rev())
-      .map(|(x, y)| super::arithmetic::wl_arg_order(x, y))
-      .find(|o| o.is_ne())
-      .unwrap_or_else(|| a.len().cmp(&b.len()))
+  let order = {
+    let terms = sum_terms(&args);
+    if terms.len() < 2 {
+      return Err(args);
+    }
+    match plain_call_term_order(&terms) {
+      Some(order) => order,
+      None => return Err(args),
+    }
   };
-  keyed.sort_by(|(a, _), (b, _)| order(a, b));
-  // Equal neighbors are like terms, which combine.
-  if keyed.windows(2).any(|w| order(&w[0].0, &w[1].0).is_eq()) {
+  let mut terms: Vec<Option<Expr>> = Vec::with_capacity(order.len());
+  for arg in args {
+    take_sum_terms(arg, &mut terms);
+  }
+  Ok(plus(
+    order.into_iter().filter_map(|i| terms[i].take()).collect(),
+  ))
+}
+
+/// `sum_terms` by value: the terms in the same order, moved out of the sums
+/// they are in (copied out of a sum that is shared with another expression).
+fn take_sum_terms(mut arg: Expr, out: &mut Vec<Option<Expr>>) {
+  match &mut arg {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for term in std::mem::take(args).into_inner() {
+        take_sum_terms(term, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let left = std::mem::replace(&mut **left, Expr::Integer(0));
+      let right = std::mem::replace(&mut **right, Expr::Integer(0));
+      take_sum_terms(left, out);
+      take_sum_terms(right, out);
+    }
+    _ => out.push(Some(arg)),
+  }
+}
+
+/// `-1 * sum` for a sum of canonical products of calls of heads without
+/// built-in meaning: `Times` distributes the `-1`, which only changes the
+/// sign of every coefficient — the factors, and with them the order of the
+/// terms, stay. The general code multiplies every term and adds the
+/// products up one by one through all it knows.
+pub(super) fn negated_plain_call_sum(args: &[Expr]) -> Option<Expr> {
+  #[cfg(test)]
+  if tests::GENERIC_ONLY.get() {
     return None;
   }
-  Some(plus(keyed.into_iter().map(|(_, t)| t.clone()).collect()))
+  let ([Expr::Integer(-1), sum] | [sum, Expr::Integer(-1)]) = args else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args: terms } = sum else {
+    return None;
+  };
+  if name != "Plus" || terms.len() < 2 {
+    return None;
+  }
+  // The terms are checked (and put in order) only once negated; a term
+  // that is not such a product makes that fail.
+  let mut negated: Vec<Option<Expr>> = terms
+    .iter()
+    .map(|term| {
+      let factors = term_factors(term);
+      let coeff = match term {
+        Expr::FunctionCall { name, args }
+          if name == "Times" && factors.len() < args.len() =>
+        {
+          super::arithmetic::expr_to_coeff(&args[0])?
+        }
+        _ => super::arithmetic::Coeff::Exact(1, 1),
+      };
+      (!factors.is_empty()).then(|| {
+        Some(ordered_plain_product(
+          &coeff.negate(),
+          factors.iter().cloned(),
+          factors.len(),
+        ))
+      })
+    })
+    .collect::<Option<_>>()?;
+  let order = {
+    let terms: Vec<&Expr> = negated.iter().flatten().collect();
+    plain_call_term_order(&terms)?
+  };
+  Some(plus(
+    order
+      .into_iter()
+      .filter_map(|i| negated[i].take())
+      .collect(),
+  ))
 }
 
 /// `Plus[args]` when every term is a canonical monomial (or one exact
@@ -613,6 +820,137 @@ mod tests {
         assert_eq!(format!("{fast:?}"), format!("{general:?}"));
       }
     }
+  }
+
+  /// `-1` times a sum of call products, among them sums the fast path has to
+  /// leave alone (a constant or a symbol among the terms, a power).
+  #[test]
+  fn negated_call_sums_match_the_general_times() {
+    let mut rng = Rng(0x51ed_270b_9f3c_a6d1);
+    let mut negated = 0;
+    for _ in 0..2000 {
+      let source = (0..2 + rng.next(6))
+        .map(|_| random_call_term(&mut rng))
+        .collect::<Vec<_>>()
+        .join(" + ");
+      let sum = eval(&source);
+      for args in [
+        [Expr::Integer(-1), sum.clone()],
+        [sum.clone(), Expr::Integer(-1)],
+      ] {
+        negated += usize::from(negated_plain_call_sum(&args).is_some());
+        let fast = times_ast(&args).unwrap();
+        let general = generic(|| times_ast(&args)).unwrap();
+        assert_eq!(format!("{fast:?}"), format!("{general:?}"), "{source}");
+      }
+    }
+    assert!(negated > 100, "only {negated} sums took the fast path");
+  }
+
+  /// The same call met in many terms is recognized by where its arguments
+  /// are stored once they are shared, as `Expand` leaves them.
+  #[test]
+  fn sums_of_shared_calls_match_the_general_plus() {
+    let mut rng = Rng(0x7f4a_7c15_9e37_79b9);
+    let pool: Vec<Expr> = (1..=12)
+      .map(|i| {
+        let mut call = eval(&format!("g[x[{}], x[{}]]", i % 5, i));
+        if let Expr::FunctionCall { args, .. } = &mut call {
+          args.share();
+        }
+        call
+      })
+      .collect();
+    for _ in 0..300 {
+      let terms: Vec<Expr> = (0..2 + rng.next(40))
+        .map(|_| {
+          let mut factors = vec![eval(COEFFS[3 + rng.next(COEFFS.len() - 3)])];
+          let mut next = rng.next(3);
+          while next < pool.len() {
+            factors.push(pool[next].clone());
+            next += 1 + rng.next(5);
+          }
+          times_ast(&factors).unwrap()
+        })
+        .collect();
+      let fast = plus_ast(&terms).unwrap();
+      let general = generic(|| plus_ast(&terms)).unwrap();
+      assert_eq!(
+        crate::syntax::expr_to_string(&fast),
+        crate::syntax::expr_to_string(&general)
+      );
+    }
+  }
+
+  /// Owned terms, nested sums among them, are moved into the same sum the
+  /// borrowing path builds, and handed back when they are no such sum.
+  #[test]
+  fn owned_call_sums_match_the_general_plus() {
+    let mut rng = Rng(0x1b87_3593_cc9e_2d51);
+    let mut summed = 0;
+    for _ in 0..1000 {
+      let mut terms: Vec<Expr> = (0..2 + rng.next(8))
+        .map(|_| eval(&random_call_term(&mut rng)))
+        .collect();
+      if terms.len() > 3 && rng.next(2) == 0 {
+        let tail = terms.split_off(2);
+        terms.push(plus(tail));
+      }
+      let general = generic(|| plus_ast(&terms)).unwrap();
+      match plain_call_sum_owned(terms.clone()) {
+        Ok(fast) => {
+          summed += 1;
+          assert_eq!(format!("{fast:?}"), format!("{general:?}"), "{terms:?}");
+        }
+        Err(back) => {
+          assert_eq!(format!("{back:?}"), format!("{terms:?}"));
+          assert!(plain_call_sum(&terms).is_none(), "{terms:?}");
+        }
+      }
+    }
+    assert!(summed > 10, "only {summed} sums took the fast path");
+  }
+
+  /// The orders found once for a set of factors are the orders `Times` and
+  /// `Plus` give them.
+  #[test]
+  fn factor_orders_are_the_orders_of_times_and_plus() {
+    let factors: Vec<Expr> = [
+      "g[x[1], x[2]]",
+      "g[x[2], x[1]]",
+      "g[x[1], x[10]]",
+      "h[]",
+      "g[a]",
+      "f[a, b]",
+      "F[a]",
+      "g[b]",
+    ]
+    .iter()
+    .map(|s| eval(s))
+    .collect();
+    let orders = plain_factor_orders(&factors).unwrap();
+    let product = generic(|| times_ast(&factors)).unwrap();
+    let ordered: Vec<Expr> =
+      orders.times.iter().map(|&i| factors[i].clone()).collect();
+    assert_eq!(format!("{product:?}"), format!("{:?}", times(ordered)));
+    let sum = generic(|| plus_ast(&factors)).unwrap();
+    let mut by_rank: Vec<usize> = (0..factors.len()).collect();
+    let rank = orders.plus_rank.unwrap();
+    by_rank.sort_by_key(|&i| rank[i]);
+    let ordered: Vec<Expr> =
+      by_rank.into_iter().map(|i| factors[i].clone()).collect();
+    assert_eq!(format!("{sum:?}"), format!("{:?}", plus(ordered)));
+    // Symbols among the factors have no place among the calls of a sum, and
+    // equal factors or ones with built-in meaning no order at all.
+    let with_symbol = [eval("g[a]"), eval("zz")];
+    assert!(
+      plain_factor_orders(&with_symbol)
+        .unwrap()
+        .plus_rank
+        .is_none()
+    );
+    assert!(plain_factor_orders(&[eval("g[a]"), eval("g[a]")]).is_none());
+    assert!(plain_factor_orders(&[eval("g[a]"), eval("Sin[a]")]).is_none());
   }
 
   #[test]

@@ -122,6 +122,59 @@ mod user_defined_functions {
     );
   }
 
+  // The rules of a function are looked up once per change to the
+  // definitions and shared between its calls; every way of changing them
+  // has to reach the next call (and a call still running keeps its own).
+  #[test]
+  fn redefinition_reaches_the_next_call() {
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := x^2; a = f[3]; f[x_] := x^3; {a, f[3]}").unwrap(),
+      "{9, 27}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] := 1; a = f[5]; f[x_Integer] := 2; b = f[5]; \
+         f[5] = 3; c = f[5]; f[5] =.; {a, b, c, f[5]}"
+      )
+      .unwrap(),
+      "{1, 2, 3, 2}"
+    );
+  }
+
+  #[test]
+  fn clearing_reaches_the_next_call() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] := x + 1; a = f[1]; Clear[f]; b = ToString[f[1]]; \
+         f[x_] := x + 2; {a, b, f[1], Block[{f}, ToString[f[1]]], f[1]}"
+      )
+      .unwrap(),
+      "{2, f[1], 3, f[1], 3}"
+    );
+  }
+
+  #[test]
+  fn a_function_redefining_itself_finishes_its_own_call() {
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := (f[y_] := 2 y; x + 1); {f[10], f[10], f[4]}")
+        .unwrap(),
+      "{11, 20, 8}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "fib[0] = 0; fib[1] = 1; fib[n_] := fib[n] = fib[n - 1] + fib[n - 2]; \
+         {fib[30], fib[31]}"
+      )
+      .unwrap(),
+      "{832040, 1346269}"
+    );
+  }
+
   #[test]
   fn map_apply_with_user_function() {
     // Test @@@ with user-defined function

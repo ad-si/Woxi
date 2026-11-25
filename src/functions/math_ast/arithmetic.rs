@@ -2293,7 +2293,7 @@ impl Coeff {
       _ => Self::Real(self.to_f64() * other.to_f64()),
     }
   }
-  fn negate(&self) -> Self {
+  pub(super) fn negate(&self) -> Self {
     match self {
       Self::Exact(n, d) => Self::Exact(-n, *d),
       Self::BigExact(n, d) => Self::BigExact(-n, d.clone()),
@@ -11231,6 +11231,9 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(product) = super::canonical_polynomial::plain_factor_product(args)
   {
     return Ok(product);
+  }
+  if let Some(sum) = super::canonical_polynomial::negated_plain_call_sum(args) {
+    return Ok(sum);
   }
 
   // An exact zero times a machine number is the machine zero: `0*1.5` and

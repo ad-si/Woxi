@@ -2194,10 +2194,15 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
 /// Add all terms of a finite sum with a single `Plus`. Folding them in one at
 /// a time re-sorts the growing symbolic sum at every step, which is
 /// quadratic for sums with many distinct terms.
-fn plus_all(terms: &[Expr]) -> Result<Expr, InterpreterError> {
-  match terms.len() {
-    0 => Ok(Expr::Integer(0)),
-    _ => crate::functions::math_ast::plus_ast(terms),
+fn plus_all(terms: Vec<Expr>) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::canonical_polynomial::plain_call_sum_owned;
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  // Long sums of products of calls are moved into the total, not copied.
+  match plain_call_sum_owned(terms) {
+    Ok(sum) => Ok(sum),
+    Err(terms) => crate::functions::math_ast::plus_ast(&terms),
   }
 }
 
@@ -2447,7 +2452,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         terms.push(sum_ast(&inner)?);
       }
-      return plus_all(&terms);
+      return plus_all(terms);
     }
     // Evaluate innermost sum first (last iterator), then wrap outward
     let body = &args[0];
@@ -2513,7 +2518,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
               crate::syntax::substitute_index_variable(body, &var_name, item);
             terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
           }
-          return plus_all(&terms);
+          return plus_all(terms);
         }
       }
 
@@ -2550,7 +2555,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::syntax::substitute_index_variable(body, &var_name, value);
           terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         }
-        return plus_all(&terms);
+        return plus_all(terms);
       }
 
       // Infinite range with an explicit integer step, {i, min, Infinity, s}:
@@ -2761,7 +2766,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
               i += 1.0;
             }
-            return plus_all(&terms);
+            return plus_all(terms);
           }
         }
       }
@@ -2804,7 +2809,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
               terms
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
             }
-            return plus_all(&terms);
+            return plus_all(terms);
           }
         }
       }
@@ -2924,7 +2929,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         i += step;
       }
-      return plus_all(&terms);
+      return plus_all(terms);
     }
     _ => {}
   }
@@ -3345,8 +3350,7 @@ fn try_symbolic_sum(
       return Ok(Some(h_top));
     }
     if a > 0 {
-      let skipped =
-        plus_all(&(0..a).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
+      let skipped = plus_all((0..a).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
       if matches!(skipped, Expr::Integer(0)) {
         return Ok(Some(h_top));
       }
@@ -3356,7 +3360,7 @@ fn try_symbolic_sum(
         diff,
       ])?));
     }
-    let below = plus_all(&(a..0).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
+    let below = plus_all((a..0).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&plus2(
       below, h_top,
     ))?));

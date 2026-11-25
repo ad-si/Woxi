@@ -4241,6 +4241,27 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
             .join("\u{1}");
           cache.insert(key, (arg_exprs, rhs_value.clone()));
         });
+        // Like a symbol's value, the value is stored as already evaluated:
+        // reading `f[lit]` before anything changes must not put a long
+        // result through `Times` and `Plus` term by term again. Not one
+        // that mentions `f` itself (`f[1] = g[f[1]]` recurses when read),
+        // nor one the list destructuring above rewrote.
+        if body_substitutions.is_empty()
+          && let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
+            &rhs_value
+          && items.is_shared()
+          && !crate::syntax::mentions_symbol(&rhs_value, func_name)
+        {
+          items.mark_evaluated(
+            if crate::evaluator::core_eval::mentions_only_protected_symbols(
+              &rhs_value,
+            ) {
+              crate::epoch::current_protected_epoch()
+            } else {
+              crate::epoch::current_epoch()
+            },
+          );
+        }
         return Ok(rhs_value);
       }
     }

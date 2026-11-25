@@ -639,6 +639,70 @@ mod expand {
     );
   }
 
+  // The terms of a product of sums of calls are assembled in canonical
+  // order as they are; a rule attached to `Times` (here an upvalue of the
+  // calls) still has to see every product.
+  #[test]
+  fn expanded_call_products_obey_rules_for_times() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "before = ToString[Expand[(g[1] + g[3]) (g[2] + g[4])], InputForm]; \
+         g /: g[1] g[2] := seven; \
+         {before, Expand[(g[1] + g[3]) (g[2] + g[4])]}"
+      )
+      .unwrap(),
+      "{g[1]*g[2] + g[2]*g[3] + g[1]*g[4] + g[3]*g[4], \
+       seven + g[2]*g[3] + g[1]*g[4] + g[3]*g[4]}"
+    );
+  }
+
+  // Calls that evaluate to something else, to each other, or to the same
+  // thing are multiplied out as what they evaluate to.
+  #[test]
+  fn expanded_call_products_use_evaluated_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "e = Hold[Expand[(g[1] + g[2]) (g[3] + g[4])]]; g[3] = g[1]; g[4] = 5; \
+         ReleaseHold[e]"
+      )
+      .unwrap(),
+      "5*g[1] + g[1]^2 + 5*g[2] + g[1]*g[2]"
+    );
+  }
+
+  // `-1` distributes over a sum of products of calls, flipping the sign of
+  // each coefficient in place (issue #2142).
+  #[test]
+  fn minus_a_sum_of_call_products() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = g[1] g[2] - 3 g[3] + g[1]/2 - g[4] h[1]; \
+         {-s, -(g[2] - g[1]), -(1 + g[1]), -(x + g[1]), -(g[1]^2 + g[2]), s - s}"
+      )
+      .unwrap(),
+      "{-1/2*g[1] - g[1]*g[2] + 3*g[3] + g[4]*h[1], g[1] - g[2], -1 - g[1], \
+       -x - g[1], -g[1]^2 - g[2], 0}"
+    );
+  }
+
+  // Radicals of one integer still merge after a long sum is expanded, and a
+  // sum without two such terms is returned as it is.
+  #[test]
+  fn expand_merges_integer_radicals_among_other_terms() {
+    clear_state();
+    assert_eq!(
+      interpret("Expand[a/Sqrt[3] + a Sqrt[3] + g[1] (g[2] + g[3])]").unwrap(),
+      "(4*a)/Sqrt[3] + g[1]*g[2] + g[1]*g[3]"
+    );
+    assert_eq!(
+      interpret("Expand[Sqrt[3] g[1] (g[2] + g[3])]").unwrap(),
+      "Sqrt[3]*g[1]*g[2] + Sqrt[3]*g[1]*g[3]"
+    );
+  }
+
   #[test]
   fn expanded_kernels_follow_later_definitions() {
     assert_eq!(

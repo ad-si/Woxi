@@ -6,12 +6,38 @@ use crate::functions::calculus_ast::simplify;
 /// Expand[expr] - Expands products and positive integer powers
 /// Expand[expr, Modulus -> n] - Expands and reduces coefficients modulo n
 pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  expand_ast_inner(args).map(|e| match &e {
-    Expr::List(items) => {
-      Expr::List(items.iter().map(merge_integer_radical_terms).collect())
-    }
-    _ => merge_integer_radical_terms(&e),
+  expand_ast_inner(args).map(|e| match e {
+    Expr::List(ref items) => Expr::List(
+      items
+        .iter()
+        .map(|item| merge_integer_radical_terms(item.clone()))
+        .collect(),
+    ),
+    e => merge_integer_radical_terms(e),
   })
+}
+
+/// A radical of an integer: `b^(p/q)` with `b > 1`, or `Sqrt[b]`.
+fn is_integer_radical(f: &Expr) -> bool {
+  let is_base = |b: &Expr| matches!(b, Expr::Integer(b) if *b > 1);
+  match f {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_base(&args[0])
+        && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational")
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      is_base(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      is_base(left)
+        && matches!(&**right, Expr::FunctionCall { name, .. } if name == "Rational")
+    }
+    _ => false,
+  }
 }
 
 fn expand_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -114,12 +140,23 @@ fn expand_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `r - s` an integer, are like terms to Expand: they combine over the
 /// smaller power (`a/Sqrt[3] + a Sqrt[3]` is `(4 a)/Sqrt[3]`,
 /// `2^(1/3) + 2^(4/3)` is `3*2^(1/3)`). Plain Plus leaves them apart.
-fn merge_integer_radical_terms(expr: &Expr) -> Expr {
-  let Expr::FunctionCall { name, args: terms } = expr else {
-    return expr.clone();
+fn merge_integer_radical_terms(expr: Expr) -> Expr {
+  let Expr::FunctionCall { name, args: terms } = &expr else {
+    return expr;
   };
   if name != "Plus" {
-    return expr.clone();
+    return expr;
+  }
+  // Only terms holding such a radical can merge, and it takes two of them:
+  // look for those before taking every term of a long sum apart.
+  let has_radical = |t: &Expr| match t {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(is_integer_radical)
+    }
+    other => is_integer_radical(other),
+  };
+  if terms.iter().filter(|t| has_radical(t)).take(2).count() < 2 {
+    return expr;
   }
   // A term as (numeric coefficient, other factors, b, p/q) when it holds
   // exactly one radical of a positive integer.
@@ -200,7 +237,7 @@ fn merge_integer_radical_terms(expr: &Expr) -> Expr {
     parts.push(part);
   }
   if groups.iter().all(|(_, m)| m.len() < 2) {
-    return expr.clone();
+    return expr;
   }
   let mut merged_into: Vec<Option<usize>> = vec![None; terms.len()];
   let mut new_terms: Vec<Expr> = Vec::new();
@@ -245,8 +282,7 @@ fn merge_integer_radical_terms(expr: &Expr) -> Expr {
     .map(|(t, _)| t.clone())
     .collect();
   all.extend(new_terms);
-  crate::evaluator::evaluate_expr_to_expr(&call("Plus", all))
-    .unwrap_or_else(|_| expr.clone())
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", all)).unwrap_or(expr)
 }
 
 /// Top-level driver for the 2-arg `Expand[expr, pat]` form.
