@@ -5834,6 +5834,108 @@ mod interpreter_tests {
     );
   }
 
+  /// The `(x, y, width, height)` of every nested cell `<svg>` of a layout
+  /// (span placeholders and gaps draw no cell).
+  fn graphics_grid_cell_boxes(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    svg
+      .split("<svg ")
+      .skip(2)
+      .map(|cell| {
+        let grab = |attr: &str| -> f64 {
+          let key = format!("{attr}=\"");
+          let start = cell.find(&key).expect("attr present") + key.len();
+          let end = cell[start..].find('"').unwrap() + start;
+          cell[start..end].parse().unwrap()
+        };
+        (grab("x"), grab("y"), grab("width"), grab("height"))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn test_graphics_grid_span_from_above_spans_rows() {
+    // Regression: a picture continued by `SpanFromAbove` covers the rows
+    // below it, like in `Grid`. It used to size its own row alone, which
+    // shrank every cell of the grid to make the tall picture fit one row.
+    for cells in [
+      "{{tall, p1}, {SpanFromAbove, p2}}",
+      "{{p1, tall}, {p2, SpanFromAbove}}",
+    ] {
+      clear_state();
+      let svg = interpret(&format!(
+        "p1 = Graphics[{{Red, Disk[]}}]; p2 = Graphics[{{Green, Disk[]}}]; \
+         tall = Graphics[{{Blue, Rectangle[{{0, 0}}, {{1, 2}}]}}]; \
+         ExportString[GraphicsGrid[{cells}, ImageSize -> 400], \"SVG\"]"
+      ))
+      .unwrap();
+      let boxes = graphics_grid_cell_boxes(&svg);
+      assert_eq!(boxes.len(), 3, "{svg}");
+      let tall = boxes.iter().find(|b| b.3 > b.2 * 1.5).expect("tall cell");
+      let small: Vec<_> = boxes.iter().filter(|b| b.3 <= b.2 * 1.5).collect();
+      assert_eq!(small.len(), 2, "{svg}");
+      // The single-row cells keep their full share of the width.
+      for b in &small {
+        assert!((b.2 - 182.0).abs() <= 1.0, "cell shrunk: {svg}");
+      }
+      // The spanning cell reaches from the top of the first row to the
+      // bottom of the second.
+      let top = small.iter().map(|b| b.1).fold(f64::MAX, f64::min);
+      let bottom = small.iter().map(|b| b.1 + b.3).fold(0.0, f64::max);
+      assert!((tall.1 - top).abs() <= 1.0, "{svg}");
+      assert!((tall.1 + tall.3 - bottom).abs() <= 1.0, "{svg}");
+    }
+  }
+
+  #[test]
+  fn test_graphics_grid_span_from_above_is_not_a_column_span() {
+    // A `SpanFromAbove` to the right of a picture continues the cell above
+    // it, so the picture on its left stays in its own column instead of
+    // being centered across both.
+    clear_state();
+    let svg = interpret(
+      "p = Graphics[{Red, Disk[]}]; \
+       ExportString[GraphicsGrid[{{p, p}, {p, SpanFromAbove}}, ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    let boxes = graphics_grid_cell_boxes(&svg);
+    assert_eq!(boxes.len(), 3, "{svg}");
+    assert_eq!(boxes[2].0, boxes[0].0, "{svg}");
+  }
+
+  #[test]
+  fn test_graphics_grid_null_cell_is_a_gap() {
+    // An empty (`Null`) cell is blank space of its own: the picture beside
+    // it is not stretched or centered across it.
+    clear_state();
+    let svg = interpret(
+      "p = Graphics[{Red, Disk[]}]; \
+       ExportString[GraphicsGrid[{{p, Null}, {p, p}}, ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    let boxes = graphics_grid_cell_boxes(&svg);
+    assert_eq!(boxes.len(), 3, "{svg}");
+    assert_eq!(boxes[0].0, boxes[1].0, "{svg}");
+    assert_eq!(boxes[0].2, boxes[1].2, "{svg}");
+  }
+
+  #[test]
+  fn test_graphics_grid_block_span_covers_rows_and_columns() {
+    // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` together merge a
+    // rectangular block of cells.
+    clear_state();
+    let svg = interpret(
+      "p = Graphics[{Red, Disk[]}]; \
+       ExportString[GraphicsGrid[{{p, SpanFromLeft}, {SpanFromAbove, SpanFromBoth}, {p, p}}, \
+         ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    let boxes = graphics_grid_cell_boxes(&svg);
+    assert_eq!(boxes.len(), 3, "{svg}");
+    let (big, below) = (boxes[0], boxes[1]);
+    assert!(big.2 > 2.0 * below.2 && big.3 > 2.0 * below.3, "{svg}");
+    assert!(below.1 >= big.1 + big.3, "{svg}");
+  }
+
   #[test]
   fn test_list_line_plot_accepts_whole_series_tooltip_wrapper() {
     // `ListLinePlot[Tooltip[data, label], ...]` wraps the *entire* data
