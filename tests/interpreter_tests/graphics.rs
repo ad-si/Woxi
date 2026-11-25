@@ -5697,6 +5697,41 @@ mod graphics {
     }
 
     #[test]
+    fn graphics_label_with_matrix_is_set_in_the_text_face() {
+      // Regression: a graphics label captioning a matrix (`Text[Row[{"v = ",
+      // MatrixForm[v]}], pos]`) set its text in the monospace face of
+      // typeset output, so the caption was far wider than the one-line
+      // labels beside it and ran into its neighbors.
+      let width = |svg: &str| -> f64 {
+        let rest = &svg[svg.find(" width=\"").expect("a sized picture")..];
+        let w = " width=\"".len();
+        rest[w..w + rest[w..].find('"').unwrap()].parse().unwrap()
+      };
+      for label in [
+        "Row[{Style[\"v\", Italic], \" = \", MatrixForm[{3, 4}]}]",
+        "Row[{\"M = \", NumberForm[MatrixForm[{{1.5, 2}, {2, 1}}], {3, 2}]}]",
+        "Column[{\"values\", Grid[{{1, 2}, {3, 4}}]}]",
+      ] {
+        let svg =
+          export_svg(&format!("Graphics[{{Red, Text[{label}, {{0, 0}}]}}]"));
+        assert!(!svg.contains("monospace"), "{label}: {svg}");
+        // The proportional face sets the same text narrower than the
+        // label typeset on its own.
+        let picture = &svg[svg.find("<svg x=").expect("a label picture")..];
+        let typeset = export_svg(label);
+        assert!(
+          width(picture) < width(&typeset),
+          "{label}: {svg}\n{typeset}"
+        );
+      }
+      // A face the label names itself is kept.
+      let named = export_svg(
+        "Graphics[{Style[Text[Row[{\"v = \", MatrixForm[{3, 4}]}], {0, 0}], FontFamily -> \"Courier\"]}]",
+      );
+      assert!(named.contains("Courier"), "{named}");
+    }
+
+    #[test]
     fn traditional_form_padded_form_complex_label() {
       // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
       // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded
