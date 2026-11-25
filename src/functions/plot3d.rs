@@ -149,6 +149,13 @@ impl Camera {
       size: 2.0,
       scale: [1.0; 3],
       offset: [0.0; 3],
+      eye: self.perspective.map(|eye| {
+        [
+          eye.center[0] + eye.distance * toward[0],
+          eye.center[1] + eye.distance * toward[1],
+          eye.center[2] + eye.distance * toward[2],
+        ]
+      }),
     }
   }
 }
@@ -256,6 +263,9 @@ pub(crate) struct Triangle {
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
+  /// The opacity of the outline edges: `EdgeForm[{…, Opacity[o]}]`
+  /// strokes them translucently. 1 by default.
+  pub edge_opacity: f64,
   /// The stroke width `EdgeForm[{…, Thick}]` asked outline edges to be
   /// drawn with. `None` keeps the default hairline.
   pub edge_width: Option<f64>,
@@ -1017,26 +1027,33 @@ struct SmoothFacet {
 fn shade_smoothly(
   triangles: &mut [Triangle],
   facets: &[SmoothFacet],
-  toward: [f64; 3],
+  frame: &ViewFrame,
   shade: impl FnMut(&SmoothFacet, [f64; 3], Point3D) -> (u8, u8, u8),
 ) {
-  shade_smoothly_with(triangles, facets, None, toward, shade);
+  shade_smoothly_with(triangles, facets, None, frame, shade);
 }
 
 /// `shade_smoothly` with the surface's exact normals (`exact` is called
 /// with the facet's position in `facets`), where they are known.
+///
+/// Which side of a facet faces the viewer is settled from the eye of a
+/// perspective `frame`, where the facet sits, as the lighting settles it.
+/// Judged from the view direction at the center instead, a facet the eye
+/// sees past the edge of a curved surface (a torus's underside near its
+/// silhouette) had its normals turned to its back, which the lighting
+/// then flipped to the surface's inner side and lit dark.
 fn shade_smoothly_with(
   triangles: &mut [Triangle],
   facets: &[SmoothFacet],
   exact: Option<crate::functions::smooth_shading::ExactNormal>,
-  toward: [f64; 3],
+  frame: &ViewFrame,
   mut shade: impl FnMut(&SmoothFacet, [f64; 3], Point3D) -> (u8, u8, u8),
 ) {
   let worlds: Vec<[Point3D; 3]> = facets.iter().map(|f| f.world).collect();
   let colors = crate::functions::smooth_shading::corner_colors(
     &worlds,
     exact,
-    toward,
+    &|p| frame.toward_at([p.x, p.y, p.z]),
     |i, n, p| shade(&facets[i], n, p),
   );
   for (facet, c) in facets.iter().zip(colors) {
@@ -1360,6 +1377,28 @@ fn split_depth_cycles(
     }
   }
   None
+}
+
+/// `triangles` (with their corners `worlds` in the normalized box) cut
+/// where they pass through each other or their depth order cycles, and put in back-to-front draw order
+/// (see [`painter_order`]).
+fn painter_sorted(
+  mut triangles: Vec<Triangle>,
+  mut worlds: Vec<[Point3D; 3]>,
+  camera: &Camera,
+) -> (Vec<Triangle>, Vec<[Point3D; 3]>) {
+  split_interpenetrating(&mut worlds, &mut triangles, camera);
+  let edges = split_depth_cycles(&mut worlds, &mut triangles, camera);
+  let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
+  let depths: Vec<_> = triangles.iter().map(|t| t.depth).collect();
+  let opacities: Vec<_> = triangles.iter().map(|t| t.opacity).collect();
+  let order =
+    painter_order(&worlds, &projected, &depths, &opacities, camera, edges);
+  let mut slots: Vec<Option<Triangle>> =
+    triangles.into_iter().map(Some).collect();
+  let worlds = order.iter().map(|&i| worlds[i]).collect();
+  let triangles = order.into_iter().filter_map(|i| slots[i].take()).collect();
+  (triangles, worlds)
 }
 
 /// Back-to-front draw order for the triangles. A centroid sort alone draws a
@@ -1692,9 +1731,11 @@ fn styled_mesh_segment(
 
 /// The default mesh of a surface sampled on a `[i][j]` grid of heights
 /// (`ListPlot3D`'s data): `count` lines evenly spaced across each
-/// direction plus the outline, each following the surface linearly between
-/// the samples it crosses. `to_box` maps fractional grid indices and a
-/// height into the normalized box.
+/// direction plus the outline. `to_box` maps fractional grid indices and a
+/// height into the normalized box. Each cell is drawn as two triangles cut
+/// along its diagonal from `(i, j)` to `(i + 1, j + 1)`, so a line crossing
+/// a cell bends where it crosses that diagonal: it lies on the triangles
+/// rather than cutting through them, where they would hide parts of it.
 fn grid_mesh_lines(
   grid: &[Vec<f64>],
   count: usize,
@@ -1707,39 +1748,53 @@ fn grid_mesh_lines(
     return Vec::new();
   }
   let mut lines = Vec::new();
-  // Height at fractional row `fi` of column `j` (and the transpose).
-  let along_rows = |fi: f64, j: usize| {
-    let i0 = (fi.floor() as usize).min(rows - 2);
-    let t = fi - i0 as f64;
-    grid[i0][j] * (1.0 - t) + grid[i0 + 1][j] * t
+  // The cell holding a fractional index, and the fraction across it.
+  let cell = |f: f64, n: usize| {
+    let k = (f.floor().max(0.0) as usize).min(n - 2);
+    (k, f - k as f64)
   };
-  let along_cols = |i: usize, fj: f64| {
-    let j0 = (fj.floor() as usize).min(cols - 2);
-    let t = fj - j0 as f64;
-    grid[i][j0] * (1.0 - t) + grid[i][j0 + 1] * t
-  };
-  for k in 0..=count + 1 {
-    let fi = k as f64 / (count + 1) as f64 * (rows - 1) as f64;
-    for j in 0..cols - 1 {
-      let (z0, z1) = (along_rows(fi, j), along_rows(fi, j + 1));
-      if z0.is_finite() && z1.is_finite() {
+  // A polyline through `(fi, fj, z)` points, split where a height is
+  // undefined.
+  let mut push = |pts: &[(f64, f64, f64)]| {
+    for pair in pts.windows(2) {
+      let [(i0, j0, z0), (i1, j1, z1)] = [pair[0], pair[1]];
+      if z0.is_finite() && z1.is_finite() && (i0, j0) != (i1, j1) {
         lines.push(mesh_segment(
-          to_box(fi, j as f64, z0),
-          to_box(fi, (j + 1) as f64, z1),
+          to_box(i0, j0, z0),
+          to_box(i1, j1, z1),
           camera,
         ));
       }
     }
+  };
+  for k in 0..=count + 1 {
+    // The line at fractional row `fi`, across every column cell.
+    let fi = k as f64 / (count + 1) as f64 * (rows - 1) as f64;
+    let (i0, t) = cell(fi, rows);
+    let lerp = |a: f64, b: f64| a * (1.0 - t) + b * t;
+    for j in 0..cols - 1 {
+      let start = (fi, j as f64, lerp(grid[i0][j], grid[i0 + 1][j]));
+      let end = (
+        fi,
+        (j + 1) as f64,
+        lerp(grid[i0][j + 1], grid[i0 + 1][j + 1]),
+      );
+      let bend = (fi, j as f64 + t, lerp(grid[i0][j], grid[i0 + 1][j + 1]));
+      push(&[start, bend, end]);
+    }
+    // The line at fractional column `fj`, across every row cell.
     let fj = k as f64 / (count + 1) as f64 * (cols - 1) as f64;
+    let (j0, u) = cell(fj, cols);
+    let lerp = |a: f64, b: f64| a * (1.0 - u) + b * u;
     for i in 0..rows - 1 {
-      let (z0, z1) = (along_cols(i, fj), along_cols(i + 1, fj));
-      if z0.is_finite() && z1.is_finite() {
-        lines.push(mesh_segment(
-          to_box(i as f64, fj, z0),
-          to_box((i + 1) as f64, fj, z1),
-          camera,
-        ));
-      }
+      let start = (i as f64, fj, lerp(grid[i][j0], grid[i][j0 + 1]));
+      let end = (
+        (i + 1) as f64,
+        fj,
+        lerp(grid[i + 1][j0], grid[i + 1][j0 + 1]),
+      );
+      let bend = (i as f64 + u, fj, lerp(grid[i][j0], grid[i + 1][j0 + 1]));
+      push(&[start, bend, end]);
     }
   }
   lines
@@ -1753,6 +1808,12 @@ fn grid_mesh_lines(
 /// hole); `segment(a, b, axis)` builds the line piece between two samples
 /// of a line of constant first (`axis == 0`) or second (`axis == 1`)
 /// parameter.
+///
+/// The surface draws each cell as the two triangles cut along its diagonal
+/// from `(i + 1, j)` to `(i, j + 1)`, so a line between two grid rows bends
+/// where it crosses that diagonal: it lies on the triangles. Straight
+/// across a cell that is not flat (a twisted Möbius strip) it would cut
+/// through them, and the triangle in front of it hid stretches of it.
 fn parameter_grid_mesh_lines(
   grid_u: usize,
   grid_v: usize,
@@ -1766,9 +1827,14 @@ fn parameter_grid_mesh_lines(
     z: a.z + (b.z - a.z) * f,
   };
   let mut lines = Vec::new();
-  for (axis, polyline) in
-    parameter_grid_mesh_polylines(grid_u, grid_v, n, at, &interpolate)
-  {
+  for (axis, polyline) in parameter_grid_mesh_polylines_bent(
+    grid_u,
+    grid_v,
+    n,
+    at,
+    &interpolate,
+    true,
+  ) {
     for pair in polyline.windows(2) {
       lines.push(segment(pair[0], pair[1], axis));
     }
@@ -1792,6 +1858,21 @@ fn parameter_grid_mesh_polylines<P: Copy>(
   n: [usize; 2],
   at: &dyn Fn(usize, usize) -> Option<P>,
   interpolate: &dyn Fn(P, P, f64) -> P,
+) -> Vec<(usize, Vec<P>)> {
+  parameter_grid_mesh_polylines_bent(grid_u, grid_v, n, at, interpolate, false)
+}
+
+/// `parameter_grid_mesh_polylines`, with (`bend`) a point added where a
+/// line between two grid rows crosses a cell's diagonal from `(i + 1, j)`
+/// to `(i, j + 1)`, so the line lies on the two triangles the cell is
+/// drawn as.
+fn parameter_grid_mesh_polylines_bent<P: Copy>(
+  grid_u: usize,
+  grid_v: usize,
+  n: [usize; 2],
+  at: &dyn Fn(usize, usize) -> Option<P>,
+  interpolate: &dyn Fn(P, P, f64) -> P,
+  bend: bool,
 ) -> Vec<(usize, Vec<P>)> {
   let mut polylines = Vec::new();
   for m in 0..=n[0].max(n[1]) + 1 {
@@ -1820,9 +1901,26 @@ fn parameter_grid_mesh_polylines<P: Copy>(
       };
       // Only pieces whose both ends exist are drawn, so a lone sample
       // between two holes contributes nothing.
+      // Where the line crosses the diagonal of the cell between `j - 1`
+      // and `j` along it.
+      let diagonal_point = |j: usize| {
+        if axis == 0 {
+          Some(interpolate(at(k + 1, j - 1)?, at(k, j)?, 1.0 - f))
+        } else {
+          Some(interpolate(at(j, k)?, at(j - 1, k + 1)?, f))
+        }
+      };
       let mut current: Vec<P> = Vec::new();
       for j in 0..=along {
         if let Some(p) = point(j) {
+          if bend
+            && !current.is_empty()
+            && f > 0.0
+            && f < 1.0
+            && let Some(d) = diagonal_point(j)
+          {
+            current.push(d);
+          }
           current.push(p);
         } else {
           if current.len() >= 2 {
@@ -2455,12 +2553,11 @@ fn parse_dependent_iterator(
 fn generate_mesh_lines(
   grid: &[Vec<f64>],
   grid_n: usize,
-  z_lo: f64,
-  z_hi: f64,
-  z_range: f64,
   mesh_mode: MeshMode,
   camera: &Camera,
-  half: [f64; 3],
+  // The grid point `(i, j)` at height `z`, in the normalized box (the
+  // height clamped to the plotted range).
+  at: &dyn Fn(usize, usize, f64) -> Point3D,
 ) -> Vec<MeshLine> {
   let step = match mesh_mode {
     MeshMode::Default => MESH_STEP,
@@ -2468,14 +2565,6 @@ fn generate_mesh_lines(
     MeshMode::All => return Vec::new(),
     MeshMode::None => return Vec::new(),
   };
-
-  let nx = |ii: usize| -> f64 {
-    (ii as f64 / grid_n as f64) * 2.0 * half[0] - half[0]
-  };
-  let ny = |jj: usize| -> f64 {
-    (jj as f64 / grid_n as f64) * 2.0 * half[1] - half[1]
-  };
-  let nz = |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * half[2] - half[2] };
 
   let mut lines = Vec::new();
 
@@ -2485,19 +2574,7 @@ fn generate_mesh_lines(
       let z0 = grid[i][j];
       let z1 = grid[i + 1][j];
       if z0.is_finite() && z1.is_finite() {
-        let cz0 = z0.clamp(z_lo, z_hi);
-        let cz1 = z1.clamp(z_lo, z_hi);
-        let p0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(cz0),
-        };
-        let p1 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(cz1),
-        };
-        lines.push(mesh_segment(p0, p1, camera));
+        lines.push(mesh_segment(at(i, j, z0), at(i + 1, j, z1), camera));
       }
     }
   }
@@ -2508,19 +2585,7 @@ fn generate_mesh_lines(
       let z0 = grid[i][j];
       let z1 = grid[i][j + 1];
       if z0.is_finite() && z1.is_finite() {
-        let cz0 = z0.clamp(z_lo, z_hi);
-        let cz1 = z1.clamp(z_lo, z_hi);
-        let p0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(cz0),
-        };
-        let p1 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(cz1),
-        };
-        lines.push(mesh_segment(p0, p1, camera));
+        lines.push(mesh_segment(at(i, j, z0), at(i, j + 1, z1), camera));
       }
     }
   }
@@ -2649,6 +2714,11 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` fixes the horizontal
+  // range too, which is then not padded.
+  let mut xy_range_explicit = false;
+  // `PlotRangePadding -> spec`; `None` is `Automatic`.
+  let mut range_padding: Option<[(RangePad, RangePad); 3]> = None;
   // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
   // automatic vertical range clips outliers off.
   let mut keep_z_outliers = false;
@@ -2775,9 +2845,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               y_max = y_max.min(yr.1);
             }
             z_clip = Some(zr);
+            xy_range_explicit = true;
           } else {
             z_clip = parse_z_only_range(replacement);
           }
+        }
+        Expr::Identifier(name) if name == "PlotRangePadding" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          range_padding = parse_range_padding_3d(&value);
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
@@ -2969,24 +3045,49 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
-  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
-    1.0
-  } else {
-    z_hi - z_lo
+
+  // The box spans the plotted range widened by `PlotRangePadding`: an
+  // automatic range gets `Scaled[0.02]` on each side, an explicit one
+  // none (Wolfram returns `{Scaled[0.02], Scaled[0.02], Automatic}` under
+  // `PlotRange -> {z0, z1}`). The surface sits inside the box, so the
+  // ticks at its extremes fall on the box instead of past its edge.
+  let box_range: [(f64, f64); 3] = {
+    let pads =
+      range_padding.unwrap_or([(RangePad::Automatic, RangePad::Automatic); 3]);
+    let explicit = [xy_range_explicit, xy_range_explicit, z_clip.is_some()];
+    // A flat surface at height `c` sits in the middle of `{c - |c|,
+    // c + |c|}` (`{-1, 1}` for `c = 0`), as in wolframscript.
+    let z_base = if (z_hi - z_lo).abs() < 1e-15 {
+      let half = if z_lo == 0.0 { 1.0 } else { z_lo.abs() };
+      (z_lo - half, z_hi + half)
+    } else {
+      (z_lo, z_hi)
+    };
+    let base = [(x_min, x_max), (y_min, y_max), z_base];
+    std::array::from_fn(|d| {
+      let (lo, hi) = padded_axis_range(
+        base[d],
+        pads[d].0.resolve(explicit[d]),
+        pads[d].1.resolve(explicit[d]),
+      );
+      if hi > lo { (lo, hi) } else { base[d] }
+    })
+  };
+  // A data coordinate along axis `d`, in the normalized box.
+  let box_coord = |d: usize, v: f64| -> f64 {
+    let (lo, hi) = box_range[d];
+    (v - lo) / (hi - lo) * 2.0 * box_half[d] - box_half[d]
   };
 
   // Lights placed at scene coordinates (`{"Point", c, {x, y, z}}`) follow
   // the data into the normalized box the surface is drawn in.
   {
-    let sx = 2.0 * box_half[0] / (x_max - x_min);
-    let sy = 2.0 * box_half[1] / (y_max - y_min);
-    let sz = 2.0 * box_half[2] / z_range;
-    scene.frame.scale = [sx, sy, sz];
-    scene.frame.offset = [
-      -box_half[0] - x_min * sx,
-      -box_half[1] - y_min * sy,
-      -box_half[2] - z_lo * sz,
-    ];
+    let scale: [f64; 3] = std::array::from_fn(|d| {
+      2.0 * box_half[d] / (box_range[d].1 - box_range[d].0)
+    });
+    scene.frame.scale = scale;
+    scene.frame.offset =
+      std::array::from_fn(|d| -box_half[d] - box_range[d].0 * scale[d]);
   }
 
   // Phase 2: Build triangles using the shared z range
@@ -3277,7 +3378,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
       })
     };
-    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    let (names_axes, names_ratios, names_padding) =
+      (names("Axes"), names("BoxRatios"), names("PlotRangePadding"));
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
@@ -3289,18 +3391,35 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       ));
     }
+    // The padding the picture was drawn with, as Wolfram spells it out:
+    // `Scaled[0.02]` for each automatic range, `Automatic` (none) for an
+    // explicit one.
+    if !names_padding {
+      let pad = |explicit: bool| {
+        if explicit {
+          id_expr("Automatic")
+        } else {
+          call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING))
+        }
+      };
+      structure_args.push(rule_expr(
+        id_expr("PlotRangePadding"),
+        Expr::List(
+          vec![
+            pad(xy_range_explicit),
+            pad(xy_range_explicit),
+            pad(xy_range_explicit || z_clip.is_some()),
+          ]
+          .into(),
+        ),
+      ));
+    }
     call("Graphics3D", structure_args)
   };
 
-  let nx = |x: f64| -> f64 {
-    (x - x_min) / (x_max - x_min) * 2.0 * box_half[0] - box_half[0]
-  };
-  let ny = |y: f64| -> f64 {
-    (y - y_min) / (y_max - y_min) * 2.0 * box_half[1] - box_half[1]
-  };
-  let nz = |z: f64| -> f64 {
-    ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * box_half[2] - box_half[2]
-  };
+  let nx = |x: f64| -> f64 { box_coord(0, x) };
+  let ny = |y: f64| -> f64 { box_coord(1, y) };
+  let nz = |z: f64| -> f64 { box_coord(2, z.clamp(z_lo, z_hi)) };
   let to_box = |p: [f64; 3]| Point3D {
     x: nx(p[0]),
     y: ny(p[1]),
@@ -3460,6 +3579,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [v0, v1, v2].map(|v| project(v, &camera)),
@@ -3562,7 +3682,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     shade_smoothly(
       &mut all_triangles,
       &facets,
-      scene.frame.toward,
+      &scene.frame,
       |facet, normal, at| {
         shade_facet(
           SurfaceDefault::Theme(surface_idx),
@@ -3623,6 +3743,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [false; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
@@ -3693,9 +3814,52 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         None => grid,
       };
-      let mut lines = generate_mesh_lines(
-        grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera, box_half,
-      );
+      let mut lines =
+        generate_mesh_lines(grid, grid_n, mesh_mode, &camera, &|i, j, z| {
+          to_box([grid_x(i), grid_y(j), z])
+        });
+      // A mesh line leaving the `RegionFunction`'s region runs on to the
+      // region's edge, where the surface was cut, instead of stopping at
+      // the last sample inside it.
+      if let (Some(masks), Some(rf), MeshMode::Default) =
+        (&region_masks, &region_function, mesh_mode)
+      {
+        let mask = &masks[surface_idx];
+        let compiled = crate::functions::plot::PlotBody2::new(
+          bodies[surface_idx],
+          &xvar,
+          &yvar,
+        );
+        let surface_at = |x: f64, y: f64| -> Option<[f64; 3]> {
+          compiled
+            .at(x, y)
+            .filter(|z| z.is_finite())
+            .map(|z| [x, y, z])
+        };
+        let inside = |p: &[f64; 3]| {
+          crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+        };
+        let raw = &grids[surface_idx];
+        let point = |i: usize, j: usize| [grid_x(i), grid_y(j), raw[i][j]];
+        let mut edges: Vec<((usize, usize), (usize, usize))> = Vec::new();
+        for k in (0..=grid_n).step_by(MESH_STEP) {
+          for m in 0..grid_n {
+            edges.push(((m, k), (m + 1, k)));
+            edges.push(((k, m), (k, m + 1)));
+          }
+        }
+        for (a, b) in edges {
+          let (lo, hi) = match (mask[a.0][a.1], mask[b.0][b.1]) {
+            (true, false) => (a, b),
+            (false, true) => (b, a),
+            _ => continue,
+          };
+          let from = point(lo.0, lo.1);
+          let to =
+            bisect_region_edge(from, point(hi.0, hi.1), &surface_at, &inside);
+          lines.push(mesh_segment(to_box(from), to_box(to), &camera));
+        }
+      }
       if let Some(style) = &mesh_style {
         for line in &mut lines {
           *line = styled_line_like(line, style);
@@ -3775,14 +3939,6 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Finalize z range for axis labels
-  // z_lo/z_hi already account for PlotRange and flat-range handling
-  let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
-    (z_lo - 0.5, z_hi + 0.5)
-  } else {
-    (z_lo, z_hi)
-  };
-
   // Painter's algorithm: sort back-to-front (largest depth first)
   all_triangles.sort_by(|a, b| {
     b.depth
@@ -3796,9 +3952,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None,
     args[3..].iter().any(|o| matches!(o, Expr::Rule { pattern, replacement } if matches!(&**pattern, Expr::Identifier(n) if n == "PlotTheme") && matches!(&**replacement, Expr::String(t) if t == "Marketing"))),
     &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_axis_min, z_axis_max),
+    box_range[0],
+    box_range[1],
+    box_range[2],
     svg_width,
     svg_height,
     full_width,
@@ -3886,6 +4042,7 @@ pub(crate) fn translucent_face_run(
       && t.color == first.color
       && t.opacity == first.opacity
       && t.edge_color == first.edge_color
+      && t.edge_opacity == first.edge_opacity
       && t.edge_width == first.edge_width
       && t.edge_dashing == first.edge_dashing
       && tris[start..end].iter().any(|m| shares_edge(m, t));
@@ -4754,6 +4911,158 @@ fn automatic_axes_edges(
   out
 }
 
+/// Pixels per scene unit at `p` for a length lying across the line of
+/// sight (one that is not foreshortened): the root mean square of the
+/// screen lengths of the three unit axes, which for a projection onto the
+/// screen plane sum (squared) to twice the square of that scale.
+fn screen_scale_at(
+  p: Point3D,
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+  unit: f64,
+) -> f64 {
+  let at = |q: Point3D| {
+    let (x, y) = project(q, camera);
+    to_svg(x, y)
+  };
+  let (x0, y0) = at(p);
+  let h = if unit.is_finite() && unit > 0.0 {
+    unit
+  } else {
+    1.0
+  };
+  let mut sum = 0.0;
+  for d in 0..3 {
+    let mut q = [p.x, p.y, p.z];
+    q[d] += h;
+    let (x1, y1) = at(Point3D {
+      x: q[0],
+      y: q[1],
+      z: q[2],
+    });
+    sum += ((x1 - x0) / h).powi(2) + ((y1 - y0) / h).powi(2);
+  }
+  (sum / 2.0).sqrt()
+}
+
+/// The screen direction of the tick marks of each box-edge axis, scaled
+/// by how much the scene foreshortens it (1 across the line of sight).
+///
+/// Wolfram draws a 3D tick mark as a segment in the scene, perpendicular
+/// to its axis and pointing into the box along one of the two other
+/// coordinate directions:
+/// - the ticks of the vertical (z) axis run along the horizontal axis
+///   whose edge meets the z axis's edge (the longer one on screen when
+///   both or neither do);
+/// - the ticks of an x or y axis lie in the horizontal face of the box on
+///   the axis's edge when that face is turned away from the viewer (the
+///   floor seen from above), and run vertically otherwise.
+///
+/// Either choice falls back to the other direction when it is too
+/// foreshortened, or too nearly parallel to the axis on screen, to read.
+/// `None` for an axis that has no extent on screen.
+fn box_axis_tick_directions(
+  axes: &[(Point3D, Point3D, (f64, f64), bool); 3],
+  lo: [f64; 3],
+  hi: [f64; 3],
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+) -> [Option<(f64, f64)>; 3] {
+  let coords = |p: Point3D| [p.x, p.y, p.z];
+  let pt = |p: [f64; 3]| Point3D {
+    x: p[0],
+    y: p[1],
+    z: p[2],
+  };
+  let span = (0..3).map(|d| hi[d] - lo[d]).fold(0.0_f64, f64::max);
+  if !(span.is_finite() && span > 0.0) {
+    return [None, None, None];
+  }
+  let at = |q: [f64; 3]| {
+    let (x, y) = project(pt(q), camera);
+    to_svg(x, y)
+  };
+  // Whether a coordinate of an edge sits on the box's high face.
+  let on_high = |d: usize, v: f64| (v - hi[d]).abs() < (v - lo[d]).abs();
+  std::array::from_fn(|k| {
+    let (p0, p1, _, _) = axes[k];
+    let (a0, a1) = (coords(p0), coords(p1));
+    let mid: [f64; 3] = std::array::from_fn(|d| f64::midpoint(a0[d], a1[d]));
+    let scale = screen_scale_at(pt(mid), camera, to_svg, span * 1e-3);
+    let (sx0, sy0) = at(a0);
+    let (sx1, sy1) = at(a1);
+    let axis_len = (sx1 - sx0).hypot(sy1 - sy0);
+    if !(scale > 0.0 && axis_len > 1e-9) {
+      return None;
+    }
+    let (ax, ay) = ((sx1 - sx0) / axis_len, (sy1 - sy0) / axis_len);
+    // The screen vector of a unit step along dimension `d` into the box,
+    // relative to an unforeshortened unit, and its sine with the axis.
+    let candidate = |d: usize| {
+      let sign = if on_high(d, mid[d]) { -1.0 } else { 1.0 };
+      let h = span * 1e-3;
+      let mut q = mid;
+      q[d] += sign * h;
+      let (x0, y0) = at(mid);
+      let (x1, y1) = at(q);
+      let (vx, vy) = ((x1 - x0) / (h * scale), (y1 - y0) / (h * scale));
+      let len = vx.hypot(vy);
+      let sin = if len > 0.0 {
+        (ax * vy - ay * vx).abs() / len
+      } else {
+        0.0
+      };
+      ((vx, vy), len, sin)
+    };
+    let readable =
+      |c: &((f64, f64), f64, f64), min_len: f64| c.1 >= min_len && c.2 >= 0.3;
+    let (first, second, min_len) = if k == 2 {
+      // The horizontal axes' edges, to see which one meets this one.
+      let meets = |d: usize| {
+        let (q0, q1) = (coords(axes[d].0), coords(axes[d].1));
+        [a0, a1].iter().any(|e| {
+          [q0, q1]
+            .iter()
+            .any(|q| (0..3).all(|i| (e[i] - q[i]).abs() <= span * 1e-9))
+        })
+      };
+      let (cx, cy) = (candidate(0), candidate(1));
+      let x_first = match (meets(0), meets(1)) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => cx.1 >= cy.1,
+      };
+      if x_first {
+        (cx, cy, 0.0)
+      } else {
+        (cy, cx, 0.0)
+      }
+    } else {
+      let other = 1 - k;
+      let z_high = on_high(2, mid[2]);
+      let outward = if z_high { 1.0 } else { -1.0 };
+      let face = {
+        let mut c: [f64; 3] =
+          std::array::from_fn(|d| f64::midpoint(lo[d], hi[d]));
+        c[2] = if z_high { hi[2] } else { lo[2] };
+        c
+      };
+      let face_hidden = outward * camera.toward_viewer(pt(face))[2] <= 1e-9;
+      if face_hidden {
+        (candidate(other), candidate(2), 0.55)
+      } else {
+        (candidate(2), candidate(other), 0.78)
+      }
+    };
+    let chosen = if readable(&first, min_len) || second.1 <= first.1 {
+      first
+    } else {
+      second
+    };
+    Some(chosen.0)
+  })
+}
+
 /// `draw_axes_on_box` with per-axis explicit tick positions (`Ticks`).
 #[allow(clippy::too_many_arguments)]
 fn draw_axes_on_box_with_ticks(
@@ -4958,6 +5267,20 @@ fn draw_axes_on_box_with_ticks(
       }
     }
   }
+  // Axes along the box's edges draw their tick marks in the scene (see
+  // `box_axis_tick_directions`); axes crossing inside it at `AxesOrigin`
+  // keep marks perpendicular on screen.
+  let tick_dirs = if crossing.is_none() {
+    box_axis_tick_directions(
+      &axes,
+      [box_x_lo, box_y_lo, box_z_lo],
+      [box_x_hi, box_y_hi, box_z_hi],
+      camera,
+      to_svg,
+    )
+  } else {
+    [None, None, None]
+  };
 
   // Project the box center so we can orient tick labels outward
   let box_center = Point3D {
@@ -5044,8 +5367,8 @@ fn draw_axes_on_box_with_ticks(
     extent.add(sx0, sy0);
     extent.add(sx1, sy1);
 
-    // The axis label sits centered on the axis, clear of the tick labels
-    // already sitting there — where Wolfram puts it.
+    // The label of an axis on a box edge sits centered on the axis, clear
+    // of the tick labels already sitting there — where Wolfram puts it.
     if let Some(label) = axes_labels[ai].as_deref().filter(|l| !l.is_empty()) {
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
       let len = (dx * dx + dy * dy).sqrt();
@@ -5091,8 +5414,21 @@ fn draw_axes_on_box_with_ticks(
           + block_shift
           + font_size as f64 * 0.5;
         let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
-        let (lx, ly) =
-          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let (lx, ly) = if crossing.is_some() {
+          // Axes crossing at an `AxesOrigin` are labeled at their end
+          // farther from the viewer, on the side of the tick marks —
+          // across the axis from the tick labels.
+          let (far_x, far_y) =
+            if depth(end, camera) > depth(axis_origin, camera) {
+              (sx1, sy1)
+            } else {
+              (sx0, sy0)
+            };
+          let reach = font_size as f64 * 1.2 + block_shift;
+          (far_x - perpx * reach * sign, far_y - perpy * reach * sign)
+        } else {
+          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign)
+        };
         let content = if lines.len() == 1 {
           lines[0].clone()
         } else {
@@ -5120,6 +5456,22 @@ fn draw_axes_on_box_with_ticks(
       }
     }
 
+    // Where a tick mark of `length` (pixels, before foreshortening) drawn
+    // from `(x, y)` ends: along this axis's scene tick direction, else
+    // perpendicular to the axis on screen, into the box.
+    let tick_end = |x: f64, y: f64, length: f64| -> (f64, f64) {
+      if let Some((vx, vy)) = tick_dirs[ai] {
+        let length = length * SCENE_TICK_GAIN;
+        return (x + vx * length, y + vy * length);
+      }
+      let (dx, dy) = (sx1 - sx0, sy1 - sy0);
+      let len = dx.hypot(dy);
+      if len <= 1e-9 {
+        return (x, y);
+      }
+      let sign = outward_sign(sx0, sy0, sx1, sy1);
+      (x + dy / len * length * sign, y - dx / len * length * sign)
+    };
     if ticks[ai].is_none() {
       let majors = tick_values(val_min, val_max);
       if majors.len() >= 2 {
@@ -5145,7 +5497,8 @@ fn draw_axes_on_box_with_ticks(
             };
             let (x, y) = project(p, camera);
             let (x, y) = to_svg(x, y);
-            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
+            let (ex, ey) = tick_end(x, y, MINOR_TICK_PX);
+            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n"));
           }
         }
       }
@@ -5181,9 +5534,9 @@ fn draw_axes_on_box_with_ticks(
         // runs.
         let sign = outward_sign(sx0, sy0, sx1, sy1);
 
+        let (ex, ey) = tick_end(tx, ty, MAJOR_TICK_PX);
         svg.push_str(&format!(
-                    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                    tx, ty, tx - perpx * sign, ty - perpy * sign, tick_color
+                    "<line x1=\"{tx:.1}\" y1=\"{ty:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n"
                 ));
 
         // A label pushed sideways is aligned on its near end, so it grows
@@ -5505,6 +5858,16 @@ fn fit_3d_frame(
 /// How far from the axis line the tick labels are centered.
 const TICK_LABEL_OFFSET: f64 = 10.0;
 
+/// Screen lengths (pixels) of the major and minor tick marks of a 3D axis.
+const MAJOR_TICK_PX: f64 = 4.0;
+const MINOR_TICK_PX: f64 = 2.5;
+
+/// How much longer a tick mark drawn in the scene is than one drawn
+/// across the axis on screen, before its foreshortening: Wolfram's marks
+/// measure about 5 pixels across the line of sight and 4 at the default
+/// view's slant.
+const SCENE_TICK_GAIN: f64 = 1.25;
+
 /// The font size of 3D tick labels (Wolfram's are smaller than its
 /// axis labels).
 const TICK_FONT_SIZE: i32 = 10;
@@ -5537,7 +5900,7 @@ fn label_half_width(label: &str, font_size: i32) -> f64 {
 /// same ones the tick marks are drawn at. Like wolframscript, a 3D box axis
 /// steps by the smallest of 1, 2 and 5 × 10^k that leaves fewer than five
 /// intervals: -1..1 by 0.5, 0..1 by 0.5, -5..5 and 0..10 by 5, 0..3 by 1.
-fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
+pub(crate) fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
   let span = val_max - val_min;
   if !(span.is_finite() && span > 0.0) {
     return Vec::new();
@@ -5779,19 +6142,31 @@ fn vector_plot3d_solid(
   // In box units each axis spans 1 (BoxRatios {1, 1, 1}), so lengths are
   // measured on the box, then mapped back to data per axis.
   let cell = 1.0 / n as f64;
-  let length_per = 0.7 * cell / m_hi;
-  let radius = 0.0082 * sides.iter().copied().fold(0.0_f64, f64::max);
-  let mut content = Vec::with_capacity(samples.len());
-  // What is drawn: each arrow as a hexagonal shaft and head (a light solid
-  // that keeps the picture small), in box units mapped back to the data.
-  let mut drawn = vec![call0("EdgeForm")];
-  let to_data = |q: [f64; 3]| {
-    [
-      x0 + q[0] * sides[0],
-      y0 + q[1] * sides[1],
-      z0 + q[2] * sides[2],
-    ]
-  };
+  let longest = 0.7 * cell;
+  let length_per = longest / m_hi;
+  // Wolfram sizes every arrow by the longest one, `L` (in box units): an
+  // `Arrowheads` size of `0.3 L` -- a fraction of the box's diagonal, so
+  // the head of the longest arrow covers about two thirds of it -- and a
+  // tube `L / 20` thick, both measured along the first axis
+  // (`InputForm[VectorPlot3D[…]]` gives `Arrowheads[{{0.0491, 1.}}]` and
+  // `Tube[…, 0.0164]` for arrows 0.327 long over `{x, -1, 1}`).
+  let head_size = 0.3 * longest;
+  let radius = longest / 20.0 * sides[0];
+  let mut content = vec![
+    call1("CapForm", Expr::String("Butt".to_string())),
+    call(
+      "Arrowheads",
+      vec![
+        Expr::List(
+          vec![Expr::List(
+            vec![Expr::Real(head_size), Expr::Real(1.0)].into(),
+          )]
+          .into(),
+        ),
+        rule_expr(id_expr("Appearance"), Expr::String("Projected".to_string())),
+      ],
+    ),
+  ];
   for (f, p, v, m) in &samples {
     let half = [0, 1, 2].map(|d| 0.5 * v[d] * length_per * sides[d]);
     let a = [p[0] - half[0], p[1] - half[1], p[2] - half[2]];
@@ -5828,64 +6203,6 @@ fn vector_plot3d_solid(
         ],
       )
     };
-    {
-      // Box units: every axis spans 1.
-      let ua = [0, 1, 2].map(|d| (a[d] - [x0, y0, z0][d]) / sides[d]);
-      let ub = [0, 1, 2].map(|d| (b[d] - [x0, y0, z0][d]) / sides[d]);
-      let axis = v_sub(ub, ua);
-      let len = v_len(axis);
-      if len > 1e-12 {
-        let u = v_scale(axis, 1.0 / len);
-        let helper = if u[0].abs() < 0.9 {
-          [1.0, 0.0, 0.0]
-        } else {
-          [0.0, 1.0, 0.0]
-        };
-        let e1 = {
-          let c = v_cross(u, helper);
-          v_scale(c, 1.0 / v_len(c))
-        };
-        let e2 = v_cross(u, e1);
-        let shaft_r = 0.0082;
-        let head_len = (0.45 * len).min(0.05);
-        let head_r = 0.4 * head_len;
-        let base = v_sub(ub, v_scale(u, head_len));
-        let ring = |c: [f64; 3], rad: f64| -> Vec<[f64; 3]> {
-          (0..6)
-            .map(|k| {
-              let t = std::f64::consts::PI / 3.0 * k as f64;
-              v_add(
-                c,
-                v_add(v_scale(e1, rad * t.cos()), v_scale(e2, rad * t.sin())),
-              )
-            })
-            .collect()
-        };
-        let poly = |pts: Vec<[f64; 3]>| {
-          call1(
-            "Polygon",
-            Expr::List(
-              pts
-                .into_iter()
-                .map(|q| real3(to_data(q)))
-                .collect::<Vec<_>>()
-                .into(),
-            ),
-          )
-        };
-        let (r0, r1, rh) =
-          (ring(ua, shaft_r), ring(base, shaft_r), ring(base, head_r));
-        let mut parts = vec![color.clone()];
-        for k in 0..6 {
-          let k2 = (k + 1) % 6;
-          parts.push(poly(vec![r0[k], r0[k2], r1[k2], r1[k]]));
-          parts.push(poly(vec![rh[k], rh[k2], ub]));
-        }
-        parts.push(poly(rh.clone()));
-        parts.push(poly(r0.clone()));
-        drawn.push(Expr::List(parts.into()));
-      }
-    }
     content.push(Expr::List(
       vec![
         color,
@@ -5918,7 +6235,7 @@ fn vector_plot3d_solid(
     "VectorColorFunction",
     "PlotLegends",
   ];
-  let mut g_args = vec![Expr::List(drawn.into())];
+  let mut g_args = vec![Expr::List(content.into())];
   g_args.extend(opts.iter().filter(|o| {
     !matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(k) if PLOT_ONLY.contains(&k.as_str())))
@@ -5946,17 +6263,14 @@ fn vector_plot3d_solid(
       ),
     ));
   }
-  let picture = graphics3d_ast(&g_args)?;
-  let Expr::Graphics { svg, .. } = &picture else {
-    return Ok(picture);
-  };
-  // The symbolic form keeps Wolfram's `Arrow[Tube[…]]` primitives.
-  let mut structure_args = vec![Expr::List(content.into())];
-  structure_args.extend(g_args[1..].iter().cloned());
-  Ok(crate::plot3d_result_with_structure(
-    svg.clone(),
-    call("Graphics3D", structure_args),
-  ))
+  // Wolfram pads the explicit range like an automatic one.
+  if !named("PlotRangePadding") {
+    g_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING)),
+    ));
+  }
+  graphics3d_ast(&g_args)
 }
 
 /// VectorPlot3D[{vx, vy, vz}, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
@@ -6845,6 +7159,7 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Background",
     "BoxRatios",
     "PlotRange",
+    "PlotRangePadding",
   ];
   for o in opts {
     if let Expr::Rule { pattern, .. } = o
@@ -6856,6 +7171,11 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let defaults = [
     ("Axes", bool_expr(true)),
     ("BoxRatios", Expr::List(vec![Expr::Integer(1); 3].into())),
+    // Wolfram pads the explicit range like an automatic one.
+    (
+      "PlotRangePadding",
+      call1("Scaled", Expr::Real(AUTOMATIC_RANGE_PADDING)),
+    ),
     (
       "PlotRange",
       Expr::List(
@@ -6929,37 +7249,57 @@ fn parse_point3d_list_strict(expr: &Expr) -> Option<Vec<Point3D>> {
 const UNBOUNDED_3D_HEADS: [&str; 4] =
   ["InfiniteLine", "HalfLine", "InfinitePlane", "HalfPlane"];
 
-/// Does any primitive need the final scene bounds (Scaled coordinates or an unbounded object)?
-fn has_frame_dependent_3d(expr: &Expr) -> bool {
+/// Which primitives [`expand_frame_dependent_3d`] places: the points in
+/// `Scaled` coordinates or the unbounded objects.
+#[derive(Clone, Copy, PartialEq)]
+enum FrameDependent {
+  Scaled,
+  Unbounded,
+}
+
+fn is_scaled_point_3d(name: &str, args: &[Expr]) -> bool {
+  name == "Scaled"
+    && (args.len() == 1 || args.len() == 2)
+    && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3)
+}
+
+/// Does any primitive of the `kind` need the final scene bounds?
+fn has_frame_dependent_3d(expr: &Expr, kind: FrameDependent) -> bool {
   match expr {
-    Expr::List(items) => items.iter().any(has_frame_dependent_3d),
+    Expr::List(items) => items.iter().any(|i| has_frame_dependent_3d(i, kind)),
     Expr::FunctionCall { name, args } => {
-      (name == "Scaled"
-        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3))
-        || UNBOUNDED_3D_HEADS.contains(&name.as_str())
-        || args.iter().any(has_frame_dependent_3d)
+      let own = match kind {
+        FrameDependent::Scaled => is_scaled_point_3d(name, args),
+        FrameDependent::Unbounded => {
+          UNBOUNDED_3D_HEADS.contains(&name.as_str())
+        }
+      };
+      own || args.iter().any(|a| has_frame_dependent_3d(a, kind))
     }
     _ => false,
   }
 }
 
-/// Resolve Scaled points and replace every unbounded primitive with the `Line`/`Polygon` it
-/// shows inside `bounds`, leaving the rest of the scene untouched. One that
-/// misses the box entirely disappears (an empty `Line[{}]`), which is what
-/// Wolfram draws for it.
-fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
+/// Resolve the `Scaled` points against `bounds`, or replace every
+/// unbounded primitive with the `Line`/`Polygon` it shows inside `bounds`,
+/// leaving the rest of the scene untouched. One that misses the box
+/// entirely disappears (an empty `Line[{}]`), which is what Wolfram draws
+/// for it.
+fn expand_frame_dependent_3d(
+  expr: &Expr,
+  bounds: &[(f64, f64); 3],
+  kind: FrameDependent,
+) -> Expr {
   match expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|i| expand_frame_dependent_3d(i, bounds))
+        .map(|i| expand_frame_dependent_3d(i, bounds, kind))
         .collect::<Vec<_>>()
         .into(),
     ),
     Expr::FunctionCall { name, args }
-      if name == "Scaled"
-        && (args.len() == 1 || args.len() == 2)
-        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3) =>
+      if kind == FrameDependent::Scaled && is_scaled_point_3d(name, args) =>
     {
       let Some(fractions) = eval_vec3(&args[0]) else {
         return expr.clone();
@@ -6981,7 +7321,8 @@ fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
       )
     }
     Expr::FunctionCall { name, args }
-      if UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
+      if kind == FrameDependent::Unbounded
+        && UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
     {
       unbounded_3d_to_primitive(name, args, bounds).unwrap_or_else(empty_line3d)
     }
@@ -6989,7 +7330,7 @@ fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| expand_frame_dependent_3d(a, bounds))
+        .map(|a| expand_frame_dependent_3d(a, bounds, kind))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -7354,6 +7695,79 @@ fn clip_triangles_to_box(
   out
 }
 
+/// The outlined end circles of a `Cylinder` or `Cone` that the box `bounds`
+/// cuts open, as the line pieces left inside the box. `tris` is the
+/// primitive's tessellation from `tessellate_for_transform`. `None` when the
+/// primitive has no outlined rim (another primitive, `EdgeForm[]`) or none
+/// of it is inside the box.
+fn clipped_rim_lines(
+  prim: &Primitive3D,
+  tris: &[(Point3D, Point3D, Point3D)],
+  bounds: &[(f64, f64); 3],
+) -> Option<Primitive3D> {
+  let (flags, style) = match prim {
+    Primitive3D::Cylinder {
+      p1,
+      p2,
+      radius,
+      style,
+    } if style.edges => {
+      let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
+      let steps = cylinder_side_steps(len, *radius, MAX_SIDE_SUBDIVISIONS);
+      (cylinder_edge_flags(steps, CYLINDER_SIDES), style)
+    }
+    Primitive3D::Cone { style, .. } if style.edges => {
+      (cone_edge_flags(CONE_SIDES), style)
+    }
+    _ => return None,
+  };
+  // Every rim edge borders a side facet and a cap facet; it is drawn once,
+  // and consecutive edges are joined into one polyline so a dash pattern
+  // runs along the whole circle.
+  let key = |p: &Point3D| [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+  let mut seen = std::collections::HashSet::new();
+  let mut chains: Vec<Vec<Point3D>> = Vec::new();
+  for ((a, b, c), on_rim) in tris.iter().zip(&flags) {
+    let corners = [a, b, c];
+    for (e, _) in on_rim.iter().enumerate().filter(|(_, on)| **on) {
+      let (from, to) = (corners[e], corners[(e + 1) % 3]);
+      let (kf, kt) = (key(from), key(to));
+      if !seen.insert(if kf <= kt { (kf, kt) } else { (kt, kf) }) {
+        continue;
+      }
+      match chains.last_mut() {
+        Some(chain) if chain.last().map(key) == Some(kf) => chain.push(*to),
+        Some(chain) if chain.last().map(key) == Some(kt) => chain.push(*from),
+        _ => chains.push(vec![*from, *to]),
+      }
+    }
+  }
+  let segments: Vec<Vec<Point3D>> = chains
+    .iter()
+    .flat_map(|chain| clip_polyline_to_box(chain, bounds))
+    // A circle merely touching the box leaves a piece of no length.
+    .filter(|piece| {
+      piece.windows(2).any(|w| {
+        v_len([w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z]) > 1e-9
+      })
+    })
+    .collect();
+  if segments.is_empty() {
+    return None;
+  }
+  // The outline keeps the look the unclipped primitive's rim has: the
+  // `EdgeForm` color, width and dashing, opaque whatever the faces are.
+  let mut line_style = style.clone();
+  line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
+  line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
+  line_style.dashing = style.edge_dashing.clone();
+  line_style.opacity = 1.0;
+  Some(Primitive3D::Line3D {
+    segments,
+    style: line_style,
+  })
+}
+
 /// The convex polygon a plane through `p` spanned by `u` and `w` cuts out of
 /// the box. `bound` optionally adds the half plane's own edge as one more
 /// half space, so `HalfPlane` stops at its boundary line.
@@ -7568,18 +7982,43 @@ fn disk_triangle_signed_area(a: [f64; 2], b: [f64; 2], radius: f64) -> f64 {
   }
 }
 
+/// The `Scaled` padding Wolfram gives every side of an automatic 3D range
+/// (`PlotRangePadding -> Automatic`), and the one `Plot3D`, `ListPlot3D`
+/// and most other 3D plots spell out in the graphic they return.
+pub(crate) const AUTOMATIC_RANGE_PADDING: f64 = 0.02;
+
+/// The wider `Scaled` padding `ParametricPlot3D` and `RevolutionPlot3D`
+/// give their automatic ranges.
+const PARAMETRIC_RANGE_PADDING: f64 = 0.05;
+
 /// One side's `PlotRangePadding`: an absolute length in plot coordinates,
 /// or `Scaled[s]`, a fraction of the axis' range.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum RangePad {
+pub(crate) enum RangePad {
   Absolute(f64),
   Scaled(f64),
+  /// `Automatic`: `Scaled[0.02]` around a range taken from the contents,
+  /// nothing around an explicit one (see [`RangePad::resolve`]).
+  Automatic,
+}
+
+impl RangePad {
+  /// The padding a side gets, `Automatic` decided by whether its axis'
+  /// range was given explicitly.
+  pub(crate) fn resolve(self, explicit_range: bool) -> RangePad {
+    match self {
+      RangePad::Automatic if explicit_range => RangePad::Absolute(0.0),
+      RangePad::Automatic => RangePad::Scaled(AUTOMATIC_RANGE_PADDING),
+      other => other,
+    }
+  }
 }
 
 /// A single `PlotRangePadding` value: a number, `Scaled[s]` or `None`.
 fn parse_range_pad(expr: &Expr) -> Option<RangePad> {
   match expr {
     Expr::Identifier(s) if s == "None" => Some(RangePad::Absolute(0.0)),
+    Expr::Identifier(s) if s == "Automatic" => Some(RangePad::Automatic),
     Expr::FunctionCall { name, args }
       if name == "Scaled" && args.len() == 1 =>
     {
@@ -7597,7 +8036,9 @@ fn parse_range_pad(expr: &Expr) -> Option<RangePad> {
 /// value pads every side alike, `{px, py, pz}` gives one per axis and each
 /// of those may itself be `{low, high}`. `Automatic` (or anything not
 /// understood) is `None`, keeping the default framing.
-fn parse_range_padding_3d(expr: &Expr) -> Option<[(RangePad, RangePad); 3]> {
+pub(crate) fn parse_range_padding_3d(
+  expr: &Expr,
+) -> Option<[(RangePad, RangePad); 3]> {
   let side_pair = |e: &Expr| match e {
     Expr::List(items) if items.len() == 2 => {
       Some((parse_range_pad(&items[0])?, parse_range_pad(&items[1])?))
@@ -7614,19 +8055,33 @@ fn parse_range_padding_3d(expr: &Expr) -> Option<[(RangePad, RangePad); 3]> {
   }
 }
 
-/// `range` widened by `pad_lo` below and `pad_hi` above. A negative
-/// padding that would turn the range inside out leaves it collapsed at
-/// the point where the two sides meet.
-fn padded_axis_range(
+/// `range` widened by `pad_lo` below and `pad_hi` above. A `Scaled[s]`
+/// side is `s` of the *padded* width, as in Wolfram (`AbsoluteOptions`
+/// of `Graphics3D[Cuboid[]]` reports `1/48` for the default
+/// `Scaled[0.02]`, not `1/50`). A negative padding that would turn the
+/// range inside out leaves it collapsed at the point where the two sides
+/// meet.
+pub(crate) fn padded_axis_range(
   (lo, hi): (f64, f64),
   pad_lo: RangePad,
   pad_hi: RangePad,
 ) -> (f64, f64) {
-  let width = hi - lo;
-  let length = |pad: RangePad| match pad {
+  // An unresolved `Automatic` side is left unpadded.
+  let absolute = |pad: RangePad| match pad {
     RangePad::Absolute(p) => p,
-    RangePad::Scaled(s) => s * width,
+    RangePad::Scaled(_) | RangePad::Automatic => 0.0,
   };
+  let scaled = |pad: RangePad| match pad {
+    RangePad::Scaled(s) => s,
+    RangePad::Absolute(_) | RangePad::Automatic => 0.0,
+  };
+  let free = 1.0 - scaled(pad_lo) - scaled(pad_hi);
+  let width = if free > 0.0 {
+    (hi - lo + absolute(pad_lo) + absolute(pad_hi)) / free
+  } else {
+    hi - lo
+  };
+  let length = |pad: RangePad| absolute(pad) + scaled(pad) * width;
   let (new_lo, new_hi) = (lo - length(pad_lo), hi + length(pad_hi));
   if new_hi >= new_lo {
     (new_lo, new_hi)
@@ -7634,6 +8089,47 @@ fn padded_axis_range(
     let meet = f64::midpoint(new_lo, new_hi);
     (meet, meet)
   }
+}
+
+/// The `PlotRangePadding` among a plot's options, `None` when it is not
+/// given (or not understood).
+fn range_padding_option(opts: &[Expr]) -> Option<[(RangePad, RangePad); 3]> {
+  opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRangePadding") =>
+    {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      parse_range_padding_3d(&value)
+    }
+    _ => None,
+  })
+}
+
+/// The box a 3D picture displays around the range `raw`: each side widened
+/// by its `PlotRangePadding` (or narrowed, when negative). `Automatic` is
+/// `Scaled[0.02]` around a range taken from the contents (measured on
+/// wolframscript's `Graphics3D[Cuboid[]]`) and nothing around an
+/// `explicit` one.
+fn displayed_box_3d(
+  raw: [(f64, f64); 3],
+  explicit: [bool; 3],
+  padding: Option<[(RangePad, RangePad); 3]>,
+) -> [(f64, f64); 3] {
+  let pads = padding.unwrap_or([(RangePad::Automatic, RangePad::Automatic); 3]);
+  std::array::from_fn(|d| {
+    padded_axis_range(
+      raw[d],
+      pads[d].0.resolve(explicit[d]),
+      pads[d].1.resolve(explicit[d]),
+    )
+  })
 }
 
 /// A box the unbounded primitives can be clipped to. A scene made only of
@@ -7771,6 +8267,9 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 /// of the bounding box, far thinner than the curves of a plot.
 const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
 
+/// The outline color of a face under the default `EdgeForm`.
+const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
+
 /// The absolute width a thickness symbol names in 3D (`Thick`,
 /// `Thickness[Large]`, …): the same widths as in 2D graphics.
 fn named_line_thickness(name: &str) -> Option<f64> {
@@ -7805,6 +8304,10 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// The opacity of that outline (`EdgeForm[{Black, Opacity[0.1]}]`, the
+  /// faint outline of a 3D chart's bars): it is blended with what lies
+  /// behind it. 1 when no `Opacity` was given.
+  edge_opacity: f64,
   /// The outline width a thickness inside `EdgeForm[…]` asks for.
   edge_width: Option<f64>,
   /// `EdgeForm[Dashed]`: the outline's dash pattern.
@@ -7877,6 +8380,9 @@ struct FaceFormOverride {
   base_color: Option<(u8, u8, u8)>,
   /// The opacity set by plain directives, for non-face primitives.
   base_opacity: f64,
+  /// Whether a plain color directive followed the `FaceForm`. A round
+  /// solid (`Sphere`, `Cylinder`, `Cone`) is then drawn in that color.
+  recolored: bool,
 }
 
 impl StyleState3D {
@@ -7894,6 +8400,7 @@ impl StyleState3D {
   fn set_plain_color(&mut self, rgb: (u8, u8, u8)) {
     if let Some(fo) = &mut self.face_form {
       fo.base_color = Some(rgb);
+      fo.recolored = true;
       if fo.color.is_none() {
         self.color = Some(rgb);
         self.back_color = None;
@@ -7930,6 +8437,7 @@ impl Default for StyleState3D {
       edges: true,
       faces: true,
       edge_color: None,
+      edge_opacity: 1.0,
       edge_width: None,
       edge_dashing: None,
       specular: None,
@@ -8089,6 +8597,10 @@ enum Primitive3D {
     tris: Vec<(Point3D, Point3D, Point3D)>,
     style: StyleState3D,
     smooth: bool,
+    /// The surface is a face whose open rim (the triangle edges no other
+    /// triangle shares) is drawn in its `EdgeForm`, as Wolfram outlines a
+    /// `BSplineSurface`. Curved solids and tubes draw no rim.
+    outlined: bool,
   },
 }
 
@@ -8194,6 +8706,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       opacity: face_opacity,
       base_color,
       base_opacity,
+      recolored: false,
     });
     style.back_color = match args.get(1) {
       Some(back) => {
@@ -8334,6 +8847,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         // EdgeForm[Dashed]` draws thick red dashes.
         let mut edge = StyleState3D {
           color: style.edge_color,
+          opacity: style.edge_opacity,
           thickness: style.edge_width,
           dashing: style.edge_dashing.clone(),
           ..StyleState3D::default()
@@ -8344,15 +8858,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
           }
         }
         // A translucent edge (`EdgeForm[{Black, Opacity[0.1]}]`, the faint
-        // outline of a 3D chart's bars) is drawn in its color faded
-        // toward the white page.
-        if edge.opacity < 1.0
-          && let Some((r, g, b)) = edge.color
-        {
-          let o = edge.opacity.clamp(0.0, 1.0);
-          let fade = |c: u8| (c as f64 * o + 255.0 * (1.0 - o)).round() as u8;
-          edge.color = Some((fade(r), fade(g), fade(b)));
-        }
+        // outline of a 3D chart's bars) is blended with the faces behind
+        // it rather than drawn opaque.
+        style.edge_opacity = edge.opacity.clamp(0.0, 1.0);
         style.edge_color = edge.color;
         style.edge_width = edge.thickness;
         style.edge_dashing = edge.dashing;
@@ -8443,6 +8951,48 @@ fn outline_edge_cap(dashing: Option<&Vec<f64>>) -> &'static str {
     ""
   } else {
     " stroke-linecap=\"round\""
+  }
+}
+
+/// The faces `Boxed -> {Left, Bottom, Back}` (or a single face name) asks
+/// the box to draw the edges of, in the order Left, Right, Front, Back,
+/// Bottom, Top. `None` when the value is not such a list.
+fn parse_boxed_faces(value: &Expr) -> Option<[bool; 6]> {
+  const NAMES: [&str; 6] = ["Left", "Right", "Front", "Back", "Bottom", "Top"];
+  let items: Vec<&Expr> = match value {
+    Expr::List(items) => items.iter().collect(),
+    single @ Expr::Identifier(_) => vec![single],
+    _ => return None,
+  };
+  let mut faces = [false; 6];
+  for item in items {
+    let Expr::Identifier(name) = item else {
+      return None;
+    };
+    let k = NAMES.iter().position(|n| n == name)?;
+    faces[k] = true;
+  }
+  Some(faces)
+}
+
+/// Whether the box edge between corners `i` and `j` (indexed by the bits
+/// x = 1, y = 2, z = 4 set for the high side) lies on one of `faces` (see
+/// [`parse_boxed_faces`]).
+fn box_edge_on_faces(i: usize, j: usize, faces: [bool; 6]) -> bool {
+  (0..6).any(|f| {
+    let (bit, high) = (1 << (f / 2), f % 2 == 1);
+    // Left/Right are x, Front/Back y, Bottom/Top z.
+    faces[f] && [i, j].iter().all(|&c| (c & bit != 0) == high)
+  })
+}
+
+/// The `stroke-opacity` of a face's outline edges drawn with
+/// `EdgeForm[{…, Opacity[o]}]`; empty for an opaque outline.
+fn edge_opacity_attr(opacity: f64) -> String {
+  if opacity < 1.0 {
+    format!(" stroke-opacity=\"{}\"", opacity.max(0.0))
+  } else {
+    String::new()
   }
 }
 
@@ -9820,6 +10370,7 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
       // A tilted box keeps its flat faces and their outline, unlike the
       // curved solids, whose facet cuts must stay invisible.
       smooth: !matches!(prim, Primitive3D::Cuboid { .. }),
+      outlined: matches!(prim, Primitive3D::Surface3D { outlined: true, .. }),
     };
     return;
   }
@@ -10377,6 +10928,17 @@ fn collect_3d_primitives(
     {
       style.without_face_form();
     }
+    // A plain color given after the `FaceForm` is the one a round solid
+    // takes: `{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+    // cylinder between yellow polygons.
+    if let Primitive3D::Sphere { style, .. }
+    | Primitive3D::Cylinder { style, .. }
+    | Primitive3D::Cone { style, .. } = prim
+      && style.face_form.as_ref().is_some_and(|fo| fo.recolored)
+    {
+      style.without_face_form();
+      style.back_color = None;
+    }
   }
 }
 
@@ -10796,11 +11358,16 @@ fn collect_3d_primitives_styled(
                 style,
                 prims,
               );
+              // The head is a smooth solid: no rim is drawn round its base
+              // (wolframscript's `VectorPlot3D` heads show none).
               prims.push(Primitive3D::Cone {
                 p1: base,
                 p2: tip,
                 radius: 0.22 * len,
-                style: style.clone(),
+                style: StyleState3D {
+                  edges: false,
+                  ..style.clone()
+                },
               });
             }
             None => collect_3d_primitives(&args[0], style, prims),
@@ -11009,6 +11576,7 @@ fn collect_3d_primitives_styled(
               tris: tessellate_capsule(p1, p2, radius),
               style: style.clone(),
               smooth: true,
+              outlined: false,
             });
           }
         }
@@ -11112,10 +11680,22 @@ fn collect_3d_primitives_styled(
               },
             },
           };
+          // Likewise a single radius written as the curve's second argument
+          // (`Tube[BSplineCurve[pts, r]]`) is the tube's radius.
+          let radius_spec = args.get(1).or_else(|| match &args[0] {
+            Expr::FunctionCall { name, args: inner }
+              if name == "BSplineCurve" =>
+            {
+              inner.get(1).filter(|a| {
+                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+              })
+            }
+            _ => None,
+          });
           for pts in curves {
             let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
               rs
-            } else if let Some(spec) = args.get(1) {
+            } else if let Some(spec) = radius_spec {
               let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
               match &spec {
                 Expr::List(items) if items.len() == pts.len() => items
@@ -11187,6 +11767,7 @@ fn collect_3d_primitives_styled(
                   tris,
                   style: style.clone(),
                   smooth: true,
+                  outlined: false,
                 });
               }
             }
@@ -11219,6 +11800,7 @@ fn collect_3d_primitives_styled(
             tris: tessellate_torus(&center, r1, r2),
             style: style.clone(),
             smooth: true,
+            outlined: false,
           });
         }
         // `BSplineCurve[{p1, …}, opts…]` draws the spline its control
@@ -11240,6 +11822,7 @@ fn collect_3d_primitives_styled(
               tris: tessellate_bspline_surface(&grid),
               style: style.clone(),
               smooth: true,
+              outlined: true,
             });
           }
         }
@@ -11304,6 +11887,7 @@ fn collect_3d_primitives_styled(
                 tris,
                 style,
                 smooth: true,
+                outlined: false,
               });
             }
             *style = saved;
@@ -11968,6 +12552,7 @@ fn collect_raster3d(
           tris: tessellate_cuboid(&at(i0, j0, k0), &at(i1, j1, k1)),
           style: voxel_style,
           smooth: false,
+          outlined: false,
         });
       }
     }
@@ -12061,6 +12646,7 @@ fn collect_opaque_raster3d_faces(
             ],
             style: voxel_style,
             smooth: false,
+            outlined: false,
           });
         }
       }
@@ -12679,6 +13265,33 @@ fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
     .collect()
 }
 
+/// For a box of zero thickness along exactly one axis, the index (in
+/// `tessellate_cuboid`'s face order) of the one face to draw: of the two
+/// faces lying in the same plane, the one turned toward the viewer, so the
+/// sheet shows its front color from either side. The other four faces
+/// have no area.
+fn flat_cuboid_visible_face(
+  p_min: &Point3D,
+  p_max: &Point3D,
+  camera: &Camera,
+) -> Option<usize> {
+  let lo = [p_min.x, p_min.y, p_min.z];
+  let hi = [p_max.x, p_max.y, p_max.z];
+  let flat: Vec<usize> = (0..3).filter(|&i| lo[i] == hi[i]).collect();
+  let &[axis] = &flat[..] else {
+    return None;
+  };
+  let center = Point3D {
+    x: f64::midpoint(lo[0], hi[0]),
+    y: f64::midpoint(lo[1], hi[1]),
+    z: f64::midpoint(lo[2], hi[2]),
+  };
+  let toward = camera.toward_viewer(center);
+  // Faces come as bottom, top (z), front, back (y), left, right (x).
+  let first = [4, 2, 0][axis];
+  Some(first + usize::from(toward[axis] > 0.0))
+}
+
 fn hidden_cuboid_faces(
   prims: &[Primitive3D],
 ) -> std::collections::HashSet<(u8, [i64; 5])> {
@@ -12693,7 +13306,14 @@ fn hidden_cuboid_faces(
     } = prim
       && style.opacity >= 1.0
     {
-      for (axis, hi, key) in cuboid_face_keys(p_min, p_max) {
+      let keys = cuboid_face_keys(p_min, p_max);
+      for (i, (axis, hi, key)) in keys.into_iter().enumerate() {
+        // A box of zero thickness along an axis has its own two faces in
+        // one plane. They are its whole visible surface, not an interior
+        // wall between two boxes.
+        if keys[i ^ 1].2 == key {
+          continue;
+        }
         if seen.contains(&(axis, !hi, key)) {
           hidden.insert((axis, key));
         }
@@ -12754,24 +13374,27 @@ pub(crate) fn tessellate_cuboid(
     }, // 7
   ];
   vec![
+    // Each face is wound counterclockwise seen from outside the box, so
+    // its normal points outward and `FaceForm[front, back]` paints the
+    // outside with the front color.
     // Bottom
-    (v[0], v[1], v[2]),
-    (v[0], v[2], v[3]),
+    (v[0], v[2], v[1]),
+    (v[0], v[3], v[2]),
     // Top
-    (v[4], v[6], v[5]),
-    (v[4], v[7], v[6]),
+    (v[4], v[5], v[6]),
+    (v[4], v[6], v[7]),
     // Front
-    (v[0], v[5], v[1]),
-    (v[0], v[4], v[5]),
+    (v[0], v[1], v[5]),
+    (v[0], v[5], v[4]),
     // Back
-    (v[2], v[7], v[3]),
-    (v[2], v[6], v[7]),
+    (v[2], v[3], v[7]),
+    (v[2], v[7], v[6]),
     // Left
-    (v[0], v[3], v[7]),
-    (v[0], v[7], v[4]),
+    (v[0], v[7], v[3]),
+    (v[0], v[4], v[7]),
     // Right
-    (v[1], v[5], v[6]),
-    (v[1], v[6], v[2]),
+    (v[1], v[6], v[5]),
+    (v[1], v[2], v[6]),
   ]
 }
 
@@ -12794,6 +13417,33 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
     is_edge(corners[1], corners[2]),
     is_edge(corners[2], corners[0]),
   ]
+}
+
+/// The rim of an open surface: each triangle edge no other triangle
+/// shares (corners matched to 1e-8, so a closed seam stays shut).
+fn open_rim_flags(tris: &[(Point3D, Point3D, Point3D)]) -> Vec<[bool; 3]> {
+  use std::collections::HashMap;
+  let key = |p: Point3D| {
+    let q = |v: f64| (v * 1e8).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+  };
+  let edge_key = |a: Point3D, b: Point3D| {
+    let (ka, kb) = (key(a), key(b));
+    if ka <= kb { (ka, kb) } else { (kb, ka) }
+  };
+  let mut uses: HashMap<_, usize> = HashMap::new();
+  for t in tris {
+    for (a, b) in [(t.0, t.1), (t.1, t.2), (t.2, t.0)] {
+      *uses.entry(edge_key(a, b)).or_default() += 1;
+    }
+  }
+  tris
+    .iter()
+    .map(|t| {
+      let rim = |a: Point3D, b: Point3D| uses[&edge_key(a, b)] == 1;
+      [rim(t.0, t.1), rim(t.1, t.2), rim(t.2, t.0)]
+    })
+    .collect()
 }
 
 /// Which edges of a flat-faced mesh's triangles outline a face: an edge is an
@@ -13087,6 +13737,19 @@ fn point_disk_padding(
   pad
 }
 
+/// The radius of the largest `Point` dot in the scene, 0 without any.
+fn largest_point_dot_radius(prims: &[Primitive3D]) -> f64 {
+  prims
+    .iter()
+    .filter_map(|prim| match prim {
+      Primitive3D::Point3DPrim { points, style } if !points.is_empty() => {
+        Some(point_dot_radius(style))
+      }
+      _ => None,
+    })
+    .fold(0.0, f64::max)
+}
+
 thread_local! {
   /// Diagonal of the box of the `Graphics3D` currently being collected (its
   /// explicit `PlotRange`, else the extent of its contents), which an
@@ -13158,14 +13821,14 @@ fn arrow3d_head_anchors(
     .collect()
 }
 
-/// The corners whose projected convex hull outlines the cone head of a
-/// line `Arrow` in 3D: the tip (the arrow's last point) followed by a ring
-/// of points around the cone's base. The cone is `len` long, points along
-/// the arrow's last segment and is as slim as the head of an
-/// `Arrow[Tube[…]]`. Like Wolfram's, the head keeps its size on an arrow
-/// shorter than itself. `None` when the last segment has no length.
-fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
-  const RING: usize = 24;
+/// The axis of the head of a line `Arrow` in 3D: from the back of the
+/// head to its tip (the arrow's last point), `len` long along the arrow's
+/// last segment. Wolfram draws that head as its flat 2D arrowhead turned
+/// to face the viewer (see `default_arrowhead_polygon`), as long on screen
+/// as `len` is across the line of sight, whatever the arrow's slant. Like
+/// Wolfram's, the head keeps its size on an arrow shorter than itself.
+/// `None` when the last segment has no length.
+fn arrow3d_head_axis(points: &[Point3D], len: f64) -> Option<[Point3D; 2]> {
   let n = points.len();
   if n < 2 || !(len.is_finite() && len > 0.0) {
     return None;
@@ -13177,38 +13840,13 @@ fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
   if !(seg > 0.0 && seg.is_finite()) {
     return None;
   }
-  let u = [d[0] / seg, d[1] / seg, d[2] / seg];
-  // Two unit vectors spanning the plane of the base.
-  let helper = if u[0].abs() < 0.9 {
-    [1.0, 0.0, 0.0]
-  } else {
-    [0.0, 1.0, 0.0]
+  let k = len / seg;
+  let back = Point3D {
+    x: tip.x - d[0] * k,
+    y: tip.y - d[1] * k,
+    z: tip.z - d[2] * k,
   };
-  let cross = |a: [f64; 3], b: [f64; 3]| {
-    [
-      a[1] * b[2] - a[2] * b[1],
-      a[2] * b[0] - a[0] * b[2],
-      a[0] * b[1] - a[1] * b[0],
-    ]
-  };
-  let e1 = cross(u, helper);
-  let l1 = v_len(e1);
-  let e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
-  let e2 = cross(u, e1);
-  let radius = 0.22 * len;
-  let base = [tip.x - u[0] * len, tip.y - u[1] * len, tip.z - u[2] * len];
-  let mut out = Vec::with_capacity(RING + 1);
-  out.push(tip);
-  for k in 0..RING {
-    let a = std::f64::consts::TAU * k as f64 / RING as f64;
-    let (s, c) = a.sin_cos();
-    out.push(Point3D {
-      x: base[0] + radius * (c * e1[0] + s * e2[0]),
-      y: base[1] + radius * (c * e1[1] + s * e2[1]),
-      z: base[2] + radius * (c * e1[2] + s * e2[2]),
-    });
-  }
-  Some(out)
+  Some([back, tip])
 }
 
 /// Default radius of a `Tube` given none, as a fraction of the diagonal of
@@ -14096,6 +14734,7 @@ fn perspective_warp(
         tris,
         style,
         smooth,
+        outlined,
       } => {
         let tris: Vec<(Point3D, Point3D, Point3D)> = tris
           .iter()
@@ -14106,6 +14745,7 @@ fn perspective_warp(
             tris,
             style,
             smooth,
+            outlined,
           });
         }
       }
@@ -14163,8 +14803,34 @@ fn resolve_scaled_sphere_radii(
 
 /// The world-coordinate bounding box of a set of 3D primitives, as
 /// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
-/// to bound.
+/// to bound. An axis the contents do not extend along (a flat polygon, a
+/// vertical line) is given a range as Wolfram does: from 0 to twice the
+/// value (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
 fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
+  let widen = |(lo, hi): (f64, f64)| {
+    if lo.is_finite() && hi.is_finite() && range_is_flat((lo, hi)) {
+      let c = f64::midpoint(lo, hi);
+      if c == 0.0 {
+        (-1.0, 1.0)
+      } else {
+        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
+      }
+    } else {
+      (lo, hi)
+    }
+  };
+  primitives_extent(prims).map(widen)
+}
+
+/// Whether the contents do not extend along an axis whose range is
+/// `(lo, hi)` (a flat polygon, a vertical line).
+fn range_is_flat((lo, hi): (f64, f64)) -> bool {
+  hi - lo <= 1e-12 * lo.abs().max(1.0)
+}
+
+/// The bounding box of a set of 3D primitives as the contents span it: an
+/// axis they do not extend along keeps its zero-width range.
+fn primitives_extent(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   let mut x3_min = f64::INFINITY;
   let mut x3_max = f64::NEG_INFINITY;
   let mut y3_min = f64::INFINITY;
@@ -14341,27 +15007,7 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
     }
   }
-  // An axis the contents do not extend along (a flat polygon, a vertical
-  // line) is given a range as Wolfram does: from 0 to twice the value
-  // (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
-  let widen = |(lo, hi): (f64, f64)| {
-    if lo.is_finite() && hi.is_finite() && hi - lo <= 1e-12 * lo.abs().max(1.0)
-    {
-      let c = f64::midpoint(lo, hi);
-      if c == 0.0 {
-        (-1.0, 1.0)
-      } else {
-        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
-      }
-    } else {
-      (lo, hi)
-    }
-  };
-  [
-    widen((x3_min, x3_max)),
-    widen((y3_min, y3_max)),
-    widen((z3_min, z3_max)),
-  ]
+  [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
 }
 
 /// How much wider than the sphere's projected circle a sphere-framed
@@ -14371,6 +15017,14 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
 /// one morphing surface) all draw it 0.90–0.91× as large as the bare circle
 /// fit, while one with `ImagePadding -> 20` fills the padded region.
 const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
+
+/// Longest-to-shortest side ratio up to which an invisible box counts as
+/// compact and is sphere-framed in a picture of fixed size (see its use in
+/// `graphics3d_ast`). Wolfram's snapshots put the limit between a
+/// 2 × 4 × 4 box (a plane crossed by an arrow, sphere-framed at
+/// `ImageSize -> {400, 400}`) and a 4 × 4 × 10 one (a tall building
+/// filling a 300 × 400 picture).
+const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
@@ -14453,6 +15107,14 @@ fn contents_sphere_radius(
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Math inside a picture keeps its italics even when the picture is drawn
+  // as part of an SVG export of a larger expression.
+  if crate::functions::graphics::export_upright_letters() {
+    return crate::functions::graphics::with_export_upright_letters(
+      false,
+      || graphics3d_ast(args),
+    );
+  }
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
   let content = evaluate_expr_to_expr(&args[0])?;
 
@@ -14462,6 +15124,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_height = false;
   let mut full_width = false;
   let mut show_box = true;
+  // `Boxed -> {Left, Bottom, Back}`: only the edges of these faces of the
+  // box (Left, Right, Front, Back, Bottom, Top) are drawn.
+  let mut box_faces: Option<[bool; 6]> = None;
   let mut axes_edge: Option<AxesEdges> = None;
   let mut background: Option<(u8, u8, u8)> = None;
   let mut camera = Camera::default();
@@ -14568,7 +15233,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Boxed" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_box = false,
           Expr::Identifier(s) if s == "True" => show_box = true,
-          _ => {}
+          other => {
+            if let Some(faces) = parse_boxed_faces(other) {
+              show_box = true;
+              box_faces = Some(faces);
+            }
+          }
         },
         "ViewProjection" => {
           orthographic = matches!(replacement.as_ref(), Expr::String(s) if s == "Orthographic");
@@ -14825,14 +15495,53 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // each of them replaced by the `Line`/`Polygon` it draws there. Clipping
   // to exactly those bounds is what keeps an unbounded object from
   // widening the range it was measured against.
-  if has_frame_dependent_3d(&content) {
+  // What is drawn: the content with its frame-dependent primitives placed
+  // (the symbolic result keeps them as written).
+  let mut drawn = std::borrow::Cow::Borrowed(&content);
+  if has_frame_dependent_3d(&drawn, FrameDependent::Unbounded) {
     let bounds =
       clipping_bounds(plot_range.unwrap_or_else(|| primitives_bounds(&prims)));
-    let expanded = expand_frame_dependent_3d(&content, &bounds);
+    drawn = std::borrow::Cow::Owned(expand_frame_dependent_3d(
+      &drawn,
+      &bounds,
+      FrameDependent::Unbounded,
+    ));
     prims.clear();
     style3d = StyleState3D::default();
-    collect_3d_primitives(&expanded, &mut style3d, &mut prims);
+    collect_3d_primitives(&drawn, &mut style3d, &mut prims);
   }
+
+  // `Scaled` coordinates are fractions of the *displayed* box -- the range
+  // widened by its `PlotRangePadding` -- so `Scaled[{0, 0, 0}]` is the
+  // box's corner (Wolfram's 3D charts lay their base plate out that way).
+  // They are placed once the rest of the scene has fixed that box, and do
+  // not widen it: `anchored_bounds` keeps the range they were placed in.
+  let explicit_axes: [bool; 3] = match partial_range {
+    Some(partial) => partial.map(|r| r.is_some()),
+    None => [plot_range.is_some(); 3],
+  };
+  let anchored_bounds: std::cell::Cell<Option<[(f64, f64); 3]>> =
+    std::cell::Cell::new(None);
+  if has_frame_dependent_3d(&drawn, FrameDependent::Scaled) {
+    let raw = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let displayed =
+      clipping_bounds(displayed_box_3d(raw, explicit_axes, range_padding));
+    drawn = std::borrow::Cow::Owned(expand_frame_dependent_3d(
+      &drawn,
+      &displayed,
+      FrameDependent::Scaled,
+    ));
+    prims.clear();
+    style3d = StyleState3D::default();
+    collect_3d_primitives(&drawn, &mut style3d, &mut prims);
+    anchored_bounds.set(Some(raw));
+  }
+  // The extent of the scene's contents, without what is anchored to its box.
+  let primitives_bounds = |prims: &[Primitive3D]| {
+    anchored_bounds
+      .get()
+      .unwrap_or_else(|| primitives_bounds(prims))
+  };
 
   resolve_scaled_sphere_radii(&mut prims, plot_range);
 
@@ -14900,6 +15609,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // A curved solid that crosses the box is cut open along it: its
     // facets are clipped like polygons (Wolfram does not cap the cut).
+    // The end circles its `EdgeForm` outlines are kept as far as they lie
+    // inside the box.
+    let mut cut_rims: Vec<Primitive3D> = Vec::new();
     for prim in &mut prims {
       let curved = matches!(
         prim,
@@ -14921,20 +15633,27 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let clipped = clip_triangles_to_box(&tris, &bounds);
+      if let Some(rims) = clipped_rim_lines(prim, &tris, &bounds) {
+        cut_rims.push(rims);
+      }
       let style = primitive_style(prim).clone();
-      let smooth = match prim {
-        Primitive3D::Surface3D { smooth, .. } => *smooth,
-        _ => true,
+      let (smooth, outlined) = match prim {
+        Primitive3D::Surface3D {
+          smooth, outlined, ..
+        } => (*smooth, *outlined),
+        _ => (true, false),
       };
       *prim = Primitive3D::Surface3D {
         tris: clipped,
         style,
         smooth,
+        outlined,
       };
     }
     prims.retain(
       |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
     );
+    prims.extend(cut_rims);
 
     // Points, and text anchored at a point, outside the box are not drawn
     // (e.g. a label placed above a plot whose range `Show` inherits).
@@ -15021,21 +15740,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // default size, pinned to a 100 × 100 × 20 `PlotRange` and seen from
   // `ViewPoint -> {0, 0, 1}`, spans about 110 units of the picture, as the
   // outline fit does (sphere framing would span 204).
+  // A scene that is one cell of a `Grid`, `Row`, `Column` or list rather
+  // than a picture of its own keeps the outline fit: Wolfram's snapshot of
+  // a Demonstration's `Grid` of two unboxed scenes pinned to a 24 × 24 × 10
+  // `PlotRange` at `ImageSize -> {290, 290}`, seen from `ViewPoint ->
+  // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
+  // below their `PlotLabel` does (sphere framing would span 180). The
+  // layout draws such a cell again (see `outline_fitted_cell_svg`).
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
-  let spherical_region = spherical_region
-    || (!spherical_region_off
-      && manipulate_frame
-      && explicitly_framed
-      && explicit_height
-      && aspect_ratio.is_none())
-    || (!spherical_region_off
-      && explicitly_framed
-      && !show_box
-      && explicit_height
-      && !full_width
-      && !aspect_full
-      && aspect_ratio.is_none()
-      && view_angle.is_none());
+  let automatic_sphere = !spherical_region
+    && !spherical_region_off
+    && !OUTLINE_FIT_CELL.get()
+    && explicitly_framed
+    && explicit_height
+    && aspect_ratio.is_none()
+    && (manipulate_frame
+      || (!show_box && !full_width && !aspect_full && view_angle.is_none()));
+  let spherical_region = spherical_region || automatic_sphere;
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
@@ -15054,6 +15775,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
       let vertical = scaled_view_vertical(camera.vertical, &bounds);
       perspective_warp(&mut prims, eye, target, vertical);
+      // The warped scene is framed by what it shows.
+      anchored_bounds.set(None);
       camera.azimuth = -std::f64::consts::FRAC_PI_2;
       camera.elevation = 0.0;
       camera.vertical = Camera::DEFAULT_VERTICAL;
@@ -15108,6 +15831,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for i in 0..3 {
           range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
         }
+      }
+      if let Some(mut range) = anchored_bounds.get() {
+        for i in 0..3 {
+          range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
+        }
+        anchored_bounds.set(Some(range));
       }
     }
   }
@@ -15248,7 +15977,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style,
         } => {
           let mut tris = tessellate_cuboid(p_min, p_max);
-          if style.opacity >= 1.0 && !hidden_faces.is_empty() {
+          if let Some(keep) = flat_cuboid_visible_face(p_min, p_max, &camera) {
+            tris.drain(..2 * keep);
+            tris.truncate(2);
+          } else if style.opacity >= 1.0 && !hidden_faces.is_empty() {
             let keys = cuboid_face_keys(p_min, p_max);
             let mut face = 0;
             tris.retain(|_| {
@@ -15329,10 +16061,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tris,
           style,
           smooth,
+          outlined,
         } => {
           // A Raster3D voxel is a box, so only its own edges are outlined.
           if !*smooth {
             holed_boundaries = coplanar_cut_flags(tris);
+          } else if *outlined && style.edges {
+            holed_boundaries = open_rim_flags(tris);
           }
           (tris.clone(), style)
         }
@@ -15348,6 +16083,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edges: true,
             faces: true,
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             specular: None,
@@ -15434,12 +16170,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
-    // A non-planar polygon has no single normal: each of its fan
-    // triangles is lit by its own.
+    // A polygon is lit as one face with its Newell normal, even when its
+    // corners do not share a plane: Wolfram fills a non-planar polygon
+    // (a closed path over several faces of a box) in a single shade
+    // rather than lighting each of its fan triangles by its own normal.
     let polygon_normal = match prim {
-      Primitive3D::Polygon3D { points, .. }
-        if points.len() > 3 && is_planar_polygon3d(points) =>
-      {
+      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
         let mut normal = [0.0; 3];
         for i in 0..points.len() {
           let (a, b) = (points[i], points[(i + 1) % points.len()]);
@@ -15529,6 +16265,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary,
           edge_color: prim_style.edge_color,
+          edge_opacity: prim_style.edge_opacity,
           edge_width: prim_style.edge_width,
           edge_dashing: prim_style.edge_dashing.clone(),
           projected: [v0, v1, v2].map(|p| project(p, &camera)),
@@ -15603,7 +16340,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::smooth_shading::corner_colors(
           &corners,
           exact.as_deref(),
-          scene.frame.toward,
+          &|at| {
+            let t = camera.toward_viewer(at);
+            let len = v_len(t);
+            if len > 0.0 && len.is_finite() {
+              v_scale(t, 1.0 / len)
+            } else {
+              scene.frame.toward
+            }
+          },
           |_, normal, at| {
             shade_facet(
               SurfaceDefault::Plain(base_color),
@@ -15668,6 +16413,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_triangles.push(Triangle {
         boundary,
         edge_color: prim_style.edge_color,
+        edge_opacity: prim_style.edge_opacity,
         edge_width: prim_style.edge_width,
         edge_dashing: prim_style.edge_dashing.clone(),
         projected: [p0, p1, p2],
@@ -15697,82 +16443,55 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Painter's algorithm
-  split_interpenetrating(&mut triangle_vertices, &mut all_triangles, &camera);
-  let edges =
-    split_depth_cycles(&mut triangle_vertices, &mut all_triangles, &camera);
-  {
-    let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
-    let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
-    let opacities: Vec<_> = all_triangles.iter().map(|t| t.opacity).collect();
-    let order = painter_order(
-      &triangle_vertices,
-      &projected,
-      &depths,
-      &opacities,
-      &camera,
-      edges,
-    );
-    let mut slots: Vec<Option<Triangle>> =
-      all_triangles.drain(..).map(Some).collect();
-    triangle_vertices = order.iter().map(|&i| triangle_vertices[i]).collect();
-    all_triangles = order.into_iter().filter_map(|i| slots[i].take()).collect();
-  }
+  let (all_triangles, triangle_vertices) =
+    painter_sorted(all_triangles, triangle_vertices, &camera);
 
-  // Compute 3D bounding box of all primitives for the wireframe box
-  let [
-    (mut x3_min, mut x3_max),
-    (mut y3_min, mut y3_max),
-    (mut z3_min, mut z3_max),
-  ] = primitives_bounds(&prims);
-
-  // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
-  // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
-  if range_padding.is_none() {
-    let pad_x = (x3_max - x3_min) * 0.02;
-    let pad_y = (y3_max - y3_min) * 0.02;
-    let pad_z = (z3_max - z3_min) * 0.02;
-    x3_min -= pad_x;
-    x3_max += pad_x;
-    y3_min -= pad_y;
-    y3_max += pad_y;
-    z3_min -= pad_z;
-    z3_max += pad_z;
-  }
-
-  // An explicit PlotRange pins the displayed region regardless of the
-  // content's extent, keeping the framing stable across re-renders.
-  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
-    x3_min = xl;
-    x3_max = xh;
-    y3_min = yl;
-    y3_max = yh;
-    z3_min = zl;
-    z3_max = zh;
-  }
-
-  // An explicit `PlotRangePadding` widens (or, when negative, narrows)
-  // the displayed box on each side, whether the range is automatic or
-  // given. A negative padding zooms in on the middle of the range.
-  if let Some(pad) = range_padding {
-    let mut axes = [
-      (&mut x3_min, &mut x3_max),
-      (&mut y3_min, &mut y3_max),
-      (&mut z3_min, &mut z3_max),
-    ];
-    for ((lo, hi), (pad_lo, pad_hi)) in axes.iter_mut().zip(pad) {
-      let (padded_lo, padded_hi) =
-        padded_axis_range((**lo, **hi), pad_lo, pad_hi);
-      **lo = padded_lo;
-      **hi = padded_hi;
-    }
-  }
+  // The wireframe box: the extent of the primitives -- or an explicit
+  // PlotRange, which pins the displayed region regardless of the content's
+  // extent, keeping the framing stable across re-renders -- widened by
+  // `PlotRangePadding` (see `displayed_box_3d`).
+  let [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)] = displayed_box_3d(
+    plot_range.unwrap_or_else(|| primitives_bounds(&prims)),
+    explicit_axes,
+    range_padding,
+  );
 
   // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
   // longest side of the *displayed* box, padding included. An automatic
-  // range is padded by 2% per side before it becomes that box, so a scene
-  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  // range is padded by `Scaled[0.02]` per side before it becomes that box,
+  // so a scene under an explicit `ViewAngle` is drawn 0.96 of its unpadded
+  // size.
   let view_box_side =
     (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
+
+  // An invisible box of compact shape (no side much longer than another)
+  // around an automatic range is sphere-framed in a picture of fixed width
+  // and height, even with the default camera: Wolfram's snapshots of the
+  // five Platonic solids, each an unboxed `Graphics3D` at
+  // `ImageSize -> {80, 80}`, draw a unit cube 0.82 × 0.89 of the frame
+  // and a tetrahedron 0.61 × 0.53, off center, as the sphere around the
+  // contents gives (within 3 %), not filling the frame. An elongated box
+  // (a thin 3.4 × 3.4 × 39 cylinder, a tall 4 × 4 × 10 building) keeps
+  // the fit to its contents below, and so do flat contents, whose box is
+  // only as thick as the range Wolfram makes up for it (a planar net of
+  // dots at `ImageSize -> {350, 400}` reaches the picture's edges).
+  let view_box_shortest_side =
+    (x3_max - x3_min).min(y3_max - y3_min).min(z3_max - z3_min);
+  let compact_sphere_framed = !spherical_region
+    && (!spherical_region_off
+      && !show_box
+      && !show_axes
+      && explicit_height
+      && !full_width
+      && !aspect_full
+      && aspect_ratio.is_none()
+      && view_angle.is_none()
+      && plot_range.is_none()
+      && partial_range.is_none()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && view_box_shortest_side > 0.0
+      && view_box_side <= COMPACT_BOX_MAX_SIDE_RATIO * view_box_shortest_side);
+  let spherical_region = spherical_region || compact_sphere_framed;
 
   // Build box corners
   let box_corners = [
@@ -15868,13 +16587,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Include box corners in the projected bounding box. Wolfram frames the
-  // picture by the bounding box whether or not it is drawn: with
-  // `Boxed -> False` the box is merely invisible, so a dome or a tall
-  // solid keeps the margins its box corners leave around it instead of
-  // being blown up to touch the edges. A pinned region is framed by its
-  // box alone: content reaching beyond it (a long axis cylinder, a big
-  // sphere) is cut off by the picture rather than shrinking it.
+  // Include box corners in the projected bounding box. A drawn box frames
+  // the picture. A pinned region is framed by its box alone: content
+  // reaching beyond it (a long axis cylinder, a big sphere) is cut off by
+  // the picture rather than shrinking it.
   if plot_range.is_some() {
     px_min = f64::INFINITY;
     px_max = f64::NEG_INFINITY;
@@ -15887,9 +16603,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // frame. A Demonstration's unboxed cylinder of fixed volume at
   // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
   // snapshots, whether it is tall and thin or short and wide. A picture
-  // given only a width keeps the box's margins.
+  // given only a width keeps the box's margins (wolframscript draws an
+  // unboxed lone triangle, unit cube or pair of cubes as large as boxed
+  // ones) unless the scene is made of round solids alone: an unboxed
+  // `Sphere[]` exports 360 × 363 (boxed: 360 × 391) and a cylinder of
+  // radius 1 and height 3 262 × 432 (boxed: 320 × 432).
+  let round_solids_only = !prims.is_empty()
+    && prims.iter().all(|p| {
+      matches!(
+        p,
+        Primitive3D::Sphere { .. }
+          | Primitive3D::Cylinder { .. }
+          | Primitive3D::Cone { .. }
+      )
+    });
   let fit_contents = !show_box
-    && explicit_height
+    && (explicit_height || round_solids_only)
     && !full_width
     && !aspect_full
     && !show_axes
@@ -16023,10 +16752,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Point` on the outline of the scene keeps its disk inside the picture
   // rather than being cut in half by the edge. A Demonstration's unboxed
   // net of `PointSize[Large]` control points at `ImageSize -> {350, 400}`
-  // leaves the same margin of one dot radius on all four sides.
-  if fit_contents && image_padding.is_none() && plot_region.is_none() {
-    let pad =
-      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max]);
+  // leaves the same margin of one dot radius on all four sides. The same
+  // goes for a compact scene framed by the sphere around its contents:
+  // its outermost dots sit on that sphere, which may touch any side.
+  if (fit_contents || compact_sphere_framed)
+    && image_padding.is_none()
+    && plot_region.is_none()
+  {
+    let pad = if compact_sphere_framed {
+      [largest_point_dot_radius(&prims); 4]
+    } else {
+      point_disk_padding(&prims, &camera, [px_min, px_max, py_min, py_max])
+    };
     if pad.iter().any(|p| *p > 0.0) {
       image_padding = Some(pad);
     }
@@ -16220,11 +16957,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// its position along it. Translucent pieces of one polyline drawn in
     /// a row are joined back into a single stroke (see `emit_edge_run`).
     piece_of: Option<(usize, usize)>,
-    /// The corners of a 3D `Arrow`'s cone head, filled flat in `color` as
-    /// their projected convex hull. Its `endpoints` run from the center of
-    /// the cone's base to the tip, which places the head in the same draw
-    /// order as a line piece, so an opaque surface in front of it hides it.
-    head_outline: Option<Vec<Point3D>>,
+    /// The head of a 3D line `Arrow` rather than a line piece: Wolfram's
+    /// flat 2D arrowhead filled in `color`, facing the viewer, along the
+    /// `endpoints` (the back of the head to its tip; see
+    /// [`arrow3d_head_axis`]). It takes the same draw order as a line
+    /// piece, so an opaque surface in front of it hides it.
+    arrow_head: bool,
     /// The part of the piece away from the ends of the segment it was cut
     /// from (see `line_draw_slots`); `[0, 1]` for a whole edge.
     end_zone: [f64; 2],
@@ -16252,6 +16990,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (3, 7),
     ];
     for &(i, j) in &edge_pairs {
+      if let Some(faces) = box_faces
+        && !box_edge_on_faces(i, j, faces)
+      {
+        continue;
+      }
       let a = box_corners[i];
       let b = box_corners[j];
       // On-screen length of the whole edge, so a dashed `BoxStyle` runs
@@ -16278,7 +17021,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: t0 * edge_px,
           dot_radius: None,
           piece_of: None,
-          head_outline: None,
+          arrow_head: false,
           end_zone: [0.0, 1.0],
         });
       }
@@ -16330,7 +17073,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: 0.0,
               dot_radius: None,
               piece_of: None,
-              head_outline: None,
+              arrow_head: false,
               end_zone: [0.0, 1.0],
             });
           }
@@ -16381,10 +17124,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       if let Primitive3D::Arrow3D { points, .. } = prim {
-        // Arrowhead: a cone in the scene, like the head of an
-        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
-        // length as a fraction of the diagonal of the scene's box, so it
-        // foreshortens with the view like the rest of the scene.
+        // Arrowhead: Wolfram's flat 2D head facing the viewer.
+        // `Arrowheads[s]` (default a twentieth) is its length as a
+        // fraction of the diagonal of the scene's box.
         for (segment, size) in arrow3d_head_anchors(
           points,
           arrowhead_fractions(
@@ -16393,25 +17135,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
           .as_deref(),
         ) {
-          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          let Some([back, tip]) =
+            arrow3d_head_axis(&segment, size * scene_diag)
           else {
             continue;
           };
-          let tip = head[0];
-          let ring = &head[1..];
-          let n = ring.len() as f64;
-          let base = Point3D {
-            x: ring.iter().map(|p| p.x).sum::<f64>() / n,
-            y: ring.iter().map(|p| p.y).sum::<f64>() / n,
-            z: ring.iter().map(|p| p.z).sum::<f64>() / n,
-          };
           let mid = Point3D {
-            x: f64::midpoint(base.x, tip.x),
-            y: f64::midpoint(base.y, tip.y),
-            z: f64::midpoint(base.z, tip.z),
+            x: f64::midpoint(back.x, tip.x),
+            y: f64::midpoint(back.y, tip.y),
+            z: f64::midpoint(back.z, tip.z),
           };
           sorted_edges.push(SceneEdge {
-            endpoints: [base, tip],
+            endpoints: [back, tip],
             depth: depth(mid, &camera) - bias,
             color: color.clone(),
             width,
@@ -16420,7 +17155,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dash_offset: 0.0,
             dot_radius: None,
             piece_of: None,
-            head_outline: Some(head),
+            arrow_head: true,
             end_zone: [0.0, 1.0],
           });
         }
@@ -16473,7 +17208,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
               piece_of: Some((polyline_id, piece_index)),
-              head_outline: None,
+              arrow_head: false,
               end_zone: [
                 (LINE_END_REACH - t0) / (t1 - t0),
                 (1.0 - LINE_END_REACH - t0) / (t1 - t0),
@@ -16505,7 +17240,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: 0.0,
           dot_radius: Some(radius),
           piece_of: None,
-          head_outline: None,
+          arrow_head: false,
           end_zone: [0.0, 1.0],
         });
       }
@@ -16580,21 +17315,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
-      if let Some(head) = &edge.head_outline {
-        let screen: Vec<(f64, f64, usize)> = head
-          .iter()
-          .enumerate()
-          .map(|(i, p)| {
-            let (px, py) = project(*p, &camera);
-            let (sx, sy) = to_svg(px, py);
-            (sx, sy, i)
-          })
-          .collect();
-        let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
-        if hull.len() >= 3 {
-          let pts: Vec<String> = hull
-            .iter()
-            .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+      if edge.arrow_head {
+        let [back, tip] = edge.endpoints;
+        let len3 = v_len([tip.x - back.x, tip.y - back.y, tip.z - back.z]);
+        let head_len = len3 * screen_scale_at(tip, &camera, &to_svg, len3);
+        let (dx, dy) = (ex1 - ex0, ey1 - ey0);
+        let d = dx.hypot(dy);
+        // An arrow pointing straight at the viewer has no direction on
+        // screen; its head is still drawn, pointing up.
+        let dir = if d > 1e-9 {
+          (dx / d, dy / d)
+        } else {
+          (0.0, -1.0)
+        };
+        if head_len.is_finite() && head_len > 0.0 {
+          let pts: Vec<String> =
+            crate::functions::graphics::default_arrowhead_polygon(
+              (ex1, ey1),
+              dir,
+              head_len,
+            )
+            .into_iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
             .collect();
           svg.push_str(&format!(
             "<polygon points=\"{}\" fill=\"{}\"{opacity_attr}/>\n",
@@ -16850,11 +17592,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tri.opacity,
           &mut texture_ids,
         ) {
-          let edge_stroke = match tri.edge_color {
-            Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-            None => "rgb(64,64,64)".to_string(),
-          };
+          let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+          let edge_stroke = format!("rgb({er},{eg},{eb})");
           let edge_width = tri.edge_width.unwrap_or(1.0);
+          let edge_alpha = edge_opacity_attr(tri.edge_opacity);
           for (e, on_outline) in tri.boundary.iter().enumerate() {
             if !on_outline {
               continue;
@@ -16863,7 +17604,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let (bx, by) = corners[(e + 1) % 3];
             let cap = outline_edge_cap(None);
             svg.push_str(&format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}/>\n",
             ));
           }
           continue;
@@ -16885,15 +17626,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // the default `EdgeForm`, which stays opaque — so the outline of a
       // transparent face still shows. That is what makes
       // `{Opacity[0], Cuboid[…]}` a wireframe box.
-      let edge_stroke = match tri.edge_color {
-        Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
-        None => "rgb(64,64,64)".to_string(),
-      };
+      let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
+      let edge_stroke = format!("rgb({er},{eg},{eb})");
       let edge_width = tri.edge_width.unwrap_or(1.0);
+      let edge_alpha = edge_opacity_attr(tri.edge_opacity);
       let fill_opacity_attr = if tri.opacity < 1.0 {
-        format!(" fill-opacity=\"{}\"", tri.opacity)
+        format!(" fill-opacity=\"{}\"{edge_alpha}", tri.opacity)
       } else {
-        String::new()
+        edge_alpha.clone()
       };
       // The hairline stroke closes the anti-aliasing seam between
       // neighboring triangles. Where the seam is an internal cut of a
@@ -16989,7 +17729,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             outline_slot(k, e),
             outline_seq,
             format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
             ),
           )));
           outline_seq += 1;
@@ -17193,7 +17933,79 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be a `Rule` (`Graphics3D[a -> b]` draws nothing but is legal) and must
   // not be read as one.
   let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  let result = crate::graphics3d_result_with_structure(svg, structure);
+  if automatic_sphere && let Expr::Graphics { svg, .. } = &result {
+    AUTOMATIC_SPHERE_FRAMED.with_borrow_mut(|keys| {
+      if keys.len() >= AUTOMATIC_SPHERE_MEMORY {
+        keys.pop_front();
+      }
+      keys.push_back(svg_hash(svg));
+    });
+  }
+  Ok(result)
+}
+
+/// How many automatically sphere-framed scenes are remembered; the oldest
+/// are forgotten first.
+const AUTOMATIC_SPHERE_MEMORY: usize = 64;
+
+thread_local! {
+  /// Set while a layout draws one of its cells again by the box outline
+  /// (see [`outline_fitted_cell_svg`]).
+  static OUTLINE_FIT_CELL: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+  /// The pictures `graphics3d_ast` framed by their sphere under the default
+  /// `SphericalRegion -> Automatic` (rather than an explicit `True`), by the
+  /// hash of their SVG.
+  static AUTOMATIC_SPHERE_FRAMED: std::cell::RefCell<std::collections::VecDeque<u64>> =
+    const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn svg_hash(svg: &str) -> u64 {
+  use std::hash::{Hash, Hasher};
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  svg.hash(&mut hasher);
+  hasher.finish()
+}
+
+/// A rendered `Graphics3D` that the default `SphericalRegion -> Automatic`
+/// framed by its sphere, drawn again by its box outline — the way it is
+/// shown as a cell of a `Grid`, `Row`, `Column` or list (see the framing
+/// rules in [`graphics3d_ast`]). `None` for any other picture.
+pub fn outline_fitted_cell_svg(expr: &Expr) -> Option<String> {
+  let Expr::Graphics {
+    svg,
+    is_3d: true,
+    structure: Some(structure),
+    ..
+  } = expr
+  else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args } = structure.as_ref() else {
+    return None;
+  };
+  if name != "Graphics3D"
+    || args.is_empty()
+    || !AUTOMATIC_SPHERE_FRAMED
+      .with_borrow(|keys| keys.contains(&svg_hash(svg)))
+  {
+    return None;
+  }
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      OUTLINE_FIT_CELL.set(self.0);
+    }
+  }
+  let _restore = Restore(OUTLINE_FIT_CELL.replace(true));
+  let captured = crate::captured_graphics_count();
+  let redrawn = graphics3d_ast(args);
+  crate::truncate_captured_graphics(captured);
+  match redrawn {
+    Ok(Expr::Graphics { ref svg, .. }) => Some(svg.clone()),
+    _ => None,
+  }
 }
 
 /// `Prolog -> g` / `Epilog -> g` on a `Graphics3D`: 2-D primitives drawn
@@ -18529,6 +19341,18 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     z_hi - z_lo
   };
+  // The box is the range padded by `Scaled[0.02]` on each side (the
+  // vertical one only when automatic), as Wolfram's `ListPlot3D` is: the
+  // surface fills `1 - 2 * 0.02` of each side, centered in the box.
+  let pad_of = |explicit: bool| {
+    if explicit {
+      0.0
+    } else {
+      AUTOMATIC_RANGE_PADDING
+    }
+  };
+  let pad = [pad_of(false), pad_of(false), pad_of(z_clip.is_some())];
+  let fill = pad.map(|s| 1.0 - 2.0 * s);
 
   // The surface's triangles in data coordinates: the two halves of each
   // grid cell, or the triangulation of scattered points.
@@ -18565,9 +19389,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut tris = Vec::new();
     for i in 0..rows.saturating_sub(1) {
       for j in 0..cols.saturating_sub(1) {
+        // Cut along the same diagonal as the drawn surface.
         for corners in [
-          [(i, j), (i + 1, j), (i, j + 1)],
-          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+          [(i, j), (i + 1, j), (i + 1, j + 1)],
+          [(i, j), (i + 1, j + 1), (i, j + 1)],
         ] {
           if let [Some(a), Some(b), Some(c)] = corners.map(|(a, b)| node(a, b))
           {
@@ -18620,9 +19445,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (x, y, z) = points[k];
         let (fx, fy) = frac(x, y);
         Point3D {
-          x: fx / (rows - 1).max(1) as f64 * 2.0 - 1.0,
-          y: fy / (cols - 1).max(1) as f64 * 2.0 - 1.0,
-          z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+          x: (fx / (rows - 1).max(1) as f64 * 2.0 - 1.0) * fill[0],
+          y: (fy / (cols - 1).max(1) as f64 * 2.0 - 1.0) * fill[1],
+          z: (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE
+            - Z_SCALE)
+            * fill[2],
         }
       });
       let avg = t
@@ -18648,6 +19475,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       base.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: verts.map(|v| project(v, &camera)),
@@ -18658,7 +19486,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vertex_colors: None,
       });
     }
-    shade_smoothly(&mut base, &base_facets, scene.frame.toward, |f, n, at| {
+    shade_smoothly(&mut base, &base_facets, &scene.frame, |f, n, at| {
       shade_facet(
         SurfaceDefault::Theme(0),
         f.style.as_ref(),
@@ -18739,36 +19567,42 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       let nx = |ii: usize| -> f64 {
-        (ii as f64 / (rows - 1).max(1) as f64) * 2.0 - 1.0
+        ((ii as f64 / (rows - 1).max(1) as f64) * 2.0 - 1.0) * fill[0]
       };
       let ny = |jj: usize| -> f64 {
-        (jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0
+        ((jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0) * fill[1]
       };
       let nz = |z: f64| -> f64 {
-        ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+        (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE)
+          * fill[2]
       };
 
-      // Triangle 1: (i,j), (i+1,j), (i,j+1)
-      if z00.is_finite() && z10.is_finite() && z01.is_finite() {
-        let v0 = Point3D {
-          x: nx(i),
-          y: ny(j),
-          z: nz(z00),
-        };
-        let v1 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(z10),
-        };
-        let v2 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(z01),
-        };
+      // Each cell is cut along its diagonal from (i, j) to (i + 1, j + 1),
+      // as Wolfram's ListPlot3D triangulates a grid of heights.
+      let corner_z = |a: usize, b: usize| match (a - i, b - j) {
+        (0, 0) => z00,
+        (1, 0) => z10,
+        (0, 1) => z01,
+        _ => z11,
+      };
+      for corners in [
+        [(i, j), (i + 1, j), (i + 1, j + 1)],
+        [(i, j), (i + 1, j + 1), (i, j + 1)],
+      ] {
+        let zs = corners.map(|(a, b)| corner_z(a, b));
+        if !zs.iter().all(|z| z.is_finite()) {
+          continue;
+        }
+        let [v0, v1, v2] = [0, 1, 2].map(|k| Point3D {
+          x: nx(corners[k].0),
+          y: ny(corners[k].1),
+          z: nz(zs[k]),
+        });
 
-        let avg = ((z00.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range)
+        let avg = zs
+          .iter()
+          .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
+          .sum::<f64>()
           / 3.0;
         let normal = triangle_normal(v0, v1, v2);
         let (color, opacity) = shade_facet(
@@ -18786,84 +19620,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style: color_at(avg),
           plot_style: None,
         });
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
+        let center = tri_center(v0, v1, v2);
         mesh_world.push([v0, v1, v2]);
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
-          projected: [p0, p1, p2],
-          depth: depth(center, &camera),
-          color,
-          opacity,
-          texture: None,
-          vertex_colors: None,
-        });
-      }
-
-      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
-      if z11.is_finite() && z01.is_finite() && z10.is_finite() {
-        let v0 = Point3D {
-          x: nx(i + 1),
-          y: ny(j + 1),
-          z: nz(z11),
-        };
-        let v1 = Point3D {
-          x: nx(i),
-          y: ny(j + 1),
-          z: nz(z01),
-        };
-        let v2 = Point3D {
-          x: nx(i + 1),
-          y: ny(j),
-          z: nz(z10),
-        };
-
-        let avg = ((z11.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range
-          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range)
-          / 3.0;
-        let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) = shade_facet(
-          SurfaceDefault::Theme(0),
-          color_at(avg).as_ref(),
-          surface_style,
-          normal,
-          tri_center(v0, v1, v2),
-          &scene,
-        );
-
-        facets.push(SmoothFacet {
-          index: all_triangles.len(),
-          world: [v0, v1, v2],
-          style: color_at(avg),
-          plot_style: None,
-        });
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-
-        mesh_world.push([v0, v1, v2]);
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          edge_width: None,
-          edge_dashing: None,
-          projected: [p0, p1, p2],
+          projected: [v0, v1, v2].map(|v| project(v, &camera)),
           depth: depth(center, &camera),
           color,
           opacity,
@@ -18873,10 +19638,46 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  shade_smoothly(
+  // A sample of a regular grid is lit with the normal of the surface the
+  // grid samples there (from its neighbors on both sides), like Wolfram's
+  // `VertexNormals`, so a sharp fold between samples shades smoothly
+  // instead of alternating bright and dark facets along it.
+  let box_grid: Vec<Vec<Option<(f64, f64, f64)>>> = if scattered.is_some() {
+    Vec::new()
+  } else {
+    let span =
+      |k: usize, n: usize| k as f64 / (n - 1).max(1) as f64 * 2.0 - 1.0;
+    (0..rows)
+      .map(|i| {
+        (0..cols)
+          .map(|j| {
+            let z = grid[i][j];
+            z.is_finite().then(|| {
+              (
+                span(i, rows),
+                span(j, cols),
+                ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE
+                  - Z_SCALE,
+              )
+            })
+          })
+          .collect()
+      })
+      .collect()
+  };
+  let grid_normals =
+    parameter_grid_normals(&box_grid, &|(x, y, z)| Point3D { x, y, z });
+  let exact = |_: usize, p: Point3D, _: [f64; 3], _: Point3D| {
+    grid_normals
+      .get(&grid_point_key(p))
+      .copied()
+      .unwrap_or([0.0; 3])
+  };
+  shade_smoothly_with(
     &mut all_triangles,
     &facets,
-    scene.frame.toward,
+    Some(&exact),
+    &scene.frame,
     |facet, normal, at| {
       shade_facet(
         SurfaceDefault::Theme(0),
@@ -18909,9 +19710,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Mesh -> Automatic`: as in WL, 15 lines across each direction of the
   // data plus its outline, whatever the size of the data.
   let to_box = |fi: f64, fj: f64, z: f64| Point3D {
-    x: fi / (rows - 1).max(1) as f64 * 2.0 - 1.0,
-    y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
-    z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+    x: (fi / (rows - 1).max(1) as f64 * 2.0 - 1.0) * fill[0],
+    y: (fj / (cols - 1).max(1) as f64 * 2.0 - 1.0) * fill[1],
+    z: (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE)
+      * fill[2],
   };
   let mut mesh_lines = if let Some(segments) = &level_mesh {
     segments
@@ -18992,7 +19794,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           push(at(i, j), at(i, j + 1));
         }
         if i + 1 < rows && j + 1 < cols {
-          push(at(i + 1, j), at(i, j + 1));
+          push(at(i, j), at(i + 1, j + 1));
         }
       }
     }
@@ -19004,9 +19806,21 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(&mesh_world),
     false,
     &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_axis_min, z_axis_max),
+    padded_axis_range(
+      (x_min, x_max),
+      RangePad::Scaled(pad[0]),
+      RangePad::Scaled(pad[0]),
+    ),
+    padded_axis_range(
+      (y_min, y_max),
+      RangePad::Scaled(pad[1]),
+      RangePad::Scaled(pad[1]),
+    ),
+    padded_axis_range(
+      (z_axis_min, z_axis_max),
+      RangePad::Scaled(pad[2]),
+      RangePad::Scaled(pad[2]),
+    ),
     svg_width,
     svg_height,
     full_width,
@@ -19729,6 +20543,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [proj0, proj1, proj2],
@@ -19769,6 +20584,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           all_triangles.push(Triangle {
             boundary: [true; 3],
             edge_color: None,
+            edge_opacity: 1.0,
             edge_width: None,
             edge_dashing: None,
             projected: [proj0, proj1, proj2],
@@ -20592,6 +21408,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_opacity: 1.0,
               edge_width: None,
               edge_dashing: None,
               projected: [p0, p1, p2],
@@ -20617,6 +21434,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_triangles.push(Triangle {
               boundary: [true; 3],
               edge_color: None,
+              edge_opacity: 1.0,
               edge_width: None,
               edge_dashing: None,
               projected: [p0, p2, p3],
@@ -21050,7 +21868,27 @@ fn march_tetra(
   };
   let (ci, co) = (centroid(&inside), centroid(&outside));
   let toward_high = [ci[0] - co[0], ci[1] - co[1], ci[2] - co[2]];
+  // A level that passes exactly through a corner of the tetrahedron
+  // collapses crossings onto that corner. The zero-area triangles this
+  // leaves are no part of the surface; drawn, they would show as stray
+  // strokes along their one remaining edge.
+  let size = (0..4)
+    .flat_map(|i| (i + 1..4).map(move |j| (i, j)))
+    .map(|(i, j)| {
+      let d = [
+        verts[i].x - verts[j].x,
+        verts[i].y - verts[j].y,
+        verts[i].z - verts[j].z,
+      ];
+      v_dot(d, d)
+    })
+    .fold(0.0f64, f64::max);
   let mut emit = |t: [Point3D; 3]| {
+    let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
+    let e2 = [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z];
+    if v_len(v_cross(e1, e2)) <= 1e-12 * size {
+      return;
+    }
     let n = triangle_normal(t[0], t[1], t[2]);
     let dot =
       n[0] * toward_high[0] + n[1] * toward_high[1] + n[2] * toward_high[2];
@@ -22089,7 +22927,11 @@ fn contour3d_render(
     ));
   }
 
-  // `FitToSurfaces` boxes the plot to the extent of what was drawn.
+  // `FitToSurfaces` boxes the plot to the extent of what was drawn. The box
+  // is that range padded by `Scaled[0.02]` on each side (none around an
+  // explicit `PlotRange`), as Wolfram's `ContourPlot3D`, `RegionPlot3D` and
+  // `ListContourPlot3D` do.
+  let explicit_range = matches!(plot_range, Some(ContourBox::Explicit(_)));
   let plot_range = match plot_range {
     Some(ContourBox::Explicit(r)) => r,
     Some(ContourBox::FitToSurfaces) => {
@@ -22103,6 +22945,13 @@ fn contour3d_render(
     }
     None => ranges,
   };
+  // `ColorFunctionScaling` scales over the range itself, unpadded.
+  let data_range = plot_range;
+  let plot_range = displayed_box_3d(
+    plot_range,
+    [explicit_range; 3],
+    range_padding_option(opts),
+  );
   let [(x_min_p, x_max_p), (y_min_p, y_max_p), (z_min_p, z_max_p)] = plot_range;
   // Normalize coordinates to [-1, 1] for x and y and to the z half-extent
   // (`CONTOUR3D_Z_SCALE`) for z.
@@ -22137,7 +22986,7 @@ fn contour3d_render(
           |f: fn(&Point3D) -> f64| tri_world.iter().map(f).sum::<f64>() / 3.0;
         color_fn.style_with_extra_args(
           [mid(|p| p.x), mid(|p| p.y), mid(|p| p.z)],
-          plot_range,
+          data_range,
           &[(triangle_level[t], value_range)],
         )
       })
@@ -22159,6 +23008,7 @@ fn contour3d_render(
     all_triangles.push(Triangle {
       boundary: [mesh_all; 3],
       edge_color: style.and_then(|s| s.edge_color),
+      edge_opacity: style.map_or(1.0, |s| s.edge_opacity),
       edge_width: style.and_then(|s| s.edge_width),
       edge_dashing: style.and_then(|s| s.edge_dashing.clone()),
       projected: tri_norm.map(|p| project(p, &camera)),
@@ -22282,7 +23132,7 @@ fn contour3d_render(
     &mut all_triangles,
     &facets,
     exact,
-    scene.frame.toward,
+    &scene.frame,
     |facet, normal, at| {
       shade_facet(
         SurfaceDefault::Theme(world_triangles[facet.index].1),
@@ -24389,8 +25239,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRange`, `BoxRatios` (the data's own proportions by default),
   // `Boxed`, `Axes` and the view options behave as they do for any 3D
   // graphic. ──
-  let svg =
-    render_surface_structure("SphericalPlot3D", complexes.clone(), &args[3..])?;
+  let svg = render_surface_structure(
+    "SphericalPlot3D",
+    complexes.clone(),
+    &args[3..],
+    0.0,
+  )?;
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   let content = if complexes.len() == 1 {
@@ -24437,11 +25291,14 @@ const SURFACE_PLOT_ONLY_OPTIONS: &[&str] = &[
 /// `Graphics3D` with the plot's options `opts`, so `PlotRange`,
 /// `BoxRatios`, `Boxed`, `Lighting`, textures and the view options behave
 /// as they do for any 3D graphic. Like the plots, it draws axes unless
-/// told otherwise.
+/// told otherwise, and pads the range by `Scaled[padding]` on each side
+/// unless `PlotRangePadding` says otherwise (Wolfram gives
+/// `SphericalPlot3D` none and `ParametricPlot3D` `Scaled[0.05]`).
 fn render_surface_structure(
   plot: &str,
   items: Vec<Expr>,
   opts: &[Expr],
+  padding: f64,
 ) -> Result<String, InterpreterError> {
   let option_name = |o: &Expr| {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n.to_string())
@@ -24462,6 +25319,17 @@ fn render_surface_structure(
   {
     render_args
       .push(rule_expr(Expr::Identifier("Axes".into()), bool_expr(true)));
+  }
+  // An explicit `PlotRange` is not padded.
+  if range_padding_option(opts).is_none()
+    && !opts
+      .iter()
+      .any(|o| option_name(o).as_deref() == Some("PlotRange"))
+  {
+    render_args.push(rule_expr(
+      Expr::Identifier("PlotRangePadding".into()),
+      call1("Scaled", Expr::Real(padding)),
+    ));
   }
   // Evaluated like any `Graphics3D[…]`, so a held `Texture[Image[…]]`
   // becomes the image it names.
@@ -25931,6 +26799,51 @@ fn parameter_domain_edges(
   along_u.chain(along_v)
 }
 
+/// The key a sample of a parameter grid is looked up by: its normalized
+/// position, to a billionth.
+fn grid_point_key(p: Point3D) -> (i64, i64, i64) {
+  let q = |v: f64| (v * 1e9).round() as i64;
+  (q(p.x), q(p.y), q(p.z))
+}
+
+/// The surface normal at each sample of a parameter grid (`grid[i][j]`,
+/// `None` in a hole), mapped through `to_box`: the cross product of the
+/// central differences along the two parameters (one-sided at an edge or
+/// beside a hole), keyed by [`grid_point_key`]. A sample where the
+/// tangents are parallel (a pole) is left out.
+fn parameter_grid_normals(
+  grid: &[Vec<Option<(f64, f64, f64)>>],
+  to_box: &dyn Fn((f64, f64, f64)) -> Point3D,
+) -> std::collections::HashMap<(i64, i64, i64), [f64; 3]> {
+  let mut normals = std::collections::HashMap::new();
+  let at = |i: usize, j: usize| -> Option<Point3D> {
+    grid.get(i)?.get(j).copied().flatten().map(to_box)
+  };
+  let diff = |a: Point3D, b: Point3D| [b.x - a.x, b.y - a.y, b.z - a.z];
+  for i in 0..grid.len() {
+    for j in 0..grid[i].len() {
+      let Some(p) = at(i, j) else { continue };
+      let along =
+        |prev: Option<Point3D>, next: Option<Point3D>| match (prev, next) {
+          (Some(a), Some(b)) => Some(diff(a, b)),
+          (None, Some(b)) => Some(diff(p, b)),
+          (Some(a), None) => Some(diff(a, p)),
+          (None, None) => None,
+        };
+      let du = along(i.checked_sub(1).and_then(|k| at(k, j)), at(i + 1, j));
+      let dv = along(j.checked_sub(1).and_then(|k| at(i, k)), at(i, j + 1));
+      if let (Some(du), Some(dv)) = (du, dv) {
+        let n = v_cross(du, dv);
+        let scale = v_len(du) * v_len(dv);
+        if scale > 0.0 && v_len(n) > 1e-6 * scale {
+          normals.insert(grid_point_key(p), n);
+        }
+      }
+    }
+  }
+  normals
+}
+
 /// Implementation of ParametricPlot3D.
 ///
 /// Two forms are supported:
@@ -26312,9 +27225,6 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // given, so the default theme material is used.
   let plot_styles: Vec<StyleState3D> =
     plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, surfaces.len()));
-
-  let camera = Camera::default();
-  let scene = Scene::new(&camera, args);
   // Without an explicit `PlotPoints` the grid is 50 samples per direction,
   // refined to about 20 per full turn (2π) of a long parameter span, so a
   // surface winding many times around (a Klein bottle over `{u, 0, 30 π}`)
@@ -26330,7 +27240,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram starts `ParametricPlot3D` from 15 samples per direction.
   let recursion_grid = |p: Option<usize>, auto: usize| -> usize {
     match (p, max_recursion) {
-      (Some(p), _) => p - 1,
+      // Wolfram's sampler halves the cells that are not yet smooth: a
+      // refined grid, no finer than the automatic one, stands in for it.
+      (Some(p), Some(r)) => {
+        let cells = p - 1;
+        cells.saturating_mul(1 << r.min(10)).min(auto.max(cells))
+      }
+      (Some(p), None) => p - 1,
       (None, Some(r)) => 14usize.saturating_mul(1 << r.min(10)).min(auto),
       (None, None) => auto,
     }
@@ -26462,8 +27378,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // An explicit `PlotRange` pins the displayed region regardless of the
-  // sampled surface's own extent, matching `Graphics3D`.
-  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
+  // sampled surface's own extent, matching `Graphics3D`. The box is that
+  // range padded by `Scaled[0.05]` on each side (none around an explicit
+  // one), as Wolfram's `ParametricPlot3D` surfaces are. Colors and
+  // textures are scaled over the range itself, unpadded.
+  let [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)] = plot_range
+    .unwrap_or([(gx_min, gx_max), (gy_min, gy_max), (gz_min, gz_max)]);
+  {
+    let automatic = RangePad::Scaled(if plot_range.is_some() {
+      0.0
+    } else {
+      PARAMETRIC_RANGE_PADDING
+    });
+    let pads =
+      range_padding_option(&args[3..]).unwrap_or([(automatic, automatic); 3]);
+    let [(xl, xh), (yl, yh), (zl, zh)] = displayed_box_3d(
+      plot_range.unwrap_or([
+        (gx_min, gx_max),
+        (gy_min, gy_max),
+        (gz_min, gz_max),
+      ]),
+      [plot_range.is_some(); 3],
+      Some(pads),
+    );
     gx_min = xl;
     gx_max = xh;
     gy_min = yl;
@@ -26491,6 +27428,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
   // The box is normalized to ±box_ratios, so the eye stands back by that.
   let camera = Camera::for_box(box_ratios);
+  // The lights and the side of a facet that faces the eye are settled from
+  // this camera too. The default one's eye, placed for a box of side 2,
+  // stood inside a larger box: seen from there, much of a torus faced
+  // away and was lit from behind.
+  let scene = Scene::new(&camera, args);
 
   // `ColorFunction`: the color of facet `(i, j)`, from `f` at the facet's
   // mean point and its center in parameter space.
@@ -26517,10 +27459,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let y = pts.iter().map(|p| p.1).sum::<f64>() / n;
               let z = pts.iter().map(|p| p.2).sum::<f64>() / n;
               if let Some(scheme) = &surface_color_scheme {
-                let t = if (gz_max - gz_min).abs() < 1e-15 {
+                let t = if (cz_max - cz_min).abs() < 1e-15 {
                   0.5
                 } else {
-                  (z - gz_min) / (gz_max - gz_min)
+                  (z - cz_min) / (cz_max - cz_min)
                 };
                 return Some(
                   crate::functions::field_plot::apply_named_color_function(
@@ -26540,9 +27482,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   }
                 };
                 [
-                  unit(x, gx_min, gx_max),
-                  unit(y, gy_min, gy_max),
-                  unit(z, gz_min, gz_max),
+                  unit(x, cx_min, cx_max),
+                  unit(y, cy_min, cy_max),
+                  unit(z, cz_min, cz_max),
                   unit(u, u_min, u_max),
                   unit(v, v_min, v_max),
                 ]
@@ -26608,9 +27550,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let call = Expr::CurriedCall {
       func: Box::new(f.clone()),
       args: [
-        unit(x, gx_min, gx_max),
-        unit(y, gy_min, gy_max),
-        unit(z, gz_min, gz_max),
+        unit(x, cx_min, cx_max),
+        unit(y, cy_min, cy_max),
+        unit(z, cz_min, cz_max),
         su,
         sv,
       ]
@@ -26987,7 +27929,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
     });
-    let extents = [(gx_min, gx_max), (gy_min, gy_max), (gz_min, gz_max)];
+    let extents = [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)];
     if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
       let range = extents
         .iter()
@@ -26997,6 +27939,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect::<Vec<_>>();
       structure_args
         .push(rule_expr(id_expr("PlotRange"), Expr::List(range.into())));
+      // The padding the picture was drawn with.
+      if range_padding_option(&structure_args).is_none() {
+        structure_args.push(rule_expr(
+          id_expr("PlotRangePadding"),
+          call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)),
+        ));
+      }
     }
     call("Graphics3D", structure_args)
   };
@@ -27011,13 +27960,20 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => items.to_vec(),
       single => vec![single.clone()],
     };
-    let svg = render_surface_structure("ParametricPlot3D", items, &args[3..])?;
+    let svg = render_surface_structure(
+      "ParametricPlot3D",
+      items,
+      &args[3..],
+      PARAMETRIC_RANGE_PADDING,
+    )?;
     let svg = with_plot_label(svg, args, svg_width, svg_height);
     return Ok(crate::plot3d_result_with_structure(svg, structure));
   }
 
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  // Each triangle's corners in the normalized box, for the draw order.
+  let mut all_worlds: Vec<[Point3D; 3]> = Vec::new();
 
   for (surface_idx, sg) in all_surface_points.iter().enumerate() {
     let style = plot_style_for_surface(&plot_styles, surface_idx);
@@ -27094,6 +28050,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style: cf_style,
           plot_style: shaded_style.or_else(|| style.cloned()),
         });
+        all_worlds.push([v0, v1, v2]);
         let center = Point3D {
           x: (v0.x + v1.x + v2.x) / 3.0,
           y: (v0.y + v1.y + v2.y) / 3.0,
@@ -27102,6 +28059,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -27142,10 +28100,24 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         push_triangle(p[0], p[k], p[k + 1], piece.cell);
       }
     }
-    shade_smoothly(
+    // Like Wolfram's `VertexNormals`, a sample is lit with the normal of
+    // the surface itself there — the cross product of its tangents along
+    // the two parameters — rather than an average of the coarse facets
+    // around it, which creases where the surface bends sharply between
+    // samples. Corners off the grid (a `RegionFunction` cut) fall back to
+    // the averaged normal.
+    let grid_normals = parameter_grid_normals(sg, &normalize);
+    let exact = |_: usize, p: Point3D, _: [f64; 3], _: Point3D| {
+      grid_normals
+        .get(&grid_point_key(p))
+        .copied()
+        .unwrap_or([0.0; 3])
+    };
+    shade_smoothly_with(
       &mut all_triangles,
       &facets,
-      scene.frame.toward,
+      Some(&exact),
+      &scene.frame,
       |facet, normal, at| {
         shade_facet(
           SurfaceDefault::Theme(surface_idx),
@@ -27235,16 +28207,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  // A surface passing through itself (a Klein bottle) has facets that no
+  // centroid sort orders correctly. Order them as `Graphics3D` does: cut
+  // where they intersect, then by which one lies behind the other's
+  // plane.
+  let (all_triangles, all_worlds) =
+    painter_sorted(all_triangles, all_worlds, &camera);
 
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
-    None,
+    Some(&all_worlds),
     false,
     &camera,
     (gx_min, gx_max),
@@ -27547,6 +28520,7 @@ mod painter_order_tests {
       opacity: 1.0,
       boundary: [true; 3],
       edge_color: None,
+      edge_opacity: 1.0,
       edge_width: None,
       edge_dashing: None,
       texture: None,
@@ -28144,13 +29118,22 @@ mod review_mesh_tests {
           depth: 0.0,
         },
       );
-      assert_eq!(lines.len(), (count + 2) * (nu + nv));
-      let levels: std::collections::BTreeSet<_> = lines
-        .iter()
-        .filter(|l| l.endpoints[0].x == l.endpoints[1].x)
-        .map(|l| (l.endpoints[0].x * 1e6).round() as i64)
-        .collect();
+      // Each level runs the whole way across, in pieces bent at the cell
+      // diagonals (on this flat grid the bends stay on the line).
+      let mut levels: std::collections::BTreeMap<i64, f64> =
+        std::collections::BTreeMap::new();
+      for l in &lines {
+        let [a, b] = l.endpoints;
+        if (a.x - b.x).abs() < 1e-9 {
+          *levels.entry((a.x * 1e6).round() as i64).or_default() +=
+            (b.y - a.y).abs();
+        }
+      }
       assert_eq!(levels.len(), count + 2);
+      assert!(
+        levels.values().all(|&len| (len - nv as f64).abs() < 1e-9),
+        "{levels:?}"
+      );
     }
   }
 }

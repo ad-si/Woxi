@@ -158,6 +158,26 @@ mod legends {
       );
     }
   }
+
+  /// A legend entry that has to be typeset as a picture (a hat over a
+  /// letter, written as inline box notation) is set in the same
+  /// proportional text face as the plain entries beside it.
+  /// Regression: the typeset entry came out in the monospace box face, so
+  /// its letters were wider and spaced differently from its neighbor's.
+  #[test]
+  fn typeset_legend_entry_uses_the_text_face() {
+    let svg = svg_of(
+      r#"ListPlot[{{{1, 2}}, {{2, 3}}}, PlotLegends -> {Row[{Style["x", Italic], "(k)"}], "\!\(\*OverscriptBox[\(x\), \(^\)]\)(k)"}]"#,
+    );
+    assert!(
+      svg.contains(">^</text>"),
+      "the hat is not typeset over the letter: {svg}"
+    );
+    assert!(
+      !svg.contains("monospace"),
+      "a legend entry is set in the box face: {svg}"
+    );
+  }
 }
 
 mod image_size {
@@ -516,7 +536,7 @@ fn frame_labels_take_their_frame_style_color() {
   assert_eq!(label_fill(&svg, "tl"), "rgb(255,0,0)");
   let svg =
     svg_of(r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"}]"#);
-  assert_eq!(label_fill(&svg, "tb"), "#666");
+  assert_eq!(label_fill(&svg, "tb"), "#404040");
 }
 
 /// A `Style[label, …, Background -> color]` inside a `Plot` `Epilog`
@@ -928,5 +948,55 @@ mod relative_plot_style_thickness {
        AbsoluteThickness[3]], Axes -> False, ImageSize -> 500]",
     );
     assert!(svg.contains("stroke-width=\"30\""), "{svg}");
+  }
+}
+
+/// An `Epilog` `Inset` whose object is a `Column` of `Row`s of text runs
+/// (strings and computed numbers) is a text block: it takes the current
+/// color and the label font instead of being inset as a boxed picture.
+mod epilog_inset_column_of_rows {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  #[test]
+  fn is_drawn_as_colored_text_lines() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> {Darker[Red], Inset[Column[{\
+       Row[{\"first \", 40, \" units\"}], Row[{\"second \", 2.5}]}], \
+       {0.4, 0.8}]}]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(170,0,0)\">first 40 units<tspan"),
+      "{svg}"
+    );
+    assert!(svg.contains(">second 2.5</tspan>"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn keeps_styled_runs_and_an_outer_style() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Style[Inset[Column[{\
+       Row[{\"a \", Style[\"b\", Blue]}], \"plain\"}], {0.4, 0.8}], Larger]]",
+    );
+    assert!(
+      svg.contains("<tspan fill=\"rgb(0,0,255)\">b</tspan>"),
+      "{svg}"
+    );
+    assert!(svg.contains(">plain</tspan>"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+  }
+
+  /// A row holding a picture is still inset as a picture.
+  #[test]
+  fn row_with_a_graphic_stays_a_picture() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Column[{\
+       Row[{\"a \", Graphics[Disk[]]}]}], {0.4, 0.8}]]",
+    );
+    assert!(svg.matches("<svg").count() > 1, "{svg}");
   }
 }

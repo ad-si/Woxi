@@ -16,6 +16,15 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### StandardForm boxes of `Piecewise` are its plain call
+
+`ToBoxes[Piecewise[{{a, b}, {c, d}}, 0]]` is
+`RowBox[{"Piecewise", "[", …, "]"}]` in Woxi. wolframscript builds the same
+braced `GridBox` (tagged `"Piecewise"`, the default in a
+`TagBox["True", "PiecewiseDefault", …]` row, shown even when it is `0`) as
+in TraditionalForm, and wraps a held one in `TagBox[…, HoldForm]`. Only the
+TraditionalForm boxes are implemented.
+
 ### `DownValues` shows a named list pattern as `name_List`
 
 A definition such as `h[g : {__}, n_] := …` matches exactly like Wolfram's
@@ -34,6 +43,17 @@ does not reconstruct it, so `Show[ContourPlot3D[…], …]` draws a clipped
 isosurface without the dark rim wolframscript shows at the box walls. An
 explicit `BoundaryStyle -> style` is kept as `Line` primitives and survives
 `Show`.
+
+### Inline box code in a graphics `Text` is never italic
+
+Inside graphics, Wolfram sets the single-letter symbols of typeset math in
+italics, including those of a string carrying inline box code:
+`Graphics[Text[TraditionalForm["\!\(\*SuperscriptBox[\(x\), \(2\)]\)"]]]`
+shows an italic x². Woxi's graphics `Text` folds such box code to plain
+Unicode text (`x²`) before any italic decision, so the letter stays
+upright. `Graphics[Text[TraditionalForm[x^2]]]` (an expression, not a box
+string) is italic as in Wolfram. Exported on its own (not inside graphics),
+the same math is upright in both.
 
 ### Displaying held `Graphics[…]` evaluates its primitives
 
@@ -276,6 +296,14 @@ woxi eval 'ToString[Sin[x] + 3 Cos[x], TraditionalForm]'            # 3 cos(x) +
 
 More samples of the order: `a + b + Sin[a]` is `a+sin(a)+b`, `3 + a + Cos[b]`
 is `a+cos(b)+3`, and `Cos[x] + Sin[x] + Tan[x]` is `sin(x)+cos(x)+tan(x)`.
+
+Terms that tie in `TraditionalFormDump`ordplus` (the same variables to the
+same powers) keep the order of the older typesetting, which is only known
+from samples: partial fractions read `1/x`, `1/(x + 2)`, `1/(x - 1)`
+(stored Demonstration output). Woxi sorts tied terms of equal power by the
+canonical order of their boxes less the numeric coefficient, which
+reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
+`Sin[x] + Sin[2 x]`) are unverified.
 
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
@@ -1248,30 +1276,32 @@ tracking through the Gamma-ratio path starting from a machine-real argument.
 
 Overflow of `Exp[x.]`, `a.^b`, products, quotients and sums of machine reals
 is promoted to an arbitrary-precision number (up to a decimal exponent of
-10000), but not everywhere:
+6*10^8), but not everywhere:
 
 ```sh
-wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
-woxi eval 'Exp[1000] // N'             # Infinity
-
 wolframscript -code 'Exp[-1000.]'      # General::munfl: Exp[-1000.] is too small to represent as a normalized machine number; precision may be lost.
                                        # 0.
 woxi eval 'Exp[-1000.]'                # 0.  (no General::munfl)
 
-wolframscript -code 'Exp[1000.] > 10^433'   # True
-woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
-Exact input made inexact by `N` and underflow still collapse to `Infinity` /
-`0.`, and machine results beyond a decimal exponent of 10000 stay `Infinity`:
-numeric routines (limits, `NMaximize`, `FindRoot`) sample far outside the
-machine range and rely on that staying cheap. For the same reason Woxi emits
-no `General::munfl` — wolframscript's own numeric routines do not either,
-but a top-level `Exp[-1000.]` or `0.5^2000.` does. Arbitrary-precision input
-is promoted up to a decimal exponent of 10^8 (`Exp[10.`30^5]` is
-`2.8066…*^43429` in both); past that Woxi returns `Overflow[]`/`Underflow[]`
-with `General::ovfl`/`General::unfl` where wolframscript still shows a number
-(`Exp[10.`30^9]`, `10^-1100329811.`30`).
+Machine underflow collapses to `0.` without `General::munfl` —
+wolframscript's own numeric routines do not emit it either, but a top-level
+`Exp[-1000.]` or `0.5^2000.` does. Functions other than `Exp` and `Power`
+(`Cosh`, `Sinh`, `Gamma`, …) still return `Infinity` past the machine range
+(`Cosh[1000.]`), where wolframscript gives a number.
+
+The arbitrary-precision type has a 32-bit binary exponent, so numbers end
+near 10^646456993 where wolframscript's `$MaxNumber` is near
+10^1355718576299609. Past a decimal exponent of 6*10^8 a machine result is
+`Infinity` (`Exp[2.*^9]`) and an arbitrary-precision one is
+`Overflow[]`/`Underflow[]` with `General::ovfl`/`General::unfl`
+(`Exp[10.`30^10]`, `10^-1100329811.`30`), where wolframscript still shows a
+number.
+
+`MantissaExponent` of an arbitrary-precision number outside the machine range
+stays unevaluated (`MantissaExponent[1.5`20*^5000]`), where wolframscript
+returns the mantissa and exponent.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 
@@ -2820,6 +2850,14 @@ differences:
   Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
   `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
   are not covered.
+- A second variable the equations never differentiate in
+  (`NDSolve[{D[z[t, s], t, t] == …, z[0, s] == s, …}, z, {t, …}, {s, …}]`)
+  is a parameter: the ODEs of a uniform grid of its values (51 points or
+  more, sized like a space grid from the initial profiles) are integrated
+  as one system (`src/functions/ode_ast/param_family.rs`). WL's grid in the
+  parameter differs, so values between grid points do, visibly once the
+  family is chaotic
+  (SensitiveDependenceOnInitialConditionsInASimpleThreeBodyProb).
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -5623,6 +5661,14 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
   of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
 - `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
   triangulation in wolframscript; Woxi draws one polygon over the points.
+- A `ParametricPlot3D` surface with `PlotPoints -> n, MaxRecursion -> r`
+  is sampled on a uniform grid of `(n - 1) 2^r` cells per direction (at
+  most the automatic grid); wolframscript refines only where the surface
+  bends (the figure-eight Klein bottle at `n = 20, r = 1`: 2286 triangles
+  against Woxi's 2888). Where a surface folds over at its silhouette
+  (that Klein bottle's outer rim), the facets straddling the fold show as
+  small teeth between the lit outside and the darker inside, which
+  wolframscript's finer facets there keep too small to see.
 - `ContourPlot3D` meshes its `PlotPoints` grid only, while wolframscript
   refines it adaptively (`MaxRecursion`): with `PlotPoints -> 15` an
   ellipsoid shows a 2–3× finer mesh in wolframscript.
@@ -5930,8 +5976,12 @@ about 0.90 of the width and an inner half torus of a 4 × 4 × 2 box (led by
 a `ParametricPlot3D`) at about 0.57. Woxi draws them at 0.93 and 0.64; with
 the contents sphere for both, the torus came out at 0.83. Whether `PlotRange` and `ViewPoint` are really the triggers, or
 merely correlate with them in these four snapshots, is unverified. A
-`Boxed -> False` picture given only a width still fits the box outline, and
-`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+`Boxed -> False` picture given only a width still fits the box outline
+unless it is made of round solids alone (`Sphere`, `Cylinder`, `Cone`),
+which are fitted to their contents (wolframscript draws an unboxed
+`Sphere[]` 360 × 363, boxed 360 × 391); wolframscript's unboxed hemisphere
+of 100 small polygons is 360 × 354 against 360 × 305 boxed, which neither
+rule reproduces. `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
@@ -5958,14 +6008,49 @@ projected contents, not the box (whose perspective outline is about 1.25×
 the contents here) nor its sphere. No single rule found so far reproduces
 this and the three snapshots above; unverified with wolframscript.
 
-A square picture without a `PlotRange` or `ViewPoint` contradicts the
-outline fit as well. A Demonstration's `Manipulate` shows a plain
-`Boxed -> False` `Graphics3D` at `ImageSize -> {400, 400}`: a 2 × 4 plane
-in z = 0 crossed by a vertical arrow from z = -2 to z = 2. Its snapshots
-draw the plane about 323 px wide, with the origin at the center of the
-picture. That matches the sphere framing (Woxi: 320 px), not the outline
-fit that Woxi applies (398 px). Unlike the tall building, this box is
-nearly as wide as it is tall, and the picture is square. Unverified with
+An unboxed scene without a `PlotRange` or `ViewPoint` in a picture of fixed
+width and height is framed by the shape of its box. A compact box (longest
+side at most 2.25 times the shortest, contents not flat) is sphere-framed. A
+Demonstration's `Manipulate` shows a plain `Boxed -> False` `Graphics3D` at
+`ImageSize -> {400, 400}`: a 2 × 4 plane in z = 0 crossed by a vertical
+arrow from z = -2 to z = 2. Its snapshots draw the plane about 323 px wide
+(Woxi: 322 px; the fit to the contents gave 398 px). Another one draws the
+five Platonic solids at `ImageSize -> {80, 80}`: a unit cube spans
+65.5 × 71.5 px and a tetrahedron of edge 1 spans 49 × 42.5 px, off center
+(Woxi: 66.5 × 72 and 50.5 × 44, each solid 2–3 % larger than in the
+snapshot). An elongated box (the tall building above, a thin
+3.4 × 3.4 × 39 cylinder that fills 95–98 % of a 150 × 150 picture) and
+flat contents are fitted to the frame by their contents. The limit of 2.25
+lies between the plane's 2 × 4 × 4 box and the building's 4 × 4 × 10 one.
+Whether the shape of the box is really what decides is unverified with
+wolframscript. A cylinder about as wide as it is tall (8 × 8 × 7.06) at
+`ImageSize -> {150, 150}` now spans 94 % of the frame, just under the
+95–98 % of that Demonstration's snapshots.
+
+A second square picture agrees. A Demonstration's `Manipulate` shows an
+unboxed `Graphics3D` of polygons at `ImageSize -> {400, 400}`, from the
+default camera and with no `PlotRange`. The polygons form a triangular
+prism cut into tetrahedra and prisms, in a 1.2 × 1.2 × 1 box. Its
+snapshot draws the scene about 314 × 276 pt. That is the sphere-framed
+size (Woxi with `SphericalRegion -> True`: 314 × 279). The outline fit
+draws it 398 × 354, so the scene touches the picture's edges. Fitting the
+scene's box outline instead of its contents (as a `Boxed -> True` picture
+does) gives 350 × 311, which does not match either. Three rules were tried
+and each contradicts an earlier snapshot:
+
+- Sphere-framing every square unboxed picture in a `Manipulate` breaks the
+  fixed-volume cylinders at `ImageSize -> {150, 150}` (see
+  `an_unboxed_scene_without_a_set_view_fills_a_pinned_picture`). They fill
+  95–98 % of the frame, but sphere framing draws the thin one at 84 %.
+- Sphere-framing every unboxed picture no taller than wide also breaks the
+  stepped stack of cuboids at `ImageSize -> {400, 300}`, which keeps the
+  outline fit.
+- A rule based on how compact the box is breaks the 8 × 8 × 7 cylinder. It
+  also fills its frame.
+
+The two sphere-framed scenes are built from `Polygon`s (and an `Arrow`).
+The outline-fitted ones are `Cylinder`s and `Cuboid`s. It is not known
+whether that difference matters. None of these cases has been checked with
 wolframscript.
 
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
@@ -6028,6 +6113,23 @@ doesn't pin down either rule, so both stay as they are. (A Demonstration
 snapshot of a box 1.6 times as tall as it is deep does pin down one
 exception: the x axis, along the front face, stays on the bottom front edge
 although the top back one is nearer the viewer; Woxi follows that.)
+
+### Direction of 3D tick marks
+
+Wolfram draws a 3D tick mark in the scene along one of the two other
+coordinate directions, into the box. The rule Woxi uses was read off
+wolframscript renderings of a unit cube with long colored ticks from 23
+view points: the z axis's ticks run along the horizontal axis whose edge
+meets the z axis's edge; an x or y axis's ticks lie in the horizontal face
+on its edge when that face is turned away from the viewer, and run
+vertically otherwise; either falls back to the other direction when it is
+foreshortened below about 0.55 (horizontal) or 0.78 (vertical) of its
+length, or nearly parallel to the axis on screen. It reproduces all but
+three borderline views: `ViewPoint -> {3, -1, 2}` draws the y axis's ticks
+vertically where Woxi keeps them along x, `{2, -1, -2}` the z axis's along
+x where Woxi picks y, and `{-0.5, -1, 3}` the z axis's along y where Woxi
+picks x. The marks are about 5 pixels long across the line of sight,
+foreshortened with the scene.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6180,6 +6282,35 @@ streamlines crossing a vertical line, a uniform flow
 cylinder (`{x, -3, 3}, {y, -2, 2}`) has 17 at its upstream edge. Its seeding
 algorithm is not recoverable from the output, so Woxi's default sits between
 the two, and `StreamPoints` settings keep Wolfram's proportions to it.
+
+### `VectorPlot3D` lays its arrows out differently
+
+Woxi centers one arrow in each cell of an `n`×`n`×`n` grid
+(`VectorPoints -> n`), the longest `0.7 / n` of the box side. wolframscript
+samples a staggered lattice with spacing `1 / (2 (n - 1))` of the side and
+drops some of its points (4, 18, 49, 100, 221 arrows for `n = 2 … 6` of a
+uniform field), its longest arrow `0.225, 0.18, 0.164, 0.155, 0.15` of the
+side for `n = 2 … 6` and `0.9 / n` from there on, and widens the range (to
+`±1.222` for `{x, -1, 1}` at `n = 4`). Both size the heads
+(`Arrowheads[{{0.3 L, 1.}}]`) and tubes (`L / 20`) by the longest arrow `L`,
+so only the layout and `L` differ.
+
+### `StreamPlot3D` picks different extra seeds past the coarse lattice
+
+`StreamPlot3D[…, StreamPoints -> n]` seeds a `k`×`k`×`k` lattice over the
+middle 80 % of each side (`k³ ≤ n`, both sides agree) and tops it up with
+points of a finer lattice. Which finer points come first differs: for
+`k = 2` (`n = 9 … 16`) wolframscript takes the eight `(±r, ±r, ±r)` points
+(`r = 0.267` on `{-1, 1}`) in the order `(-,-,+), (-,+,-), (-,+,+), (+,-,-),
+(+,-,+), (+,+,-), (+,+,+), (-,-,-)`, Woxi nearest-the-center-first in
+lattice order starting at `(-,-,-)`. So `StreamPlot3D[{-y, x, 0.2}, …,
+StreamPoints -> 10]` draws its two inner helices through different seeds
+(a different phase offset between them). The finer lattice is not
+consistent either: for `k = 3` the extras are `(±0.4, ±0.4, ±0.4)` and for
+`k = 4` `(±0.48, ±0.48, ±0.48)`, in yet other orders (probed with the
+fields `{1, 0, 0}` and `{0, 0, 1}`, whose lines show the seeds' `(y, z)` and
+`(x, y)`). Sorting by a floating-point distance to the center, by
+`Nearest`, or by lattice order reproduces none of the observed orders.
 
 ### Plot argument forms from the reference pages that are still missing
 
@@ -6418,6 +6549,13 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+- `Labeled[plot, label, Top]` keeps its picture at full size; Wolfram
+  reduces it the way it reduces a picture nested in any other layout. In a
+  `GraphicsGrid` cell the difference shows: Wolfram's plot takes under half
+  the cell's width while its label spans the cell, where Woxi's plot fills
+  about three quarters of it. (Measured off a stored front-end rendering of
+  `GraphicsGrid[{{Labeled[ListPlot[…], Row[{…}], Top], …}}, ImageSize ->
+  600]`, not re-verified against wolframscript.)
 
 ### `Column` item heights with `ItemSize` and large text
 
@@ -7611,7 +7749,11 @@ this area are artifacts of that.
 
 Wolfram uses a proprietary generator, Woxi uses ChaCha8; no seed produces the
 same sequence. Verify determinism and distribution instead.
-**Not reproducible.**
+`SeedRandom[n, Method -> m]` likewise draws from ChaCha8: each non-default
+method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
+reproducible stream (a key derived from the method is mixed into the seed),
+but none of them reproduces the named algorithm's numbers or statistical
+quirks. **Not reproducible.**
 
 ### Performance
 
@@ -9209,8 +9351,7 @@ Found comparing the graphics-tests renders (2026-11):
   - A symbol used as a plot legend entry is likewise set upright; WL sets
     it in italics (TraditionalForm). `AxesLabel` and `FrameLabel` entries
     already follow WL.
-  - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
-    draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
+  - Frame edges and tick marks are 1 px wide; WL draws them 0.5 pt wide.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
     (WL 100 x 17).
   - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],
@@ -9856,6 +9997,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   operators, `1/(2 Pi I) S f[z]/(z - a) d z`, parenthesizes the left group
   (`(∮γ f(z)) ⅆz`): wolframscript reads it as one flat `Times`. Woxi's held
   tree cannot tell that chain from an explicitly parenthesized `(a b/c) d`.
+  The root cause is the parser: in Wolfram `/` binds tighter than `*` and
+  implicit multiplication (`Hold[a b/c]` and `Hold[a*b/c]` are
+  `Times[a, Times[b, Power[c, -1]]]`, `Hold[a/b c]` is
+  `Times[Times[a, Power[b, -1]], c]`), while Woxi parses `a b/c` as
+  `Times[Times[a, b], Power[c, -1]]`. Wolfram's TraditionalForm then merges
+  a nested `Times` holding a reciprocal into the fraction instead of
+  parenthesizing it.
 - `PlotLabel -> Binomial[15, k]` is drawn as the one-line text
   `Binomial(15, k)`; wolframscript typesets the stacked binomial. Plot labels
   are drawn as text markup, which has no 2D boxes except fractions.
@@ -10039,15 +10187,18 @@ a unit sphere's by 0.5, as in wolframscript. What still differs:
   `θ ∈ [0, π]`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
+- DensityPlot3D (a `Raster3D`) draws its voxels as sharp-edged translucent
+  cubes; wolframscript's volume rendering blends neighboring voxels, so
+  their edges look blurred. A vector SVG can approximate it with a
+  `feGaussianBlur` over the voxel faces, but the 3D painter has no way yet
+  to mark which of its triangles form a volume.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
-  are ignored. A translucent `EdgeForm` color is faded toward white
-  rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
-  Back}` (BubbleChart3D's partial box) draws the whole box.
+  are ignored.
 - 3D charts: the translucent backdrop panels wolframscript puts behind
   BarChart3D and RectangleChart3D (`Scaled` polygons with `VertexColors`)
   are not drawn; BubbleChart3D's largest bubble is a fifth of the data's
-  smallest extent (wolframscript's is up to 1% smaller) and its
-  `Specularity` highlight is brighter. BarChart3D with `ChartLabels` or
+  smallest extent (wolframscript's is up to 1% smaller). BarChart3D with
+  `ChartLabels` or
   `ChartLegends`, PieChart3D and SectorChart3D keep Woxi's own chart
   renderer (no axes, square framing). DensityPlot3D's volume is as listed
   above.
@@ -10721,6 +10872,16 @@ matches a saved Wolfram snapshot. The flat-axis rule and the direction of
 the tick marks were not checked against `wolframscript` (none was available
 in the session).
 
+### Label position of 3D axes crossing at an `AxesOrigin`
+
+With an explicit `AxesOrigin` in a `Graphics3D` (or a 3D plot), Woxi puts
+each `AxesLabel` at the end of its axis farther from the viewer, a fixed
+distance off the axis on the side of the tick marks. A saved Wolfram
+snapshot (default `ViewPoint`, `AxesOrigin -> {0, 0, 0}`) shows the labels
+at those ends and on that side, but the rule choosing the end (it could
+also be the end farther from the crossing point) and the exact offset were
+not checked against `wolframscript` (none was available in the session).
+
 ### `NDSolve`StateData` prints its registry index
 
 An `NDSolve`StateData` object is a mutable handle (`NDSolve`Iterate`
@@ -10862,3 +11023,29 @@ Woxi draws the default `Graphics3D` face outline in a flat dark gray
 core of Wolfram's outline is pure black, so the dark gray of thin default
 edges may come from anti-aliasing a black hairline rather than from the
 edge color itself. Not yet checked against wolframscript.
+
+### `FaceForm` on round solids
+
+Woxi lets `FaceForm[front, back]` color `Sphere`, `Cylinder` and `Cone`
+unless a plain color directive follows it, in which case the round solid
+takes that color (`{FaceForm[Yellow, Green], White, Cylinder[…]}` is a white
+cylinder). A saved snapshot confirms only that last case. Whether Wolfram
+ignores `FaceForm` on round solids altogether, including with no later
+color, has not been checked against wolframscript. Wolfram also lets the two
+coincident faces of a zero-thickness `Cuboid` z-fight (speckles of front
+and back color); Woxi draws the sheet in its front color.
+
+### A slightly shrunk copy of a solid drawn under the original
+
+A scene that draws a copy of a solid scaled by `0.998` about its center in
+one color, and then the solid itself (opened into frame-shaped faces by a
+`GraphicsComplex` rewrite) in a second color, under a distant camera
+(`ViewPoint -> {0, 100, 71}`, `ViewAngle -> 0.008`). Woxi draws the outer surface on top, as the geometry says, so the frames
+cover the shrunk copy. All four of Wolfram's saved snapshots of such a scene
+show only the shrunk copy's color and its edges. Even the frames' own edges
+are hidden; only a few hairline slivers of the outer surface show along
+silhouettes. That looks like depth-buffer precision under a far camera, with
+the earlier primitive winning the near-tie. But Woxi already draws exactly
+coplanar faces later-on-top, as in Wolfram. With that rule, a depth tie would
+put the outer surface on top, so the cause is unconfirmed. Not yet checked
+against wolframscript.

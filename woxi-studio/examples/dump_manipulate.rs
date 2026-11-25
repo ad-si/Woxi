@@ -10,6 +10,8 @@
 //! `<svg-out-dir>/widget-<n>.svg` so the visual output can be inspected.
 //! Set `OVERRIDE="x=0.5,y=1"` to render the SVG with those control values
 //! in place of the initial ones (e.g. to compare against a stored snapshot).
+//! Set `MOVE="x=0.5,y=1"` to move the controls themselves to those values
+//! and re-evaluate, so the side displays are dumped at them as well.
 //! Set `CLICKS="1.5,2.5;9.5,2.5"` to click the picture's `ClickPane` at
 //! those pane coordinates in turn; the variables (and, with `svg-out-dir`,
 //! the picture as `widget-<n>-click-<k>.svg`) are dumped after each click.
@@ -153,6 +155,16 @@ fn main() {
         state.apply_saved_variables(
           &woxi::notebook::extract_saved_manipulate_variables(&next.content),
         );
+      }
+      // `MOVE="x=0.5,y=1"` moves the controls themselves and re-evaluates,
+      // so the side displays (not just the picture) show those values.
+      if let Ok(mv) = std::env::var("MOVE") {
+        let saved: Vec<(String, String)> = split_top_level_commas(&mv)
+          .iter()
+          .filter_map(|kv| kv.split_once('='))
+          .map(|(k, v)| (k.to_string(), v.to_string()))
+          .collect();
+        state.apply_saved_variables(&saved);
       }
       widget_count += 1;
       println!("=== Interactive widget #{widget_count} ===");

@@ -15898,3 +15898,45 @@ mod postfix_input_form {
     }
   }
 }
+
+mod box_code_inside_linear_syntax_group {
+  use super::*;
+
+  /// A `\*Box[…]` escape part-way through a `\(…\)` group stands for that
+  /// box itself, next to the group's plain atoms.
+  #[test]
+  fn box_escape_after_atoms_is_a_nested_box() {
+    assert_eq!(
+      interpret(r#"FullForm[\(a\*SuperscriptBox["x", "2"] + b\)]"#).unwrap(),
+      "FullForm[RowBox[{a, SuperscriptBox[x, 2], +, b}]]"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToExpression[\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]"#
+      )
+      .unwrap(),
+      interpret("Cross[9, 10^9]").unwrap()
+    );
+  }
+
+  /// The same box code read from a string: a multi-byte character such as
+  /// `\[Cross]` (U+F4A0, whose last UTF-8 byte is 0xA0) must not be split
+  /// as if that byte were a no-break space.
+  #[test]
+  fn string_with_cross_before_box_escape_interprets() {
+    assert_eq!(
+      interpret(
+        r#"ToExpression["\!\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)"] === Cross[9, 10^9]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToExpression["\!\(\*FractionBox[\(c\), \(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]\)", StandardForm, HoldForm] === HoldForm[c/Cross[9, 10^9]]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
