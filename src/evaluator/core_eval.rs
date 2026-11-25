@@ -1370,17 +1370,78 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
   // The vast majority of evaluations don't return TailCall, so avoid the
   // up-front Expr::clone() and only allocate the owned `current` once a
   // TailCall is actually observed.
-  match evaluate_expr_to_expr_inner(expr) {
+  let assign_seq = crate::epoch::own_value_seq();
+  let result = match evaluate_expr_to_expr_inner(expr) {
     Err(InterpreterError::TailCall(next)) => {
       let mut current = *next;
       loop {
         match evaluate_expr_to_expr_inner(&current) {
           Err(InterpreterError::TailCall(next)) => current = *next,
-          result => return result,
+          result => break result,
         }
       }
     }
     result => result,
+  }?;
+  reevaluate_after_own_value_change(expr, result, assign_seq)
+}
+
+/// Wolfram evaluates a result again when it changed and mentions a symbol
+/// that got a value meanwhile: in `{x, x = 5}` the first element is
+/// evaluated before the second assigns `x`, so the result `{x, 5}` is
+/// evaluated once more, to `{5, 5}`. Only lists and calls of heads that
+/// evaluate their arguments are re-evaluated this way, and only when an
+/// argument still mentions (outside held parts) a symbol whose own value
+/// was assigned while they were evaluated.
+fn reevaluate_after_own_value_change(
+  expr: &Expr,
+  result: Expr,
+  assign_seq: u64,
+) -> Result<Expr, InterpreterError> {
+  use crate::epoch::{
+    AssignedSince, assigned_symbol, own_values_assigned_since,
+  };
+  if !matches!(expr, Expr::List(_) | Expr::FunctionCall { .. })
+    || !matches!(result, Expr::List(_) | Expr::FunctionCall { .. })
+  {
+    return Ok(result);
+  }
+  let assigned = own_values_assigned_since(assign_seq);
+  if matches!(assigned, AssignedSince::Nothing) || head_holds_arguments(expr) {
+    return Ok(result);
+  }
+  fn mentions_assigned(e: &Expr, assigned: &AssignedSince) -> bool {
+    match e {
+      Expr::Identifier(name) => {
+        assigned_symbol(assigned, name)
+          && crate::ENV.with(|env| env.borrow().contains_key(name))
+      }
+      Expr::List(items) => items.iter().any(|i| mentions_assigned(i, assigned)),
+      Expr::FunctionCall { args, .. } => {
+        !head_holds_arguments(e)
+          && args.iter().any(|a| mentions_assigned(a, assigned))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        mentions_assigned(left, assigned) || mentions_assigned(right, assigned)
+      }
+      Expr::UnaryOp { operand, .. } => mentions_assigned(operand, assigned),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|o| mentions_assigned(o, assigned))
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        mentions_assigned(pattern, assigned)
+          || mentions_assigned(replacement, assigned)
+      }
+      _ => false,
+    }
+  }
+  if mentions_assigned(&result, &assigned) {
+    evaluate_expr_to_expr(&result)
+  } else {
+    Ok(result)
   }
 }
 
