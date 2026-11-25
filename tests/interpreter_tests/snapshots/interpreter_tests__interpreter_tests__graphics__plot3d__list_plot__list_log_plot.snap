@@ -27,13 +27,13 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <line x1="3353.7" y1="2065.0" x2="3353.7" y2="2041.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="252.0" y1="2065.0" x2="252.0" y2="2025.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="1068.3" y1="2065.0" x2="1068.3" y2="2025.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1068.3" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
+<text x="1068.3" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
 <line x1="1884.5" y1="2065.0" x2="1884.5" y2="2025.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1884.5" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="1884.5" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
 <line x1="2700.7" y1="2065.0" x2="2700.7" y2="2025.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2700.7" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
+<text x="2700.7" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3</text>
 <line x1="3517.0" y1="2065.0" x2="3517.0" y2="2025.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="3517.0" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
+<text x="3517.0" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">4</text>
 <line x1="252.0" y1="5.0" x2="252.0" y2="2107.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="252.0" y1="2105.0" x2="276.0" y2="2105.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="252.0" y1="2057.2" x2="276.0" y2="2057.2" stroke="rgb(102,102,102)" stroke-width="2"/>
@@ -65,11 +65,11 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <line x1="252.0" y1="168.7" x2="276.0" y2="168.7" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="252.0" y1="137.8" x2="276.0" y2="137.8" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="252.0" y1="1923.1" x2="292.0" y2="1923.1" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="231.6" y="1957.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
+<text x="231.6" y="1957.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
 <line x1="252.0" y1="1318.8" x2="292.0" y2="1318.8" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="231.6" y="1353.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<text x="231.6" y="1353.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">10</text>
 <line x1="252.0" y1="714.4" x2="292.0" y2="714.4" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="231.6" y="749.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
+<text x="231.6" y="749.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">100</text>
 <line x1="252.0" y1="110.1" x2="292.0" y2="110.1" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="231.6" y="144.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
+<text x="231.6" y="144.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1000</text>
 </svg>

@@ -13,15 +13,15 @@ expression: "export_svg(\"RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]\")"
 </g>
 <rect x="0" y="0" width="343.64" height="343.64" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="6.87" y1="343.64" x2="6.87" y2="339.64" stroke="#666666" stroke-width="0.5"/>
-<text x="6.87" y="355.69" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">-2</text>
+<text x="6.87" y="355.69" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">-2</text>
 <line x1="89.35" y1="343.64" x2="89.35" y2="339.64" stroke="#666666" stroke-width="0.5"/>
-<text x="89.35" y="355.69" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">-1</text>
+<text x="89.35" y="355.69" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">-1</text>
 <line x1="171.82" y1="343.64" x2="171.82" y2="339.64" stroke="#666666" stroke-width="0.5"/>
-<text x="171.82" y="355.69" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">0</text>
+<text x="171.82" y="355.69" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">0</text>
 <line x1="254.29" y1="343.64" x2="254.29" y2="339.64" stroke="#666666" stroke-width="0.5"/>
-<text x="254.29" y="355.69" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1</text>
+<text x="254.29" y="355.69" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">1</text>
 <line x1="336.76" y1="343.64" x2="336.76" y2="339.64" stroke="#666666" stroke-width="0.5"/>
-<text x="336.76" y="355.69" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2</text>
+<text x="336.76" y="355.69" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">2</text>
 <line x1="23.37" y1="343.64" x2="23.37" y2="341.24" stroke="#666666" stroke-width="0.5"/>
 <line x1="39.86" y1="343.64" x2="39.86" y2="341.24" stroke="#666666" stroke-width="0.5"/>
 <line x1="56.36" y1="343.64" x2="56.36" y2="341.24" stroke="#666666" stroke-width="0.5"/>
@@ -60,15 +60,15 @@ expression: "export_svg(\"RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]\")"
 <line x1="303.77" y1="0" x2="303.77" y2="2.40" stroke="#666666" stroke-width="0.5"/>
 <line x1="320.27" y1="0" x2="320.27" y2="2.40" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="336.76" x2="4.00" y2="336.76" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="340.23" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">-2</text>
+<text x="-3.00" y="340.23" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">-2</text>
 <line x1="0" y1="254.29" x2="4.00" y2="254.29" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="257.76" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">-1</text>
+<text x="-3.00" y="257.76" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">-1</text>
 <line x1="0" y1="171.82" x2="4.00" y2="171.82" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="175.28" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">0</text>
+<text x="-3.00" y="175.28" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">0</text>
 <line x1="0" y1="89.35" x2="4.00" y2="89.35" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="92.81" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">1</text>
+<text x="-3.00" y="92.81" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">1</text>
 <line x1="0" y1="6.87" x2="4.00" y2="6.87" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="10.34" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2</text>
+<text x="-3.00" y="10.34" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">2</text>
 <line x1="0" y1="320.27" x2="2.40" y2="320.27" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="303.77" x2="2.40" y2="303.77" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="287.28" x2="2.40" y2="287.28" stroke="#666666" stroke-width="0.5"/>
