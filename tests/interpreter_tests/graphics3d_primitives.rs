@@ -4020,4 +4020,30 @@ mod range_padding {
       "{True, True, 1}"
     );
   }
+
+  /// A `Graphics3D` `Text` label whose inline box notation hangs limits on
+  /// a large operator is drawn as the same laid-out picture the 2D `Text`
+  /// uses (a tall sign with its limits at its ends), in the label's color
+  /// and size, while other labels of the scene stay plain text.
+  #[test]
+  fn text3d_large_operator_limits_are_laid_out() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Graphics3D[{Red, Text[Row[{"volume = ", "\!\(\*SubsuperscriptBox[\(\[Integral]\), \(0\), \(h\)]\)", Style["A", Italic], Style[" dy", Italic]}], {0, 0, 1}], Text[Row[{"n = ", "\!\(\*SubscriptBox[\(x\), \(1\)]\)"}], {0, 0, 0}]}, BaseStyle -> 20], "SVG"]"#,
+    )
+    .unwrap();
+    let at = svg.find("<svg x=").expect("embedded label picture");
+    let picture = &svg[at..at + svg[at..].find("</svg>").unwrap()];
+    assert!(
+      picture.contains("<path d=\"M "),
+      "no sign stroke: {picture}"
+    );
+    assert!(picture.contains("rgb(255,0,0)"), "{picture}");
+    assert!(picture.contains("font-size=\"20.0\""), "{picture}");
+    for part in [">volume = </text>", ">h</text>", ">0</text>", "> dy</text>"] {
+      assert!(picture.contains(part), "{part} missing in {picture}");
+    }
+    assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
+    assert!(svg.contains(">n = x<tspan"), "{svg}");
+  }
 }
