@@ -31316,6 +31316,10 @@ pub struct GridStyle {
   /// The font family a `FontFamily -> "…"` directive asks for.
   pub font_family: Option<String>,
   pub(crate) color: Option<Color>,
+  /// Whether a named style set in a proportional text face (`"Label"`)
+  /// styles the grid, so its cells are measured in that face like those of
+  /// a `Text[…]` display rather than at the fixed advance of output text.
+  pub text_face: bool,
 }
 
 /// Any of the `Grid` span continuation markers.
@@ -31750,6 +31754,7 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       }
       // `Style[Grid[…], "Label"]` — the stylesheet entry's size and color.
       Expr::String(name) => {
+        gs.text_face |= named_style_font_family(name).is_some();
         if let Some((size, rgb)) = named_style_appearance(name) {
           gs.font_size = Some(size);
           if let Some((r, g, b)) = rgb {
@@ -33289,6 +33294,7 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
       gs.font_size = base.font_size.or(gs.font_size);
       gs.font_family = base.font_family.or(gs.font_family);
       gs.color = base.color.or(gs.color);
+      gs.text_face |= base.text_face;
     }
   }
   gs
@@ -33999,6 +34005,13 @@ fn grid_svg_styled_internal_reporting(
   // `BaseStyle -> directives` styles every cell of the grid; being nearer
   // the cells than an enclosing `Style[Grid[…], …]`, it takes precedence.
   let default_style = &grid_base_style(&args[1..], outer_style);
+  // A grid in a proportional named style (`Style[Grid[…], "Label"]`) sizes
+  // its columns by the widths of that face, as a `Text[…]` display does.
+  if default_style.text_face && !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
+    return with_text_display_grids(|| {
+      grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style)
+    });
+  }
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
   let mut rows: Vec<Vec<Expr>> = match &data {
