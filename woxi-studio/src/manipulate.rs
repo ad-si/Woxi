@@ -8057,6 +8057,23 @@ mod tests {
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
   }
 
+  /// A caption whose fraction has a `\[Cross]` product with a typeset power
+  /// below it (`\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)`, a unit
+  /// such as coulombs per 9×10⁹) reads `C/(9×10⁹)`: the box code after the
+  /// `\*` inside the group is a superscript, and `Cross` is the infix `×`
+  /// rather than a `Cross[…]` call.
+  #[test]
+  fn control_label_typesets_cross_product_with_power_in_fraction() {
+    let code = r#"Manipulate[c, {{c, 1, "charge q/\!\(\*FractionBox[\(C\), \(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]\)"}, -1, 1},
+      {{d, 1, "\!\(\*RowBox[{\"a\", \"\[Cross]\", \"b\"}]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("Cross["), "{dump}");
+    assert!(dump.contains("label: \"charge q/C/(9×10⁹)\""), "{dump}");
+    assert!(dump.contains("label: \"a×b\""), "{dump}");
+  }
+
   /// A setter choice captioned with a plain typeset fraction
   /// (`\!\(\*FractionBox[\(1\), \(x\)]\)`) reads `1/x` as written, not
   /// the OutputForm of the reciprocal `x^(-1)`; a compound side is
