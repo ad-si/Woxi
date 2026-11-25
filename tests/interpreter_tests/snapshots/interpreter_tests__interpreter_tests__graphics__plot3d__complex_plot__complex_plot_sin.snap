@@ -138,18 +138,18 @@ expression: "export_svg(\"ComplexPlot[Sin[z], {z, -Pi - Pi I, Pi + Pi I}]\")"
 <line x1="3585.0" y1="253.1" x2="3561.0" y2="253.1" stroke="#666666" stroke-width="5.0"/>
 <line x1="3585.0" y1="43.1" x2="3561.0" y2="43.1" stroke="#666666" stroke-width="5.0"/>
 <rect x="148.6" y="5.0" width="3436.4" height="3436.4" fill="none" stroke="#666666" stroke-width="5.0"/>
-<text x="291.7" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-3</text>
-<text x="816.7" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="1341.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="2391.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="2916.9" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
-<text x="3441.9" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
-<text x="118.6" y="3333.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-3</text>
-<text x="118.6" y="2808.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2</text>
-<text x="118.6" y="2283.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1</text>
-<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="118.6" y="1233.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="118.6" y="708.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
-<text x="118.6" y="183.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
+<text x="291.7" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-3</text>
+<text x="816.7" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="1341.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="1866.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="2391.8" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="2916.9" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
+<text x="3441.9" y="3561.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3</text>
+<text x="118.6" y="3333.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-3</text>
+<text x="118.6" y="2808.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2</text>
+<text x="118.6" y="2283.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1</text>
+<text x="118.6" y="1758.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0</text>
+<text x="118.6" y="1233.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1</text>
+<text x="118.6" y="708.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
+<text x="118.6" y="183.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3</text>
 </svg>

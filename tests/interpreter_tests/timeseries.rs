@@ -186,7 +186,7 @@ mod labeling_function {
       let needle = format!(">{value}</text>");
       let line = svg
         .lines()
-        .find(|l| l.contains(&needle) && l.contains("fill=\"#666\""))
+        .find(|l| l.contains(&needle) && l.contains("fill=\"#404040\""))
         .unwrap_or_else(|| panic!("no value label for {value}"));
       let x = attr(line, "x=\"").expect("x");
       let fs = attr(line, "font-size=\"").expect("font-size");

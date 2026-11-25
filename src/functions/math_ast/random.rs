@@ -3244,6 +3244,50 @@ fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
 /// SeedRandom[n] - Seed the random number generator
 /// SeedRandom[] - Reset to non-deterministic RNG
 pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  seed_random_with_method(args, None)
+}
+
+/// The value mixed into a seed to give the generator `method` its own
+/// stream, or `None` for the default generator (`"ExtendedCA"`,
+/// `Automatic`, `"Default"`), whose streams `SeedRandom[n]` already gives.
+/// A method with suboptions (`{"MKL", Method -> "MCG31"}`) is keyed by its
+/// whole specification, so each variant is a distinct generator.
+fn generator_stream_key(method: &Expr) -> Option<u64> {
+  let name = match method {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => "",
+  };
+  if matches!(name, "ExtendedCA" | "Automatic" | "Default") {
+    return None;
+  }
+  Some(hash_string_to_u64(&crate::syntax::expr_to_input_form(
+    method,
+  )))
+}
+
+/// `SeedRandom[seed, Method -> method]`: Wolfram's generators (`"Rule30CA"`,
+/// `"Congruential"`, `"MersenneTwister"`, …) each produce their own
+/// sequence for the same seed. Woxi draws every stream from one generator,
+/// so a non-default method gets its own stream by mixing a key derived from
+/// the method into the seed: the same seed and method always repeat, while
+/// different methods differ.
+pub fn seed_random_with_method(
+  args: &[Expr],
+  method: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  let stream_key = method.and_then(generator_stream_key);
+  let mix = |seed: u64| match stream_key {
+    // SplitMix64-style finalizer, so nearby seeds of one method do not
+    // land on nearby seeds of another.
+    Some(key) => {
+      let mut z = seed ^ key.rotate_left(17);
+      z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+      z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+      z ^ (z >> 31)
+    }
+    None => seed,
+  };
   match args.len() {
     0 => {
       crate::unseed_rng();
@@ -3251,13 +3295,13 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     1 => match &args[0] {
       Expr::Integer(seed) => {
-        crate::seed_rng(*seed as u64);
+        crate::seed_rng(mix(*seed as u64));
         Ok(null_expr())
       }
       Expr::String(s) => {
         // Wolfram accepts string seeds; hash the string deterministically
         // so the same string always produces the same sequence.
-        crate::seed_rng(hash_string_to_u64(s));
+        crate::seed_rng(mix(hash_string_to_u64(s)));
         Ok(null_expr())
       }
       _ => Err(InterpreterError::EvaluationError(
