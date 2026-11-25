@@ -1945,7 +1945,7 @@ fn region_level_segments(
     hi = hi.max(*value);
   }
   let mut segments = Vec::new();
-  if !(hi > lo) {
+  if hi <= lo {
     return segments;
   }
   let step = (hi - lo) / (levels + 1) as f64;
