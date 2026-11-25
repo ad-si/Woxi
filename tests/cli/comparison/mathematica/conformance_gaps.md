@@ -2151,6 +2151,26 @@ woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0
 Systems of two or more such equations are solved by Gaussian elimination
 and are not affected.
 
+### `ColorFunction` of a `ParametricPlot` curve: the fourth argument
+
+```sh
+woxi eval 'ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6}, ColorFunction -> (Hue[#4] &)], "SVG"]'
+```
+
+wolframscript hands a curve's `ColorFunction` four arguments, as it does a
+region's `x, y, u, v` (a `Function[{x, y, u, v}, …]` colors a curve without a
+`Function::fpct` message). Woxi passes `u` again as the fourth; what
+wolframscript passes there has **not been verified**.
+
+### `NSolve` of a system with radicals: order inferred from one system
+
+Woxi sorts the solutions of a radical system descending by the values of
+its radicals, then of its variables. The rule is inferred from the
+equilibria of the restricted three-body problem (where the published output
+of a Demonstration shows `Last` picking the point between the masses); the
+complete wolframscript order of that list, and of other radical systems,
+has **not been verified**.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh

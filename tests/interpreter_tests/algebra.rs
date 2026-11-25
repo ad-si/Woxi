@@ -6467,6 +6467,33 @@ y^2]^3)) y}, {x, y}]; \
   }
 
   #[test]
+  fn nsolve_radical_system_orders_by_radicals_descending() {
+    // Regression: the equilibria of a system with radicals were listed
+    // descending by the first variable, so `Last` picked the outermost
+    // point. Each radical counts as an unknown ahead of the variables: the
+    // solutions run descending by the radicals' values, which puts the
+    // point between the two centers (nearest to both) last, and rounding
+    // noise in a coordinate does not reorder the symmetric pair.
+    for mu in ["0.1", "0.0123001", "0.03"] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!(
+          "mu = {mu}; s = {{x, y}} /. NSolve[{{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + \
+y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, \
+-y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + \
+y^2]^3)) y}}, {{x, y}}]; \
+d = Norm[# - {{1 - mu, 0}}] & /@ s; \
+{{Length[s], OrderedQ[Reverse[Round[d, 10.^-6]]], \
+-mu < s[[-1, 1]] < 1 - mu, Abs[s[[-1, 2]]] < 10^-9, \
+Sign[Round[s[[All, 2]], 0.001]]}}"
+        ))
+        .unwrap(),
+        "{5, True, True, True, {0, 1, -1, 0, 0}}"
+      );
+    }
+  }
+
+  #[test]
   fn nsolve_underdetermined_linear_solves_for_first_variables() {
     // NSolve, unlike Solve, solves a linear underdetermined system for its
     // first variables and reports no `svars`.
