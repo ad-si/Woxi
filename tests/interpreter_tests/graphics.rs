@@ -10905,6 +10905,85 @@ mod plot3d {
   mod revolution_plot3d {
     use super::*;
 
+    mod boundary_style {
+      use super::*;
+
+      /// The outline lines the extracted surface (`plot[[1]]`) carries.
+      fn outline(code: &str) -> String {
+        interpret(&format!(
+          "Cases[{code}[[1]], {{t_AbsoluteThickness, s_, Line[l_]}} :> \
+           {{s, Length[l]}}, Infinity]"
+        ))
+        .unwrap()
+      }
+
+      #[test]
+      fn outlines_the_sides_of_a_partial_sweep() {
+        // A half turn is outlined along both profile ends and both cut
+        // sides: 50 segments per side of the sampling grid.
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, {k, 0, Pi}, Mesh -> None, \
+             BoundaryStyle -> Black]"
+          ),
+          "{{GrayLevel[0], 200}}"
+        );
+      }
+
+      #[test]
+      fn leaves_out_the_seam_of_a_full_turn() {
+        // A full turn closes up, so only the two rims are outlined.
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, {k, 0, 2 Pi}, Mesh -> None, \
+             BoundaryStyle -> Red]"
+          ),
+          "{{RGBColor[1, 0, 0], 100}}"
+        );
+      }
+
+      #[test]
+      fn a_style_without_a_color_draws_black() {
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+             BoundaryStyle -> AbsoluteThickness[2]]"
+          ),
+          "{{Directive[GrayLevel[0], AbsoluteThickness[2]], 100}}"
+        );
+      }
+
+      #[test]
+      fn no_outline_by_default() {
+        assert_eq!(
+          outline("RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None]"),
+          "{}"
+        );
+        assert_eq!(
+          outline(
+            "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+             BoundaryStyle -> None]"
+          ),
+          "{}"
+        );
+      }
+
+      #[test]
+      fn the_standalone_picture_strokes_the_outline() {
+        let plain =
+          export_svg("RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None]");
+        let outlined = export_svg(
+          "RevolutionPlot3D[{x}, {x, 1, 2}, Mesh -> None, \
+           BoundaryStyle -> Red]",
+        );
+        assert!(!plain.contains("rgb(255,0,0)") && !plain.contains("#ff0000"));
+        assert!(
+          outlined.contains("rgb(255,0,0)") || outlined.contains("#ff0000"),
+          "the outline is drawn in red"
+        );
+      }
+    }
+
     mod basic {
       use super::*;
 

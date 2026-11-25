@@ -298,6 +298,20 @@ pub(crate) struct TriangleTexture {
 /// to quadratic, so bigger scenes keep the plain centroid sort.
 const PAINTER_ORDER_MAX_TRIANGLES: usize = 200000;
 
+/// In a scene too big for `painter_order` to refine every pair, the faces
+/// whose projected bounding box covers at least this fraction of the
+/// scene's are still ordered against everything they overlap. Small facets
+/// of finely sampled surfaces sort well enough by centroid among
+/// themselves, but a large flat face beside them (the side of a plank cut
+/// from a plot) has its centroid far from the facets it borders, and the
+/// centroid sort would draw it over the surface in front of it.
+const PAINTER_ORDER_LARGE_FACE_FRACTION: f64 = 1.0 / 2000.0;
+
+/// Most bounding-box tests the large-face ordering of an oversized scene
+/// may make (large faces times all faces): beyond it only the largest
+/// faces are ordered.
+const PAINTER_ORDER_LARGE_FACE_BUDGET: usize = 100_000_000;
+
 /// Largest scene `split_interpenetrating` cuts up; splitting multiplies the
 /// triangle count, which must stay within `PAINTER_ORDER_MAX_TRIANGLES`.
 const SPLIT_MAX_TRIANGLES: usize = 60000;
@@ -925,6 +939,74 @@ fn for_each_overlapping_pair(
   }
 }
 
+/// Calls `f(i, j)` (with `i < j`) for every pair of triangles that overlap
+/// on screen and of which at least one is a large face (see
+/// `PAINTER_ORDER_LARGE_FACE_FRACTION`): the pairs an oversized scene still
+/// orders. Each large face is tested against every other triangle, so the
+/// cost stays linear in the scene for a bounded number of large faces.
+fn for_each_overlapping_large_face_pair(
+  projected: &[[(f64, f64); 3]],
+  mut f: impl FnMut(usize, usize),
+) {
+  let n = projected.len();
+  let bbox: Vec<[f64; 4]> = projected
+    .iter()
+    .map(|t| {
+      let xs = t.iter().map(|p| p.0);
+      let ys = t.iter().map(|p| p.1);
+      [
+        xs.clone().fold(f64::MAX, f64::min),
+        xs.fold(f64::MIN, f64::max),
+        ys.clone().fold(f64::MAX, f64::min),
+        ys.fold(f64::MIN, f64::max),
+      ]
+    })
+    .collect();
+  let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut y_min, mut y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for b in &bbox {
+    x_min = x_min.min(b[0]);
+    x_max = x_max.max(b[1]);
+    y_min = y_min.min(b[2]);
+    y_max = y_max.max(b[3]);
+  }
+  let scene_area = (x_max - x_min) * (y_max - y_min);
+  if !(scene_area.is_finite() && scene_area > 0.0) {
+    return;
+  }
+  let area = |b: &[f64; 4]| (b[1] - b[0]) * (b[3] - b[2]);
+  let threshold = scene_area * PAINTER_ORDER_LARGE_FACE_FRACTION;
+  let mut large: Vec<usize> =
+    (0..n).filter(|&i| area(&bbox[i]) >= threshold).collect();
+  // The largest faces first, keeping only as many as the budget allows.
+  large.sort_by(|&a, &b| {
+    area(&bbox[b])
+      .partial_cmp(&area(&bbox[a]))
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  large.truncate(PAINTER_ORDER_LARGE_FACE_BUDGET / n.max(1));
+  let mut is_large = vec![false; n];
+  for &i in &large {
+    is_large[i] = true;
+  }
+  for &i in &large {
+    let a = &bbox[i];
+    for j in 0..n {
+      // A pair of two large faces is visited once, from the smaller index.
+      if j == i || (is_large[j] && j < i) {
+        continue;
+      }
+      let b = &bbox[j];
+      if b[0] >= a[1] || a[0] >= b[1] || a[3] <= b[2] || b[3] <= a[2] {
+        continue;
+      }
+      if projected_triangles_overlap(&projected[i], &projected[j]) {
+        f(i.min(j), i.max(j));
+      }
+    }
+  }
+}
+
 /// Most cutting planes applied to a single triangle, bounding the growth of
 /// a scene whose surfaces cross each other heavily.
 const MAX_SPLIT_PLANES: usize = 256;
@@ -1459,7 +1541,7 @@ fn split_depth_cycles(
     }
     let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
     let opacities: Vec<_> = triangles.iter().map(|t| t.opacity).collect();
-    let after = depth_order_edges(verts, &projected, &opacities, camera);
+    let after = depth_order_edges(verts, &projected, &opacities, camera, false);
     let (component, count) = strongly_connected_components(&after);
     let mut size = vec![0usize; count];
     for &c in &component {
@@ -1559,11 +1641,12 @@ fn painter_order(
       .partial_cmp(&key(depths[a]))
       .unwrap_or(std::cmp::Ordering::Equal)
   });
-  if n > PAINTER_ORDER_MAX_TRIANGLES {
-    return by_depth;
-  }
-  let after = edges
-    .unwrap_or_else(|| depth_order_edges(verts, projected, opacities, camera));
+  // A scene too big to order every overlapping pair still orders its
+  // large faces against what they overlap.
+  let large_faces_only = n > PAINTER_ORDER_MAX_TRIANGLES;
+  let after = edges.unwrap_or_else(|| {
+    depth_order_edges(verts, projected, opacities, camera, large_faces_only)
+  });
   let mut rank = vec![0usize; n];
   for (r, &k) in by_depth.iter().enumerate() {
     rank[k] = r;
@@ -1578,11 +1661,12 @@ fn depth_order_edges(
   projected: &[[(f64, f64); 3]],
   opacities: &[f64],
   camera: &Camera,
+  large_faces_only: bool,
 ) -> Vec<Vec<usize>> {
   let n = verts.len();
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for_each_overlapping_pair(projected, |i, j| {
+  let order_pair = |i: usize, j: usize| {
     // Faces lying in one plane (two boxes sharing a face) have no depth
     // order; the one given later is drawn on top, as in Wolfram. Wolfram
     // draws the opaque faces first and a translucent face only where it is
@@ -1620,7 +1704,12 @@ fn depth_order_edges(
       Some(false) => after[j].push(i),
       None => {}
     }
-  });
+  };
+  if large_faces_only {
+    for_each_overlapping_large_face_pair(projected, order_pair);
+  } else {
+    for_each_overlapping_pair(projected, order_pair);
+  }
   after
 }
 
@@ -20568,6 +20657,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  let mut boundary_style: Option<(Expr, StyleState3D)> = None;
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -20582,6 +20672,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          boundary_style = parse_surface_boundary_style(replacement);
         }
         Expr::Identifier(name) if name == "RevolutionAxis" => {
           if let Some(a) = parse_revolution_axis(replacement) {
@@ -21082,6 +21175,31 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `BoundaryStyle` outlines each surface along the sides of its
+  // parameter domain, leaving out the seam where a full turn closes up.
+  let full_turn =
+    (theta_max - theta_min).abs() >= std::f64::consts::TAU * (1.0 - 1e-9);
+  let boundary_edges = || {
+    parameter_domain_edges(n_t, n_theta).filter(move |&((_, j0), (_, j1))| {
+      !(full_turn && j0 == j1 && (j0 == 0 || j0 == n_theta))
+    })
+  };
+  if let Some((_, style)) = &boundary_style {
+    for grid in &grids {
+      for ((i0, j0), (i1, j1)) in boundary_edges() {
+        if let (Some(a), Some(b)) = (grid[i0][j0], grid[i1][j1]) {
+          mesh_lines.push(styled_mesh_segment(
+            normalize(a),
+            normalize(b),
+            &camera,
+            Some(style),
+            ("rgb(0,0,0)", SURFACE_BOUNDARY_THICKNESS),
+          ));
+        }
+      }
+    }
+  }
+
   // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
   // `First[RevolutionPlot3D[…]]` is the surface itself, in world
   // coordinates, so it can be re-drawn inside another `Graphics3D` (the
@@ -21145,6 +21263,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       content.push(call1("Polygon", Expr::List(quads.into())));
+      if let Some((style_expr, _)) = &boundary_style {
+        let segments: Vec<Expr> = boundary_edges()
+          .filter_map(|((i0, j0), (i1, j1))| {
+            let (a, b) = (index_of[i0][j0]?, index_of[i1][j1]?);
+            Some(Expr::List(
+              vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+                .into(),
+            ))
+          })
+          .collect();
+        if !segments.is_empty() {
+          content.push(Expr::List(
+            vec![
+              boundary_thickness_expr(),
+              style_expr.clone(),
+              call1("Line", Expr::List(segments.into())),
+            ]
+            .into(),
+          ));
+        }
+      }
       // The mesh, every `MESH_STEP`-th line of constant t and of
       // constant θ, as the standalone render rules it.
       if mesh_mode == MeshMode::Default {
@@ -27259,6 +27398,45 @@ fn clip_parametric_cells(
   (pieces, cuts)
 }
 
+/// The `BoundaryStyle` of a parametric surface (`ParametricPlot3D`,
+/// `RevolutionPlot3D`): the style expression the extracted complex draws
+/// the outline with and the style the standalone render strokes it in.
+/// `None` and `Automatic` draw no outline.
+fn parse_surface_boundary_style(
+  replacement: &Expr,
+) -> Option<(Expr, StyleState3D)> {
+  let value =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  match value {
+    Expr::Identifier(ref n) if n == "None" || n == "Automatic" => None,
+    other => {
+      let mut style = StyleState3D {
+        color: Some((0, 0, 0)),
+        ..StyleState3D::default()
+      };
+      apply_3d_directive(&other, &mut style);
+      // A style naming no color (`AbsoluteThickness[3]`) draws the outline
+      // black, in the extracted complex too — otherwise it would take on
+      // the surface's color there.
+      let mut probe = StyleState3D::default();
+      apply_3d_directive(&other, &mut probe);
+      let other = if probe.color.is_some() {
+        other
+      } else {
+        let black = call1("GrayLevel", Expr::Integer(0));
+        match &other {
+          Expr::FunctionCall { name, args } if name == "Directive" => call(
+            "Directive",
+            std::iter::once(black).chain(args.iter().cloned()).collect(),
+          ),
+          _ => call("Directive", vec![black, other]),
+        }
+      };
+      Some((other, style))
+    }
+  }
+}
+
 /// The grid steps along the four sides of a `[0, nu] x [0, nv]` sampling
 /// grid: the outline of a parametric surface's domain.
 fn parameter_domain_edges(
@@ -27501,40 +27679,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           texture_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          boundary_style = match value {
-            Expr::Identifier(ref n) if n == "None" || n == "Automatic" => None,
-            other => {
-              let mut style = StyleState3D {
-                color: Some((0, 0, 0)),
-                ..StyleState3D::default()
-              };
-              apply_3d_directive(&other, &mut style);
-              // A style naming no color (`AbsoluteThickness[3]`) draws the
-              // outline black, in the extracted complex too — otherwise it
-              // would take on the surface's color there.
-              let mut probe = StyleState3D::default();
-              apply_3d_directive(&other, &mut probe);
-              let other = if probe.color.is_some() {
-                other
-              } else {
-                let black = call1("GrayLevel", Expr::Integer(0));
-                match &other {
-                  Expr::FunctionCall { name, args } if name == "Directive" => {
-                    call(
-                      "Directive",
-                      std::iter::once(black)
-                        .chain(args.iter().cloned())
-                        .collect(),
-                    )
-                  }
-                  _ => call("Directive", vec![black, other]),
-                }
-              };
-              Some((other, style))
-            }
-          };
+          boundary_style = parse_surface_boundary_style(replacement);
         }
         Expr::Identifier(name) if name == "RegionFunction" => {
           region_fn = Some(
@@ -29012,6 +29157,48 @@ mod painter_order_tests {
     }
   }
 
+  /// An oversized scene orders only the pairs involving a large face: a
+  /// speck lying in front of a big tilted face, whose centroid is far
+  /// nearer than the speck's, still has to be drawn after it, while two
+  /// overlapping specks are left to the centroid sort.
+  #[test]
+  fn large_faces_are_ordered_against_the_specks_they_overlap() {
+    // Looking straight down the z axis: screen position is (x, y), and a
+    // larger z is nearer.
+    let camera = Camera {
+      azimuth: 0.0,
+      elevation: std::f64::consts::FRAC_PI_2,
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // The big face lies in the plane z = x + y; both specks sit above it
+    // near the origin, where the plane is low.
+    let verts = vec![
+      [p(0.0, 0.0, 0.0), p(10.0, 0.0, 10.0), p(0.0, 10.0, 10.0)],
+      [p(0.5, 0.5, 1.5), p(0.7, 0.5, 1.5), p(0.5, 0.7, 1.5)],
+      [p(0.55, 0.55, 1.6), p(0.75, 0.55, 1.6), p(0.55, 0.75, 1.6)],
+    ];
+    let tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+    let opacities = vec![1.0; verts.len()];
+    let after =
+      depth_order_edges(&verts, &projected, &opacities, &camera, true);
+    let mut big_before = after[0].clone();
+    big_before.sort_unstable();
+    assert_eq!(
+      big_before,
+      vec![1, 2],
+      "both specks are drawn after the face"
+    );
+    assert!(after[1].is_empty() && after[2].is_empty());
+
+    // Refining every pair orders the two specks as well.
+    let all = depth_order_edges(&verts, &projected, &opacities, &camera, false);
+    assert_eq!(all[1], vec![2]);
+  }
+
   /// Three bars that each lie over the next where they cross (A over B,
   /// B over C, C over A) have no back-to-front order as wholes. They are
   /// cut until the order graph has no cycle left, and at every crossing the
@@ -29049,7 +29236,7 @@ mod painter_order_tests {
     let order_graph = |verts: &[[Point3D; 3]], tris: &[Triangle]| {
       let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
       let opacities: Vec<_> = tris.iter().map(|t| t.opacity).collect();
-      depth_order_edges(verts, &projected, &opacities, &camera)
+      depth_order_edges(verts, &projected, &opacities, &camera, false)
     };
     let (_, components) =
       strongly_connected_components(&order_graph(&verts, &tris));
