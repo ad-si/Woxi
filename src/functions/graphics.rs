@@ -58485,17 +58485,19 @@ fn parse_manipulate_control(
   }
 
   // Head can be either a plain symbol `u` or `{u, uinit}` / `{u, uinit, ulbl}`.
-  let plain_run = |s: String| {
+  // A control without a caption is labeled with its variable, typeset the
+  // way the FrontEnd sets a symbol in a Manipulate panel: a one-letter
+  // name (`t`, `θ`, `μ`) in italics, a longer one (`m1`, `speed`) upright.
+  let default_run = |n: &str| {
+    let s = default_control_label(n);
     vec![LabelRun {
+      italic: is_single_letter_symbol(&s),
       text: s,
-      italic: false,
       ..Default::default()
     }]
   };
   let (name, explicit_initial, label_runs) = match &items[0] {
-    Expr::Identifier(n) => {
-      (n.clone(), None, plain_run(default_control_label(n)))
-    }
+    Expr::Identifier(n) => (n.clone(), None, default_run(n)),
     Expr::List(head_items) if !head_items.is_empty() => {
       let n = match &head_items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -58516,7 +58518,7 @@ fn parse_manipulate_control(
           }
           _ => manipulate_label_runs(other, false),
         },
-        None => plain_run(default_control_label(&n)),
+        None => default_run(&n),
       };
       (n, init, lbl)
     }
