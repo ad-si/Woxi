@@ -148,6 +148,141 @@ fn function_params_bind(params: &Expr, var: &str) -> bool {
   }
 }
 
+/// A pure function `body &` with every part of its body that is a fixed
+/// color or number computation replaced by the value it has.
+///
+/// A `ColorFunction` is called for every cell of a plot, and typically most
+/// of it — the nested `Blend[{…}, {…}]` stops, the arithmetic placing them —
+/// does not depend on the slots at all. Only expressions built entirely from
+/// numbers, named colors and the deterministic heads listed in
+/// [`is_constant_color_head`] are folded, so nothing that could differ from
+/// one call to the next (a variable, a random number, a side effect) is
+/// touched. Anything but a `body &` function is returned as it is.
+pub(crate) fn fold_constant_color_parts(function: &Expr) -> Expr {
+  let Expr::Function { body } = function else {
+    return function.clone();
+  };
+  let (folded, constant) = fold_constant_color_expr(body);
+  let folded = if constant {
+    evaluate_expr_to_expr(&folded).unwrap_or(folded)
+  } else {
+    folded
+  };
+  Expr::Function {
+    body: Box::new(folded),
+  }
+}
+
+/// The heads [`fold_constant_color_parts`] evaluates ahead of time when all
+/// their arguments are constant.
+fn is_constant_color_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Plus"
+      | "Times"
+      | "Power"
+      | "Rational"
+      | "Sqrt"
+      | "Abs"
+      | "Min"
+      | "Max"
+      | "Mean"
+      | "Blend"
+      | "RGBColor"
+      | "GrayLevel"
+      | "Hue"
+      | "Opacity"
+      | "Darker"
+      | "Lighter"
+      | "Directive"
+  )
+}
+
+/// `expr` with its constant sub-expressions evaluated, and whether `expr`
+/// as a whole is constant (in which case it is returned unevaluated, for the
+/// caller to evaluate as part of the largest constant expression around it).
+fn fold_constant_color_expr(expr: &Expr) -> (Expr, bool) {
+  // A constant child that is more than a literal is replaced by its value
+  // once its parent turns out not to be constant.
+  let settle = |parts: Vec<(Expr, bool)>, constant: bool| -> Vec<Expr> {
+    parts
+      .into_iter()
+      .map(|(e, c)| {
+        let compound =
+          !matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_));
+        if c && compound && !constant {
+          evaluate_expr_to_expr(&e).unwrap_or(e)
+        } else {
+          e
+        }
+      })
+      .collect()
+  };
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) => (expr.clone(), true),
+    Expr::Identifier(_) => (
+      expr.clone(),
+      crate::functions::graphics::parse_color(expr).is_some(),
+    ),
+    Expr::List(items) => {
+      let parts: Vec<_> = items.iter().map(fold_constant_color_expr).collect();
+      let constant = parts.iter().all(|(_, c)| *c);
+      (Expr::List(settle(parts, constant).into()), constant)
+    }
+    Expr::FunctionCall { name, args } => {
+      let parts: Vec<_> = args.iter().map(fold_constant_color_expr).collect();
+      let constant =
+        is_constant_color_head(name) && parts.iter().all(|(_, c)| *c);
+      (
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: settle(parts, constant).into(),
+        },
+        constant,
+      )
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus
+          | crate::syntax::BinaryOperator::Times
+          | crate::syntax::BinaryOperator::Divide
+          | crate::syntax::BinaryOperator::Power
+      ) =>
+    {
+      let parts = vec![
+        fold_constant_color_expr(left),
+        fold_constant_color_expr(right),
+      ];
+      let constant = parts.iter().all(|(_, c)| *c);
+      let mut settled = settle(parts, constant).into_iter();
+      (
+        Expr::BinaryOp {
+          op: *op,
+          left: Box::new(settled.next().unwrap()),
+          right: Box::new(settled.next().unwrap()),
+        },
+        constant,
+      )
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (inner, constant) = fold_constant_color_expr(operand);
+      (
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(inner),
+        },
+        constant,
+      )
+    }
+    other => (other.clone(), false),
+  }
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -609,6 +744,11 @@ pub(crate) fn symbol_body_value(body: &Expr, vars: &[String]) -> Option<Expr> {
       .into(),
     })
     .ok();
+  }
+  // Only a symbol can stand for a stored expression; any other body is
+  // left alone without copying it (this runs once per plot sample).
+  if !matches!(body, Expr::Identifier(_)) {
+    return None;
   }
   let mut current = body.clone();
   let mut resolved = false;
@@ -1458,17 +1598,26 @@ fn plot_range_requests_all_y(value: &Expr) -> bool {
 
 /// Which axes a `PlotRange` value asks to show the whole extent of, outliers
 /// included: both for `All`, one for `All` in its slot of `{xrange, yrange}`.
+/// An `All` end of a `{min, All}` pair reaches out to the whole extent of
+/// its axis too: `PlotRange -> {0, All}` keeps the y outliers, and
+/// `{{0, All}, {0, 1}}` the x ones.
 pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  // `All`, or a `{min, max}` pair with an `All` end.
+  let reaches_all = |e: &Expr| {
+    is_all(e)
+      || matches!(e, Expr::List(ends) if ends.len() == 2
+        && is_y_only_pair(ends) && ends.iter().any(is_all))
+  };
   match &val {
     e if is_all(e) => (true, true),
-    // `{ymin, All}` opens only an end of the y range.
+    // `{ymin, All}` opens an end of the y range only.
     Expr::List(items) if items.len() == 2 && is_y_only_pair(items) => {
-      (false, false)
+      (false, items.iter().any(is_all))
     }
     Expr::List(items) if items.len() == 2 => {
-      (is_all(&items[0]), is_all(&items[1]))
+      (reaches_all(&items[0]), reaches_all(&items[1]))
     }
     _ => (false, false),
   }
@@ -1528,7 +1677,9 @@ pub(crate) fn split_into_segments(
 /// Finite segments of `points` with every y clamped into `[y_min, y_max]`.
 /// A filled region keeps covering the plot area where the curve itself has
 /// left the plot range, so it follows the clamped curve instead of the
-/// clipped one.
+/// clipped one. Where a stretch of the curve crosses a range edge, the
+/// crossing point is added first, so the clamped outline leaves the curve
+/// exactly where the curve leaves the range, however sparse the samples.
 pub(crate) fn clamp_segments_to_y_range(
   points: &[(f64, f64)],
   y_min: f64,
@@ -1537,10 +1688,25 @@ pub(crate) fn clamp_segments_to_y_range(
   split_into_segments(points)
     .into_iter()
     .map(|seg| {
-      seg
-        .into_iter()
-        .map(|(x, y)| (x, y.clamp(y_min, y_max)))
-        .collect()
+      let mut out: Vec<(f64, f64)> = Vec::with_capacity(seg.len());
+      for (i, &(x, y)) in seg.iter().enumerate() {
+        if i > 0 {
+          let (px, py) = seg[i - 1];
+          // The edges this stretch crosses, in the order it meets them.
+          let mut crossings: Vec<f64> = [y_min, y_max]
+            .into_iter()
+            .filter(|&edge| (py - edge) * (y - edge) < 0.0)
+            .map(|edge| (edge - py) / (y - py))
+            .collect();
+          crossings.sort_by(f64::total_cmp);
+          for t in crossings {
+            let cy = (py + (y - py) * t).clamp(y_min, y_max);
+            out.push((px + (x - px) * t, cy));
+          }
+        }
+        out.push((x, y.clamp(y_min, y_max)));
+      }
+      out
     })
     .collect()
 }
@@ -5568,22 +5734,26 @@ pub(crate) fn plot_labels_svg(
         sf,
       ));
     }
-    // A `Column` title lines its rows up at their left edges, the block
-    // as a whole centered over the plot; every other title centers each
-    // line on its own.
-    let (tx, anchor) = if sl.left_aligned
-      && !sl.extra_lines.is_empty()
-      && sl.segments.is_empty()
+    // A `Column` title lines its rows up at one edge (the left one unless
+    // it asks otherwise), the block as a whole centered over the plot;
+    // every other title centers each line on its own.
+    let alignment = if sl.extra_lines.is_empty() || !sl.segments.is_empty() {
+      crate::functions::graphics::ColumnAlignment::Center
+    } else {
+      sl.line_alignment
+    };
+    let anchor = alignment.text_anchor();
+    let tx = if alignment == crate::functions::graphics::ColumnAlignment::Center
     {
+      cx
+    } else {
       let bold = if sl.bold {
         plot_padding::BOLD_WIDTH_SCALE
       } else {
         1.0
       };
       let w = sl.widest_line_width(fs / sf, 1.0) * sf * bold;
-      (cx - w / 2.0, "start")
-    } else {
-      (cx, "middle")
+      alignment.anchor_x(cx, w)
     };
     // A plain string with line breaks stacks its lines too.
     let body = if sl.markup.is_none()
@@ -6483,6 +6653,25 @@ fn generate_svg_with_options(
   } else {
     0.0
   };
+  // The room, in display points, the title takes above the top padding. The
+  // plotting area is laid out in what is left below it, so a title never
+  // costs the area its `AspectRatio`: a two-line `PlotLabel` over a square
+  // plot in a fixed `ImageSize -> {w, h}` narrows the plot along with
+  // shortening it instead of squashing it.
+  let stacked_below =
+    usize::from(has_top_label) + usize::from(axes_label_y.is_some());
+  let title_room = {
+    let stacked =
+      lone_title + stacked_title_room(opts.plot_label.as_ref(), sf) as f64 / sf;
+    // A lone `PlotLabel` sits above the padding: a top padding too small
+    // to hold it gives up plotting area instead of letting the title run
+    // into the frame (or, with no room at all, off the image).
+    if stacked_below == 0 {
+      stacked.max(decorations.title)
+    } else {
+      stacked
+    }
+  };
   if let Some(ar) = opts
     .aspect_ratio
     .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
@@ -6492,7 +6681,7 @@ fn generate_svg_with_options(
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h =
-        plot_w * ar + (pad_bottom + pad_top + lone_title) * sf;
+        plot_w * ar + (pad_bottom + pad_top + title_room) * sf;
       svg_height =
         ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
@@ -6513,30 +6702,19 @@ fn generate_svg_with_options(
     Some(padding) => {
       let [pad_left, pad_right, pad_bottom, pad_top] = padding;
       let m = padded_margins(
-        [pad_left, pad_right, pad_bottom, pad_top + lone_title],
+        [pad_left, pad_right, pad_bottom, pad_top + title_room],
         (render_width, render_height),
         opts.aspect_ratio,
         opts.aspect_full,
         sf,
       );
-      let stacked_below =
-        usize::from(has_top_label) + usize::from(axes_label_y.is_some());
       let top = m.top as i32
-        + stacked_title_room(opts.plot_label.as_ref(), sf)
         + stacked_label_shortfall(
           opts.plot_label.as_ref(),
           stacked_below,
           m.top as i32,
           sf,
         );
-      // A lone `PlotLabel` sits above the padding: a top padding too small
-      // to hold it gives up plotting area instead of letting the title run
-      // into the frame (or, with no room at all, off the image).
-      let top = if stacked_below == 0 && decorations.title > 0.0 {
-        top.max(((padding[3] + decorations.title) * sf).ceil() as i32)
-      } else {
-        top
-      };
       (top, m.bottom, m.left, 0u32, m.right, 0u32)
     }
     None => (
@@ -10490,6 +10668,18 @@ pub(crate) fn generate_bar_svg(
     .chain(look.error_bars.iter().flatten().flat_map(|&(l, h)| [l, h]))
     .fold((0.0_f64, 0.0_f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
 
+  // An explicit bottom `ImagePadding` replaces the automatic margin that
+  // otherwise stands in for the lower `Scaled[0.02]` of an automatic value
+  // range above 0.
+  let baseline_above_padding =
+    look.image_padding.is_some_and(|p| p[2].is_some())
+      && plot_range_y.is_none()
+      && look.plot_range_padding.is_none()
+      && !look.frame
+      && !look.value_axis_negated
+      && data_lo >= 0.0
+      && data_hi > 0.0;
+
   // y-axis range: explicit PlotRange overrides the auto-computed extent,
   // which anchors at 0 and leaves WL's `Scaled[0.05]` headroom above the
   // tallest bar (5% of the padded span, whose lower `Scaled[0.02]` the
@@ -10511,7 +10701,15 @@ pub(crate) fn generate_bar_svg(
   } else {
     let y_max_auto = data_hi * (1.0 + 0.05 / 0.93);
     let y_max_auto = if y_max_auto <= 0.0 { 1.0 } else { y_max_auto };
-    (0.0, y_max_auto)
+    // Under an explicit bottom `ImagePadding` the range's lower
+    // `Scaled[0.02]` is part of the plotting area, which the padding
+    // surrounds: the value axis runs on below the bars' baseline.
+    let y_min_auto = if baseline_above_padding {
+      -0.02 / 0.93 * data_hi
+    } else {
+      0.0
+    };
+    (y_min_auto, y_max_auto)
   };
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
 
@@ -10522,16 +10720,34 @@ pub(crate) fn generate_bar_svg(
   // Otherwise WL's range runs from 2% of the bars' span before the first
   // bar (where the y axis stands) to the last bar's edge; a frame pads that
   // by another `Scaled[0.02]` of it on both sides.
-  let (x_min, x_max) = plot_range_x.unwrap_or_else(|| {
-    let (first, last) = (slot.margin, n as f64 - slot.margin);
-    let lo = first - 0.02 * (last - first);
-    if look.frame {
-      let pad = 0.02 / 0.96 * (last - lo);
-      (lo - pad, last + pad)
-    } else {
-      (lo, last)
+  //
+  // The unframed chart's axes keep to the bars under an explicit x range:
+  // the value axis stands where it does without one (`AxesOrigin`), and the
+  // baseline, a line of its own, runs from there to 2% past the last bar.
+  // The explicit range is padded by `Scaled[0.02]` on both sides, like any
+  // range of a chart.
+  let (first, last) = (slot.margin, n as f64 - slot.margin);
+  let natural_lo = first - 0.02 * (last - first);
+  let explicit_x_axes = plot_range_x
+    .filter(|(lo, hi)| {
+      !look.frame && look.plot_range_padding.is_none() && hi > lo
+    })
+    .map(|(lo, hi)| {
+      let pad = 0.02 / 0.96 * (hi - lo);
+      let (lo, hi) = (lo - pad, hi + pad);
+      let axis_x = natural_lo.clamp(lo, hi);
+      let baseline_end = (last + 0.02 * (last - natural_lo)).clamp(axis_x, hi);
+      ((lo, hi), axis_x, baseline_end)
+    });
+  let (x_min, x_max) = match (explicit_x_axes, plot_range_x) {
+    (Some((range, _, _)), _) => range,
+    (None, Some(range)) => range,
+    (None, None) if look.frame => {
+      let pad = 0.02 / 0.96 * (last - natural_lo);
+      (natural_lo - pad, last + pad)
     }
-  });
+    (None, None) => (natural_lo, last),
+  };
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
   // An explicit `PlotRangePadding` pads the bars' own extent (or the
@@ -10808,6 +11024,8 @@ pub(crate) fn generate_bar_svg(
     r - 1.5 * sf
   };
   let x_axis_overrun = match (explicit_pad(0), explicit_pad(1)) {
+    // The baseline of an explicit x range ends inside the plotting area.
+    _ if explicit_x_axes.is_some() => 0.0,
     // With both sides given the plot range, including the axis' 2%
     // padding past the last bar, spans what the padding leaves.
     (Some(l), Some(r)) => {
@@ -10887,6 +11105,34 @@ pub(crate) fn generate_bar_svg(
       if need > margin_bottom + x_label_area as f64 {
         x_label_area = (need - margin_bottom).ceil() as u32;
       }
+    }
+  }
+  // Upright labels below a baseline that stands above an explicit bottom
+  // padding hang 1.75 em below it (baseline and descenders); like rotated
+  // ones, they take plotting area rather than being cut off at the image's
+  // edge when the padding and the range below 0 are too small for them.
+  if baseline_above_padding && labels_below && !has_rotated_labels {
+    let below = -y_min / (y_max - y_min);
+    let plot_h_est = match look.aspect_ratio {
+      Some(r) if !look.fixed_height => {
+        (render_width as f64
+          - margin_left
+          - legend_margin_right as f64
+          - y_label_area as f64)
+          * r
+      }
+      _ => {
+        render_height as f64
+          - top_margin as f64
+          - margin_bottom
+          - x_label_area as f64
+      }
+    }
+    .max(1.0);
+    let need = 1.75 * chart_label_font_pt * sf;
+    let deficit = need - (x_label_area as f64 + below * plot_h_est);
+    if deficit > 0.0 {
+      x_label_area += (deficit / (1.0 - below)).ceil() as u32;
     }
   }
   if let Some(r) = look.aspect_ratio {
@@ -11128,7 +11374,13 @@ pub(crate) fn generate_bar_svg(
     render_width as f64 - margin_left - margin_right - y_label_area as f64;
   let plot_h =
     render_height as f64 - margin_top - margin_bottom - x_label_area as f64;
-  let axis_y = plot_y0 + plot_h;
+  // The bars' baseline, below which the chart labels are set: the bottom
+  // of the plotting area, unless the value range runs on below 0.
+  let axis_y = if baseline_above_padding {
+    plot_y0 + plot_h * (1.0 - (0.0 - y_min) / (y_max - y_min))
+  } else {
+    plot_y0 + plot_h
+  };
   if !pictorial_bars.is_empty() {
     let to_px = |x: f64, y: f64| {
       (
@@ -11220,7 +11472,10 @@ pub(crate) fn generate_bar_svg(
     let origin = if look.frame {
       (x_min, y_min)
     } else {
-      (x_min, y_scale.origin(None, None))
+      (
+        explicit_x_axes.map_or(x_min, |(_, axis_x, _)| axis_x),
+        y_scale.origin(None, None),
+      )
     };
     let mut axes_svg = crate::functions::plot_axes::origin_axes_svg(
       &crate::functions::plot_axes::OriginAxes {
@@ -11228,7 +11483,8 @@ pub(crate) fn generate_bar_svg(
         x: x_scale,
         y: y_scale,
         origin,
-        show: (true, true),
+        // The baseline of an explicit x range is drawn below.
+        show: (explicit_x_axes.is_none(), true),
         ticks: show_ticks.then_some((&no_x_ticks, &y_ticks)),
         sf,
         axis_color: &axis_hex,
@@ -11254,6 +11510,14 @@ pub(crate) fn generate_bar_svg(
       ));
     }
     let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
+    if let Some((_, axis_x, baseline_end)) = explicit_x_axes {
+      axes_svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{axis_y:.1}\" x2=\"{:.1}\" \
+         y2=\"{axis_y:.1}\" stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+        px(axis_x),
+        px(baseline_end)
+      ));
+    }
     if show_ticks && n > 0 && look.frame {
       // A frame is ticked (inwards, on its bottom and top edges) at each
       // bar's center and, a little longer, in the middle of each gap
@@ -16756,7 +17020,12 @@ pub(crate) fn parse_explicit_tick_entries(
           _ if crate::functions::graphics::has_explicit_style(&label_expr) => {
             crate::functions::graphics::expr_to_svg_markup(&label_expr)
           }
-          Some(text) => crate::functions::graphics::box_string_to_svg(&text),
+          // Tick labels are set in TraditionalForm: a one-letter symbol in
+          // the string's box code (`"-\!\(\*SubscriptBox[\(d\), \(ox\)]\)"`)
+          // is italic, its plain text upright.
+          Some(text) => {
+            crate::functions::graphics::traditional_box_string_to_svg(&text)
+          }
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))
           }
@@ -17357,21 +17626,24 @@ pub(crate) fn parse_plot_legends(
           {
             crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => match crate::functions::graphics::structured_label_svg(&item) {
-            Some(svg) => format!(
-              "{}{svg}",
-              crate::functions::graphics::STYLED_LABEL_MARKER
-            ),
-            // A mathematical label (`W[u]`) is set in TraditionalForm,
-            // with italic letters, like an axis label.
-            None => {
-              crate::functions::graphics::traditional_math_axis_label(&item)
-                .or_else(|| {
-                  crate::functions::graphics::styled_axis_label(&item)
-                })
-                .unwrap_or_else(|| expr_to_string(&item))
+          _ => {
+            match crate::functions::graphics::structured_legend_label_svg(&item)
+            {
+              Some(svg) => format!(
+                "{}{svg}",
+                crate::functions::graphics::STYLED_LABEL_MARKER
+              ),
+              // A mathematical label (`W[u]`) is set in TraditionalForm,
+              // with italic letters, like an axis label.
+              None => {
+                crate::functions::graphics::traditional_math_axis_label(&item)
+                  .or_else(|| {
+                    crate::functions::graphics::styled_axis_label(&item)
+                  })
+                  .unwrap_or_else(|| expr_to_string(&item))
+              }
             }
-          },
+          }
         })
         .collect();
       (labels, false, false, LegendPosition::Right)

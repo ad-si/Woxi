@@ -811,6 +811,32 @@ mod duration {
   }
 
   #[test]
+  fn sound_rescaled_to_a_duration() {
+    // `Sound[primitives, dur]` rescales the primitives to fill `dur`
+    // seconds, whatever their own lengths add up to.
+    assert_eq!(
+      interpret("Duration[Sound[{SoundNote[0, 1], SoundNote[4, 3]}, 2]]")
+        .unwrap(),
+      "Quantity[2., Seconds]"
+    );
+    assert_eq!(
+      interpret(
+        "Duration[Sound[{SoundNote[{0, 4, 7}, 4], SoundNote[{2, 7, 11}, 1/4]}, 2]]"
+      )
+      .unwrap(),
+      "Quantity[2., Seconds]"
+    );
+    // A sampled segment is stretched the same way.
+    assert_eq!(
+      interpret(
+        "Duration[Sound[SampledSoundList[Table[Sin[n/3.], {n, 800}], 800], 3]]"
+      )
+      .unwrap(),
+      "Quantity[3., Seconds]"
+    );
+  }
+
+  #[test]
   fn unit_conversion() {
     assert_eq!(
       interpret(

@@ -6912,16 +6912,56 @@ fn tf_sum_keeps_order(expr: &Expr) -> bool {
 }
 
 /// The older TraditionalForm order of a sum's terms: by descending power,
-/// numbers last, a two-term sum not leading with its negative term.
+/// numbers last, a two-term sum not leading with its negative term. Terms
+/// of the same power go by the canonical order of their boxes less any
+/// numeric coefficient, so partial fractions read `1/x`, `1/(x + 2)`,
+/// `1/(x - 1)` whatever their numerators are.
 fn tf_sort_by_degree(terms: &mut [(bool, Expr)]) {
-  terms.sort_by(|(_, a), (_, b)| {
-    let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
-    let (ka, kb) = (key(a), key(b));
-    ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let mut keyed: Vec<((bool, f64), Option<Expr>, (bool, Expr))> = terms
+    .iter()
+    .map(|(neg, t)| ((tf_is_number(t), -tf_degree(t)), None, (*neg, t.clone())))
+    .collect();
+  // The box of a term is only built for the terms that tie.
+  for i in 0..keyed.len() {
+    let tied = (0..keyed.len()).any(|j| {
+      j != i
+        && keyed[j].0.0 == keyed[i].0.0
+        && keyed[j].0.1.total_cmp(&keyed[i].0.1).is_eq()
+    });
+    if tied && !keyed[i].0.0 {
+      keyed[i].1 = Some(tf(&tf_without_numeric_coefficient(&keyed[i].2.1)));
+    }
+  }
+  keyed.sort_by(|(ka, ba, _), (kb, bb, _)| {
+    ka.0
+      .cmp(&kb.0)
+      .then(ka.1.total_cmp(&kb.1))
+      .then_with(|| match (ba, bb) {
+        (Some(a), Some(b)) => canonical_cmp(a, b),
+        _ => std::cmp::Ordering::Equal,
+      })
   });
+  for (slot, (_, _, term)) in terms.iter_mut().zip(keyed) {
+    *slot = term;
+  }
   let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
   if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
     terms.swap(0, 1);
+  }
+}
+
+/// A term of a sum less its numeric factors: `3/(4 (x + 2))` gives
+/// `1/(x + 2)`, `-2 x y` gives `x y`. A term with no other factor is kept.
+fn tf_without_numeric_coefficient(term: &Expr) -> Expr {
+  let mut factors = Vec::new();
+  tf_flatten_times(term, &mut factors);
+  let rest: Vec<Expr> =
+    factors.into_iter().filter(|f| !tf_is_number(f)).collect();
+  match rest.len() {
+    0 => term.clone(),
+    1 => rest.into_iter().next().unwrap(),
+    _ => call("Times", rest),
   }
 }
 
@@ -6932,7 +6972,8 @@ fn tf_is_number(t: &Expr) -> bool {
 
 /// A term's power in its variables for the older TraditionalForm order:
 /// exponents of symbols add up across a product (`x y` and `x^2` are 2,
-/// `√x` is 1/2, `1/x` is -1); numbers and other function calls count 0.
+/// `√x` is 1/2, `1/x` is -1), a sum has the power of its highest term;
+/// numbers and other function calls count 0.
 fn tf_degree(t: &Expr) -> f64 {
   match t {
     Expr::Identifier(_) => {
@@ -6956,6 +6997,15 @@ fn tf_degree(t: &Expr) -> f64 {
       right,
     } => tf_degree(left) - tf_degree(right),
     Expr::UnaryOp { operand, .. } => tf_degree(operand),
+    // A sum has the power of its highest term, so `1/(x + 2)` is -1.
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().map(tf_degree).fold(0.0, f64::max)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } => tf_degree(left).max(tf_degree(right)),
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       0.5 * tf_degree(&args[0])
     }

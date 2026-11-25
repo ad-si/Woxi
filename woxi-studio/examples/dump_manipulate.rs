@@ -10,9 +10,14 @@
 //! `<svg-out-dir>/widget-<n>.svg` so the visual output can be inspected.
 //! Set `OVERRIDE="x=0.5,y=1"` to render the SVG with those control values
 //! in place of the initial ones (e.g. to compare against a stored snapshot).
+//! Set `MOVE="x=0.5,y=1"` to move the controls themselves to those values
+//! and re-evaluate, so the side displays are dumped at them as well.
 //! Set `CLICKS="1.5,2.5;9.5,2.5"` to click the picture's `ClickPane` at
 //! those pane coordinates in turn; the variables (and, with `svg-out-dir`,
 //! the picture as `widget-<n>-click-<k>.svg`) are dumped after each click.
+//! Set `TICKS=40` to press play and advance the animation that many ticks;
+//! the control values (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-ticks.svg`) are dumped afterwards.
 
 use std::path::PathBuf;
 
@@ -150,6 +155,16 @@ fn main() {
         state.apply_saved_variables(
           &woxi::notebook::extract_saved_manipulate_variables(&next.content),
         );
+      }
+      // `MOVE="x=0.5,y=1"` moves the controls themselves and re-evaluates,
+      // so the side displays (not just the picture) show those values.
+      if let Ok(mv) = std::env::var("MOVE") {
+        let saved: Vec<(String, String)> = split_top_level_commas(&mv)
+          .iter()
+          .filter_map(|kv| kv.split_once('='))
+          .map(|(k, v)| (k.to_string(), v.to_string()))
+          .collect();
+        state.apply_saved_variables(&saved);
       }
       widget_count += 1;
       println!("=== Interactive widget #{widget_count} ===");
@@ -292,6 +307,37 @@ fn main() {
       }
       if let Ok(clicks) = std::env::var("CLICKS") {
         click_pane(&mut state, &clicks, widget_count, svg_out_dir.as_deref());
+      }
+      if let Some(ticks) = std::env::var("TICKS")
+        .ok()
+        .and_then(|t| t.parse::<usize>().ok())
+      {
+        if !state.playing {
+          state.toggle_play();
+        }
+        let started = std::time::Instant::now();
+        for _ in 0..ticks {
+          state.advance_animation();
+        }
+        println!(
+          "after {ticks} ticks ({:.2?}): graphics={} text={:?} error={:?}",
+          started.elapsed(),
+          state.graphics_handle.is_some(),
+          state.text_output,
+          state.error
+        );
+        for c in state.controls.iter().filter(|c| c.binds_variable()) {
+          println!("  {} = {}", c.name(), c.current_code());
+        }
+        if let Some(dir) = &svg_out_dir
+          && let Some(handle) = &state.graphics_handle
+          && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+        {
+          std::fs::create_dir_all(dir).expect("create svg out dir");
+          let out = dir.join(format!("widget-{widget_count}-ticks.svg"));
+          std::fs::write(&out, bytes).expect("write svg");
+          println!("wrote {}", out.display());
+        }
       }
       if std::env::var("PRESS_BUTTONS").is_ok() {
         let mut st = state;

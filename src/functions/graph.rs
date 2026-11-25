@@ -1130,6 +1130,22 @@ fn graph_render(
     }
     pts
   };
+  // `AspectRatio -> r` over a computed layout reshapes the layout itself:
+  // the embedding is stretched to the asked height-to-width ratio and the
+  // picture then keeps its natural proportions, so the vertex markers stay
+  // round (stretching the finished picture instead smeared them into
+  // ellipses). The picture's window is then cut to the same ratio around
+  // the layout (see the end), which also gives a layout with no width or
+  // no height — a single chain — its room.
+  let layout_aspect = aspect_ratio
+    .as_ref()
+    .filter(|_| layout_is_computed)
+    .and_then(crate::functions::math_ast::try_eval_to_f64)
+    .filter(|ratio| *ratio > 0.0);
+  let positions = match layout_aspect {
+    Some(ratio) => stretch_layout_to_aspect_ratio(positions, ratio),
+    None => positions,
+  };
   // The caller's units of an internal point, and the transform taking
   // graphics drawn in the caller's units onto the internal scale.
   let to_caller = |(x, y): (f64, f64)| {
@@ -1715,6 +1731,9 @@ fn graph_render(
     (coord_scale, coord_center)
   };
 
+  // The widest vertex label, in points, for the room it needs beside the
+  // window of a layout stretched to an `AspectRatio`.
+  let mut widest_label = 0.0_f64;
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
@@ -1827,6 +1846,11 @@ fn graph_render(
       // pre-stringifying it) so a structured name like `Subscript[x, 1]`
       // still typesets instead of showing its literal head name.
       let styled = call("Style", vec![label, Expr::Integer(10)]);
+      widest_label =
+        widest_label.max(crate::functions::plot_padding::text_width(
+          &crate::functions::graphics::graphics_text_content(&styled),
+          10.0,
+        ));
       // On an explicit `"CircularEmbedding"` an automatically placed label
       // sits outside the circle, in line with its vertex's spoke.
       let spoke = (x - layout_center.0, y - layout_center.1);
@@ -1882,15 +1906,15 @@ fn graph_render(
     primitives.push(e);
   }
   let content = Expr::List(primitives.into());
-  // A graph is drawn at Wolfram's 360-point default unless the caller
-  // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
-  // wide, short strip and has to get one.
-  let image_size_opt = rule_expr(
-    id_expr("ImageSize"),
-    image_size.unwrap_or(Expr::Integer(360)),
-  );
-
-  let mut graphics_args = vec![content, image_size_opt];
+  // The caller's `ImageSize` — `LayeredGraphPlot[…, ImageSize -> {200, 50}]`
+  // asks for a wide, short strip and has to get one.
+  let mut graphics_args = vec![content];
+  // Left unsized, the picture takes the automatic size of any graphic:
+  // 360 points wide, or less when that would make a tall, narrow drawing
+  // (a single chain of a layered plot) run past the height limit.
+  if let Some(size) = image_size {
+    graphics_args.push(rule_expr(id_expr("ImageSize"), size));
+  }
   // The title is the picture's own `PlotLabel`, set above the plot area in
   // the default label style, as `GraphPlot` returns it.
   if let Some(label) = plot_label {
@@ -1899,6 +1923,60 @@ fn graph_render(
   if let Some(bg) = background {
     graphics_args.push(rule_expr(id_expr("Background"), bg));
   }
+  // The window around a layout stretched to an `AspectRatio`: as many
+  // units tall per unit of width as the picture is, so nothing in it is
+  // distorted.
+  let mut layout_window = false;
+  let shown_range = shown_range.or_else(|| {
+    let ratio = layout_aspect?;
+    let corners: Vec<(f64, f64)> =
+      positions.iter().map(|&p| to_caller(p)).collect();
+    let span = |f: fn(&(f64, f64)) -> f64| {
+      corners
+        .iter()
+        .map(f)
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+          (lo.min(v), hi.max(v))
+        })
+    };
+    let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+    let width = (x1 - x0).max((y1 - y0) / ratio);
+    if !(width.is_finite() && width > 1e-9) {
+      return None;
+    }
+    // Room for the vertex markers and arrowheads on the outline.
+    let half_width = width / 2.0
+      + LAYOUT_WINDOW_MARGIN * width
+      + 2.0 * vertex_radius / coord_scale;
+    let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+    layout_window = true;
+    Some(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(
+        vec![
+          pair(cx - half_width, cx + half_width),
+          pair(cy - half_width * ratio, cy + half_width * ratio),
+        ]
+        .into(),
+      ),
+    ))
+  });
+  // That window is exact, so the vertex labels — set up and to the right
+  // of their markers at a fixed size — get their room as padding there.
+  if layout_window && widest_label > 0.0 {
+    let side = Expr::Real(widest_label + LABEL_PADDING_PT);
+    let line = Expr::Real(10.0 + LABEL_PADDING_PT);
+    graphics_args.push(rule_expr(
+      id_expr("ImagePadding"),
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(LABEL_PADDING_PT), side].into()),
+          Expr::List(vec![Expr::Real(LABEL_PADDING_PT), line].into()),
+        ]
+        .into(),
+      ),
+    ));
+  }
   if let Some(range) = shown_range {
     graphics_args.push(range);
   }
@@ -1906,6 +1984,48 @@ fn graph_render(
     graphics_args.push(rule_expr(id_expr("AspectRatio"), ratio));
   }
   graphics_ast(&graphics_args)
+}
+
+/// The blank margin around a layout stretched to an `AspectRatio`, as a
+/// fraction of the layout's width.
+const LAYOUT_WINDOW_MARGIN: f64 = 0.04;
+
+/// The gap, in points, between a vertex label and the picture's edge.
+const LABEL_PADDING_PT: f64 = 6.0;
+
+/// Stretch a layout about its center so its bounding box is `ratio` times
+/// as tall as it is wide, keeping its larger extent. A layout without
+/// width or height is returned unchanged.
+fn stretch_layout_to_aspect_ratio(
+  positions: Vec<(f64, f64)>,
+  ratio: f64,
+) -> Vec<(f64, f64)> {
+  let bounds = |f: fn(&(f64, f64)) -> f64| {
+    positions
+      .iter()
+      .map(f)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      })
+  };
+  let (x0, x1) = bounds(|p| p.0);
+  let (y0, y1) = bounds(|p| p.1);
+  let (w, h) = (x1 - x0, y1 - y0);
+  if !(w > 1e-9 && h > 1e-9) {
+    return positions;
+  }
+  // Shrink one direction rather than grow the other, so the layout keeps
+  // the extent the vertex sizes are derived from.
+  let (sx, sy) = if h / w > ratio {
+    (1.0, ratio * w / h)
+  } else {
+    (h / (ratio * w), 1.0)
+  };
+  let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+  positions
+    .into_iter()
+    .map(|(x, y)| (cx + (x - cx) * sx, cy + (y - cy) * sy))
+    .collect()
 }
 
 /// A `VertexSize` setting.
@@ -4650,7 +4770,6 @@ fn placed_edge_label(label: &Expr) -> (&Expr, EdgeLabelPlace) {
 /// The text of an edge label: strings as they are, `Placed[label, pos]`
 /// looked through, anything else in its formatted output form (so
 /// `NumberForm[x, 3]` shows as the rounded number).
-
 fn edge_label_text(label: &Expr) -> String {
   let (label, _) = placed_edge_label(label);
   match label {
@@ -6145,59 +6264,125 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Depth-first individualization: split the first cell of more than one
   // vertex on each of its members in turn, keeping the smallest edge list.
-  let mut best: Option<(Vec<(usize, usize)>, Vec<usize>)> = None;
-  let mut budget = 20_000usize;
-  fn search(
-    colors: Vec<usize>,
-    out: &[Vec<usize>],
-    inn: &[Vec<usize>],
-    relabeled: &dyn Fn(&[usize]) -> Vec<(usize, usize)>,
-    best: &mut Option<(Vec<(usize, usize)>, Vec<usize>)>,
-    budget: &mut usize,
-  ) {
-    if *budget == 0 {
-      return;
-    }
-    *budget -= 1;
-    let n = colors.len();
-    let mut counts = vec![0usize; n];
-    for &c in &colors {
-      counts[c] += 1;
-    }
-    let Some(cell) = (0..n).find(|&c| counts[c] > 1) else {
-      let candidate = relabeled(&colors);
-      if best.as_ref().is_none_or(|(b, _)| candidate < *b) {
-        *best = Some((candidate, colors));
+  //
+  // Two leaves with the same edge list differ by an automorphism of the
+  // graph. A member of a cell that such an automorphism (one that leaves
+  // the vertices individualized so far in place) maps an already tried
+  // member onto heads a subtree with the very same leaves, so it is
+  // skipped. Without this a graph with many interchangeable vertices (the
+  // leaves of a star) has more leaves than can be visited.
+  struct Search<'a> {
+    out: &'a [Vec<usize>],
+    inn: &'a [Vec<usize>],
+    relabeled: &'a dyn Fn(&[usize]) -> Vec<(usize, usize)>,
+    best: Option<(Vec<(usize, usize)>, Vec<usize>)>,
+    automorphisms: Vec<Vec<usize>>,
+    path: Vec<usize>,
+    budget: usize,
+  }
+  impl Search<'_> {
+    /// Whether a known automorphism fixing the current path maps one of
+    /// `tried` onto `v`.
+    fn equivalent_to_tried(&self, v: usize, tried: &[usize]) -> bool {
+      if tried.is_empty() || self.automorphisms.is_empty() {
+        return false;
       }
-      return;
-    };
-    for v in (0..n).filter(|&v| colors[v] == cell) {
-      // `v` takes the cell's first label; the rest of the cell shifts up.
-      let mut split: Vec<usize> = colors
-        .iter()
-        .enumerate()
-        .map(|(w, &c)| {
-          if c > cell || (c == cell && w != v) {
-            2 * c + 1
-          } else {
-            2 * c
-          }
-        })
-        .collect();
-      let mut distinct = split.clone();
-      distinct.sort_unstable();
-      distinct.dedup();
-      for c in &mut split {
-        *c = distinct.binary_search(c).unwrap_or(0);
+      let n = self.out.len();
+      let mut parent: Vec<usize> = (0..n).collect();
+      fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+          parent[x] = parent[parent[x]];
+          x = parent[x];
+        }
+        x
       }
-      refine_colors(&mut split, out, inn);
-      search(split, out, inn, relabeled, best, budget);
-      if *budget == 0 {
+      for g in &self.automorphisms {
+        if self.path.iter().any(|&p| g[p] != p) {
+          continue;
+        }
+        for (x, &y) in g.iter().enumerate() {
+          let (rx, ry) = (find(&mut parent, x), find(&mut parent, y));
+          parent[rx] = ry;
+        }
+      }
+      let root = find(&mut parent, v);
+      tried.iter().any(|&u| find(&mut parent, u) == root)
+    }
+
+    fn run(&mut self, colors: Vec<usize>) {
+      if self.budget == 0 {
         return;
+      }
+      self.budget -= 1;
+      let n = colors.len();
+      let mut counts = vec![0usize; n];
+      for &c in &colors {
+        counts[c] += 1;
+      }
+      let Some(cell) = (0..n).find(|&c| counts[c] > 1) else {
+        let candidate = (self.relabeled)(&colors);
+        match &self.best {
+          Some((b, labels)) if candidate == *b => {
+            // The vertex carrying each label here is the image of the
+            // vertex carrying it in the best labeling.
+            let mut at_label = vec![0usize; n];
+            for (v, &l) in colors.iter().enumerate() {
+              at_label[l] = v;
+            }
+            self
+              .automorphisms
+              .push(labels.iter().map(|&l| at_label[l]).collect());
+          }
+          Some((b, _)) if candidate > *b => {}
+          _ => self.best = Some((candidate, colors)),
+        }
+        return;
+      };
+      let mut tried: Vec<usize> = Vec::new();
+      for v in (0..n).filter(|&v| colors[v] == cell) {
+        if self.equivalent_to_tried(v, &tried) {
+          continue;
+        }
+        tried.push(v);
+        // `v` takes the cell's first label; the rest of the cell shifts up.
+        let mut split: Vec<usize> = colors
+          .iter()
+          .enumerate()
+          .map(|(w, &c)| {
+            if c > cell || (c == cell && w != v) {
+              2 * c + 1
+            } else {
+              2 * c
+            }
+          })
+          .collect();
+        let mut distinct = split.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        for c in &mut split {
+          *c = distinct.binary_search(c).unwrap_or(0);
+        }
+        refine_colors(&mut split, self.out, self.inn);
+        self.path.push(v);
+        self.run(split);
+        self.path.pop();
+        if self.budget == 0 {
+          return;
+        }
       }
     }
   }
-  search(colors, &out, &inn, &relabeled, &mut best, &mut budget);
+  let mut search = Search {
+    out: &out,
+    inn: &inn,
+    relabeled: &relabeled,
+    best: None,
+    automorphisms: Vec::new(),
+    path: Vec::new(),
+    budget: 20_000,
+  };
+  search.run(colors);
+  let best = search.best;
   let Some((edge_list, _)) = best else {
     return Ok(unevaluated());
   };
@@ -7019,11 +7204,16 @@ fn resolve_vertex_label(spec: &Expr, vertex: &Expr) -> Option<(Expr, String)> {
   }
 }
 
-/// Whether a vertex expression is the one a `VertexStyle` rule names.
-/// Any `Style[…]` wrapper already on the vertex is looked through.
+/// Whether a vertex expression is the one a `VertexStyle` rule names,
+/// literally or as a pattern. Any `Style[…]` wrapper already on the vertex is looked through.
 fn vertex_matches_rule(vertex: &Expr, target: &Expr) -> bool {
-  expr_to_string(unwrap_vertex_style(vertex).0)
-    == expr_to_string(unwrap_vertex_style(target).0)
+  let (vertex, target) =
+    (unwrap_vertex_style(vertex).0, unwrap_vertex_style(target).0);
+  expr_to_string(vertex) == expr_to_string(target)
+    // The rule may also name its vertices by a pattern (`{"C", _}`).
+    || (crate::evaluator::pattern_matching::contains_pattern(target)
+      && crate::evaluator::pattern_matching::match_pattern(vertex, target)
+        .is_some())
 }
 
 /// Wrap `part` in `Style[part, directives…]` when one of the `rules`
@@ -11760,12 +11950,16 @@ fn graph_parts(expr: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
   ))
 }
 
-/// The `Graphics3D` picture of a `Graph3D[…]` that carries explicit
-/// `VertexCoordinates`: gray edges as lines and one sphere per vertex, sized
-/// by `VertexSize` (a number or `{"Scaled", s}`, relative to the extent of
-/// the vertices). Accepts `Graph3D[graph, opts…]` and
-/// `Graph3D[vertices, edges, opts…]`. `None` when there are no 3D
-/// coordinates to draw at.
+/// The `Graphics3D` picture of a `Graph3D[…]`: one line per edge and one
+/// sphere per vertex, at the graph's `VertexCoordinates` or, without them,
+/// at a spring embedding in space. Accepts `Graph3D[graph, opts…]`,
+/// `Graph3D[vertices, edges, opts…]` and `Graph3D[edges, opts…]`.
+///
+/// `VertexSize`, `VertexStyle` and `EdgeStyle` are read as `Graph` reads
+/// them (a setting for every part, per-part rules, or both); edges joining
+/// the same two vertices are drawn side by side. Every option that is not
+/// a graph option is handed on to the `Graphics3D`. `None` when the
+/// argument is not a graph or its coordinates are not points in space.
 pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
@@ -11777,34 +11971,78 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
     Expr::FunctionCall { name, .. } if name == "Graph" => {
       (args[0].clone(), args[1..].to_vec())
     }
-    _ => (
-      Expr::FunctionCall {
-        name: "Graph".into(),
-        args: args.clone(),
-      },
+    // `Graph3D[vertices, edges, opts…]` or `Graph3D[edges, opts…]`: `Graph`
+    // tells the two apart, works out the vertex list and takes in options
+    // given as one list.
+    Expr::List(_) => (
+      crate::evaluator::evaluate_expr_to_expr(&call("Graph", args.to_vec()))
+        .ok()?,
       Vec::new(),
     ),
+    _ => return None,
   };
   let (vertices, edges, mut options) = graph_parts(&inner)?;
   options.extend(outer_options);
-  let coordinates = graph_option(&options, "VertexCoordinates")?;
-  let Expr::List(coords) = &coordinates else {
-    return None;
-  };
-  let points: Vec<[f64; 3]> = coords
-    .iter()
-    .map(|c| match c {
-      Expr::List(xyz) if xyz.len() == 3 => Some([
-        crate::functions::math_ast::try_eval_to_f64(&xyz[0])?,
-        crate::functions::math_ast::try_eval_to_f64(&xyz[1])?,
-        crate::functions::math_ast::try_eval_to_f64(&xyz[2])?,
-      ]),
-      _ => None,
+  // A later setting of an option (one given to `Graph3D` itself) wins over
+  // the one the wrapped graph carries.
+  let option = |name: &str| {
+    options.iter().rev().find_map(|o| {
+      match crate::evaluator::dispatch::list_operations::as_rule(o) {
+        Some((Expr::Identifier(n), value)) if n == name => Some(value.clone()),
+        _ => None,
+      }
     })
-    .collect::<Option<_>>()?;
-  if points.len() != vertices.len() {
+  };
+
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .rev()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let pairs: Vec<(usize, usize)> = edges
+    .iter()
+    .filter_map(|e| {
+      let (u, v, _) = edge_endpoints(e)?;
+      Some((
+        *index.get(&expr_to_string(&u))?,
+        *index.get(&expr_to_string(&v))?,
+      ))
+    })
+    .collect();
+
+  let coordinates = option("VertexCoordinates");
+  let points: Vec<[f64; 3]> = match &coordinates {
+    Some(Expr::List(coords)) => {
+      let points: Vec<[f64; 3]> = coords
+        .iter()
+        .map(|c| match c {
+          Expr::List(xyz) if xyz.len() == 3 => Some([
+            crate::functions::math_ast::try_eval_to_f64(&xyz[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&xyz[1])?,
+            crate::functions::math_ast::try_eval_to_f64(&xyz[2])?,
+          ]),
+          _ => None,
+        })
+        .collect::<Option<_>>()?;
+      if points.len() != vertices.len() {
+        return None;
+      }
+      points
+    }
+    Some(Expr::Identifier(s)) if s == "Automatic" => {
+      spring_points_3d(vertices.len(), &pairs)
+    }
+    Some(_) => return None,
+    None => spring_points_3d(vertices.len(), &pairs),
+  };
+  if points.is_empty() {
     return None;
   }
+
+  let distance = |p: &[f64; 3], q: &[f64; 3]| {
+    (0..3).map(|d| (p[d] - q[d]).powi(2)).sum::<f64>().sqrt()
+  };
   let extent = (0..3)
     .map(|d| {
       let lo = points.iter().map(|p| p[d]).fold(f64::INFINITY, f64::min);
@@ -11816,58 +12054,198 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
     })
     .fold(0.0_f64, f64::max);
   let extent = if extent > 0.0 { extent } else { 1.0 };
-  let size = graph_option(&options, "VertexSize");
-  let scaled = match &size {
-    Some(Expr::List(items)) if items.len() == 2 => {
-      crate::functions::math_ast::try_eval_to_f64(&items[1])
-    }
-    Some(other) => crate::functions::math_ast::try_eval_to_f64(other),
-    None => None,
-  }
-  .unwrap_or(0.03);
-  let radius = scaled * extent / 2.0;
+  let min_dist = points
+    .iter()
+    .enumerate()
+    .flat_map(|(i, p)| points[i + 1..].iter().map(move |q| (p, q)))
+    .map(|(p, q)| distance(p, q))
+    .filter(|d| *d > 1e-12)
+    .fold(f64::INFINITY, f64::min);
+  let auto_radius = 0.03 * extent / 2.0;
+  // As for a flat `Graph`: a number is a fraction of the smallest distance
+  // between two vertices, `{"Scaled", s}` one of the larger extent.
+  let size_radius = |size: VertexSize| match size {
+    VertexSize::Relative(s) if min_dist.is_finite() => s * min_dist / 2.0,
+    VertexSize::Relative(_) => auto_radius,
+    VertexSize::Scaled(s) => s * extent / 2.0,
+  };
+  let (size_rules, size_defaults) =
+    option("VertexSize").map_or_default(|s| split_style_rules(&s));
+  let default_radius = size_defaults
+    .first()
+    .and_then(parse_vertex_size)
+    .map_or(auto_radius, size_radius);
+  let (style_rules, style_defaults) =
+    option("VertexStyle").map_or_default(|s| split_style_rules(&s));
+  let default_vertex_style = if style_defaults.is_empty() {
+    vec![call(
+      "RGBColor",
+      vec![Expr::Real(0.37), Expr::Real(0.51), Expr::Real(0.71)],
+    )]
+  } else {
+    style_defaults
+  };
+
+  let radii: Vec<f64> = vertices
+    .iter()
+    .map(|v| {
+      size_rules
+        .iter()
+        .find(|(target, _)| vertex_matches_rule(v, target))
+        .and_then(|(_, s)| parse_vertex_size(s))
+        .map_or(default_radius, size_radius)
+    })
+    .collect();
 
   let point = |p: &[f64; 3]| {
     Expr::List(
       vec![Expr::Real(p[0]), Expr::Real(p[1]), Expr::Real(p[2])].into(),
     )
   };
-  let index: std::collections::HashMap<String, usize> = vertices
+
+  // Edges between the same two vertices are spread over parallel lines,
+  // a tenth of the edge's length apart.
+  let mut multiplicity: std::collections::HashMap<(usize, usize), usize> =
+    std::collections::HashMap::new();
+  for &(i, j) in &pairs {
+    *multiplicity.entry((i.min(j), i.max(j))).or_default() += 1;
+  }
+  let mut drawn: std::collections::HashMap<(usize, usize), usize> =
+    std::collections::HashMap::new();
+  let lines: Vec<Expr> = pairs
     .iter()
-    .enumerate()
-    .rev()
-    .map(|(i, v)| (expr_to_string(v), i))
-    .collect();
-  let lines: Vec<Expr> = edges
-    .iter()
-    .filter_map(|e| {
-      let (u, v, _) = edge_endpoints(e)?;
-      let (i, j) = (
-        *index.get(&expr_to_string(&u))?,
-        *index.get(&expr_to_string(&v))?,
-      );
-      Some(call(
+    .filter(|(i, j)| i != j)
+    .map(|&(i, j)| {
+      let key = (i.min(j), i.max(j));
+      let count = multiplicity[&key];
+      let nth = drawn.entry(key).or_default();
+      let slot = *nth as f64 - (count as f64 - 1.0) / 2.0;
+      *nth += 1;
+      let (p, q) = (points[key.0], points[key.1]);
+      let dir = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+      let length = distance(&p, &q);
+      // The part of an edge inside a vertex's sphere is hidden by it, so
+      // the line runs from surface to surface.
+      let (p, q) = if length > radii[key.0] + radii[key.1] {
+        let along = |r: f64| [0, 1, 2].map(|d| dir[d] / length * r);
+        let (a, b) = (along(radii[key.0]), along(radii[key.1]));
+        (
+          [p[0] + a[0], p[1] + a[1], p[2] + a[2]],
+          [q[0] - b[0], q[1] - b[1], q[2] - b[2]],
+        )
+      } else {
+        (p, q)
+      };
+      // A direction across the edge: the edge crossed with the axis it is
+      // least aligned with.
+      let axis = (0..3)
+        .min_by(|&a, &b| dir[a].abs().total_cmp(&dir[b].abs()))
+        .unwrap_or(0);
+      let mut unit = [0.0; 3];
+      unit[axis] = 1.0;
+      let across = [
+        dir[1] * unit[2] - dir[2] * unit[1],
+        dir[2] * unit[0] - dir[0] * unit[2],
+        dir[0] * unit[1] - dir[1] * unit[0],
+      ];
+      let norm = distance(&across, &[0.0; 3]).max(1e-12);
+      let shift = slot * 0.1 * length / norm;
+      let moved = |r: [f64; 3]| {
+        [
+          r[0] + across[0] * shift,
+          r[1] + across[1] * shift,
+          r[2] + across[2] * shift,
+        ]
+      };
+      call(
         "Line",
-        vec![Expr::List(
-          vec![point(&points[i]), point(&points[j])].into(),
-        )],
-      ))
+        vec![Expr::List(vec![point(&moved(p)), point(&moved(q))].into())],
+      )
     })
     .collect();
-  let spheres: Vec<Expr> = points
+  let (_, edge_defaults) =
+    option("EdgeStyle").map_or_default(|s| split_style_rules(&s));
+  let mut edge_group = if edge_defaults.is_empty() {
+    vec![call("GrayLevel", vec![Expr::Real(0.6)])]
+  } else {
+    edge_defaults
+  };
+  edge_group.extend(lines);
+
+  let spheres: Vec<Expr> = vertices
     .iter()
-    .map(|p| call("Sphere", vec![point(p), Expr::Real(radius)]))
+    .zip(points.iter().zip(&radii))
+    .map(|(v, (p, &radius))| {
+      let mut group = style_rules
+        .iter()
+        .find(|(target, _)| vertex_matches_rule(v, target))
+        .map_or_else(
+          || default_vertex_style.clone(),
+          |(_, s)| collect_directives(s),
+        );
+      group.push(call("Sphere", vec![point(p), Expr::Real(radius)]));
+      Expr::List(group.into())
+    })
     .collect();
-  let prims = vec![
-    call("GrayLevel", vec![Expr::Real(0.6)]),
-    Expr::List(lines.into()),
-    call(
-      "RGBColor",
-      vec![Expr::Real(0.37), Expr::Real(0.51), Expr::Real(0.71)],
-    ),
-    Expr::List(spheres.into()),
-  ];
-  Some(call("Graphics3D", vec![Expr::List(prims.into())]))
+
+  let mut graphics_args = vec![Expr::List(
+    vec![Expr::List(edge_group.into()), Expr::List(spheres.into())].into(),
+  )];
+  // Whatever is not a graph option belongs to the picture; the last
+  // setting of each wins, so it goes first.
+  let mut seen: Vec<String> = Vec::new();
+  for o in options.iter().rev() {
+    let Some((Expr::Identifier(n), _)) =
+      crate::evaluator::dispatch::list_operations::as_rule(o)
+    else {
+      continue;
+    };
+    let graph_option = ["Vertex", "Edge", "Graph", "Multiedge", "Directed"]
+      .iter()
+      .any(|prefix| n.starts_with(prefix));
+    if !graph_option && !seen.contains(n) {
+      seen.push(n.clone());
+      graphics_args.push(o.clone());
+    }
+  }
+  // The front end draws a graph without a bounding box.
+  if !seen.iter().any(|n| n == "Boxed") {
+    graphics_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Boxed".into())),
+      replacement: Box::new(Expr::Identifier("False".into())),
+    });
+  }
+  // … and under white light, so a vertex shows the color it was given.
+  if !seen.iter().any(|n| n == "Lighting") {
+    graphics_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Lighting".into())),
+      replacement: Box::new(Expr::String("Neutral".into())),
+    });
+  }
+  Some(call("Graphics3D", graphics_args))
+}
+
+/// A spring embedding of a graph in space, one point per vertex.
+fn spring_points_3d(n: usize, edges: &[(usize, usize)]) -> Vec<[f64; 3]> {
+  force_layout_nd(n, edges, 3)
+    .into_iter()
+    .map(|p| [p[0], p[1], p[2]])
+    .collect()
+}
+
+/// The rendered picture of a `Graph3D[…]` (see [`graph3d_to_graphics3d`]),
+/// or `None` when it is not a graph that can be drawn.
+pub(crate) fn graph3d_render(expr: &Expr) -> Option<Expr> {
+  let picture = graph3d_to_graphics3d(expr)?;
+  let Expr::FunctionCall { name, args } = &picture else {
+    return None;
+  };
+  if name != "Graphics3D" {
+    return None;
+  }
+  crate::functions::plot3d::graphics3d_ast(args)
+    .ok()
+    .filter(|g| matches!(g, Expr::Graphics { .. }))
 }
 
 /// The value a graph option carries, if the graph sets it.
