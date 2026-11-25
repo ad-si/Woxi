@@ -11907,16 +11907,14 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
     VertexSize::Relative(_) => auto_radius,
     VertexSize::Scaled(s) => s * extent / 2.0,
   };
-  let (size_rules, size_defaults) = option("VertexSize")
-    .map(|s| split_style_rules(&s))
-    .unwrap_or_default();
+  let (size_rules, size_defaults) =
+    option("VertexSize").map_or_default(|s| split_style_rules(&s));
   let default_radius = size_defaults
     .first()
     .and_then(parse_vertex_size)
     .map_or(auto_radius, size_radius);
-  let (style_rules, style_defaults) = option("VertexStyle")
-    .map(|s| split_style_rules(&s))
-    .unwrap_or_default();
+  let (style_rules, style_defaults) =
+    option("VertexStyle").map_or_default(|s| split_style_rules(&s));
   let default_vertex_style = if style_defaults.is_empty() {
     vec![call(
       "RGBColor",
@@ -12003,9 +12001,8 @@ pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
       )
     })
     .collect();
-  let (_, edge_defaults) = option("EdgeStyle")
-    .map(|s| split_style_rules(&s))
-    .unwrap_or_default();
+  let (_, edge_defaults) =
+    option("EdgeStyle").map_or_default(|s| split_style_rules(&s));
   let mut edge_group = if edge_defaults.is_empty() {
     vec![call("GrayLevel", vec![Expr::Real(0.6)])]
   } else {
