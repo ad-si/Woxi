@@ -3036,21 +3036,30 @@ fn find_constraint_spans(
   let mut spans = Vec::new();
   let mut i = 0;
   while i < s.len() {
-    if let Some(caps) = re.captures_at(s, i)
-      && let Some(m) = caps.get(0)
-      && m.start() == i
-      && !m.as_str().is_empty()
-      && caps_satisfy_constraints(&caps, constraints)
-    {
+    // The search reports the leftmost match at or after `i`, so no match
+    // starts between `i` and it: jump there instead of retrying every
+    // character, which was quadratic on a long text with sparse matches
+    // (seconds for one `StringContainsQ` on a 500 kB string). No match at
+    // all ends the scan.
+    let Some(caps) = re.captures_at(s, i) else {
+      break;
+    };
+    let Some(m) = caps.get(0) else {
+      break;
+    };
+    if m.start() > i {
+      i = m.start();
+      continue;
+    }
+    let ch = s[i..].chars().next().unwrap();
+    if !m.as_str().is_empty() && caps_satisfy_constraints(&caps, constraints) {
       spans.push((m.start(), m.end()));
-      let ch = s[i..].chars().next().unwrap();
       i = if overlapping {
         i + ch.len_utf8()
       } else {
         m.end()
       };
     } else {
-      let ch = s[i..].chars().next().unwrap();
       i += ch.len_utf8();
     }
   }
@@ -6053,7 +6062,11 @@ fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
   } else {
     ("", trimmed)
   };
-  let prec_digits = prec.round() as i64;
+  let prec_digits = if prec > 0.0 {
+    crate::bigfloat_shown_digits(body, prec) as i64
+  } else {
+    prec.round() as i64
+  };
   // Compact storage (`d.ddd…e<exponent>`): round the mantissa and keep the
   // exponent, renormalizing when the rounding carries into a new digit.
   if let Some((mantissa, exponent)) =
@@ -6190,6 +6203,10 @@ fn resolve_form_wrappers(expr: &Expr) -> Expr {
 /// custom box delimiters (`<~`, `~>`, etc.) surface in the rendered
 /// TeX.
 fn box_ast_to_tex(expr: &Expr) -> String {
+  if let Some(plain_box) = crate::functions::graphics::script_template_box(expr)
+  {
+    return box_ast_to_tex(&plain_box);
+  }
   fn tex_special_chars(s: &str) -> String {
     s.replace('~', "\\sim ")
   }
@@ -6393,14 +6410,7 @@ fn expr_to_tex_inner(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => tex_real(*f),
-    Expr::BigFloat(digits, prec) => {
-      // TeX rendering of a precision-tagged BigFloat uses the
-      // plain decimal digits (no `…` precision marker), padded
-      // with trailing zeros to show all `prec` significant
-      // digits. wolframscript's `-14.`3 // TeXForm` → `-14.0`
-      // (3 sig digits = "14" + "0").
-      pad_bigfloat_to_precision(digits, *prec)
-    }
+    Expr::BigFloat(digits, prec) => tex_bigfloat(expr, digits, *prec),
     Expr::String(s) => format!("\\text{{{}}}", tex_escape_text(s)),
     // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
     Expr::Raw(s) => format!("\\text{{{s}}}"),
@@ -6933,6 +6943,59 @@ fn tex_real(f: f64) -> String {
         None => raw,
       }
     }
+  }
+}
+
+/// TeX rendering of a precision-tagged BigFloat: its decimal digits (no
+/// precision marker), padded with trailing zeros to show all `prec`
+/// significant digits (`-14.`3` → `-14.0`). As for a machine real, a
+/// magnitude from `10^6` on is written `1.50\times 10^6`, and one below
+/// `10^-5` as its InputForm text inside a `\text{…}`.
+fn tex_bigfloat(expr: &Expr, digits: &str, prec: f64) -> String {
+  let (sign, abs) = match digits.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", digits),
+  };
+  let (mantissa, shift) =
+    crate::functions::math_ast::numerical::split_compact_digits(abs)
+      .unwrap_or((abs, 0));
+  let (int_part, frac_part) =
+    mantissa.split_once('.').unwrap_or((mantissa, ""));
+  let int_trim = int_part.trim_start_matches('0');
+  // The significant digits and the decimal exponent of the first of them.
+  let (sig, exponent) = if int_trim.is_empty() {
+    let frac_trim = frac_part.trim_start_matches('0');
+    let zeros = (frac_part.len() - frac_trim.len()) as i64;
+    (frac_trim.to_string(), -(zeros + 1))
+  } else {
+    (format!("{int_trim}{frac_part}"), int_trim.len() as i64 - 1)
+  };
+  let exponent = exponent + shift;
+  if sig.is_empty() || (-5..=5).contains(&exponent) {
+    return pad_bigfloat_to_precision(digits, prec);
+  }
+  if exponent < -5 {
+    let text = crate::syntax::expr_to_input_form(expr)
+      .replace('`', "$\\grave{ }$")
+      .replace('^', "${}^{\\wedge}$");
+    return format!("\\text{{{text}}}");
+  }
+  let n = (prec.round().max(1.0)) as usize;
+  let lead: String = sig.chars().take(n + 2).collect();
+  let scaled = format!("{}.{}", &lead[..1], &lead[1..]);
+  let mut rounded = crate::round_significant(&scaled, n);
+  let mut exponent = exponent;
+  // Rounding up may carry into a new leading digit (`9.99` → `10.0`).
+  if rounded.starts_with("10") {
+    let all: String = rounded.chars().filter(char::is_ascii_digit).collect();
+    rounded = format!("1.{}", &all[1..n.max(1)]);
+    exponent += 1;
+  }
+  let exponent = exponent.to_string();
+  if exponent.len() == 1 {
+    format!("{sign}{rounded}\\times 10^{exponent}")
+  } else {
+    format!("{sign}{rounded}\\times 10^{{{exponent}}}")
   }
 }
 
@@ -9400,6 +9463,20 @@ pub fn linear_syntax_box_text(expr: &Expr) -> String {
       linear_syntax_box_text(pattern),
       linear_syntax_box_text(replacement)
     ),
+    // A template's argument list is spelled out as a call:
+    // `TemplateBox[List["a", "b"], "RowDefault"]`.
+    Expr::FunctionCall { name, args }
+      if name == "TemplateBox"
+        && let Some((Expr::List(items), rest)) = args.split_first() =>
+    {
+      let mut text = format!("TemplateBox[List[{}]", parts(items));
+      for arg in rest {
+        text.push_str(", ");
+        text.push_str(&linear_syntax_box_text(arg));
+      }
+      text.push(']');
+      text
+    }
     Expr::FunctionCall { name, args } => {
       format!("{name}[{}]", parts(args))
     }
@@ -10058,6 +10135,27 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
     // the flattened text.
     "HoldForm" if args.len() == 1 => {
       format!("TagBox[{}, HoldForm]", expr_to_boxes(&args[0]))
+    }
+
+    // `PolynomialForm[p, opts]` sets `p` in standard order unless
+    // `TraditionalOrder -> True` asks for the descending one, tagged with
+    // the wrapper: `TagBox[…, PolynomialForm[#1, TraditionalOrder -> True] &]`.
+    "PolynomialForm"
+      if !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      use crate::evaluator::dispatch::complex_and_special as forms;
+      let body = if forms::polynomial_form_order(&args[1..]) == Some(true) {
+        forms::tf_descending_sum(&args[0])
+          .map_or_else(|| expr_to_boxes(&args[0]), |sum| expr_to_boxes(&sum))
+      } else {
+        expr_to_boxes(&args[0])
+      };
+      let tag = forms::polynomial_form_tag(&args[1..]);
+      format!(
+        "TagBox[{body}, {}]",
+        crate::syntax::expr_to_input_form(&tag)
+      )
     }
 
     // Default: function application

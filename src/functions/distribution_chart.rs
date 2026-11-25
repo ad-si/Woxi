@@ -168,6 +168,7 @@ pub fn chart_element_data_ast(args: &[Expr]) -> Expr {
     [Expr::String(s)] if s == "DistributionChart" => &[
       "Density",
       "DensityQuantile",
+      "DistributionRectangle",
       "FadingQuantile",
       "GlassQuantile",
       "HistogramDensity",

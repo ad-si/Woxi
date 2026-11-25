@@ -5239,6 +5239,86 @@ impl HypothesisTestSettings {
   }
 }
 
+/// The "TestConclusion" of a hypothesis test, the nested `Row` WL builds:
+/// `Row[{"The null hypothesis that ", hypothesis, "is rejected at the ",
+/// Row[{5, " percent level "}], Row[{"based on the ", test, " test."}]}]`.
+/// `hypothesis` is the test's own `Row` (ending in a space), `percent` the
+/// significance level times 100.
+pub(crate) fn hypothesis_test_conclusion(
+  hypothesis: Expr,
+  rejected: bool,
+  percent: Expr,
+  test: &str,
+) -> Expr {
+  let row = |items: Vec<Expr>| call("Row", vec![Expr::List(items.into())]);
+  row(vec![
+    str_expr("The null hypothesis that "),
+    hypothesis,
+    str_expr(if rejected {
+      "is rejected at the "
+    } else {
+      "is not rejected at the "
+    }),
+    row(vec![percent, str_expr(" percent level ")]),
+    row(vec![
+      str_expr("based on the "),
+      str_expr(test),
+      str_expr(" test."),
+    ]),
+  ])
+}
+
+/// The tables of a hypothesis test ("TestDataTable", "PValueTable", …):
+/// `Style[Grid[{{"", headers…}, {test, values…}, …}, …], "DialogStyle"]`,
+/// one row per test after the header row.
+pub(crate) fn hypothesis_test_table(
+  headers: &[&str],
+  rows: Vec<(String, Vec<Expr>)>,
+) -> Expr {
+  let mut header = vec![str_expr("")];
+  header.extend(headers.iter().map(|h| str_expr(h)));
+  let mut grid_rows = vec![Expr::List(header.into())];
+  for (name, values) in rows {
+    let mut row = vec![str_expr(&name)];
+    row.extend(values);
+    grid_rows.push(Expr::List(row.into()));
+  }
+  let rule = |name: &str, value: Expr| {
+    crate::helpers::rule_expr(Expr::Identifier(name.to_string()), value)
+  };
+  let at_second = || {
+    Expr::List(
+      vec![crate::helpers::rule_expr(
+        Expr::Integer(2),
+        call("GrayLevel", vec![Expr::Real(0.7)]),
+      )]
+      .into(),
+    )
+  };
+  let grid = call(
+    "Grid",
+    vec![
+      Expr::List(grid_rows.into()),
+      rule(
+        "Alignment",
+        Expr::List(
+          vec![
+            Expr::Identifier("Left".to_string()),
+            Expr::Identifier("Automatic".to_string()),
+          ]
+          .into(),
+        ),
+      ),
+      rule(
+        "Dividers",
+        Expr::List(vec![at_second(), at_second()].into()),
+      ),
+      rule("Spacings", Expr::Identifier("Automatic".to_string())),
+    ],
+  );
+  call("Style", vec![grid, str_expr("DialogStyle")])
+}
+
 /// The p-value of a t statistic under the alternative hypothesis.
 fn t_test_p_value_for(t_stat: f64, df: f64, alternative: Alternative) -> f64 {
   let two_sided = t_test_p_value(t_stat, df);

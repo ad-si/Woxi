@@ -3207,7 +3207,17 @@ mod empirical_distribution {
         "Map[CDF[EmpiricalDistribution[{3., 1., 2., 2.}], #] &, {1., 2., 3.}]"
       )
       .unwrap(),
-      "{0.25, 0.75, 1.}"
+      "{0.25, 0.75, 1}"
+    );
+    // No mass is the exact 0; exact data stays exact at a machine point.
+    assert_eq!(
+      interpret(
+        "{CDF[EmpiricalDistribution[{3., 1.}], 0.5], \
+          PDF[EmpiricalDistribution[{3., 1.}], 2], \
+          CDF[EmpiricalDistribution[{3, 1, 2, 2}], 2.5]}"
+      )
+      .unwrap(),
+      "{0, 0, 3/4}"
     );
   }
 

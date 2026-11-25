@@ -5464,6 +5464,17 @@ mod boolean_fuzz_edge_cases {
       interpret("ToString[a || Xor[b, c]]").unwrap(),
       "a || Xor[b, c]"
     );
+    // They keep their operator's binding (215) under tighter operators too.
+    assert_eq!(
+      interpret("{ToString[c + Xor[a, b], InputForm], ToString[-Xor[b, c], InputForm], ToString[f[x]*Nor[a, b] == 2, InputForm], ToString[Xor[a, b] -> c, InputForm], ToString[Hold[Xor[b, c][x]], InputForm]}").unwrap(),
+      "{c + (Xor[a, b]), -(Xor[b, c]), f[x]*(Nor[a, b]) == 2, Xor[a, b] -> c, Hold[(Xor[b, c])[x]]}"
+    );
+    // `ToString[FullForm[e], InputForm]` writes `e` as plain InputForm.
+    assert_eq!(
+      interpret("ToString[FullForm[{1 ;; 4, a || Xor[b, c]}], InputForm]")
+        .unwrap(),
+      "FullForm[{1 ;; 4, a || (Xor[b, c])}]"
+    );
     assert_eq!(
       interpret("FullForm[a || Xor[b, c]]").unwrap(),
       "FullForm[a || Xor[b, c]]"
@@ -5541,22 +5552,31 @@ mod boolean_fuzz_edge_cases {
 mod boolean_convert_tree_and_implies_forms {
   use super::*;
 
-  // "BDT" is the binary decision tree, the same Shannon decomposition "IF"
-  // writes out.
+  // "BDT" writes out the reduced decision diagram with complement edges as
+  // `(v && then) || ( !v && else)`; a complemented child is the negation
+  // of its regular node, a complemented root pushes it into the children.
   #[test]
   fn bdt_is_the_decision_tree() {
     clear_state();
     assert_eq!(
       interpret("BooleanConvert[(a || b) && c, \"BDT\"]").unwrap(),
-      "If[a, If[c, True, False], If[b, If[c, True, False], False]]"
+      "(a && c) || ( !a && b && c)"
     );
     assert_eq!(
-      interpret(
-        "Table[BooleanConvert[e, \"BDT\"] === BooleanConvert[e, \"IF\"], \
-         {e, {Xor[a, b, c], a && !b, Majority[a, b, c]}}]"
-      )
-      .unwrap(),
-      "{True, True, True}"
+      interpret("BooleanConvert[Xor[a, b, c], \"BDT\"]").unwrap(),
+      "(a && ((b && c) || ( !b &&  !c))) || ( !a &&  !((b && c) || ( !b &&  !c)))"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[(a || b) && (c || d), \"BDT\"]").unwrap(),
+      "(a && (c || ( !c && d))) || ( !a && b && (c || ( !c && d)))"
+    );
+    assert_eq!(
+      interpret("{BooleanConvert[Implies[a, b], \"BDT\"], BooleanConvert[Nand[a, b], \"BDT\"], BooleanConvert[!a, \"BDT\"]}").unwrap(),
+      "{(a && b) ||  !a, (a &&  !b) ||  !a,  !a}"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nor[a, b, c], \"BDT\"]").unwrap(),
+      " !a &&  !(b || ( !b && c))"
     );
   }
 

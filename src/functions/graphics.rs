@@ -711,6 +711,23 @@ fn parse_shadow_color(expr: &Expr) -> Option<Color> {
   None
 }
 
+impl StyleState {
+  /// The style typeset output outside a picture starts from (a `Row`'s
+  /// text items, a `Button` label): the 14 point output text, where a
+  /// picture's own labels default to [`GRAPHICS_TEXT_FONT_SIZE`].
+  fn typeset() -> Self {
+    Self {
+      font_size: 14.0,
+      ..Self::default()
+    }
+  }
+}
+
+/// The size a picture's `Text` is set at when nothing asks for another
+/// one: 10 points, which is what wolframscript's SVG export writes and what
+/// the front end draws (a `Text` digit is as tall as a plot's tick label).
+pub(crate) const GRAPHICS_TEXT_FONT_SIZE: f64 = 10.0;
+
 impl Default for StyleState {
   fn default() -> Self {
     Self {
@@ -733,7 +750,7 @@ impl Default for StyleState {
       edge_form: None,
       halo: None,
       drop_shadow: None,
-      font_size: 14.0,
+      font_size: GRAPHICS_TEXT_FONT_SIZE,
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
       font_family: String::new(),
@@ -4242,7 +4259,9 @@ fn collect_primitives(
           // other object (a string, a number) is placed like `Text`.
           if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
-          } else if let Some(label) = text_row_inset_object(args, 14.0) {
+          } else if let Some(label) =
+            text_row_inset_object(args, style.font_size)
+          {
             // A `Row` of text runs is a (possibly wrapped) paragraph.
             let mut text_args = args.to_vec();
             text_args[0] = label;
@@ -7144,7 +7163,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
       match pane_width_points(args) {
-        Some(w) => wrap_text_to_points(&text, w, 14.0),
+        Some(w) => wrap_text_to_points(&text, w, GRAPHICS_TEXT_FONT_SIZE),
         None => text,
       }
     }
@@ -7617,10 +7636,13 @@ pub(crate) fn popup_menu_cell_svg(args: &[Expr]) -> String {
 /// the standard 14-point text metric, with Wolfram's padding around it.
 fn button_plate_size(label: &str) -> (f64, f64) {
   const CHAR_W: f64 = 8.4;
-  const PAD_X: f64 = 12.0;
+  const PAD_X: f64 = BUTTON_PLATE_PAD_X;
   let w = label.chars().count() as f64 * CHAR_W + 2.0 * PAD_X;
   (w.max(28.0), 26.0)
 }
+
+/// The horizontal padding between a button plate's edge and its label.
+const BUTTON_PLATE_PAD_X: f64 = 12.0;
 
 /// The pixel size a `Button[label, action, ImageSize -> …]` option asks
 /// for: a single number is the width (the height follows the content, so it
@@ -7732,7 +7754,7 @@ fn button_text_plate_svg(args: &[Expr]) -> String {
   let size = button_image_size(args);
   // A `Style[label, …]` label (`Style[n, "Title"]`, `Style[k, 24, Bold]`)
   // keeps its font size, color and face on the plate.
-  let mut text_style = StyleState::default();
+  let mut text_style = StyleState::typeset();
   let mut styled = false;
   let mut inner = &args[0];
   while let Expr::FunctionCall { name, args: sargs } = inner
@@ -7751,15 +7773,40 @@ fn button_text_plate_svg(args: &[Expr]) -> String {
     }
     inner = &sargs[0];
   }
-  let label = graphics_text_content(&args[0]);
   let font = styled.then_some(&text_style);
-  let natural = button_plate_size_styled(&label, font);
-  let plate = match size {
-    Some((w, h)) => {
-      button_plate_svg_styled(&label, w, h.unwrap_or(natural.1), font)
-    }
-    None => button_plate_svg_styled(&label, natural.0, natural.1, font),
+  // A `Column` label stacks its items as lines of the plate, which is as
+  // wide as the longest of them.
+  let (lines, column) = button_label_lines(&args[0]);
+  let mut natural = (0.0_f64, 0.0_f64);
+  for line in &lines {
+    let (w, h) = button_plate_size_styled(&graphics_text_content(line), font);
+    natural = (natural.0.max(w), h);
+  }
+  natural.1 += (lines.len() - 1) as f64 * BUTTON_PLATE_LINE_HEIGHT;
+  let markup: Vec<String> =
+    lines.iter().map(button_label_line_markup).collect();
+  // A script stacked over its base rises above the line; the label stays
+  // centered, so the plate grows both ways.
+  let label_size = font.map_or(14.0, |f| f.font_size);
+  natural.1 += 2.0
+    * markup
+      .iter()
+      .map(|m| {
+        crate::functions::plot_padding::stacked_script_room(m, label_size)
+      })
+      .fold(0.0, f64::max);
+  let (w, h) = match size {
+    Some((w, h)) => (w, h.unwrap_or(natural.1)),
+    None => natural,
   };
+  let plate = button_plate_svg_lines(
+    &markup,
+    w,
+    h,
+    font,
+    button_is_pressed(args),
+    column,
+  );
   let background = args
     .iter()
     .skip(2)
@@ -7821,6 +7868,25 @@ fn button_plate_svg_styled(
   h: f64,
   font: Option<&StyleState>,
 ) -> String {
+  button_plate_svg_lines(&[svg_escape(label)], w, h, font, false, false)
+}
+
+/// The height one more line of a multi-line button label adds to its plate.
+const BUTTON_PLATE_LINE_HEIGHT: f64 = 18.0;
+
+/// A `Button` plate of an explicit pixel size holding one text line per
+/// entry of `lines` (inline SVG markup, already escaped). A single line is
+/// centered; the lines of a `Column` label are set flush left when
+/// `left_aligned`. `pressed` draws the flat gray plate of `Appearance ->
+/// "Pressed"` instead of the raised white one.
+fn button_plate_svg_lines(
+  lines: &[String],
+  w: f64,
+  h: f64,
+  font: Option<&StyleState>,
+  pressed: bool,
+  left_aligned: bool,
+) -> String {
   let (size, fill, face) = match font {
     Some(f) => {
       let mut face = String::new();
@@ -7834,17 +7900,88 @@ fn button_plate_svg_styled(
     }
     None => ("14".to_string(), "#000000".to_string(), String::new()),
   };
-  format!(
+  let (plate_fill, plate_stroke) = if pressed {
+    (BUTTON_PRESSED_FILL, BUTTON_PRESSED_FILL)
+  } else {
+    ("#FDFDFD", "#BFBFBF")
+  };
+  let (anchor, x) = if left_aligned {
+    ("start", BUTTON_PLATE_PAD_X)
+  } else {
+    ("middle", w / 2.0)
+  };
+  let first_y = h / 2.0
+    - (lines.len().saturating_sub(1)) as f64 * BUTTON_PLATE_LINE_HEIGHT / 2.0;
+  let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
-     </svg>\n",
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"{plate_fill}\" stroke=\"{plate_stroke}\" stroke-width=\"1\"/>\n",
     w - 1.0,
     h - 1.0,
-    w / 2.0,
-    h / 2.0,
-    svg_escape(label)
-  )
+  );
+  for (i, line) in lines.iter().enumerate() {
+    out.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"{anchor}\" dominant-baseline=\"central\">{line}</text>\n",
+      first_y + i as f64 * BUTTON_PLATE_LINE_HEIGHT,
+    ));
+  }
+  out.push_str("</svg>\n");
+  out
+}
+
+/// The plate color of a button drawn with `Appearance -> "Pressed"` (and of
+/// the unselected choices of a `TogglerBar`).
+const BUTTON_PRESSED_FILL: &str = "#EDEDED";
+
+/// Whether a `Button[label, action, opts…]` asks for `Appearance ->
+/// "Pressed"`. The option value is held with the rest of the button, so a
+/// condition (`If[MemberQ[picked, k], "Pressed", Automatic]`) is evaluated
+/// here.
+fn button_is_pressed(button_args: &[Expr]) -> bool {
+  button_args.iter().skip(2).any(|o| {
+    matches!(option_kv(o), Some(("Appearance", value))
+    if matches!(
+      evaluate_expr_to_expr(value),
+      Ok(Expr::String(ref v)) if v == "Pressed"
+    ))
+  })
+}
+
+/// The text lines of a button label: the items of a `Column[{…}]` label
+/// (seen through `Text` and `Style` wrappers), any other label as its one
+/// line. The flag says whether the label was a `Column`.
+fn button_label_lines(label: &Expr) -> (Vec<Expr>, bool) {
+  let mut inner = label;
+  loop {
+    match inner {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Text" | "Style") && !args.is_empty() =>
+      {
+        inner = &args[0];
+      }
+      Expr::FunctionCall { name, args } if name == "Column" => {
+        if let Some(Expr::List(items)) = args.first()
+          && !items.is_empty()
+        {
+          return (items.to_vec(), true);
+        }
+        break;
+      }
+      _ => break,
+    }
+  }
+  (vec![label.clone()], false)
+}
+
+/// One line of a button label as inline SVG markup: the plain text, or —
+/// for a label typeset with a stacked script (`Overscript[arrow, k]`) —
+/// the markup that sets the script over its base.
+fn button_label_line_markup(line: &Expr) -> String {
+  let markup = expr_to_svg_markup(line);
+  if markup.contains("data-stack=") {
+    markup
+  } else {
+    svg_escape(&graphics_text_content(line))
+  }
 }
 
 /// The value a `Dynamic[x, …]` control is showing: `x` evaluated. Any other
@@ -9731,11 +9868,15 @@ pub(crate) fn stacked_label_picture(
   color: &str,
 ) -> Option<(String, f64, f64)> {
   let boxes = match content {
-    Expr::String(s) if has_script_stacked_inline_box(s) => {
+    Expr::String(s)
+      if has_script_stacked_inline_box(s)
+        || label_has_large_operator_script(content) =>
+    {
       inline_box_string_to_box_expr(s)
     }
     _ if label_typesets_fraction(content)
-      || formula_has_graphics_operand(content) =>
+      || formula_has_graphics_operand(content)
+      || label_has_large_operator_script(content) =>
     {
       Some(crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
@@ -16034,6 +16175,9 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
 /// for), which a single
 /// line of text cannot show.
 fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
+  if let Some(plain_box) = script_template_box(boxes) {
+    return traditional_box_runs(&plain_box);
+  }
   let plain = |text: &str| LabelRun {
     text: text.to_string(),
     ..Default::default()
@@ -18345,7 +18489,7 @@ fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
       // `Automatic` shows the axis (positioned automatically), e.g. the
       // common `Axes -> {Automatic, False}` form.
       Expr::Identifier(s) if s == "True" || s == "Automatic" => Some(true),
-      Expr::Identifier(s) if s == "False" => Some(false),
+      Expr::Identifier(s) if s == "False" || s == "None" => Some(false),
       _ => None,
     }
   }
@@ -18355,7 +18499,7 @@ fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
     Expr::Identifier(s) if s == "True" || s == "Automatic" => {
       Some((true, true))
     }
-    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::Identifier(s) if s == "False" || s == "None" => Some((false, false)),
     Expr::List(items) if items.len() == 2 => {
       let x_axis = parse_bool(&items[0])?;
       let y_axis = parse_bool(&items[1])?;
@@ -18811,7 +18955,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               plot_label_picture = Some((svg, w, h));
             }
             other => {
-              let lines = expr_to_svg_markup_lines(other);
+              // Set in `TraditionalForm`, so a lone lowercase Greek letter
+              // in its text is italic.
+              let lines =
+                with_label_greek_italics(|| expr_to_svg_markup_lines(other));
               if lines.iter().any(|l| !l.is_empty()) {
                 if lines.len() > 1 {
                   plot_label_alignment =
@@ -21638,6 +21785,42 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
 /// The elements of a `TemplateBox`: a list, or a `List[…]` call.
+/// The plain script box a script template stands for:
+/// `TemplateBox[{x, "3"}, "Superscript", SyntaxForm -> SuperscriptBox]`
+/// (the boxes of `Superscript[x, 3]`) is drawn as `SuperscriptBox[x, "3"]`,
+/// likewise `"Subscript"` and `"Subsuperscript"`; `TemplateBox[{m, n},
+/// "Mod"]` is the row `m mod n`. The box renderers read these templates
+/// through this.
+pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "TemplateBox" || args.len() < 2 {
+    return None;
+  }
+  let (head, arity) = match &args[1] {
+    Expr::String(t) if t == "Superscript" => ("SuperscriptBox", 2),
+    Expr::String(t) if t == "Subscript" => ("SubscriptBox", 2),
+    Expr::String(t) if t == "Subsuperscript" => ("SubsuperscriptBox", 3),
+    // `TemplateBox[{m, n}, "Mod"]` is the row `m mod n`.
+    Expr::String(t) if t == "Mod" => ("RowBox", 2),
+    _ => return None,
+  };
+  let items = template_box_items(&args[0])?;
+  if items.len() != arity {
+    return None;
+  }
+  if head == "RowBox" {
+    return Some(call1(
+      "RowBox",
+      Expr::List(
+        vec![items[0].clone(), str_expr("mod"), items[1].clone()].into(),
+      ),
+    ));
+  }
+  Some(call(head, items.to_vec()))
+}
+
 fn template_box_items(e: &Expr) -> Option<&[Expr]> {
   match e {
     Expr::List(items) => Some(items),
@@ -21839,6 +22022,9 @@ fn stack_box_lines_centered(lines: &[BoxLayout]) -> BoxLayout {
 }
 
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
+  if let Some(plain_box) = script_template_box(expr) {
+    return layout_box(&plain_box, font_size);
+  }
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
     BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
@@ -22059,8 +22245,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // nested radicals) — a lone superscript (~1.3×) stays with plain
           // glyphs so ordinary parenthesized expressions are unaffected.
           if inner_ascent + inner_descent > natural * 1.5 {
+            // A grid may come tagged (`TagBox[GridBox[…], #1 &]`).
             let around_grid = items[o_idx + 1..c_idx].iter().any(|it| {
-              matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
+              matches!(it, Expr::FunctionCall { name, args }
+                if name == "GridBox"
+                  || (name == "TagBox"
+                    && matches!(args.first(),
+                      Some(Expr::FunctionCall { name: g, .. }) if g == "GridBox")))
             });
             children[o_idx] = render_stretchy_delim(
               o,
@@ -26251,6 +26442,64 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// Typesetting the text of a graphic's label (`PlotLabel`), which the
+  /// front end sets in `TraditionalForm`: a lowercase Greek letter standing
+  /// alone as a word of a string (`"Outside μ ± ϵ"`) is drawn in italics,
+  /// the way a single-letter math variable is, while the rest of the text
+  /// stays upright.
+  static LABEL_GREEK_ITALICS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`LABEL_GREEK_ITALICS`] on, restoring it afterwards.
+pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(LABEL_GREEK_ITALICS.with(|c| c.replace(true)));
+  f()
+}
+
+/// Whether `c` is a lowercase Greek letter (including the variant forms
+/// `ϑ`, `ϕ`, `ϖ`, `ϰ`, `ϱ` and `ϵ`). `π` is excluded: it reads as the
+/// constant `Pi`, which is set upright.
+fn is_lowercase_greek_letter(c: char) -> bool {
+  c != '\u{3C0}'
+    && (('\u{3B1}'..='\u{3C9}').contains(&c)
+      || matches!(
+        c,
+        '\u{3D1}' | '\u{3D5}' | '\u{3D6}' | '\u{3F0}' | '\u{3F1}' | '\u{3F5}'
+      ))
+}
+
+/// SVG-escape label text, setting each lowercase Greek letter that stands
+/// alone as a word (no letter or digit on either side) in italics.
+fn svg_escape_label_greek_italics(text: &str) -> String {
+  let chars: Vec<char> = text.chars().collect();
+  let is_word_char =
+    |i: usize| chars.get(i).is_some_and(|c| c.is_alphanumeric());
+  let mut out = String::new();
+  let mut plain = String::new();
+  for (i, &c) in chars.iter().enumerate() {
+    let lone = is_lowercase_greek_letter(c)
+      && !(i > 0 && is_word_char(i - 1))
+      && !is_word_char(i + 1);
+    if lone {
+      out.push_str(&svg_escape(&plain));
+      plain.clear();
+      out.push_str(&format!("<tspan font-style=\"italic\">{c}</tspan>"));
+    } else {
+      plain.push(c);
+    }
+  }
+  out.push_str(&svg_escape(&plain));
+  out
+}
+
 /// Run `f` with [`SINGLE_LETTER_ITALICS`] on, restoring it afterwards.
 fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
   struct Restore(bool);
@@ -26305,6 +26554,9 @@ pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
 }
 
 pub fn boxes_to_svg(expr: &Expr) -> String {
+  if let Some(plain_box) = script_template_box(expr) {
+    return boxes_to_svg(&plain_box);
+  }
   match expr {
     // Atoms: in box form, atoms are always Expr::String
     // A string box is stored as its quoted source (`"\"A\""`) but is drawn
@@ -26332,6 +26584,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           "<tspan font-style=\"italic\">{}</tspan>",
           svg_escape(unquoted)
         );
+      }
+      if LABEL_GREEK_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
+      {
+        return svg_escape_label_greek_italics(unquoted);
       }
       svg_escape(unquoted)
     }
@@ -26778,6 +27035,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // them as expressions so the renderer recognizes them, instead of as
   // the box strings "Italic" and "FontSize -> 20" that style nothing.
   let parse_arg = |index: usize, src: &[char]| -> Expr {
+    // A template's argument list is written as the call `List[…]`: read
+    // it as the braced list it is.
+    if name == "TemplateBox"
+      && index == 0
+      && src.len() > 6
+      && src[..5].iter().collect::<String>() == "List["
+      && src[src.len() - 1] == ']'
+    {
+      let mut braced = vec!['{'];
+      braced.extend_from_slice(&src[5..src.len() - 1]);
+      braced.push('}');
+      return parse_box_to_expr(&braced);
+    }
     if name == "StyleBox" && index > 0 {
       let text: String = src.iter().collect();
       if let Ok(directive) = crate::parse_to_expr(&text) {
@@ -28665,6 +28935,9 @@ fn box_expr_to_plain(e: &Expr) -> String {
 
 /// `spaced` is false inside a script, where a limit `n=0` stays tight.
 fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
+  if let Some(plain_box) = script_template_box(e) {
+    return box_expr_to_plain_in(&plain_box, spaced);
+  }
   match e {
     // A string typeset in StandardForm is drawn without its quotes; its box
     // carries them as literal characters (`"\"f(x)\""`).
@@ -28951,6 +29224,9 @@ pub fn box_string_visible_len(s: &str) -> usize {
 /// Handles fraction markers by splitting text around nested `<svg>` elements
 /// with `<line>` for fraction bars.
 pub fn estimate_box_display_width(expr: &Expr) -> f64 {
+  if let Some(plain_box) = script_template_box(expr) {
+    return estimate_box_display_width(&plain_box);
+  }
   match expr {
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
@@ -32855,6 +33131,9 @@ fn traditional_form_two_dimensional_boxes(expr: &Expr) -> Option<Expr> {
     return None;
   }
   fn two_dimensional(e: &Expr) -> bool {
+    if script_template_box(e).is_some() {
+      return true;
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         matches!(
@@ -32934,6 +33213,47 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
     && !["FractionBox", "SqrtBox", "RadicalBox"]
       .iter()
       .any(|head| s.contains(head))
+}
+
+/// Whether a label holds inline box notation that hangs limits on a large
+/// operator (`∫` with its bounds, `∑` with its index), on its own or among
+/// the parts of a `Row` or under a style wrapper. The sign is drawn tall
+/// with the limits at its ends, which a line of text with sub/superscript
+/// runs cannot show, so such a label goes through the box layout.
+pub(crate) fn label_has_large_operator_script(expr: &Expr) -> bool {
+  fn boxes_script_large_operator(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        (matches!(
+          name.as_str(),
+          "SubscriptBox"
+            | "SuperscriptBox"
+            | "SubsuperscriptBox"
+            | "UnderscriptBox"
+            | "OverscriptBox"
+            | "UnderoverscriptBox"
+        ) && matches!(args.first(),
+          Some(Expr::String(base)) if large_operator_scale(base).is_some()))
+          || args.iter().any(boxes_script_large_operator)
+      }
+      Expr::List(items) => items.iter().any(boxes_script_large_operator),
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::String(s) => inline_box_string_to_box_expr(s)
+      .is_some_and(|boxes| boxes_script_large_operator(&boxes)),
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      matches!(&args[0], Expr::List(items)
+        if items.iter().any(label_has_large_operator_script))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      label_has_large_operator_script(&args[0])
+    }
+    _ => false,
+  }
 }
 
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
@@ -33447,6 +33767,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       button_cell_svg(args)
     }
+    // A bare `TogglerBar[Dynamic[var], choices]` cell draws as its row of
+    // toggle plates.
+    Expr::FunctionCall { name, args }
+      if name == "TogglerBar"
+        && args.len() >= 2
+        && togglerbar_svg(args).is_some() =>
+    {
+      togglerbar_svg(args)?
+    }
     // A bare `Trigger[Dynamic[var], range]` cell draws as its play button.
     Expr::FunctionCall { name, args }
       if name == "Trigger" && args.len() >= 2 =>
@@ -33834,9 +34163,14 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
     }
     _ => Some(parse_color(expr)?),
   };
-  // The thickness and dashing the style asks for.
+  // The thickness and dashing the style asks for. A grid has no plot width
+  // for a relative `Thickness[d]` to be a fraction of, so it is `d` points,
+  // like `AbsoluteThickness[d]`.
   let style = crate::functions::plot::parse_style_directives(expr);
-  let width = style.as_ref().and_then(|s| s.thickness).unwrap_or(1.0);
+  let width = style
+    .as_ref()
+    .and_then(|s| s.thickness_fraction.or(s.thickness))
+    .unwrap_or(1.0);
   let dash = style
     .as_ref()
     .and_then(|s| s.dashing.as_ref())
@@ -42425,6 +42759,13 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Button" if args.len() >= 2 => {
         return Some(button_cell_svg(&args));
       }
+      // A `TogglerBar[Dynamic[var], choices]` item draws as its row of
+      // toggle plates rather than its source text.
+      "TogglerBar" if args.len() >= 2 => {
+        if let Some(svg) = togglerbar_svg(&args) {
+          return Some(svg);
+        }
+      }
       // A `Trigger[Dynamic[var], {from, to}]` control item is drawn as its
       // play button (its sweep needs a live widget).
       "Trigger" if args.len() >= 2 => return Some(button_plate_svg("▶")),
@@ -43268,14 +43609,32 @@ fn column_layout_svg(
   // A text-labeled `Button` without an explicit `ImageSize` stretches to
   // the column's width, as the FrontEnd lays out a button stacked above a
   // wider item (a "play" button over a plot).
+  // An item drawn with the blank margin of a text line (see `text_layouts`)
+  // fills the column between those margins, not over them.
+  // (A column that also stacks a picture drops those margins.)
+  let stacks_picture = cells
+    .iter()
+    .enumerate()
+    .any(|(i, c)| matches!(c, Cell::Svg { .. }) && !text_layout(i));
+  let stretched_width = |i: usize| {
+    if text_layout(i) && !stacks_picture {
+      col_width - 2.0 * edge_pad
+    } else {
+      col_width
+    }
+  };
   let cells: Vec<Cell> = cells
     .into_iter()
     .zip(items.iter())
-    .map(|(cell, item)| match (&cell, resolve_display_item(item)) {
-      (Cell::Svg { width, .. }, Expr::FunctionCall { ref name, ref args })
-        if name == "Button"
+    .enumerate()
+    .map(
+      |(i, (cell, item))| match (&cell, resolve_display_item(item)) {
+        (
+          Cell::Svg { width, .. },
+          Expr::FunctionCall { ref name, ref args },
+        ) if name == "Button"
           && args.len() >= 2
-          && *width < col_width
+          && *width < stretched_width(i)
           && button_image_size(args).is_none()
           && !matches!(args[0], Expr::Image { .. })
           && !matches!(
@@ -43283,24 +43642,25 @@ fn column_layout_svg(
             Expr::FunctionCall { name: inner, .. }
               if inner == "Graphics" || inner == "Graphics3D"
           ) =>
-      {
-        let mut stretched = args.to_vec();
-        stretched.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-          replacement: Box::new(Expr::Real(col_width)),
-        });
-        let svg = button_cell_svg(&stretched);
-        let (w, h) = parse_svg_wh(&svg);
-        Cell::Svg {
-          svg,
-          width: w,
-          height: h,
-          picture: true,
-          text_line: None,
+        {
+          let mut stretched = args.to_vec();
+          stretched.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+            replacement: Box::new(Expr::Real(stretched_width(i))),
+          });
+          let svg = button_cell_svg(&stretched);
+          let (w, h) = parse_svg_wh(&svg);
+          Cell::Svg {
+            svg,
+            width: w,
+            height: h,
+            picture: true,
+            text_line: None,
+          }
         }
-      }
-      _ => cell,
-    })
+        _ => cell,
+      },
+    )
     .collect();
 
   // Per-row heights
@@ -43320,8 +43680,13 @@ fn column_layout_svg(
         Cell::Svg { height, .. } => *height,
         Cell::Text(e, plain) => {
           let (style, fs) = text_style(e, font_size);
-          let lines = markup_lines(&expr_to_svg_markup(style.content))
-            .map_or(1, |l| l.len());
+          let markup = expr_to_svg_markup(style.content);
+          let lines = markup_lines(&markup).map_or(1, |l| l.len());
+          // A script stacked over its base (`Overscript[arrow, k]`) rises
+          // above the line, which is centered in its row: the row grows
+          // both ways so the script clears the item above.
+          let stack_room = 2.0
+            * crate::functions::plot_padding::stacked_script_room(&markup, fs);
           // A line in the proportional text face of a `Text[…]` display
           // takes the front end's text line pitch (12 pt labels stack about
           // 15.3 pt apart); the monospace typeset face keeps its padded box.
@@ -43329,11 +43694,12 @@ fn column_layout_svg(
             .font_family
             .as_deref()
             .map_or(*plain, is_text_face_family);
-          if in_text_face {
-            fs * lines as f64 * TEXT_FACE_LINE_PITCH
-          } else {
-            fs * lines as f64 + pad_y
-          }
+          stack_room
+            + if in_text_face {
+              fs * lines as f64 * TEXT_FACE_LINE_PITCH
+            } else {
+              fs * lines as f64 + pad_y
+            }
         }
       };
       item_size_entry_at(item_size_h, i, n_items)
@@ -44131,7 +44497,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
   }
 
   let make_text_cell = |item: &Expr| -> Cell {
-    let mut st = StyleState::default();
+    let mut st = StyleState::typeset();
     let mut color: Option<Color> = None;
     // An `Invisible[…]` item takes its content's width but is painted with
     // no fill, so the row keeps its shape while the item reads blank.
@@ -44382,9 +44748,33 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         axis: Some(a),
         ..
       } if v_align == "center" => 2.0 * a.max(height - a),
-      _ => cell_height(c),
+      // A script stacked over its base (`Overscript[arrow, k]`) rises
+      // above the line; the line stays centered, so it grows both ways.
+      Cell::Text {
+        markup,
+        height,
+        size,
+        ..
+      } => {
+        height
+          + 2.0
+            * crate::functions::plot_padding::stacked_script_room(markup, *size)
+      }
+      Cell::Svg { .. } => cell_height(c),
     })
     .fold(font_size + pad_y, f64::max);
+  // The same holds for a stacked script in the separator between items.
+  let total_h = match &separator {
+    Separator::Text(text, _) if cells.len() > 1 => total_h.max(
+      font_size
+        + pad_y
+        + 2.0
+          * crate::functions::plot_padding::stacked_script_room(
+            text, font_size,
+          ),
+    ),
+    _ => total_h,
+  };
   let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
   let svg_w = canvas_w.ceil().max(1.0) as u32;
@@ -64084,6 +64474,50 @@ fn togglerbar_node(
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
 ) -> Option<DisplayNode> {
+  let bar = togglerbar_choices(args)?;
+  let buttons = bar
+    .choices
+    .into_iter()
+    .map(|choice| DisplayNode::Toggler {
+      label: Box::new(display_expr_to_node(
+        &choice.label,
+        bindings,
+        probes,
+        ons,
+      )),
+      mutation: choice.mutation,
+      selected: choice.selected,
+      enabled: bar.enabled,
+      checkbox,
+    })
+    .collect();
+  Some(if bar.vertical {
+    DisplayNode::Column(buttons)
+  } else {
+    DisplayNode::Row(buttons)
+  })
+}
+
+/// One choice of a `TogglerBar[Dynamic[…], choices]`.
+struct TogglerBarChoice {
+  label: Expr,
+  /// Wolfram source toggling the choice's membership in the bound list.
+  mutation: String,
+  selected: bool,
+}
+
+/// The choices of a `TogglerBar[Dynamic[…], choices, opts…]` with the state
+/// each one shows and the code a press runs.
+struct TogglerBarChoices {
+  choices: Vec<TogglerBarChoice>,
+  enabled: bool,
+  vertical: bool,
+}
+
+/// Resolve the arguments of a `TogglerBar`/`CheckboxBar` (see
+/// [`togglerbar_node`]) into its choices; `None` when they don't have that
+/// shape.
+fn togglerbar_choices(args: &[Expr]) -> Option<TogglerBarChoices> {
   let Some(Expr::FunctionCall {
     name: dname,
     args: dargs,
@@ -64135,7 +64569,7 @@ fn togglerbar_node(
       .collect::<Vec<_>>()
       .join(", ")
   );
-  let mut buttons = Vec::with_capacity(choices.len());
+  let mut bar_choices = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
       Expr::Rule {
@@ -64176,12 +64610,10 @@ fn togglerbar_node(
         format!("{target} = ({setter_code})[{toggled}]")
       }
     };
-    buttons.push(DisplayNode::Toggler {
-      label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
+    bar_choices.push(TogglerBarChoice {
+      label: label.clone(),
       mutation,
       selected,
-      enabled,
-      checkbox,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -64203,11 +64635,45 @@ fn togglerbar_node(
       && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
         || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
   });
-  Some(if vertical {
-    DisplayNode::Column(buttons)
-  } else {
-    DisplayNode::Row(buttons)
+  Some(TogglerBarChoices {
+    choices: bar_choices,
+    enabled,
+    vertical,
   })
+}
+
+/// A `TogglerBar[Dynamic[var], choices, opts…]` drawn inside a picture (an
+/// item of a `Column`/`Row`/`Grid`, or exported on its own): one button
+/// plate per choice, raised for the selected choices and flat for the
+/// others, each carrying the hit region whose press toggles its choice in a
+/// live widget. This is the `Button` drawing — the bar is a row of them.
+pub(crate) fn togglerbar_svg(args: &[Expr]) -> Option<String> {
+  let bar = togglerbar_choices(args)?;
+  let buttons: Vec<Expr> = bar
+    .choices
+    .iter()
+    .map(|choice| {
+      let action = crate::syntax::string_to_expr(&choice.mutation)
+        .unwrap_or_else(|_| id_expr("Null"));
+      let mut button = vec![choice.label.clone(), action];
+      if !choice.selected {
+        button.push(rule_expr(
+          id_expr("Appearance"),
+          Expr::String("Pressed".to_string()),
+        ));
+      }
+      if !bar.enabled {
+        button.push(rule_expr(id_expr("Enabled"), id_expr("False")));
+      }
+      call("Button", button)
+    })
+    .collect();
+  let items = Expr::List(buttons.into());
+  if bar.vertical {
+    Some(crate::evaluator::expr_to_svg(&call("Column", vec![items])))
+  } else {
+    row_to_svg(std::slice::from_ref(&items))
+  }
 }
 
 /// Build a `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[…]` display:

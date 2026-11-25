@@ -6,6 +6,15 @@
     behind it: a marker floating above a `Plot3D` surface was placed in
     the depth order by its center alone, so the faces next to it were
     painted over part of its disc.
+- Woxi Studio windows show the Woxi app icon in the title bar and
+    taskbar instead of the platform's generic default icon.
+- `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`
+    search a long text in one pass: a pattern that is absent or sparse in a
+    few hundred kilobytes took seconds, the search restarting at every
+    character.
+- `Text` (and a text `Inset`) in `Graphics` is set at 10 points when no
+    style gives a size, as wolframscript and the front end draw it, instead
+    of 14 points; labels are measured, wrapped and padded for at that size.
 - `RevolutionPlot3D` draws every curve of a nested curve list
     (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
     picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels

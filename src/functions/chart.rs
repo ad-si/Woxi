@@ -964,6 +964,23 @@ fn column_line_alignment(expr: &Expr) -> ColumnAlignment {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A graphic's label is set in `TraditionalForm`, where a lowercase Greek
+  // letter standing alone in a string is italic (see
+  // `with_label_greek_italics`). A plain string label is otherwise drawn
+  // from its text at render time, so typeset its markup here.
+  crate::functions::graphics::with_label_greek_italics(|| {
+    let mut label = parse_styled_label_impl(expr)?;
+    if label.markup.is_none() && !label.text.contains('\n') {
+      let markup = crate::functions::graphics::box_string_to_svg(&label.text);
+      if markup != crate::functions::graphics::svg_escape(&label.text) {
+        label.markup = Some(markup);
+      }
+    }
+    Some(label)
+  })
+}
+
+fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
   // A `Dynamic[x]` label reads as the value `x` currently has.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Dynamic"

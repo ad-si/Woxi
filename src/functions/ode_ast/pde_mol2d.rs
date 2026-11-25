@@ -9,7 +9,9 @@
 //! x0]` or `u[x0, y, t] == g`), a flux condition (`NeumannValue[g, x ==
 //! x0]`, `g` affine in `u`, with the finite element meaning `n·(c ∇u) = g`,
 //! `c` the coefficient of `-u_xx`), or nothing: the zero natural flux of the
-//! finite element method.
+//! finite element method in a problem written in its notation, and else, as
+//! the tensor product grid of the method of lines does, no condition at all
+//! (the solution extrapolated beyond the edge).
 //!
 //! The rectangle is divided into a uniform grid of cells whose centers
 //! carry the unknowns, so no unknown sits on an edge: a coefficient that is
@@ -41,6 +43,9 @@ enum Edge {
   Flux(Option<Box<(NExpr, NExpr, NExpr)>>),
   /// `u = g` on the face, `g` compiled over `[x, y, t]`.
   Dirichlet(NExpr),
+  /// No condition: the ghost value continues the quadratic through the
+  /// three cells next to the edge.
+  Extrapolate,
 }
 
 /// The discretized problem.
@@ -60,11 +65,20 @@ struct Grid {
 }
 
 impl Grid {
-  /// The ghost value beyond edge `e` next to a cell holding `u0`, the face
-  /// at `(xf, yf)`.
-  fn ghost(&self, e: usize, u0: f64, xf: f64, yf: f64, t: f64) -> f64 {
+  /// The ghost value beyond edge `e` next to a cell holding `u0`, followed
+  /// inward by cells holding `u1` and `u2`, the face at `(xf, yf)`.
+  #[allow(clippy::too_many_arguments)]
+  fn ghost(
+    &self,
+    e: usize,
+    [u0, u1, u2]: [f64; 3],
+    xf: f64,
+    yf: f64,
+    t: f64,
+  ) -> f64 {
     let h = if e < 2 { self.hx } else { self.hy };
     match &self.edges[e] {
+      Edge::Extrapolate => 3.0 * u0 - 3.0 * u1 + u2,
       Edge::Flux(None) => u0,
       Edge::Flux(Some(flux)) => {
         let (c, alpha, beta) = &**flux;
@@ -80,30 +94,50 @@ impl Grid {
   /// The four neighbor values of cell `(i, j)`: left, right, below, above.
   fn neighbors(&self, y: &[f64], i: usize, j: usize, t: f64) -> [f64; 4] {
     let ny = self.ny;
-    let u0 = y[i * ny + j];
     let (xi, yj) = (self.xc[i], self.yc[j]);
     [
       if i > 0 {
         y[(i - 1) * ny + j]
       } else {
-        self.ghost(0, u0, self.x_faces[0], yj, t)
+        self.ghost(0, self.x_inward(y, 0, j), self.x_faces[0], yj, t)
       },
       if i + 1 < self.nx {
         y[(i + 1) * ny + j]
       } else {
-        self.ghost(1, u0, self.x_faces[1], yj, t)
+        self.ghost(1, self.x_inward(y, 1, j), self.x_faces[1], yj, t)
       },
       if j > 0 {
         y[i * ny + j - 1]
       } else {
-        self.ghost(2, u0, xi, self.y_faces[0], t)
+        self.ghost(2, self.y_inward(y, 0, i), xi, self.y_faces[0], t)
       },
       if j + 1 < ny {
         y[i * ny + j + 1]
       } else {
-        self.ghost(3, u0, xi, self.y_faces[1], t)
+        self.ghost(3, self.y_inward(y, 1, i), xi, self.y_faces[1], t)
       },
     ]
+  }
+
+  /// The three cells of row `j` inward from the lower (`side` 0) or upper
+  /// `x` edge.
+  fn x_inward(&self, y: &[f64], side: usize, j: usize) -> [f64; 3] {
+    let (nx, ny) = (self.nx, self.ny);
+    let at = |k: usize| {
+      let i = if side == 0 { k } else { nx - 1 - k };
+      y[i * ny + j]
+    };
+    [at(0), at(1), at(2)]
+  }
+
+  /// The three cells of column `i` inward from the lower or upper `y` edge.
+  fn y_inward(&self, y: &[f64], side: usize, i: usize) -> [f64; 3] {
+    let ny = self.ny;
+    let at = |k: usize| {
+      let j = if side == 0 { k } else { ny - 1 - k };
+      y[i * ny + j]
+    };
+    [at(0), at(1), at(2)]
   }
 
   fn residual(&self, t: f64, y: &[f64]) -> Vec<f64> {
@@ -131,7 +165,14 @@ impl Grid {
   /// cell's stencil reads together.
   fn jacobian(&self, t: f64, y: &[f64], f0: &[f64]) -> Option<Band> {
     let (nx, ny) = (self.nx, self.ny);
-    let mut jac = Band::new(nx * ny, ny, ny);
+    // An extrapolated `x` edge reads two cells inward, `2 ny` apart.
+    let extrapolated = |e: usize| matches!(self.edges[e], Edge::Extrapolate);
+    let band = if extrapolated(0) || extrapolated(1) {
+      2 * ny
+    } else {
+      ny
+    };
+    let mut jac = Band::new(nx * ny, band, band);
     let mut probe = y.to_vec();
     for ci in 0..3 {
       for cj in 0..3 {
@@ -166,6 +207,19 @@ impl Grid {
           if j + 1 < ny {
             readers.push((i, j + 1));
           }
+          // The cell next to an extrapolated edge reads two cells inward.
+          if i == 2 && extrapolated(0) {
+            readers.push((0, j));
+          }
+          if i + 3 == nx && extrapolated(1) {
+            readers.push((nx - 1, j));
+          }
+          if j == 2 && extrapolated(2) {
+            readers.push((i, 0));
+          }
+          if j + 3 == ny && extrapolated(3) {
+            readers.push((i, ny - 1));
+          }
           for (ri, rj) in readers {
             let row = ri * ny + rj;
             let v = (fp[row] - f0[row]) / d;
@@ -195,19 +249,19 @@ impl Grid {
     }
     for j in 0..ny {
       let yj = self.yc[j];
-      let (u_lo, u_hi) = (y[j], y[(nx - 1) * ny + j]);
+      let (lo, hi) = (self.x_inward(y, 0, j), self.x_inward(y, 1, j));
       out[0][j + 1] =
-        f64::midpoint(u_lo, self.ghost(0, u_lo, self.x_faces[0], yj, t));
+        f64::midpoint(lo[0], self.ghost(0, lo, self.x_faces[0], yj, t));
       out[nx + 1][j + 1] =
-        f64::midpoint(u_hi, self.ghost(1, u_hi, self.x_faces[1], yj, t));
+        f64::midpoint(hi[0], self.ghost(1, hi, self.x_faces[1], yj, t));
     }
     for i in 0..nx {
       let xi = self.xc[i];
-      let (u_lo, u_hi) = (y[i * ny], y[i * ny + ny - 1]);
+      let (lo, hi) = (self.y_inward(y, 0, i), self.y_inward(y, 1, i));
       out[i + 1][0] =
-        f64::midpoint(u_lo, self.ghost(2, u_lo, xi, self.y_faces[0], t));
+        f64::midpoint(lo[0], self.ghost(2, lo, xi, self.y_faces[0], t));
       out[i + 1][ny + 1] =
-        f64::midpoint(u_hi, self.ghost(3, u_hi, xi, self.y_faces[1], t));
+        f64::midpoint(hi[0], self.ghost(3, hi, xi, self.y_faces[1], t));
     }
     // Corners: linear extrapolation from the two adjacent faces.
     for (ci, ii) in [(0, 1), (nx + 1, nx)] {
@@ -588,6 +642,11 @@ fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
     }
   }
   let pde = pde?;
+  // A problem in finite element notation has the zero natural flux on an
+  // edge without a condition.
+  let finite_element = opts.finite_element
+    || !dirichlet.is_empty()
+    || mentions_head(pde, "NeumannValue");
 
   // The argument slot of each domain's variable in the unknown's calls.
   let u_args = first_u_args(pde, u)?;
@@ -801,7 +860,8 @@ fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
       continue;
     }
     match &flux[e] {
-      None => edges.push(Edge::Flux(None)),
+      None if finite_element => edges.push(Edge::Flux(None)),
+      None => edges.push(Edge::Extrapolate),
       Some((alpha, beta)) => {
         let c = diffusion(if e < 2 { UXX } else { UYY })?;
         if mentions_any(&c, &[TV]) || mentions_any(beta, &[TV]) {
@@ -816,6 +876,20 @@ fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
     }
   }
   let edges: [Edge; 4] = edges.try_into().ok()?;
+  for (axis, dom) in [x_dom, y_dom].iter().enumerate() {
+    if edges[2 * axis..2 * axis + 2]
+      .iter()
+      .any(|e| matches!(e, Edge::Extrapolate))
+    {
+      crate::emit_message(&format!(
+        "{}::bcart: Warning: an insufficient number of boundary conditions \
+         have been specified for the direction of independent variable {}. \
+         Artificial boundary effects may be present in the solution.",
+        super::ndsolve_message_head(),
+        dom.name
+      ));
+    }
+  }
 
   let mut n_cells = 32usize;
   if let Some(lo) = opts.min_points {

@@ -1094,6 +1094,22 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     {
       return Some(row_template_source(tag, &parts));
     }
+    // The script and `Mod` templates stand for the call they typeset:
+    // `TemplateBox[{"x", "3"}, "Superscript"]` is `Superscript[x, 3]`.
+    // Its options (`SyntaxForm -> SuperscriptBox`) follow the name.
+    let name = args[1].trim().trim_matches('"');
+    if matches!(name, "Superscript" | "Subscript" | "Subsuperscript" | "Mod") {
+      let items = args[0].trim();
+      let items = match items.strip_prefix("List[") {
+        Some(rest) => format!("{{{}}}", rest.strip_suffix(']').unwrap_or(rest)),
+        None => items.to_string(),
+      };
+      let operands: Vec<String> = template_box_parts(&items)
+        .iter()
+        .map(|p| format!("({})", extract_cell_content(p.trim())))
+        .collect();
+      return Some(format!("{name}[{}]", operands.join(", ")));
+    }
     // A Demonstration's cloud-compatible snapshot slideshow is stored as
     // `TemplateBox[{InterpretationBox[Null, EmbeddedHTML["<html…>"]], …},
     // "EmbeddedHTML"]`. Show the page's visible text rather than its markup.

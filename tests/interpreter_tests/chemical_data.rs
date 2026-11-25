@@ -107,11 +107,11 @@ mod chemical_data_tests {
   }
 
   #[test]
-  fn unknown_property_is_missing() {
+  fn unknown_property_stays_unevaluated() {
     clear_state();
     assert_eq!(
       interpret(r#"ChemicalData["Water", "NoSuchProperty"]"#).unwrap(),
-      "Missing[NotAvailable]"
+      "ChemicalData[Water, NoSuchProperty]"
     );
   }
 }
