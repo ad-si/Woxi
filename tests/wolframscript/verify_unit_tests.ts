@@ -3111,6 +3111,23 @@ function main() {
     "Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]",
     // Simplify[(1 - Cos[9])/9]: a leaf-count tie WL breaks toward 2 Sin[9/2]^2/9.
     "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. {a -> 3, t -> 5} // Simplify",
+    // ToString[FullForm[…], InputForm] brackets the Xor; the compared
+    // top-level output agrees (`FullForm[a || Xor[b, c]]`), so this is the
+    // harness's InputForm wrapper, not a divergence.
+    "FullForm[a || Xor[b, c]]",
+    // wolframscript overflows a machine-integer year (from ~1e15) and prints
+    // its own artifact; recorded in conformance_gaps.md.
+    "DateString[{200000000000000000007, 4, 15}, \"ISODate\"]",
+    // Without a front end wolframscript's Beep[] is FrontEndObject::notavail
+    // + $Failed; Woxi beeps and returns Null like a notebook kernel.
+    "Beep[] === Null",
+    "x = Beep[]; x === Null",
+    // AnnotationRules come out in WL's internal hash order.
+    "ToString[Options[SetProperty[{Graph[Tooltip[#, #] & /@ {1, 2}, {1 -> 2}], 2}, VertexStyle -> Red]], InputForm]",
+    // A held literal Rational[n, d] call is indistinguishable from the number
+    // in Woxi's representation (conformance_gaps.md).
+    "Hold[Rational[1, 2]]",
+    "Hold[Rational[-3, 4]]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
