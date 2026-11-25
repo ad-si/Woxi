@@ -27906,6 +27906,33 @@ mod sum_reads_index_dependent_symbols {
       "{14, 36, (k*(1 + k)*(1 + 2*k))/6}"
     );
   }
+
+  #[test]
+  fn a_symbol_mentioning_the_indices_of_a_multiple_sum() {
+    // The symbols are replaced once for the whole call, not again for
+    // every term of the enumerated grid.
+    assert_eq!(
+      interpret(
+        "r = n^2 + m; {Sum[r, {n, 3}, {m, 2}], Product[r, {n, 3}, {m, 2}], \
+         Sum[r, {n, 3}, {m, n}]}"
+      )
+      .unwrap(),
+      "{37, 19800, 46}"
+    );
+  }
+
+  #[test]
+  fn a_multiple_sum_over_the_parts_of_a_matrix() {
+    assert_eq!(
+      interpret(
+        "am = Table[Boole[Mod[i + j, 5] < 2], {i, 30}, {j, 30}]; \
+         {Sum[am[[i, 3]]*am[[i, j]]*am[[3, j]], {i, 30}, {j, 30}], \
+          Product[1 + am[[i, j]], {i, 4}, {j, 4}]}"
+      )
+      .unwrap(),
+      "{108, 128}"
+    );
+  }
 }
 
 /// Piecewise integrands whose intervals end at parameters: each binding

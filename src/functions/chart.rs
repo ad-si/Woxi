@@ -3750,6 +3750,15 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "AxesLabel" | "FrameLabel" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
+          // A label keeps its styling (`Style["k", Italic]`, also inside a
+          // `Row`) and sets a mathematical one in TraditionalForm, the same
+          // way a plot's labels are.
+          let label_text: fn(&Expr) -> Option<String> = if name == "FrameLabel"
+          {
+            crate::functions::graphics::frame_label_text
+          } else {
+            crate::functions::graphics::axes_label_entry
+          };
           // The nested `{{left, right}, {bottom, top}}` form of a
           // `FrameLabel` goes through the shared parser; only its bottom and
           // left edges are drawn on a chart.
@@ -3764,15 +3773,15 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             && !items.is_empty()
           {
             // `{xlabel}` names the x axis only.
-            let x = expr_to_label(&items[0]).unwrap_or_default();
-            let y = items.get(1).and_then(expr_to_label).unwrap_or_default();
+            let x = label_text(&items[0]).unwrap_or_default();
+            let y = items.get(1).and_then(label_text).unwrap_or_default();
             if name == "FrameLabel" {
               opts.frame_label = Some((x, y));
             } else {
               opts.axes_label = Some((x, y));
             }
           } else if !matches!(&val, Expr::Identifier(n) if n == "None")
-            && let Some(y) = expr_to_label(&val)
+            && let Some(y) = label_text(&val)
           {
             // A lone label names the value (vertical) axis, as in WL —
             // a `FrameLabel` as well as an `AxesLabel`.
