@@ -1386,6 +1386,119 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
   reevaluate_after_own_value_change(expr, result, assign_seq)
 }
 
+/// Heads that hold their arguments by name in the evaluator rather than
+/// through a Hold attribute (`Manipulate` reports none, as in Wolfram, yet
+/// holds its body and specs).
+fn holds_arguments_by_name(name: &str) -> bool {
+  name == "Table"
+  || name == "Do"
+  // ParallelDo holds its body like Do so side-effecting expressions
+  // (e.g. Print[i]) aren't evaluated once before iteration begins.
+  || name == "ParallelDo"
+  || name == "With"
+  || name == "Block"
+  // BlockRandom is deliberately absent: it is HoldFirst, not HoldAll,
+  // so only its body is held (by the attribute machinery) while any
+  // trailing option evaluates normally.
+  || name == "Function"
+  || name == "For"
+  || name == "While"
+  || name == "ClearAll"
+  || name == "Clear"
+  || name == "Hold"
+  || name == "HoldForm"
+  || name == "HoldComplete"
+  || name == "Unevaluated"
+  || name == "ValueQ"
+  || name == "Reap"
+  || name == "Plot"
+  || name == "Plot3D"
+  // Note: Graphics is NOT held – its args are evaluated normally
+  // (so Thick → Thickness[Large], Red → RGBColor[1,0,0], etc.)
+  || name == "ParametricPlot"
+  // The 3D counterparts of the held 2D plotting heads above need the
+  // same treatment: each takes a symbolic body plus `{var, min, max}`
+  // iterator specs, so a `Module` local reused as one of those
+  // iterator variables (a common idiom — see the "Firm with Two
+  // Plants" Demonstration, whose Manipulate reuses its `Q` control as
+  // ParametricPlot3D's own iterator) must stay unevaluated in the
+  // iterator position rather than being substituted away before the
+  // plot function ever sees it as a symbol.
+  || name == "ParametricPlot3D"
+  || name == "ContourPlot3D"
+  || name == "RegionPlot3D"
+  || name == "VectorPlot3D"
+  || name == "SphericalPlot3D"
+  || name == "RevolutionPlot3D"
+  || name == "PolarPlot"
+  || name == "DensityPlot"
+  || name == "ContourPlot"
+  || name == "RegionPlot"
+  || name == "StreamPlot"
+  || name == "VectorPlot"
+  || name == "StreamDensityPlot"
+  || name == "VectorDensityPlot"
+  || name == "DiscretePlot"
+  || name == "DiscretePlot3D"
+  || name == "Show"
+  || name == "GraphicsRow"
+  || name == "GraphicsColumn"
+  || name == "GraphicsGrid"
+  || name == "PlotGrid"
+  || name == "BooleanTable"
+  // Manipulate holds its body and variable specs so that controls
+  // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
+  // (matching Wolfram Language notebook behavior).
+  || name == "Manipulate"
+  // Animate is Manipulate that auto-plays; it holds its body and
+  // variable spec for the same reason. (ListAnimate is deliberately
+  // NOT held: its argument is a precomputed list of frames that must
+  // evaluate first, matching Wolfram Language.)
+  || name == "Animate"
+  // Control likewise holds its variable spec so that the bound symbol
+  // and any symbolic values stay intact for interactive rendering.
+  || name == "Control"
+  // LocatorPane holds its body graphic so it isn't evaluated with the
+  // locator point free; ClickPane holds its handler so it stays an
+  // un-applied function until fed a click position.
+  || name == "LocatorPane"
+  || name == "ClickPane"
+  // GeometricScene holds its point-definition rules and primitives:
+  // the primitives reference point *symbols*, not values, and must
+  // stay symbolic until a `["Graphics"]` property substitutes them in.
+  || name == "GeometricScene"
+  // TemplateIf's condition refers to slots that are only filled when
+  // the template is applied, so it must not evaluate before then
+  // (`TemplateIf[StringQ[TemplateSlot[1]], …]`).
+  || name == "TemplateIf"
+  // NDSolve holds its equations, dependent variable(s) and
+  // independent-variable spec (matching Wolfram: NDSolve has
+  // HoldAll) so that an independent variable name reused elsewhere
+  // in the caller's scope — e.g. a Manipulate animation control
+  // also named `t`, as in the "Spring-Cart-Pendulum System"
+  // Demonstration's `sol[t_] = First[NDSolve[…, {t, 0, tMax}]]` —
+  // isn't substituted with its outer value before the solver ever
+  // sees `t` as the symbolic integration variable. The
+  // equations/bounds still resolve correctly: the solver
+  // substitutes each grid value for the iterator and evaluates the
+  // rest itself (picking up other free symbols, like a
+  // Module-local coefficient, from scope).
+  //
+  // DSolve is deliberately NOT held here even though real Wolfram
+  // gives it the same HoldAll attribute: unlike NDSolve's numeric
+  // stepper, DSolve's symbolic classifiers evaluate sub-expressions
+  // directly rather than through a scoped substitute-then-evaluate
+  // step, so holding its args swaps this bug for a silently wrong
+  // symbolic solution (`y[x] -> 5 + C[1]` instead of `x + C[1]`
+  // under `Block[{x = 5}, …]`) rather than fixing it.
+  || name == "NDSolve"
+  || name == "NDSolveValue"
+  // MatrixPropertyDistribution holds its property expression: it is a
+  // function of the symbolic matrix variable (e.g. Eigenvalues[x]) and
+  // only becomes evaluable once a sampled matrix is substituted in.
+  || name == "MatrixPropertyDistribution"
+}
+
 /// Wolfram evaluates a result again when it changed and mentions a symbol
 /// that got a value meanwhile: in `{x, x = 5}` the first element is
 /// evaluated before the second assigns `x`, so the result `{x, 5}` is
@@ -1407,38 +1520,37 @@ fn reevaluate_after_own_value_change(
     return Ok(result);
   }
   let assigned = own_values_assigned_since(assign_seq);
-  if matches!(assigned, AssignedSince::Nothing) || head_holds_arguments(expr) {
+  let holds = |e: &Expr| {
+    head_holds_arguments(e)
+      || matches!(e, Expr::FunctionCall { name, .. } if holds_arguments_by_name(name))
+  };
+  if matches!(assigned, AssignedSince::Nothing) || holds(expr) {
     return Ok(result);
   }
-  fn mentions_assigned(e: &Expr, assigned: &AssignedSince) -> bool {
+  fn mentions_assigned(
+    e: &Expr,
+    assigned: &AssignedSince,
+    holds: &dyn Fn(&Expr) -> bool,
+  ) -> bool {
+    let go = |x: &Expr| mentions_assigned(x, assigned, holds);
     match e {
       Expr::Identifier(name) => {
         assigned_symbol(assigned, name)
           && crate::ENV.with(|env| env.borrow().contains_key(name))
       }
-      Expr::List(items) => items.iter().any(|i| mentions_assigned(i, assigned)),
-      Expr::FunctionCall { args, .. } => {
-        !head_holds_arguments(e)
-          && args.iter().any(|a| mentions_assigned(a, assigned))
-      }
-      Expr::BinaryOp { left, right, .. } => {
-        mentions_assigned(left, assigned) || mentions_assigned(right, assigned)
-      }
-      Expr::UnaryOp { operand, .. } => mentions_assigned(operand, assigned),
-      Expr::Comparison { operands, .. } => {
-        operands.iter().any(|o| mentions_assigned(o, assigned))
-      }
+      Expr::List(items) => items.iter().any(go),
+      Expr::FunctionCall { args, .. } => !holds(e) && args.iter().any(go),
+      Expr::BinaryOp { left, right, .. } => go(left) || go(right),
+      Expr::UnaryOp { operand, .. } => go(operand),
+      Expr::Comparison { operands, .. } => operands.iter().any(go),
       Expr::Rule {
         pattern,
         replacement,
-      } => {
-        mentions_assigned(pattern, assigned)
-          || mentions_assigned(replacement, assigned)
-      }
+      } => go(pattern) || go(replacement),
       _ => false,
     }
   }
-  if mentions_assigned(&result, &assigned) {
+  if mentions_assigned(&result, &assigned, &holds) {
     evaluate_expr_to_expr(&result)
   } else {
     Ok(result)
@@ -3675,114 +3787,7 @@ fn evaluate_expr_to_expr_uncached(
         }
         // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
         // These functions take unevaluated expressions as first argument
-        if name == "Table"
-        || name == "Do"
-        // ParallelDo holds its body like Do so side-effecting expressions
-        // (e.g. Print[i]) aren't evaluated once before iteration begins.
-        || name == "ParallelDo"
-        || name == "With"
-        || name == "Block"
-        // BlockRandom is deliberately absent: it is HoldFirst, not HoldAll,
-        // so only its body is held (by the attribute machinery) while any
-        // trailing option evaluates normally.
-        || name == "Function"
-        || name == "For"
-        || name == "While"
-        || name == "ClearAll"
-        || name == "Clear"
-        || name == "Hold"
-        || name == "HoldForm"
-        || name == "HoldComplete"
-        || name == "Unevaluated"
-        || name == "ValueQ"
-        || name == "Reap"
-        || name == "Plot"
-        || name == "Plot3D"
-        // Note: Graphics is NOT held – its args are evaluated normally
-        // (so Thick → Thickness[Large], Red → RGBColor[1,0,0], etc.)
-        || name == "ParametricPlot"
-        // The 3D counterparts of the held 2D plotting heads above need the
-        // same treatment: each takes a symbolic body plus `{var, min, max}`
-        // iterator specs, so a `Module` local reused as one of those
-        // iterator variables (a common idiom — see the "Firm with Two
-        // Plants" Demonstration, whose Manipulate reuses its `Q` control as
-        // ParametricPlot3D's own iterator) must stay unevaluated in the
-        // iterator position rather than being substituted away before the
-        // plot function ever sees it as a symbol.
-        || name == "ParametricPlot3D"
-        || name == "ContourPlot3D"
-        || name == "RegionPlot3D"
-        || name == "VectorPlot3D"
-        || name == "SphericalPlot3D"
-        || name == "RevolutionPlot3D"
-        || name == "PolarPlot"
-        || name == "DensityPlot"
-        || name == "ContourPlot"
-        || name == "RegionPlot"
-        || name == "StreamPlot"
-        || name == "VectorPlot"
-        || name == "StreamDensityPlot"
-        || name == "VectorDensityPlot"
-        || name == "DiscretePlot"
-        || name == "DiscretePlot3D"
-        || name == "Show"
-        || name == "GraphicsRow"
-        || name == "GraphicsColumn"
-        || name == "GraphicsGrid"
-        || name == "PlotGrid"
-        || name == "BooleanTable"
-        // Manipulate holds its body and variable specs so that controls
-        // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
-        // (matching Wolfram Language notebook behavior).
-        || name == "Manipulate"
-        // Animate is Manipulate that auto-plays; it holds its body and
-        // variable spec for the same reason. (ListAnimate is deliberately
-        // NOT held: its argument is a precomputed list of frames that must
-        // evaluate first, matching Wolfram Language.)
-        || name == "Animate"
-        // Control likewise holds its variable spec so that the bound symbol
-        // and any symbolic values stay intact for interactive rendering.
-        || name == "Control"
-        // LocatorPane holds its body graphic so it isn't evaluated with the
-        // locator point free; ClickPane holds its handler so it stays an
-        // un-applied function until fed a click position.
-        || name == "LocatorPane"
-        || name == "ClickPane"
-        // GeometricScene holds its point-definition rules and primitives:
-        // the primitives reference point *symbols*, not values, and must
-        // stay symbolic until a `["Graphics"]` property substitutes them in.
-        || name == "GeometricScene"
-        // TemplateIf's condition refers to slots that are only filled when
-        // the template is applied, so it must not evaluate before then
-        // (`TemplateIf[StringQ[TemplateSlot[1]], …]`).
-        || name == "TemplateIf"
-        // NDSolve holds its equations, dependent variable(s) and
-        // independent-variable spec (matching Wolfram: NDSolve has
-        // HoldAll) so that an independent variable name reused elsewhere
-        // in the caller's scope — e.g. a Manipulate animation control
-        // also named `t`, as in the "Spring-Cart-Pendulum System"
-        // Demonstration's `sol[t_] = First[NDSolve[…, {t, 0, tMax}]]` —
-        // isn't substituted with its outer value before the solver ever
-        // sees `t` as the symbolic integration variable. The
-        // equations/bounds still resolve correctly: the solver
-        // substitutes each grid value for the iterator and evaluates the
-        // rest itself (picking up other free symbols, like a
-        // Module-local coefficient, from scope).
-        //
-        // DSolve is deliberately NOT held here even though real Wolfram
-        // gives it the same HoldAll attribute: unlike NDSolve's numeric
-        // stepper, DSolve's symbolic classifiers evaluate sub-expressions
-        // directly rather than through a scoped substitute-then-evaluate
-        // step, so holding its args swaps this bug for a silently wrong
-        // symbolic solution (`y[x] -> 5 + C[1]` instead of `x + C[1]`
-        // under `Block[{x = 5}, …]`) rather than fixing it.
-        || name == "NDSolve"
-        || name == "NDSolveValue"
-        // MatrixPropertyDistribution holds its property expression: it is a
-        // function of the symbolic matrix variable (e.g. Eigenvalues[x]) and
-        // only becomes evaluable once a sampled matrix is substituted in.
-        || name == "MatrixPropertyDistribution"
-        {
+        if holds_arguments_by_name(name) {
           // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
           // BooleanTable aren't actually HoldAll in Wolfram Language, so a
           // `Sequence @@ list` argument must reduce to `Sequence[…]` before
