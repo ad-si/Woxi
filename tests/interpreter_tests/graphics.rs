@@ -2057,6 +2057,97 @@ mod graphics {
       );
     }
 
+    /// `Inset[obj]` with no position (or an `Automatic` one) is
+    /// `Inset[obj, Center]`: a styled label lands in the middle of the
+    /// picture. Regression: it went to `Text`'s default, the origin, which
+    /// put a card's big centered suit symbol on its corner.
+    #[test]
+    fn a_text_inset_without_position_is_centered() {
+      let text_xy = |position: &str| -> (f64, f64) {
+        let svg = export_svg(&format!(
+          "Graphics[{{Rectangle[{{0, 0}}, {{1, 1.5}}], \
+           Inset[Style[\"Q\", 40, Red]{position}]}}]"
+        ));
+        let attr = |name: &str| -> f64 {
+          svg
+            .split("<text")
+            .nth(1)
+            .and_then(|s| s.split(&format!(" {name}=\"")).nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("no text {name}: {svg}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      let centered = text_xy(", Scaled[{0.5, 0.5}]");
+      assert_eq!(text_xy(""), centered);
+      assert_eq!(text_xy(", Automatic"), centered);
+      assert_ne!(text_xy(", {0, 0}"), centered);
+    }
+
+    /// A single-number inset size is the object's width; its height
+    /// follows from the object's own aspect ratio. Regression: the number
+    /// was used for both sides, so a tall picture was squeezed into a
+    /// square and came out narrower than asked for.
+    #[test]
+    fn a_scalar_inset_size_sets_the_width() {
+      let inset = |object: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[{object}, {{0, 0}}, {{0, 0}}, 2]}}, \
+           PlotRange -> {{{{0, 4}}, {{0, 4}}}}, ImageSize -> 400]"
+        ))
+      };
+      // The `name="value"` / `name='value'` attribute of the first element
+      // that starts with `tag` and mentions `marker`.
+      let attr = |svg: &str, tag: &str, marker: &str, name: &str| -> f64 {
+        let element = svg
+          .split(tag)
+          .skip(1)
+          .filter_map(|s| s.split('>').next())
+          .find(|e| e.contains(marker))
+          .unwrap_or_else(|| panic!("no {tag} with {marker} in {svg}"));
+        element
+          .split(&format!(" {name}="))
+          .nth(1)
+          .and_then(|s| s.get(1..))
+          .and_then(|s| s.split(['"', '\'']).next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} in {element}"))
+      };
+      // Two of the four plot units across a 400 pixel picture, and the
+      // 1 × 1.5 rectangle's own shape.
+      let check = |what: &str, w: f64, h: f64| {
+        assert!((w - 200.0).abs() < 8.0, "width of {what}: {w}");
+        assert!((h / w - 1.5).abs() < 0.05, "aspect of {what}: {w} x {h}");
+      };
+      // The image is drawn by a nested picture (its own pixel size, `<svg
+      // width='…' height='…' viewBox=…>`) placed in a padded frame (`<svg
+      // x=… width=… viewBox="0 0 vw vh">`) that the frame's `width`/`vw`
+      // scales onto the page.
+      let svg = inset("Image[Graphics[Rectangle[{0, 0}, {1, 1.5}]]]");
+      let frame_view_width = svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("viewBox=\"0 0 ").nth(1))
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("no padded frame in {svg}"));
+      let scale = attr(&svg, "<svg x=", "", "width") / frame_view_width;
+      let picture = "<svg xmlns='http://www.w3.org/2000/svg'";
+      check(
+        "the image",
+        attr(&svg, picture, "viewBox", "width") * scale,
+        attr(&svg, picture, "viewBox", "height") * scale,
+      );
+      let svg = inset("Graphics[{Red, Rectangle[{0, 0}, {1, 1.5}]}]");
+      let red = "rgb(255,0,0)";
+      check(
+        "the graphic",
+        attr(&svg, "<rect", red, "width"),
+        attr(&svg, "<rect", red, "height"),
+      );
+    }
+
     /// An inset `size` is the width of the whole chart picture, and the
     /// chart's white plate must not paint over what it overlaps — a pie
     /// inset used to fill its whole `size` and hide its neighbors.
@@ -3082,7 +3173,7 @@ mod graphics {
         "Graphics[Line[{{0, 0}, {1, 1}}]]",
         "Graphics[{Thickness[0.05], Red, Line[{{0, 0}, {0, 2}}]}]",
         "Graphics[{Thickness -> 0.025, Green, Line[{{1, 2}, {1, -2}}]}]",
-        "Graphics[{Dashed, Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]",
+        "Graphics[{Red, Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]",
       ] {
         let svg = export_svg(code);
         assert!(
@@ -3104,7 +3195,8 @@ mod graphics {
         "Line[{{0, 0}, {1, 0}, {1, 1}}]",
         "Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]",
       ] {
-        for directives in ["", "Thickness[0.02], ", "Red, Dashed, "] {
+        // (A dashed line has butt caps; see `dashed_lines_have_butt_caps`.)
+        for directives in ["", "Thickness[0.02], ", "Red, "] {
           let svg = export_svg(&format!("Graphics[{{{directives}{line}}}]"));
           assert!(svg.contains("stroke-linecap=\"square\""), "{line}: {svg}");
           assert!(!svg.contains("stroke-linecap=\"butt\""), "{line}: {svg}");
@@ -3612,22 +3704,19 @@ mod graphics {
     }
 
     /// `TraditionalForm` of a string carrying inline box code typesets that
-    /// code with its single-letter symbols in italics (an italic `d²`, `xₖ`)
-    /// as a grid entry, while plain text runs stay upright.
+    /// code as a grid entry; exported to SVG (not a picture), its
+    /// single-letter symbols are upright, as in Wolfram's SVG export, and
+    /// plain text runs stay upright too.
     #[test]
-    fn traditional_form_inline_box_string_italicizes_letters() {
+    fn traditional_form_inline_box_string_letters_upright_in_svg_export() {
       for (label, letter) in [
         ("\"\\!\\(\\*SuperscriptBox[\\(d\\), \\(2\\)]\\)\"", "d"),
         ("\"\\!\\(\\*SubscriptBox[\\(x\\), \\(k\\)]\\)\"", "x"),
       ] {
         let code = format!("Grid[{{{{TraditionalForm[{label}], 1}}}}]");
         let svg = export_svg(&code);
-        assert!(
-          svg.contains(&format!(
-            "<tspan font-style=\"italic\">{letter}</tspan>"
-          )),
-          "{code}: {svg}"
-        );
+        assert!(svg.contains(&format!(">{letter}<")), "{code}: {svg}");
+        assert!(!svg.contains("italic"), "{code}: {svg}");
       }
       // Text outside the box code stays upright.
       let svg = export_svg(
@@ -4323,6 +4412,59 @@ mod graphics {
           assert!(svg.matches("<polygon").count() > 2);
         }
 
+        /// `Polygon[{poly1, poly2}, VertexColors -> {cols1, cols2}]` gives
+        /// each sub-polygon its own color list instead of drawing them all
+        /// with the default black fill.
+        #[test]
+        fn multi_polygon_per_polygon_color_lists() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{{0, 0}, {1, 0}, {0, 1}}, \
+             {{2, 0}, {3, 0}, {2, 1}}, {{4, 0}, {5, 0}, {4, 1}}}, \
+             VertexColors -> {Table[GrayLevel[1], {3}], \
+             Table[Red, {3}], Table[GrayLevel[0], {3}]}]}]",
+          );
+          // Each sub-polygon's corners share one color, so each is one
+          // flat fill rather than a mesh of blended facets.
+          assert_eq!(
+            svg.matches("fill=\"rgb(255,255,255)\"").count(),
+            1,
+            "{svg}"
+          );
+          assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+          assert_eq!(svg.matches("fill=\"rgb(0,0,0)\"").count(), 1, "{svg}");
+        }
+
+        /// A per-polygon color list shorter than its polygon leaves the
+        /// remaining corners of that polygon black, as a flat list does.
+        #[test]
+        fn multi_polygon_per_polygon_short_color_list() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{{0, 0}, {1, 0}, {0, 1}}, \
+             {{2, 0}, {3, 0}, {2, 1}}}, \
+             VertexColors -> {{Red, Red, Red}, {Blue}}]}]",
+          );
+          assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+          // The second triangle blends from blue into black corners: a
+          // gradient between the two, not one flat color.
+          assert!(svg.contains("<stop stop-color=\"#0000ff\"/>"), "{svg}");
+          assert!(
+            svg.contains("<stop offset=\"1\" stop-color=\"#000000\"/>"),
+            "{svg}"
+          );
+        }
+
+        /// `Line[{seg1, seg2}, VertexColors -> {cols1, cols2}]` colors each
+        /// segment with its own list.
+        #[test]
+        fn multi_segment_line_per_segment_color_lists() {
+          let svg = export_svg(
+            "Graphics[{Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}, \
+             VertexColors -> {{Red, Red}, {Blue, Blue}}]}]",
+          );
+          assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+          assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+        }
+
         /// A self-crossing outline is filled by the even-odd rule whether
         /// it is flat-colored or blended: the blend is clipped to the
         /// even-odd region, so a pentagram's center stays hollow.
@@ -4578,6 +4720,43 @@ mod graphics {
       };
       // The line break stacks the label's two lines.
       assert!(height(&svg) > height(&label(" ")) + 10.0, "{svg}");
+    }
+
+    /// A `PlotLabel` that is itself `Framed` (under a `Style` with a
+    /// `Background`) draws the frame and the shading behind its text,
+    /// rather than dropping both and printing only the bare text.
+    #[test]
+    fn plot_label_framed_draws_frame_and_background() {
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[Framed[\"10:45\"], 14, \
+         Background -> RGBColor[1, 0.5, 0]]]",
+      );
+      assert!(!svg.contains("Framed"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,128,0)\""), "{svg}");
+      assert!(svg.contains("stroke-width=\"0.5\""), "{svg}");
+      assert!(svg.contains("font-size=\"14.0\""), "{svg}");
+      assert!(svg.contains(">10:45<"), "{svg}");
+
+      // A bare frame draws its box with no shading.
+      let plain = export_svg("Graphics[Disk[], PlotLabel -> Framed[\"abc\"]]");
+      assert!(plain.contains("<rect x=\"0.5\" y=\"0.5\""), "{plain}");
+      assert!(plain.contains(">abc<"), "{plain}");
+
+      // A `Style` that only shades the text draws the shading, no frame.
+      let shaded = export_svg(
+        "Graphics[Disk[], PlotLabel -> Style[\"abc\", Background -> Yellow]]",
+      );
+      assert!(shaded.contains("fill=\"rgb(255,255,0)\""), "{shaded}");
+      assert!(!shaded.contains("<rect x=\"0.5\" y=\"0.5\""), "{shaded}");
+      assert!(shaded.contains(">abc<"), "{shaded}");
+
+      // A label with neither stays a plain line of title text.
+      let text =
+        export_svg("Graphics[Disk[], PlotLabel -> Style[\"abc\", 14]]");
+      assert!(
+        text.contains("<tspan font-size=\"14\">abc</tspan>"),
+        "{text}"
+      );
     }
 
     /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
@@ -6046,6 +6225,123 @@ mod graphics {
         let p = meet(edges[0], edges[1]);
         assert!(!edges.iter().all(|s| inside(p, *s)), "{origin}: {edges:?}");
       }
+    }
+
+    /// Axes crossing at an `AxesOrigin` carry their labels at the end
+    /// farther from the viewer instead of at the middle of the axis (where
+    /// all three would pile up on the crossing point).
+    #[test]
+    fn graphics3d_crossing_axes_are_labeled_at_their_far_ends() {
+      let attr = |l: &str, name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let rest = &l[l.find(&key).unwrap() + key.len()..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      // Each axis line with the position of the label that follows it.
+      let labeled = |svg: &str| -> Vec<([f64; 4], (f64, f64))> {
+        let mut out = Vec::new();
+        let mut axis = None;
+        for l in svg.lines() {
+          if l.starts_with("<line ") && l.contains("stroke-width=\"1\"") {
+            axis = Some([
+              attr(l, "x1"),
+              attr(l, "y1"),
+              attr(l, "x2"),
+              attr(l, "y2"),
+            ]);
+          } else if l.starts_with("<text ")
+            && ["a", "b", "c"]
+              .iter()
+              .any(|n| l.ends_with(&format!(">{n}</text>")))
+          {
+            out.push((axis.unwrap(), (attr(l, "x"), attr(l, "y"))));
+          }
+        }
+        out
+      };
+      let scene = |view: &str, origin: &str| {
+        labeled(&export_svg(&format!(
+          "Graphics3D[Point[{{{{-2, -3, -4}}, {{2, 3, 4}}}}], Axes -> True, \
+           AxesLabel -> {{\"a\", \"b\", \"c\"}}, ViewPoint -> {view}{origin}]"
+        )))
+      };
+      let dist = |p: (f64, f64), x: f64, y: f64| (p.0 - x).hypot(p.1 - y);
+      let mid = |s: [f64; 4]| ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+      let above = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}");
+      assert_eq!(above.len(), 3, "{above:?}");
+      for (s, label) in &above {
+        let to_end = dist(*label, s[0], s[1]).min(dist(*label, s[2], s[3]));
+        let (mx, my) = mid(*s);
+        assert!(to_end < 25.0, "{above:?}");
+        assert!(dist(*label, mx, my) > 50.0, "{above:?}");
+      }
+      // Seen from above, the far end of the vertical axis is its lower
+      // one; seen from below, its upper one.
+      let (z_axis, z_label) = above[2];
+      assert!(z_label.1 > mid(z_axis).1, "{above:?}");
+      let below = scene("{1.3, -2.4, -2}", ", AxesOrigin -> {0, 0, 0}");
+      let (z_axis, z_label) = below[2];
+      assert!(z_label.1 < mid(z_axis).1, "{below:?}");
+      // The far end of the first axis is the one away from the viewer's
+      // side of it.
+      let right = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}")[0];
+      let left = scene("{-1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}")[0];
+      assert!(right.1.0 < mid(right.0).0, "{right:?}");
+      assert!(left.1.0 > mid(left.0).0, "{left:?}");
+      // Axes on the box edges keep their labels at the middle.
+      for (s, label) in scene("{1.3, -2.4, 2}", "") {
+        let to_end = dist(label, s[0], s[1]).min(dist(label, s[2], s[3]));
+        assert!(to_end > 50.0, "{s:?} {label:?}");
+      }
+    }
+
+    /// A `Cylinder` or `Cone` cut open by the `PlotRange` keeps the outline
+    /// of its end circles, as far as they lie inside the box.
+    #[test]
+    fn graphics3d_clipped_round_solids_keep_their_rim_outlines() {
+      let rim_lines = |expr: &str| -> usize {
+        export_svg(expr)
+          .lines()
+          .filter(|l| {
+            (l.starts_with("<line ") || l.starts_with("<polyline "))
+              && l.contains("stroke=\"rgb(64,64,64)\"")
+          })
+          .count()
+      };
+      let cut = "PlotRange -> {{-1, 1}, {0, 1}, {-1, 2}}";
+      for solid in [
+        "Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]",
+        "Cone[{{0, 0, 0}, {0, 0, 1}}, 1]",
+      ] {
+        assert!(
+          rim_lines(&format!("Graphics3D[{{Opacity[0.5], {solid}}}, {cut}]"))
+            > 10,
+          "{solid}"
+        );
+        // `EdgeForm[]` turns the outline off, cut or not.
+        assert_eq!(
+          rim_lines(&format!(
+            "Graphics3D[{{EdgeForm[], Opacity[0.5], {solid}}}, {cut}]"
+          )),
+          0,
+          "{solid}"
+        );
+      }
+      // The outline takes the `EdgeForm` color, and none of it is drawn
+      // outside the box: a cylinder whose rims both lie beyond the range
+      // shows only its cut-open side.
+      let red = export_svg(&format!(
+        "Graphics3D[{{EdgeForm[Red], Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}, \
+         {cut}]"
+      ));
+      assert!(red.contains("stroke=\"rgb(255,0,0)\""), "{red}");
+      assert_eq!(
+        rim_lines(
+          "Graphics3D[Cylinder[{{0, 0, -5}, {0, 0, 5}}, 1], \
+           PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}]"
+        ),
+        0
+      );
     }
 
     /// Automatic 3D box ticks step by the smallest of 1, 2 and 5 × 10^k
@@ -14726,9 +15022,11 @@ mod plot3d {
            Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
         ))
       };
+      // wolframscript draws the sphere 337.5 px across: the view angle
+      // spans the box padded by `Scaled[0.05]` on each side.
       let narrow = sphere(", ViewAngle -> 18 Degree");
       assert!(
-        (narrow.0 - 378.0).abs() < 8.0 && (narrow.1 - 378.0).abs() < 8.0,
+        (narrow.0 - 337.5).abs() < 8.0 && (narrow.1 - 337.5).abs() < 8.0,
         "expected the sphere to nearly fill the frame, got {narrow:?}"
       );
       let wide = sphere(", ViewAngle -> 36 Degree");
@@ -23246,6 +23544,41 @@ mod plot3d {
       assert!(labels.contains(&"0".to_string()), "{labels:?}");
       assert!(labels.contains(&"8".to_string()), "{labels:?}");
     }
+
+    /// An `All` end of a `{min, All}` range keeps the outliers an
+    /// automatic range clips off, on the x axis as on the y axis.
+    #[test]
+    fn list_plot_plot_range_all_end_keeps_outliers() {
+      clear_state();
+      let data = "{{0, 0}, {1, 0.5}, {10, 0.6}, {1000, 0.7}, \
+                  {10^5, 0.8}, {10^6, 0.9}, {2 10^7, 0.99}}";
+      assert_eq!(
+        interpret(&format!(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, All}}, {{0, 1}}}}], PlotRange])[[1, 2]] > 2 10^7"
+        ))
+        .unwrap(),
+        "True"
+      );
+      // An `Automatic` end still clips them.
+      assert_eq!(
+        interpret(&format!(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{data}, \
+           PlotRange -> {{{{0, Automatic}}, {{0, 1}}}}], PlotRange])[[1, 2]] < 10^7"
+        ))
+        .unwrap(),
+        "True"
+      );
+      // `{ymin, All}` keeps the y outliers.
+      assert_eq!(
+        interpret(
+          "(PlotRange /. AbsoluteOptions[ListPlot[{1, 2, 1, 2, 1, 2, 1, 2, \
+           100}, PlotRange -> {0, All}], PlotRange])[[2, 2]] >= 100"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
   }
 
   mod ternary_list_plot {
@@ -28245,26 +28578,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .collect();
       assert_eq!(bar_xs.len(), 20, "expected 20 bars");
 
-      // Plot area left edge ~197 (the y axis: the "250" labels plus their
-      // 3 pt gap), right edge ~3517 (width ~3320). With x ∈ [0, 50] in
-      // chart coordinates (bar i centered at i + 1), bar i spans [i + 0.6,
-      // i + 1.4], so the first bar starts at ~197 + 0.6/50 * 3320 ≈ 235
-      // and the last (i=19) at ~197 + 19.6/50 * 3320 ≈ 1498 — i.e. the
-      // bars only cover ~38% of the plot width.
+      // Plot area left edge ~197 (the "250" labels plus their 3 pt gap),
+      // right edge ~3585 (width ~3388). The x range {0, 50} is padded by
+      // `Scaled[0.02]` on both sides to [-1.04, 51.04]; in chart
+      // coordinates (bar i centered at i + 1) bar i spans [i + 0.6,
+      // i + 1.4], so the first bar starts at
+      // ~197 + 1.64/52.08 * 3388 ≈ 304 and the last (i=19) at
+      // ~197 + 20.64/52.08 * 3388 ≈ 1540 — i.e. the bars only cover ~38%
+      // of the plot width.
       assert!(
-        (bar_xs[0] - 235.0).abs() < 5.0,
-        "first bar x {} should be near 235",
+        (bar_xs[0] - 304.0).abs() < 5.0,
+        "first bar x {} should be near 304",
         bar_xs[0]
       );
       assert!(
-        (bar_xs[19] - 1498.0).abs() < 5.0,
-        "last bar x {} should be near 1498",
+        (bar_xs[19] - 1540.0).abs() < 5.0,
+        "last bar x {} should be near 1540",
         bar_xs[19]
       );
 
       // Bar heights follow the y override: Prime[20]=71 at y=250 should
-      // occupy 71/250 of the plot height (~2052 px: the plot area's width
-      // over GoldenRatio) ≈ 581 px.
+      // occupy 71/250 of the plot height (~2094 px: the plot area's width
+      // over GoldenRatio) ≈ 594 px.
       let last_bar_line = svg
         .lines()
         .rfind(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
@@ -28278,8 +28613,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .unwrap();
       let last_h: f64 = h_str.parse().unwrap();
       assert!(
-        (last_h - 581.0).abs() < 5.0,
-        "last bar height {last_h} should be near 581"
+        (last_h - 594.0).abs() < 5.0,
+        "last bar height {last_h} should be near 594"
       );
     }
 
@@ -31295,8 +31630,137 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    // Too few points to interpolate (two points span no triangle): no
-    // arrows, as in the Wolfram Language.
+    // List data drops only an exactly zero vector: the `1.*^-16` residue a
+    // real-stepped `Table` leaves at the center of a rotation field still
+    // gets its arrow, as in Wolfram (only a sampled function's vectors
+    // below `$MachineEpsilon` are noise).
+    #[test]
+    fn list_vector_plot_keeps_tiny_vectors() {
+      let count = |center: &str| {
+        interpret(&format!(
+          "d = N[Table[{{y, -x}}, {{x, -2, 2, 1/2}}, {{y, -2, 2, 1/2}}]]; \
+           d[[5, 5]] = {center}; \
+           Length[Cases[ListVectorPlot[d][[1]], _Arrow, Infinity]]"
+        ))
+        .unwrap()
+        .parse::<i64>()
+        .unwrap()
+      };
+      assert_eq!(count("{1.*^-20, 0.}"), count("{0., 0.}") + 1);
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot[{2.*^-16, 0}, {x, -1, 1}, {y, -1, 1}][[1]], \
+             _Arrow, Infinity]]"
+        )
+        .unwrap(),
+        "0"
+      );
+    }
+
+    // `InterpolationOrder -> 0` on matrix data fills the cell between
+    // nodes k and k + 1 with the value at node k, as Wolfram does: a 2x2
+    // matrix is one flat cell in the color of its first entry (it used to
+    // be split into four quadrants around the nodes).
+    #[test]
+    fn list_density_plot_order_zero_uses_lower_node() {
+      let svg = export_svg(
+        "ListDensityPlot[{{0, 1}, {2, 3}}, InterpolationOrder -> 0, \
+         ColorFunction -> GrayLevel]",
+      );
+      let i = svg.find("base64,").unwrap() + 7;
+      let j = i + svg[i..].find('"').unwrap();
+      use base64::Engine;
+      let png = base64::engine::general_purpose::STANDARD
+        .decode(&svg[i..j])
+        .unwrap();
+      let img = ::image::load_from_memory(&png).unwrap().to_rgba8();
+      let first = *img.get_pixel(0, 0);
+      assert!(img.pixels().all(|p| *p == first), "not one flat cell");
+      assert_eq!(first.0[0], 0, "{first:?}");
+    }
+
+    // The polar axes and their labels are drawn over the curve, the grid
+    // under it, as in Wolfram (the axes used to be painted first).
+    #[test]
+    fn polar_axes_are_drawn_over_the_curve() {
+      let svg = export_svg(
+        "PolarPlot[2 + Cos[3 t], {t, 0, 2 Pi}, PolarAxes -> True, \
+         PolarGridLines -> Automatic]",
+      );
+      let curve = svg.find("3D99CC").expect("curve");
+      let label = svg.find(">4.<").expect("radial label");
+      assert!(curve < label, "curve {curve} after label {label}");
+    }
+
+    // `Region[reg, Axes -> True]` draws its axes: the option no longer
+    // loses to Region's own `Axes -> False` default.
+    #[test]
+    fn region_honors_axes_option() {
+      let svg = |opts: &str| {
+        export_svg(&format!(
+          "Region[ImplicitRegion[1/4 <= x^2 + y^2 <= 4 && y >= x/2, {{x, y}}], \
+           PlotRange -> {{{{-2.2, 2.2}}, {{-2.2, 2.2}}}}{opts}]"
+        ))
+      };
+      assert_eq!(svg(", Axes -> True").matches(">-1<").count(), 2);
+      assert_eq!(svg("").matches(">-1<").count(), 0);
+    }
+
+    // A plot's frame is stroked half a point wide, as Wolfram draws it
+    // (it was a full point, reading as a dark border).
+    #[test]
+    fn plot_frame_is_half_a_point_wide() {
+      let svg = export_svg("Plot[1/x, {x, -2, 2}, Frame -> True]");
+      let frame = svg
+        .match_indices("<polyline ")
+        .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+        .find(|el| el.matches(',').count() == 5)
+        .expect("closed frame polyline");
+      assert!(frame.contains("stroke-width=\"5\""), "{frame}");
+    }
+
+    // A ParametricPlot region's curved edges are cut into chords fine
+    // enough to meet the boundary line drawn over them: the annulus of
+    // `PlotPoints -> 20` has (as in Wolfram) at least 76 chords along its
+    // outer arc, where 19 left visible white slivers.
+    #[test]
+    fn parametric_region_follows_curved_edges() {
+      assert_eq!(
+        interpret(
+          "p = ParametricPlot[{r Cos[t], r Sin[t]}, {r, 1, 2}, \
+           {t, 0, 3 Pi/2}, PlotPoints -> 20]; \
+           Length[Union[Round[Select[Flatten[Cases[p, Polygon[pts_] :> pts, \
+           Infinity], 1], Abs[Norm[#] - 2] < 10^-9 &], 10^-6]]] >= 77"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // A user function returning a picture is laid out like the
+    // `Graphics[…]` it builds: drawn again at the cell's size (keeping its
+    // own proportions, as Wolfram does), not drawn at full size and then
+    // shrunk with its labels.
+    #[test]
+    fn graphics_row_redraws_user_function_pictures() {
+      let cells = |row: &str| {
+        let svg = export_svg(row);
+        svg
+          .match_indices("<svg x=")
+          .map(|(i, _)| svg[i..i + svg[i..].find('>').unwrap()].to_string())
+          .collect::<Vec<_>>()
+      };
+      let direct = cells(
+        "GraphicsRow[{Graphics[{Disk[]}, Frame -> True], \
+         Graphics[{Disk[]}, Frame -> True]}, ImageSize -> 520]",
+      );
+      let via_function = cells(
+        "p[c_] := Graphics[{Disk[]}, Frame -> True]; \
+         GraphicsRow[{p[1], p[2]}, ImageSize -> 520]",
+      );
+      assert_eq!(direct, via_function);
+      assert!(!direct[0].contains("viewBox=\"0 0 360"), "{direct:?}");
+    }
     #[test]
     fn list_vector_plot_two_points_draws_nothing() {
       assert_eq!(
@@ -31970,6 +32434,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         fixed.starts_with("<svg width=\"15\" height=\"10\""),
         "unexpected header: {}",
         fixed.lines().next().unwrap_or("")
+      );
+    }
+
+    #[test]
+    fn array_plot_pixel_constrained_symbolic_form_keeps_its_size() {
+      // Regression: the symbolic form a layout or `Show` redraws carried
+      // the requested `ImageSize -> 220`, so a redrawn 19x51 grid filled the
+      // whole 220-point box instead of 4 pixels per cell (204x76).
+      clear_state();
+      let plot = "ArrayPlot[Table[Mod[i + j, 4], {i, 19}, {j, 51}], \
+                  PixelConstrained -> True, ImageSize -> 220]";
+      assert_eq!(
+        interpret(&format!("Options[{plot}, ImageSize]")).unwrap(),
+        "{ImageSize -> {204, 76}}"
+      );
+      let shown = export_svg(&format!("Show[{plot}]"));
+      assert!(
+        shown.starts_with("<svg width=\"204\" height=\"76\""),
+        "unexpected header: {}",
+        shown.lines().next().unwrap_or("")
       );
     }
 
@@ -35167,10 +35651,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     // A polygon whose corners do not lie in one plane (a closed path over
     // three faces of a cube) has no plane to be flattened onto. Woxi used
-    // to squash it onto one plane and light it with a single normal, so a
-    // box drawn as one such polygon came out as a flat panel. It is drawn
-    // as a fan from its first corner instead, each triangle lit by its own
-    // normal.
+    // to squash it onto one plane, so a box drawn as one such polygon came
+    // out as a flat panel. It is drawn as a fan from its first corner
+    // instead. Like wolframscript, the whole fan is lit with the polygon's
+    // one Newell normal, so every triangle has the same shade.
     #[test]
     fn a_non_planar_polygon_is_a_lit_fan() {
       let svg = export_svg(
@@ -35205,7 +35689,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let mut fills: Vec<&String> = triangles.iter().map(|t| &t.1).collect();
       fills.sort();
       fills.dedup();
-      assert_eq!(fills.len(), 4, "each triangle has its own shade: {svg}");
+      assert_eq!(fills.len(), 1, "the fan is lit as one face: {svg}");
     }
 
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
@@ -38141,7 +38625,9 @@ mod list_plot_3d {
       .matches("stroke=\"#000000a0\"")
       .count()
     };
-    assert_eq!(mesh(""), 2 * 17 * 31);
+    // 17 lines across the 31 cells each way; the 15 inner lines bend
+    // where they cross a cell's diagonal, so each is two pieces per cell.
+    assert_eq!(mesh(""), 2 * (2 * 15 + 2) * 31);
     assert_eq!(mesh(", Mesh -> None"), 0);
     // Some mesh segments lie under facets painted after them.
     let svg = export_svg(
@@ -38394,6 +38880,31 @@ mod tree_form_graphics {
       (small - natural * 150.0 / 360.0).abs() < 0.1,
       "label size {small} at width 150 vs {natural} at 360"
     );
+  }
+
+  /// Wolfram packs each subtree as far left as the nodes already on its
+  /// layers allow: in `f[x, g[a, b, c, d, e]]` the shallow `x` sits one
+  /// step left of `g` (above `b`), not after all five leaves.
+  #[test]
+  fn tree_form_packs_shallow_siblings() {
+    clear_state();
+    let svg =
+      interpret("ExportString[TreeForm[f[x, g[a, b, c, d, e]]], \"SVG\"]")
+        .unwrap();
+    let x_of = |label: &str| -> f64 {
+      let at = svg.find(&format!(">{label}<")).expect(label);
+      let start = svg[..at].rfind("<text").unwrap();
+      let tag = &svg[start..at];
+      let i = tag.find(" x=\"").unwrap() + 4;
+      tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+    };
+    let step = x_of("b") - x_of("a");
+    assert!(step > 0.0, "{svg}");
+    let near = |p: f64, q: f64| (p - q).abs() < 0.5;
+    assert!(near(x_of("c") - x_of("b"), step), "{svg}");
+    assert!(near(x_of("x"), x_of("b")), "{svg}");
+    assert!(near(x_of("g"), x_of("c")), "{svg}");
+    assert!(near(x_of("f"), x_of("x").midpoint(x_of("g"))), "{svg}");
   }
 
   #[test]
@@ -47417,7 +47928,7 @@ mod manipulate {
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
-    DisplayNode, ManipulateControl, extract_animator_spec,
+    DisplayNode, ManipulateControl, SliderUnit, extract_animator_spec,
     extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
     extract_locator_pane_spec, extract_manipulate_spec, manipulate_block_code,
     manipulate_enabled_states, manipulate_initial_bindings,
@@ -48061,25 +48572,81 @@ mod manipulate {
         min,
         max,
         initial,
-        imaginary,
+        unit,
         ..
       } => {
         assert_eq!(name, "w");
         assert_eq!((*min, *max, *initial), (-2.0, 2.0, 0.0));
-        assert!(*imaginary);
+        assert_eq!(*unit, SliderUnit::Imaginary);
         assert_eq!(
-          woxi::functions::graphics::continuous_binding_code(
-            1.5, false, *imaginary
-          ),
+          woxi::functions::graphics::continuous_binding_code(1.5, false, *unit),
           "Complex[0, 3/2]"
         );
       }
       other => panic!("expected Continuous, got {other:?}"),
     }
     match &spec.controls[1] {
-      ManipulateControl::Continuous { imaginary, .. } => assert!(!*imaginary),
+      ManipulateControl::Continuous { unit, .. } => {
+        assert_eq!(*unit, SliderUnit::Plain);
+      }
       other => panic!("expected Continuous, got {other:?}"),
     }
+  }
+
+  // A range stepped in exact `Degree` multiples counts degrees: the slider
+  // binds the exact angle (`96 Degree`, not `8 Pi/15`), which reads out as
+  // `96°` the way Wolfram shows it. A range with an inexact or missing
+  // step, or bounds that are not all degree multiples, stays a plain slider.
+  #[test]
+  fn spec_degree_stepped_slider_binds_exact_angles() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, {{a, 45 Degree, \"angle\"}, 40 Degree, 170 Degree, \
+       1 Degree}, {b, 0, 90 Degree, 1/2 Degree}, {c, 10 Degree, 20 Degree}, \
+       {d, 0, Pi, Pi/4}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let fields = |i: usize| match &spec.controls[i] {
+      ManipulateControl::Continuous {
+        min,
+        max,
+        step,
+        initial,
+        unit,
+        ..
+      } => (*min, *max, *step, *initial, *unit),
+      other => panic!("expected Continuous, got {other:?}"),
+    };
+    assert_eq!(
+      fields(0),
+      (40.0, 170.0, Some(1.0), 45.0, SliderUnit::Degree)
+    );
+    assert_eq!(fields(1), (0.0, 90.0, Some(0.5), 0.0, SliderUnit::Degree));
+    assert_eq!(fields(2).4, SliderUnit::Plain);
+    assert_eq!(fields(3).4, SliderUnit::Plain);
+
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings[0], ("a".to_string(), "45*Degree".to_string()));
+    assert_eq!(bindings[1], ("b".to_string(), "0*Degree".to_string()));
+
+    use woxi::functions::graphics::continuous_binding_code;
+    let code = continuous_binding_code(96.0, false, SliderUnit::Degree);
+    assert_eq!(code, "96*Degree");
+    clear_state();
+    assert_eq!(interpret(&code).unwrap(), "96*Degree");
+    assert_eq!(
+      continuous_binding_code(22.5, false, SliderUnit::Degree),
+      "45/2*Degree"
+    );
+
+    let svg = woxi::functions::graphics::continuous_value_label_svg(
+      96.0,
+      false,
+      SliderUnit::Degree,
+    )
+    .expect("an exact angle is typeset");
+    assert!(svg.contains(">96<"), "{svg}");
+    assert!(svg.contains("\u{b0}"), "degree sign: {svg}");
   }
 
   // A slider binding an exact non-integer value reads it as a typeset
@@ -48088,7 +48655,7 @@ mod manipulate {
   #[test]
   fn exact_slider_value_readout_is_a_stacked_fraction() {
     use woxi::functions::graphics::continuous_value_label_svg;
-    let svg = continuous_value_label_svg(-7.0 / 6.0, false, false)
+    let svg = continuous_value_label_svg(-7.0 / 6.0, false, SliderUnit::Plain)
       .expect("exact rational is typeset");
     assert!(svg.contains("<line "), "fraction bar: {svg}");
     assert!(svg.contains(">7<") && svg.contains(">6<"), "{svg}");
@@ -48097,14 +48664,20 @@ mod manipulate {
     let svg = continuous_value_label_svg(
       3.0 * std::f64::consts::PI / 4.0,
       false,
-      false,
+      SliderUnit::Plain,
     )
     .expect("rational multiple of Pi is typeset");
     assert!(svg.contains("<line "), "fraction bar: {svg}");
     assert!(svg.contains("\u{3c0}"), "pi symbol: {svg}");
 
-    assert_eq!(continuous_value_label_svg(-3.0, false, false), None);
-    assert_eq!(continuous_value_label_svg(-7.0 / 6.0, true, false), None);
+    assert_eq!(
+      continuous_value_label_svg(-3.0, false, SliderUnit::Plain),
+      None
+    );
+    assert_eq!(
+      continuous_value_label_svg(-7.0 / 6.0, true, SliderUnit::Plain),
+      None
+    );
   }
 
   // Corner points given as `{re, im I}` pairs make a 2D pad over the real
@@ -50921,15 +51494,51 @@ mod manipulate {
           *orientation,
           woxi::functions::graphics::ControlOrientation::Horizontal
         );
-        // Unlabeled control → a single upright run of the variable name.
+        // Unlabeled control → a single run of the variable name, italic
+        // because the name is one letter.
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
-        assert!(!label_runs[0].italic);
+        assert!(label_runs[0].italic);
         // {x, 0, 10} is all exact integers, so x stays exact throughout.
         assert!(!is_real);
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  /// An unlabeled control shows its variable the way the FrontEnd sets a
+  /// symbol: a one-letter name (Latin or Greek) in italics, a longer name
+  /// upright. Regression: every default label was upright, so `{θ, 0, 1}`
+  /// and `{μ, 0, 1}` sliders read `θ`/`μ` instead of `𝜃`/`𝜇`.
+  #[test]
+  fn spec_default_label_italic_for_single_letter_names() {
+    let expr = interpret_to_expr(
+      "Manipulate[{θ, μ, m1, speed, b}, {{θ, 0.5}, 0, 1}, {μ, 0, 1}, \
+       {{m1, 0.5}, 0, 1}, {speed, 0, 1}, {{b, 0.2}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let runs: Vec<(String, bool)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { label_runs, .. } => {
+          assert_eq!(label_runs.len(), 1, "{label_runs:?}");
+          (label_runs[0].text.clone(), label_runs[0].italic)
+        }
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      runs,
+      vec![
+        ("θ".to_string(), true),
+        ("μ".to_string(), true),
+        ("m1".to_string(), false),
+        ("speed".to_string(), false),
+        ("b".to_string(), true),
+      ]
+    );
   }
 
   fn first_continuous_label(code: &str) -> String {
@@ -51773,6 +52382,36 @@ mod manipulate {
       })
       .collect();
     assert_eq!(popups, [false, true, false]);
+  }
+
+  /// `None` entries of a Manipulate-level `ControlType -> {…}` list hide
+  /// their variables, leaving them bound state values a button can drive,
+  /// and so does a button type (`Button`, `ButtonBar`), which drives no
+  /// variable. Regression: both were ignored, so every such variable showed
+  /// up as a slider.
+  #[test]
+  fn spec_manipulate_level_control_type_list_hides_none_entries() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c, d}, Button[\"go\", a = 2], {a, 1, 1}, \
+       {b, 0, 5}, {c, {1, 2}}, {d, 0, 3}, \
+       ControlType -> {Button, None, SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> =
+      spec.state.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["a", "b"]);
+    let controls: Vec<String> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Button { .. } => "button".to_string(),
+        ManipulateControl::Discrete { name, .. }
+        | ManipulateControl::Continuous { name, .. } => name.clone(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(controls, ["button", "c", "d"]);
   }
 
   /// A spec that names its own control type keeps it — the Manipulate-level
@@ -57842,6 +58481,31 @@ mod color_data_indexed {
          {{p, {0, 0}}, Locator, Appearance -> \"Labeled\"}]"
       ),
       vec![("p".to_string(), None)]
+    );
+  }
+
+  // A Manipulate's Locator markers join the outermost graphic its body
+  // returns, never a picture nested inside it (an `Inset` graphic), which
+  // a post-order `FirstPosition` search would find first.
+  #[test]
+  fn manipulate_locator_markers_join_the_outermost_graphic() {
+    clear_state();
+    let markers = vec![("pt".to_string(), None)];
+    let wrap = |body: &str| {
+      woxi::functions::graphics::locator_marker_body(body, &markers)
+    };
+    interpret("pt = {1, 0}").unwrap();
+    let nested = wrap(
+      "Graphics[{Inset[Graphics[Disk[], PlotRange -> 3]], Circle[]}, \
+       PlotRange -> 2]",
+    );
+    assert_eq!(
+      interpret(&format!("Options[{nested}, Epilog]")).unwrap(),
+      "{Epilog -> {Locator[{1, 0}]}}"
+    );
+    assert_eq!(
+      interpret(&format!("FreeQ[{nested}[[1, 1, 1]], Locator]")).unwrap(),
+      "True"
     );
   }
 
@@ -67153,6 +67817,94 @@ mod wl_table_layout {
     assert!(svg.contains("<path"), "{svg}");
   }
 
+  /// Regression: `PointLegend` glyph markers are Wolfram's 12.5-point
+  /// glyphs, drawn as shapes of the glyph's size rather than as text a
+  /// fallback font draws bullet-sized.
+  #[test]
+  fn point_legend_glyph_markers_are_shapes() {
+    let svg = interpret(
+      "ExportString[PointLegend[{Red, Blue, Green}, {\"a\", \"b\", \"c\"}, \
+       LegendMarkers -> {\"\\[FilledCircle]\", \"\\[FilledSquare]\", \
+       \"\\[EmptyUpTriangle]\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains('\u{25CF}') && !svg.contains('\u{25B3}'),
+      "{svg}"
+    );
+    // A 0.61 em disk, a 0.41 em square, an outlined triangle.
+    assert!(svg.contains("r=\"3.812\""), "{svg}");
+    assert!(
+      svg.contains("points=\"7.425,3.675 12.575,3.675 12.575,8.825"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("fill=\"none\" stroke=\"rgb(0,255,0)\""),
+      "{svg}"
+    );
+    assert!(svg.contains("viewBox=\"0 0 20 12.5\""), "{svg}");
+  }
+
+  /// Regression: integral signs are drawn as paths inside their box; the
+  /// fallback fonts' far taller `∫` glyph overhung the top of the picture
+  /// and was cut off.
+  #[test]
+  fn traditional_form_integral_signs_are_paths() {
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Integrate[f[x], {x, 0, 1}]]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains('\u{222B}'), "{svg}");
+    assert!(svg.contains("stroke-linecap=\"round\""), "{svg}");
+    // The contour integral carries its ring.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Subscript[\"\\[ContourIntegral]\", \
+       g] f[z]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains('\u{222E}'), "{svg}");
+    assert!(svg.contains("<ellipse"), "{svg}");
+  }
+
+  /// Regression: the `\[Rule]` arrow StandardForm writes into the boxes
+  /// gets the same room on either side as a drawn `→`.
+  #[test]
+  fn standard_form_rule_arrow_is_spaced() {
+    let width = |code: &str| -> f64 {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+    };
+    // `<|a → 1|>` is 13 points wider than `{a, 1}` with a bare arrow; the
+    // arrow's spaces (0.6 of a character on each side) add 10 more.
+    let extra = width("<|\"a\" -> 1|>") - width("{\"a\", 1}");
+    assert!(extra > 20.0, "rule arrow is not spaced: {extra}");
+  }
+
+  #[test]
+  fn traditional_form_piecewise_leaves_a_zero_default_implicit() {
+    // Under two or more cases Wolfram leaves an exact `0` default out;
+    // a single case, a nonzero default and an inexact `0.` keep their
+    // `True` row.
+    let has_default_row = |code: &str| {
+      interpret(&format!(
+        "StringContainsQ[ToString[ToBoxes[TraditionalForm[HoldForm[{code}]]], \
+         InputForm], \"PiecewiseDefault\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 0]"), "False");
+    assert_eq!(
+      has_default_row("f[x] == Piecewise[{{a, b}, {c, d}, {e, g}}, 0]"),
+      "False"
+    );
+    assert_eq!(has_default_row("Piecewise[{{a, b}}, 0]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 5]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}, 0.]"), "True");
+    assert_eq!(has_default_row("Piecewise[{{a, b}, {c, d}}]"), "False");
+  }
+
   #[test]
   fn traditional_form_held_exp_is_a_function_call() {
     // A held `Exp[…]` typesets as `exp(…)`, like `sin(…)`; only `E^x` is
@@ -67504,7 +68256,7 @@ mod list_plot_wl15_ranges {
       "{svg}"
     );
     // Simple ticks write 0 as "0", and the grid is GrayLevel[0, 0.2].
-    assert!(svg.contains("fill=\"rgb(102,102,102)\">0</text>"), "{svg}");
+    assert!(svg.contains("fill=\"rgb(64,64,64)\">0</text>"), "{svg}");
     assert!(svg.contains("opacity=\"0.2\" stroke=\"#000000\""), "{svg}");
   }
 
@@ -68438,7 +69190,7 @@ mod frame_ticks_per_edge {
     let marks = lines(&svg);
     assert_eq!(marks.iter().filter(|l| l.4 == "rgb(255,0,0)").count(), 1);
     assert_eq!(marks.iter().filter(|l| l.4 == "rgb(0,0,255)").count(), 1);
-    assert_eq!(attr(texts(&svg, "a")[0], "fill"), "rgb(102,102,102)");
+    assert_eq!(attr(texts(&svg, "a")[0], "fill"), "rgb(64,64,64)");
   }
 
   #[test]
@@ -68451,7 +69203,7 @@ mod frame_ticks_per_edge {
     assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#0000FF");
     // The frame keeps its own style.
     assert!(
-      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"5\""),
       "{svg}"
     );
   }
@@ -68473,7 +69225,7 @@ mod frame_ticks_per_edge {
     assert!(y.contains(&"rgb(0,0,255)".to_string()), "{y:?}");
     let x = fills("350");
     assert!(x.contains(&"rgb(255,0,0)".to_string()), "{x:?}");
-    assert!(x.contains(&"#666666".to_string()), "{x:?}");
+    assert!(x.contains(&"#404040".to_string()), "{x:?}");
     // The bottom marks are thick.
     let marks = lines(&svg);
     assert!(
@@ -68495,7 +69247,7 @@ mod frame_ticks_per_edge {
       "{svg}"
     );
     assert!(
-      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"5\""),
       "{svg}"
     );
     assert!(
@@ -68503,7 +69255,7 @@ mod frame_ticks_per_edge {
       "{svg}"
     );
     assert!(
-      svg.contains("stroke=\"#0000FF\" stroke-width=\"10\""),
+      svg.contains("stroke=\"#0000FF\" stroke-width=\"5\""),
       "{svg}"
     );
     // The y = 0 axis keeps the theme gray hairline.
@@ -70129,8 +70881,9 @@ mod review_regressions {
 
   #[test]
   fn inactive_operators_keep_notation_without_evaluation() {
+    // The integral sign is drawn as a path, the other operators as glyphs.
     for (op, body, glyph) in [
-      ("Integrate", "Exp[-x^2]", "∫"),
+      ("Integrate", "Exp[-x^2]", "stroke-linecap=\"round\""),
       ("Sum", "1/x^2", "∑"),
       ("Product", "1-z^2/x^2", "∏"),
     ] {
@@ -70675,12 +71428,24 @@ mod bar_chart_slide_conformance {
     let h = svg_height(&svg);
     let (left, axis_y) = axis_lines(&svg);
     assert!((left - 900.0).abs() < 1.0, "{left}");
-    assert!((axis_y - (h - 60.0) * 10.0).abs() < 1.0, "{axis_y} of {h}");
+    // The padding lies below the plotting area, whose lower `Scaled[0.02]`
+    // the baseline stands above.
+    let baseline = |svg: &str, pad: f64| {
+      let bottom = (svg_height(svg) - pad) * 10.0;
+      let top = svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .map(|l| attr(l, "y1").min(attr(l, "y2")))
+        .fold(f64::INFINITY, f64::min);
+      bottom - 0.02 * (bottom - top)
+    };
+    let expected = baseline(&svg, 60.0);
+    assert!((axis_y - expected).abs() < 1.5, "{axis_y} of {h}");
     // A single number pads every side; `All` leaves a side automatic.
     let svg = export_svg("BarChart[{1, 3, 2}, ImagePadding -> 50]");
     let (left, axis_y) = axis_lines(&svg);
     assert!((left - 500.0).abs() < 1.0, "{left}");
-    assert!((axis_y - (svg_height(&svg) - 50.0) * 10.0).abs() < 1.0);
+    assert!((axis_y - baseline(&svg, 50.0)).abs() < 1.5, "{axis_y}");
     let auto = export_svg("BarChart[{1, 3, 2}]");
     let mixed = export_svg(
       "BarChart[{1, 3, 2}, ImagePadding -> {{70, All}, {All, All}}]",
@@ -70688,6 +71453,113 @@ mod bar_chart_slide_conformance {
     assert!((axis_lines(&mixed).0 - 700.0).abs() < 1.0);
     let bottom = |svg: &str| svg_height(svg) * 10.0 - axis_lines(svg).1;
     assert!((bottom(&mixed) - bottom(&auto)).abs() < 1.0);
+  }
+
+  /// The numeric attribute `name` of an SVG element.
+  fn attr(tag: &str, name: &str) -> f64 {
+    let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    tag[at..].split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// Under an explicit x `PlotRange` the value axis stays beside the first
+  /// bar instead of moving to the range's edge, and the baseline ends
+  /// shortly after the last bar. Regression: both followed the range, so
+  /// the tick labels fell into (and were cut off by) a small `ImagePadding`.
+  #[test]
+  fn bar_chart_explicit_x_range_keeps_axes_at_bars() {
+    for n in [3, 6, 10] {
+      let svg = export_svg(&format!(
+        "BarChart[Range[{n}], PlotRange -> {{{{0, {n} + 4}}, All}}, \
+         ImageSize -> 400, ImagePadding -> {{{{15, 15}}, {{8, 8}}}}]"
+      ));
+      let rects: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<rect") && l.contains("<title>"))
+        .collect();
+      assert_eq!(rects.len(), n);
+      let first_left = attr(rects[0], "x");
+      let last_right = attr(rects[n - 1], "x") + attr(rects[n - 1], "width");
+      let bar_w = attr(rects[0], "width");
+      let lines: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<line")).collect();
+      let y_axis = lines
+        .iter()
+        .find(|l| {
+          attr(l, "x1") == attr(l, "x2")
+            && attr(l, "y2") - attr(l, "y1") > 500.0
+        })
+        .unwrap();
+      let x_axis = lines
+        .iter()
+        .find(|l| {
+          attr(l, "y1") == attr(l, "y2")
+            && attr(l, "x2") - attr(l, "x1") > 500.0
+        })
+        .unwrap();
+      // The value axis: left of the first bar by less than a bar's width,
+      // and well inside the 15 pt padding (150 render units).
+      let axis_x = attr(y_axis, "x1");
+      assert!(axis_x < first_left && first_left - axis_x < bar_w, "{n}");
+      assert!(axis_x > 250.0, "{n}: {axis_x}");
+      // The baseline starts at the value axis and stops after the last
+      // bar, far from the range's right end.
+      assert!((attr(x_axis, "x1") - axis_x).abs() < 1.0, "{n}");
+      let end = attr(x_axis, "x2");
+      assert!(end > last_right && end - last_right < bar_w, "{n}: {end}");
+      assert!(end < 3850.0 - 2.0 * bar_w, "{n}: {end}");
+    }
+  }
+
+  /// An explicit bottom `ImagePadding` surrounds the plotting area, whose
+  /// automatic value range reaches `Scaled[0.02]` below 0: the value axis
+  /// runs on below the baseline. Chart labels under the baseline stay
+  /// inside the image even when that padding is smaller than they are.
+  /// Regression: the baseline sat exactly on the padding and the labels
+  /// were drawn below the image's bottom edge.
+  #[test]
+  fn bar_chart_labels_fit_above_small_bottom_padding() {
+    for (data, labels) in [
+      ("{3, 1, 2}", "{\"a\", \"b\", \"c\"}"),
+      ("{8, 8, 12, 12, 10}", "Range[0, 4]"),
+      ("{250, 100}", "{\"gy\", \"pq\"}"),
+    ] {
+      for range in ["", "PlotRange -> {{0, 8}, All}, "] {
+        let svg = export_svg(&format!(
+          "BarChart[{data}, ChartLabels -> {labels}, {range}\
+           ImageSize -> 400, ImagePadding -> {{{{15, 15}}, {{8, 8}}}}]"
+        ));
+        let h = svg_height(&svg) * 10.0;
+        let lines: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<line")).collect();
+        let y_axis = lines
+          .iter()
+          .find(|l| {
+            attr(l, "x1") == attr(l, "x2")
+              && attr(l, "y2") - attr(l, "y1") > 500.0
+          })
+          .unwrap();
+        let rect = svg
+          .lines()
+          .find(|l| l.starts_with("<rect") && l.contains("<title>"))
+          .unwrap();
+        let baseline = attr(rect, "y") + attr(rect, "height");
+        // The value axis reaches below the bars' baseline.
+        assert!(attr(y_axis, "y2") > baseline + 20.0, "{data} {range}");
+        let label_ys: Vec<f64> = svg
+          .lines()
+          .filter(|l| {
+            l.starts_with("<text") && l.contains("text-anchor=\"middle\"")
+          })
+          .map(|l| attr(l, "y"))
+          .collect();
+        assert!(!label_ys.is_empty(), "{data} {range}");
+        for y in label_ys {
+          // Baseline below the bars, descenders (a quarter em of the
+          // 10 pt font) above the image's bottom edge.
+          assert!(y > baseline && y + 25.0 <= h, "{data} {range}: {y} {h}");
+        }
+      }
+    }
   }
 
   /// A `PlotRange` reaching below 0 extends the plotting area down to it,
@@ -72324,6 +73196,59 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
       export_svg(&format!("{code}, SphericalRegion -> False]"));
     assert_eq!(default, explicit_off, "{code}");
   }
+}
+
+/// Regression: an unboxed scene of fixed size with a pinned `PlotRange` or
+/// an explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or
+/// list keeps the outline fit, also inside a `Manipulate` frame. Wolfram's
+/// snapshot of a Demonstration's `Grid` of two such scenes (a 24 × 24 × 10
+/// range seen from `{0, 0, 6}` at `ImageSize -> {290, 290}`) draws them
+/// about 1.4× as large as the sphere framing Woxi gave them.
+#[test]
+fn pinned_3d_scene_in_a_layout_cell_fits_its_outline() {
+  let scene = |extra: &str| {
+    format!(
+      "Graphics3D[{{Line[{{{{-12, 0, 0}}, {{12, 0, 0}}}}],        Line[{{{{0, -12, 0}}, {{0, 12, 0}}}}]}}, Boxed -> False,        PlotRange -> {{{{-12, 12}}, {{-12, 12}}, {{-5, 5}}}},        ViewPoint -> {{0, 0, 6}}, ImageSize -> {{290, 290}}{extra}]"
+    )
+  };
+  // On its own the scene is still framed by its sphere.
+  assert_eq!(
+    export_svg(&scene("")),
+    export_svg(&scene(", SphericalRegion -> True"))
+  );
+  for layout in [
+    "Grid[{{#, #}}]",
+    "Row[{#, #}]",
+    "Column[{#, #}]",
+    "{#, #}",
+    "Labeled[Grid[{{#}}], \"label\", Bottom]",
+  ] {
+    let cell = |extra: &str| layout.replace('#', &scene(extra));
+    let automatic = export_svg(&cell(""));
+    let outline = export_svg(&cell(", SphericalRegion -> False"));
+    let sphere = export_svg(&cell(", SphericalRegion -> True"));
+    assert_ne!(outline, sphere, "{layout}");
+    assert_eq!(automatic, outline, "{layout}");
+    assert_eq!(
+      woxi::with_manipulate_frame(|| export_svg(&cell(""))),
+      woxi::with_manipulate_frame(|| {
+        export_svg(&cell(", SphericalRegion -> False"))
+      }),
+      "{layout} in a Manipulate frame"
+    );
+    // An explicit `SphericalRegion -> True` is kept in a cell.
+    assert_ne!(sphere, automatic, "{layout}");
+  }
+  // The same holds for a scene assigned to a variable before it is laid out
+  // and for a `Show` of several scenes.
+  let held = |extra: &str| {
+    export_svg(&format!(
+      "Module[{{g = {}}}, Grid[{{{{Show[g, g], g}}}}]]",
+      scene(extra)
+    ))
+  };
+  assert_eq!(held(""), held(", SphericalRegion -> False"));
+  assert_ne!(held(""), held(", SphericalRegion -> True"));
 }
 
 /// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
@@ -75168,10 +76093,11 @@ mod plot_label_default_color {
     head[start..end].to_string()
   }
 
-  /// Wolfram draws a `PlotLabel` in `GrayLevel[0.4]` unless a color is
-  /// given, across `Graphics`, `Graphics3D` and the plotting functions.
+  /// Wolfram's SVG export sets a `PlotLabel` in `GrayLevel[0.25]` unless a
+  /// color is given, across `Graphics`, `Graphics3D` and the plotting
+  /// functions.
   #[test]
-  fn plot_labels_default_to_gray_level_0_4() {
+  fn plot_labels_default_to_gray_level_0_25() {
     for expr in [
       "Graphics[Circle[], PlotLabel -> \"title\"]",
       "Graphics[Circle[], PlotLabel -> Grid[{{\"title\", 1}}]]",
@@ -75190,7 +76116,7 @@ mod plot_label_default_color {
       "BubbleChart[{{1, 2, 3}, {2, 3, 1}}, PlotLabel -> \"title\"]",
     ] {
       let svg = export_svg(expr);
-      assert_eq!(label_fill(&svg, "title"), "#666666", "{expr}");
+      assert_eq!(label_fill(&svg, "title"), "#404040", "{expr}");
     }
   }
 
@@ -75299,6 +76225,63 @@ mod grid_item_trailing_line_break {
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\\n\"}, {\"b\"}}]")),
       text_y(&export_svg("Grid[{{\"a\"}, {\"x\"}, {\"b\"}}]"))
     );
+  }
+}
+
+/// A ContourPlot keeps its square frame (`AspectRatio -> 1`) letterboxed
+/// into a wider `ImageSize -> {w, h}` box; `Show` of it, alone or with
+/// other graphics, must keep that shape instead of stretching the frame
+/// over the whole image.
+mod show_keeps_contour_plot_aspect_ratio {
+  use super::*;
+
+  /// The horizontal extent of the longest polyline (the plotted curve) as
+  /// a fraction of the picture's viewBox width.
+  fn curve_width_fraction(svg: &str) -> f64 {
+    let vb = svg.split("viewBox=\"0 0 ").nth(1).unwrap();
+    let vb_w: f64 = vb.split_whitespace().next().unwrap().parse().unwrap();
+    let longest = svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|p| {
+        let pts = p.split("points=\"").nth(1)?;
+        let pts = &pts[..pts.find('"')?];
+        let xs: Vec<f64> = pts
+          .split_whitespace()
+          .filter_map(|xy| xy.split(',').next()?.parse().ok())
+          .collect();
+        Some(xs)
+      })
+      .max_by_key(Vec::len)
+      .unwrap();
+    let min = longest.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = longest.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (max - min) / vb_w
+  }
+
+  const PLOT: &str = "ContourPlot[x^2 + y^2 == 1, {x, -1, 1}, {y, 0, 3}, \
+                      ImageSize -> {500, 350}]";
+
+  #[test]
+  fn standalone_frame_is_square() {
+    let f = curve_width_fraction(&export_svg(PLOT));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_image_size_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, ImageSize -> {{500, 350}}]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
+  }
+
+  #[test]
+  fn show_with_graphics_keeps_square_frame() {
+    let f = curve_width_fraction(&export_svg(&format!(
+      "Show[{PLOT}, Graphics[Point[{{0, 1}}]]]"
+    )));
+    assert!(f < 0.75, "curve spans {f} of the width");
   }
 }
 
@@ -75467,5 +76450,453 @@ mod steep_crossings_and_chart_options {
         "{name}"
       );
     }
+  }
+}
+
+// `FaceForm[front, back]` on boxes and round solids. A `Cuboid`'s faces
+// used to be wound inward, so its outside took the back color; a box of zero
+// thickness lost its two flat faces altogether (each hid the other as an
+// "interior wall"); and a plain color after the `FaceForm` did not reach a
+// `Cylinder`.
+mod face_form_on_boxes_and_round_solids {
+  use super::*;
+
+  /// The fill of every `<polygon>`, in paint order.
+  fn polygon_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<polygon")
+      .skip(1)
+      .map(|rest| {
+        let start = rest.find("fill=\"").unwrap() + 6;
+        let end = start + rest[start..].find('"').unwrap();
+        rest[start..end].to_string()
+      })
+      .collect()
+  }
+
+  /// `(r, g, b)` of an `rgb(r,g,b)` fill.
+  fn rgb(fill: &str) -> (u8, u8, u8) {
+    let inner = fill
+      .strip_prefix("rgb(")
+      .and_then(|s| s.strip_suffix(')'))
+      .unwrap_or_else(|| panic!("not an rgb fill: {fill}"));
+    let c: Vec<u8> = inner.split(',').map(|v| v.parse().unwrap()).collect();
+    (c[0], c[1], c[2])
+  }
+
+  /// The front color (yellow, lit) has red in it; the back color (green)
+  /// has none.
+  fn is_front(fill: &str) -> bool {
+    rgb(fill).0 > 0
+  }
+
+  #[test]
+  fn cuboid_outside_takes_front_color() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{FaceForm[Yellow, Green], Cuboid[]}, Boxed -> False]",
+    );
+    let fills = polygon_fills(&svg);
+    assert_eq!(fills.len(), 12);
+    // The three faces toward the viewer show the front color, the three
+    // far ones (seen from inside) the back color, and a near face is
+    // painted last.
+    assert_eq!(fills.iter().filter(|f| is_front(f)).count(), 6, "{fills:?}");
+    assert!(is_front(&fills[11]), "{fills:?}");
+    assert!(!is_front(&fills[0]), "{fills:?}");
+  }
+
+  #[test]
+  fn flat_cuboid_is_a_filled_sheet_from_either_side() {
+    for view in ["{1.3, -2.4, 2}", "{1.3, -2.4, -2}"] {
+      for corners in [
+        "{0, 0, 0}, {2, 1, 0}",
+        "{2, 0.25, 0.5}, {2, 0.75, 2}",
+        "{0, 1, 0}, {2, 1, 3}",
+      ] {
+        clear_state();
+        let svg = export_svg(&format!(
+          "Graphics3D[{{FaceForm[Yellow, Green], Cuboid[{corners}]}}, \
+           Boxed -> False, ViewPoint -> {view}]"
+        ));
+        let fills = polygon_fills(&svg);
+        assert_eq!(fills.len(), 2, "{corners} from {view}: {fills:?}");
+        assert!(
+          fills.iter().all(|f| is_front(f)),
+          "{corners} from {view}: {fills:?}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn flat_cuboid_without_face_form_is_filled() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Red, Cuboid[{-1, -1, 0}, {1, 1, 0}]}, Boxed -> False]",
+    );
+    let fills = polygon_fills(&svg);
+    assert_eq!(fills.len(), 2);
+    assert!(fills.iter().all(|f| rgb(f).0 > rgb(f).1));
+  }
+
+  #[test]
+  fn boxes_sharing_a_wall_still_hide_it() {
+    clear_state();
+    let two = polygon_fills(&export_svg(
+      "Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 1}], Cuboid[{1, 0, 0}, {2, 1, 1}]}]",
+    ));
+    // Two boxes of six faces each, less the wall between them.
+    assert_eq!(two.len(), 2 * (12 - 2));
+  }
+
+  #[test]
+  fn plain_color_after_face_form_colors_a_cylinder() {
+    clear_state();
+    let cap_fills = |directives: &str| -> Vec<(u8, u8, u8)> {
+      polygon_fills(&export_svg(&format!(
+        "Graphics3D[{{{directives}, Cylinder[{{{{0, 0, 0}}, {{0, 0.3, 0}}}}, 1]}}]"
+      )))
+      .iter()
+      .filter(|f| f.starts_with("rgb("))
+      .map(|f| rgb(f))
+      .collect()
+    };
+    let white = cap_fills("White");
+    assert_ne!(white, []);
+    assert_eq!(cap_fills("FaceForm[Yellow, Green], White"), white);
+    // Without a later color the `FaceForm` still colors the cylinder.
+    let yellow = cap_fills("FaceForm[Yellow, Green]");
+    assert_ne!(yellow, white);
+    assert!(yellow.iter().all(|c| c.2 == 0), "{yellow:?}");
+  }
+
+  #[test]
+  fn plain_color_after_face_form_leaves_polygons_to_the_face_form() {
+    clear_state();
+    let svg = |directives: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{{directives}, \
+         Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, {{0, 1, 0}}}}]}}]"
+      ))
+    };
+    assert_eq!(
+      svg("FaceForm[Yellow, Green], White"),
+      svg("FaceForm[Yellow, Green]")
+    );
+  }
+}
+
+mod graphics3d_review_ticks_heads_framing {
+  use super::*;
+
+  /// The `(x1, y1, x2, y2)` of every `<line>` whose `stroke` is `color`.
+  fn lines_in(svg: &str, color: &str) -> Vec<[f64; 4]> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .map(|l| l.split('>').next().unwrap_or(""))
+      .filter(|l| l.contains(&format!("stroke=\"{color}\"")))
+      .map(line_coords)
+      .collect()
+  }
+
+  /// The `(x1, y1, x2, y2)` attributes of one `<line …>` tag body.
+  fn line_coords(tag: &str) -> [f64; 4] {
+    let attr = |name: &str| -> f64 {
+      tag
+        .split(&format!("{name}=\""))
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+  }
+
+  /// The sine of the angle between two screen segments.
+  fn sine(a: [f64; 4], b: [f64; 4]) -> f64 {
+    let (ax, ay) = (a[2] - a[0], a[3] - a[1]);
+    let (bx, by) = (b[2] - b[0], b[3] - b[1]);
+    (ax * by - ay * bx).abs() / (ax.hypot(ay) * bx.hypot(by))
+  }
+
+  /// Wolfram draws a 3D tick mark in the scene, along another coordinate
+  /// direction into the box, not perpendicular to its axis on screen. From
+  /// the default `ViewPoint` the x axis's ticks run along y (in the
+  /// floor), the y axis's (on the top edge) down along z, and the z
+  /// axis's along the x axis that meets it — parallel on screen to that
+  /// axis's line.
+  #[test]
+  fn box_axis_ticks_run_along_a_scene_direction() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[Point[{0.5, 0.5, 0.5}], \
+       PlotRange -> {{0, 1}, {0, 1}, {0, 1}}, Axes -> True, \
+       Boxed -> False, Ticks -> {{0.5}, {0.5}, {0.5}}, \
+       TicksStyle -> {RGBColor[1, 0, 0], RGBColor[0, 1, 0], \
+       RGBColor[0, 0, 1]}]",
+    );
+    let x_ticks = lines_in(&svg, "rgb(255,0,0)");
+    let y_ticks = lines_in(&svg, "rgb(0,255,0)");
+    let z_ticks = lines_in(&svg, "rgb(0,0,255)");
+    assert_eq!(
+      (x_ticks.len(), y_ticks.len(), z_ticks.len()),
+      (1, 1, 1),
+      "{svg}"
+    );
+    // The axis lines, drawn in order x, y, z with width 1.
+    let axes: Vec<[f64; 4]> = svg
+      .split("<line ")
+      .skip(1)
+      .map(|l| l.split('>').next().unwrap_or(""))
+      .filter(|l| l.contains("stroke-width=\"1\""))
+      .take(3)
+      .map(line_coords)
+      .collect();
+    assert_eq!(axes.len(), 3, "{svg}");
+    // The z axis's tick is parallel to the x axis it meets.
+    assert!(sine(z_ticks[0], axes[0]) < 0.1, "{svg}");
+    // The y axis's tick is vertical (along z), parallel to the z axis.
+    assert!(sine(y_ticks[0], axes[2]) < 0.1, "{svg}");
+    // The x axis's tick runs along y, slanting up and to the right, not
+    // along the screen normal of the x axis.
+    let t = x_ticks[0];
+    assert!(t[2] > t[0] && t[3] < t[1], "{t:?}");
+    assert!(sine(t, axes[0]) < 0.99, "{t:?} {:?}", axes[0]);
+  }
+
+  /// A 3D line `Arrow` gets Wolfram's flat 2D arrowhead turned to face the
+  /// viewer — the notched dart, its tip and 13 outline points — rather
+  /// than the outline of a cone, and keeps that shape seen along the
+  /// arrow.
+  #[test]
+  fn line_arrow_head_in_3d_is_the_notched_2d_head() {
+    clear_state();
+    for view in ["{1.3, -2.4, 2}", "{-3, 0.2, 0.1}"] {
+      let svg = export_svg(&format!(
+        "Graphics3D[{{RGBColor[1, 0, 0], Arrow[{{{{0, 0, 0}}, {{1, 0, 0}}}}]}}, \
+         ViewPoint -> {view}]"
+      ));
+      let heads: Vec<usize> = svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .filter(|p| {
+          p.split('>')
+            .next()
+            .unwrap()
+            .contains("fill=\"rgb(255,0,0)\"")
+        })
+        .map(|p| p.split('"').next().unwrap().split_whitespace().count())
+        .collect();
+      assert_eq!(heads, vec![14], "{view}: {svg}");
+    }
+  }
+
+  /// `EdgeForm[{Black, Opacity[0.1]}]` (the outline of a 3D chart's bars)
+  /// strokes translucent black over the faces, not an opaque near-white
+  /// line.
+  #[test]
+  fn translucent_edge_form_strokes_with_stroke_opacity() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{EdgeForm[Directive[GrayLevel[0], Opacity[0.1]]], \
+       Cuboid[]}]",
+    );
+    assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    assert!(svg.contains("stroke-opacity=\"0.1\""), "{svg}");
+    assert!(!svg.contains("rgb(230,230,230)"), "{svg}");
+  }
+
+  /// `Boxed -> {Left, Bottom, Back}` draws only the 9 edges of those three
+  /// faces, three quarters of the whole box's 12.
+  #[test]
+  fn boxed_face_list_draws_only_those_faces_edges() {
+    clear_state();
+    let count = |boxed: &str| {
+      export_svg(&format!(
+        "Graphics3D[Point[{{0, 0, 0}}], PlotRange -> 1, Boxed -> {boxed}]"
+      ))
+      .matches("<line ")
+      .count()
+    };
+    let (all, some) = (count("True"), count("{Left, Bottom, Back}"));
+    assert!(all > 0);
+    assert_eq!(some * 12, all * 9, "{some} of {all}");
+  }
+
+  /// BubbleChart3D's `Specularity` is Wolfram's highlight of a hovered
+  /// bubble only; a static chart draws the bubbles matte, inside a box of
+  /// only its back faces with both horizontal axes on the floor.
+  #[test]
+  fn bubble_chart_3d_is_matte_with_a_partial_box() {
+    clear_state();
+    let g = "BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 3}}]";
+    assert_eq!(
+      interpret(&format!("FreeQ[{g}, Specularity]")).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("Boxed /. Options[{g}]")).unwrap(),
+      "{Left, Bottom, Back}"
+    );
+    assert_eq!(
+      interpret(&format!("AxesEdge /. Options[{g}]")).unwrap(),
+      "{{-1, -1}, {1, -1}, {-1, -1}}"
+    );
+  }
+
+  /// RectangleChart3D stands its blocks against the back of the box, so
+  /// its depth axis counts from there: 0 at the back, increasing toward
+  /// the viewer, as Wolfram labels it.
+  #[test]
+  fn rectangle_chart_3d_depth_ticks_count_from_the_back() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "(Ticks /. Options[RectangleChart3D[{{1, 2, 3}, {2, 1, 2}, \
+         {3, 3, 1}}]])[[2]]"
+      )
+      .unwrap(),
+      "{{3., 0}, {2., 1}, {1., 2}, {0., 3}}"
+    );
+  }
+
+  /// An unboxed scene of round solids without axes or a set range is
+  /// framed by its contents, as wolframscript does: `Sphere[]` exports
+  /// 360 × 363 (boxed: 360 × 391). Other unboxed scenes keep the box's
+  /// frame: a lone triangle or two cubes are drawn as large as boxed.
+  #[test]
+  fn unboxed_round_solids_are_framed_by_their_contents() {
+    clear_state();
+    let height = |code: &str| -> f64 {
+      let svg = export_svg(code);
+      svg
+        .split("height=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    let sphere = height("Graphics3D[Sphere[], Boxed -> False]");
+    assert!((355.0..=370.0).contains(&sphere), "{sphere}");
+    for scene in [
+      "Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]",
+      "{Cuboid[{0, 0, 1}], Cuboid[{1, 0, 0}]}",
+    ] {
+      let (unboxed, boxed) = (
+        height(&format!("Graphics3D[{scene}, Boxed -> False]")),
+        height(&format!("Graphics3D[{scene}]")),
+      );
+      assert!((unboxed - boxed).abs() <= 2.0, "{unboxed} vs {boxed}");
+    }
+  }
+  /// A perspective eye sees past the rim of a sphere off to one side of
+  /// the picture. That band faces the eye, so it is lit as the sphere's
+  /// front: the rim of the origin sphere toward the picture's center (its
+  /// upper right, where the lights are) stays light, as in Wolfram's
+  /// rendering, instead of a dark sliver lit as the sphere's back.
+  #[test]
+  fn sphere_rim_seen_past_in_perspective_is_lit_as_front() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 0.2], Sphere[{1, 1, 1}, 0.2]}]",
+    );
+    // Gradient id -> its stop colors.
+    let mut stops = std::collections::HashMap::new();
+    for g in svg.split("<linearGradient id=\"").skip(1) {
+      let id = g.split('"').next().unwrap().to_string();
+      let body = g.split("</linearGradient>").next().unwrap();
+      let colors: Vec<u32> = body
+        .split("stop-color=\"#")
+        .skip(1)
+        .map(|c| u32::from_str_radix(&c[..6], 16).unwrap())
+        .collect();
+      stops.insert(id, colors);
+    }
+    // The faces of the origin sphere: the lower-left of the picture.
+    let mut faces: Vec<(Vec<(f64, f64)>, String)> = Vec::new();
+    for p in svg.split("<polygon points=\"").skip(1) {
+      let pts: Vec<(f64, f64)> = p
+        .split('"')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .filter_map(|xy| {
+          let (x, y) = xy.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect();
+      let Some(id) = p
+        .split('>')
+        .next()
+        .unwrap()
+        .split("fill=\"url(#")
+        .nth(1)
+        .map(|r| r.split(')').next().unwrap().to_string())
+      else {
+        continue;
+      };
+      if pts.iter().all(|&(x, y)| x < 180.0 && y > 150.0) {
+        faces.push((pts, id));
+      }
+    }
+    assert!(faces.len() > 20, "{svg}");
+    let all: Vec<(f64, f64)> =
+      faces.iter().flat_map(|(p, _)| p.iter().copied()).collect();
+    let n = all.len() as f64;
+    let (cx, cy) = (
+      all.iter().map(|p| p.0).sum::<f64>() / n,
+      all.iter().map(|p| p.1).sum::<f64>() / n,
+    );
+    let radius = all
+      .iter()
+      .map(|&(x, y)| (x - cx).hypot(y - cy))
+      .fold(0.0_f64, f64::max);
+    // The outer band of the upper-right quarter.
+    let mut checked = 0;
+    for (pts, id) in &faces {
+      let rim = pts.iter().any(|&(x, y)| {
+        x > cx && y < cy && (x - cx).hypot(y - cy) > 0.85 * radius
+      });
+      if !rim {
+        continue;
+      }
+      checked += 1;
+      for &c in &stops[id] {
+        // The back-lit sliver was #663339; the lit rim is #989a8f or lighter.
+        let brightest = (c >> 16).max((c >> 8) & 0xff).max(c & 0xff);
+        assert!(brightest > 0x80, "dark rim stop #{c:06x} at {pts:?}");
+      }
+    }
+    assert!(checked > 3, "{checked}");
+  }
+  /// VectorPlot3D's arrows are sized as wolframscript's are, by the longest
+  /// arrow `L`: `Arrowheads[{{0.3 L, 1.}}]` and tubes `L / 20` thick (in a
+  /// range 2 wide that is a third of the head size; wolframscript gives
+  /// `0.0675` and `0.0225` for `VectorPoints -> 2`). Their heads are drawn
+  /// as smooth shaded cones: their faces are filled with gradients.
+  #[test]
+  fn vector_plot_3d_heads_are_shaded_cones() {
+    clear_state();
+    let g = "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+             VectorPoints -> 2]";
+    assert_eq!(
+      interpret(&format!(
+        "s = Union[Cases[{g}, Arrowheads[{{{{h_, 1.}}}}, ___] :> h, \
+         Infinity]]; r = Union[Cases[{g}, Tube[_, r_] :> r, Infinity]]; \
+         {{Length[s], Length[r], Abs[First[r] - First[s] / 3] < 10^-9}}"
+      ))
+      .unwrap(),
+      "{1, 1, True}"
+    );
+    let svg = export_svg(g);
+    assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
   }
 }

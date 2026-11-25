@@ -40,20 +40,20 @@ expression: "export_svg(\"ListPolarPlot[{1, 2, 3, 2, 1}]\")"
 <line x1="3357.9" y1="1972.0" x2="3357.9" y2="1948.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="3549.5" y1="1972.0" x2="3549.5" y2="1948.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="101.4" y1="1972.0" x2="101.4" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="101.4" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2.5</text>
+<text x="101.4" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2.5</text>
 <line x1="580.3" y1="1972.0" x2="580.3" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="580.3" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-2.0</text>
+<text x="580.3" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-2.0</text>
 <line x1="1059.2" y1="1972.0" x2="1059.2" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1059.2" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1.5</text>
+<text x="1059.2" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1.5</text>
 <line x1="1538.1" y1="1972.0" x2="1538.1" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1538.1" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1.0</text>
+<text x="1538.1" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1.0</text>
 <line x1="2017.0" y1="1972.0" x2="2017.0" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2017.0" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.5</text>
+<text x="2017.0" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-0.5</text>
 <line x1="2495.9" y1="1972.0" x2="2495.9" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2974.8" y1="1972.0" x2="2974.8" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2974.8" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="2974.8" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.5</text>
 <line x1="3453.7" y1="1972.0" x2="3453.7" y2="1932.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="3453.7" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="3453.7" y="2092.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 <line x1="2495.9" y1="32.0" x2="2495.9" y2="3216.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2495.9" y1="3121.5" x2="2519.9" y2="3121.5" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2495.9" y1="3025.7" x2="2519.9" y2="3025.7" stroke="rgb(102,102,102)" stroke-width="2"/>
@@ -82,16 +82,16 @@ expression: "export_svg(\"ListPolarPlot[{1, 2, 3, 2, 1}]\")"
 <line x1="2495.9" y1="247.7" x2="2519.9" y2="247.7" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2495.9" y1="152.0" x2="2519.9" y2="152.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2495.9" y1="2929.9" x2="2535.9" y2="2929.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="2964.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1.0</text>
+<text x="2465.9" y="2964.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-1.0</text>
 <line x1="2495.9" y1="2450.9" x2="2535.9" y2="2450.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="2485.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.5</text>
+<text x="2465.9" y="2485.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">-0.5</text>
 <line x1="2495.9" y1="1972.0" x2="2535.9" y2="1972.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="2495.9" y1="1493.0" x2="2535.9" y2="1493.0" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="1527.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="2465.9" y="1527.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.5</text>
 <line x1="2495.9" y1="1014.1" x2="2535.9" y2="1014.1" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="1048.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="2465.9" y="1048.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 <line x1="2495.9" y1="535.1" x2="2535.9" y2="535.1" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="569.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
+<text x="2465.9" y="569.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.5</text>
 <line x1="2495.9" y1="56.2" x2="2535.9" y2="56.2" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2465.9" y="90.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
+<text x="2465.9" y="90.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.0</text>
 </svg>
