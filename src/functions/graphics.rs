@@ -36726,7 +36726,10 @@ fn grid_svg_styled_internal_reporting(
             let span_end = (j + span_width(row, j)).min(num_cols) - 1;
             x_offset + col_w - col_pad_right[span_end] - nat_w
           }
-          _ => x_offset + (col_w - nat_w) / 2.0,
+          // Centered on a whole pixel: at a half-pixel offset the
+          // crisp-edged half-point frame lines of a plot fall between
+          // pixel centers and are not drawn at all.
+          _ => (x_offset + (col_w - nat_w) / 2.0).round(),
         };
         let vis_h = cell_bottom - cell_top;
         let gy = aligned_top(nat_h).unwrap_or_else(|| {
@@ -43641,6 +43644,16 @@ fn column_layout_svg(
       let (resolved, shows_text) = resolve_display_item_face(item);
       match &resolved {
         Expr::Graphics { svg, .. } => {
+          // An automatically sized picture is drawn at the reduced size
+          // of the column it sits in, as in a `Column` without options.
+          // Items drawn beforehand (`text_items`) already have their size.
+          let resized = text_items
+            .is_none()
+            .then(|| {
+              crate::functions::container_layout::cell_graphic_svg(&resolved)
+            })
+            .flatten();
+          let svg = resized.as_ref().unwrap_or(svg);
           let (w, h) = parse_svg_wh(svg);
           Cell::Svg {
             svg: svg.clone(),

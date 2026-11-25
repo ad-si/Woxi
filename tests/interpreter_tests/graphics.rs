@@ -43243,8 +43243,9 @@ mod grid_rasterize {
     .unwrap()
     .graphics
     .expect("grid of framed panes should draw");
-    // WL's framed box puts the content 5 points inside its edge.
-    assert!(svg.contains("width=\"110\" height=\"70\""), "{svg}");
+    // WL's framed box puts the content 5 points inside its edge. The box
+    // is a cell of the grid, which sets it inside the grid's own margins.
+    assert!(svg.contains("width=\"110.0\" height=\"70.0\""), "{svg}");
     assert!(!svg.contains("stroke=\"rgb(190,190,190)\""), "{svg}");
   }
 

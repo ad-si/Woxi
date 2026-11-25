@@ -4078,9 +4078,9 @@ fn keep_frame_boxes(
   result
 }
 
-/// Whether `expr` is a `Column[…]`, possibly under `Style[…, directives]`
-/// wrappers.
-fn is_text_column(expr: &syntax::Expr) -> bool {
+/// Whether `expr` is a `Column[…]` or a `Grid[…]`, possibly under
+/// `Style[…, directives]` wrappers.
+fn is_text_layout(expr: &syntax::Expr) -> bool {
   let mut current = expr;
   while let syntax::Expr::FunctionCall { name, args } = current
     && name == "Style"
@@ -4090,7 +4090,8 @@ fn is_text_column(expr: &syntax::Expr) -> bool {
   }
   matches!(
     current,
-    syntax::Expr::FunctionCall { name, .. } if name == "Column"
+    syntax::Expr::FunctionCall { name, .. }
+      if name == "Column" || name == "Grid"
   )
 }
 
@@ -4155,13 +4156,15 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // are drawn at the reduced size of a nested one.
       match functions::graphics::with_inline_text_math(|| {
         functions::graphics::with_text_display_grids(|| {
-          // A `Column` layout, styled or not
+          // A `Column` or `Grid` layout, styled or not
           // (`Text@Style[Column[{Grid[…], Row[{…}]}], 17]`,
-          // `Text[Column[{Grid[…], Grid[…]}]]`) is drawn in the proportional
-          // text face, so the text of its items (numbers and subscripted
-          // symbols included) is not left in the monospace face of a bare
+          // `Text[Column[{Grid[…], Grid[…]}]]`,
+          // `Text[Grid[{{Column[{label, picture}], …}}]]`) is drawn in the
+          // proportional text face, so the text of its items (numbers and
+          // subscripted symbols included, and the labels of the layouts in
+          // its cells) is not left in the monospace face of a bare
           // `Column`'s `Row`s and grid cells.
-          if is_text_column(&content) {
+          if is_text_layout(&content) {
             let in_face = render_visual_display_pipeline(
               &functions::graphics::in_text_face(&content),
             );
