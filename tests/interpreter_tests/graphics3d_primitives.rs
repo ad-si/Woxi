@@ -1518,7 +1518,7 @@ mod ticks {
       .position(|l| {
         // Its fill may reach across the internal cut by extra corners.
         l.starts_with("<polygon points=\"134.1,170.5 ")
-          && l.contains(" 247.0,32.6 245.4,196.0\"")
+          && l.contains(" 245.4,196.0 247.0,32.6 ")
       })
       .expect("hiding face");
     assert!(last_red < hiding_face, "{s}");

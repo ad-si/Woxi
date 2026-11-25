@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
+    way to draw a ground plane) is filled instead of drawn as a bare
+    outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes
+    the front color, not the back one, and a plain color after the
+    `FaceForm` colors a `Sphere`, `Cylinder` or `Cone`.
 - A `Cylinder` or `Cone` cut open by the `PlotRange` of a 3D scene keeps
     the outline of its end circles inside the box. 3D axes crossing at an
     `AxesOrigin` carry their `AxesLabel`s at their far ends instead of
