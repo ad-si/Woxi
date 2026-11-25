@@ -38544,7 +38544,10 @@ mod tree_form_graphics {
     assert!(near(x_of("c") - x_of("b"), step), "{svg}");
     assert!(near(x_of("x"), x_of("b")), "{svg}");
     assert!(near(x_of("g"), x_of("c")), "{svg}");
-    assert!(near(x_of("f"), (x_of("x") + x_of("g")) / 2.0), "{svg}");
+    assert!(
+      near(x_of("f"), f64::midpoint(x_of("x"), x_of("g"))),
+      "{svg}"
+    );
   }
 
   #[test]
