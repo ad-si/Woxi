@@ -2053,7 +2053,43 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
   {
     return Some(parsed);
   }
+  // Box code holding `\(…\)` groups reads through the box parser, which
+  // understands a group's own `\*Box[…]` escapes
+  // (`FractionBox[\(C\), \(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)]`).
+  if (src.contains("\\(")
+    || src.contains(crate::functions::string_ast::BOX_OPEN))
+    && let Some(expr) = boxes_expr_to_expr(src)
+  {
+    return Some(expr);
+  }
   let text = crate::notebook::box_source_to_expression(src)?;
+  string_to_expr(&text).ok()
+}
+
+/// Read box source (`SuperscriptBox["x", "2"]`, or a `\(…\)` group) as box
+/// expressions and interpret them as the expression they typeset, the way
+/// `ToExpression` reads boxes.
+fn boxes_expr_to_expr(src: &str) -> Option<Expr> {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP};
+  // Inside a string the group delimiters are stored as private-use
+  // markers; spell them out as the escapes the box reader parses.
+  let src: String = src
+    .chars()
+    .map(|c| match c {
+      c if c == BOX_OPEN => "\\(".to_string(),
+      c if c == BOX_SEP => "\\*".to_string(),
+      c if c == BOX_CLOSE => "\\)".to_string(),
+      c => c.to_string(),
+    })
+    .collect();
+  let boxes = string_to_expr(&src).ok()?;
+  let Expr::FunctionCall { name, .. } = &boxes else {
+    return None;
+  };
+  if !crate::functions::string_ast::box_input_head(name) {
+    return None;
+  }
+  let text = crate::functions::string_ast::boxes_to_input(&boxes)?;
   string_to_expr(&text).ok()
 }
 
@@ -2311,12 +2347,25 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
   let mut i = 0;
   while i < bytes.len() {
     let c = bytes[i];
-    if (c as char).is_whitespace() {
+    // Bytes, not chars: a continuation byte of a multi-byte character (the
+    // `0xA0` ending `\[Cross]`'s U+F4A0) is no whitespace, even though the
+    // same value read as a char is a no-break space.
+    if c.is_ascii_whitespace() {
       i += 1;
       continue;
     }
     if c == b'\\' && i + 1 < bytes.len() {
       let n = bytes[i + 1];
+      // `\*Box[…]`: a box expression written out inside the box text
+      // (`\(9\[Cross]\*SuperscriptBox[\(10\), \(9\)]\)`), which stands
+      // for that box itself.
+      if n == b'*' {
+        let end = box_escape_extent(bytes, i + 2)?;
+        let nested = string_to_expr(s[i + 2..end].trim()).ok()?;
+        toks.push(BoxTok::Nested(nested));
+        i = end;
+        continue;
+      }
       if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'/' | b'`') {
         toks.push(BoxTok::Op(n as char));
         i += 2;
@@ -2362,7 +2411,7 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
     let start = i;
     while i < bytes.len() {
       let c = bytes[i];
-      if (c as char).is_whitespace() {
+      if c.is_ascii_whitespace() {
         break;
       }
       if matches!(c, b'(' | b')' | b'+' | b'-' | b'*' | b'/' | b'=' | b',') {
@@ -2372,7 +2421,7 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
         && i + 1 < bytes.len()
         && matches!(
           bytes[i + 1],
-          b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'(' | b')'
+          b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'(' | b')' | b'*'
         )
       {
         break;
@@ -2384,6 +2433,58 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
     }
   }
   Some(toks)
+}
+
+/// The end of the box expression a `\*` escape starts at `start`: a quoted
+/// string box, or a head (`SuperscriptBox`, `RowBox`, …) with its balanced
+/// `[…]` arguments, skipping brackets inside quoted strings.
+fn box_escape_extent(bytes: &[u8], start: usize) -> Option<usize> {
+  let mut i = start;
+  while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+    i += 1;
+  }
+  let skip_string = |mut j: usize| -> Option<usize> {
+    j += 1;
+    while j < bytes.len() {
+      match bytes[j] {
+        b'\\' => j += 2,
+        b'"' => return Some(j + 1),
+        _ => j += 1,
+      }
+    }
+    None
+  };
+  if bytes.get(i) == Some(&b'"') {
+    return skip_string(i);
+  }
+  let head_start = i;
+  while i < bytes.len()
+    && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'$' | b'`'))
+  {
+    i += 1;
+  }
+  if i == head_start || bytes.get(i) != Some(&b'[') {
+    return None;
+  }
+  let mut depth = 0usize;
+  while i < bytes.len() {
+    match bytes[i] {
+      b'"' => {
+        i = skip_string(i)?;
+        continue;
+      }
+      b'[' => depth += 1,
+      b']' => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(i + 1);
+        }
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  None
 }
 
 fn box_unit(tok: &BoxTok) -> Option<Expr> {
@@ -2601,34 +2702,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
-/// Multiply a decimal literal by `10^exponent` by moving its decimal point,
-/// keeping every digit the literal was written with. Used for the `*^` form
-/// of a precision-tagged real, where rounding through `f64` would throw away
-/// the extra digits the precision tag exists to carry.
-fn shift_decimal_point(literal: &str, exponent: i32) -> String {
-  if exponent == 0 {
-    return literal.to_string();
-  }
-  let (sign, digits) = match literal.strip_prefix('-') {
-    Some(rest) => ("-", rest),
-    None => ("", literal),
-  };
-  let (int_part, frac_part) = digits.split_once('.').unwrap_or((digits, ""));
-  let mut all: String = int_part.to_string();
-  all.push_str(frac_part);
-  // Where the point sits in `all` after the shift.
-  let point = int_part.len() as i32 + exponent;
-  let body = if point <= 0 {
-    format!("0.{}{all}", "0".repeat((-point) as usize))
-  } else if (point as usize) >= all.len() {
-    format!("{all}{}.", "0".repeat(point as usize - all.len()))
-  } else {
-    let (head, tail) = all.split_at(point as usize);
-    format!("{head}.{tail}")
-  };
-  format!("{sign}{body}")
-}
-
 fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
@@ -2717,7 +2790,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           && let Ok(exponent) = s[idx + 2..].parse::<i32>()
         {
           return Expr::BigFloat(
-            shift_decimal_point(&s[..idx], exponent),
+            crate::functions::math_ast::numerical::bigfloat_digits_from_scientific(
+              &s[..idx],
+              i64::from(exponent),
+            ),
             crate::functions::math_ast::numerical::MACHINE_OVERFLOW_PRECISION,
           );
         }
@@ -2801,7 +2877,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       };
       // The scaled literal, as the digit string the BigFloat path stores
       // (always with a decimal point: `3`20` is the real `3.`20.`).
-      let mut scaled_str = shift_decimal_point(value_str, exponent);
+      let mut scaled_str =
+        crate::functions::math_ast::numerical::bigfloat_digits_from_scientific(
+          value_str,
+          i64::from(exponent),
+        );
       if !scaled_str.contains('.') {
         scaled_str.push('.');
       }
@@ -3053,6 +3133,11 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         }) && !box_source_is_double_escaped(box_src)
           && let Some(expr) = box_escape_to_expr(box_src)
         {
+          return expr;
+        }
+        // Box code part-way through the group (`9\[Cross]\*SuperscriptBox[…]`)
+        // reads as the boxes it spells out.
+        if let Some(expr) = boxes_expr_to_expr(raw) {
           return expr;
         }
         // Fallback: surface the raw source as HoldComplete.
@@ -8683,6 +8768,16 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     (false, digits)
   };
   let prefix = if is_negative { "-" } else { "" };
+
+  // Compact storage (`d.ddd…e<exponent>`) is already in scientific form.
+  if let Some((mantissa, exponent)) =
+    crate::functions::math_ast::numerical::split_compact_digits(abs_digits)
+  {
+    return format!(
+      "{prefix}{mantissa}`{}*^{exponent}",
+      format_precision(prec)
+    );
+  }
 
   // Find the decimal point position
   let dot_pos = abs_digits.find('.');

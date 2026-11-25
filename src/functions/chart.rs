@@ -1,6 +1,6 @@
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::graphics::{Color, parse_color};
+use crate::functions::graphics::{Color, ColumnAlignment, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, LegendLayout,
@@ -310,11 +310,11 @@ pub(crate) struct StyledLabel {
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
   pub segments: Vec<LabelSegment>,
-  /// The lines of a stacked title line up at their left edges inside a
-  /// block that is itself centered, the way a `Column` (whose default
-  /// `Alignment` is `Left`) sets them. `false` centers every line on its
-  /// own, as a `Grid` does.
-  pub left_aligned: bool,
+  /// How the lines of a stacked title line up inside a block that is
+  /// itself centered: at one edge, the way a `Column` (whose default
+  /// `Alignment` is `Left`) sets them, or each centered on its own, as a
+  /// `Grid` does.
+  pub line_alignment: ColumnAlignment,
 }
 
 /// The box `Framed[…]` draws around a title or one line of it.
@@ -945,39 +945,20 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     frame: None,
     line_frames: Vec::new(),
     segments,
-    left_aligned: false,
+    line_alignment: ColumnAlignment::Center,
   })
 }
 
-/// Whether a stacked title is a `Column` whose lines line up at the left:
-/// its default `Alignment` is `Left`, and a second argument
-/// (`Column[{…}, Center]`) or an `Alignment -> …` option overrides it.
-fn column_aligns_left(expr: &Expr) -> bool {
-  let Expr::FunctionCall { name, args } = expr else {
-    return false;
-  };
-  if name != "Column" {
-    return false;
-  }
-  let mut alignment = None;
-  for arg in &args[1..] {
-    match arg {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Alignment") =>
-      {
-        alignment = Some(replacement.as_ref());
-      }
-      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {}
-      other if alignment.is_none() => alignment = Some(other),
-      _ => {}
+/// How the lines of a stacked title line up: a `Column` sets them flush
+/// left unless its second argument (`Column[{…}, Center]`) or its
+/// `Alignment -> …` option says otherwise; anything else centers each line.
+fn column_line_alignment(expr: &Expr) -> ColumnAlignment {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Column" => {
+      crate::functions::graphics::column_alignment(args)
+        .unwrap_or(ColumnAlignment::Left)
     }
-  }
-  match alignment {
-    None => true,
-    Some(Expr::Identifier(a)) => a == "Left",
-    Some(_) => false,
+    _ => ColumnAlignment::Center,
   }
 }
 
@@ -1070,7 +1051,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames,
       segments: Vec::new(),
-      left_aligned: column_aligns_left(expr),
+      line_alignment: column_line_alignment(expr),
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -1132,7 +1113,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       });
     }
   }
@@ -1158,7 +1139,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -1172,7 +1153,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
-      left_aligned: false,
+      line_alignment: ColumnAlignment::Center,
     }),
     // `Null` typesets as nothing — a label variable left unset, or an
     // option default of `Null`, must not print the word "Null".
@@ -1191,7 +1172,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
-      left_aligned: false,
+      line_alignment: ColumnAlignment::Center,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -1251,7 +1232,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments,
-        left_aligned: false,
+        line_alignment: ColumnAlignment::Center,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -1296,7 +1277,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           frame: None,
           line_frames: Vec::new(),
           segments,
-          left_aligned: false,
+          line_alignment: ColumnAlignment::Center,
         })
       }
     }
@@ -6667,40 +6648,15 @@ fn bar_chart_3d_graphics(
     ));
   }
   let x_extent = xs.last().map_or(1.0, |x| x + 1.0);
-  // The invisible base plate Wolfram adds, which sets the scene's extent
-  // a little past the bars.
-  let z_top = bars.iter().map(|b| b.2.abs()).fold(0.0, f64::max);
-  let v3 = |p: [f64; 3]| {
-    Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
-  };
-  content.insert(
-    0,
-    Expr::List(
-      vec![
-        Expr::FunctionCall {
-          name: "Opacity".to_string(),
-          args: vec![Expr::Integer(0)].into(),
-        },
-        Expr::FunctionCall {
-          name: "EdgeForm".to_string(),
-          args: vec![].into(),
-        },
-        Expr::FunctionCall {
-          name: "Cuboid".to_string(),
-          args: vec![
-            v3([-0.05 * x_extent, -0.25, 0.0]),
-            v3([1.05 * x_extent, 1.25, 0.0048 * z_top]),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    ),
+  let below_floor = bars.iter().any(|b| b.2 < 0.0);
+  let mut scene = crate::functions::chart3d::chart3d_base(
+    x_extent,
+    1.0,
+    below_floor,
+    color(0, 0),
   );
-  content.insert(
-    0,
-    crate::functions::chart3d::bar_chart_backdrop(color(0, 0)),
-  );
+  scene.extend(content);
+  let content = scene;
   let defaults = bar_chart3d_options(
     &bar_ticks(&xs, &column_group),
     x_extent,
@@ -6850,6 +6806,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -7066,6 +7023,7 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
+          edge_opacity: 1.0,
           edge_width: None,
           edge_dashing: None,
           projected: [
@@ -7667,6 +7625,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [
@@ -7711,6 +7670,7 @@ fn build_cylindrical_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [
@@ -7835,6 +7795,7 @@ fn build_torus_sector(
       all.push(Triangle {
         boundary: [true; 3],
         edge_color: None,
+        edge_opacity: 1.0,
         edge_width: None,
         edge_dashing: None,
         projected: [
@@ -9042,9 +9003,18 @@ fn date_list_plot_ast_impl(
       })
       .collect(),
   );
+  // An explicit `Axes -> Automatic` is the default resolved below.
+  let is_automatic_axes = |a: &Expr| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "Automatic"))
+  };
   let has_option = |name: &str| {
     args[1..].iter().any(|a| {
-      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      !is_automatic_axes(a)
+        && matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
     })
   };
@@ -9052,10 +9022,23 @@ fn date_list_plot_ast_impl(
   new_args.extend(
     args[1..]
       .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .filter(|a| {
+        matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          && !is_automatic_axes(a)
+      })
       .cloned(),
   );
-  for (name, value) in [("Frame", "True"), ("Joined", "True")] {
+  // `Axes -> Automatic` draws the axes only when there is no frame: the
+  // framed default has no line at y = 0, `Frame -> False` brings it back.
+  let frameless = args[1..].iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Frame")
+        && matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "False" || v == "None"))
+  });
+  let axes = if frameless { "True" } else { "False" };
+  for (name, value) in [("Frame", "True"), ("Joined", "True"), ("Axes", axes)] {
     if !has_option(name) {
       new_args.push(Expr::Rule {
         pattern: Box::new(Expr::Identifier(name.into())),

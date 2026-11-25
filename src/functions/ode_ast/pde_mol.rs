@@ -1080,7 +1080,7 @@ fn integrate(
 /// resolved (its cubic interpolation between grid points within 10^-4 of
 /// its own scale), at least 51 (64 periodic), at most 1025, and within
 /// `MinPoints`/`MaxPoints`.
-fn choose_points(
+pub(super) fn choose_points(
   ics: &[NumFn],
   x_min: f64,
   x_max: f64,

@@ -34,17 +34,17 @@ expression: "export_svg(\"ListPlot[{1, 4, 9}]\")"
 <line x1="3399.3" y1="2167.9" x2="3399.3" y2="2143.9" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="85.4" y1="2167.9" x2="85.4" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="656.8" y1="2167.9" x2="656.8" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="656.8" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="656.8" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.5</text>
 <line x1="1228.1" y1="2167.9" x2="1228.1" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1228.1" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="1228.1" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 <line x1="1799.5" y1="2167.9" x2="1799.5" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="1799.5" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
+<text x="1799.5" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.5</text>
 <line x1="2370.9" y1="2167.9" x2="2370.9" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2370.9" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
+<text x="2370.9" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.0</text>
 <line x1="2942.2" y1="2167.9" x2="2942.2" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="2942.2" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
+<text x="2942.2" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.5</text>
 <line x1="3513.6" y1="2167.9" x2="3513.6" y2="2127.9" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="3513.6" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
+<text x="3513.6" y="2288.4" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3.0</text>
 <line x1="85.4" y1="5.0" x2="85.4" y2="2212.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="85.4" y1="2053.8" x2="109.4" y2="2053.8" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="85.4" y1="1939.8" x2="109.4" y2="1939.8" stroke="rgb(102,102,102)" stroke-width="2"/>
@@ -62,11 +62,11 @@ expression: "export_svg(\"ListPlot[{1, 4, 9}]\")"
 <line x1="85.4" y1="115.3" x2="109.4" y2="115.3" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="85.4" y1="2167.9" x2="125.4" y2="2167.9" stroke="rgb(102,102,102)" stroke-width="2"/>
 <line x1="85.4" y1="1711.7" x2="125.4" y2="1711.7" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="57.6" y="1746.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="57.6" y="1746.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2</text>
 <line x1="85.4" y1="1255.6" x2="125.4" y2="1255.6" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="57.6" y="1290.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
+<text x="57.6" y="1290.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">4</text>
 <line x1="85.4" y1="799.5" x2="125.4" y2="799.5" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="57.6" y="834.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
+<text x="57.6" y="834.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">6</text>
 <line x1="85.4" y1="343.4" x2="125.4" y2="343.4" stroke="rgb(102,102,102)" stroke-width="2"/>
-<text x="57.6" y="378.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">8</text>
+<text x="57.6" y="378.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">8</text>
 </svg>

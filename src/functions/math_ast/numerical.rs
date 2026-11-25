@@ -628,21 +628,100 @@ pub(crate) fn bigfloat_from_f64(x: f64, bits: usize) -> astro_float::BigFloat {
   BigFloat::from_f64(x, bits)
 }
 
-/// Largest decimal exponent an overflowed machine real is promoted to.
-/// Numeric routines sample functions far outside the machine range and rely
-/// on such values staying a cheap `Infinity`.
-pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
+/// Largest decimal exponent of an arbitrary-precision result, whether it
+/// was computed from arbitrary-precision input or promoted from an
+/// overflowed machine real. The type itself (a 32-bit binary exponent) ends
+/// near 10^646456993; results past this bound are `Overflow[]`/`Underflow[]`
+/// (or a machine `Infinity`/`0.`) — wolframscript, whose `$MaxNumber` is
+/// near 10^1355718576299609, still shows them as numbers.
+pub const MAX_BIGFLOAT_DECIMAL_EXPONENT: f64 = 6.0e8;
 
-/// Largest decimal exponent of an arbitrary-precision result. The type
-/// itself (a 32-bit binary exponent) ends near 10^646456993, and converting
-/// such a number to decimal costs time in proportion to its exponent (about
-/// 0.4 s at 10^8), so results past this bound are `Overflow[]`/`Underflow[]`
-/// — wolframscript, whose `$MaxNumber` is near 10^1355718576299609, still
-/// shows them as numbers.
-pub const MAX_BIGFLOAT_DECIMAL_EXPONENT: f64 = 1.0e8;
+/// Largest decimal exponent an overflowed machine real is promoted to.
+pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = MAX_BIGFLOAT_DECIMAL_EXPONENT;
+
+/// Decimal exponent past which the digit string of an arbitrary-precision
+/// number is kept in the compact form `d.ddd…e<exponent>` instead of being
+/// written out digit by digit: a number such as `Exp[1.*^6]` would
+/// otherwise carry hundreds of thousands of padding zeros through every
+/// operation.
+pub const COMPACT_DECIMAL_EXPONENT: i64 = 10_000;
+
+/// The mantissa and decimal exponent of a digit string in the compact form
+/// (see [`COMPACT_DECIMAL_EXPONENT`]); `None` for a written-out one.
+pub fn split_compact_digits(digits: &str) -> Option<(&str, i64)> {
+  let (mantissa, exponent) = digits.split_once('e')?;
+  Some((mantissa, exponent.parse().ok()?))
+}
+
+/// Multiply a decimal literal by `10^exponent` by moving its decimal point,
+/// keeping every digit the literal was written with.
+pub fn shift_decimal_point(literal: &str, exponent: i64) -> String {
+  if exponent == 0 {
+    return literal.to_string();
+  }
+  let (sign, digits) = match literal.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", literal),
+  };
+  let (int_part, frac_part) = digits.split_once('.').unwrap_or((digits, ""));
+  let mut all: String = int_part.to_string();
+  all.push_str(frac_part);
+  // Where the point sits in `all` after the shift.
+  let point = int_part.len() as i64 + exponent;
+  let body = if point <= 0 {
+    format!("0.{}{all}", "0".repeat((-point) as usize))
+  } else if (point as usize) >= all.len() {
+    format!("{all}{}.", "0".repeat(point as usize - all.len()))
+  } else {
+    let (head, tail) = all.split_at(point as usize);
+    format!("{head}.{tail}")
+  };
+  format!("{sign}{body}")
+}
+
+/// A digit string with every decimal digit written out, whichever form it
+/// is stored in. Only for code that needs the individual digits of a number
+/// (its integer part, its digit list): the expansion of a compact string is
+/// as long as its exponent.
+pub fn plain_bigfloat_digits(digits: &str) -> std::borrow::Cow<'_, str> {
+  match split_compact_digits(digits) {
+    Some((mantissa, exponent)) => {
+      std::borrow::Cow::Owned(shift_decimal_point(mantissa, exponent))
+    }
+    None => std::borrow::Cow::Borrowed(digits),
+  }
+}
+
+/// The stored form of a decimal literal `mantissa × 10^exponent`: written
+/// out, or compact once its magnitude passes [`COMPACT_DECIMAL_EXPONENT`].
+/// `mantissa` is a plain decimal with an optional leading `-`.
+pub fn bigfloat_digits_from_scientific(
+  mantissa: &str,
+  exponent: i64,
+) -> String {
+  let (sign, body) = match mantissa.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", mantissa),
+  };
+  let (int_part, frac_part) = body.split_once('.').unwrap_or((body, ""));
+  let all = format!("{int_part}{frac_part}");
+  let significant = all.trim_start_matches('0');
+  if significant.is_empty() {
+    return shift_decimal_point(mantissa, 0);
+  }
+  // Exponent of the leading significant digit.
+  let leading = exponent + int_part.len() as i64
+    - 1
+    - (all.len() - significant.len()) as i64;
+  if leading.abs() <= COMPACT_DECIMAL_EXPONENT {
+    return shift_decimal_point(mantissa, exponent);
+  }
+  let tail = significant[1..].trim_end_matches('0');
+  format!("{sign}{}.{tail}e{leading}", &significant[..1])
+}
 
 /// `Overflow[]` or `Underflow[]` with its message, for a result whose decimal
-/// exponent is past [`MAX_PROMOTED_DECIMAL_EXPONENT`].
+/// exponent is past [`MAX_BIGFLOAT_DECIMAL_EXPONENT`].
 pub fn out_of_range_result(overflow: bool) -> Expr {
   if overflow {
     crate::emit_message("General::ovfl: Overflow occurred in computation.");
@@ -671,8 +750,8 @@ pub fn machine_power_out_of_range(
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
     return None;
   }
-  // The promoted number stores every decimal digit, so a result with an
-  // absurd magnitude stays a machine overflow (`Infinity`).
+  // Past the range of the arbitrary-precision type the result stays a
+  // machine overflow (`Infinity`).
   if (b * a.log10()).abs() > MAX_PROMOTED_DECIMAL_EXPONENT {
     return None;
   }
@@ -794,7 +873,7 @@ pub fn bigfloat_exp(
   digits: &str,
   prec: f64,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, Radix, RoundingMode};
+  use astro_float::RoundingMode;
   let x_val: f64 = digits.parse().ok()?;
   if x_val == 0.0 {
     return None;
@@ -812,7 +891,7 @@ pub fn bigfloat_exp(
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
     }
   };
-  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let x = parse_bigfloat_digits(digits, bits, rm, &mut cc);
   let result = x.exp(bits, rm, &mut cc);
   let result_prec = prec - x_val.abs().log10();
   let digits = wl_fraction_digits(&result, result_prec);
@@ -831,7 +910,7 @@ pub fn bigfloat_log(
   digits: &str,
   prec: f64,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, Radix, RoundingMode};
+  use astro_float::RoundingMode;
   let x_val: f64 = digits.parse().ok()?;
   // Log[-x] = Log[x] + I Pi, both parts known to the same accuracy.
   if let Some(abs_digits) = digits.strip_prefix('-')
@@ -865,7 +944,7 @@ pub fn bigfloat_log(
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
     }
   };
-  let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
+  let x = parse_bigfloat_digits(digits, bits, rm, &mut cc);
   let result = x.ln(bits, rm, &mut cc);
   // ln x itself, not ln of x read as a machine number: x may lie past the
   // machine range (1.*^308 * 10. is 1.*^309), where that reads as Infinity.
@@ -1491,6 +1570,103 @@ pub(crate) fn gamma_bigfloat(
   outer.mul(&sum, bits, rm)
 }
 
+/// The value of a stored digit string (written out or compact, see
+/// [`COMPACT_DECIMAL_EXPONENT`]) as a number of `bits` bits. A compact
+/// string is scaled by its power of ten with guard bits, so the result is
+/// as close to the decimal value as a written-out string would give.
+pub fn parse_bigfloat_digits(
+  digits: &str,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::{BigFloat, Radix};
+  let Some((mantissa, exponent)) = split_compact_digits(digits) else {
+    return BigFloat::parse(digits, Radix::Dec, bits, rm, cc);
+  };
+  let work_bits = bits + 128;
+  let mantissa = BigFloat::parse(mantissa, Radix::Dec, work_bits, rm, cc);
+  let power = BigFloat::from_i32(10, work_bits).powi(
+    exponent.unsigned_abs() as usize,
+    work_bits,
+    rm,
+  );
+  if exponent >= 0 {
+    mantissa.mul(&power, bits, rm)
+  } else {
+    mantissa.div(&power, bits, rm)
+  }
+}
+
+/// The decimal digits of `bf` as `(sign, digits, exponent)`, the value
+/// being `0.d₁d₂… × 10^exponent`.
+///
+/// astro-float converts in time proportional to the exponent, so a number
+/// far outside the machine range is first scaled by a power of ten into
+/// the units range (with guard bits to absorb the scaling error) and only
+/// the digits its own mantissa resolves are kept.
+fn bigfloat_decimal_digits(
+  bf: &astro_float::BigFloat,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::Sign, Vec<u8>, i64), InterpreterError> {
+  use astro_float::{BigFloat, Radix};
+  let format_error = |e: astro_float::Error| {
+    InterpreterError::EvaluationError(format!("N: format error: {e}"))
+  };
+  let binary_exponent = bf.exponent().map_or(0, i64::from);
+  let shift =
+    ((binary_exponent - 1) as f64 * std::f64::consts::LOG10_2).floor() as i64;
+  if shift.abs() <= COMPACT_DECIMAL_EXPONENT / 2 {
+    let (sign, digits, exponent) = bf
+      .convert_to_radix(Radix::Dec, rm, cc)
+      .map_err(format_error)?;
+    return Ok((sign, digits, i64::from(exponent)));
+  }
+  let mantissa_bits = bf.mantissa_max_bit_len().unwrap_or(64);
+  let work_bits = mantissa_bits + 128;
+  let power = BigFloat::from_i32(10, work_bits).powi(
+    shift.unsigned_abs() as usize,
+    work_bits,
+    rm,
+  );
+  let scaled = if shift > 0 {
+    bf.div(&power, work_bits, rm)
+  } else {
+    bf.mul(&power, work_bits, rm)
+  };
+  let (sign, mut digits, exponent) = scaled
+    .convert_to_radix(Radix::Dec, rm, cc)
+    .map_err(format_error)?;
+  let mut exponent = i64::from(exponent) + shift;
+  // Round to the digits the mantissa resolves; the rest is binary noise.
+  let resolved = ((mantissa_bits as f64 * std::f64::consts::LOG10_2).floor()
+    as usize)
+    .max(1);
+  if digits.len() > resolved {
+    let round_up = digits[resolved] >= 5;
+    digits.truncate(resolved);
+    if round_up {
+      let mut carried = true;
+      for d in digits.iter_mut().rev() {
+        if *d == 9 {
+          *d = 0;
+        } else {
+          *d += 1;
+          carried = false;
+          break;
+        }
+      }
+      if carried {
+        digits.insert(0, 1);
+        digits.pop();
+        exponent += 1;
+      }
+    }
+  }
+  Ok((sign, digits, exponent))
+}
+
 /// Convert a BigFloat to a decimal string.
 /// If `max_fraction_digits` is Some(n), round to `n` digits AFTER the
 /// decimal point (a negative `n` rounds off integer digits), so e.g. with
@@ -1507,11 +1683,7 @@ pub fn bigfloat_to_string(
     return Ok("0.".to_string());
   }
 
-  let (sign, digits, exponent) = bf
-    .convert_to_radix(astro_float::Radix::Dec, rm, cc)
-    .map_err(|e| {
-      InterpreterError::EvaluationError(format!("N: format error: {e}"))
-    })?;
+  let (sign, digits, exponent) = bigfloat_decimal_digits(bf, rm, cc)?;
 
   if digits.is_empty() || digits.iter().all(|&d| d == 0) {
     return Ok("0.".to_string());
@@ -1528,7 +1700,7 @@ pub fn bigfloat_to_string(
   // Rounding (not truncation) the last shown digit matches Wolfram. Carries
   // that ripple past the leading digit increment the decimal exponent.
   let (digit_str, decimal_exp) = if let Some(max_frac) = max_fraction_digits {
-    let exp_i64 = exponent as i64;
+    let exp_i64 = exponent;
     let total_keep = (max_frac + exp_i64).max(1) as usize;
     if digit_str.len() > total_keep {
       let kept = &digit_str[..total_keep];
@@ -1565,8 +1737,18 @@ pub fn bigfloat_to_string(
       (digit_str, exp_i64)
     }
   } else {
-    (digit_str, exponent as i64)
+    (digit_str, exponent)
   };
+
+  // Far from the decimal point the digits are kept as `d.ddd…e<exponent>`.
+  if (decimal_exp - 1).abs() > COMPACT_DECIMAL_EXPONENT {
+    let tail = digit_str[1..].trim_end_matches('0');
+    return Ok(format!(
+      "{prefix}{}.{tail}e{}",
+      &digit_str[..1],
+      decimal_exp - 1
+    ));
+  }
 
   if decimal_exp <= 0 {
     // Number like 0.000xxxx
@@ -2041,12 +2223,8 @@ fn set_precision_exact(expr: &Expr) -> Expr {
       }
     }
     Expr::BigFloat(digits, _) => {
-      let mantissa = digits.split("*^").next().unwrap_or(digits);
-      let exponent: i64 = digits
-        .split("*^")
-        .nth(1)
-        .and_then(|e| e.parse().ok())
-        .unwrap_or(0);
+      let (mantissa, exponent) =
+        split_compact_digits(digits).unwrap_or((digits.as_str(), 0));
       let (int_part, frac_part) =
         mantissa.split_once('.').unwrap_or((mantissa, ""));
       let Ok(num) = format!("{int_part}{frac_part}").parse::<BigInt>() else {
@@ -2522,13 +2700,9 @@ pub fn expr_to_bigfloat(
     Expr::Real(f) => Ok(
       crate::functions::math_ast::numerical::bigfloat_from_f64(*f, bits),
     ),
-    Expr::BigFloat(digits, _) => Ok(BigFloat::parse(
-      digits,
-      astro_float::Radix::Dec,
-      bits,
-      rm,
-      cc,
-    )),
+    Expr::BigFloat(digits, _) => {
+      Ok(parse_bigfloat_digits(digits, bits, rm, cc))
+    }
     // A variable holding `Pi`/`E`/`Degree` substitutes in as `Identifier`
     // rather than `Constant` (unlike a literal `Pi` token), so both variants
     // are accepted here — matching how GoldenRatio, EulerGamma, etc. below

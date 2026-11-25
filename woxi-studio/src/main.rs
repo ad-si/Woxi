@@ -4430,16 +4430,40 @@ const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 /// plus its value readout.
 const SIDE_PANEL_CONTROL_WIDTH: f32 = 230.0;
 
+/// The choice a bare two-state domain shows as *checked*, if it is a domain
+/// the FrontEnd draws as a checkbox at all:
+///
+/// * a boolean domain — `{True, False}` in either order — is checked on
+///   `True`;
+/// * the numeric pair `{0, 1}`, the off/on domain `Checkbox[x, {0, 1}]`
+///   takes, is checked on `1`. A Demonstration whose
+///   `{{init, 1, "initialization"}, {0, 1}}` control the stored Wolfram
+///   snapshots draw as a checked box beside its caption (never a `0 | 1`
+///   setter bar) pins this down. Only the ascending pair is automatic:
+///   `{1, 0}` keeps its two buttons unless `ControlType -> Checkbox` asks
+///   for a positional `Checkbox[x, {1, 0}]`.
+fn checkbox_on_choice(values: &[String]) -> Option<&'static str> {
+  if values.len() != 2 {
+    return None;
+  }
+  let has = |wanted: &str| values.iter().any(|v| v == wanted);
+  if has("True") && has("False") {
+    Some("True")
+  } else if values[0] == "0" && values[1] == "1" {
+    Some("1")
+  } else {
+    None
+  }
+}
+
 /// Whether a discrete control renders as a checkbox. The Wolfram FrontEnd
-/// shows a checkbox for a bare boolean domain — `{v, {True, False}}` in
-/// either order — rather than a two-button setter. Labeling the choices
-/// (`{False -> "scaling function", True -> "wavelet"}`) asks for those
-/// labels to be shown, so such a domain stays a SetterBar whose buttons
-/// carry them; a checkbox would have nowhere to put them.
+/// shows a checkbox for a bare two-state domain (see
+/// [`checkbox_on_choice`]) rather than a two-button setter. Labeling the
+/// choices (`{False -> "scaling function", True -> "wavelet"}`) asks for
+/// those labels to be shown, so such a domain stays a SetterBar whose
+/// buttons carry them; a checkbox would have nowhere to put them.
 fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
-  values.len() == 2
-    && values.iter().any(|v| v == "True")
-    && values.iter().any(|v| v == "False")
+  checkbox_on_choice(values).is_some()
     && value_labels.len() == values.len()
     && value_labels.iter().zip(values).all(|(label, v)| label == v)
 }
@@ -4447,9 +4471,10 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// How a discrete control draws as a checkbox, if it does: whether the box
 /// is checked, and the display label a toggle sends (the other choice).
 ///
-/// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
-/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`),
-/// and stays checked on `True` when `ControlType -> Checkbox` is spelled out
+/// A bare two-state domain (see `renders_as_checkbox`) is checked on its
+/// "on" choice — `True`, or `1` for the `{0, 1}` pair — unless a
+/// `PopupMenu`/`SetterBar` type was forced (`other_type`), and stays
+/// checked there when `ControlType -> Checkbox` is spelled out
 /// (`{color, {True, False}, ControlType -> Checkbox}`), as the FrontEnd
 /// draws it. An explicit `ControlType -> Checkbox` over any other two
 /// choices (`{1, 0}`, `{None, All}`) follows `Checkbox[x, {v1, v2}]`: the
@@ -4473,12 +4498,13 @@ fn discrete_checkbox_state(
   if other_type || !renders_as_checkbox(values, value_labels) {
     return None;
   }
+  let on = checkbox_on_choice(values)?;
   let checked =
-    !has_overflow && values.get(current_index).is_some_and(|v| v == "True");
+    !has_overflow && values.get(current_index).is_some_and(|v| v == on);
   let other_label = value_labels
     .iter()
     .zip(values)
-    .find(|(_, v)| (*v == "True") != checked)
+    .find(|(_, v)| (*v == on) != checked)
     .map(|(l, _)| l.clone());
   Some((checked, other_label))
 }
@@ -10283,6 +10309,47 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// Regression: the variables a button drives were declared as `{n, 0, 0}`
+  /// and `{log, {}}` specs and hidden by a Manipulate-level
+  /// `ControlType -> {None, None}` list. The `None` entries were ignored, so
+  /// the variables became sliders/choosers instead of state the button's
+  /// writes are kept in.
+  #[test]
+  fn control_type_list_none_entries_keep_button_driven_state() {
+    let code = r#"Manipulate[
+      Row[{n, ": ", log}],
+      Button["draw", n = n + 1; AppendTo[log, 10 n]],
+      Button["reset", n = 0; log = {}],
+      {n, 0, 0}, {log, {}},
+      ControlType -> {None, None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the button panel should build a ManipulateState");
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .map(manipulate::ControlState::name)
+      .collect();
+    assert_eq!(names, ["", ""], "only the two buttons are controls");
+    let draw = match &state.controls[0] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      other => panic!("expected the draw button, got {other:?}"),
+    };
+    state.apply_button_action(&draw);
+    state.apply_button_action(&draw);
+    let value = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| panic!("{name} must stay hidden state"))
+    };
+    assert_eq!(value("n"), "2");
+    assert_eq!(value("log"), "{10, 20}");
+  }
+
   /// Regression: a control row `Row[{"label", ButtonBar[…], "label",
   /// ButtonBar[…]}]` mixing captions with several `ButtonBar`s was kept as one
   /// static heading whose text was the raw `ButtonBar[…]` source. Each bar must
@@ -15198,6 +15265,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     assert!(stored_output_editor(&plain).is_none());
   }
 
+  /// A bitmap pasted into a sentence of a Text cell (a Demonstration's
+  /// Details showing a logo next to its description) opens as the prose
+  /// followed by the picture. Regression: the inline picture cell was
+  /// dropped, leaving "…the emblem: ." with nothing to look at.
+  #[test]
+  fn text_cell_inline_raster_picture_opens_as_a_stored_graphic() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell["Details", "Subsection"],
+Cell[TextData[{
+ "Here is the emblem: ",
+ Cell[BoxData[
+  GraphicsBox[
+   TagBox[RasterBox[CompressedData["
+1:PAYLOAD
+     "], {{0, 2.}, {3., 0}}, {0, 255},
+     ColorFunction->RGBColor],
+    BoxForm`ImageTag["Byte", ColorSpace -> "RGB", Interleaving -> True],
+    Selectable->False],
+   ImageSize->{3., 2.},
+   PlotRange->{{0, 3.}, {0, 2.}}]], ExpressionUUID->
+  "00000000-0000-0000-0000-000000000003"],
+ "."
+}], "Text", CellID->7]
+}, Open  ]]
+}]"##
+      .replace("PAYLOAD", "eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRIzUBCklBmKT8jJoSEA0jISfA==");
+    let nb = woxi::notebook::parse_notebook(&nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let shown: Vec<(CellStyle, String, bool)> = editors
+      .iter()
+      .map(|e| {
+        let text = if e.stored_graphic {
+          String::new()
+        } else {
+          e.content.text().trim().to_string()
+        };
+        (e.style, text, e.stored_graphic)
+      })
+      .collect();
+    assert_eq!(
+      shown,
+      vec![
+        (CellStyle::Subsection, "Details".to_string(), false),
+        (CellStyle::Text, "Here is the emblem:".to_string(), false),
+        (CellStyle::Output, String::new(), true),
+      ]
+    );
+    let svg = editors[2].graphics_svg.as_deref().expect("the picture");
+    assert!(svg.contains("data:image/png;base64,"), "{svg}");
+  }
+
   #[test]
   fn demonstration_compatibility_checkboxes_render_as_a_card() {
     // The metadata cells at the end of every Demonstration submission
@@ -20082,7 +20201,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: false,
+      unit: manipulate::SliderUnit::Plain,
       reversed: false,
     };
     let empty = manipulate::ControlState::Continuous {
@@ -20096,11 +20215,32 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: false,
+      unit: manipulate::SliderUnit::Plain,
       reversed: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
+  }
+
+  // A slider counting degrees substitutes its position as the exact angle
+  // (`96*Degree`), the way Wolfram binds a `Degree`-stepped slider.
+  #[test]
+  fn degree_slider_binds_exact_angle_current_code() {
+    let c = manipulate::ControlState::Continuous {
+      name: "a".to_string(),
+      label: "a".to_string(),
+      label_runs: vec![],
+      min: 40.0,
+      max: 170.0,
+      step: 1.0,
+      current: 96.0,
+      is_real: false,
+      exact_value: None,
+      orientation: manipulate::ControlOrientation::Horizontal,
+      unit: manipulate::SliderUnit::Degree,
+      reversed: false,
+    };
+    assert_eq!(c.current_code(), "96*Degree");
   }
 
   // A slider along the imaginary axis substitutes its value as a complex
@@ -20118,12 +20258,12 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
-      imaginary: true,
+      unit: manipulate::SliderUnit::Imaginary,
       reversed: false,
     };
     assert_eq!(c.current_code(), "Complex[0, 1]");
-    if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {
-      *imaginary = false;
+    if let manipulate::ControlState::Continuous { unit, .. } = &mut c {
+      *unit = manipulate::SliderUnit::Plain;
     }
     assert_eq!(c.current_code(), "1");
   }
@@ -25461,7 +25601,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       &s(&["False", "True"]),
       &s(&["False", "True"])
     ));
-    assert!(!renders_as_checkbox(&s(&["0", "1"]), &s(&["0", "1"])));
+    // The off/on pair `{0, 1}` is a checkbox too (see
+    // `numeric_zero_one_domain_renders_as_a_checkbox`), but only in that
+    // order, and only while its choices carry no labels of their own.
+    assert!(renders_as_checkbox(&s(&["0", "1"]), &s(&["0", "1"])));
+    assert!(!renders_as_checkbox(&s(&["1", "0"]), &s(&["1", "0"])));
+    assert!(!renders_as_checkbox(&s(&["0", "1"]), &s(&["off", "on"])));
     assert!(!renders_as_checkbox(
       &s(&["True", "False", "None"]),
       &s(&["True", "False", "None"])
@@ -25505,6 +25650,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// A bare `{0, 1}` domain is the off/on pair `Checkbox[x, {0, 1}]` takes,
+  /// and the FrontEnd draws it as a checkbox checked on `1` — the stored
+  /// snapshots of the Demonstrations that switch a cellular automaton's
+  /// initial cell with `{{init, 1, "initialization"}, {0, 1}}` show a
+  /// checked box beside the caption. Regression: Woxi drew a two-button
+  /// `0 | 1` setter bar, because only `{True, False}` counted as two-state.
+  #[test]
+  fn numeric_zero_one_domain_renders_as_a_checkbox() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[init + steps, {{init, 1, \"initialization\"}, {0, 1}}, \
+       {{steps, 3, \"steps\"}, Range[0, 4]}, \
+       {{mix, 0, \"mix\"}, {0 -> \"off\", 1 -> \"on\"}}, \
+       {{flip, 1, \"flip\"}, {1, 0}}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let kind = |state: &manipulate::ManipulateState, idx: usize| {
+      let manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        checkbox,
+        popup,
+        setter_bar,
+        overflow,
+        ..
+      } = &state.controls[idx]
+      else {
+        panic!("expected a discrete control at {idx}");
+      };
+      discrete_checkbox_state(
+        values,
+        value_labels,
+        *current_index,
+        *checkbox,
+        *popup || *setter_bar,
+        overflow.is_some(),
+      )
+    };
+    // `init = 1` is the checked state, and clearing the box binds `0`.
+    assert_eq!(kind(&state, 0), Some((true, Some("0".to_string()))));
+    assert!(state.select_discrete(0, "0"));
+    assert_eq!(kind(&state, 0), Some((false, Some("1".to_string()))));
+
+    // The neighboring controls keep their buttons: five numeric choices are
+    // a setter bar, a labeled `{0, 1}` pair must show its own labels, and
+    // the descending `{1, 0}` pair is no automatic checkbox.
+    assert_eq!(kind(&state, 1), None);
+    assert_eq!(kind(&state, 2), None);
+    assert_eq!(kind(&state, 3), None);
   }
 
   /// An explicit `ControlType -> RadioButtonBar` keeps its row of radio
@@ -27359,6 +27556,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = 
   }
 
   /// End-to-end regression for the shape of the "Leverage Ratios"
+  /// A Manipulate body `Pane[Labeled[table, caption, Top], {w, h},
+  /// Alignment -> {Center, Center}]` reserves the pane's whole box and
+  /// centers the captioned table in it; the table alone would shrink the
+  /// content area as the slider grows or shrinks the table.
+  #[test]
+  fn manipulate_fixed_pane_around_labeled_table_keeps_its_box() {
+    woxi::interpret(
+      "cells[k_] := Grid[Table[\" \", {k}, {k}], Frame -> All]; \
+       caption[k_] := Text[Row[Range[k], \"+\"]];",
+    )
+    .unwrap();
+    let code = "Manipulate[\
+      Pane[Labeled[cells[k], caption[k], Top], {420, 310}, \
+        Alignment -> {Center, Center}], \
+      {{k, 4, \"size\"}, 1, 9, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    for value in ["4", "7"] {
+      state.apply_saved_variables(&[("k".to_string(), value.to_string())]);
+      state.reevaluate();
+      let svg = state.check_render().unwrap().graphics.unwrap();
+      assert!(
+        svg.starts_with("<svg width=\"420\" height=\"310\""),
+        "k = {value}: {svg:.200}"
+      );
+    }
+  }
+
   /// Wolfram Demonstration: a `Setter` whose choice rules are
   /// `key -> Tooltip[displayValue, hoverText]` (so the button shows the
   /// tooltip's *first* argument, not the whole `Tooltip[…]` source), a
