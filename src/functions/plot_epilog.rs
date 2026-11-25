@@ -1147,6 +1147,32 @@ fn render_item(
             }
             other => (other, &[] as &[Expr], false),
           };
+          // A label that stacks material (the built-up fraction of
+          // `Row[{"y = 1 + ", 1/x}]`) cannot be set as one line of text:
+          // it is laid out as a picture and centered on the anchor, the
+          // way `Graphics` draws it.
+          if !is_framed
+            && args.get(3).and_then(point2).is_none()
+            && let Some(picture) = stacked_label_svg(body, args.get(2), style)
+          {
+            let (svg, w, h) = picture;
+            let embedded = crate::functions::graphics::embed_svg_centered(
+              &svg,
+              area.px(x) + shift.0 * area.scale,
+              area.py(y) - shift.1 * area.scale,
+              w * area.scale,
+              h * area.scale,
+            );
+            let alpha = style.color.a * style.opacity;
+            if alpha < 1.0 {
+              out.push_str(&format!(
+                "<g opacity=\"{alpha:.3}\">\n{embedded}</g>\n"
+              ));
+            } else {
+              out.push_str(&embedded);
+            }
+            return;
+          }
           // `Style[…]` around the content sets the text's own size and
           // color; without one the epilog's directives still apply.
           let styled = crate::functions::chart::parse_styled_label(body);
@@ -1572,6 +1598,52 @@ fn render_item(
   }
 }
 
+/// The picture of a `Text` label that stacks material (a built-up
+/// fraction), with its size in points, or `None` for a label that is set as
+/// a line of text. The enclosing directives give the label its color,
+/// weight, slant and size unless its own `Style` says otherwise; `offset`
+/// is the `{ox, oy}` point of the label that sits on the anchor.
+fn stacked_label_svg(
+  body: &Expr,
+  offset: Option<&Expr>,
+  style: &EpilogStyle,
+) -> Option<(String, f64, f64)> {
+  let mut directives = Vec::new();
+  if style.bold {
+    directives.push(Expr::Identifier("Bold".to_string()));
+  }
+  if style.italic {
+    directives.push(Expr::Identifier("Italic".to_string()));
+  }
+  let label = if directives.is_empty() {
+    body.clone()
+  } else {
+    directives.insert(0, body.clone());
+    call("Style", directives)
+  };
+  // The label's own `Style` color also draws its fraction bars, which
+  // are stroked in the picture's base color.
+  let styled = crate::functions::chart::parse_styled_label(body);
+  let color = styled.as_ref().and_then(|s| s.color).unwrap_or(style.color);
+  let font_size = styled
+    .as_ref()
+    .and_then(|s| s.font_size)
+    .or(style.font_size)
+    .unwrap_or(13.0);
+  let (svg, w, h) = crate::functions::graphics::stacked_label_picture(
+    &label,
+    font_size,
+    "",
+    &color.to_svg_rgb(),
+  )?;
+  Some(crate::functions::graphics::align_inset_picture(
+    svg,
+    w,
+    h,
+    offset.and_then(point2).unwrap_or((0.0, 0.0)),
+  ))
+}
+
 /// Whether a label is a `Column` whose lines are set flush left — the
 /// default, or an explicit `Alignment -> Left` (or the positional
 /// alignment of `Column[items, Left]`).
@@ -1580,14 +1652,10 @@ fn is_left_aligned_column(label: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      let positional = args
-        .get(1)
-        .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
-      match positional.or_else(|| option_value(&args[1..], "Alignment")) {
-        None => true,
-        Some(Expr::Identifier(a)) => a == "Left",
-        Some(_) => false,
-      }
+      !matches!(
+        crate::functions::graphics::column_alignment(args),
+        Some(a) if a != crate::functions::graphics::ColumnAlignment::Left
+      )
     }
     _ => false,
   }

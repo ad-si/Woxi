@@ -6,7 +6,7 @@ expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}
 <defs>
 <clipPath id="plotClip_326x202"><rect x="0" y="0" width="326.37" height="201.71"/></clipPath>
 </defs>
-<text x="195.3" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#666666" xml:space="preserve"><tspan font-weight="bold">Test</tspan></text>
+<text x="195.3" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#404040" xml:space="preserve"><tspan font-weight="bold">Test</tspan></text>
 <g transform="translate(32.13,13.91)">
 <g>
 <circle cx="16.32" cy="191.62" r="1.31" fill="rgb(0,0,0)" opacity="0"/>
@@ -26,19 +26,19 @@ expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}
 </g>
 <rect x="0" y="0" width="326.37" height="201.71" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="97.37" y1="201.71" x2="97.37" y2="197.86" stroke="#666666" stroke-width="0.5"/>
-<text x="97.37" y="213.76" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">A</text>
+<text x="97.37" y="213.76" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">A</text>
 <line x1="229.00" y1="201.71" x2="229.00" y2="197.86" stroke="#666666" stroke-width="0.5"/>
-<text x="229.00" y="213.76" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">B</text>
+<text x="229.00" y="213.76" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">B</text>
 <line x1="97.37" y1="0" x2="97.37" y2="3.85" stroke="#666666" stroke-width="0.5"/>
-<text x="97.37" y="-5.12" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle"></text>
+<text x="97.37" y="-5.12" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle"></text>
 <line x1="229.00" y1="0" x2="229.00" y2="3.85" stroke="#666666" stroke-width="0.5"/>
-<text x="229.00" y="-5.12" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle"></text>
+<text x="229.00" y="-5.12" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle"></text>
 <line x1="0" y1="159.79" x2="3.85" y2="159.79" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="163.26" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">10</text>
+<text x="-3.00" y="163.26" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">10</text>
 <line x1="0" y1="100.85" x2="3.85" y2="100.85" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="104.32" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">15</text>
+<text x="-3.00" y="104.32" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">15</text>
 <line x1="0" y1="41.91" x2="3.85" y2="41.91" stroke="#666666" stroke-width="0.5"/>
-<text x="-3.00" y="45.38" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">20</text>
+<text x="-3.00" y="45.38" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="end">20</text>
 <line x1="0" y1="195.16" x2="2.31" y2="195.16" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="183.37" x2="2.31" y2="183.37" stroke="#666666" stroke-width="0.5"/>
 <line x1="0" y1="171.58" x2="2.31" y2="171.58" stroke="#666666" stroke-width="0.5"/>
@@ -70,7 +70,7 @@ expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}
 <line x1="326.37" y1="30.13" x2="324.06" y2="30.13" stroke="#666666" stroke-width="0.5"/>
 <line x1="326.37" y1="18.34" x2="324.06" y2="18.34" stroke="#666666" stroke-width="0.5"/>
 <line x1="326.37" y1="6.55" x2="324.06" y2="6.55" stroke="#666666" stroke-width="0.5"/>
-<text x="163.2" y="230.9" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">X</text>
-<text x="-23.1" y="100.9" fill="#555555" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" transform="rotate(-90,-23.1,100.9)">Y</text>
+<text x="163.2" y="230.9" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle">X</text>
+<text x="-23.1" y="100.9" fill="#404040" font-size="10" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" transform="rotate(-90,-23.1,100.9)">Y</text>
 </g>
 </svg>
