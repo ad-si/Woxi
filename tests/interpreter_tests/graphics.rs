@@ -68273,6 +68273,28 @@ mod generalized_bar_chart {
     );
   }
 
+  /// An unevaluated `Transpose`, `ConjugateTranspose` or `Conjugate` in a
+  /// label draws as its postfix mark (`mᵀ`, `m†`, `z*`), an operator
+  /// operand bracketed, rather than as the spelled-out head.
+  #[test]
+  fn label_draws_transpose_and_conjugate_as_postfix_marks() {
+    let mark = |m: &str| {
+      format!("<tspan baseline-shift=\"super\" font-size=\"70%\">{m}</tspan>")
+    };
+    let svg = export_svg("Graphics[{}, PlotLabel -> f[Transpose[m]]]");
+    assert!(svg.contains(&format!("f[m{}]", mark("T"))), "{svg}");
+    let svg = export_svg(
+      "Graphics[{}, PlotLabel -> g[ConjugateTranspose[a + b], Conjugate[z]]]",
+    );
+    assert!(
+      svg.contains(&format!("g[(a + b){}, z{}]", mark("\u{2020}"), mark("*"))),
+      "{svg}"
+    );
+    // The permuting two-argument form is an ordinary function call.
+    let svg = export_svg("Graphics[{}, PlotLabel -> Transpose[m, {2, 1, 3}]]");
+    assert!(svg.contains("Transpose[m, {2, 1, 3}]"), "{svg}");
+  }
+
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
   /// base (the star raised as a script), not the `SuperStar[d]` expression
   /// the box reads back as.

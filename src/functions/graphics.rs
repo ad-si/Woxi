@@ -25417,6 +25417,28 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             expr_to_svg_markup(&args[0]),
           )
         }
+        // The conjugate, transpose and Hermitian adjoint are postfix marks
+        // in StandardForm: `z*`, `mᵀ`, `m†`. An operator expression is
+        // bracketed before taking the mark, `(a + b)ᵀ`.
+        "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
+          let mark = match name.as_str() {
+            "Conjugate" => "*",
+            "Transpose" => "T",
+            _ => "\u{2020}",
+          };
+          let base = expr_to_svg_markup(&args[0]);
+          let bracketed = matches!(
+            &args[0],
+            Expr::BinaryOp { .. } | Expr::UnaryOp { .. }
+          ) || matches!(&args[0], Expr::FunctionCall { name: inner, args: ia }
+            if matches!(inner.as_str(), "Plus" | "Times" | "Power" | "Rational" | "Complex")
+              || (ia.len() == 1
+                && matches!(inner.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose")));
+          let base = if bracketed { format!("({base})") } else { base };
+          format!(
+            "{base}<tspan baseline-shift=\"super\" font-size=\"70%\">{mark}</tspan>"
+          )
+        }
         "Subscript" | "Superscript" if args.len() >= 2 => {
           let shift = if name == "Subscript" { "sub" } else { "super" };
           let scripts: String = args[1..]

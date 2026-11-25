@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
+    stays unevaluated is typeset in StandardForm as a postfix superscript
+    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
+    notebook output and picture labels, instead of the spelled-out head.
 - `ParametricPlot` applies a `ColorFunction` that declares four
     parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
     region; the curve was drawn black.

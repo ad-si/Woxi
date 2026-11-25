@@ -7271,15 +7271,6 @@ fn scientific_string_to_box(s: &str) -> Option<syntax::Expr> {
   })
 }
 
-/// Convert a single numeric token in Wolfram backtick notation to its typeset
-/// notebook display form. Returns `None` when `token` is not a number with a
-/// precision marker, so symbol context names like `` Global` `` (which start
-/// with a letter) are left untouched.
-///
-/// - A machine real (bare backtick, `` 2.` ``) just loses the marker → `2.`.
-/// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
-///   precision in significant figures → `3.14`.
-/// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
 /// How many significant digits Wolfram shows of an arbitrary-precision
 /// number with these decimal `digits` (unsigned, plain or compact
 /// `d.ddde<k>`) and precision `prec`: `Ceiling[prec - Log10[m]]` for the
@@ -7303,6 +7294,15 @@ pub(crate) fn bigfloat_shown_digits(digits: &str, prec: f64) -> usize {
   ((prec - mantissa.log10() - 1e-9).ceil() as i64).max(1) as usize
 }
 
+/// Convert a single numeric token in Wolfram backtick notation to its typeset
+/// notebook display form. Returns `None` when `token` is not a number with a
+/// precision marker, so symbol context names like `` Global` `` (which start
+/// with a letter) are left untouched.
+///
+/// - A machine real (bare backtick, `` 2.` ``) just loses the marker → `2.`.
+/// - An arbitrary-precision real (`` 3.1415…`3. ``) is truncated to its
+///   precision in significant figures → `3.14`.
+/// - A `*^exp` scientific suffix is preserved (`` 1.23`5.*^6 `` → `1.23*^6`).
 fn precision_number_display(token: &str) -> Option<String> {
   // Numeric leaves start with a digit (negatives are wrapped in a RowBox
   // with a separate "-" token, so the magnitude leaf is unsigned).
