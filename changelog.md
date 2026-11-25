@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `RevolutionPlot3D` draws every curve of a nested curve list
+    (`{{r1, z1}, {r2, z2}} /. sol` with a list of solutions was an empty
+    picture), hands its `ColorFunction` all of `x, y, z, t, θ, r`, labels
+    its axes with `AxesLabel` and pads its automatic range by
+    `Scaled[0.05]`, so ticks at the surface's extremes are drawn.
+- `FaceGrids` are drawn by the surface plots (`Plot3D`,
+    `RevolutionPlot3D`, …) as well as `Graphics3D`, and `FaceGridsStyle`
+    sets their color and thickness.
 - `Tooltip[shape, label]` inside a `Graphics` records its label on the
     drawn shape, and Woxi Studio shows it while the pointer rests on the
     shape in a Manipulate's picture — diagrams that explain their parts

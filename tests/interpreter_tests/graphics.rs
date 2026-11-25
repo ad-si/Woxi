@@ -10935,6 +10935,184 @@ mod plot3d {
         assert!(two.len() > bare.len());
       }
 
+      /// A replacement threaded over a solution list wraps the curve list
+      /// in one more level (`{{r1, z1}, {r2, z2}} /. sol`); the nested
+      /// curves are still drawn as individual surfaces.
+      #[test]
+      fn nested_curve_lists_are_flattened() {
+        let flat = export_svg(
+          "RevolutionPlot3D[{{-Sin[t], Cos[t]}, {t, t^2}}, {t, 0, 1}]",
+        );
+        assert!(flat.len() > 1000);
+        assert_eq!(
+          export_svg(
+            "RevolutionPlot3D[{{{-Sin[t], Cos[t]}, {t, t^2}}}, {t, 0, 1}]"
+          ),
+          flat
+        );
+        assert_eq!(
+          export_svg(
+            "RevolutionPlot3D[{{{-Sin[t], Cos[t]}}, {{t, t^2}}}, {t, 0, 1}]"
+          ),
+          flat
+        );
+        assert_eq!(
+          export_svg(
+            "RevolutionPlot3D[Evaluate[{{-f[t], g[t]}, {t, t^2}} /. \
+             {{f -> Sin, g -> Cos}}], {t, 0, 1}]"
+          ),
+          flat
+        );
+      }
+
+      /// A `ColorFunction` is handed `x, y, z, t, θ, r`, so one written
+      /// with more than three parameters still colors the surface.
+      #[test]
+      fn color_function_takes_parameter_arguments() {
+        let fills = |code: &str| {
+          let svg = export_svg(code);
+          let mut fills: Vec<String> = svg
+            .split("fill=\"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next().map(str::to_string))
+            .collect();
+          fills.sort();
+          fills.dedup();
+          fills
+        };
+        let plain =
+          fills("RevolutionPlot3D[{t, t^2}, {t, 0, 1}, Mesh -> None]");
+        let by_height = fills(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, Mesh -> None, \
+           ColorFunction -> Function[{x, y, z}, Blend[{Blue, Red}, z]]]",
+        );
+        assert_ne!(by_height, plain);
+        // `z` is still the third argument when more are named.
+        assert_eq!(
+          fills(
+            "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, Mesh -> None, \
+             ColorFunction -> Function[{x, y, z, t, th}, \
+             Blend[{Blue, Red}, z]]]"
+          ),
+          by_height
+        );
+        // The fourth argument is the scaled curve parameter, the sixth
+        // the scaled distance from the axis; for this curve both run with
+        // the radius, so they give the same colors as each other but not
+        // the same as the height.
+        let by_parameter = fills(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, Mesh -> None, \
+           ColorFunction -> Function[{x, y, z, t, th, r}, \
+           Blend[{Blue, Red}, t]]]",
+        );
+        assert_ne!(by_parameter, plain);
+        assert_ne!(by_parameter, by_height);
+        // The fifth argument is the scaled sweep angle.
+        let by_angle = fills(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, Mesh -> None, \
+           ColorFunction -> Function[{x, y, z, t, th, r}, \
+           Blend[{Blue, Red}, th]]]",
+        );
+        assert_ne!(by_angle, plain);
+        assert_ne!(by_angle, by_parameter);
+      }
+
+      /// `AxesLabel` names the axes of the plot's own picture.
+      #[test]
+      fn axes_label_is_drawn() {
+        let svg = export_svg(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, \
+           AxesLabel -> {\"radius\", \"depth\", \"height\"}]",
+        );
+        for label in ["radius", "depth", "height"] {
+          assert!(svg.contains(label), "missing axis label {label}");
+        }
+        assert!(
+          !export_svg("RevolutionPlot3D[{t, t^2}, {t, 0, 1}]")
+            .contains("radius")
+        );
+      }
+
+      /// `FaceGrids` rules the faces of the box, in the color
+      /// `FaceGridsStyle` names.
+      #[test]
+      fn face_grids_are_drawn_in_their_style() {
+        let count = |svg: &str, stroke: &str| {
+          svg.matches(&format!("stroke=\"{stroke}\"")).count()
+        };
+        let bare = export_svg("RevolutionPlot3D[{t, t^2}, {t, 0, 1}]");
+        assert_eq!(count(&bare, "rgb(217,217,217)"), 0);
+        let gridded =
+          export_svg("RevolutionPlot3D[{t, t^2}, {t, 0, 1}, FaceGrids -> All]");
+        assert!(count(&gridded, "rgb(217,217,217)") > 100);
+        let styled = export_svg(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, FaceGrids -> All, \
+           FaceGridsStyle -> Directive[Red, Thickness[0.004]]]",
+        );
+        assert_eq!(count(&styled, "rgb(217,217,217)"), 0);
+        assert_eq!(
+          count(&styled, "rgb(255,0,0)"),
+          count(&gridded, "rgb(217,217,217)")
+        );
+        // One face asks for fewer lines than all six.
+        let one_face = export_svg(
+          "RevolutionPlot3D[{t, t^2}, {t, 0, 1}, \
+           FaceGrids -> {{0, 0, -1}}]",
+        );
+        let n = count(&one_face, "rgb(217,217,217)");
+        assert!(n > 0 && n < count(&gridded, "rgb(217,217,217)"));
+      }
+
+      /// The other renderers share the same face grids: `Plot3D` draws
+      /// them too, and `Graphics3D` honors `FaceGridsStyle`.
+      #[test]
+      fn face_grids_style_applies_to_other_3d_pictures() {
+        let count = |svg: &str, stroke: &str| {
+          svg.matches(&format!("stroke=\"{stroke}\"")).count()
+        };
+        for picture in [
+          "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> None, ",
+          "Graphics3D[Sphere[], ",
+        ] {
+          let plain = export_svg(&format!("{picture}FaceGrids -> All]"));
+          let styled = export_svg(&format!(
+            "{picture}FaceGrids -> All, FaceGridsStyle -> Red]"
+          ));
+          let lines = count(&plain, "rgb(217,217,217)");
+          assert!(lines > 100, "{picture} drew {lines} grid pieces");
+          assert_eq!(count(&styled, "rgb(217,217,217)"), 0, "{picture}");
+          assert!(count(&styled, "rgb(255,0,0)") >= lines, "{picture}");
+        }
+      }
+
+      /// The box is the surface's range padded by `Scaled[0.05]`, so a
+      /// tick at the surface's lowest point is drawn; an explicit range is
+      /// not padded.
+      #[test]
+      fn automatic_range_is_padded() {
+        assert_eq!(
+          interpret(
+            "PlotRangePadding /. Options[RevolutionPlot3D[{t, t^2}, \
+             {t, 0, 1}]]"
+          )
+          .unwrap(),
+          "{Scaled[0.05], Scaled[0.05], Scaled[0.05]}"
+        );
+        assert_eq!(
+          interpret(
+            "PlotRangePadding /. Options[RevolutionPlot3D[{t, t^2}, \
+             {t, 0, 1}, PlotRange -> {0, 2}]]"
+          )
+          .unwrap(),
+          "{Scaled[0.05], Scaled[0.05], None}"
+        );
+        let svg = export_svg(
+          "RevolutionPlot3D[{t, t^2 - 1}, {t, 0, 1}, \
+           Ticks -> {Automatic, Automatic, {-1, 0}}]",
+        );
+        assert!(svg.contains(">-1<") && svg.contains(">0<"));
+      }
+
       /// Each surface of a list of profiles takes the next color of the
       /// default theme, so the lower sheet is blue rather than orange.
       #[test]
@@ -60479,16 +60657,18 @@ mod revolution_plot3d_part_extraction {
   }
 
   /// A full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` `PlotRange` clips
-  /// the height just like `{zmin, zmax}`.
+  /// the height just like `{zmin, zmax}` (the padding is switched off, as
+  /// only the automatic horizontal range of the latter is padded).
   #[test]
   fn revolution_plot3d_full_plot_range_clips_height() {
     clear_state();
     assert_eq!(
       interpret(
         "ExportString[RevolutionPlot3D[r^2, {r, 0, 2}, \
-         PlotRange -> {{-2, 2}, {-2, 2}, {0, 1}}], \"SVG\"] === \
+         PlotRange -> {{-2, 2}, {-2, 2}, {0, 1}}, \
+         PlotRangePadding -> None], \"SVG\"] === \
          ExportString[RevolutionPlot3D[r^2, {r, 0, 2}, \
-         PlotRange -> {0, 1}], \"SVG\"]"
+         PlotRange -> {0, 1}, PlotRangePadding -> None], \"SVG\"]"
       )
       .unwrap(),
       "True"
