@@ -3516,7 +3516,17 @@ fn field_plot_structure(
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
   }
-  let mut structure_args = vec![Expr::List(items.into())];
+  // A contour plot's content is a single `GraphicsComplex`, which Wolfram
+  // stores as the graphic's first argument itself (not in a list), so
+  // `First[First[plot]]` is the point table.
+  let content = match <[Expr; 1]>::try_from(items) {
+    Ok([complex]) if matches!(&complex, Expr::FunctionCall { name, .. } if name == "GraphicsComplex") => {
+      complex
+    }
+    Ok([item]) => Expr::List(vec![item].into()),
+    Err(items) => Expr::List(items.into()),
+  };
+  let mut structure_args = vec![content];
   let mut explicit = crate::functions::plot::explicit_options(args);
   // The plot's own `PlotRange` clips the *function values* — its x/y axes
   // are already fixed by the `{x,xmin,xmax}`/`{y,ymin,ymax}` iterators and
@@ -4775,7 +4785,7 @@ fn contour_plot_equations(
   let structure = call(
     "Graphics",
     vec![
-      Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
+      contour_graphics_complex(&structure_items),
       Expr::List(structure_options.into()),
     ],
   );
@@ -4789,7 +4799,11 @@ fn contour_plot_equations(
     log_y: false,
     plot_range: None,
     data_x_range: None,
-    aspect_ratio: None,
+    // The frame keeps the plot's own `AspectRatio` (1 by default) and is
+    // letterboxed into an `ImageSize -> {w, h}` box, so `Show` must keep
+    // that shape rather than stretch the frame over the whole image.
+    aspect_ratio: Some(area.plot_h / area.plot_w)
+      .filter(|r| r.is_finite() && *r > 0.0),
     legends: Vec::new(),
     settles_all_range: false,
   };
@@ -5852,6 +5866,11 @@ struct VectorArrowStyle {
   /// `VectorScaling -> Automatic`: the arrow length grows with the
   /// magnitude instead of being the same for every vector.
   scaled_lengths: bool,
+  /// Vectors shorter than this draw no arrow. A sampled function drops
+  /// everything below `$MachineEpsilon` (its numerical noise); list data
+  /// (`ListVectorPlot`) drops only vectors whose squared norm is zero, so
+  /// a `1.*^-16` residue of a real-stepped `Table` still gets its arrow.
+  min_magnitude: f64,
 }
 
 /// The `VectorColorFunction` of a vector plot.
@@ -5874,6 +5893,7 @@ fn parse_vector_arrow_style(args: &[Expr], start: usize) -> VectorArrowStyle {
     color: None,
     segments: false,
     scaled_lengths: false,
+    min_magnitude: f64::EPSILON,
   };
   let opts = &args[start.min(args.len())..];
   if let Some(value) = option_rule(opts, "VectorColorFunction") {
@@ -6119,7 +6139,11 @@ fn vector_arrow_primitives(
     let &(x, y, vx, vy, mag) = v;
     let (sx, sy) = (vx * px_per_x, vy * px_per_y);
     let screen = sx.hypot(sy);
-    if mag < 1e-15 || screen <= 0.0 || !screen.is_finite() {
+    if mag < style.min_magnitude
+      || vx * vx + vy * vy == 0.0
+      || screen <= 0.0
+      || !screen.is_finite()
+    {
       continue;
     }
     // `VectorScaling -> Automatic` maps the rescaled magnitude `s` to
@@ -6204,6 +6228,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     &|x, y| evaluate_vector(body, &xvar, &yvar, x, y),
+    f64::EPSILON,
   )
 }
 
@@ -6216,9 +6241,11 @@ fn render_sampled_vector_plot(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+  min_magnitude: f64,
 ) -> Result<Expr, InterpreterError> {
   let mut opts = parse_density_contour_options(args, start);
-  let arrow_style = parse_vector_arrow_style(args, start);
+  let mut arrow_style = parse_vector_arrow_style(args, start);
+  arrow_style.min_magnitude = min_magnitude;
 
   // Framed like DensityPlot, `Scaled[0.02]` padding on every side.
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
@@ -6460,9 +6487,14 @@ pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (x_range, y_range) = vector_data_ranges(&samples);
   let field = ScatteredVectorField::new(&samples);
-  render_sampled_vector_plot(args, 1, x_range, y_range, &|x, y| {
-    field.as_ref().and_then(|f| f.at(x, y))
-  })
+  render_sampled_vector_plot(
+    args,
+    1,
+    x_range,
+    y_range,
+    &|x, y| field.as_ref().and_then(|f| f.at(x, y)),
+    0.0,
+  )
 }
 
 /// ListStreamPlot[{{{x1, y1}, {vx1, vy1}}, …}] or ListStreamPlot[array]
@@ -7068,15 +7100,14 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // smoothly between the data points instead of showing blocky pixels.
   // Every cell gets at least 8 pixels per side (within 256 to 512), so the
   // sharp bands of the triangle interpolation survive the image's scaling.
-  // `InterpolationOrder -> 0` keeps the data's cells as flat blocks.
-  let grid = if grid.len() < 64 || grid[0].len() < 64 {
+  // `InterpolationOrder -> 0` keeps the data's cells as flat blocks, at
+  // any grid size.
+  let grid = if nearest && !is_triples_data(rows) {
+    lower_node_cell_grid(&grid, 256)
+  } else if grid.len() < 64 || grid[0].len() < 64 {
     let out = |n: usize| (8 * n.saturating_sub(1)).clamp(256, 512);
     let (out_cols, out_rows) = (out(grid.len()), out(grid[0].len()));
-    if nearest {
-      nearest_node_grid(&grid, out_cols, out_rows)
-    } else {
-      resample_node_grid(&grid, out_cols, out_rows)
-    }
+    resample_node_grid(&grid, out_cols, out_rows)
   } else {
     grid
   };
@@ -7125,28 +7156,24 @@ fn interpolation_order_is_zero(opts: &[Expr]) -> bool {
   })
 }
 
-/// Upsample a node grid by taking the nearest node, so every data cell
-/// stays one flat block.
-fn nearest_node_grid(
-  grid: &[Vec<f64>],
-  out_cols: usize,
-  out_rows: usize,
-) -> Vec<Vec<f64>> {
+/// Upsample a node grid for `InterpolationOrder -> 0` matrix data: as in
+/// Wolfram, the cell between nodes `k` and `k + 1` (along each axis) is
+/// one flat block in the color of its lower node, so `n` nodes give
+/// `n - 1` cells and the last row and column of the data only bound them.
+/// Every cell gets the same whole number of pixels (at least `min_px`
+/// across the image) so the cell borders stay sharp.
+fn lower_node_cell_grid(grid: &[Vec<f64>], min_px: usize) -> Vec<Vec<f64>> {
   let cols = grid.len();
   let rows = if cols > 0 { grid[0].len() } else { 0 };
   if cols < 2 || rows < 2 {
     return grid.to_vec();
   }
-  (0..out_cols)
+  let per_cell = |cells: usize| min_px.div_ceil(cells).max(1);
+  let (px_x, px_y) = (per_cell(cols - 1), per_cell(rows - 1));
+  (0..(cols - 1) * px_x)
     .map(|i| {
-      let x = (i as f64 + 0.5) / out_cols as f64 * (cols - 1) as f64;
-      let i0 = (x.round() as usize).min(cols - 1);
-      (0..out_rows)
-        .map(|j| {
-          let y = (j as f64 + 0.5) / out_rows as f64 * (rows - 1) as f64;
-          grid[i0][(y.round() as usize).min(rows - 1)]
-        })
-        .collect()
+      let i0 = i / px_x;
+      (0..(rows - 1) * px_y).map(|j| grid[i0][j / px_y]).collect()
     })
     .collect()
 }
@@ -8531,6 +8558,17 @@ fn array_plot_value_range(value: &Expr) -> Option<(Option<f64>, Option<f64>)> {
   }
 }
 
+/// Whether `ColorRules` holds immediate rules (`->`) only. Those give equal
+/// numbers the same color for sure, whereas a delayed right-hand side
+/// (`:> RandomColor[]`) is evaluated per cell.
+fn color_rules_are_immediate(rules: &Expr) -> bool {
+  match rules {
+    Expr::List(rules) => rules.iter().all(|r| matches!(r, Expr::Rule { .. })),
+    Expr::Rule { .. } => true,
+    _ => false,
+  }
+}
+
 fn array_plot_matrix(data: &Expr) -> Option<Vec<Expr>> {
   let densify = |e: &Expr| {
     crate::functions::list_helpers_ast::densify_sparse_array(e)
@@ -8670,24 +8708,38 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the size of the cells, so a first layout measures it and, when the
   // decorations stick out of the box, a second one shrinks the cells by
   // exactly that much.
+  array_plot_two_pass(args, false)
+}
+
+/// [`array_plot_ast`] for a caller whose matrix (`args[0]`) is evaluated
+/// already when `evaluated` is set, so its cells are not evaluated again.
+fn array_plot_two_pass(
+  args: &[Expr],
+  evaluated: bool,
+) -> Result<Expr, InterpreterError> {
   let mut overhead = (0, 0);
-  let result = array_plot_ast_inset(args, (0, 0), &mut overhead)?;
+  let result = array_plot_ast_inset(args, (0, 0), &mut overhead, evaluated)?;
   if overhead == (0, 0) {
     return Ok(result);
   }
-  array_plot_ast_inset(args, overhead, &mut (0, 0))
+  array_plot_ast_inset(args, overhead, &mut (0, 0), evaluated)
 }
 
 /// `ArrayPlot` with the cells fitted into the `ImageSize` box less `inset`
 /// (width, height) points. When the `ImageSize` is an explicit `{w, h}`
 /// box, `overhead` receives how far the frame ticks and plot label reach
-/// beyond the cells.
+/// beyond the cells. `evaluated` tells that the matrix is evaluated already.
 fn array_plot_ast_inset(
   args: &[Expr],
   inset: (u32, u32),
   overhead: &mut (u32, u32),
+  evaluated: bool,
 ) -> Result<Expr, InterpreterError> {
-  let data = evaluate_expr_to_expr(&args[0])?;
+  let data = if evaluated {
+    args[0].clone()
+  } else {
+    evaluate_expr_to_expr(&args[0])?
+  };
   let Some(rows) = array_plot_matrix(&data) else {
     return Ok(crate::helpers::unevaluated("ArrayPlot", args));
   };
@@ -8915,7 +8967,8 @@ fn array_plot_ast_inset(
       let cells: Vec<ArrayCell> = items
         .iter()
         .map(|item| {
-          let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+          // The matrix is evaluated, and so is each of its cells.
+          let v = item.clone();
           // Try as color first
           if let Some(color) = parse_color(&v) {
             ArrayCell::Color(color)
@@ -9031,6 +9084,12 @@ fn array_plot_ast_inset(
   let mut cell_rgb: Vec<Vec<(u8, u8, u8)>> = Vec::with_capacity(n_rows);
   let mut scalar_rows = Vec::with_capacity(n_rows);
   let mut scalar_raster = color_rules.is_none() && color_function.is_none();
+  let color_rules_cacheable =
+    color_rules.as_ref().is_some_and(color_rules_are_immediate);
+  let mut color_rule_cache: std::collections::HashMap<
+    (bool, u128),
+    Option<(u8, u8, u8)>,
+  > = std::collections::HashMap::new();
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -9059,7 +9118,7 @@ fn array_plot_ast_inset(
             // Check ColorRules first — matched with the same `Replace`
             // semantics as `/.` (exact value or pattern), not `f64`
             // equality, so non-real cell values (`I`, `-I`, …) match too.
-            let found = color_rules.as_ref().and_then(|rules| {
+            let lookup = |rules: &Expr| {
               crate::evaluator::pattern_matching::apply_replace_all_ast(
                 cell_expr, rules,
               )
@@ -9074,7 +9133,26 @@ fn array_plot_ast_inset(
                   (rule_color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
                 )
               })
-            });
+            };
+            // A matrix usually repeats a handful of numbers, and immediate
+            // rules color equal numbers alike, so each distinct number is
+            // matched against the rules only once.
+            let cache_key = match cell_expr {
+              Expr::Integer(n) if color_rules_cacheable => {
+                Some((false, *n as u128))
+              }
+              Expr::Real(x) if color_rules_cacheable => {
+                Some((true, x.to_bits() as u128))
+              }
+              _ => None,
+            };
+            let found =
+              color_rules.as_ref().and_then(|rules| match cache_key {
+                Some(key) => {
+                  *color_rule_cache.entry(key).or_insert_with(|| lookup(rules))
+                }
+                None => lookup(rules),
+              });
             // Beyond an explicit `PlotRange`, the cell takes its
             // `ClippingStyle` color, or else shows the background.
             let clipped = value_range.and_then(|_| {
@@ -9553,12 +9631,27 @@ fn array_plot_ast_inset(
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
-  for opt in &args[1..] {
-    if let Expr::Rule { pattern, .. } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n)
-        if n == "ImageSize" || n == "AspectRatio")
-    {
-      structure_args.push(opt.clone());
+  // `PixelConstrained` has already fixed that size to whole pixels per
+  // cell, which the requested `ImageSize` only bounds.
+  if pixel_constrained.is_some() {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+      replacement: Box::new(Expr::List(
+        vec![
+          Expr::Integer(svg_width as i128),
+          Expr::Integer(svg_height as i128),
+        ]
+        .into(),
+      )),
+    });
+  } else {
+    for opt in &args[1..] {
+      if let Expr::Rule { pattern, .. } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n)
+          if n == "ImageSize" || n == "AspectRatio")
+      {
+        structure_args.push(opt.clone());
+      }
     }
   }
   let structure = call("Graphics", structure_args);
@@ -10295,21 +10388,31 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are; numbers take part in the scaling.
   let mut cells: Vec<Vec<Expr>> = Vec::with_capacity(rows.len());
   let mut numeric: Vec<(usize, usize, f64)> = Vec::new();
+  let color_rules_cacheable =
+    color_rules.as_ref().is_some_and(color_rules_are_immediate);
+  let mut color_rule_cache: std::collections::HashMap<
+    (bool, u128),
+    Option<Expr>,
+  > = std::collections::HashMap::new();
   for (i, row) in rows.iter().enumerate() {
     let Expr::List(items) = row else { continue };
     let mut out = Vec::with_capacity(items.len());
     for (j, item) in items.iter().enumerate() {
-      let mut v = evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
-      if let Some(rules) = &color_rules
-        && parse_color(&v).is_none()
-        && let Ok(replaced) =
-          crate::evaluator::pattern_matching::apply_replace_all_ast(&v, rules)
-        && let Some(c) =
-          crate::functions::graphics::parse_style_color(&replaced)
-      {
+      let number_key = match item {
+        Expr::Integer(n) => Some((false, *n as u128)),
+        Expr::Real(x) => Some((true, x.to_bits() as u128)),
+        _ => None,
+      };
+      // `data` is evaluated, and so is each of its cells.
+      let mut v = item.clone();
+      let colored = |v: &Expr, rules: &Expr| {
+        let replaced =
+          crate::evaluator::pattern_matching::apply_replace_all_ast(v, rules)
+            .ok()?;
+        let c = crate::functions::graphics::parse_style_color(&replaced)?;
         // A directive list (`{Hue[h], AbsoluteThickness[t]}`) colors the
         // cell with the color it sets.
-        v = if parse_color(&replaced).is_some() {
+        Some(if parse_color(&replaced).is_some() {
           replaced
         } else {
           Expr::FunctionCall {
@@ -10317,7 +10420,24 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)]
               .into(),
           }
+        })
+      };
+      if let Some(rules) = &color_rules
+        && parse_color(&v).is_none()
+      {
+        // A matrix usually repeats a handful of numbers, and immediate
+        // rules color equal numbers alike, so each distinct number is
+        // matched against the rules only once.
+        let color = match number_key.filter(|_| color_rules_cacheable) {
+          Some(key) => color_rule_cache
+            .entry(key)
+            .or_insert_with(|| colored(&v, rules))
+            .clone(),
+          None => colored(&v, rules),
         };
+        if let Some(color) = color {
+          v = color;
+        }
       }
       if parse_color(&v).is_none()
         && let Some(x) = try_eval_to_f64(&v).filter(|x| x.is_finite())
@@ -10384,7 +10504,11 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if opt("FrameTicks").is_none() {
     forwarded.push(rule("FrameTicks", Expr::Identifier("All".to_string())));
   }
-  array_plot_ast(&forwarded)
+  // The cells are evaluated (and colored) above; with thousands of them,
+  // evaluating each color directive again would dominate the plot.
+  let forwarded =
+    &crate::functions::graphics::splice_option_lists(&forwarded)[..];
+  array_plot_two_pass(forwarded, true)
 }
 
 /// Internal name of `MatrixPlot`'s default color function (its theme's

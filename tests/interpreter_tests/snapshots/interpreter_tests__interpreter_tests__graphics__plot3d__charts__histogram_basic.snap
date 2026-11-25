@@ -34,17 +34,17 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 <line x1="3338.3" y1="2048.4" x2="3338.3" y2="2024.4" stroke="#666" stroke-width="2"/>
 <line x1="255.4" y1="2048.4" x2="255.4" y2="2008.4" stroke="#666" stroke-width="2"/>
 <line x1="787.0" y1="2048.4" x2="787.0" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="787.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="787.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 <line x1="1318.5" y1="2048.4" x2="1318.5" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="1318.5" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
+<text x="1318.5" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.5</text>
 <line x1="1850.0" y1="2048.4" x2="1850.0" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="1850.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
+<text x="1850.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.0</text>
 <line x1="2381.5" y1="2048.4" x2="2381.5" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="2381.5" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
+<text x="2381.5" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.5</text>
 <line x1="2913.0" y1="2048.4" x2="2913.0" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="2913.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
+<text x="2913.0" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3.0</text>
 <line x1="3444.6" y1="2048.4" x2="3444.6" y2="2008.4" stroke="#666" stroke-width="2"/>
-<text x="3444.6" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.5</text>
+<text x="3444.6" y="2168.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3.5</text>
 <line x1="189.0" y1="60.0" x2="189.0" y2="2089.0" stroke="#666" stroke-width="2"/>
 <line x1="189.0" y1="1985.5" x2="213.0" y2="1985.5" stroke="#666" stroke-width="2"/>
 <line x1="189.0" y1="1922.6" x2="213.0" y2="1922.6" stroke="#666" stroke-width="2"/>
@@ -72,17 +72,17 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 <line x1="189.0" y1="224.3" x2="213.0" y2="224.3" stroke="#666" stroke-width="2"/>
 <line x1="189.0" y1="98.6" x2="213.0" y2="98.6" stroke="#666" stroke-width="2"/>
 <line x1="189.0" y1="2048.4" x2="229.0" y2="2048.4" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="2083.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.0</text>
+<text x="159.0" y="2083.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.0</text>
 <line x1="189.0" y1="1733.9" x2="229.0" y2="1733.9" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="1768.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="159.0" y="1768.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">0.5</text>
 <line x1="189.0" y1="1419.4" x2="229.0" y2="1419.4" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="1454.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="159.0" y="1454.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.0</text>
 <line x1="189.0" y1="1104.9" x2="229.0" y2="1104.9" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="1139.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
+<text x="159.0" y="1139.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">1.5</text>
 <line x1="189.0" y1="790.4" x2="229.0" y2="790.4" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="825.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
+<text x="159.0" y="825.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.0</text>
 <line x1="189.0" y1="475.9" x2="229.0" y2="475.9" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="510.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
+<text x="159.0" y="510.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">2.5</text>
 <line x1="189.0" y1="161.4" x2="229.0" y2="161.4" stroke="#666" stroke-width="2"/>
-<text x="159.0" y="196.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
+<text x="159.0" y="196.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#404040">3.0</text>
 </svg>
