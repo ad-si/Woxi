@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
+    plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
+    `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
+    `ContourPlot` holds its `GraphicsComplex` as the graphic's first argument,
+    so `plot[[1, 1]]` is the point table.
 - `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
     `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
     `Normal` of a series returns one flat sum, so `Part` picks its terms
