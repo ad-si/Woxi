@@ -197,8 +197,11 @@ mod image_size {
       assert!(key.contains("font-size=\"17\""), "{edge}: {key}");
       let hot = text_tag("hot");
       assert!(hot.contains("fill=\"rgb(255,0,0)\""), "{edge}: {hot}");
-      let t = text_tag("t</text>");
-      assert!(t.contains("font-style=\"italic\""), "{edge}: {t}");
+      let italic = svg.match_indices("\">t<").any(|(end, _)| {
+        let start = svg[..end].rfind("<text").unwrap();
+        svg[start..end].contains("font-style=\"italic\"")
+      });
+      assert!(italic, "{edge}");
     }
   }
 
@@ -1865,5 +1868,20 @@ mod column_plot_label {
     );
     let tag = title_tag(&svg, "top");
     assert_eq!(attr(tag, "font-size"), "200", "{svg}");
+  }
+
+  // Where one factor of the plotted function underflows and another leaves
+  // the machine range, the function is `0.` and the curve carries on to the
+  // end of the range instead of breaking off at an `Indeterminate`.
+  #[test]
+  fn curve_continues_where_a_factor_overflows() {
+    assert_eq!(
+      interpret(
+        "Max[Cases[Plot[E^(-E^x) (E^(E^x) - 1), {x, 0, 20}], \
+         Line[p_] :> p[[All, 1]], Infinity]] > 19.9"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 }

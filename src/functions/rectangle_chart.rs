@@ -247,11 +247,6 @@ pub fn rectangle_chart_ast(
     .flatten()
     .map(|item| item.sizes.get(1).copied().unwrap_or(0.0))
     .fold(0.0_f64, f64::max);
-  let max_height = sets
-    .iter()
-    .flatten()
-    .map(|item| item.sizes.get(2).copied().unwrap_or(0.0))
-    .fold(0.0_f64, f64::max);
   let mut x = if multi { GROUP_INSET } else { 0.0 };
   let mut end = x;
   let mut prims = Vec::new();
@@ -406,35 +401,27 @@ pub fn rectangle_chart_ast(
 
   let mut content = if three_d { vec![edge.clone()] } else { vec![] };
   if three_d {
-    // The invisible base plate that sets the scene's extent.
-    let (x1, z1) = (end, max_height);
-    content.push(Expr::List(
-      vec![
-        call("Opacity", vec![Expr::Integer(0)]),
-        call("EdgeForm", vec![]),
-        call(
-          "Cuboid",
-          vec![
-            Expr::List(
-              vec![
-                Expr::Real(-0.05 * x1),
-                Expr::Real(-0.25 * max_depth),
-                Expr::Integer(0),
-              ]
-              .into(),
-            ),
-            Expr::List(
-              vec![
-                Expr::Real(x1 + 0.05 * x1),
-                Expr::Real(max_depth + 0.25 * max_depth),
-                Expr::Real(0.008 * z1),
-              ]
-              .into(),
-            ),
-          ],
-        ),
-      ]
-      .into(),
+    // The backdrop in the first block's color, over the invisible slab
+    // that sets the scene's extent.
+    let first_color = match chart_style.as_ref() {
+      None | Some(Expr::Identifier(_) | Expr::String(_)) => {
+        crate::functions::chart3d::chart3d_color(0)
+      }
+      Some(_) => crate::functions::graphics::parse_color(&chart_style_for(
+        chart_style.as_ref(),
+        0,
+        multi,
+      ))
+      .map_or_else(
+        || crate::functions::chart3d::chart3d_color(0),
+        |c| (c.r, c.g, c.b),
+      ),
+    };
+    content.extend(crate::functions::chart3d::chart3d_base(
+      end,
+      max_depth,
+      false,
+      first_color,
     ));
   }
   if let Some(b) = base_style {
