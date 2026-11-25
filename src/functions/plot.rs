@@ -4399,6 +4399,9 @@ pub(crate) struct PlotOptions {
   /// The `PointSize` (a fraction of the image width) of scatter dots whose
   /// style sets none; `None` = the fixed 3 px radius dot.
   pub default_point_size: Option<f64>,
+  /// `PlotMarkers -> {Point, size}`: the size of the plain dots, stored as
+  /// `default_point_size` is. `None` = the automatic size.
+  pub point_marker_size: Option<f64>,
   /// Points of a list plot written `Style[point, color]`: per series, each
   /// such point's coordinates and the color its dot takes (over the
   /// series' own).
@@ -4705,6 +4708,7 @@ impl Default for PlotOptions {
       exclusion_marks: Vec::new(),
       plot_markers: Vec::new(),
       default_point_size: None,
+      point_marker_size: None,
       point_colors: Vec::new(),
       label_style: None,
       label_style_sources: [None, None],
@@ -15678,6 +15682,29 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
     }
     _ => None,
   }
+}
+
+/// The dot size `PlotMarkers -> {Point, size}` asks for: `Point` is the
+/// plain round dot, so the pair only resizes it. The dot is 1.3 times the
+/// marker size across (13 pt for `Medium`, as the Wolfram front end draws
+/// it), a named size standing for its marker size in points. Stored
+/// negative, like `AbsolutePointSize`. `None` for any other marker spec.
+pub(crate) fn point_marker_size(replacement: &Expr) -> Option<f64> {
+  let val =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  let Expr::List(items) = &val else {
+    return None;
+  };
+  if items.len() != 2
+    || !matches!(&items[0], Expr::Identifier(s) if s == "Point")
+  {
+    return None;
+  }
+  let size = match &items[1] {
+    Expr::Identifier(name) => named_marker_size(name)?,
+    other => try_eval_to_f64(other)?,
+  };
+  (size > 0.0).then_some(-1.3 * size)
 }
 
 /// Parse a `PlotMarkers` option value into one marker per series. A single

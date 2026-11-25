@@ -41239,6 +41239,7 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
   let mut standard = false;
+  let mut in_text = false;
   while let Expr::FunctionCall { name, args } = &current {
     // `Text[Row[…]]` sets the layout in the proportional text face: it
     // comes off as the `Style` that face is, for the layout renderers.
@@ -41246,6 +41247,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       && !matches!(layout, Expr::String(_))
     {
       current = call("Style", vec![layout.clone(), family]);
+      break;
+    }
+    // `Text[Pane[Column[…], size]]`: the face of a `Text` peeled further
+    // out still sets the layout the wrappers in between hold.
+    if in_text
+      && matches!(name.as_str(), "Row" | "Column" | "Grid")
+      && matches!(args.first(), Some(Expr::List(_)))
+    {
+      current = call("Style", vec![current.clone(), text_face_family()]);
       break;
     }
     let pass_through = match name.as_str() {
@@ -41323,6 +41333,7 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
     }
     traditional |= name == "TraditionalForm";
     standard |= name == "StandardForm";
+    in_text |= name == "Text";
     // A width-only `Pane[Grid[…], w]` still breaks the grid's long text
     // cells at the pane's width when the pane itself is peeled away.
     let inner = (name == "Pane")
@@ -43321,6 +43332,13 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
         if is_style_wrapper(name) && !args.is_empty() =>
       {
         is_text_atom(&args[0])
+      }
+      // A script set on its base (`Subscript[N, w]`) stays on the line.
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Subscript" | "Superscript")
+          && args.len() == 2 =>
+      {
+        args.iter().all(is_text_atom)
       }
       _ => false,
     }
@@ -55489,7 +55507,13 @@ fn variant_dynamic_bounds(
   };
   let min_code = which(&|b| Some(b.0));
   let max_code = which(&|b| Some(b.1));
-  let step_code = which(&|b| b.2);
+  // A variant without a step moves freely: among stepped variants it
+  // gives 0, which tells the slider to take its automatic increment.
+  let step_code = bounds
+    .iter()
+    .any(|b| b.2.is_some())
+    .then(|| which(&|b| Some(b.2.unwrap_or(0.0))))
+    .flatten();
   Some((name.to_string(), min_code, max_code, step_code))
 }
 
