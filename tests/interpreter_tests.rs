@@ -629,7 +629,11 @@ mod interpreter_tests {
     )
     .unwrap();
     let svg = r.graphics.expect("the formula must be drawn");
-    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    // The integral sign is drawn as a path.
+    assert!(
+      svg.contains("stroke-linecap=\"round\""),
+      "integral sign missing: {svg}"
+    );
     assert!(!svg.contains("TraditionalForm"), "{svg}");
     assert!(svg.contains("bold"), "Bold style missing: {svg}");
   }

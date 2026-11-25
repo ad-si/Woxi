@@ -5543,8 +5543,12 @@ fn tf_piecewise(args: &[Expr]) -> Expr {
       _ => None,
     })
     .collect();
-  // A given default, `0` included, is a `True` row of its own.
-  if let Some(default) = args.get(1) {
+  // A given default is a `True` row of its own — except an exact `0`
+  // under two or more cases, which Wolfram leaves implicit (a single
+  // case keeps its `0` row, and an inexact `0.` is always shown).
+  let implicit_zero =
+    rows.len() >= 2 && matches!(args.get(1), Some(Expr::Integer(0)));
+  if let Some(default) = args.get(1).filter(|_| !implicit_zero) {
     rows.push(list(vec![
       tf(default),
       tf_box(
