@@ -251,7 +251,10 @@ mod evaluation_reuse {
     fn reading_a_list_between_append_tos_is_cheap() {
       let elapsed = reads_between("AppendTo[x, UndirectedEdge[i, 1]]");
       assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
-      assert_eq!(interpret("Last[x]").unwrap(), "300 <-> 1");
+      assert_eq!(
+        interpret("{Length[x], First[Last[x]]}").unwrap(),
+        "{20300, 300}"
+      );
     }
 
     #[test]
