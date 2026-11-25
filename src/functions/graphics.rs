@@ -16175,6 +16175,9 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
 /// for), which a single
 /// line of text cannot show.
 fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
+  if let Some(plain_box) = script_template_box(boxes) {
+    return traditional_box_runs(&plain_box);
+  }
   let plain = |text: &str| LabelRun {
     text: text.to_string(),
     ..Default::default()
@@ -18952,7 +18955,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               plot_label_picture = Some((svg, w, h));
             }
             other => {
-              let lines = expr_to_svg_markup_lines(other);
+              // Set in `TraditionalForm`, so a lone lowercase Greek letter
+              // in its text is italic.
+              let lines =
+                with_label_greek_italics(|| expr_to_svg_markup_lines(other));
               if lines.iter().any(|l| !l.is_empty()) {
                 if lines.len() > 1 {
                   plot_label_alignment =
@@ -21779,6 +21785,42 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
 /// The elements of a `TemplateBox`: a list, or a `List[…]` call.
+/// The plain script box a script template stands for:
+/// `TemplateBox[{x, "3"}, "Superscript", SyntaxForm -> SuperscriptBox]`
+/// (the boxes of `Superscript[x, 3]`) is drawn as `SuperscriptBox[x, "3"]`,
+/// likewise `"Subscript"` and `"Subsuperscript"`; `TemplateBox[{m, n},
+/// "Mod"]` is the row `m mod n`. The box renderers read these templates
+/// through this.
+pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "TemplateBox" || args.len() < 2 {
+    return None;
+  }
+  let (head, arity) = match &args[1] {
+    Expr::String(t) if t == "Superscript" => ("SuperscriptBox", 2),
+    Expr::String(t) if t == "Subscript" => ("SubscriptBox", 2),
+    Expr::String(t) if t == "Subsuperscript" => ("SubsuperscriptBox", 3),
+    // `TemplateBox[{m, n}, "Mod"]` is the row `m mod n`.
+    Expr::String(t) if t == "Mod" => ("RowBox", 2),
+    _ => return None,
+  };
+  let items = template_box_items(&args[0])?;
+  if items.len() != arity {
+    return None;
+  }
+  if head == "RowBox" {
+    return Some(call1(
+      "RowBox",
+      Expr::List(
+        vec![items[0].clone(), str_expr("mod"), items[1].clone()].into(),
+      ),
+    ));
+  }
+  Some(call(head, items.to_vec()))
+}
+
 fn template_box_items(e: &Expr) -> Option<&[Expr]> {
   match e {
     Expr::List(items) => Some(items),
@@ -21980,6 +22022,9 @@ fn stack_box_lines_centered(lines: &[BoxLayout]) -> BoxLayout {
 }
 
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
+  if let Some(plain_box) = script_template_box(expr) {
+    return layout_box(&plain_box, font_size);
+  }
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
     BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
@@ -22200,8 +22245,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // nested radicals) — a lone superscript (~1.3×) stays with plain
           // glyphs so ordinary parenthesized expressions are unaffected.
           if inner_ascent + inner_descent > natural * 1.5 {
+            // A grid may come tagged (`TagBox[GridBox[…], #1 &]`).
             let around_grid = items[o_idx + 1..c_idx].iter().any(|it| {
-              matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
+              matches!(it, Expr::FunctionCall { name, args }
+                if name == "GridBox"
+                  || (name == "TagBox"
+                    && matches!(args.first(),
+                      Some(Expr::FunctionCall { name: g, .. }) if g == "GridBox")))
             });
             children[o_idx] = render_stretchy_delim(
               o,
@@ -26392,6 +26442,64 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// Typesetting the text of a graphic's label (`PlotLabel`), which the
+  /// front end sets in `TraditionalForm`: a lowercase Greek letter standing
+  /// alone as a word of a string (`"Outside μ ± ϵ"`) is drawn in italics,
+  /// the way a single-letter math variable is, while the rest of the text
+  /// stays upright.
+  static LABEL_GREEK_ITALICS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`LABEL_GREEK_ITALICS`] on, restoring it afterwards.
+pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(LABEL_GREEK_ITALICS.with(|c| c.replace(true)));
+  f()
+}
+
+/// Whether `c` is a lowercase Greek letter (including the variant forms
+/// `ϑ`, `ϕ`, `ϖ`, `ϰ`, `ϱ` and `ϵ`). `π` is excluded: it reads as the
+/// constant `Pi`, which is set upright.
+fn is_lowercase_greek_letter(c: char) -> bool {
+  c != '\u{3C0}'
+    && (('\u{3B1}'..='\u{3C9}').contains(&c)
+      || matches!(
+        c,
+        '\u{3D1}' | '\u{3D5}' | '\u{3D6}' | '\u{3F0}' | '\u{3F1}' | '\u{3F5}'
+      ))
+}
+
+/// SVG-escape label text, setting each lowercase Greek letter that stands
+/// alone as a word (no letter or digit on either side) in italics.
+fn svg_escape_label_greek_italics(text: &str) -> String {
+  let chars: Vec<char> = text.chars().collect();
+  let is_word_char =
+    |i: usize| chars.get(i).is_some_and(|c| c.is_alphanumeric());
+  let mut out = String::new();
+  let mut plain = String::new();
+  for (i, &c) in chars.iter().enumerate() {
+    let lone = is_lowercase_greek_letter(c)
+      && !(i > 0 && is_word_char(i - 1))
+      && !is_word_char(i + 1);
+    if lone {
+      out.push_str(&svg_escape(&plain));
+      plain.clear();
+      out.push_str(&format!("<tspan font-style=\"italic\">{c}</tspan>"));
+    } else {
+      plain.push(c);
+    }
+  }
+  out.push_str(&svg_escape(&plain));
+  out
+}
+
 /// Run `f` with [`SINGLE_LETTER_ITALICS`] on, restoring it afterwards.
 fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
   struct Restore(bool);
@@ -26446,6 +26554,9 @@ pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
 }
 
 pub fn boxes_to_svg(expr: &Expr) -> String {
+  if let Some(plain_box) = script_template_box(expr) {
+    return boxes_to_svg(&plain_box);
+  }
   match expr {
     // Atoms: in box form, atoms are always Expr::String
     // A string box is stored as its quoted source (`"\"A\""`) but is drawn
@@ -26473,6 +26584,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           "<tspan font-style=\"italic\">{}</tspan>",
           svg_escape(unquoted)
         );
+      }
+      if LABEL_GREEK_ITALICS.with(std::cell::Cell::get)
+        && !export_upright_letters()
+      {
+        return svg_escape_label_greek_italics(unquoted);
       }
       svg_escape(unquoted)
     }
@@ -26919,6 +27035,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // them as expressions so the renderer recognizes them, instead of as
   // the box strings "Italic" and "FontSize -> 20" that style nothing.
   let parse_arg = |index: usize, src: &[char]| -> Expr {
+    // A template's argument list is written as the call `List[…]`: read
+    // it as the braced list it is.
+    if name == "TemplateBox"
+      && index == 0
+      && src.len() > 6
+      && src[..5].iter().collect::<String>() == "List["
+      && src[src.len() - 1] == ']'
+    {
+      let mut braced = vec!['{'];
+      braced.extend_from_slice(&src[5..src.len() - 1]);
+      braced.push('}');
+      return parse_box_to_expr(&braced);
+    }
     if name == "StyleBox" && index > 0 {
       let text: String = src.iter().collect();
       if let Ok(directive) = crate::parse_to_expr(&text) {
@@ -28806,6 +28935,9 @@ fn box_expr_to_plain(e: &Expr) -> String {
 
 /// `spaced` is false inside a script, where a limit `n=0` stays tight.
 fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
+  if let Some(plain_box) = script_template_box(e) {
+    return box_expr_to_plain_in(&plain_box, spaced);
+  }
   match e {
     // A string typeset in StandardForm is drawn without its quotes; its box
     // carries them as literal characters (`"\"f(x)\""`).
@@ -29092,6 +29224,9 @@ pub fn box_string_visible_len(s: &str) -> usize {
 /// Handles fraction markers by splitting text around nested `<svg>` elements
 /// with `<line>` for fraction bars.
 pub fn estimate_box_display_width(expr: &Expr) -> f64 {
+  if let Some(plain_box) = script_template_box(expr) {
+    return estimate_box_display_width(&plain_box);
+  }
   match expr {
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
@@ -32996,6 +33131,9 @@ fn traditional_form_two_dimensional_boxes(expr: &Expr) -> Option<Expr> {
     return None;
   }
   fn two_dimensional(e: &Expr) -> bool {
+    if script_template_box(e).is_some() {
+      return true;
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         matches!(
@@ -34025,9 +34163,14 @@ fn parse_divider_entry(expr: &Expr) -> Option<DividerLine> {
     }
     _ => Some(parse_color(expr)?),
   };
-  // The thickness and dashing the style asks for.
+  // The thickness and dashing the style asks for. A grid has no plot width
+  // for a relative `Thickness[d]` to be a fraction of, so it is `d` points,
+  // like `AbsoluteThickness[d]`.
   let style = crate::functions::plot::parse_style_directives(expr);
-  let width = style.as_ref().and_then(|s| s.thickness).unwrap_or(1.0);
+  let width = style
+    .as_ref()
+    .and_then(|s| s.thickness_fraction.or(s.thickness))
+    .unwrap_or(1.0);
   let dash = style
     .as_ref()
     .and_then(|s| s.dashing.as_ref())
@@ -44410,7 +44553,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
+    // The imaginary unit of a complex number (`15 + 18 ⅈ`) and the other
+    // Letterlike Symbols math glyphs are drawn as their letter
+    // double-struck, as in every other label: the embedded faces have no
+    // glyph for them, and the fallback face draws an unrelated shape.
+    let markup = render_math_letterlike_glyphs(
+      &st.text_decoration.markup(&expr_to_svg_markup(text_item)),
+    );
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -44445,9 +44594,17 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       // narrower than the sans average: its per-character advances bound
       // it, where the average would leave a centered piece floating in a
       // gap as wide as a third of its own text.
-      if st.font_family == "sans-serif"
-        || proportional_family_scale(&st.font_family) < 1.0
-      {
+      if is_embedded_sans_family(&st.font_family) {
+        // The default sans face (`Text[…]`, or `sans-serif` by name) is
+        // drawn in the embedded Atkinson Hyperlegible Next, whose digits
+        // and blanks run wider than Arial's: measured by Arial's advances,
+        // a centered part spills into its neighbors.
+        crate::functions::plot_padding::exported_text_extent(
+          &markup,
+          st.font_size,
+        )
+        .1 * bold
+      } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
         let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
@@ -58093,6 +58250,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       runs.extend(grouped_label_runs(operand, italic));
       runs
     }
+    // A held product (`a b c` parses as the left-nested `(a*b)*c`) is
+    // one `Times` of all its factors, set by the same code as the
+    // evaluated `Times[a, b, c]`: nesting must not parenthesize the inner
+    // product, and typeset factors sit side by side.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } if contains_presentation_head(expr) => {
+      let mut factors = Vec::new();
+      flatten_held_product(expr, &mut factors);
+      product_label_runs(&factors, italic)
+    }
     // Arithmetic joining typeset label pieces — a Demonstrations setter
     // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
     // the operands so their `Row`/`Style`/`Superscript` structure keeps
@@ -58104,16 +58273,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       if arithmetic_label_operator(*op).is_some()
         && contains_presentation_head(expr) =>
     {
-      let (mut text, group) =
-        arithmetic_label_operator(*op).unwrap_or_default();
-      // Typeset pieces multiplied together set side by side.
-      let is_styled = |e: &Expr| {
-        is_style_call(e)
-          || matches!(e, Expr::FunctionCall { name, .. } if name == "Text")
-      };
-      if text == "*" && is_styled(left) && is_styled(right) {
-        text = " ";
-      }
+      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
       let side = |e: &Expr| {
         if group {
           grouped_label_runs(e, italic)
@@ -58319,6 +58479,21 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The factors of a held product, in order: `(a*b)*c` gives `a, b, c`.
+fn flatten_held_product(expr: &Expr, factors: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_held_product(left, factors);
+      flatten_held_product(right, factors);
+    }
+    other => factors.push(other.clone()),
+  }
+}
+
 /// Runs for a `Times[…]` of typeset pieces. Reciprocal factors are the
 /// quotient's denominator, so `Row[…] Row[…]^-1` — what `Row[…]/Row[…]`
 /// evaluates to — sets as a quotient rather than as a product with a
@@ -58342,7 +58517,11 @@ fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
   // Typeset pieces (`Style[…] Text[…]`) set side by side, as the front end
   // shows them; a product of plain symbols keeps its `*`.
-  let sep = if numerators.iter().all(contains_presentation_head)
+  // A string factor is text too: `", " Style["D", Italic]` sets as
+  // `, D`, never `, *D`.
+  let sep = if numerators
+    .iter()
+    .all(|f| matches!(f, Expr::String(_)) || contains_presentation_head(f))
     || numerators.iter().any(has_script_head)
   {
     " "

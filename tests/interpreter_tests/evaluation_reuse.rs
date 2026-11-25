@@ -449,4 +449,49 @@ mod evaluation_reuse {
       );
     }
   }
+
+  // Wolfram evaluates a result again when a symbol it mentions got a value
+  // while its elements were evaluated.
+  mod reevaluation_after_assignment {
+    use super::*;
+
+    #[test]
+    fn list_element_before_its_assignment() {
+      clear_state();
+      assert_eq!(interpret("Clear[x]; {x, x = 5}").unwrap(), "{5, 5}");
+    }
+
+    #[test]
+    fn call_argument_before_its_assignment() {
+      clear_state();
+      assert_eq!(interpret("Clear[x]; f[x, x = 5]").unwrap(), "f[5, 5]");
+    }
+
+    #[test]
+    fn module_local_read_before_it_is_set() {
+      clear_state();
+      assert_eq!(
+        interpret("Module[{m}, {Det[m], m = {{1, 2}, {3, 4}}}]").unwrap(),
+        "{-2, {{1, 2}, {3, 4}}}"
+      );
+    }
+
+    #[test]
+    fn nested_read_before_a_later_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret("Module[{s}, {g[{s}], h[s = 3]}]").unwrap(),
+        "{g[{3}], h[3]}"
+      );
+    }
+
+    #[test]
+    fn held_parts_stay_held() {
+      clear_state();
+      assert_eq!(
+        interpret("Clear[x]; {Hold[x], x = 3}").unwrap(),
+        "{Hold[x], 3}"
+      );
+    }
+  }
 }

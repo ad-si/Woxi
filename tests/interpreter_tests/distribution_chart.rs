@@ -86,12 +86,13 @@ fn non_list_data_is_ldata() {
 fn chart_element_data_distribution_chart() {
   assert_eq!(
     interpret("ChartElementData[\"DistributionChart\"]").unwrap(),
-    "{Density, DensityQuantile, FadingQuantile, GlassQuantile, \
-     HistogramDensity, LineDensity, PointDensity, Quantile, SmoothDensity}"
+    "{Density, DensityQuantile, DistributionRectangle, FadingQuantile, \
+     GlassQuantile, HistogramDensity, LineDensity, PointDensity, Quantile, \
+     SmoothDensity}"
   );
   assert_eq!(
     interpret("Attributes[ChartElementData]").unwrap(),
-    "{Protected}"
+    "{Protected, ReadProtected}"
   );
 }
 

@@ -772,6 +772,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // Manipulate it holds its arguments via the explicit name-match in
     // core_eval.rs rather than a HoldAll attribute.
     "GeometricScene" => A::Protected | A::ReadProtected,
+    "ChartElementData" => A::Protected | A::ReadProtected,
     // The moment functions and their formal-symbol evaluator.
     "Moment" | "CentralMoment" | "Cumulant" | "FactorialMoment"
     | "MomentEvaluate" => A::Protected | A::ReadProtected,
@@ -1032,7 +1033,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // (`SetPrecision[x'[t] == 1, 8]` keeps `Derivative[1]`, so NDSolve still
     // sees a differential equation). Like `CircleTimes`, it stays
     // unprotected so user code can define derivatives.
-    "Derivative" => A::NHoldAll | A::ReadProtected,
+    "Derivative" => A::NHoldAll,
     "PrintTemporary" => A::Protected | A::ReadProtected,
 
     // Protected + ReadProtected (additional)

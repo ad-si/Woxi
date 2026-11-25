@@ -18126,7 +18126,8 @@ mod plot3d {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a
       // shifted tspan and a machine real keeps the 6 significant figures
       // the notebook front end shows — the "Power of a Test about a
-      // Binomial Parameter" Demonstration titles its plot this way.
+      // Binomial Parameter" Demonstration titles its plot this way. The
+      // lone Greek letter of a string is italic in `TraditionalForm`.
       let svg = export_svg(
         r#"Plot[x, {x, 0, 1},
              PlotLabel -> Text[Row[{"\[Alpha]", " = K(", Subscript[p, 0],
@@ -18138,7 +18139,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+          "<tspan font-style=\"italic\">α</tspan> = K(<tspan \
+           font-style=\"italic\">p</tspan><tspan \
            baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
@@ -20007,6 +20009,40 @@ mod plot3d {
       );
       let line = svg.lines().find(|l| l.contains(&applied)).unwrap();
       assert!(line.contains("font-size=\"140\""), "{line}");
+    }
+
+    /// A plot label is set in `TraditionalForm`, where a lowercase Greek
+    /// letter standing alone as a word of a string is italic while the rest
+    /// of the text — a Greek letter inside a word, `π`, a capital — stays
+    /// upright. As part of a scheduled QA routine, Woxi Studio was tested
+    /// against a randomly sampled Wolfram Demonstration notebook whose
+    /// `PlotLabel` was a `Row` of strings naming Greek parameters; its
+    /// snapshot shows them italic, Woxi drew them upright. This is a
+    /// self-authored, construct-equivalent example.
+    #[test]
+    fn plot_label_strings_set_lone_greek_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      for code in [
+        "Graphics[Circle[], PlotLabel -> \"Within α ± δ: 3\"]",
+        "Graphics[Circle[], PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Show[Graphics[Circle[]], ListPlot[{1, 2}], \
+         PlotLabel -> Row[{\"Within α ± δ: \", 3}]]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> \"Within α ± δ: 3\"]",
+        "Plot[s, {s, 0, 1}, PlotLabel -> Style[\"Within α ± δ: 3\", Bold]]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains(&format!("Within {} ± {}: 3", italic("α"), italic("δ"))),
+          "{code}: {svg}"
+        );
+      }
+      let svg =
+        export_svg("Graphics[Circle[], PlotLabel -> \"αβ, π, Ω and γ2\"]");
+      assert!(svg.contains(">αβ, π, Ω and γ2</text>"), "{svg}");
+      // Exported text outside graphics keeps its letters upright.
+      let svg = export_svg("Style[\"Within α\", 12]");
+      assert!(!svg.contains(&italic("α")), "{svg}");
     }
 
     /// A subscripted symbol in a label is typeset in `TraditionalForm`
@@ -38290,10 +38326,11 @@ mod matrix_form {
     clear_state();
     assert_eq!(
       interpret("ToBoxes[TranslationTransform[{a, b}]]").unwrap(),
-      "RowBox[{TransformationFunction, [, RowBox[{(, GridBox[{{1, 0, a}, \
-       {0, 1, b}, {0, 0, 1}}, GridBoxDividers -> {Columns -> {{False}}, \
-       ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
-       RowsIndexed -> {-2 -> True}}], )}], ]}]"
+      "RowBox[{TransformationFunction, [, RowBox[{(, TagBox[GridBox[{{1, 0, a}, \
+       {0, 1, b}, {0, 0, 1}}, AutoDelete -> False, GridBoxDividers -> \
+       {Columns -> {{False}}, ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
+       RowsIndexed -> {-2 -> True}}, GridBoxItemSize -> {Columns -> \
+       {{Automatic}}, Rows -> {{Automatic}}}], #1 & ], )}], ]}]"
     );
     let svg = interpret(
       "ExportString[Row[{\"H = \", MatrixForm[TranslationTransform[{a, b}]]}], \
@@ -52410,6 +52447,45 @@ mod manipulate {
     );
   }
 
+  /// A held caption written as a product of three or more typeset pieces
+  /// (`"speed " Superscript["m", 2] Text["/s"]`, which parses as the
+  /// left-nested `(a*b)*c`) sets its factors side by side. Regression: the
+  /// inner product was parenthesized and joined by `*`, giving
+  /// `((speed *m²)*/s)`.
+  #[test]
+  fn spec_label_held_product_sets_factors_side_by_side() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"speed \" Superscript[\"m\", 2] Superscript[\"k\", 3] \
+         Text[\"/s\"]}, {1, 2}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let label = match &spec.controls[0] {
+      ManipulateControl::Discrete { label, .. } => label.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(label, "speed  m\u{00B2} k\u{00B3} /s");
+  }
+
+  /// A string factor in a product of typeset pieces is text, set beside
+  /// its neighbor: `", " Style["D", Italic]` reads `,  D`, not `, *D`.
+  #[test]
+  fn spec_choice_label_string_times_style_has_no_star() {
+    let expr = interpret_to_expr(
+      "Manipulate[a, \
+       {{a, 1, \"\"}, {1 -> Row[{\"x\", \", \" Style[\"D\", Italic]}], \
+         2 -> \"y\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let labels = match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => value_labels.clone(),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(labels[0], "x,  D");
+  }
+
   /// A caption's `Style` color may be any expression that evaluates to a
   /// color, such as a palette entry `ColorData[1, n]`. Regression: only
   /// literal color directives were recognized, so these captions lost
@@ -62555,7 +62631,9 @@ mod grid_text_in_graphics {
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(\*OverscriptBox[\(AB\), \(_\)] × \*OverscriptBox[\(AC\), \(_\)]\), \(2\)]\)", {0, 0}]], "SVG"]"#,
     )
     .unwrap();
-    assert!(svg.contains("(AB\u{0304}*AC\u{0304})/2"), "{svg}");
+    // Typeset factors set side by side, the same as the evaluated
+    // `Times[Overscript[…], Overscript[…]]`.
+    assert!(svg.contains("(AB\u{0304} AC\u{0304})/2"), "{svg}");
   }
 
   #[test]
@@ -67930,9 +68008,12 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(boxes.contains("RowBox[{(, GridBox[{{"), "{boxes}");
-    assert!(boxes.contains("}}], )}], NumberForm]"), "{boxes}");
-    assert!(boxes.contains("StyleBox[2.12, "), "{boxes}");
-    assert!(boxes.contains("StyleBox[-4.00, "), "{boxes}");
+    assert!(
+      boxes.contains("}}], )}], NumberForm[#1, {3, 2}] & ]"),
+      "{boxes}"
+    );
+    assert!(boxes.contains("StyleBox[\"2.12\", "), "{boxes}");
+    assert!(boxes.contains("StyleBox[\"-4.00\", "), "{boxes}");
     assert!(!boxes.contains("RowBox[{{"), "{boxes}");
     // `ScientificForm` threads into the grid the same way.
     let sci = interpret(
@@ -67940,7 +68021,7 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(sci.contains("RowBox[{(, GridBox[{{"), "{sci}");
-    assert!(sci.contains("ScientificForm]"), "{sci}");
+    assert!(sci.contains("ScientificForm[#1, 2] & ]"), "{sci}");
   }
 
   /// A `Text` label `Row[{"A = ", TraditionalForm[NumberForm[m, {3, 2}]]}]`
@@ -71961,6 +72042,74 @@ mod graphics3d_point_depth {
     assert!(svg[..dot].contains("<line"), "far edges come first");
     assert!(svg[dot..].contains("<line"), "near edges come after");
   }
+
+  /// The faces drawn after the first `<circle>` of `svg` that reach into
+  /// the inner part of its disc.
+  fn faces_over_dot(svg: &str) -> Vec<String> {
+    let dot_at = svg.find("<circle").expect("the point is drawn");
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let start = tag.find(&key).unwrap() + key.len();
+      let end = start + tag[start..].find('"').unwrap();
+      tag[start..end].parse().unwrap()
+    };
+    let circle = &svg[dot_at..dot_at + svg[dot_at..].find("/>").unwrap()];
+    let (cx, cy, r) =
+      (attr(circle, "cx"), attr(circle, "cy"), attr(circle, "r"));
+    let seg_dist = |(ax, ay): (f64, f64), (bx, by): (f64, f64)| {
+      let (dx, dy) = (bx - ax, by - ay);
+      let len2 = dx * dx + dy * dy;
+      let t = if len2 > 0.0 {
+        (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      (ax + t * dx - cx).hypot(ay + t * dy - cy)
+    };
+    svg[dot_at..]
+      .match_indices("<polygon points=\"")
+      .filter_map(|(i, key)| {
+        let rest = &svg[dot_at + i + key.len()..];
+        let pts: Vec<(f64, f64)> = rest[..rest.find('"').unwrap()]
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let reaches_in = (0..pts.len())
+          .any(|k| seg_dist(pts[k], pts[(k + 1) % pts.len()]) < 0.7 * r);
+        reaches_in.then(|| rest[..rest.find("/>").unwrap()].to_string())
+      })
+      .collect()
+  }
+
+  // Regression: a big dot floating above a surface was placed in the draw
+  // order by its center alone, so the surface faces next to that center
+  // (behind the dot, but drawn later) were painted over part of its disc.
+  #[test]
+  fn faces_behind_a_dot_are_drawn_before_its_whole_disc() {
+    for (x, y) in [("0", "0"), ("2", "2"), ("-2.5", "0"), ("1", "-2")] {
+      let svg = export_svg(&format!(
+        "Show[Plot3D[(u^2 + v^2)/2, {{u, -3, 3}}, {{v, -3, 3}}], \
+         Graphics3D[{{PointSize[0.06], Orange, \
+         Point[{{{x}, {y}, (({x})^2 + ({y})^2)/2 + 1.5}}]}}]]"
+      ));
+      let over = faces_over_dot(&svg);
+      assert!(over.is_empty(), "dot at {x}, {y}: {over:?}");
+    }
+  }
+
+  #[test]
+  fn a_dot_under_a_surface_stays_hidden_by_it() {
+    // Below a dome seen from above, the faces in front of the dot's center
+    // still come after it.
+    let svg = export_svg(
+      "Show[Plot3D[4 - (u^2 + v^2)/2, {u, -2, 2}, {v, -2, 2}], \
+       Graphics3D[{PointSize[0.06], Point[{0, 0, 1}]}]]",
+    );
+    assert!(!faces_over_dot(&svg).is_empty(), "{svg}");
+  }
 }
 
 mod surface_default_mesh {
@@ -73816,15 +73965,32 @@ mod styled_math_typesetting {
 mod rational_coefficient_boxes {
   use super::*;
 
+  // The rational coefficient leads as a fraction once the product's boxes
+  // nest a `RowBox` in a `RowBox`; a flatter product stays over the
+  // denominator.
   #[test]
   fn rational_coefficient_of_a_sum_is_a_leading_fraction() {
     assert_eq!(
       interpret("ToBoxes[(a + b)/12]").unwrap(),
-      "RowBox[{FractionBox[1, 12],  , RowBox[{(, RowBox[{a, +, b}], )}]}]"
+      "FractionBox[RowBox[{a, +, b}], 12]"
     );
     assert_eq!(
       interpret("ToBoxes[3 (a + b) c/4]").unwrap(),
-      "RowBox[{FractionBox[3, 4],  , RowBox[{RowBox[{(, RowBox[{a, +, b}], )}],  , c}]}]"
+      "RowBox[{FractionBox[3, 4],  , RowBox[{(, RowBox[{a, +, b}], )}],  , c}]"
+    );
+    assert_eq!(
+      interpret(
+        "{ToBoxes[3 (a + b)/4], ToBoxes[Sqrt[a + b]/4], ToBoxes[3 x y/4]}"
+      )
+      .unwrap(),
+      "{FractionBox[RowBox[{3,  , RowBox[{(, RowBox[{a, +, b}], )}]}], 4], FractionBox[SqrtBox[RowBox[{a, +, b}]], 4], FractionBox[RowBox[{3,  , x,  , y}], 4]}"
+    );
+    assert_eq!(
+      interpret(
+        "{ToBoxes[(a + b)^2/4], ToBoxes[f[a b]/4], ToBoxes[(a b + c)/4]}"
+      )
+      .unwrap(),
+      "{RowBox[{FractionBox[1, 4],  , SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], 2]}], RowBox[{FractionBox[1, 4],  , RowBox[{f, [, RowBox[{a,  , b}], ]}]}], RowBox[{FractionBox[1, 4],  , RowBox[{(, RowBox[{RowBox[{a,  , b}], +, c}], )}]}]}"
     );
     // A symbolic denominator or a plain product stays one fraction.
     assert_eq!(
@@ -73835,10 +74001,10 @@ mod rational_coefficient_boxes {
   }
 
   #[test]
-  fn rational_coefficient_of_a_row_is_a_leading_fraction() {
+  fn rational_coefficient_of_a_row_stays_a_fraction() {
     assert_eq!(
       interpret("ToBoxes[Row[{\"(\", a + b, \")\"}]/24]").unwrap(),
-      "RowBox[{FractionBox[1, 24],  , TemplateBox[{\"(\", RowBox[{a, +, b}], \")\"}, RowDefault]}]"
+      "FractionBox[TemplateBox[{\"(\", RowBox[{a, +, b}], \")\"}, RowDefault], 24]"
     );
   }
 
@@ -74791,7 +74957,10 @@ fn row_label_with_rational_part_stacks_the_fraction_inline() {
 fn number_form_of_rational_boxes_as_fraction() {
   clear_state();
   let boxes = interpret("ToBoxes[NumberForm[14/3, {3, 2}]]").unwrap();
-  assert!(boxes.contains("FractionBox[14, 3]"), "{boxes}");
+  assert!(
+    boxes.contains("FractionBox[InterpretationBox[StyleBox[\"14\""),
+    "{boxes}"
+  );
   assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
 }
 

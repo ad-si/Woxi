@@ -530,7 +530,8 @@ fn face_grids_style(opts: &[Expr]) -> (String, f64) {
 /// triangle that covers the piece's midpoint on screen without lying in
 /// front of it. Drawn there, the piece shows over every face behind it
 /// and under every face in front of it. `dots[k]` marks a piece that is a
-/// `Point` dot rather than a line (missing entries are lines).
+/// `Point` dot rather than a line, with the radius of its disc in projected
+/// units (missing entries are lines).
 ///
 /// `end_zones[k]`, when given, is the stretch `[lo, hi]` of piece `k`
 /// (as fractions of its length) away from the ends of the line it was cut
@@ -540,7 +541,7 @@ fn line_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
-  dots: &[bool],
+  dots: &[Option<f64>],
   camera: &Camera,
   end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<usize> {
@@ -629,7 +630,7 @@ fn line_draw_bounds(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
-  dots: &[bool],
+  dots: &[Option<f64>],
   camera: &Camera,
   owners: Option<&[usize]>,
   end_zones: Option<&[[f64; 2]]>,
@@ -641,6 +642,7 @@ fn line_draw_bounds(
   // crowded scene, so a cell does not hold thousands of faces.
   let cells = ((tris.len() as f64).sqrt() as usize).clamp(64, 512);
   let toward_viewer = camera.toward_viewer_fn();
+  let frame = camera.view_frame();
   let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
   for t in tris {
     for &(x, y) in &t.projected {
@@ -697,7 +699,8 @@ fn line_draw_bounds(
       // A piece can cross several small faces: it is sampled along its
       // length.
       let floor = owners.map(|o| o[n] + 1);
-      let is_dot = dots.get(n).copied().unwrap_or(false);
+      let dot_radius = dots.get(n).copied().flatten();
+      let is_dot = dot_radius.is_some();
       let mut slot = floor.unwrap_or(0);
       let mut first_front = usize::MAX;
       // Faces the piece runs along (or crosses in front of) lift it over
@@ -707,16 +710,59 @@ fn line_draw_bounds(
       // paint a stub of the hidden line over that face.
       let mut end_slot = 0;
       let mut cap = usize::MAX;
+      // A dot's disc reaches past its center: the faces behind the dot
+      // that overlap its disc anywhere must be drawn before it too, as a
+      // depth buffer keeps the whole disc (at the depth of its center) in
+      // front of them. Those faces are found from samples on rings around
+      // the center, at the center's depth.
+      let mut ring_slot = 0;
+      // The first face covering the dot's center and lying in front of
+      // it: a ring sample never lifts the dot over it.
+      let mut center_front = usize::MAX;
       const SAMPLES: [f64; 5] = [0.02, 0.25, 0.5, 0.75, 0.98];
       let [zone_lo, zone_hi] = end_zones.map_or([0.0, 1.0], |z| z[n]);
-      for (i, t) in SAMPLES.into_iter().enumerate() {
-        let at_end =
-          i == 0 || i == SAMPLES.len() - 1 || t < zone_lo || t > zone_hi;
-        let m = Point3D {
-          x: seg[0].x + t * (seg[1].x - seg[0].x),
-          y: seg[0].y + t * (seg[1].y - seg[0].y),
-          z: seg[0].z + t * (seg[1].z - seg[0].z),
-        };
+      let mut samples: Vec<(Point3D, bool, bool)> = SAMPLES
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| {
+          let at_end =
+            i == 0 || i == SAMPLES.len() - 1 || t < zone_lo || t > zone_hi;
+          let m = Point3D {
+            x: seg[0].x + t * (seg[1].x - seg[0].x),
+            y: seg[0].y + t * (seg[1].y - seg[0].y),
+            z: seg[0].z + t * (seg[1].z - seg[0].z),
+          };
+          (m, at_end, false)
+        })
+        .collect();
+      if let Some(radius) = dot_radius.filter(|r| *r > 0.0 && r.is_finite()) {
+        // All samples of a dot coincide: one center sample is enough.
+        samples.truncate(1);
+        samples[0].1 = false;
+        let c = seg[0];
+        for frac in [0.5, 0.85] {
+          for step in 0..8 {
+            let angle = step as f64 * std::f64::consts::FRAC_PI_4;
+            let (sin, cos) = angle.sin_cos();
+            let r = radius * frac;
+            let off = [
+              r * (cos * frame.right[0] + sin * frame.up[0]),
+              r * (cos * frame.right[1] + sin * frame.up[1]),
+              r * (cos * frame.right[2] + sin * frame.up[2]),
+            ];
+            samples.push((
+              Point3D {
+                x: c.x + off[0],
+                y: c.y + off[1],
+                z: c.z + off[2],
+              },
+              false,
+              true,
+            ));
+          }
+        }
+      }
+      for (m, at_end, ring) in samples {
         let pm = project(m, camera);
         if pm.0 < lo.0 || pm.0 > hi.0 || pm.1 < lo.1 || pm.1 > hi.1 {
           continue;
@@ -728,7 +774,8 @@ fn line_draw_bounds(
         for &k in &near[start..] {
           // A face drawn before the slot found so far can only matter
           // as the first one in front, and only when that is looked for.
-          if k < slot && (floor.is_none_or(|f| k < f) || k >= first_front) {
+          let reached = if ring { slot.max(ring_slot) } else { slot };
+          if k < reached && (floor.is_none_or(|f| k < f) || k >= first_front) {
             continue;
           }
           let inset = depth_inside(&tris[k].projected, pm);
@@ -756,6 +803,7 @@ fn line_draw_bounds(
           // face the dot lies inside of (with a corner on each side of
           // the dot's depth) is drawn under it.
           if is_dot
+            && !ring
             && d.abs() <= 1e-6 * size.max(1e-300)
             && face_in_front_of(v, m, &toward_viewer, size)
           {
@@ -763,6 +811,12 @@ fn line_draw_bounds(
           }
           // A line on a curved surface lies a little behind the planes
           // of the faces next to the ones it runs along.
+          if ring {
+            if inset >= 0.0 && d >= 0.0 {
+              ring_slot = ring_slot.max(k + 1);
+            }
+            continue;
+          }
           if d >= -1e-2 * size.max(1e-300) {
             if at_end {
               end_slot = end_slot.max(k + 1);
@@ -770,6 +824,9 @@ fn line_draw_bounds(
               slot = slot.max(k + 1);
             }
           } else {
+            if is_dot && inset >= 0.0 {
+              center_front = center_front.min(k);
+            }
             if inset >= -margin * 1e-3 {
               cap = cap.min(k);
             }
@@ -783,7 +840,8 @@ fn line_draw_bounds(
           }
         }
       }
-      (slot.max(end_slot.min(cap)), first_front)
+      let slot = slot.max(end_slot.min(cap));
+      (slot.max(ring_slot.min(center_front)), first_front)
     })
     .collect()
 }
@@ -13997,12 +14055,17 @@ fn scene_image_width() -> f64 {
 
 /// The radius in pixels of the dot a 3D `Point` is drawn as. A relative
 /// `PointSize` is measured against the same length as a relative
-/// `Thickness` (see `scene_image_width`).
+/// `Thickness` (see `scene_image_width`). Without one, a point takes
+/// Wolfram's 3D default, `PointSize[0.01]`.
 fn point_dot_radius(style: &StyleState3D) -> f64 {
-  style.point_size.map_or(3.0, |ps| {
-    crate::functions::graphics::point_radius(ps, scene_image_width())
-  })
+  crate::functions::graphics::point_radius(
+    style.point_size.unwrap_or(DEFAULT_POINT_SIZE_3D),
+    scene_image_width(),
+  )
 }
+
+/// The `PointSize` a 3D `Point` gets when no directive sets one.
+const DEFAULT_POINT_SIZE_3D: f64 = 0.01;
 
 /// The room each side of the picture (`[left, right, bottom, top]`)
 /// needs for the disks of the `Point`s that reach that side of the
@@ -17757,7 +17820,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &sorted_edges.iter().map(|e| e.endpoints).collect::<Vec<_>>(),
       &sorted_edges
         .iter()
-        .map(|e| e.dot_radius.is_some())
+        .map(|e| e.dot_radius.map(|r| r / scale.max(1e-300)))
         .collect::<Vec<_>>(),
       &camera,
       Some(&sorted_edges.iter().map(|e| e.end_zone).collect::<Vec<_>>()),
@@ -28335,11 +28398,22 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // sampled surface (`PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`), so
     // a `Show` of it frames the scene by that box — under sphere framing,
     // by the sphere around the box rather than around the contents.
-    let names_plot_range = structure_args.iter().any(|o| {
+    // `PlotRange -> All` (or `Automatic`) is an automatic range too: it
+    // resolves to the surface's extent and is padded like an unnamed one,
+    // so a `Show` led by such a plot frames the padded box.
+    let is_plot_range = |o: &Expr| {
       matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
-    });
+    };
     let extents = [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)];
+    if extents.iter().all(|(lo, hi)| hi > lo) {
+      structure_args.retain(|o| {
+        !(is_plot_range(o)
+          && matches!(o, Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. }
+            if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All" || v == "Automatic")))
+      });
+    }
+    let names_plot_range = structure_args.iter().any(is_plot_range);
     if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
       let range = extents
         .iter()

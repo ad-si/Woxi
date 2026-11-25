@@ -319,10 +319,10 @@ fn emit_gcd_lcm_exact_message(name: &str, args: &[Expr]) {
 fn round_half_even_div(p: i128, d: i128) -> i128 {
   let q = p.div_euclid(d);
   let r = p.rem_euclid(d); // 0 <= r < d
-  let twice = 2 * r;
-  if twice < d {
+  // `r` against `d - r` rather than `2 r` against `d`, which can overflow.
+  if r < d - r {
     q
-  } else if twice > d {
+  } else if r > d - r {
     q + 1
   } else if q % 2 == 0 {
     q

@@ -8201,7 +8201,7 @@ mod graph_annotations {
   fn a_style_set_on_one_vertex_keeps_the_others_style() {
     clear_state();
     // A style for one vertex is a `vertex -> style` rule, and the value
-    // the graph gave every vertex stays with the others.
+    // the graph gave every vertex stays, bare, for the others.
     assert_eq!(
       interpret(
         "ToString[Options[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
@@ -8211,9 +8211,13 @@ mod graph_annotations {
           .as_str()
       )
       .unwrap(),
-      "{VertexSize -> {1 -> {\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}, \
-       3 -> {\"Scaled\", 0.01}}, VertexStyle -> {1 -> RGBColor[0, 0, 1], \
-       2 -> RGBColor[1, 0, 0], 3 -> RGBColor[0, 0, 1]}}"
+      "{VertexSize -> {{\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}}, \
+       VertexStyle -> {RGBColor[0, 0, 1], 2 -> RGBColor[1, 0, 0]}}"
+    );
+    // Setting the vertex again replaces its rule.
+    assert_eq!(
+      interpret("g = SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, VertexStyle -> Blue], 2}, VertexStyle -> Red]; ToString[Options[SetProperty[{g, 2}, VertexStyle -> Green]], InputForm]").unwrap(),
+      "{VertexStyle -> {RGBColor[0, 0, 1], 2 -> RGBColor[0, 1, 0]}}"
     );
     // Every rule of a list names the same vertex.
     assert_eq!(
@@ -9195,7 +9199,7 @@ mod graph_utilities_package {
   fn polyhedron_data_class_lists_members_and_names() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
-      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
+      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
     );
     assert_eq!(
       interpret("PolyhedronData[\"PlatonicDual\"]").unwrap(),
@@ -9226,7 +9230,7 @@ mod graph_utilities_package {
   fn vertex_list_of_labeled_rule_list() {
     assert_eq!(
       interpret(
-        "GraphUtilities`VertexList[{{a -> b, \"x\"}, {b -> c, \"y\"}, c -> d}]"
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`VertexList[{{a -> b, \"x\"}, {b -> c, \"y\"}, c -> d}]"
       )
       .unwrap(),
       "{a, b, c, d}"
