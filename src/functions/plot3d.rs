@@ -13351,6 +13351,117 @@ fn solid_bounding_sphere(prim: &Primitive3D) -> Option<(Point3D, f64)> {
   }
 }
 
+/// Whether two closed vertex rings trace the same polygon: the same corners
+/// (to within `eps`) in the same cyclic order, starting anywhere and running
+/// either way round.
+fn same_vertex_ring(a: &[Point3D], b: &[Point3D], eps: f64) -> bool {
+  let n = a.len();
+  if n != b.len() || n == 0 {
+    return false;
+  }
+  let close = |p: &Point3D, q: &Point3D| {
+    (p.x - q.x).abs() <= eps
+      && (p.y - q.y).abs() <= eps
+      && (p.z - q.z).abs() <= eps
+  };
+  (0..n).any(|shift| {
+    (0..n).all(|k| close(&a[k], &b[(shift + k) % n]))
+      || (0..n).all(|k| close(&a[k], &b[(shift + n - k) % n]))
+  })
+}
+
+/// Removes every opaque polygon that a later opaque polygon covers exactly.
+/// Of faces lying on one another the one given last is the one seen (see
+/// [`depth_order_edges`]), so the earlier copies add nothing to the picture.
+/// Left in, they do show: each is cut into triangles, and the anti-aliased
+/// seams between the top copy's triangles let the colors stacked beneath
+/// bleed through as hairlines across the face (solids exploded with
+/// `Translate` by a factor that starts at zero all sit on one another).
+///
+/// A covered polygon's outline is covered too only when the covering one
+/// draws the same solid outline, so a differently outlined copy is kept.
+fn drop_covered_duplicate_polygons(prims: &mut Vec<Primitive3D>) {
+  // The ring of an opaque, hole-free polygon and its style.
+  fn ring(prim: &Primitive3D) -> Option<(&[Point3D], &StyleState3D)> {
+    match prim {
+      Primitive3D::Polygon3D {
+        points,
+        holes,
+        style,
+      } if holes.is_empty()
+        && points.len() >= 3
+        && style.faces
+        && style.opacity >= 1.0 =>
+      {
+        Some((points.as_slice(), style))
+      }
+      _ => None,
+    }
+  }
+  let centroid_x = |points: &[Point3D]| {
+    points.iter().map(|p| p.x).sum::<f64>() / points.len() as f64
+  };
+  let mut candidates: Vec<(usize, f64)> = Vec::new();
+  let mut scale = 0.0_f64;
+  for (i, prim) in prims.iter().enumerate() {
+    if let Some((points, _)) = ring(prim) {
+      if points
+        .iter()
+        .any(|p| !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite()))
+      {
+        continue;
+      }
+      for p in points {
+        scale = scale.max(p.x.abs()).max(p.y.abs()).max(p.z.abs());
+      }
+      candidates.push((i, centroid_x(points)));
+    }
+  }
+  if candidates.len() < 2 {
+    return;
+  }
+  let eps = 1e-9 * scale.max(1e-300);
+  // Copies of one polygon have one centroid, so sorting by it brings them
+  // next to each other.
+  candidates.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+  let outline_covered = |under: &StyleState3D, over: &StyleState3D| {
+    !under.edges
+      || (over.edges
+        && over.edge_opacity >= 1.0
+        && over.edge_dashing.is_none()
+        && under.edge_dashing.is_none()
+        && under.edge_color == over.edge_color
+        && under.edge_width == over.edge_width)
+  };
+  let mut covered = vec![false; prims.len()];
+  for (pos, &(i, cx)) in candidates.iter().enumerate() {
+    for &(j, other_cx) in &candidates[pos + 1..] {
+      if other_cx - cx > eps {
+        break;
+      }
+      let (under, over) = (i.min(j), i.max(j));
+      if covered[under] {
+        continue;
+      }
+      let (Some((under_ring, under_style)), Some((over_ring, over_style))) =
+        (ring(&prims[under]), ring(&prims[over]))
+      else {
+        continue;
+      };
+      if same_vertex_ring(under_ring, over_ring, eps)
+        && outline_covered(under_style, over_style)
+      {
+        covered[under] = true;
+      }
+    }
+  }
+  let mut index = 0;
+  prims.retain(|_| {
+    index += 1;
+    !covered[index - 1]
+  });
+}
+
 /// The opaque, closed spheres and capped cylinders of a scene, which hide
 /// facets of other solids lying wholly inside them.
 fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
@@ -16066,6 +16177,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
 
+  drop_covered_duplicate_polygons(&mut prims);
   let hidden_faces = hidden_cuboid_faces(&prims);
   let occluders = solid_occluders(&prims);
 

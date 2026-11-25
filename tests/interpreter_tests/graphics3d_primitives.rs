@@ -2584,6 +2584,65 @@ mod smooth_shading {
     assert!(last_red < first_blue, "{colors:?}");
   }
 
+  // An opaque face lying exactly under a later opaque one is never seen, so
+  // it is not drawn at all: left in, its color bleeds through the
+  // anti-aliased seams between the triangles of the face on top. The copy
+  // may list the same corners from another start or the other way round,
+  // and may be moved onto the face by a `Translate`.
+  #[test]
+  fn opaque_face_under_an_identical_face_is_not_drawn() {
+    let alone = svg(
+      "Graphics3D[{Yellow, Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, \
+       {1, 2, 0}}]}, Boxed -> False]",
+    );
+    for under in [
+      "Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}]",
+      "Polygon[{{3, 2, 0}, {1, 2, 0}, {0, 0, 0}, {2, 0, 0}}]",
+      "Polygon[{{1, 2, 0}, {3, 2, 0}, {2, 0, 0}, {0, 0, 0}}]",
+      "Translate[Polygon[{{0, 0, 5}, {2, 0, 5}, {3, 2, 5}, {1, 2, 5}}], \
+       {0, 0, -5}]",
+      "Translate[Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}], \
+       0*{1, 2, 3}]",
+    ] {
+      let stacked = svg(&format!(
+        "Graphics3D[{{Cyan, {under}, Orange, {under}, Yellow, \
+         Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, {{3, 2, 0}}, {{1, 2, 0}}}}]}}, \
+         Boxed -> False]"
+      ));
+      assert_eq!(stacked, alone, "{under}");
+    }
+  }
+
+  // Faces that only overlap, a translucent face on top, and a copy with an
+  // outline the face on top does not repeat are all still drawn.
+  #[test]
+  fn faces_that_are_not_wholly_covered_are_kept() {
+    let quad = "Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 2, 0}, {1, 2, 0}}]";
+    let one = polygon_count(&svg(&format!(
+      "Graphics3D[{{Yellow, {quad}}}, Boxed -> False]"
+    )));
+    for scene in [
+      // Shifted within the plane.
+      format!("{{Cyan, Translate[{quad}, {{0.5, 0, 0}}], Yellow, {quad}}}"),
+      // A different polygon on the same corners but one.
+      format!(
+        "{{Cyan, Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, {{3, 2, 0}}, \
+         {{1, 3, 0}}}}], Yellow, {quad}}}"
+      ),
+      // The face on top lets the lower one show through.
+      format!("{{Cyan, {quad}, Opacity[0.5], Yellow, {quad}}}"),
+    ] {
+      let n =
+        polygon_count(&svg(&format!("Graphics3D[{scene}, Boxed -> False]")));
+      assert!(n > one, "{scene}: {n} vs {one}");
+    }
+    let outlined = svg(&format!(
+      "Graphics3D[{{EdgeForm[{{Thick, Red}}], Cyan, {quad}, EdgeForm[], \
+       Yellow, {quad}}}, Boxed -> False]"
+    ));
+    assert!(outlined.contains("stroke=\"rgb(255,0,0)\""), "{outlined}");
+  }
+
   // A translucent face lying on an opaque one stays beneath it, even when
   // it is given later: only the opaque face's color shows through.
   #[test]
