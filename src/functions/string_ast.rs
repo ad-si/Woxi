@@ -6062,7 +6062,11 @@ fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
   } else {
     ("", trimmed)
   };
-  let prec_digits = prec.round() as i64;
+  let prec_digits = if prec > 0.0 {
+    crate::bigfloat_shown_digits(body, prec) as i64
+  } else {
+    prec.round() as i64
+  };
   // Compact storage (`d.ddd…e<exponent>`): round the mantissa and keep the
   // exponent, renormalizing when the rounding carries into a new digit.
   if let Some((mantissa, exponent)) =

@@ -14787,7 +14787,39 @@ fn log_quotient_for_base(base: &Expr, exp: &Expr) -> Option<Expr> {
   None
 }
 
+/// The arbitrary-precision real `c` of a purely imaginary `c I`.
+fn bigfloat_imaginary_coefficient(e: &Expr) -> Option<&Expr> {
+  let is_i = |x: &Expr| matches!(x, Expr::Identifier(n) if n == "I");
+  let (a, b) = match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  match (a, b) {
+    (c @ Expr::BigFloat(..), i) | (i, c @ Expr::BigFloat(..)) if is_i(i) => {
+      Some(c)
+    }
+    _ => None,
+  }
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // An arbitrary-precision imaginary base `c I` to an integer power is
+  // `c^n I^n`, its precision that of the real power:
+  // `(0.5`30 I)^2` is `-0.25`29.699`.
+  if let Expr::Integer(_) = exp
+    && let Some(c) = bigfloat_imaginary_coefficient(base)
+  {
+    let real_power = power_two(c, exp)?;
+    let unit_power = power_two(&Expr::Identifier("I".to_string()), exp)?;
+    return times_ast(&[real_power, unit_power]);
+  }
   // An arbitrary-precision complex base keeps its precision:
   // `(2.1`30 + 0.3`30 I)^-1`.
   if super::numeric_utils::contains_inexact_real(base)

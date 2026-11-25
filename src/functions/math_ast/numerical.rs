@@ -71,6 +71,20 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
+    // A precision past `$MaxPrecision` is lowered to it.
+    let (_, max_precision) = crate::precision_bounds();
+    let precision_f64 = if precision_f64 > max_precision {
+      crate::emit_message(&format!(
+        "N::preclg: Requested precision {} is larger than $MaxPrecision. \
+         Using current $MaxPrecision of {} instead. $MaxPrecision = \
+         Infinity specifies that any precision should be allowed.",
+        expr_to_string(&args[1]),
+        expr_to_string(&Expr::Real(max_precision))
+      ));
+      max_precision
+    } else {
+      precision_f64
+    };
     return n_eval_arbitrary_precision_form(&args[0], precision_f64);
   }
   n_eval(&args[0])

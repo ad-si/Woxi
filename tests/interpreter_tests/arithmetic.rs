@@ -16967,11 +16967,37 @@ mod precision_bounds {
         "Block[{$MaxPrecision = 20}, Precision /@ {N[Pi, 30] + 1, N[Pi, 30] * 2, N[Pi, 30]^2}]"
       )
       .unwrap(),
-      "{20., 20., 20.}"
+      "{20., 20., 19.69897000433602}"
     );
     assert_eq!(
       interpret("Block[{$MaxPrecision = 20}, ToString[N[Pi, 30]^2]]").unwrap(),
-      "9.8696044010893586188"
+      "9.869604401089358619"
+    );
+    let r = woxi::interpret_with_stdout(
+      "Block[{$MaxPrecision = 20}, Precision[N[Pi, 30]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "20.");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "N::preclg: Requested precision 30 is larger than $MaxPrecision. \
+         Using current $MaxPrecision of 20. instead. $MaxPrecision = \
+         Infinity specifies that any precision should be allowed."
+      ]
+    );
+  }
+
+  // The digits shown are Ceiling[precision - Log10[mantissa]].
+  #[test]
+  fn shown_digits_of_fractional_precision() {
+    assert_eq!(
+      interpret(
+        "ToString /@ {9.9`19.6, 1.1`19.4, N[Pi, 19.4], 1.`20, N[Pi, 30]^2}"
+      )
+      .unwrap(),
+      "{9.900000000000000000, 1.1000000000000000000, 3.141592653589793238, \
+       1.0000000000000000000, 9.8696044010893586188344909999}"
     );
   }
 
@@ -17144,7 +17170,14 @@ mod complex_arbitrary_precision_arithmetic {
 
   #[test]
   fn imaginary_monomials() {
-    assert_eq!(interpret("(0.5`30 I)^2").unwrap(), "-0.25`30.");
+    assert_eq!(
+      interpret("(0.5`30 I)^2").unwrap(),
+      "-0.25`29.69897000433602"
+    );
+    assert_eq!(
+      interpret("{(0.5`30 I)^3, (0.5`30 I)^-2}").unwrap(),
+      "{-0.125`29.522878745280337*I, -4.`29.69897000433602}"
+    );
     assert_eq!(interpret("2.5`20 I").unwrap(), "2.5`20.*I");
     assert_eq!(interpret("x (0.5`30 + I)").unwrap(), "(0.5`30. + I)*x");
   }
