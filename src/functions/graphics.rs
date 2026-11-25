@@ -26243,11 +26243,13 @@ fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
 
 /// Whether a box string is a symbol spelt with one letter (`x`, `ω`, `π`),
 /// which `TraditionalForm` sets in italics; the double-struck `ⅇ`/`ⅈ`/`ⅆ`
-/// stay upright.
+/// and the capital Greek letters (`Γ`, `Ο`, `Ω`) stay upright.
 fn is_single_letter_symbol(s: &str) -> bool {
   let mut chars = s.chars();
   matches!((chars.next(), chars.next()), (Some(c), None)
-    if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
+    if c.is_alphabetic()
+      && !('\u{2145}'..='\u{2149}').contains(&c)
+      && !('\u{391}'..='\u{3A9}').contains(&c))
 }
 
 /// Infix box tokens drawn with a space on either side: relations,

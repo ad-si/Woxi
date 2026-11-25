@@ -1677,7 +1677,9 @@ pub(crate) fn split_into_segments(
 /// Finite segments of `points` with every y clamped into `[y_min, y_max]`.
 /// A filled region keeps covering the plot area where the curve itself has
 /// left the plot range, so it follows the clamped curve instead of the
-/// clipped one.
+/// clipped one. Where a stretch of the curve crosses a range edge, the
+/// crossing point is added first, so the clamped outline leaves the curve
+/// exactly where the curve leaves the range, however sparse the samples.
 pub(crate) fn clamp_segments_to_y_range(
   points: &[(f64, f64)],
   y_min: f64,
@@ -1686,10 +1688,25 @@ pub(crate) fn clamp_segments_to_y_range(
   split_into_segments(points)
     .into_iter()
     .map(|seg| {
-      seg
-        .into_iter()
-        .map(|(x, y)| (x, y.clamp(y_min, y_max)))
-        .collect()
+      let mut out: Vec<(f64, f64)> = Vec::with_capacity(seg.len());
+      for (i, &(x, y)) in seg.iter().enumerate() {
+        if i > 0 {
+          let (px, py) = seg[i - 1];
+          // The edges this stretch crosses, in the order it meets them.
+          let mut crossings: Vec<f64> = [y_min, y_max]
+            .into_iter()
+            .filter(|&edge| (py - edge) * (y - edge) < 0.0)
+            .map(|edge| (edge - py) / (y - py))
+            .collect();
+          crossings.sort_by(f64::total_cmp);
+          for t in crossings {
+            let cy = (py + (y - py) * t).clamp(y_min, y_max);
+            out.push((px + (x - px) * t, cy));
+          }
+        }
+        out.push((x, y.clamp(y_min, y_max)));
+      }
+      out
     })
     .collect()
 }

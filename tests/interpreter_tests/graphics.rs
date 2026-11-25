@@ -22618,6 +22618,80 @@ mod plot3d {
       ));
     }
 
+    /// A filled curve that leaves the plot range between two samples is
+    /// filled up to the point where it crosses the range edge: the fill's
+    /// outline runs along the curve and then along the edge, instead of
+    /// cutting the corner from the last sample inside the range to the
+    /// clamped sample beyond it.
+    #[test]
+    fn filling_follows_a_sparse_curve_to_the_plot_range_edge() {
+      let outline = |code: &str| -> Vec<(f64, f64)> {
+        let svg = export_svg(code);
+        let start =
+          svg.find("<polygon").expect("a fill polygon") + "<polygon".len();
+        let tag = &svg[start..start + svg[start..].find("/>").unwrap()];
+        let pts = tag.split("points=\"").nth(1).unwrap();
+        pts[..pts.find('"').unwrap()]
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect()
+      };
+      // The curve climbs out of the range between x = 2 and x = 3 and comes
+      // back between x = 3 and x = 4; the crossings lie 1/4 and 6/7 of the
+      // way along those stretches.
+      let pts = outline(
+        "ListLinePlot[{1, 2, 10, 3}, PlotRange -> {0, 4}, Filling -> Axis]",
+      );
+      let x_at = |i: usize| pts[i].0;
+      let top = pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+      let on_top: Vec<f64> = pts
+        .iter()
+        .filter(|p| (p.1 - top).abs() < 0.5)
+        .map(|p| p.0)
+        .collect();
+      // Leaving crossing, the clamped sample, returning crossing.
+      assert_eq!(on_top.len(), 3, "{pts:?}");
+      let unit = x_at(1) - x_at(0);
+      let frac = |x: f64| (x - x_at(0)) / unit;
+      assert!((frac(on_top[0]) - 1.25).abs() < 0.01, "{pts:?}");
+      assert!((frac(on_top[1]) - 2.0).abs() < 0.01, "{pts:?}");
+      assert!(
+        (frac(on_top[2]) - (2.0 + 6.0 / 7.0)).abs() < 0.01,
+        "{pts:?}"
+      );
+
+      // A stretch that jumps across the whole range meets both edges.
+      let pts = outline(
+        "ListLinePlot[{-5, 5, 1}, PlotRange -> {-1, 2}, Filling -> Bottom]",
+      );
+      let unit = pts[1].0 - pts[0].0;
+      // The first sample is clamped onto the bottom edge; the stretch then
+      // enters the range 4/10 and leaves it 7/10 of the way along.
+      assert!((unit / (pts[2].0 - pts[0].0) - 4.0 / 7.0).abs() < 0.01);
+    }
+
+    /// TraditionalForm sets a single-letter symbol in italics, but a capital
+    /// Greek letter stays upright (`Ο(n)`, `Ω`), unlike a lowercase one.
+    #[test]
+    fn capital_greek_legend_symbols_stay_upright() {
+      let svg = export_svg(
+        "ListLinePlot[{{1, 2}, {2, 1}, {1, 1}}, \
+         PlotLegends -> {\\[CapitalOmicron][n], \\[CapitalOmega], \\[Omega]}]",
+      );
+      assert!(
+        svg.contains(">\u{39F}(<tspan font-style=\"italic\">n</tspan>)<"),
+        "{svg}"
+      );
+      assert!(svg.contains(">\u{3A9}</text>"), "{svg}");
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">\u{3C9}</tspan>"),
+        "{svg}"
+      );
+    }
+
     /// `Filling -> {i -> True}` shades series `i` down to the axis, as
     /// `Filling -> {i -> Axis}` does (a Demonstration builds the rule list
     /// with `Table[i -> True, {i, n}]`).
