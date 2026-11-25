@@ -3571,13 +3571,89 @@ fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(roots) = solve_bounded_inexact_transcendental(args) {
     return Ok(roots);
   }
-  let solved = solve_ast_exact_parts(args)?;
+  // A machine zero left standing in a sum (`0. + 24.5 m`, what `0.5 m 0^2`
+  // contributes) only marks the equation as inexact. Kept as an addend it
+  // blocks the cancellation of symbolic factors in the coefficients, so the
+  // system is solved without it and the roots numericized below.
+  let stripped = drop_machine_zero_addends(args);
+  let solved = solve_ast_exact_parts(stripped.as_deref().unwrap_or(args))?;
+  // A single equation whose only machine number was that zero has exact
+  // roots (`4 Sqrt[3]`), which are inexact in the original equation.
+  let solved = match &stripped {
+    Some(exact)
+      if matches!(&solved, Expr::List(_))
+        && !matches!(&exact[0], Expr::List(_))
+        && !crate::functions::math_ast::contains_inexact_real(&exact[0]) =>
+    {
+      crate::evaluator::evaluate_function_call_ast("N", &[solved])?
+    }
+    _ => solved,
+  };
   if matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve")
     && let Some(roots) = solve_exponential_polynomial_reals(args)
   {
     return Ok(roots);
   }
   Ok(numericize_inexact_components(args, solved))
+}
+
+/// `args` with every machine-zero addend of a sum in the equations removed
+/// (`0. + 24.5 m == …` becomes `24.5 m == …`); None when there is none or
+/// when the equations no longer are relations without them.
+fn drop_machine_zero_addends(args: &[Expr]) -> Option<Vec<Expr>> {
+  fn has_machine_zero_addend(e: &Expr) -> bool {
+    let here = match e {
+      Expr::FunctionCall { name, .. } if name == "Plus" => true,
+      Expr::BinaryOp { op, .. } => {
+        matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
+      }
+      _ => false,
+    };
+    if here
+      && collect_additive_terms(e)
+        .iter()
+        .any(|t| matches!(t, Expr::Real(r) if *r == 0.0))
+    {
+      return true;
+    }
+    match e {
+      Expr::FunctionCall { args, .. } => {
+        args.iter().any(has_machine_zero_addend)
+      }
+      Expr::List(items) => items.iter().any(has_machine_zero_addend),
+      Expr::BinaryOp { left, right, .. } => {
+        has_machine_zero_addend(left) || has_machine_zero_addend(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_machine_zero_addend(operand),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(has_machine_zero_addend)
+      }
+      _ => false,
+    }
+  }
+  let system = args.first()?;
+  if !has_machine_zero_addend(system) {
+    return None;
+  }
+  let rewrite = crate::syntax::string_to_expr(
+    "Function[eqs, Replace[eqs, p_Plus :> DeleteCases[p, z_Real /; z == 0], \
+     {0, Infinity}]]",
+  )
+  .ok()?;
+  let rewritten =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".into(),
+      args: vec![rewrite, Expr::List(vec![system.clone()].into())].into(),
+    })
+    .ok()?;
+  if matches!(&rewritten, Expr::Identifier(b) if b == "True" || b == "False")
+    || has_machine_zero_addend(&rewritten)
+  {
+    return None;
+  }
+  let mut stripped = args.to_vec();
+  stripped[0] = rewritten;
+  Some(stripped)
 }
 
 /// One term `c x^k E^(a x)` of an exponential polynomial in `x`.

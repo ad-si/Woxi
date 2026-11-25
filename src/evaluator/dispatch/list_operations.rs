@@ -1729,6 +1729,23 @@ fn evaluate_if_unheld(
   evaluate_expr_to_expr(&result)
 }
 
+/// Evaluate what a structural operation rebuilt under the head of a
+/// non-list `source`, so `Take[a + b, 1]` is `a` rather than `Plus[a]`. A
+/// holding head (`Hold[1 + 1, b]`) keeps its parts unevaluated, and a call
+/// that declined to operate is left alone.
+fn evaluate_rebuilt_head(
+  name: &str,
+  source: &Expr,
+  result: Expr,
+) -> Result<Expr, InterpreterError> {
+  let rebuilt = !matches!(source, Expr::List(_) | Expr::Association(_))
+    && !matches!(&result, Expr::FunctionCall { name: n, .. } if n == name);
+  if !rebuilt || crate::evaluator::core_eval::head_holds_arguments(source) {
+    return Ok(result);
+  }
+  evaluate_expr_to_expr(&result)
+}
+
 /// The list a `NumericArray[data, type]` holds, for the operations that
 /// report on the array rather than on the wrapper — `Dimensions`,
 /// `ArrayDepth`, `Normal`. Returns None for anything else.
@@ -2991,7 +3008,10 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::contains_only_ast(args));
     }
     "Pick" if args.len() == 2 || args.len() == 3 => {
-      return Some(list_helpers_ast::pick_ast(args));
+      return Some(
+        list_helpers_ast::pick_ast(args)
+          .and_then(|r| evaluate_rebuilt_head(name, &args[0], r)),
+      );
     }
     "LengthWhile" if args.len() == 2 => {
       return Some(list_helpers_ast::length_while_ast(args));
@@ -4128,13 +4148,19 @@ pub fn dispatch_list_operations(
       if let Some(r) = invalid_seq_spec(name, args) {
         return Some(r);
       }
-      return Some(list_helpers_ast::take_multi_ast(&args[0], &args[1..]));
+      return Some(
+        list_helpers_ast::take_multi_ast(&args[0], &args[1..])
+          .and_then(|r| evaluate_rebuilt_head(name, &args[0], r)),
+      );
     }
     "Drop" if args.len() == 2 => {
       if let Some(r) = invalid_seq_spec(name, args) {
         return Some(r);
       }
-      return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
+      return Some(
+        list_helpers_ast::drop_ast(&args[0], &args[1])
+          .and_then(|r| evaluate_rebuilt_head(name, &args[0], r)),
+      );
     }
     "Drop" if args.len() == 3 => {
       if let Some(r) = invalid_seq_spec(name, args) {
@@ -6202,7 +6228,10 @@ pub fn dispatch_list_operations(
       return Some(for_ast(args));
     }
     "DeleteCases" if args.len() >= 2 && args.len() <= 5 => {
-      return Some(list_helpers_ast::delete_cases_unified_ast(args));
+      return Some(
+        list_helpers_ast::delete_cases_unified_ast(args)
+          .and_then(|r| evaluate_rebuilt_head(name, &args[0], r)),
+      );
     }
     "MinMax" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::min_max_ast(args));
