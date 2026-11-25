@@ -5102,6 +5102,23 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     {
       expr_to_box_form(&args[0])
     }
+    // `PolynomialForm[p, opts]` sets `p` in standard order unless
+    // `TraditionalOrder -> True` asks for the descending one, tagged with
+    // the wrapper: `TagBox[…, PolynomialForm[#1, TraditionalOrder -> True] &]`.
+    Expr::FunctionCall { name, args }
+      if name == "PolynomialForm"
+        && !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      let body = match polynomial_form_order(&args[1..]) {
+        Some(true) => tf_descending_sum(&args[0]).map_or_else(
+          || expr_to_box_form(&args[0]),
+          |sum| expr_to_box_form(&sum),
+        ),
+        _ => expr_to_box_form(&args[0]),
+      };
+      call("TagBox", vec![body, polynomial_form_tag(&args[1..])])
+    }
     // StandardForm[expr] / TraditionalForm[expr]:
     //   TagBox[FormBox[<inner-box>, <form>], <form>, Editable -> True]
     // The inner content uses [/] brackets in StandardForm and
@@ -6916,6 +6933,70 @@ fn tf_sum_keeps_order(expr: &Expr) -> bool {
 /// of the same power go by the canonical order of their boxes less any
 /// numeric coefficient, so partial fractions read `1/x`, `1/(x + 2)`,
 /// `1/(x - 1)` whatever their numerators are.
+/// The `TraditionalOrder` option of a `PolynomialForm`: `Some(true)` or
+/// `Some(false)` when given as such, `None` for the default `Automatic`
+/// (which follows the order of the form it is typeset in).
+pub(crate) fn polynomial_form_order(opts: &[Expr]) -> Option<bool> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder") => {
+      Some(match replacement.as_ref() {
+        Expr::Identifier(v) if v == "True" => Some(true),
+        Expr::Identifier(v) if v == "False" => Some(false),
+        _ => None,
+      })
+    }
+    _ => None,
+  })?
+}
+
+/// The tag of the `TagBox` a `PolynomialForm` typesets to: the bare symbol
+/// without options, else the function re-applying them,
+/// `PolynomialForm[#1, TraditionalOrder -> False] &`.
+pub(crate) fn polynomial_form_tag(opts: &[Expr]) -> Expr {
+  if opts.is_empty() {
+    return Expr::Identifier("PolynomialForm".to_string());
+  }
+  let mut fargs = vec![Expr::Slot(1)];
+  fargs.extend(opts.iter().cloned());
+  Expr::Function {
+    body: Box::new(Expr::FunctionCall {
+      name: "PolynomialForm".to_string(),
+      args: fargs.into(),
+    }),
+  }
+}
+
+/// The terms of the sum `expr` in TraditionalForm's descending order, as a
+/// held `Plus` call, or `None` if `expr` is no sum.
+pub(crate) fn tf_descending_sum(expr: &Expr) -> Option<Expr> {
+  let mut terms = Vec::new();
+  tf_flatten_additive(expr, false, &mut terms);
+  if terms.len() < 2 {
+    return None;
+  }
+  tf_sort_by_degree(&mut terms);
+  let args = terms
+    .into_iter()
+    .map(|(neg, t)| {
+      if neg {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), t].into(),
+        }
+      } else {
+        t
+      }
+    })
+    .collect();
+  Some(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args,
+  })
+}
+
 fn tf_sort_by_degree(terms: &mut [(bool, Expr)]) {
   use crate::functions::list_helpers_ast::sorting::canonical_cmp;
   let mut keyed: Vec<((bool, f64), Option<Expr>, (bool, Expr))> = terms
@@ -8271,22 +8352,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
       call("TagBox", vec![tf(&formatted), id_expr(name)])
     }
-    // `PolynomialForm[p, TraditionalOrder -> False]` (the default) sets the
-    // sums of `p` in their standard, ascending order instead of the
-    // descending one TraditionalForm uses; `TraditionalOrder -> True`
-    // keeps that descending order.
+    // `PolynomialForm[p, TraditionalOrder -> False]` sets the sums of `p`
+    // in their standard, ascending order instead of the descending one
+    // TraditionalForm uses; `True` and the default `Automatic` keep that
+    // descending order. The boxes are tagged with the wrapper (see
+    // `polynomial_form_tag`).
     "PolynomialForm"
       if !args.is_empty()
         && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
     {
-      let traditional = args[1..].iter().any(|opt| {
-        matches!(opt, Expr::Rule { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder")
-            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
-      });
-      if traditional {
-        tf(&args[0])
-      } else {
+      let inner = if polynomial_form_order(&args[1..]) == Some(false) {
         struct Reset(bool);
         impl Drop for Reset {
           fn drop(&mut self) {
@@ -8295,7 +8370,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         }
         let _reset = Reset(TF_HELD.replace(true));
         tf(&args[0])
-      }
+      } else {
+        tf(&args[0])
+      };
+      call("TagBox", vec![inner, polynomial_form_tag(&args[1..])])
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.

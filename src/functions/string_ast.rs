@@ -10119,6 +10119,27 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       format!("TagBox[{}, HoldForm]", expr_to_boxes(&args[0]))
     }
 
+    // `PolynomialForm[p, opts]` sets `p` in standard order unless
+    // `TraditionalOrder -> True` asks for the descending one, tagged with
+    // the wrapper: `TagBox[…, PolynomialForm[#1, TraditionalOrder -> True] &]`.
+    "PolynomialForm"
+      if !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      use crate::evaluator::dispatch::complex_and_special as forms;
+      let body = if forms::polynomial_form_order(&args[1..]) == Some(true) {
+        forms::tf_descending_sum(&args[0])
+          .map_or_else(|| expr_to_boxes(&args[0]), |sum| expr_to_boxes(&sum))
+      } else {
+        expr_to_boxes(&args[0])
+      };
+      let tag = forms::polynomial_form_tag(&args[1..]);
+      format!(
+        "TagBox[{body}, {}]",
+        crate::syntax::expr_to_input_form(&tag)
+      )
+    }
+
     // Default: function application
     _ => {
       let args_boxes: Vec<String> = args.iter().map(expr_to_boxes).collect();

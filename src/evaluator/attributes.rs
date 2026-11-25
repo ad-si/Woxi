@@ -1032,7 +1032,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // (`SetPrecision[x'[t] == 1, 8]` keeps `Derivative[1]`, so NDSolve still
     // sees a differential equation). Like `CircleTimes`, it stays
     // unprotected so user code can define derivatives.
-    "Derivative" => A::NHoldAll | A::ReadProtected,
+    "Derivative" => A::NHoldAll,
     "PrintTemporary" => A::Protected | A::ReadProtected,
 
     // Protected + ReadProtected (additional)

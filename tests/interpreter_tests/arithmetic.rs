@@ -11049,7 +11049,7 @@ mod set_precision {
         "{Attributes[Derivative], N[Derivative[2][f]], N[Derivative[2][f][x], 8], N[Derivative[3][f][1/2], 10]}"
       )
       .unwrap(),
-      "{{NHoldAll, ReadProtected}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
+      "{{NHoldAll}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
     );
   }
 
@@ -17183,40 +17183,47 @@ mod complex_arbitrary_precision_arithmetic {
   }
 }
 
-/// `PolynomialForm[p, TraditionalOrder -> False]` (the default) typesets
-/// the sums of `p` in standard, ascending order inside TraditionalForm;
-/// `TraditionalOrder -> True` keeps TraditionalForm's descending order. The
-/// wrapper and its options used to be drawn literally.
+/// `PolynomialForm[p, TraditionalOrder -> False]` typesets the sums of `p`
+/// in standard, ascending order; `TraditionalOrder -> True` in the
+/// descending one; the default `Automatic` follows the form (ascending in
+/// StandardForm, descending in TraditionalForm). The boxes are tagged with
+/// the wrapper and its options.
 mod polynomial_form_typesetting {
   use super::*;
 
   #[test]
   fn traditional_order_option() {
     assert_eq!(
-      interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> False]]]"
-      )
-      .unwrap(),
-      "DisplayForm[FormBox[RowBox[{1, +, RowBox[{3,  , x}], +, \
-       SuperscriptBox[x, 2]}], TraditionalForm]]"
+      interpret("ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> False]]]").unwrap(),
+      "DisplayForm[FormBox[TagBox[RowBox[{1, +, RowBox[{3,  , x}], +, SuperscriptBox[x, 2]}], PolynomialForm[#1, TraditionalOrder -> False] & ], TraditionalForm]]"
     );
     assert_eq!(
       interpret("ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2]]]")
         .unwrap(),
-      interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> False]]]"
-      )
-      .unwrap()
+      "DisplayForm[FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm], TraditionalForm]]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> True], TraditionalForm]").unwrap(),
+      "FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ], TraditionalForm]"
+    );
+  }
+
+  #[test]
+  fn standard_form_boxes() {
+    assert_eq!(
+      interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2]]").unwrap(),
+      "TagBox[RowBox[{1, +, RowBox[{3,  , x}], +, SuperscriptBox[x, 2]}], PolynomialForm]"
     );
     assert_eq!(
       interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> True]]]"
+        "ToBoxes[PolynomialForm[1 + 3 x - x^2, TraditionalOrder -> True]]"
       )
       .unwrap(),
-      interpret("ToString[TraditionalForm[1 + 3 x + x^2]]").unwrap()
+      "TagBox[RowBox[{RowBox[{-, SuperscriptBox[x, 2]}], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ]"
+    );
+    assert_eq!(
+      interpret("PolynomialForm[1 + 3 x + x^2]").unwrap(),
+      "PolynomialForm[1 + 3*x + x^2]"
     );
   }
 }
