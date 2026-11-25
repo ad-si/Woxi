@@ -1550,6 +1550,8 @@ const REGION_GRID: usize = 33;
 
 /// How many times a bent grid cell of a region plot may split by default.
 const REGION_MAX_RECURSION: usize = 2;
+/// The most samples an iso-parameter mesh line is drawn through.
+const REGION_MESH_LINE_SAMPLES: usize = 256;
 
 /// Evaluate a `{fx, fy}` body at one point of the parameter rectangle.
 fn evaluate_at_uv(
@@ -1923,6 +1925,120 @@ fn refine_region_cell(
   emit(corners, (origin.0 + step.0 / 2.0, origin.1 + step.1 / 2.0));
 }
 
+/// The segments of `levels` evenly spaced level curves of a function known
+/// at the grid points (`values`), mapped to the picture through the images
+/// of those points (`nodes`).
+///
+/// The levels divide the range of the function into `levels + 1` equal
+/// parts. Within a cell a level curve is the straight segment between the
+/// two cell edges it crosses (two segments when it crosses all four), each
+/// crossing placed by linear interpolation along the edge. Cells with a
+/// missing corner are skipped.
+fn region_level_segments(
+  nodes: &[Vec<Option<(f64, f64)>>],
+  values: &[Vec<Option<f64>>],
+  levels: usize,
+) -> Vec<((f64, f64), (f64, f64))> {
+  let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+  for value in values.iter().flatten().flatten() {
+    lo = lo.min(*value);
+    hi = hi.max(*value);
+  }
+  let mut segments = Vec::new();
+  if hi <= lo {
+    return segments;
+  }
+  let step = (hi - lo) / (levels + 1) as f64;
+  for i in 0..nodes.len().saturating_sub(1) {
+    for j in 0..nodes[i].len().saturating_sub(1) {
+      let corner = |a: usize, b: usize| Some((nodes[a][b]?, values[a][b]?));
+      let (Some(c0), Some(c1), Some(c2), Some(c3)) = (
+        corner(i, j),
+        corner(i + 1, j),
+        corner(i + 1, j + 1),
+        corner(i, j + 1),
+      ) else {
+        continue;
+      };
+      let ring = [c0, c1, c2, c3];
+      let cell_lo = ring.iter().map(|c| c.1).fold(f64::MAX, f64::min);
+      let cell_hi = ring.iter().map(|c| c.1).fold(f64::MIN, f64::max);
+      let first = (((cell_lo - lo) / step).ceil().max(1.0)) as usize;
+      let last = (((cell_hi - lo) / step).floor()).min(levels as f64) as usize;
+      for k in first..=last {
+        let level = lo + step * k as f64;
+        let mut crossings: Vec<(f64, f64)> = Vec::with_capacity(4);
+        for e in 0..4 {
+          let ((pa, fa), (pb, fb)) = (ring[e], ring[(e + 1) % 4]);
+          if (fa < level) != (fb < level) {
+            let t = (level - fa) / (fb - fa);
+            crossings
+              .push((pa.0 + t * (pb.0 - pa.0), pa.1 + t * (pb.1 - pa.1)));
+          }
+        }
+        for pair in crossings.as_chunks::<2>().0 {
+          // A level through a corner crosses both edges there: no segment.
+          if pair[0] != pair[1] {
+            segments.push((pair[0], pair[1]));
+          }
+        }
+      }
+    }
+  }
+  segments
+}
+
+/// Whether the grid around cell `(i, j)` shows its image to be flat enough
+/// that splitting it cannot move a point by more than `tolerance`.
+///
+/// The image of an edge's midpoint strays from the edge's chord by about an
+/// eighth of the second difference of the grid points along that edge, so
+/// the second differences through the cell's corners bound the bend without
+/// evaluating the body anywhere new. A cell with no three grid points in a
+/// row to measure (a tiny grid, a hole next to it) is not called flat.
+fn region_cell_is_flat(
+  points: &[Vec<Option<(f64, f64)>>],
+  i: usize,
+  j: usize,
+  tolerance: f64,
+) -> bool {
+  let g = points.len();
+  let at = |a: isize, b: isize| -> Option<(f64, f64)> {
+    if a < 0 || b < 0 {
+      return None;
+    }
+    *points.get(a as usize)?.get(b as usize)?
+  };
+  let second = |p: (f64, f64), q: (f64, f64), r: (f64, f64)| {
+    (p.0 - 2.0 * q.0 + r.0).hypot(p.1 - 2.0 * q.1 + r.1)
+  };
+  let (i, j) = (i as isize, j as isize);
+  // Along `u` on both `v` rows of the cell, then along `v` on both `u` rows.
+  let mut worst = 0.0f64;
+  for (di, dj) in [(1isize, 0isize), (0, 1)] {
+    let mut measured = 0;
+    for side in 0..2isize {
+      for start in -1..=0isize {
+        let p = |k: isize| {
+          at(
+            i + di * (start + k) + dj * side,
+            j + dj * (start + k) + di * side,
+          )
+        };
+        if let (Some(a), Some(b), Some(c)) = (p(0), p(1), p(2)) {
+          worst = worst.max(second(a, b, c));
+          measured += 1;
+        }
+      }
+    }
+    if measured == 0 || g < 3 {
+      return false;
+    }
+  }
+  // A quarter of the tolerance, for the margin of the estimate.
+  worst / 8.0 <= tolerance / 4.0
+}
+
 /// The primitives (filled quads plus stroked boundary) of one region body.
 /// One filled cell of a two-parameter `ParametricPlot`, with the image
 /// (`xy`) and parameter (`uv`) coordinates of its center for `ColorFunction`.
@@ -1975,23 +2091,6 @@ fn parametric_region_layer(
     })
     .unwrap_or(REGION_GRID);
 
-  let du = (u_max - u_min) / (grid - 1) as f64;
-  let dv = (v_max - v_min) / (grid - 1) as f64;
-  let mut points: Vec<Vec<Option<(f64, f64)>>> = Vec::with_capacity(grid);
-  for i in 0..grid {
-    let u = u_min + i as f64 * du;
-    let mut row = Vec::with_capacity(grid);
-    for j in 0..grid {
-      let v = v_min + j as f64 * dv;
-      row.push(evaluate_at_uv(body, &uvar, u, &vvar, v).filter(|&pt| {
-        region_function
-          .as_ref()
-          .is_none_or(|rf| parametric_region_allows(rf, pt, u, v))
-      }));
-    }
-    points.push(row);
-  }
-
   let pt_expr =
     |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
 
@@ -2010,19 +2109,42 @@ fn parametric_region_layer(
     .unwrap_or(REGION_MAX_RECURSION);
   let finite =
     |p: Option<(f64, f64)>| p.filter(|(x, y)| x.is_finite() && y.is_finite());
+  // Every parameter point is evaluated once: the grid, the refinement
+  // probes on the edges two cells share, the mesh lines and the boundary
+  // all ask for many of the same points.
+  let sampled: std::cell::RefCell<
+    std::collections::HashMap<(u64, u64), Option<(f64, f64)>>,
+  > = std::cell::RefCell::default();
   let sample = |u: f64, v: f64| {
-    finite(evaluate_at_uv(body, &uvar, u, &vvar, v).filter(|&pt| {
+    let key = (u.to_bits(), v.to_bits());
+    if let Some(known) = sampled.borrow().get(&key) {
+      return *known;
+    }
+    let pt = finite(evaluate_at_uv(body, &uvar, u, &vvar, v).filter(|&pt| {
       region_function
         .as_ref()
         .is_none_or(|rf| parametric_region_allows(rf, pt, u, v))
-    }))
+    }));
+    sampled.borrow_mut().insert(key, pt);
+    pt
   };
+  let du = (u_max - u_min) / (grid - 1) as f64;
+  let dv = (v_max - v_min) / (grid - 1) as f64;
   let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
-  for pt in points.iter().flatten().filter_map(|p| finite(*p)) {
-    lo = (lo.0.min(pt.0), lo.1.min(pt.1));
-    hi = (hi.0.max(pt.0), hi.1.max(pt.1));
+  for i in 0..grid {
+    for j in 0..grid {
+      if let Some(pt) = sample(u_min + i as f64 * du, v_min + j as f64 * dv) {
+        lo = (lo.0.min(pt.0), lo.1.min(pt.1));
+        hi = (hi.0.max(pt.0), hi.1.max(pt.1));
+      }
+    }
   }
-  let tolerance = 0.005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
+  // Tight enough that a curved edge of the region is cut into chords
+  // that no longer leave a visible sliver between the faces and the
+  // finely sampled boundary line drawn over them (Wolfram's annulus
+  // `{r Cos[t], r Sin[t]}` with `PlotPoints -> 20` ends up with four
+  // chords per grid cell along its arcs).
+  let tolerance = 0.0005 * ((hi.0 - lo.0).hypot(hi.1 - lo.1));
 
   // One quad per (possibly refined) cell of the `g`-point grid over
   // `[ua, ub] x [va, vb]`; a cell with a point the body could not be
@@ -2067,11 +2189,19 @@ fn parametric_region_layer(
           else {
             continue;
           };
+          // A cell the grid itself shows to be flat needs no probing.
+          let depth = if max_recursion > 0
+            && region_cell_is_flat(&grid_points, i, j, tolerance)
+          {
+            0
+          } else {
+            max_recursion
+          };
           refine_region_cell(
             [c[0], c[1], c[2], c[3]],
             (ua + i as f64 * dg_u, va + j as f64 * dg_v),
             (dg_u, dg_v),
-            max_recursion,
+            depth,
             tolerance,
             &sample,
             &mut emit,
@@ -2094,15 +2224,31 @@ fn parametric_region_layer(
   let mut quads = Vec::new();
   let mut mesh_cells: Vec<Expr> = Vec::new();
   let mut mesh_lines: Vec<Expr> = Vec::new();
-  if let Some(mesh) = &mesh {
+  // `MeshFunctions -> {f, g}`: the mesh lines are level curves of
+  // `f[x, y, u, v]` and `g[x, y, u, v]` instead of the iso-parameter lines.
+  let mesh_functions: Option<Vec<Expr>> = opt_args.iter().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    if name != "MeshFunctions" {
+      return None;
+    }
+    match &*value {
+      Expr::List(fs) => Some(fs.iter().cloned().collect()),
+      Expr::Identifier(_) => None,
+      f => Some(vec![f.clone()]),
+    }
+  });
+  let shaded_mesh = mesh.as_ref().filter(|m| !m.shading.is_empty());
+  if shaded_mesh.is_none() {
+    // One pass over the whole grid; mesh lines are drawn over the faces.
+    quads = quads_over((u_min, u_max), (v_min, v_max), grid);
+  }
+  let edge =
+    |k: usize, n: usize, lo: f64, hi: f64| lo + (hi - lo) * k as f64 / n as f64;
+  if let Some(mesh) = shaded_mesh {
     // Every cell between consecutive mesh lines is filled on its own, in the
-    // color `MeshShading` assigns it (cycling through the array), and the
-    // mesh lines themselves are the images of the iso-`u` / iso-`v` lines.
+    // color `MeshShading` assigns it (cycling through the array).
     let (cells_u, cells_v) = (mesh.lines_u + 1, mesh.lines_v + 1);
     let cell_grid = (grid / cells_u.max(cells_v)).max(4);
-    let edge = |k: usize, n: usize, lo: f64, hi: f64| {
-      lo + (hi - lo) * k as f64 / n as f64
-    };
     for i in 0..cells_u {
       for j in 0..cells_v {
         let polys = quads_over(
@@ -2138,7 +2284,67 @@ fn parametric_region_layer(
         mesh_cells.push(Expr::List(group.into()));
       }
     }
-    let per_line = grid * 4;
+  }
+  if let (Some(mesh), Some(functions)) = (&mesh, &mesh_functions) {
+    // The level curves of each mesh function, traced through the cells of
+    // the grid: the function is read at the grid points and a level crosses
+    // a cell edge where it lies between the values at the edge's ends.
+    let nodes: Vec<Vec<Option<(f64, f64)>>> = (0..grid)
+      .map(|i| {
+        (0..grid)
+          .map(|j| sample(u_min + i as f64 * du, v_min + j as f64 * dv))
+          .collect()
+      })
+      .collect();
+    for (k, function) in functions.iter().enumerate() {
+      let levels = if k == 0 { mesh.lines_u } else { mesh.lines_v };
+      if levels == 0 {
+        continue;
+      }
+      let values: Vec<Vec<Option<f64>>> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+          row
+            .iter()
+            .enumerate()
+            .map(|(j, node)| {
+              let (x, y) = (*node)?;
+              let applied = Expr::CurriedCall {
+                func: Box::new(function.clone()),
+                args: vec![
+                  Expr::Real(x),
+                  Expr::Real(y),
+                  Expr::Real(u_min + i as f64 * du),
+                  Expr::Real(v_min + j as f64 * dv),
+                ],
+              };
+              try_eval_to_f64(&evaluate_expr_to_expr(&applied).ok()?)
+                .filter(|f| f.is_finite())
+            })
+            .collect()
+        })
+        .collect();
+      let segments = region_level_segments(&nodes, &values, levels);
+      if !segments.is_empty() {
+        let style = if k % 2 == 0 {
+          mesh.style_u.clone()
+        } else {
+          mesh.style_v.clone()
+        };
+        let lines: Vec<Expr> = segments
+          .into_iter()
+          .map(|(a, b)| Expr::List(vec![pt_expr(a), pt_expr(b)].into()))
+          .collect();
+        mesh_lines.push(Expr::List(
+          vec![style, call1("Line", Expr::List(lines.into()))].into(),
+        ));
+      }
+    }
+  } else if let Some(mesh) = &mesh {
+    // The mesh lines are the images of the iso-`u` / iso-`v` lines.
+    let (cells_u, cells_v) = (mesh.lines_u + 1, mesh.lines_v + 1);
+    let per_line = (grid * 4).min(REGION_MESH_LINE_SAMPLES);
     for k in 1..cells_u {
       let u = edge(k, cells_u, u_min, u_max);
       let line: Vec<Expr> = (0..=per_line)
@@ -2167,8 +2373,6 @@ fn parametric_region_layer(
         ));
       }
     }
-  } else {
-    quads = quads_over((u_min, u_max), (v_min, v_max), grid);
   }
   if quads.is_empty() && mesh_cells.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -2202,16 +2406,14 @@ fn parametric_region_layer(
   );
   // An `Opacity[a]` among the `PlotStyle` directives replaces the default
   // 30% fill.
-  let fill_opacity = opt_args
-    .iter()
-    .find_map(|opt| {
-      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
-      (name == "PlotStyle")
-        .then(|| crate::functions::plot::parse_filling_style(&value))
-        .flatten()
-        .and_then(|fs| fs.opacity)
-    })
-    .unwrap_or(0.3);
+  let style_opacity = opt_args.iter().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    (name == "PlotStyle")
+      .then(|| crate::functions::plot::parse_filling_style(&value))
+      .flatten()
+      .and_then(|fs| fs.opacity)
+  });
+  let fill_opacity = style_opacity.unwrap_or(0.3);
   let opacity = call1("Opacity", Expr::Real(fill_opacity));
   let no_edges = call0("EdgeForm");
 
@@ -2224,6 +2426,11 @@ fn parametric_region_layer(
       if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
     };
     let scheme = crate::functions::field_plot::color_function_scheme_name(cf);
+    // The parts of the function that do not depend on its arguments are
+    // worked out once rather than for every cell.
+    let cf = &crate::functions::plot::fold_constant_color_parts(cf);
+    // The colors are opaque unless `PlotStyle` makes the faces translucent.
+    let cell_opacity = style_opacity.filter(|a| *a < 1.0);
     let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     let color_at = |q: &RegionQuad| -> (u8, u8, u8) {
       let (x, y) = q.xy;
@@ -2274,11 +2481,31 @@ fn parametric_region_layer(
             Expr::Real(f64::from(b) / 255.0),
           ],
         );
-        let mut group = vec![
-          opaque_cell_edges(cell_color.clone()),
-          cell_color,
-          call1("Opacity", Expr::Real(1.0)),
-        ];
+        // Translucent cells are joined by a much finer hairline, itself
+        // translucent: enough to close the anti-aliased gaps between
+        // neighbors without building up into a darker grid.
+        let mut group = match cell_opacity {
+          Some(a) => vec![
+            call1(
+              "EdgeForm",
+              Expr::List(
+                vec![
+                  cell_color.clone(),
+                  call1("Opacity", Expr::Real(a)),
+                  call1("AbsoluteThickness", Expr::Real(0.25)),
+                ]
+                .into(),
+              ),
+            ),
+            cell_color,
+            call1("Opacity", Expr::Real(a)),
+          ],
+          None => vec![
+            opaque_cell_edges(cell_color.clone()),
+            cell_color,
+            call1("Opacity", Expr::Real(1.0)),
+          ],
+        };
         group.extend(polys);
         Expr::List(group.into())
       })
@@ -2299,19 +2526,30 @@ fn parametric_region_layer(
   items.append(&mut mesh_lines);
   // The outline is always drawn thin in the palette color, whatever
   // `PlotStyle` makes of the faces, as in Wolfram.
-  if border.len() > 1 {
+  // `BoundaryStyle -> style` draws it in that style over the palette color,
+  // and `BoundaryStyle -> None` leaves it out.
+  let boundary_style = opt_args.iter().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    (name == "BoundaryStyle").then(|| {
+      evaluate_expr_to_expr(&value).unwrap_or_else(|_| value.into_owned())
+    })
+  });
+  let boundary_hidden =
+    matches!(&boundary_style, Some(Expr::Identifier(n)) if n == "None");
+  if border.len() > 1 && !boundary_hidden {
     let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB
       [layer % crate::functions::plot::PLOT_COLORS_RGB.len()];
-    items.push(Expr::List(
-      vec![
-        call(
-          "RGBColor",
-          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
-        ),
-        call1("Line", Expr::List(border.into())),
-      ]
-      .into(),
-    ));
+    let mut outline = vec![call(
+      "RGBColor",
+      vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+    )];
+    match boundary_style {
+      Some(Expr::Identifier(ref n)) if n == "Automatic" => {}
+      Some(style) => outline.push(style),
+      None => {}
+    }
+    outline.push(call1("Line", Expr::List(border.into())));
+    items.push(Expr::List(outline.into()));
   }
 
   Ok(Expr::List(items.into()))
@@ -2451,8 +2689,9 @@ impl PolarAxesSpec {
     })
   }
 
-  /// The primitives drawn under the curve, and the half-width of the square
-  /// plot range that holds the axes and their labels. `r_max` is the
+  /// The grid drawn under the curve, the axes (with their ticks and
+  /// labels) drawn over it, and the half-width of the square plot range
+  /// that holds the axes and their labels. `r_max` is the
   /// distance of the curve's bounding box's farthest corner from the origin.
   ///
   /// As in Wolfram, the angular axis is a circle at the first radial tick
@@ -2461,7 +2700,7 @@ impl PolarAxesSpec {
   /// and a circle at every radial tick inside the axis; and the radial
   /// axis runs up from the origin with ticks every major and fifth of a
   /// major on its right, labeled at the majors.
-  fn prolog(&self, r_max: f64) -> (Vec<Expr>, f64) {
+  fn primitives(&self, r_max: f64) -> (Vec<Expr>, Vec<Expr>, f64) {
     use crate::functions::plot_axes::{AxisScale, AxisTicks};
     use std::f64::consts::PI;
     let ticks = AxisTicks::new(
@@ -2514,7 +2753,7 @@ impl PolarAxesSpec {
         ));
       }
     }
-    items.push(Expr::List(grid.into()));
+    let under = vec![Expr::List(grid.into())];
 
     // The angular axis: the circle, its outward ticks and their labels.
     let mut axis =
@@ -2580,7 +2819,7 @@ impl PolarAxesSpec {
       }
       items.push(Expr::List(radial.into()));
     }
-    (items, extent)
+    (under, items, extent)
   }
 }
 
@@ -2687,8 +2926,11 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let corner = |(lo, hi): (f64, f64)| lo.abs().max(hi.abs());
     let r_max = corner(data_x).hypot(corner(data_y));
     let r_max = if r_max.is_finite() { r_max } else { 1.0 };
-    let (prolog, extent) = axes.prolog(r_max);
-    plot_opts.prolog.extend(prolog);
+    // As in Wolfram, the grid lies under the curve and the axes with
+    // their labels over it (but under an `Epilog` of the call's own).
+    let (grid, axes, extent) = axes.primitives(r_max);
+    plot_opts.prolog.extend(grid);
+    plot_opts.epilog.splice(0..0, axes);
     plot_opts.axes = (false, false);
     plot_opts.clip_overlays = false;
     data_x = (-extent, extent);
