@@ -18,6 +18,11 @@
 //! Set `TICKS=40` to press play and advance the animation that many ticks;
 //! the control values (and, with `svg-out-dir`, the picture as
 //! `widget-<n>-ticks.svg`) are dumped afterwards.
+//! Set `PRESS_PICTURE=k` to press the k-th `Button` drawn inside the
+//! picture; the variables are dumped afterwards.
+//! Set `PRESS_BUTTONS=1` to press every control-panel button in turn, or
+//! `PRESS_BUTTONS="Solve,Reset"` to press only the buttons with those labels;
+//! the variables are dumped after each press.
 
 use std::path::PathBuf;
 
@@ -346,14 +351,31 @@ fn main() {
           println!("wrote {}", out.display());
         }
       }
+      if let Some(k) = std::env::var("PRESS_PICTURE")
+        .ok()
+        .and_then(|k| k.parse::<usize>().ok())
+        && let Some(region) = state.button_regions.get(k)
+      {
+        let action = region.action.clone();
+        println!("picture button {k}: {action}");
+        state.apply_button_action(&action);
+        println!("error={:?}", state.error);
+        for (n, v) in &state.state {
+          println!("  {n} = {v}");
+        }
+      }
       if std::env::var("PRESS_BUTTONS").is_ok() {
         let mut st = state;
         let actions: Vec<String> = st
           .controls
           .iter()
           .filter_map(|c| match c {
-            manipulate::ControlState::Button { action, .. } => {
-              Some(action.clone())
+            manipulate::ControlState::Button { action, label, .. } => {
+              let want = std::env::var("PRESS_BUTTONS").unwrap_or_default();
+              (want.is_empty()
+                || want == "1"
+                || want.split(',').any(|w| w == label))
+              .then(|| action.clone())
             }
             _ => None,
           })
@@ -366,6 +388,9 @@ fn main() {
             st.text_output,
             st.error
           );
+          for (n, v) in &st.state {
+            println!("  {n} = {v}");
+          }
         }
       }
       println!();
