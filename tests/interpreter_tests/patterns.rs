@@ -7288,6 +7288,73 @@ mod quick_wins_from_notebooks {
     );
   }
 
+  // A sequence followed by further elements has no fixed positions, so the
+  // named list must not be read through `Part` accessors.
+  #[test]
+  fn named_list_patterns_with_a_leading_sequence() {
+    assert_eq!(
+      interpret(
+        "f[s : {___, _, _, c_}, d_] := {s, c, d}; \
+         {f[{1, 2, 3}, 7], f[{1, 2}, 3], f[{1, 2, 3, 4}, 0]}"
+      )
+      .unwrap(),
+      "{{{1, 2, 3}, 3, 7}, f[{1, 2}, 3], {{1, 2, 3, 4}, 4, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "g[s : {a___, c_}] := {s, {a}, c}; {g[{1, 2, 3}], g[{4}], g[{}]}"
+      )
+      .unwrap(),
+      "{{{1, 2, 3}, {1, 2}, 3}, {{4}, {}, 4}, g[{}]}"
+    );
+    assert_eq!(
+      interpret(
+        "h[s : {x__, y_, z_}] := {{x}, y, z}; {h[{1, 2, 3, 4}], h[{1, 2}]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, 3, 4}, h[{1, 2}]}"
+    );
+  }
+
+  #[test]
+  fn named_list_pattern_with_a_leading_sequence_among_other_rules() {
+    assert_eq!(
+      interpret(
+        "q[s_, d_] := True /; MemberQ[s, d]; q[s : {___, _, _, c_}, d_] := c + d; \
+         q[_, _] := False; {q[{1, 2}, 2], q[{1, 2, 3}, 7], q[{1}, 7]}"
+      )
+      .unwrap(),
+      "{True, 10, False}"
+    );
+  }
+
+  #[test]
+  fn down_values_keep_the_name_of_a_sequence_list_pattern() {
+    assert_eq!(
+      interpret("f[s : {___, _, c_}, d_] := {s, c}; DownValues[f]").unwrap(),
+      "{HoldPattern[f[s:{___, _, c_}, d_]] :> {s, c}}"
+    );
+  }
+
+  // Memoized backtracking search collecting every solution with Sow/Reap.
+  #[test]
+  fn backtracking_search_over_named_list_patterns() {
+    assert_eq!(
+      interpret(
+        "walk[n_, m_] := walk[n, m] = Module[{in, step, u}, \
+           in[{i_, j_}] := 0 <= i <= n && 0 <= j <= m; \
+           step[s : {___, {n, m}}] := Sow[s]; \
+           step[s : {a___, c_}] := Module[{d}, \
+             If[in[d = c + {1, 0}], step[{a, c, d}]]; \
+             If[in[d = c + {0, 1}], step[{a, c, d}]]]; \
+           u = Reap[step[{{0, 0}}]][[2]]; If[u == {}, {}, First[u]]]; \
+         {Length[walk[2, 1]], Length[walk[2, 2]], First[walk[1, 1]]}"
+      )
+      .unwrap(),
+      "{3, 6, {{0, 0}, {1, 0}, {1, 1}}}"
+    );
+  }
+
   #[test]
   fn hold_form_release_and_named_function_derivative() {
     assert_eq!(

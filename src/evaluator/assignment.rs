@@ -2883,25 +2883,9 @@ fn downvalue_arg_info(
       // element, which relaxes the length check and (for named sequence
       // elements) binds the sequence variable to the matching tail.
       Expr::List(patterns)
-        if shares_pattern_names(lhs_args, i)
-          || patterns.iter().enumerate().any(|(idx, p)| {
-            contains_mutating_head(p)
-            || crate::evaluator::pattern_matching::is_optional_slot(p)
-            || is_options_or_repeated_element(p)
-            || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
-            // A PatternSequence element (tested or named) spans several
-            // elements, which the per-element Part accessors cannot express.
-            || matches!(p, Expr::FunctionCall { name, args }
-              if name == "PatternSequence"
-                || ((name == "PatternTest" || name == "Pattern")
-                  && args.iter().any(|a| matches!(a,
-                    Expr::FunctionCall { name: inner, .. }
-                      if inner == "PatternSequence"))))
-            // A held argument keeps its parts unevaluated; reading a call
-            // like `children[{x__}]` back out of it through Part would
-            // evaluate it.
-            || (lhs_slot_is_held(func_name, i) && is_call_pattern(p))
-          }) =>
+        if list_pattern_needs_structural_match(
+          func_name, lhs_args, i, patterns,
+        ) =>
       {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
         // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
@@ -3028,20 +3012,19 @@ fn downvalue_arg_info(
           // destructure inner elements. An element containing a mutating
           // head (`x_ = expr_`) skips the Part-accessor decomposition for
           // the same reason as the unnamed list-pattern case above.
+          // A sequence with elements after it (`s : {___, a_, b_}`) has no
+          // fixed positions either.
           Expr::List(patterns)
-            if patterns.iter().any(|p| {
-              contains_mutating_head(p)
-                || crate::evaluator::pattern_matching::is_optional_slot(p)
-                // `s : {_ ..}` — a repeated element has no fixed position to
-                // read, so it is matched structurally like the unnamed case.
-                || is_options_or_repeated_element(p)
-            }) =>
+            if list_pattern_needs_structural_match(
+              func_name, lhs_args, i, patterns,
+            ) =>
           {
             conditions.push(Some(call(
               "__StructuralPattern__",
               vec![
                 Expr::Identifier(pname.clone()),
-                Expr::List(patterns.clone()),
+                // The whole `s : {…}`, so the rule prints with its name.
+                arg.clone(),
               ],
             )));
             params.push(pname);
@@ -5518,6 +5501,37 @@ fn collect_element_bindings(
       }
     }
   }
+}
+
+/// Whether the list pattern in argument slot `i` must go through the
+/// structural matcher instead of the `Length`/`Part` lowering — shared by
+/// the unnamed (`{…}`) and named (`s : {…}`) list-pattern cases so the two
+/// cannot drift apart.
+fn list_pattern_needs_structural_match(
+  func_name: &str,
+  lhs_args: &[Expr],
+  i: usize,
+  patterns: &[Expr],
+) -> bool {
+  shares_pattern_names(lhs_args, i)
+    || patterns.iter().enumerate().any(|(idx, p)| {
+      contains_mutating_head(p)
+        || crate::evaluator::pattern_matching::is_optional_slot(p)
+        || is_options_or_repeated_element(p)
+        || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
+        // A PatternSequence element (tested or named) spans several
+        // elements, which the per-element Part accessors cannot express.
+        || matches!(p, Expr::FunctionCall { name, args }
+          if name == "PatternSequence"
+            || ((name == "PatternTest" || name == "Pattern")
+              && args.iter().any(|a| matches!(a,
+                Expr::FunctionCall { name: inner, .. }
+                  if inner == "PatternSequence"))))
+        // A held argument keeps its parts unevaluated; reading a call
+        // like `children[{x__}]` back out of it through Part would
+        // evaluate it.
+        || (lhs_slot_is_held(func_name, i) && is_call_pattern(p))
+    })
 }
 
 /// A list-pattern element that consumes a variable number of elements without
