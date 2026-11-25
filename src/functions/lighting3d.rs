@@ -455,6 +455,11 @@ pub(crate) struct ViewFrame {
   /// per axis (plots draw in a normalized box).
   pub scale: [f64; 3],
   pub offset: [f64; 3],
+  /// The eye of a perspective camera, in the renderer's coordinates. It
+  /// settles which side of a surface faces the viewer where the surface
+  /// sits: near the rim of a sphere off to one side, the eye sees past the
+  /// plane across the view direction. `None` for a camera at infinity.
+  pub eye: Option<[f64; 3]>,
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -471,6 +476,16 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 impl ViewFrame {
+  /// The unit direction from `position` (in the renderer's coordinates)
+  /// toward the viewer: toward the eye of a perspective camera, else the
+  /// view direction.
+  pub(crate) fn toward_at(&self, position: [f64; 3]) -> [f64; 3] {
+    self
+      .eye
+      .and_then(|e| normalize(sub(e, position)))
+      .unwrap_or(self.toward)
+  }
+
   /// A light point in the renderer's coordinates.
   fn place(&self, p: LightPoint) -> [f64; 3] {
     match p {
@@ -513,7 +528,8 @@ pub(crate) fn shade(
   frame: &ViewFrame,
 ) -> (u8, u8, u8) {
   let mut n = normalize(normal).unwrap_or(frame.toward);
-  if dot(n, frame.toward) < 0.0 {
+  let view = frame.toward_at(position);
+  if dot(n, view) < 0.0 {
     n = [-n[0], -n[1], -n[2]];
   }
   let c = material.color;
@@ -620,6 +636,7 @@ mod tests {
       size: 1.0,
       scale: [1.0; 3],
       offset: [0.0; 3],
+      eye: None,
     }
   }
 

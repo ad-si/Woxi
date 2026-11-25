@@ -7,6 +7,7 @@ expression: "export_svg(\"Graphics[Raster[Table[Mod[i, j]/3, {i, 4}, {j, 4}] // 
 <clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_359x358)">
+<g shape-rendering="crispEdges">
 <rect x="7.18" y="265.37" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
 <rect x="93.34" y="265.37" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
 <rect x="179.50" y="265.37" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
@@ -23,5 +24,6 @@ expression: "export_svg(\"Graphics[Raster[Table[Mod[i, j]/3, {i, 4}, {j, 4}] // 
 <rect x="93.34" y="6.89" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
 <rect x="179.50" y="6.89" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
 <rect x="265.66" y="6.89" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+</g>
 </g>
 </svg>
