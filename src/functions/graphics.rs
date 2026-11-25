@@ -4470,7 +4470,7 @@ fn collect_primitives(
         // the graphic. Its text is recorded on a group around `g`'s shapes,
         // so a live widget can show it while the pointer is over them.
         "Tooltip" if !args.is_empty() => {
-          let label = args.get(1).map(tooltip_label_text).unwrap_or_default();
+          let label = args.get(1).map_or_default(tooltip_label_text);
           if label.trim().is_empty() {
             collect_primitives(&args[0], style, prims, errors);
           } else {
@@ -16011,7 +16011,7 @@ fn render_primitive(
       out.push_str(&format!("<g id=\"{TOOLTIP_HIT_ID_PREFIX}{hex}\">\n"));
     }
     Primitive::ClickGroupEnd | Primitive::TooltipGroupEnd => {
-      out.push_str("</g>\n")
+      out.push_str("</g>\n");
     }
     Primitive::ShiftedLine { segments, style } => {
       let line = Primitive::Line {
@@ -38351,7 +38351,7 @@ pub fn tooltip_label_text(label: &Expr) -> String {
       match name.as_str() {
         "Column" => items(&args[0]).join("\n"),
         "Row" => {
-          let sep = args.get(1).map(tooltip_label_text).unwrap_or_default();
+          let sep = args.get(1).map_or_default(tooltip_label_text);
           items(&args[0]).join(&sep)
         }
         "Text" | "Framed" | "Pane" | "Panel" | "Item" | "Tooltip"
