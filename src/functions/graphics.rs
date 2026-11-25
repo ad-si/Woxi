@@ -38752,34 +38752,93 @@ fn compute_grid_layout(
   // Parse all SVGs: (viewBox, inner_content, nat_w, nat_h), plus whether
   // each is the placeholder of a `SpanFromLeft` cell.
   let mut parsed_rows: Vec<Vec<(String, String, f64, f64)>> = Vec::new();
-  let mut is_placeholder: Vec<Vec<bool>> = Vec::new();
+  let mut placeholders: Vec<Vec<Option<CellPlaceholder>>> = Vec::new();
   for row in rows {
     let mut parsed = Vec::new();
     let mut flags = Vec::new();
     for svg in row {
       if let Some(p) = parse_svg_dimensions(svg) {
         parsed.push((p.view_box, p.inner_content, p.nat_w, p.nat_h));
-        flags.push(is_span_placeholder_svg(svg));
+        flags.push(CellPlaceholder::of_svg(svg));
       }
     }
     parsed_rows.push(parsed);
-    is_placeholder.push(flags);
+    placeholders.push(flags);
   }
   // Number of columns after a cell that it spans into.
-  let extra_cols: Vec<Vec<usize>> = is_placeholder
+  let extra_cols: Vec<Vec<usize>> = placeholders
     .iter()
     .map(|flags| {
       (0..flags.len())
         .map(|j| {
-          if flags[j] {
+          if flags[j].is_some() {
             0
           } else {
-            flags[j + 1..].iter().take_while(|f| **f).count()
+            flags[j + 1..]
+              .iter()
+              .take_while(|f| **f == Some(CellPlaceholder::Left))
+              .count()
           }
         })
         .collect()
     })
     .collect();
+  // Number of rows below a cell that it spans into (`SpanFromAbove`).
+  let extra_rows: Vec<Vec<usize>> = placeholders
+    .iter()
+    .enumerate()
+    .map(|(i, flags)| {
+      (0..flags.len())
+        .map(|j| {
+          if flags[j].is_some() {
+            0
+          } else {
+            placeholders[i + 1..]
+              .iter()
+              .take_while(|below| {
+                below.get(j) == Some(&Some(CellPlaceholder::Above))
+              })
+              .count()
+          }
+        })
+        .collect()
+    })
+    .collect();
+  // The height a row's own cells give it. A cell that continues into the
+  // rows below is fitted to them afterwards instead of sizing its first
+  // row, unless that row holds nothing else: then it shares its height
+  // evenly among the rows it covers.
+  let row_height_of = |i: usize, heights: &[f64]| -> f64 {
+    let own = heights
+      .iter()
+      .zip(&extra_rows[i])
+      .filter(|(_, k)| **k == 0)
+      .map(|(h, _)| *h)
+      .fold(0.0_f64, f64::max);
+    let only_placeholders = placeholders[i]
+      .iter()
+      .zip(&extra_rows[i])
+      .all(|(ph, k)| ph.is_some() || *k > 0);
+    if !only_placeholders {
+      return own;
+    }
+    // A row of nothing but continuations takes its share of the cells
+    // that reach into it from above.
+    let shared = (0..=i)
+      .flat_map(|r| {
+        let reach = &extra_rows[r];
+        let source = if r == i { Some(heights) } else { None };
+        parsed_rows[r].iter().enumerate().filter_map(move |(j, c)| {
+          let k = reach[j];
+          (k > 0 && r + k >= i).then(|| {
+            let h = source.map_or(c.3, |hs| hs[j]);
+            h / (k + 1) as f64
+          })
+        })
+      })
+      .fold(0.0_f64, f64::max);
+    own.max(shared)
+  };
 
   if parsed_rows.iter().all(std::vec::Vec::is_empty) {
     return None;
@@ -38790,17 +38849,19 @@ fn compute_grid_layout(
   // target-width scaling.
   let row_nat_dims: Vec<(f64, f64)> = parsed_rows
     .iter()
-    .zip(is_placeholder.iter())
-    .map(|(row, flags)| {
-      // A spanned cell already counts the width of its placeholders.
+    .zip(placeholders.iter())
+    .enumerate()
+    .map(|(i, (row, flags))| {
+      // A cell spanning columns already counts the width of its
+      // placeholders.
       let w: f64 = row
         .iter()
         .zip(flags)
-        .filter(|(_, ph)| !**ph)
+        .filter(|(_, ph)| **ph != Some(CellPlaceholder::Left))
         .map(|((_, _, nw, _), _)| *nw)
         .sum();
-      let h: f64 = row.iter().map(|(_, _, _, nh)| *nh).fold(0.0_f64, f64::max);
-      (w, h)
+      let heights: Vec<f64> = row.iter().map(|(_, _, _, nh)| *nh).collect();
+      (w, row_height_of(i, &heights))
     })
     .collect();
   let max_nat_row_w = row_nat_dims
@@ -38932,6 +38993,28 @@ fn compute_grid_layout(
     })
     .collect();
 
+  // Row heights, and the gap between two rows, come first: a cell that
+  // spans rows is fitted to the ones it covers.
+  let row_heights: Vec<f64> = scaled_rows
+    .iter()
+    .enumerate()
+    .map(|(i, cell_dims)| {
+      if cell_dims.is_empty() {
+        return 0.0;
+      }
+      let heights: Vec<f64> = cell_dims.iter().map(|(_, h)| *h).collect();
+      row_height_of(i, &heights).max(10.0)
+    })
+    .collect();
+  let v_gap = if opts.outer_margin {
+    // `GraphicsGrid` resolves a `Scaled` row gap against the cell width.
+    opts.v_spacing.to_px(avg_cell_w)
+  } else {
+    let avg_h =
+      row_heights.iter().sum::<f64>() / row_heights.len().max(1) as f64;
+    opts.v_spacing.to_px(avg_h)
+  };
+
   // Per-cell layout: keep natural aspect ratios, center each cell in its
   // column and vertically center shorter cells within their row.
   let mut row_layouts: Vec<GridRowLayout> = Vec::new();
@@ -38950,19 +39033,32 @@ fn compute_grid_layout(
       continue;
     }
 
-    let row_h = cell_dims
-      .iter()
-      .map(|(_, h)| *h)
-      .fold(0.0_f64, f64::max)
-      .max(10.0);
+    let row_h = row_heights[i];
 
     let mut cells = Vec::with_capacity(parsed_row.len());
     for (j, ((vb, inner, _, _), (cw, ch))) in
       parsed_row.iter().zip(cell_dims.iter()).enumerate()
     {
-      let y_off = ((row_h - ch) / 2.0).max(0.0);
       let last = j + spans[j];
       let span_w = col_x[last] + col_w[last] - col_x[j];
+      // A cell continued by `SpanFromAbove` fills the height of the rows it
+      // covers, the gaps between them included, at its own proportions —
+      // though never so wide that it reaches the neighboring columns.
+      let down = extra_rows[i][j];
+      let covered_h = row_heights[i..=i + down].iter().sum::<f64>()
+        + v_gap
+          * row_heights[i + 1..=i + down]
+            .iter()
+            .filter(|h| **h > 0.0)
+            .count() as f64;
+      let (cw, ch) = if down > 0 && *ch > 0.0 {
+        let fit = (covered_h / ch).min((span_w + h_gap) / cw);
+        (cw * fit, ch * fit)
+      } else {
+        (*cw, *ch)
+      };
+      let (cw, ch) = (&cw, &ch);
+      let y_off = ((covered_h - ch) / 2.0).max(0.0);
       let frac = opts.row_align.get(i).copied().unwrap_or(0.5);
       let x = col_x[j] + (span_w - cw) * frac;
       cells.push(LayoutCell {
@@ -38987,16 +39083,6 @@ fn compute_grid_layout(
     .fold(0.0_f64, f64::max)
     + left_pad;
 
-  let v_gap = if row_layouts.is_empty() {
-    0.0
-  } else if opts.outer_margin {
-    // `GraphicsGrid` resolves a `Scaled` row gap against the cell width.
-    opts.v_spacing.to_px(avg_cell_w)
-  } else {
-    let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
-      / row_layouts.len().max(1) as f64;
-    opts.v_spacing.to_px(avg_h)
-  };
   let mut top_pad = if opts.outer_margin { v_gap / 2.0 } else { 0.0 };
   let mut total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
     + (row_layouts.iter().filter(|r| r.row_h > 0.0).count() as f64 - 1.0)
@@ -39085,7 +39171,8 @@ fn combine_svgs_grid(
       continue;
     }
     row_y_starts.push(y);
-    for cell in &row.cells {
+    // A span placeholder or an empty cell has nothing to draw.
+    for cell in row.cells.iter().filter(|c| !c.inner.trim().is_empty()) {
       write_cell_svg(&mut svg, cell, y);
     }
     y += row.row_h + layout.v_gap;
@@ -40069,12 +40156,62 @@ pub fn mouse_events_from_id(id: &str) -> Option<Vec<(String, String)>> {
   )
 }
 
-/// Marks the empty SVG standing in for a `SpanFromLeft` cell, so the grid
-/// layout can tell which cell spans several columns.
-const SPAN_PLACEHOLDER_ATTR: &str = "data-span-placeholder=\"1\"";
+/// What an empty SVG standing in for a content-less layout cell is there
+/// for, so the grid layout can tell which cell spans several columns or
+/// rows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellPlaceholder {
+  /// `SpanFromLeft`/`SpanFromBoth`: the cell to the left continues here.
+  Left,
+  /// `SpanFromAbove`: the cell above continues here.
+  Above,
+  /// `Null`: a gap that belongs to no other cell.
+  Blank,
+}
 
-fn is_span_placeholder_svg(svg: &str) -> bool {
-  svg.starts_with("<svg ") && svg[5..].starts_with(SPAN_PLACEHOLDER_ATTR)
+impl CellPlaceholder {
+  const ATTR: &'static str = "data-span-placeholder";
+
+  fn tag(self) -> &'static str {
+    match self {
+      Self::Left => "left",
+      Self::Above => "above",
+      Self::Blank => "blank",
+    }
+  }
+
+  /// The placeholder a layout cell stands for, if it holds no content.
+  fn of_cell(cell: &Expr) -> Option<Self> {
+    if is_span_from_left(cell) {
+      Some(Self::Left)
+    } else if is_span_from_above(cell) {
+      Some(Self::Above)
+    } else if matches!(cell, Expr::Identifier(s) if s == "Null") {
+      Some(Self::Blank)
+    } else {
+      None
+    }
+  }
+
+  /// The empty SVG, `width` wide, that marks this placeholder.
+  fn svg(self, width: i128) -> String {
+    format!(
+      "<svg {}=\"{}\" width=\"{width}\" height=\"1\" viewBox=\"0 0 {width} 1\"></svg>",
+      Self::ATTR,
+      self.tag(),
+    )
+  }
+
+  /// Read the placeholder back from an SVG written by [`Self::svg`].
+  fn of_svg(svg: &str) -> Option<Self> {
+    let rest = svg
+      .strip_prefix("<svg ")?
+      .strip_prefix(Self::ATTR)?
+      .strip_prefix("=\"")?;
+    [Self::Left, Self::Above, Self::Blank]
+      .into_iter()
+      .find(|kind| rest.starts_with(kind.tag()))
+  }
 }
 
 /// The value a layout cell shows: a bare variable resolves to the picture
@@ -40184,21 +40321,15 @@ fn render_items_at_size(
     .enumerate()
     .filter_map(|(item_idx, item)| {
       // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` mark a cell that only
-      // continues one merged in `Grid` — they hold no content of their own.
-      // `GraphicsGrid`/`Row`/`Column` don't merge spans the way `Grid` does,
-      // but the placeholder should still draw as nothing rather than fall
-      // through to the text renderer and print its own name.
+      // continues the merged cell beside or above it — they hold no content
+      // of their own, and the grid layout stretches that cell across them.
       // A `Null` cell (`If[i == j, , …]` leaving a gap in a board) is blank
       // space, not the text "Null".
-      if is_span_placeholder(item)
-        || matches!(item, Expr::Identifier(s) if s == "Null")
-      {
+      if let Some(placeholder) = CellPlaceholder::of_cell(item) {
         // A near-zero height keeps this cell from inflating its row: the
         // placeholder holds no content of its own, so the row's height
         // should follow whatever real content sits beside it.
-        return Some(format!(
-          "<svg {SPAN_PLACEHOLDER_ATTR} width=\"{per_cell_w}\" height=\"1\" viewBox=\"0 0 {per_cell_w} 1\"></svg>"
-        ));
+        return Some(placeholder.svg(per_cell_w));
       }
       // An inline call (`GraphicsGrid[{{Plot[…], Plot[…]}}]`) gets its
       // `ImageSize` injected before it ever evaluates. A bare variable
@@ -40288,9 +40419,10 @@ fn render_items_at_size(
       let cell_w = (per_cell_w * spans[item_idx]) as f64;
       if !matches!(evaluated, Expr::Graphics { .. })
         && parse_svg_wh(&svg).0 > cell_w + 0.5
-        && let Some(flowed) = wrap_list_text(&evaluated, cell_w, &[], false, &|c| {
-          parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
-        })
+        && let Some(flowed) =
+          wrap_list_text(&evaluated, cell_w, &[], false, &|c| {
+            parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+          })
       {
         let reflowed = crate::evaluator::expr_to_svg(&flowed);
         if !reflowed.is_empty() {
