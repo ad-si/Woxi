@@ -1469,3 +1469,51 @@ fn row_of_buttons_wraps_at_the_pane_width() {
   assert!(wide < 30.0, "a pane wide enough keeps one line: {wide}");
   assert!(narrow > 2.0 * wide, "the narrow pane must break the row");
 }
+
+/// The imaginary unit of a complex number in a `Row` is drawn as a
+/// double-struck `i`, as in every other label: the embedded faces have no
+/// glyph for `ⅈ`, and the fallback face drew an unrelated, wider shape that
+/// ran into the next item.
+#[test]
+fn row_draws_the_imaginary_unit_double_struck() {
+  clear_state();
+  for code in [
+    r#"ExportString[Row[{3 - 2 I, "x"}], "SVG"]"#,
+    r#"ExportString[Style[Text[Row[{"(", 15 + 18 I, ")"}]], 50], "SVG"]"#,
+  ] {
+    let svg = interpret(code).unwrap();
+    assert!(!svg.contains('\u{2148}'), "raw imaginary unit: {svg}");
+    assert!(
+      svg.contains("font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">i</tspan>"),
+      "no double-struck i: {svg}"
+    );
+  }
+}
+
+/// `Text[Row[…]]` sets its items in the default sans face, the embedded
+/// Atkinson Hyperlegible Next, so each item is measured by that face's
+/// advances. Measured by Arial's narrower digits, the items were centered in
+/// cells too small for them and overlapped their neighbors.
+#[test]
+fn text_row_items_are_measured_in_the_drawn_sans_face() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Style[Text[Row[{"(", "0000", ")"}]], 50], "SVG"]"#,
+  )
+  .unwrap();
+  let xs: Vec<f64> = svg
+    .split("<text x=\"")
+    .skip(1)
+    .map(|s| s.split('"').next().unwrap().parse().unwrap())
+    .collect();
+  assert_eq!(xs.len(), 3, "{svg}");
+  // Atkinson advances: `(` and `)` 0.299 em, `0` 0.648 em, at 50 pt.
+  let paren = 0.299 * 50.0;
+  let digits = 4.0 * 0.648 * 50.0;
+  assert!((xs[0] - paren / 2.0).abs() < 0.2, "{xs:?}");
+  assert!((xs[1] - (paren + digits / 2.0)).abs() < 0.2, "{xs:?}");
+  assert!(
+    (xs[2] - (paren + digits + paren / 2.0)).abs() < 0.2,
+    "{xs:?}"
+  );
+}

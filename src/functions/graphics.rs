@@ -44410,7 +44410,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
+    // The imaginary unit of a complex number (`15 + 18 ⅈ`) and the other
+    // Letterlike Symbols math glyphs are drawn as their letter
+    // double-struck, as in every other label: the embedded faces have no
+    // glyph for them, and the fallback face draws an unrelated shape.
+    let markup = render_math_letterlike_glyphs(
+      &st.text_decoration.markup(&expr_to_svg_markup(text_item)),
+    );
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -44445,9 +44451,17 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       // narrower than the sans average: its per-character advances bound
       // it, where the average would leave a centered piece floating in a
       // gap as wide as a third of its own text.
-      if st.font_family == "sans-serif"
-        || proportional_family_scale(&st.font_family) < 1.0
-      {
+      if is_embedded_sans_family(&st.font_family) {
+        // The default sans face (`Text[…]`, or `sans-serif` by name) is
+        // drawn in the embedded Atkinson Hyperlegible Next, whose digits
+        // and blanks run wider than Arial's: measured by Arial's advances,
+        // a centered part spills into its neighbors.
+        crate::functions::plot_padding::exported_text_extent(
+          &markup,
+          st.font_size,
+        )
+        .1 * bold
+      } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
         let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
