@@ -6227,6 +6227,123 @@ mod graphics {
       }
     }
 
+    /// Axes crossing at an `AxesOrigin` carry their labels at the end
+    /// farther from the viewer instead of at the middle of the axis (where
+    /// all three would pile up on the crossing point).
+    #[test]
+    fn graphics3d_crossing_axes_are_labeled_at_their_far_ends() {
+      let attr = |l: &str, name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let rest = &l[l.find(&key).unwrap() + key.len()..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      // Each axis line with the position of the label that follows it.
+      let labeled = |svg: &str| -> Vec<([f64; 4], (f64, f64))> {
+        let mut out = Vec::new();
+        let mut axis = None;
+        for l in svg.lines() {
+          if l.starts_with("<line ") && l.contains("stroke-width=\"1\"") {
+            axis = Some([
+              attr(l, "x1"),
+              attr(l, "y1"),
+              attr(l, "x2"),
+              attr(l, "y2"),
+            ]);
+          } else if l.starts_with("<text ")
+            && ["a", "b", "c"]
+              .iter()
+              .any(|n| l.ends_with(&format!(">{n}</text>")))
+          {
+            out.push((axis.unwrap(), (attr(l, "x"), attr(l, "y"))));
+          }
+        }
+        out
+      };
+      let scene = |view: &str, origin: &str| {
+        labeled(&export_svg(&format!(
+          "Graphics3D[Point[{{{{-2, -3, -4}}, {{2, 3, 4}}}}], Axes -> True, \
+           AxesLabel -> {{\"a\", \"b\", \"c\"}}, ViewPoint -> {view}{origin}]"
+        )))
+      };
+      let dist = |p: (f64, f64), x: f64, y: f64| (p.0 - x).hypot(p.1 - y);
+      let mid = |s: [f64; 4]| ((s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0);
+      let above = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}");
+      assert_eq!(above.len(), 3, "{above:?}");
+      for (s, label) in &above {
+        let to_end = dist(*label, s[0], s[1]).min(dist(*label, s[2], s[3]));
+        let (mx, my) = mid(*s);
+        assert!(to_end < 25.0, "{above:?}");
+        assert!(dist(*label, mx, my) > 50.0, "{above:?}");
+      }
+      // Seen from above, the far end of the vertical axis is its lower
+      // one; seen from below, its upper one.
+      let (z_axis, z_label) = above[2];
+      assert!(z_label.1 > mid(z_axis).1, "{above:?}");
+      let below = scene("{1.3, -2.4, -2}", ", AxesOrigin -> {0, 0, 0}");
+      let (z_axis, z_label) = below[2];
+      assert!(z_label.1 < mid(z_axis).1, "{below:?}");
+      // The far end of the first axis is the one away from the viewer's
+      // side of it.
+      let right = scene("{1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}")[0];
+      let left = scene("{-1.3, -2.4, 2}", ", AxesOrigin -> {0, 0, 0}")[0];
+      assert!(right.1.0 < mid(right.0).0, "{right:?}");
+      assert!(left.1.0 > mid(left.0).0, "{left:?}");
+      // Axes on the box edges keep their labels at the middle.
+      for (s, label) in scene("{1.3, -2.4, 2}", "") {
+        let to_end = dist(label, s[0], s[1]).min(dist(label, s[2], s[3]));
+        assert!(to_end > 50.0, "{s:?} {label:?}");
+      }
+    }
+
+    /// A `Cylinder` or `Cone` cut open by the `PlotRange` keeps the outline
+    /// of its end circles, as far as they lie inside the box.
+    #[test]
+    fn graphics3d_clipped_round_solids_keep_their_rim_outlines() {
+      let rim_lines = |expr: &str| -> usize {
+        export_svg(expr)
+          .lines()
+          .filter(|l| {
+            (l.starts_with("<line ") || l.starts_with("<polyline "))
+              && l.contains("stroke=\"rgb(64,64,64)\"")
+          })
+          .count()
+      };
+      let cut = "PlotRange -> {{-1, 1}, {0, 1}, {-1, 2}}";
+      for solid in [
+        "Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]",
+        "Cone[{{0, 0, 0}, {0, 0, 1}}, 1]",
+      ] {
+        assert!(
+          rim_lines(&format!("Graphics3D[{{Opacity[0.5], {solid}}}, {cut}]"))
+            > 10,
+          "{solid}"
+        );
+        // `EdgeForm[]` turns the outline off, cut or not.
+        assert_eq!(
+          rim_lines(&format!(
+            "Graphics3D[{{EdgeForm[], Opacity[0.5], {solid}}}, {cut}]"
+          )),
+          0,
+          "{solid}"
+        );
+      }
+      // The outline takes the `EdgeForm` color, and none of it is drawn
+      // outside the box: a cylinder whose rims both lie beyond the range
+      // shows only its cut-open side.
+      let red = export_svg(&format!(
+        "Graphics3D[{{EdgeForm[Red], Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}, \
+         {cut}]"
+      ));
+      assert!(red.contains("stroke=\"rgb(255,0,0)\""), "{red}");
+      assert_eq!(
+        rim_lines(
+          "Graphics3D[Cylinder[{{0, 0, -5}, {0, 0, 5}}, 1], \
+           PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}]"
+        ),
+        0
+      );
+    }
+
     /// Automatic 3D box ticks step by the smallest of 1, 2 and 5 × 10^k
     /// that leaves fewer than five intervals: a 10-wide axis by 5 (whole
     /// labels, no 2.5 steps), a 2-wide axis by 0.5.

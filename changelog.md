@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Cylinder` or `Cone` cut open by the `PlotRange` of a 3D scene keeps
+    the outline of its end circles inside the box. 3D axes crossing at an
+    `AxesOrigin` carry their `AxesLabel`s at their far ends instead of
+    piled up on the crossing point.
 - A `Text` label in a plot's `Prolog` or `Epilog` whose `Row` holds a
     quotient (`Text[Row[{"y = 1 + ", 1/x}], pos]`) stacks the numerator
     over the denominator as it does in `Graphics`, instead of printing

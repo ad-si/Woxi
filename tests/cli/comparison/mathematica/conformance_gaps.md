@@ -10848,6 +10848,16 @@ matches a saved Wolfram snapshot. The flat-axis rule and the direction of
 the tick marks were not checked against `wolframscript` (none was available
 in the session).
 
+### Label position of 3D axes crossing at an `AxesOrigin`
+
+With an explicit `AxesOrigin` in a `Graphics3D` (or a 3D plot), Woxi puts
+each `AxesLabel` at the end of its axis farther from the viewer, a fixed
+distance off the axis on the side of the tick marks. A saved Wolfram
+snapshot (default `ViewPoint`, `AxesOrigin -> {0, 0, 0}`) shows the labels
+at those ends and on that side, but the rule choosing the end (it could
+also be the end farther from the crossing point) and the exact offset were
+not checked against `wolframscript` (none was available in the session).
+
 ### `NDSolve`StateData` prints its registry index
 
 An `NDSolve`StateData` object is a mutable handle (`NDSolve`Iterate`
