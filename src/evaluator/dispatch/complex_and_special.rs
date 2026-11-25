@@ -3153,6 +3153,47 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
   }
 }
 
+/// The boxes of an operand of `Infix` (`infix`) or `Prefix`, bracketed when
+/// it prints with an operator of its own: a sum or a rule in both, a
+/// product only after a prefix operator (`f@(a b)`, but `a b + c`). Calls,
+/// powers and atoms stay bare.
+fn operator_form_operand_box(operand: &Expr, infix: bool) -> Expr {
+  let boxes = expr_to_box_form(operand);
+  let operator_row = match &boxes {
+    Expr::FunctionCall { name, args } if name == "RowBox" => !matches!(
+      args.first(),
+      Some(Expr::List(items))
+        if matches!(items.get(1), Some(Expr::String(s)) if s == "[")
+    ),
+    _ => false,
+  };
+  let product = matches!(
+    canonical_operator_call(operand),
+    Expr::FunctionCall { ref name, .. } if name == "Times"
+  );
+  if operator_row && !(infix && product) {
+    paren_box(boxes)
+  } else {
+    boxes
+  }
+}
+
+/// `InterpretationBox[boxes, expr, Editable -> False]`: boxes that read
+/// back as `expr`.
+fn interpretation_box_of(boxes: Expr, expr: &Expr) -> Expr {
+  call(
+    "InterpretationBox",
+    vec![
+      boxes,
+      expr.clone(),
+      crate::helpers::rule_expr(
+        Expr::Identifier("Editable".to_string()),
+        Expr::Identifier("False".to_string()),
+      ),
+    ],
+  )
+}
+
 /// The most `RowBox`es nested one in another along any path of a box tree.
 fn row_box_depth(boxes: &Expr) -> usize {
   match boxes {
@@ -4843,20 +4884,78 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       )
     }
     // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
-    // expressions, a string operator contributing its text.
+    // expressions (an operator expression other than a product bracketed),
+    // a string operator contributing its text; `Infix[f[a, b]]` puts
+    // `~f~` between them. Like `Prefix` (`f@x`) and `Postfix` (`x//f`), the
+    // row is an `InterpretationBox` that reads back as the wrapper. With a
+    // precedence or grouping the wrapper boxes as a plain call.
     Expr::FunctionCall { name, args }
       if name == "Infix"
-        && let Some(items) = crate::syntax::infix_display_items(args) =>
+        && args.len() <= 2
+        && crate::syntax::infix_display_items(args).is_some() =>
     {
-      row_box(
-        items
-          .iter()
-          .map(|item| match item {
-            Expr::String(s) => str_expr(s),
-            other => expr_to_box_form(other),
-          })
-          .collect(),
-      )
+      let operands: &[Expr] = match &args[0] {
+        Expr::List(items) => items,
+        Expr::FunctionCall { args: items, .. } => items,
+        _ => unreachable!("guarded by infix_display_items"),
+      };
+      let separator: Vec<Expr> = match (&args.get(1), &args[0]) {
+        (Some(Expr::String(s)), _) => vec![str_expr(s)],
+        (Some(op), _) => vec![expr_to_box_form(op)],
+        (None, Expr::FunctionCall { name: head, .. }) => vec![
+          str_expr(" "),
+          str_expr("~"),
+          str_expr(head),
+          str_expr("~"),
+          str_expr(" "),
+        ],
+        (None, _) => unreachable!("guarded by infix_display_items"),
+      };
+      let mut row = Vec::new();
+      for (i, operand) in operands.iter().enumerate() {
+        if i > 0 {
+          row.extend(separator.iter().cloned());
+        }
+        row.push(operator_form_operand_box(operand, true));
+      }
+      interpretation_box_of(row_box(row), expr)
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Prefix" || name == "Postfix")
+        && (1..=2).contains(&args.len())
+        && matches!(&args[0], Expr::FunctionCall { args: inner, .. }
+          if inner.len() == 1) =>
+    {
+      let Expr::FunctionCall {
+        name: head,
+        args: inner,
+      } = &args[0]
+      else {
+        unreachable!("guarded by the match arm")
+      };
+      let prefix = name == "Prefix";
+      let op = match args.get(1) {
+        Some(Expr::String(s)) => str_expr(s),
+        Some(other) => expr_to_box_form(other),
+        None if prefix => str_expr("@"),
+        None => str_expr("//"),
+      };
+      let row = if prefix {
+        let operand = operator_form_operand_box(&inner[0], false);
+        if args.len() == 2 {
+          vec![op, operand]
+        } else {
+          vec![str_expr(head), op, operand]
+        }
+      } else {
+        let operand = expr_to_box_form(&inner[0]);
+        if args.len() == 2 {
+          vec![operand, op]
+        } else {
+          vec![operand, op, str_expr(head)]
+        }
+      };
+      interpretation_box_of(row_box(row), expr)
     }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):

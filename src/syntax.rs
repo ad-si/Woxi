@@ -12188,6 +12188,41 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       {
         return items.iter().map(&fmt).collect();
       }
+      // OutputForm-only: `Prefix[f[x]]` lays out as `f@ x`, `Postfix[f[x]]`
+      // as `x // f`; an operator given instead goes right before or after
+      // the operand (`!x`, `x!`). A sum or product after a prefix operator
+      // is bracketed: `f@ (a + b)`.
+      if is_output
+        && (name == "Prefix" || name == "Postfix")
+        && (1..=3).contains(&args.len())
+        && let Expr::FunctionCall {
+          name: head,
+          args: inner,
+        } = &args[0]
+        && inner.len() == 1
+      {
+        let operand = fmt(&inner[0]);
+        let op = args.get(1).map(&fmt);
+        if name == "Prefix" {
+          let operand = if matches!(
+            &inner[0],
+            Expr::FunctionCall { name, args } if (name == "Plus" || name == "Times") && args.len() >= 2
+          ) || matches!(&inner[0], Expr::BinaryOp { .. })
+          {
+            format!("({operand})")
+          } else {
+            operand
+          };
+          return match op {
+            Some(op) => format!("{op}{operand}"),
+            None => format!("{head}@ {operand}"),
+          };
+        }
+        return match op {
+          Some(op) => format!("{operand}{op}"),
+          None => format!("{operand} // {head}"),
+        };
+      }
       if is_output
         && name == "Row"
         && let Some(Expr::List(items)) = args.first()
