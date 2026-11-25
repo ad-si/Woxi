@@ -23,3 +23,13 @@ The curve specification is held, so one built by `Table` needs no `Evaluate`:
 $ wo 'Head[ParametricPlot[Table[{a Cos[t], a Sin[t]}, {a, 1, 3}], {t, 0, 2 Pi}]]'
 Graphics
 ```
+
+With two parameters it draws the image of the parameter rectangle.
+`ColorFunction` colors it, `Mesh` and `MeshFunctions` draw level curves
+of functions of `x`, `y` and the two parameters over it, and
+`BoundaryStyle` styles its outline:
+
+```scrut
+$ wo 'Head[ParametricPlot[{u Cos[v], u Sin[v]}, {u, 1, 2}, {v, 0, Pi}, ColorFunction -> (Hue[#4] &), Mesh -> {5, 3}, MeshFunctions -> {#1 + #2 &, #3 &}, BoundaryStyle -> None]]'
+Graphics
+```

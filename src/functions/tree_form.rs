@@ -63,61 +63,91 @@ fn max_node_box_width(
   self_width.max(child_max)
 }
 
-/// Perform a simple tree layout using Reingold-Tilford-style centering.
-/// Returns a flat list of positioned nodes.
-fn layout_tree(root: &TreeNode, leaf_step: f64) -> Vec<LayoutNode> {
-  let mut nodes = Vec::new();
-  let y_spacing = 1.0;
-  layout_recursive(root, 0, y_spacing, leaf_step, &mut nodes, &mut 0.0);
-  nodes
+/// Lay the tree out in layers one unit apart, the way Wolfram's
+/// `TreeForm` does: each subtree is packed as far left as its contour
+/// allows — every node at least `sep` right of the nodes already placed
+/// on its layer — and a parent sits midway between its first and last
+/// child. A shallow sibling thus stays next to its neighbor instead of
+/// waiting for the leaves of a deeper subtree.
+/// Returns the nodes in pre-order, the root first.
+fn layout_tree(root: &TreeNode, sep: f64) -> Vec<LayoutNode> {
+  let mut placed = place_subtree(root, sep).nodes;
+  for (depth, node) in &mut placed {
+    node.y = -(*depth as f64);
+  }
+  placed.into_iter().map(|(_, node)| node).collect()
 }
 
-/// Recursive layout: returns the index of the placed node.
-/// `next_leaf_x` is advanced for each leaf to ensure no overlap.
-fn layout_recursive(
-  node: &TreeNode,
-  depth: usize,
-  y_spacing: f64,
-  leaf_step: f64,
-  nodes: &mut Vec<LayoutNode>,
-  next_leaf_x: &mut f64,
-) -> usize {
-  let idx = nodes.len();
-  // Reserve a spot
-  nodes.push(LayoutNode {
-    x: 0.0,
-    y: -(depth as f64) * y_spacing,
-    label: node.label.clone(),
-    children_indices: vec![],
-  });
+/// A laid-out subtree, its root at `x = 0`: its nodes in pre-order with
+/// their depth below the subtree root, and the leftmost and rightmost `x`
+/// on each of its layers.
+struct PlacedSubtree {
+  nodes: Vec<(usize, LayoutNode)>,
+  left: Vec<f64>,
+  right: Vec<f64>,
+}
 
-  if node.children.is_empty() {
-    // Leaf node: place at next available x position
-    nodes[idx].x = *next_leaf_x;
-    *next_leaf_x += leaf_step;
-  } else {
-    // Internal node: layout children, then center over them
-    let mut child_indices = Vec::new();
-    for child in &node.children {
-      let child_idx = layout_recursive(
-        child,
-        depth + 1,
-        y_spacing,
-        leaf_step,
-        nodes,
-        next_leaf_x,
-      );
-      child_indices.push(child_idx);
+fn place_subtree(node: &TreeNode, sep: f64) -> PlacedSubtree {
+  let mut nodes = vec![(
+    0,
+    LayoutNode {
+      x: 0.0,
+      y: 0.0,
+      label: node.label.clone(),
+      children_indices: vec![],
+    },
+  )];
+  let mut left: Vec<f64> = Vec::new();
+  let mut right: Vec<f64> = Vec::new();
+  let mut child_xs: Vec<f64> = Vec::new();
+  for child in &node.children {
+    let sub = place_subtree(child, sep);
+    // The leftmost shift keeping every layer `sep` clear of the
+    // siblings already placed.
+    let shift = if child_xs.is_empty() {
+      0.0
+    } else {
+      right
+        .iter()
+        .zip(&sub.left)
+        .map(|(r, l)| r + sep - l)
+        .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let offset = nodes.len();
+    nodes[0].1.children_indices.push(offset);
+    child_xs.push(shift);
+    for (depth, mut n) in sub.nodes {
+      n.x += shift;
+      for c in &mut n.children_indices {
+        *c += offset;
+      }
+      nodes.push((depth + 1, n));
     }
-
-    // Center parent over children
-    let first_child_x = nodes[child_indices[0]].x;
-    let last_child_x = nodes[child_indices[child_indices.len() - 1]].x;
-    nodes[idx].x = f64::midpoint(first_child_x, last_child_x);
-    nodes[idx].children_indices = child_indices;
+    for (k, (l, r)) in sub.left.iter().zip(&sub.right).enumerate() {
+      if k < left.len() {
+        left[k] = left[k].min(l + shift);
+        right[k] = right[k].max(r + shift);
+      } else {
+        left.push(l + shift);
+        right.push(r + shift);
+      }
+    }
   }
-
-  idx
+  // Center the parent over its first and last child, at `x = 0`.
+  let center = match (child_xs.first(), child_xs.last()) {
+    (Some(first), Some(last)) => f64::midpoint(*first, *last),
+    _ => 0.0,
+  };
+  for (_, n) in nodes.iter_mut().skip(1) {
+    n.x -= center;
+  }
+  left
+    .iter_mut()
+    .chain(right.iter_mut())
+    .for_each(|x| *x -= center);
+  left.insert(0, 0.0);
+  right.insert(0, 0.0);
+  PlacedSubtree { nodes, left, right }
 }
 
 /// Implementation of TreeForm[expr] and TreeForm[expr, maxDepth].

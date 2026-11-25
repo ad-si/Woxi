@@ -14,6 +14,7 @@ mod complex_pde;
 mod cse;
 mod curve;
 mod dde;
+mod param_family;
 mod pde_mol;
 mod pde_mol2d;
 mod state_data;
@@ -1854,7 +1855,14 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
         Ok(None) => match complex_pde::ndsolve_pde_complex(&positional) {
           Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
-          Ok(None) => Ok(unevaluated("NDSolve", args)),
+          Ok(None) => match param_family::ndsolve_parameter_family(
+            &positional,
+            &args[n_pos..],
+          ) {
+            Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+            Ok(None) => Ok(unevaluated("NDSolve", args)),
+            Err(e) => Err(e),
+          },
           Err(e) => Err(e),
         },
         Err(e) => Err(e),
@@ -12103,6 +12111,15 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
             .into_iter()
             .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
         }
+        // The real or imaginary part (or argument, or conjugate) of an
+        // expression that mentions no `I` can still be complex — `Re[Sqrt[x]]`
+        // for negative `x` — so it is compiled in complex arithmetic.
+        "Re" | "Im" | "Arg" | "Conjugate" if args.len() == 1 => {
+          Some(compile_complex(expr, var_names).map_or_else(
+            || compile_external_leaf(expr, var_names),
+            |c| NExpr::ComplexReal(Box::new(c)),
+          ))
+        }
         "If" if args.len() == 3 => {
           if let Some(cond) = compile_condition(&args[0], var_names) {
             return Some(NExpr::If {
@@ -12281,6 +12298,13 @@ enum CExpr {
   Pow(Box<Self>, Box<Self>),
   Neg(Box<Self>),
   Fn1(fn(Cx) -> Cx, Box<Self>),
+  /// `If[cond, then, otherwise]` (and each case of a `Piecewise`) with
+  /// complex branches; the condition itself compares real values.
+  If {
+    cond: Box<NCond>,
+    then: Box<Self>,
+    otherwise: Box<Self>,
+  },
 }
 
 impl CExpr {
@@ -12297,6 +12321,17 @@ impl CExpr {
       Self::Pow(b, e) => b.eval(vars).powc(e.eval(vars)),
       Self::Neg(e) => e.eval(vars).neg(),
       Self::Fn1(f, a) => f(a.eval(vars)),
+      Self::If {
+        cond,
+        then,
+        otherwise,
+      } => {
+        if cond.holds(vars) {
+          then.eval(vars)
+        } else {
+          otherwise.eval(vars)
+        }
+      }
     }
   }
 }
@@ -12402,6 +12437,38 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
           re: nval_to_f64(&args[0])?,
           im: nval_to_f64(&args[1])?,
         })),
+        // A branch on a real condition between complex values, as in a
+        // map of the plane defined piecewise (`If[Re[z] <= 1, f[z], g[z]]`).
+        "If" if args.len() == 3 => Some(CExpr::If {
+          cond: Box::new(compile_condition(&args[0], var_names)?),
+          then: Box::new(comp(&args[1])?),
+          otherwise: Box::new(comp(&args[2])?),
+        }),
+        // `Piecewise[{{v1, c1}, …}, default]`: nested `If`s, innermost the
+        // default.
+        "Piecewise" if (1..=2).contains(&args.len()) => {
+          let Expr::List(cases) = &args[0] else {
+            return None;
+          };
+          let mut acc = match args.get(1) {
+            Some(d) => comp(d)?,
+            None => CExpr::Const(Cx::real(0.0)),
+          };
+          for case in cases.iter().rev() {
+            let Expr::List(pair) = case else {
+              return None;
+            };
+            let [value, cond] = pair.as_slice() else {
+              return None;
+            };
+            acc = CExpr::If {
+              cond: Box::new(compile_condition(cond, var_names)?),
+              then: Box::new(comp(value)?),
+              otherwise: Box::new(acc),
+            };
+          }
+          Some(acc)
+        }
         _ => None,
       }
     }
@@ -16214,12 +16281,9 @@ fn evaluate_grid_interpolating_function(
         .into(),
     ))
   }
-  let derivative_free = derivative.iter().all(|&d| d == 0);
-  let window_values = if derivative_free {
-    slice_values(values, &windows)
-  } else {
-    None
-  };
+  // A partial derivative differentiates the same local pieces, so it reads
+  // the same window.
+  let window_values = slice_values(values, &windows);
   let (grid_axes, grid_values) = match &window_values {
     Some(v) => (sub_axes, v),
     None => (axes, values),
@@ -20292,6 +20356,60 @@ mod tests {
     assert_eq!(eval("Abs[x + I y]"), 5.0);
     assert_eq!(eval("Arg[x + I y]"), 4f64.atan2(3.0));
     assert_eq!(eval("Im[Conjugate[x + I y]]"), -4.0);
+  }
+
+  /// A complex value chosen by a real condition (`If`, `Piecewise`)
+  /// compiles to machine arithmetic, with either branch taken per sample.
+  #[test]
+  fn compiles_conditional_complex_values() {
+    let vars = ["x".to_string(), "y".to_string()];
+    let compiled = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap()
+    };
+    let branch = compiled("Im[If[Re[x + I y] <= 1, (x + I y)^2, x - 2 I y]]");
+    assert!(!branch.0.any_node(&|e| matches!(e, NExpr::External { .. })));
+    assert_eq!(branch.eval(&[1.0, 4.0]), 8.0);
+    assert_eq!(branch.eval(&[3.0, 4.0]), -8.0);
+    let cases = compiled(
+      "Re[Piecewise[{{I (x + I y), x < 0}, {(x + I y)^2, x < 2}}, 5 + I]]",
+    );
+    assert_eq!(cases.eval(&[-1.0, 4.0]), -4.0);
+    assert_eq!(cases.eval(&[1.0, 4.0]), -15.0);
+    assert_eq!(cases.eval(&[3.0, 4.0]), 5.0);
+    let default = compiled("Im[Piecewise[{{2 + I x, x > y}}]]");
+    assert_eq!(default.eval(&[5.0, 4.0]), 5.0);
+    assert_eq!(default.eval(&[3.0, 4.0]), 0.0);
+  }
+
+  /// `Re`, `Im`, `Arg` and `Conjugate` of an expression written without
+  /// `I` compile too — in complex arithmetic, as the expression may still
+  /// leave the real line (`Sqrt` of a negative sample).
+  #[test]
+  fn compiles_real_parts_of_expressions_without_imaginary_unit() {
+    let vars = ["x".to_string()];
+    let compiled = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap()
+    };
+    for src in ["Re[x + 1]", "Im[Sqrt[x]]", "Arg[x]", "Conjugate[2 x]"] {
+      assert!(
+        !compiled(src)
+          .0
+          .any_node(&|e| matches!(e, NExpr::External { .. })),
+        "{src} must not fall back to the evaluator"
+      );
+    }
+    assert_eq!(compiled("Re[x + 1]").eval(&[-4.0]), -3.0);
+    assert_eq!(compiled("Im[x + 1]").eval(&[-4.0]), 0.0);
+    assert_eq!(compiled("Re[Sqrt[x]]").eval(&[-4.0]), 0.0);
+    assert_eq!(compiled("Im[Sqrt[x]]").eval(&[-4.0]), 2.0);
+    assert_eq!(compiled("Arg[x]").eval(&[-4.0]), std::f64::consts::PI);
+    assert_eq!(compiled("Conjugate[2 x]").eval(&[-4.0]), -8.0);
+    // A condition on such a part selects the branch per sample.
+    let cond = compiled("If[Re[x] <= 1, 10, 20]");
+    assert_eq!(cond.eval(&[0.5]), 10.0);
+    assert_eq!(cond.eval(&[1.5]), 20.0);
   }
 
   /// A hand-built 4x4 periodic tridiagonal system whose two corners
