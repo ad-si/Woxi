@@ -15,6 +15,9 @@
 //! Set `CLICKS="1.5,2.5;9.5,2.5"` to click the picture's `ClickPane` at
 //! those pane coordinates in turn; the variables (and, with `svg-out-dir`,
 //! the picture as `widget-<n>-click-<k>.svg`) are dumped after each click.
+//! Set `TICKS=40` to press play and advance the animation that many ticks;
+//! the control values (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-ticks.svg`) are dumped afterwards.
 
 use std::path::PathBuf;
 
@@ -304,6 +307,37 @@ fn main() {
       }
       if let Ok(clicks) = std::env::var("CLICKS") {
         click_pane(&mut state, &clicks, widget_count, svg_out_dir.as_deref());
+      }
+      if let Some(ticks) = std::env::var("TICKS")
+        .ok()
+        .and_then(|t| t.parse::<usize>().ok())
+      {
+        if !state.playing {
+          state.toggle_play();
+        }
+        let started = std::time::Instant::now();
+        for _ in 0..ticks {
+          state.advance_animation();
+        }
+        println!(
+          "after {ticks} ticks ({:.2?}): graphics={} text={:?} error={:?}",
+          started.elapsed(),
+          state.graphics_handle.is_some(),
+          state.text_output,
+          state.error
+        );
+        for c in state.controls.iter().filter(|c| c.binds_variable()) {
+          println!("  {} = {}", c.name(), c.current_code());
+        }
+        if let Some(dir) = &svg_out_dir
+          && let Some(handle) = &state.graphics_handle
+          && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+        {
+          std::fs::create_dir_all(dir).expect("create svg out dir");
+          let out = dir.join(format!("widget-{widget_count}-ticks.svg"));
+          std::fs::write(&out, bytes).expect("write svg");
+          println!("wrote {}", out.display());
+        }
       }
       if std::env::var("PRESS_BUTTONS").is_ok() {
         let mut st = state;
