@@ -78,5 +78,5 @@ expression: "export_svg(r#\"Plot[Sin[x], {x, 0, 4 Pi}, PlotRange -> {-2, 2}, Asp
 <text x="118.6" y="340.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#000000">2</text>
 <text x="3540.0" y="903.7" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#000000">x</text>
 <text x="185.0" y="224.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#000000">sin(x)</text>
-<text x="1770.5" y="108.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#666666">Sine wave</text>
+<text x="1770.5" y="108.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#404040">Sine wave</text>
 </svg>

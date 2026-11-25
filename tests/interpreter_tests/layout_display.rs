@@ -1051,10 +1051,8 @@ mod layout_display {
       "PointLegend[{Red, Blue}, {\"a\", \"b\"}, \
        LegendMarkers -> {\"\\[FilledSquare]\", \"\\[FilledUpTriangle]\"}]",
     );
-    assert!(
-      svg.contains("\u{25A0}") && svg.contains("\u{25B2}"),
-      "{svg}"
-    );
+    // Geometric glyphs are drawn as shapes of their size.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
     let svg = svg_of(
       "SwatchLegend[{Red, Blue}, {\"a\", \"b\"}, LegendLabel -> \"Colors\"]",
     );
@@ -1467,6 +1465,56 @@ mod layout_display {
         "failed singular exponent {power}: {value}"
       );
     }
+  }
+
+  /// `DateListPlot`'s `Axes -> Automatic` draws no axis line at y = 0
+  /// while the plot is framed, and the axes once `Frame -> False`.
+  #[test]
+  fn date_list_plot_automatic_axes_follow_the_frame() {
+    let data = "{Table[Sin[k/3.],{k,30}],Table[Cos[k/3.],{k,30}]},{2021,1,1}";
+    let framed = svg_of(&format!("DateListPlot[{data}]"));
+    assert_eq!(framed, svg_of(&format!("DateListPlot[{data},Axes->False]")));
+    assert_eq!(
+      framed,
+      svg_of(&format!("DateListPlot[{data},Axes->Automatic]"))
+    );
+    assert_ne!(framed, svg_of(&format!("DateListPlot[{data},Axes->True]")));
+    let frameless = svg_of(&format!("DateListPlot[{data},Frame->False]"));
+    assert_eq!(
+      frameless,
+      svg_of(&format!("DateListPlot[{data},Frame->False,Axes->True]"))
+    );
+    assert_ne!(
+      frameless,
+      svg_of(&format!("DateListPlot[{data},Frame->False,Axes->False]"))
+    );
+  }
+
+  /// Exporting typeset math (not a picture) to SVG sets its single-letter
+  /// symbols upright, as Wolfram's SVG export does; inside graphics they
+  /// stay italic, and an explicit `Italic` style is kept.
+  #[test]
+  fn svg_export_of_math_sets_single_letters_upright() {
+    for expr in [
+      "TraditionalForm[x^2 + y]",
+      "x^2 + y",
+      "Column[{TraditionalForm[HoldForm[f[x] == a b]]}]",
+      "TraditionalForm[HoldForm[Overscript[f, \"^\"][w]]]",
+    ] {
+      assert!(
+        !svg_of(expr).contains("font-style=\"italic\""),
+        "{expr} exported italic letters"
+      );
+    }
+    assert!(
+      svg_of("Graphics[Text[TraditionalForm[x^2 + y]]]")
+        .contains("font-style=\"italic\"")
+    );
+    assert!(
+      svg_of("Column[{x, Graphics[Text[TraditionalForm[x^2 + y]]]}]")
+        .contains("font-style=\"italic\"")
+    );
+    assert!(svg_of("Style[\"x\", Italic]").contains("italic"));
   }
 
   #[test]
@@ -2412,6 +2460,73 @@ mod list_of_typeset_matrices {
     let (one, two, three) = (at(">1<"), at(">2<"), at(">3<"));
     assert!(!breaks_line(&svg[one..two]), "{svg}");
     assert!(breaks_line(&svg[two..three]), "{svg}");
+  }
+}
+
+mod inline_box_line_breaks {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// A saved definition wraps the source of an inline `\!\(\*…\)` box over
+  /// several lines. Those line breaks lie inside the box escape, so a grid
+  /// cell holding such a string typesets the box on one line (exactly as
+  /// the unwrapped spelling does) instead of breaking it into lines of raw
+  /// `StyleBox[…]` source.
+  #[test]
+  fn line_breaks_inside_an_inline_box_escape_do_not_break_the_cell() {
+    let cell = |t: &str| {
+      format!("Grid[{{{{TraditionalForm[HoldForm[a {t}/b]], \"|\"}}}}]")
+    };
+    let wrapped = svg_of(&cell(
+      r#""\!\(\*\nStyleBox[\"t\",\nFontSlant->\"Italic\"]\)""#,
+    ));
+    let unwrapped =
+      svg_of(&cell(r#""\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)""#));
+    assert!(!wrapped.contains("StyleBox"), "{wrapped}");
+    let size = |svg: &str| svg[..svg.find('>').unwrap()].to_string();
+    assert_eq!(size(&wrapped), size(&unwrapped));
+  }
+
+  /// A line break outside any box escape still starts a new line.
+  #[test]
+  fn line_break_outside_an_inline_box_escape_still_breaks_the_cell() {
+    let svg = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "x\ny"/b]]}}]"#);
+    let one_line = svg_of(r#"Grid[{{TraditionalForm[HoldForm[a "xy"/b]]}}]"#);
+    let height = |svg: &str| {
+      let h = svg.find("height=\"").unwrap() + 8;
+      svg[h..h + svg[h..].find('"').unwrap()]
+        .parse::<f64>()
+        .unwrap()
+    };
+    assert!(height(&svg) > height(&one_line), "{svg}");
+  }
+
+  /// A `Dynamic` layout item showing a fixed-size `Pane` of `Text` is laid
+  /// out like the `Pane` item itself: the grid inside measures its text
+  /// cells in the proportional text face, not at the monospace advance.
+  #[test]
+  fn dynamic_fixed_size_pane_of_text_keeps_the_text_face() {
+    let layout = |item: &str| {
+      clear_state();
+      let result =
+        interpret_with_stdout(&format!("Column[{{Graphics[Disk[]], {item}}}]"))
+          .unwrap();
+      result.graphics.unwrap()
+    };
+    let pane = r#"Pane[Text[Grid[{{"a long caption:  ", "x"}}]], {400, 60}]"#;
+    let second_cell_x = |svg: &str| {
+      let at = svg.find(">x<").unwrap();
+      let tag = &svg[svg[..at].rfind("<text").unwrap()..at];
+      let x = tag.find("x=\"").unwrap() + 3;
+      tag[x..x + tag[x..].find('"').unwrap()].to_string()
+    };
+    let plain = layout(pane);
+    let dynamic = layout(&format!("Dynamic[{pane}]"));
+    assert_eq!(second_cell_x(&dynamic), second_cell_x(&plain), "{dynamic}");
   }
 }
 
