@@ -6140,11 +6140,28 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
     } => tf_flatten_additive(operand, !neg, out),
     Expr::FunctionCall { name, args } if name == "Plus" => {
       for a in args {
-        tf_flatten_additive(a, neg, out);
+        // A complex number inside a larger sum is one term, set in
+        // parentheses (`x + (2 + 3 i)`), not two loose ones.
+        if tf_is_complex_with_real_part(a) {
+          out.push((neg, a.clone()));
+        } else {
+          tf_flatten_additive(a, neg, out);
+        }
       }
     }
     _ if tf_is_zero(expr) => {}
     _ => out.push((neg, expr.clone())),
+  }
+}
+
+/// Whether `expr` is a complex number with a nonzero real part, which Woxi
+/// stores as its `re + im I` sum.
+fn tf_is_complex_with_real_part(expr: &Expr) -> bool {
+  use crate::functions::expr_form::{ComplexParts, complex_full_form_parts};
+  match complex_full_form_parts(expr) {
+    Some(ComplexParts::Exact { re, .. }) => !matches!(re, Expr::Integer(0)),
+    Some(ComplexParts::Float { re, .. }) => re != 0.0,
+    None => false,
   }
 }
 
@@ -6780,6 +6797,16 @@ fn tf_operand(expr: &Expr) -> Expr {
   }
 }
 
+/// TraditionalForm box of one term of a sum: a complex number with a real
+/// part is parenthesized there (`x + (2 + 3 i)`, `x - (1 - i)`).
+fn tf_sum_term(expr: &Expr) -> Expr {
+  if tf_is_complex_with_real_part(expr) {
+    tf_parens(tf(expr))
+  } else {
+    tf_operand(expr)
+  }
+}
+
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -6806,7 +6833,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         if *neg {
           items.push(tf_string("-"));
         }
-        items.push(tf_operand(term));
+        items.push(tf_sum_term(term));
         continue;
       }
       let (neg, term) = match negated_term(term) {
@@ -6814,7 +6841,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         None => (*neg, term.clone()),
       };
       items.push(tf_string(if neg { "-" } else { "+" }));
-      items.push(tf_operand(&term));
+      items.push(tf_sum_term(&term));
     }
     return tf_row(items);
   }
@@ -6857,14 +6884,14 @@ fn tf_order_sum_terms(
     .enumerate()
     .map(|(i, (neg, term))| match negated_term(term) {
       Some(positive) if i == 0 => {
-        let mut b = tf_operand(term);
+        let mut b = tf_sum_term(term);
         if !tf_delete_first_minus(&mut b) {
-          b = tf_operand(&positive);
+          b = tf_sum_term(&positive);
         }
         (!*neg, b, positive)
       }
-      Some(positive) => (!*neg, tf_operand(&positive), positive),
-      None => (*neg, tf_operand(term), term.clone()),
+      Some(positive) => (!*neg, tf_sum_term(&positive), positive),
+      None => (*neg, tf_sum_term(term), term.clone()),
     })
     .collect();
   if signed.len() > 1 && !large {
