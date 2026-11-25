@@ -10968,6 +10968,64 @@ pub fn movable_axes(
 }
 
 #[cfg(test)]
+mod body_toggler_bar_tests {
+  use super::*;
+
+  /// A paged Demonstration panel: one `Switch` branch offers toggle
+  /// `Button`s over a list (drawn pressed while their item is picked), the
+  /// other a `TogglerBar` bound to a hidden list variable. The `Switch`
+  /// keeps both in the body, so the picture has to draw the bar as
+  /// pressable plates — it used to print the bar's source text, leaving the
+  /// list it drives unreachable.
+  #[test]
+  fn toggler_bar_in_a_switch_branch_is_pressable() {
+    let code = r#"Manipulate[
+      Pane[Switch[page,
+        1, Column[{"pick:", Row[Table[With[{k = k},
+          Button[k, picked = If[MemberQ[picked, k],
+            DeleteCases[picked, k], Append[picked, k]],
+            Appearance -> If[MemberQ[picked, k], "Pressed", Automatic]]],
+          {k, 3}]], picked}],
+        2, Column[{"active:", TogglerBar[Dynamic[active],
+          {1 -> "first", 2 -> "second", 3 -> "third"}], active}]],
+        {300, 200}],
+      {{page, 2}, {1 -> "items", 2 -> "switches"}},
+      {{picked, {2}}, ControlType -> None},
+      {{active, {1, 3}}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    let svg = state
+      .check_render()
+      .expect("body renders")
+      .graphics
+      .expect("body draws a picture");
+    assert!(!svg.contains("TogglerBar"), "the bar printed its source");
+    assert_eq!(state.button_regions.len(), 3, "one region per choice");
+    // Two choices are selected (raised), one is not (flat gray).
+    assert_eq!(svg.matches("fill=\"#EDEDED\"").count(), 1, "{svg}");
+
+    let value = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    // The plates run left to right in choice order: pressing the second
+    // adds it, pressing the first removes it.
+    let mut regions = state.button_regions.clone();
+    regions.sort_by(|a, b| a.x.total_cmp(&b.x));
+    state.apply_button_action(&regions[1].action);
+    assert_eq!(state.error, None);
+    assert_eq!(value(&state, "active"), "{1, 3, 2}");
+    state.apply_button_action(&regions[0].action);
+    assert_eq!(value(&state, "active"), "{3, 2}");
+  }
+}
+
+#[cfg(test)]
 mod tooltip_region_tests {
   use super::*;
 
