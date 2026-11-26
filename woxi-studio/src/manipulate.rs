@@ -1130,13 +1130,31 @@ fn collect_reads_and_writes(
   }
 }
 
-/// The symbols that a `Dynamic[…]` inside `body` both reads and assigns,
-/// e.g. `s` and `i` in `Dynamic[s = s + g; i = step[i]; draw[i]]`.
-fn dynamic_feedback_vars(body: &str) -> Vec<String> {
-  fn walk(expr: &woxi::syntax::Expr, out: &mut Vec<String>) {
+/// What the `Dynamic[…]`s inside `body` feed back to themselves.
+#[derive(Debug, Default, PartialEq)]
+struct DynamicFeedback {
+  /// The symbols a `Dynamic` both reads and assigns, e.g. `s` and `i` in
+  /// `Dynamic[s = s + g; i = step[i]; draw[i]]`.
+  vars: Vec<String>,
+  /// The symbols such a self-feeding `Dynamic` assigns (including the ones
+  /// it never reads, `last = s` next to `s = s + g`) that no other
+  /// `Dynamic` of the body shows: nothing else is redrawn when they change.
+  own_writes: Vec<String>,
+}
+
+/// The feedback of the `Dynamic[…]`s inside `body`. With `whole_body`, the
+/// body itself is the content of a `Dynamic` (a Manipulate body written as
+/// `Dynamic[…]`, whose wrapper is peeled off).
+fn dynamic_feedback(body: &str, whole_body: bool) -> DynamicFeedback {
+  use woxi::syntax::Expr;
+  fn reads_and_writes(content: &Expr) -> (Vec<String>, Vec<String>) {
+    let (mut reads, mut writes) = (Vec::new(), Vec::new());
+    collect_reads_and_writes(content, &mut reads, &mut writes);
+    (reads, writes)
+  }
+  fn walk_vars(expr: &Expr, out: &mut Vec<String>) {
     if let Some(content) = dynamic_content(expr) {
-      let (mut reads, mut writes) = (Vec::new(), Vec::new());
-      collect_reads_and_writes(content, &mut reads, &mut writes);
+      let (reads, writes) = reads_and_writes(content);
       for w in writes {
         if reads.contains(&w) && !out.contains(&w) {
           out.push(w);
@@ -1144,12 +1162,47 @@ fn dynamic_feedback_vars(body: &str) -> Vec<String> {
       }
     }
     for sub in sub_exprs(expr) {
-      walk(sub, out);
+      walk_vars(sub, out);
     }
   }
-  let mut out = Vec::new();
-  if let Ok(parsed) = woxi::syntax::string_to_expr(body) {
-    walk(&parsed, &mut out);
+  // The outermost `Dynamic`s: each one is refreshed as a whole.
+  fn outermost<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    if let Some(content) = dynamic_content(expr) {
+      out.push(content);
+      return;
+    }
+    for sub in sub_exprs(expr) {
+      outermost(sub, out);
+    }
+  }
+  let mut out = DynamicFeedback::default();
+  let Ok(parsed) = woxi::syntax::string_to_expr(body) else {
+    return out;
+  };
+  let mut dynamics = Vec::new();
+  if whole_body {
+    dynamics.push(&parsed);
+    let (reads, writes) = reads_and_writes(&parsed);
+    out.vars = writes.into_iter().filter(|w| reads.contains(w)).collect();
+    out.vars.dedup();
+  } else {
+    outermost(&parsed, &mut dynamics);
+  }
+  walk_vars(&parsed, &mut out.vars);
+  let accesses: Vec<_> = dynamics.into_iter().map(reads_and_writes).collect();
+  for (i, (reads, writes)) in accesses.iter().enumerate() {
+    if !writes.iter().any(|w| reads.contains(w)) {
+      continue;
+    }
+    for w in writes {
+      let shown_elsewhere = accesses
+        .iter()
+        .enumerate()
+        .any(|(j, (other_reads, _))| j != i && other_reads.contains(w));
+      if !shown_elsewhere && !out.own_writes.contains(w) {
+        out.own_writes.push(w.clone());
+      }
+    }
   }
   out
 }
@@ -1248,6 +1301,11 @@ pub struct ManipulateState {
   /// `Dynamic` again whenever its own write changed what it reads, so the
   /// body keeps stepping on its own while the value moves.
   dynamic_feedback_vars: Vec<String>,
+  /// The variables a self-feeding `Dynamic[…]` of the body assigns that no
+  /// other `Dynamic` shows (see [`DynamicFeedback::own_writes`]). Each
+  /// refresh of that `Dynamic` is one step of it, and nothing else needs
+  /// redrawing for them.
+  dynamic_feedback_writes: Vec<String>,
   /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
   /// body (see `ManipulateSpec::refresh_interval`).
   refresh_interval: Option<String>,
@@ -1578,7 +1636,10 @@ impl ManipulateState {
       &spec.body_code,
       &control_names,
     );
-    let dynamic_feedback_vars = dynamic_feedback_vars(&body);
+    let DynamicFeedback {
+      vars: dynamic_feedback_vars,
+      own_writes: dynamic_feedback_writes,
+    } = dynamic_feedback(&body, spec.body_in_dynamic);
     let mut state = ManipulateState {
       body,
       initialization: spec.initialization,
@@ -1618,6 +1679,7 @@ impl ManipulateState {
       module_locals: spec.module_locals,
       self_refreshing: false,
       dynamic_feedback_vars,
+      dynamic_feedback_writes,
       refresh_interval: spec.refresh_interval,
       timed_refresh: None,
       last_refresh: None,
@@ -2616,15 +2678,29 @@ impl ManipulateState {
   /// variable it shows changes, so when a later `Dynamic` updates what an
   /// earlier one already drew (a click handled in the second row of a
   /// grid whose first row draws the board), the earlier one is drawn
-  /// again. A single pass would leave it one step behind. Bounded, as a
-  /// `Dynamic` that writes what it reads never settles.
-  fn settle_inner_dynamics(&mut self, mut before: Vec<(String, String)>) {
+  /// again. A single pass would leave it one step behind.
+  ///
+  /// What a self-feeding `Dynamic` assigns for itself alone
+  /// (`Dynamic[pos = pos + v dt; …]`, with no other `Dynamic` showing
+  /// `pos`) is left out of the comparison: no earlier `Dynamic` is behind
+  /// on it, each refresh is one step of the simulation it runs, and the
+  /// timer drives those (see [`wants_tick`]) — an extra pass here would
+  /// step it several times per frame.
+  ///
+  /// [`wants_tick`]: Self::wants_tick
+  fn settle_inner_dynamics(&mut self, before: Vec<(String, String)>) {
     const MAX_EXTRA_PASSES: usize = 2;
     if !self.body.contains("Dynamic[") {
       return;
     }
+    let settled = |mut bindings: Vec<(String, String)>,
+                   stepped: &[String]| {
+      bindings.retain(|(name, _)| !stepped.contains(name));
+      bindings
+    };
+    let mut before = settled(before, &self.dynamic_feedback_writes);
     for _ in 0..MAX_EXTRA_PASSES {
-      let after = self.bindings();
+      let after = settled(self.bindings(), &self.dynamic_feedback_writes);
       if after == before {
         break;
       }
@@ -10894,13 +10970,33 @@ mod dynamic_feedback_tests {
 
   #[test]
   fn feedback_vars_are_read_and_assigned_inside_dynamic() {
-    let vars = dynamic_feedback_vars(
+    let feedback = dynamic_feedback(
       "Column[{Dynamic[a], Dynamic@(b = b + 1; c = 5; d += 2; {e} = {f}; \
        g = Length[g]; Plot[x, {x, 0, b}])}]",
+      false,
     );
-    assert_eq!(vars, ["b", "d", "g"]);
-    // Writes outside any `Dynamic` do not count.
-    assert!(dynamic_feedback_vars("n = n + 1; Dynamic[n]").is_empty());
+    assert_eq!(feedback.vars, ["b", "d", "g"]);
+    // Everything that self-feeding `Dynamic` assigns steps along with it.
+    assert_eq!(feedback.own_writes, ["b", "c", "d", "e", "g"]);
+    // What another `Dynamic` shows is not its own.
+    let shared = dynamic_feedback(
+      "Column[{Dynamic[n], Dynamic[n = n + 1; m = n; Dynamic[m]]}]",
+      false,
+    );
+    assert_eq!(shared.vars, ["n", "m"]);
+    assert_eq!(shared.own_writes, ["m"]);
+    // Writes outside any `Dynamic` do not count…
+    assert_eq!(
+      dynamic_feedback("n = n + 1; Dynamic[n]", false),
+      DynamicFeedback::default()
+    );
+    // …nor does a `Dynamic` that only assigns what it never reads…
+    assert_eq!(
+      dynamic_feedback("Dynamic[c = 5; a]", false),
+      DynamicFeedback::default()
+    );
+    // …unless the whole body is the content of a peeled `Dynamic`.
+    assert_eq!(dynamic_feedback("n = n + 1; Disk[{n, 0}]", true).vars, ["n"]);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -10945,6 +11041,88 @@ mod dynamic_feedback_tests {
     assert!(!state.wants_tick(), "idle once the state settles");
     state.reevaluate();
     assert_eq!(var(&state, "t"), resting);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a particle simulation
+  /// whose `Dynamic[Graphics[…]]` integrates its hidden state one time step
+  /// per refresh). The Studio ran that `Dynamic` three times per frame, so
+  /// the simulation moved three steps at once. This is a self-authored,
+  /// construct-equivalent example.
+  #[test]
+  fn self_feeding_dynamic_steps_once_per_refresh() {
+    let code = r#"Manipulate[
+      width = 10 k;
+      Dynamic[Graphics[{at = at + k; trail = Append[trail, at]; last = at;
+        Point[{at, 0}]}, PlotRange -> {{0, width}, {-1, 1}}]],
+      {k, 1, 4, 1},
+      {{at, 0}, ControlType -> None},
+      {{trail, {}}, ControlType -> None},
+      {{last, 0}, ControlType -> None},
+      {{width, 10}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(var(&state, "at"), "1", "the first frame is one step");
+    assert_eq!(var(&state, "trail"), "{1}");
+    assert!(state.wants_tick(), "the Dynamic changed what it reads");
+    state.tick();
+    assert_eq!(var(&state, "at"), "2", "a tick is one step");
+    state.tick();
+    assert_eq!(var(&state, "trail"), "{1, 2, 3}");
+    // `last` is only assigned, never read, yet steps with the same Dynamic.
+    assert_eq!(var(&state, "last"), "3");
+
+    // Moving a control steps on at the new speed.
+    assert!(state.slide_continuous(0, 3.0));
+    state.reevaluate();
+    assert_eq!(var(&state, "width"), "30");
+    let at: i64 = var(&state, "at").parse().expect("an integer step");
+    assert!(at > 3 && at % 3 == 0, "stepped by the new speed: {at}");
+    state.tick();
+    assert_eq!(var(&state, "at"), (at + 3).to_string());
+  }
+
+  /// A body that is nothing but such a `Dynamic[…]` steps the same way: the
+  /// wrapper is peeled off the body, but it still is a refresh boundary
+  /// that runs again once it changed what it reads.
+  #[test]
+  fn dynamic_body_writing_its_own_state_keeps_stepping() {
+    let code = r#"Manipulate[
+      Dynamic[Graphics[{at = at + k; Point[{at, 0}]},
+        PlotRange -> {{0, 100}, {-1, 1}}]],
+      {k, 0, 4, 1},
+      {{at, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(!state.wants_tick(), "nothing moves at speed 0");
+    assert!(state.slide_continuous(0, 2.0));
+    state.reevaluate();
+    assert_eq!(var(&state, "at"), "2");
+    assert!(state.wants_tick(), "the body changed what it reads");
+    state.tick();
+    state.tick();
+    assert_eq!(var(&state, "at"), "6");
+
+    // A `Dynamic` body that settles needs no timer.
+    let code = r#"Manipulate[
+      Dynamic[top = Max[top, k]; Graphics[Point[{top, 0}]]],
+      {k, 0, 4, 1},
+      {{top, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.slide_continuous(0, 3.0));
+    state.reevaluate();
+    state.tick();
+    assert_eq!(var(&state, "top"), "3");
+    assert!(!state.wants_tick(), "idle once the state settles");
   }
 
   /// A body that frames a captioned `Grid` of two 3D scenes under `Text`

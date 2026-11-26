@@ -48414,6 +48414,10 @@ pub struct ManipulateSpec {
   /// `Dynamic`) keeps refreshing itself, which a front end drives with a
   /// timer for as long as the value keeps changing.
   pub module_locals: Vec<String>,
+  /// Whether the body was written as `Dynamic[…]` (the wrapper is peeled
+  /// off `body_code`). Such a body is its own refresh boundary: when it
+  /// rewrites a variable it reads, the front end runs it again.
+  pub body_in_dynamic: bool,
   /// The body expression as an InputForm-compatible string, ready to be
   /// substituted into a `Block[{…}, body]` for re-evaluation.
   pub body_code: String,
@@ -49530,6 +49534,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     .as_ref()
     .map_or_default(|i| i.control_placements.clone());
   let mut module_locals: Vec<String> = Vec::new();
+  let body_in_dynamic = matches!(&args[0],
+    Expr::FunctionCall { name, args } if name == "Dynamic" && !args.is_empty());
   let mut animation_rate: Option<f64> = None;
   let (
     body_code,
@@ -51247,6 +51253,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 
   Some(ManipulateSpec {
     module_locals,
+    body_in_dynamic,
     body_code,
     controls,
     state,
@@ -56755,6 +56762,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -56842,6 +56850,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code: format!("Part[{list_code}, {var}]"),
     controls: vec![control],
     state: Vec::new(),
@@ -56942,6 +56951,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code: var,
     controls: vec![control],
     state: Vec::new(),
@@ -57210,6 +57220,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -57278,6 +57289,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -57356,6 +57368,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let animation_var = animate.map(|_| control.name().to_string());
   Some(ManipulateSpec {
     module_locals: Vec::new(),
+    body_in_dynamic: false,
     body_code,
     controls: vec![control],
     state: Vec::new(),
