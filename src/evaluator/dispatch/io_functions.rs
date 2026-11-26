@@ -7326,6 +7326,19 @@ fn wrap_pane_text_at(
         whole_words,
         proportional,
       )?;
+      // A `LineSpacing` or `TextAlignment` lays out the lines of one text,
+      // which a `Column` of separate items knows nothing of: the broken
+      // lines stay one `Row` with hard line breaks, whose text flow
+      // honors both.
+      let lays_out_lines = args[1..].iter().any(|d| {
+        matches!(d, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(k)
+            if k == "LineSpacing" || k == "TextAlignment"))
+      });
+      let inner = match lines_as_flowed_row(&inner) {
+        Some(row) if lays_out_lines => row,
+        _ => inner,
+      };
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
@@ -7766,11 +7779,57 @@ fn wrap_pane_text_at(
   }
 }
 
+/// The `Column[{line, …}]` of lines `wrap_pane_text` broke a `Row` into,
+/// restated as the one `Row` of their pieces with a `"\n"` item between
+/// two lines. `None` for anything but such a one-argument `Column`.
+fn lines_as_flowed_row(lines: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = lines else {
+    return None;
+  };
+  let [Expr::List(rows)] = &args[..] else {
+    return None;
+  };
+  if name != "Column" {
+    return None;
+  }
+  let mut pieces: Vec<Expr> = Vec::new();
+  for (i, row) in rows.iter().enumerate() {
+    if i > 0 {
+      pieces.push(Expr::String("\n".to_string()));
+    }
+    match row {
+      // A blank line holds nothing between its two breaks.
+      Expr::String(s) if s == " " => {}
+      Expr::FunctionCall { name, args }
+        if name == "Row"
+          && args.len() == 1
+          && matches!(&args[0], Expr::List(_)) =>
+      {
+        if let Expr::List(items) = &args[0] {
+          pieces.extend(items.iter().cloned());
+        }
+      }
+      piece => pieces.push(piece.clone()),
+    }
+  }
+  Some(call1("Row", Expr::List(pieces.into())))
+}
+
 /// Mark the lines `wrap_pane_text` broke a `Text[…]` into as `Text`
 /// displays, looking through the `Column`s and `Style`s that hold them, so
 /// each is drawn in the proportional text face it was measured in.
 fn text_display_lines(lines: &Expr) -> Expr {
   match lines {
+    // A styled `Row` of hard-broken lines (see `lines_as_flowed_row`) is
+    // one text: the `Text` goes around the style, where a `Text` display
+    // of a styled row is drawn in the text face.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && matches!(args.first(), Some(Expr::FunctionCall { name, .. })
+          if name == "Row") =>
+    {
+      call1("Text", lines.clone())
+    }
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Column" | "Style" | "TraditionalForm")
         && !args.is_empty() =>
