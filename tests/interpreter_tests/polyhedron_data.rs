@@ -1586,6 +1586,114 @@ mod polyhedron_data_tests {
     );
   }
 
+  // Summary of a net: point count, face count, the distinct edge lengths
+  // and the distinct orientations of the faces (1 = counterclockwise).
+  fn net_summary(name: &str) -> String {
+    interpret(&format!(
+      r#"Module[{{net = PolyhedronData["{name}", "NetFaces"], pts, faces}},
+        pts = N[net[[1]]]; faces = net[[2, 1]];
+        {{Length[pts], Length[faces],
+         Union[Round[Flatten[Map[Function[f,
+           Table[Norm[pts[[f[[i]]]] - pts[[f[[Mod[i, Length[f]] + 1]]]]],
+             {{i, Length[f]}}]], faces]], 10^-9]],
+         Union[Map[Function[f, Sign[Sum[
+           Det[{{pts[[f[[i]]]], pts[[f[[Mod[i, Length[f]] + 1]]]]}}],
+             {{i, Length[f]}}]]], faces]]}}]"#
+    ))
+    .unwrap()
+  }
+
+  // The faces sharing an edge with face `face` in the net of `name`.
+  fn net_neighbors(name: &str, face: usize) -> String {
+    interpret(&format!(
+      r#"Module[{{f = PolyhedronData["{name}", "NetFaceIndices"]}},
+        Select[Range[Length[f]],
+          # != {face} && Length[Intersection[f[[#]], f[[{face}]]]] == 2 &]]"#
+    ))
+    .unwrap()
+  }
+
+  // The dodecahedron's net is two flowers of unit pentagons — faces 2-6
+  // around face 1 and faces 7-11 around face 12 — joined by faces 6 and 7,
+  // all wound counterclockwise so a texture is never mirrored.
+  #[test]
+  fn polyhedron_data_dodecahedron_net_is_two_flowers() {
+    assert_eq!(net_summary("Dodecahedron"), "{38, 12, {1}, {1}}");
+    assert_eq!(net_neighbors("Dodecahedron", 1), "{2, 3, 4, 5, 6}");
+    assert_eq!(net_neighbors("Dodecahedron", 12), "{7, 8, 9, 10, 11}");
+    assert_eq!(net_neighbors("Dodecahedron", 6), "{1, 7}");
+    assert_eq!(net_neighbors("Dodecahedron", 3), "{1}");
+    // The coordinates are exact.
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["Dodecahedron", "NetCoordinates"][[{1, 2}]]"#
+      )
+      .unwrap(),
+      "{{0, 0}, {(1 - Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/2]/2}}"
+    );
+    // Both flowers stand side by side: the net is wider than tall.
+    assert_eq!(
+      interpret(
+        r#"Module[{p = N[PolyhedronData["Dodecahedron", "NetCoordinates"]]},
+          Round[{Max[p[[All, 1]]] - Min[p[[All, 1]]],
+                 Max[p[[All, 2]]] - Min[p[[All, 2]]]}, 10^-3]]"#
+      )
+      .unwrap(),
+      "{8163/1000, 4029/1000}"
+    );
+  }
+
+  // The rhombic dodecahedron's net is a zigzag strip of unit rhombi over
+  // 26 points, each face running counterclockwise from an acute corner.
+  #[test]
+  fn polyhedron_data_rhombic_dodecahedron_net_is_a_strip() {
+    assert_eq!(net_summary("RhombicDodecahedron"), "{26, 12, {1}, {1}}");
+    assert_eq!(net_neighbors("RhombicDodecahedron", 1), "{2}");
+    assert_eq!(net_neighbors("RhombicDodecahedron", 3), "{2, 4}");
+    assert_eq!(net_neighbors("RhombicDodecahedron", 12), "{11}");
+    // Three rhombi meet at each hub of the strip.
+    assert_eq!(
+      interpret(
+        r#"Module[{f = PolyhedronData["RhombicDodecahedron", "NetFaceIndices"]},
+          Select[Range[26], Count[Flatten[f], #] == 3 &]]"#
+      )
+      .unwrap(),
+      "{4, 9, 12, 17, 20}"
+    );
+    // The first and third corners of a face span its long diagonal.
+    assert_eq!(
+      interpret(
+        r#"Module[{net = PolyhedronData["RhombicDodecahedron", "NetFaces"]},
+          Union[Map[Function[f,
+            Simplify[{Norm[net[[1, f[[1]]]] - net[[1, f[[3]]]]],
+                      Norm[net[[1, f[[2]]]] - net[[1, f[[4]]]]]}]],
+            net[[2, 1]]]]]"#
+      )
+      .unwrap(),
+      "{{2*Sqrt[2/3], 2/Sqrt[3]}}"
+    );
+  }
+
+  // A predefined net is what "NetFaces" returns, too.
+  #[test]
+  fn polyhedron_data_predefined_net_is_shared_by_net_properties() {
+    for name in [
+      "Dodecahedron",
+      "RhombicDodecahedron",
+      "GyroelongatedSquareDipyramid",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"With[{{net = PolyhedronData["{name}", "NetFaces"]}},
+            {{PolyhedronData["{name}", "NetCoordinates"] === net[[1]],
+             PolyhedronData["{name}", "NetFaceIndices"] === net[[2, 1]]}}]"#
+        ))
+        .unwrap(),
+        "{True, True}"
+      );
+    }
+  }
+
   // Solids without a predefined net derive the properties from "NetFaces".
   #[test]
   fn polyhedron_data_net_properties_match_net_faces() {

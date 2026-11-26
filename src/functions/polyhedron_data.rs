@@ -936,8 +936,15 @@ fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
 /// `"NetFaces"`: a planar net of the solid — the faces unfolded into the
 /// plane along a breadth-first spanning tree of the face adjacency graph,
 /// as `GraphicsComplex[points, Polygon[faces]]` over 2D points (faces share
-/// the points of the edges the unfolding keeps joined).
+/// the points of the edges the unfolding keeps joined). Solids with a
+/// predefined net (see `predefined_net`) return that layout instead.
 fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  if let Some((coords, faces)) = predefined_net(info.name) {
+    return Ok(call(
+      "GraphicsComplex",
+      vec![eval_wl(coords)?, call1("Polygon", eval_wl(faces)?)],
+    ));
+  }
   let vertices = numeric_vertices(info)?;
   let faces = numeric_faces(info)?;
   let sub = |a: &[f64], b: &[f64]| -> Vec<f64> {
@@ -1072,8 +1079,8 @@ fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// A predefined planar net for solids whose net is a fixed strip layout
-/// rather than a search result: the 2D vertex coordinates and the faces as
+/// A predefined planar net for solids whose net is a fixed layout rather
+/// than a search result: the 2D vertex coordinates and the faces as
 /// 1-based indices into them.
 fn predefined_net(name: &str) -> Option<(&'static str, &'static str)> {
   match name {
@@ -1089,6 +1096,73 @@ fn predefined_net(name: &str) -> Option<(&'static str, &'static str)> {
         {10, 14, 13}, {13, 14, 17}, {14, 18, 17}, {1, 5, 3}, {5, 9, 7}, \
         {9, 13, 11}, {13, 17, 15}, {2, 4, 6}, {6, 8, 10}, {10, 12, 14}, \
         {14, 16, 18}}",
+    )),
+    // Two "flowers" of six unit pentagons, each a center with a petal on
+    // every edge, joined along one petal edge. Face 1 is the center of one
+    // flower with faces 2-6 around it clockwise, face 12 the center of the
+    // other with faces 7-11 around it clockwise; faces 6 and 7 are joined.
+    // Every face is listed counterclockwise.
+    "Dodecahedron" => Some((
+      "{{0, 0}, {(1 - Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-3 - Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, {(-1 - Sqrt[5])/2, 0}, \
+        {(-1 - Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
+        {(-1 - Sqrt[5])/2, 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {0, 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-1 - Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {1/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, {1, 0}, \
+        {(3 + Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
+        {(1 + Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
+        {-1/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
+        {1/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-3 - 3*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
+        {(-2 - Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-3 - Sqrt[5])/2, 0}, \
+        {(-2 - Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-5 - 3*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-9 - 3*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, {-2 - Sqrt[5], 0}, \
+        {(-7 - 3*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
+        {(-9 - 3*Sqrt[5])/4, -Sqrt[(5 + Sqrt[5])/8]}, {-3 - Sqrt[5], 0}, \
+        {(-11 - 5*Sqrt[5])/4, -Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-5 - 2*Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-13 - 5*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
+        {(-11 - 5*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-15 - 5*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-7 - 3*Sqrt[5])/2, 0}, \
+        {(-6 - 3*Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-5 - 2*Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-9 - 5*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-13 - 5*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-11 - 3*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-4 - Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
+        {(-7 - 3*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}}",
+      "{{1, 2, 3, 4, 5}, {6, 3, 2, 7, 8}, {9, 2, 1, 10, 11}, \
+        {12, 1, 5, 13, 14}, {15, 5, 4, 16, 17}, {18, 4, 3, 19, 20}, \
+        {20, 21, 22, 23, 18}, {24, 22, 25, 26, 27}, {28, 25, 29, 30, 31}, \
+        {32, 29, 33, 34, 35}, {36, 33, 21, 37, 38}, {29, 25, 22, 21, 33}}",
+    )),
+    // A zigzag strip of unit rhombi: three rhombi meet with their obtuse
+    // corners at each of six hubs alternating between an upper and a lower
+    // row. Every face is listed counterclockwise from an acute corner,
+    // with an upper-row hub second and a lower-row hub last.
+    "RhombicDodecahedron" => Some((
+      "{{-Sqrt[6]/3, Sqrt[3]/3}, {-4*Sqrt[6]/9, -2*Sqrt[3]/9}, \
+        {-Sqrt[6]/9, -5*Sqrt[3]/9}, {0, 0}, {0, 2*Sqrt[3]/3}, \
+        {Sqrt[6]/9, -5*Sqrt[3]/9}, {Sqrt[6]/3, Sqrt[3]/3}, \
+        {4*Sqrt[6]/9, -8*Sqrt[3]/9}, {4*Sqrt[6]/9, -2*Sqrt[3]/9}, \
+        {5*Sqrt[6]/9, Sqrt[3]/3}, {7*Sqrt[6]/9, -5*Sqrt[3]/9}, \
+        {8*Sqrt[6]/9, 0}, {8*Sqrt[6]/9, 2*Sqrt[3]/3}, \
+        {Sqrt[6], -5*Sqrt[3]/9}, {11*Sqrt[6]/9, Sqrt[3]/3}, \
+        {4*Sqrt[6]/3, -8*Sqrt[3]/9}, {4*Sqrt[6]/3, -2*Sqrt[3]/9}, \
+        {13*Sqrt[6]/9, Sqrt[3]/3}, {5*Sqrt[6]/3, -5*Sqrt[3]/9}, \
+        {16*Sqrt[6]/9, 0}, {16*Sqrt[6]/9, 2*Sqrt[3]/3}, \
+        {17*Sqrt[6]/9, -5*Sqrt[3]/9}, {19*Sqrt[6]/9, Sqrt[3]/3}, \
+        {20*Sqrt[6]/9, -8*Sqrt[3]/9}, {20*Sqrt[6]/9, -2*Sqrt[3]/9}, \
+        {23*Sqrt[6]/9, -5*Sqrt[3]/9}}",
+      "{{3, 4, 1, 2}, {1, 4, 7, 5}, {7, 4, 6, 9}, {6, 8, 11, 9}, \
+        {11, 12, 10, 9}, {10, 12, 15, 13}, {15, 12, 14, 17}, \
+        {14, 16, 19, 17}, {19, 20, 18, 17}, {18, 20, 23, 21}, \
+        {23, 20, 22, 25}, {22, 24, 26, 25}}",
     )),
     _ => None,
   }

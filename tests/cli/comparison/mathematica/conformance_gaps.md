@@ -8232,6 +8232,19 @@ a `GraphicsComplex` over de-duplicated 2D points (the shape a Demonstration
 indexing `p[[1, #]] & /@ p[[2, 1]]` expects) — inferred from that usage, not
 checked directly.
 
+### `PolyhedronData` nets of the dodecahedron and rhombic dodecahedron are partly unverified
+
+The `"NetFaces"` layouts of `Dodecahedron` (two flowers of pentagons, faces
+2–6 around face 1 and 7–11 around face 12, joined by faces 6 and 7) and
+`RhombicDodecahedron` (a zigzag strip over 26 points) reproduce the stored
+snapshots of a Demonstration that textures every face, so the face order,
+winding, starting corner and orientation of the visible faces are checked.
+Built without access to `wolframscript`, the rest is inferred: the
+dodecahedron's point numbering, the placement of the origin, the starting
+corner of its faces 1–4 (hidden in the snapshots; taken from the half-turn
+symmetry of the net), and the rhombic dodecahedron's face index lists (the
+Demonstration supplies its own over Wolfram's 26 points).
+
 ### `PolyhedronData["GyroelongatedSquareDipyramid", …]` ordering is unverified
 
 The vertex/face order and orientation of the solid are built without access to
