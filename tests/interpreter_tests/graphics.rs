@@ -49371,7 +49371,7 @@ mod manipulate {
         assert_eq!(maxs, &[1.0, 1.0, 1.0]);
         assert_eq!(steps, &None);
         assert_eq!(initial, &[0.0, 0.0, 1.0]);
-        assert!(exact_initial);
+        assert!(exact_initial.iter().all(|&e| e));
       }
       other => panic!("expected VectorSlider, got {other:?}"),
     }
@@ -56136,7 +56136,7 @@ mod manipulate {
         let two_pi = 2.0 * std::f64::consts::PI;
         assert!(maxs.iter().all(|m| (m - two_pi).abs() < 1e-12), "{maxs:?}");
         assert_eq!(initial, &vec![0.0; 3]);
-        assert!(*exact_initial);
+        assert!(exact_initial.iter().all(|&e| e));
       }
       other => panic!("expected VectorSlider, got {other:?}"),
     }
@@ -56159,7 +56159,7 @@ mod manipulate {
         ..
       } => {
         assert_eq!(initial, &vec![1.0, 2.0, 3.0, 4.0]);
-        assert!(!*exact_initial);
+        assert!(!exact_initial.iter().any(|&e| e));
       }
       other => panic!("expected VectorSlider, got {other:?}"),
     }
