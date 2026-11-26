@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- A `Graphics` title is set in `TraditionalForm` like a `Plot` title:
+    `PlotLabel -> Row[{Log[n], " (base ", 10, ")"}]` reads `log(n) (base 10)`
+    and `PlotLabel -> Sin[x]` reads `sin(x)`, where both printed their input
+    form. A built-in with a notation of its own is written in it as a
+    title, frame or axes label (`Prime[n]` is pₙ, `Fibonacci[n]` Fₙ,
+    `Floor[x]` ⌊x⌋, `BesselJ[2, x]` J₂(x)), also under a `Style`. A number
+    in a `NumberForm` with an `ExponentFunction` and a stored box keep
+    their typesetting among the items of a `Row` title.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
