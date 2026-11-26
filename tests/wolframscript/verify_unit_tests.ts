@@ -1424,6 +1424,12 @@ function main() {
   // while Wolfram's companion-matrix eigenvalues introduce machine-epsilon
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
+    // Repeated machine roots that wolframscript leaves scattered by its own
+    // eigenvalue rounding, and Woxi merges; see
+    // "High-multiplicity roots of a machine-coefficient polynomial" in
+    // conformance_gaps.md.
+    "Round[10^8 {Re[z], Im[z]} /. Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]",
+    "Round[10^8 x /. Solve[Expand[(x - 1.1)^4 (x - 1.2)] == 0, x]]",
     // wolframscript never terminates: the compiled call falls back to the
     // uncompiled FixedPoint over the free symbols x, y, z, whose SameTest is
     // never True (not even TimeConstrained interrupts it). Woxi keeps the

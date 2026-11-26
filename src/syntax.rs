@@ -299,6 +299,13 @@ pub struct PlotSeriesData {
   /// a directive of the curve, so `plot /. Line -> Arrow` draws the heads
   /// it asks for (several evenly spaced ones for a list of sizes).
   pub arrowheads: Option<Expr>,
+  /// The y range of the plot that sampled this series, set once `Show` has
+  /// merged the series into another plot's source (`None` = the range of
+  /// the source it sits in). A curve is cut at the range of its own plot,
+  /// not at that of the plot it was merged behind: the result of
+  /// `Show[narrow, tall]` layered onto a wider graphic still draws all of
+  /// `tall`'s curve, as Wolfram's unclipped `Line` does.
+  pub own_y_range: Option<(f64, f64)>,
 }
 
 /// A plot's `ColorFunction` as one of its curves was drawn with it: the
@@ -19683,24 +19690,28 @@ impl TextBox {
     let bw = base.width();
     let ew = exp.width();
 
-    // The exponent sits above the top of the base, shifted right by base width.
-    // Total lines = exp.height() + base.height()
-    // Baseline = exp.height() + base.baseline
-
-    let total = exp.height() + base.height();
+    // The exponent's last line sits on the row just above the base's
+    // baseline, to the right of the base: on a new row for a one-line
+    // base (`x^2`), beside the numerator of a tall one (`(1 + 1/x)^2`
+    // shows its `2` next to the `1`, not above the whole fraction).
+    let extra = exp.height().saturating_sub(base.baseline);
+    let first_exp_row = base.baseline + extra - exp.height();
+    let total = extra + base.height();
     let mut lines = Vec::with_capacity(total);
-
-    // Exponent lines (shifted right by base width)
-    for i in 0..exp.height() {
-      lines.push(format!("{}{}", " ".repeat(bw), exp.lines[i]));
-    }
-    // Base lines (padded right by exponent width)
-    for i in 0..base.height() {
-      lines.push(format!("{}{}", base.lines[i], " ".repeat(ew)));
+    for row in 0..total {
+      let base_line = match row.checked_sub(extra) {
+        Some(i) => base.lines[i].clone(),
+        None => " ".repeat(bw),
+      };
+      let exp_line = match row.checked_sub(first_exp_row) {
+        Some(i) if i < exp.height() => exp.lines[i].clone(),
+        _ => " ".repeat(ew),
+      };
+      lines.push(format!("{base_line}{exp_line}"));
     }
 
     Self {
-      baseline: exp.height() + base.baseline,
+      baseline: extra + base.baseline,
       lines,
     }
   }
@@ -20168,6 +20179,17 @@ fn infix_operator_textbox(expr: &Expr) -> Option<TextBox> {
 
 /// Render a base expression for Power, adding parens if needed for precedence.
 fn expr_to_textbox_base(expr: &Expr) -> TextBox {
+  if power_base_needs_parens(expr) {
+    let inner = expr_to_textbox(expr);
+    TextBox::hconcat(&[TextBox::atom("("), inner, TextBox::atom(")")])
+  } else {
+    expr_to_textbox(expr)
+  }
+}
+
+/// Whether the base of a displayed power is parenthesized under its
+/// superscript: any base that prints with an operator of its own.
+pub(crate) fn power_base_needs_parens(expr: &Expr) -> bool {
   // Wrap the Power base in parens when the base would otherwise bind
   // less tightly than the implicit superscript: Plus/Minus, negative
   // numeric literals, and unary `-x` all need parens so that e.g.
@@ -20199,7 +20221,7 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
     }
     _ => false,
   };
-  let needs_parens = matches!(
+  matches!(
     expr,
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -20216,14 +20238,16 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
     || complex_neg_im
     || times_neg_leading
-    || is_infix_display_call(expr);
-
-  if needs_parens {
-    let inner = expr_to_textbox(expr);
-    TextBox::hconcat(&[TextBox::atom("("), inner, TextBox::atom(")")])
-  } else {
-    expr_to_textbox(expr)
-  }
+    || is_infix_display_call(expr)
+    // Any other base that prints with an operator of its own binds looser
+    // than (or, as a power, groups differently from) the superscript:
+    // `(a b)^c`, `(a/b)^c`, `(a^b)^c`, `(a && b)^2`, `(a!)^2`. A square
+    // root prints as the call `Sqrt[x]`, which delimits itself.
+    || (crate::functions::is_sqrt(expr).is_none()
+      && (printed_infix_precedence(expr).is_some_and(|p| p <= 48)
+        || prints_as_negation(expr)
+        || is_negative_or_fraction_literal(expr)
+        || is_factorial_call(expr)))
 }
 
 /// Extract sign and unsigned term for Plus rendering.

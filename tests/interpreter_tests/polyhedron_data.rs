@@ -1586,6 +1586,73 @@ mod polyhedron_data_tests {
     );
   }
 
+  // A predefined net is also what "NetFaces" holds, so the three net
+  // properties describe one and the same layout.
+  #[test]
+  fn polyhedron_data_predefined_net_faces_match_net_properties() {
+    assert_eq!(
+      interpret(
+        r#"Table[net = PolyhedronData[s, "NetFaces"];
+           {Head[net], net[[1]] === PolyhedronData[s, "NetCoordinates"],
+            net[[2, 1]] === PolyhedronData[s, "NetFaceIndices"]},
+           {s, {"GyroelongatedSquareDipyramid", "Dodecahedron", "RhombicDodecahedron"}}]"#
+      )
+      .unwrap(),
+      "{{GraphicsComplex, True, True}, {GraphicsComplex, True, True}, \
+       {GraphicsComplex, True, True}}"
+    );
+  }
+
+  // The dodecahedron's net is two rosettes (a pentagon ringed by five
+  // more) joined along one edge: 38 exact points, unit edges, every face
+  // counterclockwise, twice as wide as it is high.
+  #[test]
+  fn polyhedron_data_dodecahedron_net_is_two_rosettes() {
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["Dodecahedron", "NetFaces"];
+           pts = N[net[[1]]]; faces = net[[2, 1]];
+           shared[a_, b_] := Length[Intersection[faces[[a]], faces[[b]]]];
+           area[f_] := Total[Map[Det, Partition[pts[[f]], 2, 1, 1]]]/2;
+           {Length[pts], Map[Length, faces],
+            Union[Round[Flatten[Map[Function[f, Map[Norm, pts[[f]] - pts[[RotateLeft[f]]]]], faces]], 10^-9]],
+            Union[Map[Sign[area[#]] &, faces]],
+            Table[shared[1, k], {k, 2, 6}], Table[shared[12, k], {k, 7, 11}],
+            shared[6, 7], shared[1, 12],
+            Round[(Max[#] - Min[#]) & /@ Transpose[pts], 10^-3],
+            MatchQ[net[[1]], {{_?(FreeQ[#, _Real] &), _?(FreeQ[#, _Real] &)} ..}]}"#
+      )
+      .unwrap(),
+      "{38, {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5}, {1}, {1}, \
+       {2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}, 2, 0, {8163/1000, 4029/1000}, True}"
+    );
+  }
+
+  // The rhombic dodecahedron's net is a zigzag strip of twelve unit
+  // rhombi over 26 exact points numbered from left to right; neighbors in
+  // the strip share an edge and every third rhombus a corner.
+  #[test]
+  fn polyhedron_data_rhombic_dodecahedron_net_is_a_zigzag_strip() {
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["RhombicDodecahedron", "NetFaces"];
+           pts = N[net[[1]]]; faces = net[[2, 1]];
+           area[f_] := Total[Map[Det, Partition[pts[[f]], 2, 1, 1]]]/2;
+           {Length[pts], Map[Length, faces],
+            Union[Round[Flatten[Map[Function[f, Map[Norm, pts[[f]] - pts[[RotateLeft[f]]]]], faces]], 10^-9]],
+            Union[Map[Sign[area[#]] &, faces]],
+            Table[Length[Intersection[faces[[k]], faces[[k + 1]]]], {k, 11}],
+            Table[Length[Intersection[faces[[k]], faces[[k + 2]]]], {k, 1, 10, 2}],
+            OrderedQ[Map[First, pts[[3 ;;]]]],
+            net[[1, {2, 8, 26}]]}"#
+      )
+      .unwrap(),
+      "{26, {4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4}, {1}, {1}, \
+       {2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2}, {1, 1, 1, 1, 1}, True, \
+       {{0, 2/Sqrt[3]}, {(8*Sqrt[2/3])/3, 0}, {3*Sqrt[6], 1/Sqrt[3]}}}"
+    );
+  }
+
   // Solids without a predefined net derive the properties from "NetFaces".
   #[test]
   fn polyhedron_data_net_properties_match_net_faces() {
