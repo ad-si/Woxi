@@ -79724,3 +79724,64 @@ mod plot_epilog_inset_alignment {
     assert_eq!(left, inset_left(&plot(", {-1, 1}")));
   }
 }
+
+mod text_fraction_box_label_style {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The opening tag of the SVG text element drawing `label`.
+  fn label_tag(svg: &str, label: &str) -> String {
+    let at = svg.find(&format!(">{label}<")).expect(label);
+    let start = svg[..at].rfind("<text").unwrap();
+    svg[start..at].to_string()
+  }
+
+  /// A `Text` label that is a fraction box stacks its parts at the size of
+  /// the graphic's other text, not at the size of typeset output.
+  #[test]
+  fn bare_label_takes_the_graphics_text_size() {
+    let svg = svg(
+      "Graphics[{Text[\"w\", {0, 0}], Text[DisplayForm[FractionBox[7, \
+           9]], {1, 0}]}]",
+    );
+    assert!(label_tag(&svg, "w").contains("font-size=\"10\""), "{svg}");
+    for part in ["7", "9"] {
+      let tag = label_tag(&svg, part);
+      assert!(tag.contains("font-size=\"10.0\""), "{tag}");
+    }
+    assert!(!svg.contains("font-weight=\"bold\""), "{svg}");
+  }
+
+  /// Regression: the weight of a `Style` wrapper or of the graphic's
+  /// `BaseStyle` was lost on a fraction-box label, and the `BaseStyle`
+  /// size with it.
+  #[test]
+  fn style_and_base_style_reach_the_stacked_fraction() {
+    for code in [
+      "Graphics[Text[Style[DisplayForm[FractionBox[7, 9]], Bold, 16], {0, \
+       0}]]",
+      "Graphics[Text[DisplayForm[FractionBox[7, 9]], {0, 0}], BaseStyle -> \
+       {Bold, FontSize -> 16}]",
+      "Graphics[Text[RawBoxes[FractionBox[\"7\", \"9\"]], {0, 0}], BaseStyle \
+       -> {Bold, FontSize -> 16}]",
+    ] {
+      let svg = svg(code);
+      for part in ["7", "9"] {
+        let tag = label_tag(&svg, part);
+        assert!(tag.contains("font-size=\"16.0\""), "{code}: {tag}");
+      }
+      assert!(svg.contains("<g font-weight=\"bold\">"), "{code}: {svg}");
+    }
+  }
+
+  /// A color directive paints the whole fraction.
+  #[test]
+  fn color_directive_paints_the_stacked_fraction() {
+    let svg =
+      svg("Graphics[{Red, Text[DisplayForm[FractionBox[7, 9]], {0, 0}]}]");
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+}

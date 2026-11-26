@@ -780,6 +780,9 @@ fn graph_render(
   // for `Graphics`; left out, the drawing's own extent decides.
   let mut aspect_ratio: Option<Expr> = None;
   let mut background: Option<Expr> = None;
+  // `BaseStyle -> spec` is the style every label of the picture starts
+  // from, as it is for `Graphics`.
+  let mut base_style: Option<Expr> = None;
   // `Prolog` / `Epilog`: graphics drawn under / over the graph, written in
   // the caller's own coordinates (the ones `VertexCoordinates` uses).
   let mut prolog: Option<Expr> = None;
@@ -989,6 +992,9 @@ fn graph_render(
         // does for `Graphics`.
         "Background" => {
           background = Some(replacement.clone());
+        }
+        "BaseStyle" if base_style.is_none() => {
+          base_style = Some(replacement.clone());
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -1649,7 +1655,7 @@ fn graph_render(
       {
         let (label, place) = placed_edge_label(label);
         let t = place.t;
-        let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
+        let styled = label_style(label.clone(), base_style.is_some());
         // A curved edge carries its label on the curve.
         let (cx, cy) =
           curve_ctrl.unwrap_or((f64::midpoint(x1, x2), f64::midpoint(y1, y2)));
@@ -1665,8 +1671,7 @@ fn graph_render(
     // Edge label
     if let Some(lbl) = &edge_data.label {
       let place = edge_data.label_at;
-      let styled =
-        call("Style", vec![Expr::String(lbl.clone()), Expr::Integer(10)]);
+      let styled = label_style(Expr::String(lbl.clone()), base_style.is_some());
       if si == di {
         let my = y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5;
         let point = Expr::List(vec![Expr::Real(x1), Expr::Real(my)].into());
@@ -1789,7 +1794,14 @@ fn graph_render(
       {
         primitives.push(Expr::List(vec![to_internal(drawn)].into()));
         if vertex_labels {
-          push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
+          push_vertex_label(
+            &mut primitives,
+            &vertices[i],
+            x,
+            y,
+            vertex_radius,
+            base_style.is_some(),
+          );
         }
         continue;
       }
@@ -1848,7 +1860,7 @@ fn graph_render(
       // The label keeps the vertex name as an expression (rather than
       // pre-stringifying it) so a structured name like `Subscript[x, 1]`
       // still typesets instead of showing its literal head name.
-      let styled = call("Style", vec![label, Expr::Integer(10)]);
+      let styled = label_style(label, base_style.is_some());
       widest_label =
         widest_label.max(crate::functions::plot_padding::text_width(
           &crate::functions::graphics::graphics_text_content(&styled),
@@ -1925,6 +1937,9 @@ fn graph_render(
   }
   if let Some(bg) = background {
     graphics_args.push(rule_expr(id_expr("Background"), bg));
+  }
+  if let Some(style) = base_style {
+    graphics_args.push(rule_expr(id_expr("BaseStyle"), style));
   }
   // The window around a layout stretched to an `AspectRatio`: as many
   // units tall per unit of width as the picture is, so nothing in it is
@@ -2378,6 +2393,18 @@ enum EdgeShape {
   Func(Expr),
 }
 
+/// A vertex or edge label in the graph's label size (10 points). Under a
+/// `BaseStyle` the label is left bare, so it takes its size from that
+/// style: the picture's own base size is 10 points as well, which
+/// `Larger`, `FontSize -> n`, … then change.
+fn label_style(label: Expr, base_styled: bool) -> Expr {
+  if base_styled {
+    label
+  } else {
+    call("Style", vec![label, Expr::Integer(10)])
+  }
+}
+
 /// Append the name label drawn above a vertex.
 fn push_vertex_label(
   primitives: &mut Vec<Expr>,
@@ -2385,6 +2412,7 @@ fn push_vertex_label(
   x: f64,
   y: f64,
   vertex_radius: f64,
+  base_styled: bool,
 ) {
   // Strip any Style wrapper so the label shows the underlying vertex
   // name (e.g. `3`, not `Style[3, Red]`), keeping the name itself as an
@@ -2392,7 +2420,7 @@ fn push_vertex_label(
   // like `Subscript[x, 1]` still typesets instead of showing its
   // literal head name.
   let label_expr = unwrap_vertex_style(vertex).0;
-  let styled = call("Style", vec![label_expr.clone(), Expr::Integer(10)]);
+  let styled = label_style(label_expr.clone(), base_styled);
   primitives.push(vertex_label_text(styled, "Automatic", x, y, vertex_radius));
 }
 
