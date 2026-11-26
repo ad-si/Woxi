@@ -5847,11 +5847,10 @@ mod solve {
     assert_eq!(
       interpret(
         "Round[10^8 {Re[z], Im[z]} /. \
-         Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]"
+         Solve[Expand[(z - 3.7)^5 (z^2 + 1)] == 0, z]]"
       )
       .unwrap(),
       "{{0, -100000000}, {0, 100000000}, {370000000, 0}, {370000000, 0}, \
-       {370000000, 0}, {370000000, 0}, {370000000, 0}, {370000000, 0}, \
        {370000000, 0}, {370000000, 0}, {370000000, 0}}"
     );
     assert_eq!(
@@ -5879,6 +5878,50 @@ mod solve {
       )
       .unwrap(),
       "{3, 3, 3, 3, 3}"
+    );
+  }
+
+  // From multiplicity 6 on wolframscript leaves the copies scattered by
+  // rounding (up to 0.13 away for the 9-fold root below) in an order that
+  // varies with the multiplicity; Woxi still merges them (see
+  // conformance_gaps.md, so this case is skip-listed in the verifier).
+  #[test]
+  fn machine_polynomial_high_multiplicity_roots_are_merged() {
+    assert_eq!(
+      interpret(
+        "Round[10^8 {Re[z], Im[z]} /. \
+         Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]"
+      )
+      .unwrap(),
+      "{{0, -100000000}, {0, 100000000}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}}"
+    );
+    // Every copy of a 4-fold root next to a simple one is merged into it:
+    // polishing a scattered copy used to carry it over to the simple root,
+    // leaving three copies (with an imaginary residue) and the simple root
+    // twice.
+    assert_eq!(
+      interpret(
+        "Round[10^8 x /. Solve[Expand[(x - 1.1)^4 (x - 1.2)] == 0, x]]"
+      )
+      .unwrap(),
+      "{110000000, 110000000, 110000000, 110000000, 120000000}"
+    );
+  }
+
+  // The power sums of the roots are fixed by the coefficients, however a
+  // repeated root's copies are placed, so a copy that is lost to a nearby
+  // root shows up in them.
+  #[test]
+  fn machine_polynomial_repeated_root_power_sums() {
+    assert_eq!(
+      interpret(
+        "Round[100 Table[Total[(x /. \
+         Solve[Expand[(x - 1.1)^4 (x - 1.2)] == 0, x])^k], {k, 3}]]"
+      )
+      .unwrap(),
+      "{560, 628, 705}"
     );
   }
 

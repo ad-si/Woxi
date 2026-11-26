@@ -988,6 +988,31 @@ mod framing {
 mod plot_range_clipping {
   use super::*;
 
+  /// An axis given an interval of no extent (`{0, 0}`) is framed by the
+  /// contents, while the other axes keep their explicit intervals. The
+  /// whole `PlotRange` used to be dropped, so every scene filled its
+  /// frame regardless of the fixed ranges.
+  #[test]
+  fn an_axis_interval_without_extent_is_automatic() {
+    let scene = |range: &str| {
+      svg(&format!(
+        "Graphics3D[Cylinder[{{{{0, 0, 0}}, {{0, 1, 0}}}}, 2], \
+         PlotRange -> {range}]"
+      ))
+    };
+    assert_eq!(
+      scene("{{-5, 5}, {0, 0}, {-5, 5}}"),
+      scene("{{-5, 5}, Automatic, {-5, 5}}")
+    );
+    assert_ne!(
+      scene("{{-5, 5}, {0, 0}, {-5, 5}}"),
+      scene("Automatic"),
+      "the explicit intervals of the other axes must still frame the scene"
+    );
+    // A reversed interval is still not a frame at all.
+    assert_eq!(scene("{{-5, 5}, {1, 0}, {-5, 5}}"), scene("Automatic"));
+  }
+
   // `PlotRange -> {…, {0, 1}}` cuts the unit sphere down to its upper
   // half instead of letting it spill below the box.
   #[test]
@@ -2013,7 +2038,8 @@ mod plot3d_family {
   }
 
   // Like wolframscript, the result pins its range to the sampled surface's
-  // extent; an explicit `PlotRange` is kept as given.
+  // extent; an explicit `PlotRange` is kept, spelled out per axis (a single
+  // pair is the vertical range, recorded for every axis).
   #[test]
   fn parametric_surface_result_pins_its_plot_range() {
     assert_eq!(
@@ -2030,7 +2056,7 @@ mod plot3d_family {
          {v, 0, 2}, PlotRange -> {0, 1}]]"
       )
       .unwrap(),
-      "{0, 1}"
+      "{{0, 1}, {0, 1}, {0, 1}}"
     );
   }
 }
@@ -3932,7 +3958,8 @@ mod range_padding {
          {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3]]"
       )
       .unwrap(),
-      "Scaled[0.05]"
+      "{{Scaled[0.05], Scaled[0.05]}, {Scaled[0.05], Scaled[0.05]}, \
+       {Scaled[0.05], Scaled[0.05]}}"
     );
   }
 
@@ -4044,7 +4071,10 @@ mod range_padding {
       assert!(picture.contains(part), "{part} missing in {picture}");
     }
     assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
-    assert!(svg.contains(">n = x<tspan"), "{svg}");
+    assert!(
+      svg.contains(">n = <tspan font-style=\"italic\">x</tspan><tspan"),
+      "{svg}"
+    );
   }
 }
 
@@ -4093,27 +4123,43 @@ mod default_point_size {
   }
 }
 
-/// `ParametricPlot3D[…, PlotRange -> All]` is an automatic range: its
-/// result resolves it to the surface's extent and records the
-/// `Scaled[0.05]` padding, so a `Show` led by it frames the padded box.
+/// `ParametricPlot3D` records its `PlotRange` and `PlotRangePadding` axis
+/// by axis, as wolframscript does: an automatic axis resolved to the
+/// surface's extent and padded by `Scaled[0.05]`, an `All` one kept as
+/// `All` and padded, an explicit one as given and unpadded. A `Show` led by
+/// the plot frames that box.
 mod parametric_plot_range_all {
   use super::*;
+
+  const SCALED: &str = "{Scaled[0.05], Scaled[0.05]}";
+
+  fn recorded(options: &str) -> String {
+    interpret(&format!(
+      "Options[ParametricPlot3D[{{s, t, 2 s t}}, {{s, 0, 1}}, {{t, 0, 1}}\
+       {options}], {{PlotRange, PlotRangePadding}}]"
+    ))
+    .unwrap()
+  }
 
   #[test]
   fn resolves_the_range_and_records_the_padding() {
     clear_state();
-    for spec in ["All", "Automatic"] {
+    for spec in ["", ", PlotRange -> Automatic"] {
       assert_eq!(
-        interpret(&format!(
-          "Options[ParametricPlot3D[{{s, t, 2 s t}}, {{s, 0, 1}}, \
-           {{t, 0, 1}}, PlotRange -> {spec}], \
-           {{PlotRange, PlotRangePadding}}]"
-        ))
-        .unwrap(),
-        "{PlotRange -> {{0., 1.}, {0., 1.}, {0., 2.}}, \
-         PlotRangePadding -> Scaled[0.05]}"
+        recorded(spec),
+        format!(
+          "{{PlotRange -> {{{{0., 1.}}, {{0., 1.}}, {{0., 2.}}}}, \
+           PlotRangePadding -> {{{SCALED}, {SCALED}, {SCALED}}}}}"
+        )
       );
     }
+    assert_eq!(
+      recorded(", PlotRange -> All"),
+      format!(
+        "{{PlotRange -> {{All, All, All}}, \
+         PlotRangePadding -> {{{SCALED}, {SCALED}, {SCALED}}}}}"
+      )
+    );
   }
 
   #[test]
@@ -4126,7 +4172,75 @@ mod parametric_plot_range_all {
          {PlotRange, PlotRangePadding}]"
       )
       .unwrap(),
-      "{PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, PlotRangePadding -> Automatic}"
+      "{PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, \
+       PlotRangePadding -> {{0, 0}, {0, 0}, {0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn each_axis_is_padded_by_its_own_kind() {
+    clear_state();
+    assert_eq!(
+      recorded(", PlotRange -> {All, {0, 1}, Automatic}"),
+      format!(
+        "{{PlotRange -> {{All, {{0, 1}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{SCALED}, {{0, 0}}, {SCALED}}}}}"
+      )
+    );
+    // A bare number is a symmetric range; a single pair is the vertical
+    // range, recorded for the other axes too, which stay padded; two pairs
+    // are the horizontal ranges.
+    assert_eq!(
+      recorded(", PlotRange -> 3"),
+      "{PlotRange -> {{-3, 3}, {-3, 3}, {-3, 3}}, \
+       PlotRangePadding -> {{0, 0}, {0, 0}, {0, 0}}}"
+    );
+    assert_eq!(
+      recorded(", PlotRange -> {0, 1/2}"),
+      format!(
+        "{{PlotRange -> {{{{0, 1/2}}, {{0, 1/2}}, {{0, 1/2}}}}, \
+         PlotRangePadding -> {{{SCALED}, {SCALED}, {{0, 0}}}}}}"
+      )
+    );
+    assert_eq!(
+      recorded(", PlotRange -> {{0, 1/2}, {0, 1/2}}"),
+      format!(
+        "{{PlotRange -> {{{{0, 1/2}}, {{0, 1/2}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{{0, 0}}, {{0, 0}}, {SCALED}}}}}"
+      )
+    );
+  }
+
+  #[test]
+  fn an_explicit_padding_is_spelled_out_per_side() {
+    clear_state();
+    assert_eq!(
+      recorded(", PlotRangePadding -> {1, {1, 2}, Automatic}"),
+      format!(
+        "{{PlotRange -> {{{{0., 1.}}, {{0., 1.}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{{1, 1}}, {{1, 2}}, {SCALED}}}}}"
+      )
+    );
+    assert_eq!(
+      recorded(
+        ", PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, PlotRangePadding -> None"
+      ),
+      "{PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, \
+       PlotRangePadding -> {{None, None}, {None, None}, {None, None}}}"
+    );
+  }
+
+  #[test]
+  fn a_space_curve_records_its_range_too() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Options[ParametricPlot3D[{t, t^2, 2 t}, {t, 0, 1}, \
+         PlotRange -> {{0, 2}, All, {0, 3}}], {PlotRange, PlotRangePadding}]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0, 2}, All, {0, 3}}, PlotRangePadding -> \
+       {{0, 0}, {Scaled[0.05], Scaled[0.05]}, {0, 0}}}"
     );
   }
 
