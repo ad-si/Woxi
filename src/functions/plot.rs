@@ -2567,10 +2567,18 @@ pub(crate) fn axes_label_svg_at(
 /// The SVG markup of an axis label, one entry per line of the label (a
 /// `"a\nb"` string has two).
 fn label_markup_lines(label: &str) -> Vec<String> {
-  let markup = crate::functions::graphics::box_string_to_svg_scaled(
-    label,
-    RESOLUTION_SCALE as f64,
-  );
+  // Axis and frame labels are set in TraditionalForm: a one-letter symbol
+  // in a plain string's box code is italic, its text upright. A styled
+  // label arrives as finished markup, typeset that way already.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   if markup.contains('\n') {
     crate::functions::graphics::split_markup_lines(&markup)
   } else {

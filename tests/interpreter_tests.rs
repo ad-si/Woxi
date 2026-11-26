@@ -3885,7 +3885,10 @@ mod interpreter_tests {
       "raw box source leaked into SVG: {svg}"
     );
     assert!(
-      svg.contains("p/q"),
+      svg.contains(
+        "<tspan font-style=\"italic\">p</tspan>/\
+         <tspan font-style=\"italic\">q</tspan>"
+      ),
       "expected the nested fraction to render as p/q: {svg}"
     );
   }

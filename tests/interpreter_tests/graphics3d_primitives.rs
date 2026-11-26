@@ -4071,7 +4071,10 @@ mod range_padding {
       assert!(picture.contains(part), "{part} missing in {picture}");
     }
     assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
-    assert!(svg.contains(">n = x<tspan"), "{svg}");
+    assert!(
+      svg.contains(">n = <tspan font-style=\"italic\">x</tspan><tspan"),
+      "{svg}"
+    );
   }
 }
 

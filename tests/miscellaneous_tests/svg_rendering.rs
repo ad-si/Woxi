@@ -1825,7 +1825,10 @@ mod tests {
       )
       .expect("interpret should succeed");
       assert!(
-        svg.contains("\u{221A}<tspan text-decoration=\"overline\">s</tspan>"),
+        svg.contains(
+          "\u{221A}<tspan text-decoration=\"overline\">\
+           <tspan font-style=\"italic\">s</tspan></tspan>"
+        ),
         "SqrtBox not rendered in FrameLabel: {svg}"
       );
       assert!(!svg.contains("SqrtBox"), "raw SqrtBox leaked: {svg}");
