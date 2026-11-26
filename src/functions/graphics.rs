@@ -28150,8 +28150,8 @@ pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
   structured_label_svg_impl(expr, 14.0, true)
 }
 
-/// [`structured_label_svg`] for a legend entry, set in the picture's
-/// proportional text face: a legend's plain labels are drawn in that face,
+/// [`structured_label_svg`] for a legend entry or a title, set in the
+/// picture's proportional text face: plain labels are drawn in that face,
 /// so a two-dimensional one (a hat over a letter, a fraction) has to match
 /// them instead of coming out in the typeset monospace face beside them.
 pub(crate) fn structured_legend_label_svg(expr: &Expr) -> Option<String> {
@@ -28217,13 +28217,17 @@ fn layout_box_at_script_level_one(expr: &Expr, font_size: f64) -> BoxLayout {
 /// underscript — typeset as a picture in the title font, the way Wolfram
 /// draws it, instead of flattening the fraction to `1/e` in a text span.
 /// Strings keep their own (inline box notation) rendering.
+///
+/// The picture is set in the graphic's proportional text face, like a
+/// title that is a plain line of text: a label reads the same whether or
+/// not a fraction happens to stand in it.
 fn plot_label_structured_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   if matches!(peel_style_wrapper(expr), Expr::String(_))
     || expr_to_svg_markup_lines(expr).len() != 1
   {
     return None;
   }
-  let svg = structured_label_svg_sized(expr, TITLE_FONT)?;
+  let svg = structured_label_svg_sized(&in_text_face(expr), TITLE_FONT)?;
   let (w, h) = svg_natural_size(&svg)?;
   (w > 0.0 && h > 0.0).then_some((svg, w, h))
 }

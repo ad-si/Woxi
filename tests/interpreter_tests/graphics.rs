@@ -15616,6 +15616,25 @@ mod plot3d {
       assert!(!svg.contains("Mod["), "{svg}");
     }
 
+    /// A plot title that holds a stacked fraction is drawn as a picture,
+    /// but still in the graphic's proportional text face, like a title of
+    /// plain text, not in the monospace face of typeset output.
+    #[test]
+    fn plot_label_with_fraction_uses_the_text_face() {
+      for code in [
+        "Graphics[{Line[{{0, 0}, {1, 1}}]}, PlotLabel -> Row[{\"sum = \", \
+         1/2, \"(\", Row[{1, 1/3, 1/5}, \"+\"], \") is \", 0.75}]]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"half of \", a/b}]]",
+        "Graphics3D[Sphere[], PlotLabel -> Row[{\"ratio \", 3/7}]]",
+      ] {
+        let svg = export_svg(code);
+        // The fraction is stacked rather than flattened to `1/2`.
+        assert!(svg.contains("<line "), "{code}: {svg}");
+        assert!(!svg.contains("Mono"), "{code}: {svg}");
+        assert!(!svg.contains("monospace"), "{code}: {svg}");
+      }
+    }
+
     /// A run of blanks in a plot title (`Row[{a, "    ", b}]`) is kept
     /// rather than collapsed into a single space by the SVG renderer.
     #[test]
