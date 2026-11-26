@@ -43133,6 +43133,7 @@ fn stacked_boxes_svg(items: Vec<Expr>, align: &str) -> Option<String> {
     ColumnItemKind {
       text: false,
       text_line: None,
+      inset_column: false,
     };
     items.len()
   ];
@@ -43471,6 +43472,9 @@ pub struct ColumnItemKind {
   pub text: bool,
   /// The item was a one-line text `Row` (see [`one_line_text_row`]).
   pub text_line: Option<bool>,
+  /// The item was a nested `Column` of text that insets its own lines
+  /// (see [`is_inset_text_column`]).
+  pub inset_column: bool,
 }
 
 /// Whether `expr` (under any `Style`/`Text` wrappers) is a `Row` of plain text
@@ -43497,6 +43501,8 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
       {
         args.iter().all(is_text_atom)
       }
+      // A list of text atoms is written out in braces on the same line.
+      Expr::List(items) => items.iter().all(is_text_atom),
       _ => false,
     }
   }
@@ -43535,6 +43541,30 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
     }
     _ => None,
   }
+}
+
+/// Whether `item` (under any `Style`/`Text` wrappers) is a `Column` that
+/// insets its own lines from its left and right edges: one of text items
+/// without a fixed `ItemSize` width (see `edge_pad` in
+/// [`column_layout_svg`]).
+pub(crate) fn is_inset_text_column(item: &Expr) -> bool {
+  let mut core = item;
+  while let Expr::FunctionCall { name, args } = core
+    && (is_style_wrapper(name) || (name == "Text" && args.len() == 1))
+    && let Some(first) = args.first()
+  {
+    core = first;
+  }
+  let Expr::FunctionCall { name, args } = core else {
+    return false;
+  };
+  name == "Column"
+    && matches!(args.first(), Some(Expr::List(items)) if !items.is_empty())
+    && !args[1..]
+      .iter()
+      .filter_map(option_kv)
+      .any(|(k, _)| k == "ItemSize" || k == "Frame")
+    && !crate::evaluator::lays_out_a_graphic(core)
 }
 
 fn column_layout_svg(
@@ -43735,10 +43765,26 @@ fn column_layout_svg(
     })
     .collect();
   let text_layout = |i: usize| text_layouts[i];
+  // A nested `Column` of text already insets its lines from its own edge,
+  // so it is set flush in this one: its lines start where the lines beside
+  // it do instead of being indented once more.
+  let inset_columns: Vec<bool> = items
+    .iter()
+    .enumerate()
+    .map(|(i, item)| {
+      text_layout(i)
+        && text_items.map_or_else(
+          || is_inset_text_column(item),
+          |t| t.get(i).is_some_and(|k| k.inset_column),
+        )
+    })
+    .collect();
+  let own_inset = |i: usize| inset_columns[i];
   let col_width: f64 = cells
     .iter()
     .enumerate()
     .map(|(i, c)| match c {
+      Cell::Svg { width, .. } if own_inset(i) => *width,
       Cell::Svg { width, .. } if text_layout(i) => *width + pad_x,
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
@@ -43916,8 +43962,12 @@ fn column_layout_svg(
       Some(s) => s * font_size - f64::midpoint(margin(i - 1), margin(i)),
       None => match (&cells[i - 1], &cells[i]) {
         // A one-line text `Row` carries its own leading like a text line.
+        // So does a nested `Column` of text lines.
         (Cell::Svg { text_line: a, .. }, Cell::Svg { text_line: b, .. })
-          if a.is_none() && b.is_none() =>
+          if a.is_none()
+            && b.is_none()
+            && !own_inset(i - 1)
+            && !own_inset(i) =>
         {
           6.0
         }
@@ -44059,7 +44109,7 @@ fn column_layout_svg(
         // `total_width` already holds the frame padding on both sides, so
         // a centered item sits in the middle of it and a right-aligned one
         // against the padding on the right.
-        let margin = if text_layout(i) && !has_picture {
+        let margin = if text_layout(i) && !has_picture && !own_inset(i) {
           edge_pad
         } else {
           0.0

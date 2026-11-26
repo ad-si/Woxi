@@ -5963,6 +5963,7 @@ pub(crate) fn column_svg_with_rendered_items(
             // of an explicit spacing.
             && !functions::graphics::is_framed_box(item),
           text_line: functions::graphics::one_line_text_row(item),
+          inset_column: functions::graphics::is_inset_text_column(item),
         })
         .collect(),
     );

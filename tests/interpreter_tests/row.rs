@@ -1027,6 +1027,52 @@ mod labeled_text_layout {
   }
 }
 
+mod pane_text_row_with_written_out_items {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// A list (or number, or symbol) among the items of a `Text` row in a
+  /// sized pane is measured in the proportional text face it is drawn in:
+  /// at the monospace advance a row that fits the pane was broken in two.
+  #[test]
+  fn row_with_list_item_that_fits_stays_on_one_line() {
+    let row = r#"Row[{"The members of ", {"A", "B", "C", "D", "E", "F", "G", "H"}, " are counted ", total, " times."}]"#;
+    let plain = svg(&format!("Style[Text[{row}], 16]"));
+    let paned = svg(&format!("Pane[Style[Text[{row}], 16], {{480, 100}}]"));
+    assert_eq!(
+      plain.matches("<text").count(),
+      paned.matches("<text").count(),
+      "{paned}"
+    );
+    assert!(paned.contains(" times.</text>"), "{paned}");
+  }
+
+  /// Such a row still breaks when it is wider than the pane.
+  #[test]
+  fn row_with_list_item_wider_than_the_pane_breaks() {
+    let row = r#"Row[{"The members of ", {"A", "B", "C", "D", "E", "F", "G", "H"}, " are counted ", total, " times."}]"#;
+    let narrow = svg(&format!("Pane[Style[Text[{row}], 16], {{250, 100}}]"));
+    let wide = svg(&format!("Pane[Style[Text[{row}], 16], {{480, 100}}]"));
+    let ys = |s: &str| {
+      let mut ys: Vec<String> = s
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split(" y=\"").nth(1))
+        .map(|t| t.split('"').next().unwrap().to_string())
+        .collect();
+      ys.sort();
+      ys.dedup();
+      ys.len()
+    };
+    assert_eq!(ys(&wide), 1, "{wide}");
+    assert!(ys(&narrow) > 1, "{narrow}");
+  }
+}
+
 mod traditional_row_layout {
   use super::*;
 
