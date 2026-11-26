@@ -13369,7 +13369,8 @@ fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
 /// crosses the picture exactly where it was (clamping the vertex alone
 /// would tilt them). The polyline falls apart where it leaves the region;
 /// pieces that never enter it are dropped. A polyline already inside it
-/// (or one holding a non-finite coordinate) comes back as it is.
+/// comes back as it is; one holding a non-finite coordinate has no edges
+/// to cut along, so its points are only held within the region.
 fn clip_far_polyline(
   pts: &[(f64, f64)],
   svg_w: f64,
@@ -13379,10 +13380,10 @@ fn clip_far_polyline(
   let (y_lo, y_hi) = (-FAR_PX, svg_h.max(0.0) + FAR_PX);
   let inside =
     |&(x, y): &(f64, f64)| x >= x_lo && x <= x_hi && y >= y_lo && y <= y_hi;
-  if pts.iter().all(|p| inside(p) || !(p.0.is_finite() && p.1.is_finite())) {
+  if pts.iter().all(inside) {
     return vec![pts.to_vec()];
   }
-  if pts.iter().any(|p| p.0.is_nan() || p.1.is_nan()) {
+  if pts.iter().any(|p| !(p.0.is_finite() && p.1.is_finite())) {
     return vec![
       pts
         .iter()
@@ -13408,13 +13409,6 @@ fn clip_far_polyline(
         if q < 0.0 {
           visible = false;
         }
-      } else if p.is_infinite() {
-        // An endpoint at infinity: only the finite end can be kept.
-        if q < 0.0 {
-          visible = false;
-        } else if p > 0.0 {
-          t1 = t1.min(0.0);
-        }
       } else {
         let t = q / p;
         if p < 0.0 {
@@ -13438,10 +13432,7 @@ fn clip_far_polyline(
       } else if t >= 1.0 {
         (x1, y1)
       } else {
-        (
-          clamp_far(x0 + t * dx, svg_w),
-          clamp_far(y0 + t * dy, svg_h),
-        )
+        (clamp_far(x0 + t * dx, svg_w), clamp_far(y0 + t * dy, svg_h))
       }
     };
     let (a, b) = (at(t0), at(t1));
