@@ -78517,9 +78517,10 @@ mod text_fraction_box_label_style {
   /// the graphic's other text, not at the size of typeset output.
   #[test]
   fn bare_label_takes_the_graphics_text_size() {
-    let svg =
-      svg("Graphics[{Text[\"w\", {0, 0}], Text[DisplayForm[FractionBox[7, \
-           9]], {1, 0}]}]");
+    let svg = svg(
+      "Graphics[{Text[\"w\", {0, 0}], Text[DisplayForm[FractionBox[7, \
+           9]], {1, 0}]}]",
+    );
     assert!(label_tag(&svg, "w").contains("font-size=\"10\""), "{svg}");
     for part in ["7", "9"] {
       let tag = label_tag(&svg, part);

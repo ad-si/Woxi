@@ -1671,8 +1671,7 @@ fn graph_render(
     // Edge label
     if let Some(lbl) = &edge_data.label {
       let place = edge_data.label_at;
-      let styled =
-        label_style(Expr::String(lbl.clone()), base_style.is_some());
+      let styled = label_style(Expr::String(lbl.clone()), base_style.is_some());
       if si == di {
         let my = y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5;
         let point = Expr::List(vec![Expr::Real(x1), Expr::Real(my)].into());
