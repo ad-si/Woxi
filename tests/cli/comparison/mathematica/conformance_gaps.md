@@ -6247,6 +6247,13 @@ snapshot of a box 1.6 times as tall as it is deep does pin down one
 exception: the x axis, along the front face, stays on the bottom front edge
 although the top back one is nearer the viewer; Woxi follows that.)
 
+Another Demonstration's snapshots, of a `Plot3D` with the default
+`BoxRatios` (`{1, 1, 0.4}`) and `ViewPoint`, `AxesLabel` set and
+`ImageSize -> {450, 350}`, also put the y axis on the upper-left box edge,
+where Woxi takes the lower-right one. Both upper-left cases give an explicit
+`{width, height}` image size, so the choice may depend on the picture's
+shape on screen rather than on the box alone; that is still unconfirmed.
+
 ### Direction of 3D tick marks
 
 Wolfram draws a 3D tick mark in the scene along one of the two other

@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `AxesStyle` styles the axes of 3D plots and `Graphics3D`: a color, a
+    font size, `Bold` or `Italic` reach the axis line, its label, its tick
+    marks and its tick labels (`TicksStyle` still overrides the ticks), and
+    `{sx, sy, sz}` styles the three axes separately.
 - `RotationTransform` and `RotationMatrix` by a machine-real angle about
     a 3D axis, and a `TransformationFunction` of machine reals applied to
     points, are computed in machine arithmetic instead of through the
