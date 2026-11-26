@@ -2142,9 +2142,41 @@ fn evaluate_function_call_ast_inner(
   let head_has_hold_all_complete =
     crate::func_attrs_contains(name, Attributes::HoldAllComplete)
       || get_builtin_attributes(name).contains(Attributes::HoldAllComplete);
+  // A head can carry thousands of literal rules (the `Subscript[a, b] = …`
+  // definitions a notebook saved with its Manipulate). Copying them all on
+  // every call made each further definition and each use quadratic, so the
+  // literal rules these arguments cannot match are left out of the copy.
+  // An Orderless head matches its arguments in any order and an
+  // `Unevaluated` wrapper is seen through, so those calls keep every rule.
+  let skip_mismatched_literals = !has_orderless
+    && !matches!(name, "Plus" | "Times")
+    && !args.iter().any(|a| {
+      matches!(a, Expr::FunctionCall { name, args: ua }
+        if name == "Unevaluated" && ua.len() == 1)
+    });
+  let mut kept_overloads: Option<Vec<usize>> = None;
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
-    let raw = defs.get(name).cloned();
+    let raw = match defs.get(name) {
+      Some(all) if skip_mismatched_literals => {
+        let kept: Vec<usize> = (0..all.len())
+          .filter(|&i| {
+            let (params, conditions, _, _, blank_types, _) = &all[i];
+            !(params.len() == args.len()
+              && blank_types.iter().all(|&bt| bt < 2)
+              && literal_slot_mismatch(conditions, args))
+          })
+          .collect();
+        if kept.len() == all.len() {
+          Some(all.clone())
+        } else {
+          let copy = kept.iter().map(|&i| all[i].clone()).collect();
+          kept_overloads = Some(kept);
+          Some(copy)
+        }
+      }
+      other => other.cloned(),
+    };
     if head_has_hold_all_complete {
       raw.map(|v| {
         v.into_iter()
@@ -2157,9 +2189,15 @@ fn evaluate_function_call_ast_inner(
       raw
     }
   });
+  // The inline options are stored per rule, in the order of the rules.
   let inline_opts_overloads = crate::FUNC_OPTS_INLINE.with(|m| {
     let map = m.borrow();
-    map.get(name).cloned()
+    match (map.get(name), &kept_overloads) {
+      (Some(all), Some(kept)) => {
+        Some(kept.iter().map(|&i| all.get(i).cloned().flatten()).collect())
+      }
+      (all, _) => all.cloned(),
+    }
   });
 
   // For user-defined-function matching only: strip top-level
@@ -16132,6 +16170,26 @@ fn bspline_basis_exact(
   plus_ast(&terms)
 }
 
+/// Whether a literal slot of an overload (the `_dv<i> === literal` condition
+/// of slot `i`) is given an argument that differs from its literal, with the
+/// arguments taken in the order of the slots.
+fn literal_slot_mismatch(conditions: &[Option<Expr>], args: &[Expr]) -> bool {
+  conditions.iter().zip(args).enumerate().any(|(i, (cond, arg))| {
+    if let Some(Expr::Comparison {
+      operands,
+      operators,
+    }) = cond
+      && let [Expr::Identifier(slot), literal] = operands.as_slice()
+      && matches!(operators.as_slice(), [ComparisonOp::SameQ])
+      && slot.strip_prefix("_dv").and_then(|n| n.parse().ok()) == Some(i)
+    {
+      !crate::functions::boolean_ast::same_q_pair(arg, literal)
+    } else {
+      false
+    }
+  })
+}
+
 /// The user-defined rules of `name` tried on `args` in order; the value of
 /// the first that matches. `try_orders` also tries every order of the
 /// arguments (an Orderless head).
@@ -16455,6 +16513,19 @@ fn apply_user_overloads(
 
       // Accept if required_count <= args.len() <= total_count
       if args.len() < required_count || args.len() > total_count {
+        continue;
+      }
+
+      // A literal slot (`f[a, 2] = …`) that the argument in its position
+      // does not equal rules the overload out before anything is cloned or
+      // bound: a head with thousands of literal definitions (the saved
+      // `Subscript[…] = …` rules of a notebook) is otherwise scanned at
+      // full cost on every call.
+      let permutes = has_orderless && (2..=6).contains(&args.len());
+      if !permutes
+        && args.len() == total_count
+        && literal_slot_mismatch(conditions, args)
+      {
         continue;
       }
 

@@ -7097,3 +7097,119 @@ mod function_long_form_display {
     );
   }
 }
+
+/// As part of a scheduled QA routine, Woxi Studio was tested against a
+/// randomly sampled Wolfram Demonstration notebook (a process flow diagram
+/// with mass balance tables). Its saved definitions hold thousands of
+/// literal `Subscript[a, b] = …` rules, and every call of the head copied
+/// and tried all of them, so loading the notebook took a minute. The rules a
+/// call's arguments cannot match are now left out before anything is copied;
+/// these tests pin that the rules that do apply still fire in order.
+mod literal_rules_of_a_builtin_head {
+  use super::*;
+
+  #[test]
+  fn many_literal_rules_dispatch_to_the_matching_one() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Do[Subscript[a, i] = i^2, {i, 400}]; \
+         {Subscript[a, 7], Subscript[a, 400], Subscript[a, 401], \
+          Subscript[b, 7]}"
+      )
+      .unwrap(),
+      "{49, 160000, Subscript[a, 401], Subscript[b, 7]}"
+    );
+  }
+
+  #[test]
+  fn literal_rules_with_a_value_of_their_own_call() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[y, g][t] = t + 1; Subscript[y, h][t] = t + 2; \
+         {Subscript[y, g][t], Subscript[y, h][t], Subscript[y, g][5]}"
+      )
+      .unwrap(),
+      "{1 + t, 2 + t, Subscript[y, g][5]}"
+    );
+  }
+
+  #[test]
+  fn literal_and_pattern_rules_keep_their_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[1, x_] := \"one\"; f[2, 3] := \"lit\"; f[x_, y_] := \"any\"; \
+         f[x_] := \"single\"; {f[1, 5], f[2, 3], f[2, 4], f[2], f[3, 3]}"
+      )
+      .unwrap(),
+      "{one, lit, any, single, any}"
+    );
+  }
+
+  #[test]
+  fn redefining_a_literal_rule_replaces_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[c, 1] = 5; Subscript[c, 2] = 6; Subscript[c, 1] = 7; \
+         {Subscript[c, 1], Subscript[c, 2]}"
+      )
+      .unwrap(),
+      "{7, 6}"
+    );
+  }
+
+  #[test]
+  fn machine_real_literals_match_up_to_the_last_bit() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[q, 0.1 + 0.2] = 1; Subscript[q, 2.5] = 2; \
+         {Subscript[q, 0.3], Subscript[q, 2.5], Subscript[q, 0.4]}"
+      )
+      .unwrap(),
+      "{1, 2, Subscript[q, 0.4]}"
+    );
+  }
+
+  /// The options a rule declares inline are stored per rule; they stay
+  /// with their rule when an earlier literal rule is skipped.
+  #[test]
+  fn inline_options_stay_with_their_rule() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p[1, 2] := \"lit\"; \
+         p[x_, OptionsPattern[{c -> 7}]] := {x, OptionValue[c]}; \
+         {p[1, 2], p[3], p[3, c -> 1]}"
+      )
+      .unwrap(),
+      "{lit, {3, 7}, {3, 1}}"
+    );
+  }
+
+  /// `Unevaluated` is seen through when a literal rule is matched.
+  #[test]
+  fn unevaluated_argument_still_matches_a_literal_rule() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[u, 1] = \"v\"; Subscript[u, 2] = \"w\"; \
+         Subscript[u, Unevaluated[2]]"
+      )
+      .unwrap(),
+      "w"
+    );
+  }
+
+  #[test]
+  fn same_q_of_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret("{a === a, a === b, Global`a === a, a === \"a\"}").unwrap(),
+      "{True, False, True, False}"
+    );
+  }
+}

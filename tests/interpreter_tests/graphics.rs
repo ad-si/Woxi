@@ -4930,9 +4930,113 @@ mod graphics {
         "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
       );
       assert!(
-        svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
+        svg.contains("dy=\"-13.33\" dominant-baseline=\"central\">a</tspan>"),
         "{svg}"
       );
+    }
+
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook (a process flow
+    /// diagram with mass balance tables). Its stream labels are `Column`s
+    /// of text set across the arrows: the front end sets their 15-point
+    /// lines 20 points apart, so the first line clears the arrow it sits
+    /// on. The lines were stacked one em apart and the arrows struck
+    /// through them.
+    #[test]
+    fn text_multiline_lines_are_a_line_pitch_apart() {
+      for label in [
+        "Style[Column[{\"a\", \"b\", \"c\"}], 15]",
+        "Style[\"a\\nb\\nc\", 15]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(svg.contains("dy=\"-20\""), "{label}: {svg}");
+        assert_eq!(svg.matches("dy=\"20\"").count(), 2, "{label}: {svg}");
+      }
+    }
+
+    /// The label's box grows with its lines, so an offset still names a
+    /// point of that box: with its top edge on the anchor (`{0, 1}`) the
+    /// three-line label hangs wholly below it.
+    #[test]
+    fn text_multiline_offset_uses_the_stacked_height() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 15], {0, 0}, \
+         {0, 1}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 200]",
+      );
+      let tag = svg.split("<text").nth(1).unwrap();
+      let y: f64 = tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      // The block is 15 + 2 * 20 points high and centered on `y`.
+      assert!((y - (100.0 + 27.5)).abs() < 1.0, "{y}: {svg}");
+    }
+
+    /// A table in a label is drawn as a picture of its own; the font
+    /// directives around the `Text`, around the `Grid` inside it and around
+    /// an inset `Grid` reach its text.
+    #[test]
+    fn text_grid_picture_takes_the_surrounding_style() {
+      for (graphic, size, fill) in [
+        (
+          "Graphics[Style[Text[Grid[{{\"r\", \"s\"}}, Frame -> True]], 17]]",
+          "17",
+          "black",
+        ),
+        (
+          "Graphics[Text[Style[Grid[{{\"r\", \"s\"}}, Frame -> True], 17, Red]]]",
+          "17",
+          "rgb(255,0,0)",
+        ),
+        (
+          "Graphics[Inset[Style[Grid[{{\"r\", \"s\"}}, Frame -> True], 17]]]",
+          "17",
+          "black",
+        ),
+        (
+          "Graphics[{Blue, Text[Grid[{{\"r\", \"s\"}}, Frame -> True]]}]",
+          "10",
+          "rgb(0,0,255)",
+        ),
+        (
+          "Graphics[Text[Grid[{{\"r\", \"s\"}}, Frame -> True]]]",
+          "10",
+          "black",
+        ),
+      ] {
+        let svg = export_svg(graphic);
+        for cell in ["r", "s"] {
+          let tag = svg
+            .split("<text")
+            .find(|t| t.contains(&format!(">{cell}</text>")))
+            .unwrap_or_else(|| panic!("{graphic}: {svg}"));
+          assert!(
+            tag.contains(&format!("font-size=\"{size}\"")),
+            "{graphic}: {tag}"
+          );
+          assert!(tag.contains(&format!("fill=\"{fill}\"")), "{graphic}: {tag}");
+        }
+      }
+    }
+
+    /// A fraction box in an unframed `Grid` label keeps its bar, and the
+    /// expression in its numerator is typeset, framed or not.
+    #[test]
+    fn text_grid_fraction_box_is_stacked() {
+      for options in ["", ", Frame -> True"] {
+        let svg = export_svg(&format!(
+          "Graphics[Text[Grid[{{{{\"r\", DisplayForm[FractionBox[\
+           Subscript[\"m\", \"4\"], \"KCl\"]]}}}}{options}]]]"
+        ));
+        assert!(!svg.contains("Subscript"), "{svg}");
+        assert!(!svg.contains("m4KCl"), "{svg}");
+        assert!(svg.contains(">m</text>"), "{svg}");
+        assert!(svg.contains(">KCl</text>"), "{svg}");
+        assert!(svg.contains("<line"), "{svg}");
+      }
     }
 
     /// A `Framed` item stacked in a label's `Column` sets its content
