@@ -4425,7 +4425,8 @@ fn radio_choice_icon_size(icon: &svg::Handle) -> (f32, f32) {
 /// toggle buttons) as long as the whole row still fits
 /// ([`SETTER_BAR_MAX_ROW_CHARS`]). Wolfram picks a SetterBar for up to five
 /// choices even when each one is a phrase ("battle of the sexes",
-/// "right triangle"); past that the labels have to be short.
+/// "right triangle"); past that it is a PopupMenu however short the labels
+/// are — seven integers (`1, 2, 3, 4, 5, 7, 11`) are a dropdown.
 const SETTER_BAR_MAX_CHOICES: usize = 5;
 
 /// How wide, in characters summed over every label, a SetterBar of at most
@@ -4435,16 +4436,10 @@ const SETTER_BAR_MAX_CHOICES: usize = 5;
 /// characters are a bar, five error descriptions totaling 72 are a dropdown.
 const SETTER_BAR_MAX_ROW_CHARS: usize = 69;
 
-/// Maximum number of *compact* choices — every label at most
-/// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
-/// still rendered as a SetterBar. A run of short buttons stays readable past
-/// five, but not without bound: Wolfram draws eight integers (`-3` … `4`) as
-/// a bar and nine (`2` … `10`) as a dropdown.
-const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 8;
-
-/// A choice label this short (in characters) keeps its button narrow enough
-/// to sit in a long SetterBar.
-const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
+/// Maximum number of *icon* choices — every label a rendered picture no
+/// wider than [`SETTER_ICON_SLOT`] — still rendered as a SetterBar. Text
+/// labels never get this allowance, not even single digits.
+const SETTER_BAR_MAX_ICON_CHOICES: usize = 8;
 
 /// Width, on top of the label column, reserved for a control panel placed
 /// beside the output by `ControlPlacement -> Left`/`Right`. The rows inside
@@ -4548,7 +4543,7 @@ fn discrete_checkbox_state(
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
 /// | 3       | three plot-selector phrases         |    67 | SetterBar  |
-/// | 8       | `-3` … `4`                          |    16 | SetterBar  |
+/// | 7       | `1, 2, 3, 4, 5, 7, 11`              |     8 | PopupMenu  |
 /// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
 /// | 6       | `triangle` … `octagon`              |    44 | PopupMenu  |
@@ -4557,11 +4552,11 @@ fn discrete_checkbox_state(
 ///
 /// So five phrases stay a bar while six single words become a dropdown, even
 /// though the six are the narrower row — the count decides first, and short
-/// labels buy a longer bar.
+/// text labels don't buy a longer bar.
 ///
-/// A choice whose label is a rendered icon counts as compact: it draws at a
-/// fixed 24px, narrower than a three-character button, so it costs the row
-/// nothing.
+/// Only a choice whose label is a rendered icon counts as compact: it draws
+/// at a fixed 24px, so a row of up to [`SETTER_BAR_MAX_ICON_CHOICES`] icons
+/// stays a bar.
 #[cfg(test)]
 fn renders_as_setter_bar(
   value_labels: &[String],
@@ -4573,9 +4568,8 @@ fn renders_as_setter_bar(
 /// [`renders_as_setter_bar`] for a control drawn in the panel column
 /// `beside_output` (`ControlPlacement -> Left`/`Right`) or above/below it.
 /// A side column is only as wide as its widest caption plus a short
-/// control, so the run of compact buttons Wolfram allows past
-/// [`SETTER_BAR_MAX_CHOICES`] in a full-width panel no longer fits there:
-/// seven integer choices beside the output are a dropdown.
+/// control, so the run of icon buttons allowed past
+/// [`SETTER_BAR_MAX_CHOICES`] in a full-width panel no longer fits there.
 fn setter_bar_fits(
   value_labels: &[String],
   value_label_svgs: &[Option<svg::Handle>],
@@ -4606,11 +4600,8 @@ fn setter_bar_fits(
     return row_chars <= SETTER_BAR_MAX_ROW_CHARS;
   }
   !beside_output
-    && count <= SETTER_BAR_MAX_COMPACT_CHOICES
-    && value_labels.iter().enumerate().all(|(i, label)| {
-      is_compact_icon(i)
-        || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
-    })
+    && count <= SETTER_BAR_MAX_ICON_CHOICES
+    && (0..count).all(is_compact_icon)
 }
 
 /// The size a setter-bar button draws its choice icon at.
@@ -5323,6 +5314,7 @@ fn render_manipulate_widget<'a>(
       manipulate::ControlState::Slider2D {
         name: _,
         label,
+        label_runs,
         x_min,
         x_max,
         y_min,
@@ -5370,10 +5362,10 @@ fn render_manipulate_widget<'a>(
         .size(11)
         .font(Font::MONOSPACE)
         .width(iced::Length::Fixed(120.0));
-        // Empty runs → plain label; shares label_col_width so 2D-slider rows
-        // align with the other controls.
+        // Shares label_col_width so 2D-slider rows align with the other
+        // controls.
         let label_widget =
-          manipulate_label_widget(&[], label, label_col_width, enabled);
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
         let control_row = row![label_widget, sliders, value_widget]
           .align_y(Center)
           .spacing(8);
@@ -9563,9 +9555,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
     assert!(widget.graphics_handle.is_some(), "the solid must render");
   }
   /// A solid picker over `Join` of the Platonic and Archimedean classes lists
-  /// the choices in Wolfram's order: the Platonic block by face count, from
-  /// the tetrahedron on, then the Archimedean one alphabetically; the cube
-  /// the control starts on is therefore its second choice.
+  /// the choices in Wolfram's order: the Platonic block by face count
+  /// (tetrahedron first), then the Archimedean block alphabetically. The
+  /// initial `"Cube"` therefore selects the second choice.
   #[test]
   fn polyhedron_class_popup_lists_solids_in_class_order() {
     let src = "Manipulate[Graphics3D[GraphicsComplex[PolyhedronData[s, \"VertexCoordinates\"], Line[PolyhedronData[s, \"EdgeIndices\"]]]], {{s, \"Cube\", \"solid\"}, Join[PolyhedronData[\"Platonic\"], PolyhedronData[\"Archimedean\"]]}]";
@@ -25350,12 +25342,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "condenser outflow heat duty",
     ]));
 
-    // Past five, short labels keep the bar...
-    assert!(bar(&["-3", "-2", "-1", "1", "2", "3", "4"]));
-    assert!(bar(&["-3", "-2", "-1", "0", "1", "2", "3", "4"]));
+    // Past five it is a dropdown, however short the labels: a lattice-count
+    // control over seven integers is a PopupMenu in Wolfram's stored output.
+    assert!(!bar(&["1", "2", "3", "4", "5", "7", "11"]));
+    assert!(!bar(&["a", "b", "c", "d", "e", "f"]));
+    assert!(!bar(&["-3", "-2", "-1", "0", "1", "2", "3", "4"]));
 
-    // ...and wide ones don't. Five sentence-long labels overflow the row
-    // even though five phrase-long ones fit.
+    // Five sentence-long labels overflow the row even though five
+    // phrase-long ones fit.
     assert!(!bar(&[
       "u(y)",
       "u'(y)",
@@ -25386,12 +25380,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "ThermometerColors",
     ]));
 
-    // Nine short labels are already one too many: a count control whose
-    // choices run `2` … `10` is a dropdown in Wolfram.
+    // A count control whose choices run `2` … `10` is a dropdown in Wolfram.
     assert!(!bar(&["2", "3", "4", "5", "6", "7", "8", "9", "10"]));
 
-    // Short labels buy a longer bar, not an unbounded one: 33 integers are a
-    // dropdown even though every label is two or three characters.
+    // 33 integers are a dropdown even though every label is two or three
+    // characters.
     let many: Vec<String> = (-3..30).map(|n| n.to_string()).collect();
     assert!(!renders_as_setter_bar(&many, &vec![None; many.len()]));
 
@@ -25478,18 +25471,16 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
     );
   }
 
-  /// A panel column beside the output (`ControlPlacement -> Left`/`Right`)
-  /// is too narrow for the long run of compact buttons a full-width panel
-  /// allows: Wolfram shows a seven-integer count control placed on the left
-  /// as a dropdown, while up to five choices stay a bar on either side.
+  /// Wolfram shows a seven-integer count control as a dropdown wherever its
+  /// panel sits, while up to five choices stay a bar on either side.
   #[test]
-  fn side_panel_turns_long_compact_setter_bar_into_dropdown() {
+  fn seven_integer_choices_are_a_dropdown_on_any_side() {
     let labels = |range: std::ops::RangeInclusive<i32>| -> Vec<String> {
       range.map(|n| n.to_string()).collect()
     };
     let seven = labels(1..=7);
     let svgs = vec![None; seven.len()];
-    assert!(setter_bar_fits(&seven, &svgs, false));
+    assert!(!setter_bar_fits(&seven, &svgs, false));
     assert!(!setter_bar_fits(&seven, &svgs, true));
     assert_eq!(
       renders_as_setter_bar(&seven, &svgs),
@@ -25532,6 +25523,49 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       }
       other => panic!("expected a discrete count picker, got {other:?}"),
     }
+  }
+
+  /// A copy-count picker over seven integers stays in the top panel while
+  /// two 2D sliders sit left of the picture; Wolfram draws it as a PopupMenu
+  /// there too, and the four-choice shape picker below it as a SetterBar.
+  #[test]
+  fn seven_integer_choices_above_the_output_are_a_dropdown() {
+    let code = r#"Manipulate[
+      Graphics[{Red,
+        Table[Rotate[Translate[Disk[{0, 0}, radius/10], Dynamic[shift]],
+          2 Pi j/copies, {0, 0}], {j, 0, copies - 1}]},
+        PlotRange -> 10 {{-1, 1}, {-1, 1}}],
+      {{shift, {3, 0}, "shift"}, {-8, -8}, {8, 8}, ControlPlacement -> Left},
+      {{grid, {4, 4}, "grid"}, {2, 2}, {9, 9}, {1, 1}, ControlPlacement -> Left},
+      {{copies, 4, "copies"}, {1, 2, 4, 6, 8, 9, 13}},
+      {{radius, 5, "radius"}, 1, 10, 1},
+      {{shape, 1}, {1 -> "disks", 2 -> "rings", 3 -> "bars", 4 -> "stars"}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None, "got: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the picture must render");
+    assert_eq!(placement_slot(state.placement_of(0)), SLOT_LEFT);
+    assert_eq!(placement_slot(state.placement_of(1)), SLOT_LEFT);
+    let fits_as_bar = |idx: usize| {
+      assert_eq!(placement_slot(state.placement_of(idx)), SLOT_TOP);
+      match &state.controls[idx] {
+        manipulate::ControlState::Discrete {
+          value_labels,
+          value_label_svgs,
+          popup,
+          setter_bar,
+          ..
+        } => {
+          assert!(!*popup && !*setter_bar, "no explicit control type");
+          setter_bar_fits(value_labels, value_label_svgs, false)
+        }
+        other => panic!("expected a discrete control, got {other:?}"),
+      }
+    };
+    assert!(!fits_as_bar(2), "seven integers are a dropdown");
+    assert!(fits_as_bar(4), "four words are a setter bar");
   }
 
   /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,

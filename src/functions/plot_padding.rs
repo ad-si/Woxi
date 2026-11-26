@@ -914,13 +914,24 @@ pub(crate) fn markup_font_size(markup: &str) -> Option<f64> {
 
 /// Width of a label string (box markup allowed) at `size` points.
 pub(crate) fn label_width(text: &str, size: f64) -> f64 {
+  // Every line of a styled label is markup, not just the first one, which
+  // alone carries the marker: read as plain text, the tags of the later
+  // lines would be measured as if they were drawn.
+  let marker = crate::functions::graphics::STYLED_LABEL_MARKER;
+  let styled = text.starts_with(marker);
   text
     .split('\n')
-    .map(|line| {
-      text_width(
-        &crate::functions::graphics::box_string_to_svg_scaled(line, 1.0),
-        size,
-      )
+    .enumerate()
+    .map(|(i, line)| {
+      let markup = if styled && i > 0 {
+        crate::functions::graphics::box_string_to_svg_scaled(
+          &format!("{marker}{line}"),
+          1.0,
+        )
+      } else {
+        crate::functions::graphics::box_string_to_svg_scaled(line, 1.0)
+      };
+      text_width(&markup, size)
     })
     .fold(0.0, f64::max)
 }
@@ -1147,6 +1158,16 @@ pub(crate) fn plot_decorations(
     label_length(&opts.frame_label_top),
     label_length(&opts.frame_label_right),
   ];
+  // An upright side label (`RotateLabel -> False`) reaches its width away
+  // from the edge and its height along it.
+  if !opts.rotate_label {
+    for edge in [1, 3] {
+      if let Some(height) = d.frame_labels[edge] {
+        d.frame_labels[edge] = Some(d.frame_label_lengths[edge]);
+        d.frame_label_lengths[edge] = height;
+      }
+    }
+  }
   if d.frame_labels[0].is_none() && bottom_graphic_h > 0.0 {
     d.frame_labels[0] = Some(bottom_graphic_h);
   }
