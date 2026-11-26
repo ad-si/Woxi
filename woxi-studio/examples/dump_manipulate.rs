@@ -187,6 +187,12 @@ fn main() {
         // currently showing is built but left off the panel.
         let hidden = !state.control_is_visible.get(i).copied().unwrap_or(true);
         let mark = if hidden { " [hidden]" } else { "" };
+        let off = !state.control_is_enabled.get(i).copied().unwrap_or(true);
+        let mark = if off {
+          format!("{mark} [disabled]")
+        } else {
+          mark.to_string()
+        };
         println!("  {c:?}{mark}");
         if let Some(icon) = state.label_svg(c.name()) {
           println!("    label icon: {}x{}", icon.width, icon.height);
