@@ -11,6 +11,21 @@
     Calls of a user-defined function no longer copy all of its rules, and a
     `Sum` or `Block` over a symbol without definitions no longer makes every
     large stored value evaluate anew.
+- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
+    stays unevaluated is typeset in StandardForm as a postfix superscript
+    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
+    notebook output and picture labels, instead of the spelled-out head.
+- `ParametricPlot` applies a `ColorFunction` that declares four
+    parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
+    region; the curve was drawn black.
+- `NSolve` lists the solutions of a system with radicals descending by
+    the values of its radicals (each one a further unknown ahead of the
+    variables), so `Last` of the equilibria of a restricted three-body
+    problem is the point between the two masses, as in wolframscript.
+- A large `Point` in a 3D picture is drawn whole over the surface faces
+    behind it: a marker floating above a `Plot3D` surface was placed in
+    the depth order by its center alone, so the faces next to it were
+    painted over part of its disc.
 - Woxi Studio windows show the Woxi app icon in the title bar and
     taskbar instead of the platform's generic default icon.
 - `StringContainsQ`, `StringCount`, `StringPosition` and `StringCases`

@@ -3153,6 +3153,76 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
   }
 }
 
+/// The FrontEnd's script template for `Superscript`/`Subsuperscript`
+/// (`name`) over the boxed parts: `TemplateBox[{x, "3"}, "Superscript",
+/// SyntaxForm -> SuperscriptBox]`.
+fn script_template(name: &str, parts: Vec<Expr>) -> Expr {
+  call(
+    "TemplateBox",
+    vec![
+      Expr::List(parts.into()),
+      str_expr(name),
+      crate::helpers::rule_expr(
+        Expr::Identifier("SyntaxForm".to_string()),
+        Expr::Identifier(format!("{name}Box")),
+      ),
+    ],
+  )
+}
+
+/// The boxes of an operand of `Infix` (`infix`) or `Prefix`, bracketed when
+/// it prints with an operator of its own: a sum or a rule in both, a
+/// product only after a prefix operator (`f@(a b)`, but `a b + c`). Calls,
+/// powers and atoms stay bare.
+fn operator_form_operand_box(operand: &Expr, infix: bool) -> Expr {
+  let boxes = expr_to_box_form(operand);
+  let operator_row = match &boxes {
+    Expr::FunctionCall { name, args } if name == "RowBox" => !matches!(
+      args.first(),
+      Some(Expr::List(items))
+        if matches!(items.get(1), Some(Expr::String(s)) if s == "[")
+    ),
+    _ => false,
+  };
+  let product = matches!(
+    canonical_operator_call(operand),
+    Expr::FunctionCall { ref name, .. } if name == "Times"
+  );
+  if operator_row && !(infix && product) {
+    paren_box(boxes)
+  } else {
+    boxes
+  }
+}
+
+/// `InterpretationBox[boxes, expr, Editable -> False]`: boxes that read
+/// back as `expr`.
+fn interpretation_box_of(boxes: Expr, expr: &Expr) -> Expr {
+  call(
+    "InterpretationBox",
+    vec![
+      boxes,
+      expr.clone(),
+      crate::helpers::rule_expr(
+        Expr::Identifier("Editable".to_string()),
+        Expr::Identifier("False".to_string()),
+      ),
+    ],
+  )
+}
+
+/// The most `RowBox`es nested one in another along any path of a box tree.
+fn row_box_depth(boxes: &Expr) -> usize {
+  match boxes {
+    Expr::FunctionCall { name, args } => {
+      let inner = args.iter().map(row_box_depth).max().unwrap_or(0);
+      inner + usize::from(name == "RowBox")
+    }
+    Expr::List(items) => items.iter().map(row_box_depth).max().unwrap_or(0),
+    _ => 0,
+  }
+}
+
 fn row_box(row: Vec<Expr>) -> Expr {
   call1("RowBox", Expr::List(row.into()))
 }
@@ -3455,6 +3525,29 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
     || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
+}
+
+/// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
+/// `ConjugateTranspose`, which StandardForm sets as a superscript mark.
+fn is_postfix_marked_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if args.len() == 1
+      && matches!(name.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose"))
+}
+
+/// Whether `expr` already sets with a superscript (a power or a postfix
+/// mark), so it is bracketed before taking another postfix mark.
+fn is_superscripted_call(expr: &Expr) -> bool {
+  is_postfix_marked_call(expr)
+    || matches!(expr, Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2)
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+    )
 }
 
 /// The infix symbol StandardForm sets between the arguments of a logical,
@@ -3857,9 +3950,23 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   // braced, comma-separated row of per-element display boxes, all wrapped in a
   // single `TagBox[..., Head]`.
   let first = args.first()?;
+  // `PaddedForm[x, …]` of a number is its padded text, `"  3.50"`.
+  if name == "PaddedForm"
+    && matches!(first, Expr::Real(_) | Expr::Integer(_))
+    && let Some(text) = string_ast::number_form_family_to_string(name, args)
+    && !text.contains('\n')
+    && !text.starts_with(name)
+  {
+    return Some(wrap_number_display_box(
+      Expr::String(format!("\"{text}\"")),
+      first,
+      name,
+      &args[1..],
+    ));
+  }
   if let Expr::List(items) = first {
     let inner_boxes = number_display_list_boxes(items, &parts_for)?;
-    return Some(wrap_list_number_display_box(inner_boxes, name));
+    return Some(wrap_list_number_display_box(inner_boxes, name, &args[1..]));
   }
   // An exact rational is left as it is by the number-display forms
   // (`NumberForm[14/3, {3, 2}]` shows `14/3`), so it typesets as the
@@ -3868,10 +3975,40 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     && args.len() <= 2
     && matches!(first, Expr::FunctionCall { name: n, args: r } if n == "Rational" && r.len() == 2)
   {
+    // Its numerator and denominator are each set in the form:
+    // `FractionBox[InterpretationBox[…"14"…], InterpretationBox[…"3"…]]`.
+    let Expr::FunctionCall { args: nd, .. } = first else {
+      unreachable!("matched as a Rational above")
+    };
+    let part = |v: &Expr| -> Option<Expr> {
+      let (mantissa, exp) = parts_for(v)?;
+      Some(number_display_inner_box(
+        scientific_value_box(&mantissa, exp),
+        v,
+      ))
+    };
+    // A negative one keeps its sign outside the fraction.
+    let (negative, numerator) = match &nd[0] {
+      Expr::Integer(n) if *n < 0 => (true, Expr::Integer(-n)),
+      other => (false, other.clone()),
+    };
+    if let (Some(n), Some(d)) = (part(&numerator), part(&nd[1])) {
+      let fraction = call("FractionBox", vec![n, d]);
+      let body = if negative {
+        row_box(vec![str_expr("-"), fraction])
+      } else {
+        fraction
+      };
+      return Some(call(
+        "TagBox",
+        vec![body, number_display_tag(name, &args[1..])],
+      ));
+    }
     return Some(wrap_number_display_box(
       expr_to_box_form(first),
       first,
       name,
+      &args[1..],
     ));
   }
   let Some((mantissa, exp)) = parts_for(first) else {
@@ -3881,6 +4018,70 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     scientific_value_box(&mantissa, exp),
     first,
     name,
+    &args[1..],
+  ))
+}
+
+/// StandardForm boxes of a number-display form around an expression that is
+/// no number itself: the expression boxed as usual, each number in it set in
+/// the form — `NumberForm[x + 2.5, 3]` is
+/// `TagBox[RowBox[{InterpretationBox[…"2.5"…], "+", "x"}], NumberForm[#1, 3] &]`.
+/// `None` for a number, a nested number-display form, or an invalid spec.
+fn symbolic_number_display_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if !matches!(name, "NumberForm" | "ScientificForm" | "EngineeringForm")
+    || args.is_empty()
+    || args.len() > 2
+    || is_number_expr(&args[0])
+    || is_number_display_call(&args[0])
+    || matches!(args[0], Expr::List(_) | Expr::String(_))
+  {
+    return None;
+  }
+  // The display box the form gives one number on its own.
+  let number_box = |v: &Expr| -> Option<Expr> {
+    let mut probe = vec![v.clone()];
+    probe.extend(args[1..].iter().cloned());
+    match &number_display_form_box(name, &probe)? {
+      Expr::FunctionCall {
+        name: tag,
+        args: inner,
+      } if tag == "TagBox" && !inner.is_empty() => Some(inner[0].clone()),
+      other => Some(other.clone()),
+    }
+  };
+  // The spec must format a number at all.
+  number_box(&Expr::Real(1.5))?;
+  fn mark(e: &Expr, number_box: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+    match e {
+      Expr::Integer(_) | Expr::Real(_) => {
+        number_box(e).map_or_else(|| e.clone(), |b| call1("RawBoxes", b))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        number_box(e).map_or_else(|| e.clone(), |b| call1("RawBoxes", b))
+      }
+      Expr::FunctionCall { name, args } => call(
+        name,
+        args.iter().map(|a| mark(a, number_box)).collect::<Vec<_>>(),
+      ),
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|a| mark(a, number_box))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      other => other.clone(),
+    }
+  }
+  let canonical = canonical_operator_call(&args[0]);
+  Some(call(
+    "TagBox",
+    vec![
+      expr_to_box_form(&mark(&canonical, &number_box)),
+      number_display_tag(name, &args[1..]),
+    ],
   ))
 }
 
@@ -3926,63 +4127,101 @@ fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   let call_expr = call(name, args.to_vec());
   match crate::functions::string_ast::to_string_ast(&[call_expr]) {
-    Ok(Expr::String(ref text)) if !text.starts_with("NumberForm") => Some(
-      wrap_number_display_box(Expr::String(text.clone()), &args[0], name),
-    ),
+    Ok(Expr::String(ref text)) if !text.starts_with("NumberForm") => {
+      Some(wrap_number_display_box(
+        Expr::String(format!("\"{text}\"")),
+        &args[0],
+        name,
+        &args[1..],
+      ))
+    }
     _ => None,
   }
 }
 
-/// Inner box for a decomposed number-display form: `String(mantissa)` when there
-/// is no `× 10^e` factor, otherwise
-/// `RowBox[{mantissa, " × ", SuperscriptBox["10", exp]}]`.
+/// Inner box for a decomposed number-display form: the quoted string
+/// `"\"mantissa\""` when there is no `× 10^e` factor, otherwise
+/// `RowBox[{"\"mantissa\"", "×", SuperscriptBox["10", "\"exp\""]}]` — the
+/// digits are strings, drawn without their quotes under the
+/// `ShowStringCharacters -> False` the box is wrapped in.
 fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
+  let quoted = |s: &str| Expr::String(format!("\"{s}\""));
   match exp {
-    None => str_expr(mantissa),
-    Some(e) => {
-      let script_box = vec![str_expr("10"), Expr::String(e.to_string())];
-      let row = vec![
-        str_expr(mantissa),
-        str_expr(" \u{00d7} "),
-        call("SuperscriptBox", script_box),
-      ];
-
-      row_box(row)
-    }
+    None => quoted(mantissa),
+    Some(e) => row_box(vec![
+      quoted(mantissa),
+      str_expr("\u{00d7}"),
+      call(
+        "SuperscriptBox",
+        vec![str_expr("10"), quoted(&e.to_string())],
+      ),
+    ]),
   }
 }
 
 /// Per-value display box (no `TagBox` head wrapper):
 /// `InterpretationBox[StyleBox[inner, ShowStringCharacters -> False], value,
-/// AutoDelete -> True]`. The interpretation/style layers are rendering
-/// pass-throughs for the SVG layout engine; they preserve the link to the
-/// original numeric `value`.
+/// AutoDelete -> True]` (`Editable -> False` for an integer value). The
+/// interpretation/style layers are rendering pass-throughs for the SVG
+/// layout engine; they preserve the link to the original numeric `value`.
 fn number_display_inner_box(inner: Expr, value: &Expr) -> Expr {
   let rule = |k: &str, v: &str| rule_expr(id_expr(k), id_expr(v));
   let style = call(
     "StyleBox",
     vec![inner, rule("ShowStringCharacters", "False")],
   );
-  call(
-    "InterpretationBox",
-    vec![style, value.clone(), rule("AutoDelete", "True")],
-  )
+  let edit = if matches!(value, Expr::Integer(_) | Expr::BigInteger(_)) {
+    rule("Editable", "False")
+  } else {
+    rule("AutoDelete", "True")
+  };
+  call("InterpretationBox", vec![style, value.clone(), edit])
+}
+
+/// The tag of a number-display form's `TagBox`: the bare head without
+/// further arguments, else the function re-applying them,
+/// `NumberForm[#1, {5, 3}] &`.
+fn number_display_tag(head: &str, rest: &[Expr]) -> Expr {
+  if rest.is_empty() {
+    return id_expr(head);
+  }
+  let mut fargs = vec![Expr::Slot(1)];
+  fargs.extend(rest.iter().cloned());
+  Expr::Function {
+    body: Box::new(call(head, fargs)),
+  }
 }
 
 /// Wrap a scalar inner display box with wolframscript's
 /// `TagBox[InterpretationBox[StyleBox[inner, ShowStringCharacters -> False],
-/// value, AutoDelete -> True], head]`, preserving the form head for `MakeBoxes`.
-fn wrap_number_display_box(inner: Expr, value: &Expr, head: &str) -> Expr {
+/// value, AutoDelete -> True], tag]` (see `number_display_tag`), preserving
+/// the form for `MakeBoxes`.
+fn wrap_number_display_box(
+  inner: Expr,
+  value: &Expr,
+  head: &str,
+  rest: &[Expr],
+) -> Expr {
   call(
     "TagBox",
-    vec![number_display_inner_box(inner, value), id_expr(head)],
+    vec![
+      number_display_inner_box(inner, value),
+      number_display_tag(head, rest),
+    ],
   )
 }
 
 /// Wrap the per-element display boxes of a list argument with wolframscript's
-/// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], head]`.
-fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
-  call("TagBox", vec![braced_row_box(elems), id_expr(head)])
+/// `TagBox[RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}], tag]`.
+fn wrap_list_number_display_box(
+  elems: Vec<Expr>,
+  head: &str,
+  rest: &[Expr],
+) -> Expr {
+  call(
+    "TagBox",
+    vec![braced_row_box(elems), number_display_tag(head, rest)],
+  )
 }
 
 /// `RowBox[{"{", RowBox[{e1, ",", e2, …}], "}"}]`.
@@ -4359,6 +4598,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // arguments these forms leave symbolic.
   if let Expr::FunctionCall { name, args } = expr
     && let Some(boxed) = number_display_form_box(name, args)
+      .or_else(|| symbolic_number_display_box(name, args))
   {
     return boxed;
   }
@@ -4677,12 +4917,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       {
         let rest: Vec<Expr> =
           args[1..].iter().map(canonical_operator_call).collect();
-        // A `Row` (which may spell out its own parentheses) is set after
-        // the fraction the same way.
-        let has_sum = rest.iter().any(|f| {
-          matches!(f, Expr::FunctionCall { name, args }
-            if (name == "Plus" && args.len() >= 2) || name == "Row")
-        });
+        // The fraction goes in front once the product's boxes nest one
+        // `RowBox` in another: `(a + b)/12`, `3 x y/4`, `Sqrt[a + b]/4`
+        // stay over the denominator, `(a + b) c/4`, `f[a b]/4`,
+        // `(a + b)^2/4` and `(a b + c)/4` do not.
+        let rest_box = if rest.len() == 1 {
+          expr_to_box_form(&rest[0])
+        } else {
+          expr_to_box_form(&unevaluated("Times", &rest))
+        };
+        let has_sum = row_box_depth(&rest_box) >= 2;
         let divides = rest.iter().any(|f| match f {
           Expr::FunctionCall { name, args }
             if name == "Power" && args.len() == 2 =>
@@ -4706,18 +4950,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             "FractionBox",
             vec![str_expr(&p.to_string()), str_expr(&q.to_string())],
           );
-          let product = if rest.len() == 1 {
-            let factor = expr_to_box_form(&rest[0]);
-            if matches!(&rest[0], Expr::FunctionCall { name, .. } if name == "Row")
-            {
-              factor
-            } else {
-              paren_box(factor)
-            }
-          } else {
-            expr_to_box_form(&unevaluated("Times", &rest))
-          };
-          return row_box(vec![fraction, str_expr(" "), product]);
+          // The factors follow it in one flat row.
+          let mut parts = vec![fraction];
+          for factor in &rest {
+            parts.push(str_expr(" "));
+            parts.push(box_with_paren_if_needed(factor));
+          }
+          return row_box(parts);
         }
       }
       let (num, den) =
@@ -4814,13 +5053,38 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
       // unambiguously instead of 1+x² looking like 1 + x².
       let base = canonical_operator_call(&args[0]);
-      let base_box = if needs_paren_as_power_base(&base) {
-        paren_box(expr_to_box_form(&base))
-      } else {
-        expr_to_box_form(&base)
-      };
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_postfix_marked_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
+    }
+    // The conjugate, transpose and Hermitian adjoint are postfix marks in
+    // StandardForm too: `z*`, `mᵀ` (`\[Transpose]`) and `m†`
+    // (`\[ConjugateTranspose]`). A base that is
+    // an operator expression is bracketed, `(a + b)ᵀ`, `(a²)ᵀ`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Conjugate" | "Transpose" | "ConjugateTranspose"
+      ) && args.len() == 1 =>
+    {
+      let mark = match name.as_str() {
+        "Conjugate" => "*",
+        "Transpose" => "\u{F3C7}",
+        _ => "\u{F3C9}",
+      };
+      let base = canonical_operator_call(&args[0]);
+      let base_box =
+        if needs_paren_as_power_base(&base) || is_superscripted_call(&base) {
+          paren_box(expr_to_box_form(&base))
+        } else {
+          expr_to_box_form(&base)
+        };
+      call("SuperscriptBox", vec![base_box, str_expr(mark)])
     }
     Expr::FunctionCall { name, args }
       if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>
@@ -4832,20 +5096,78 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       )
     }
     // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
-    // expressions, a string operator contributing its text.
+    // expressions (an operator expression other than a product bracketed),
+    // a string operator contributing its text; `Infix[f[a, b]]` puts
+    // `~f~` between them. Like `Prefix` (`f@x`) and `Postfix` (`x//f`), the
+    // row is an `InterpretationBox` that reads back as the wrapper. With a
+    // precedence or grouping the wrapper boxes as a plain call.
     Expr::FunctionCall { name, args }
       if name == "Infix"
-        && let Some(items) = crate::syntax::infix_display_items(args) =>
+        && args.len() <= 2
+        && crate::syntax::infix_display_items(args).is_some() =>
     {
-      row_box(
-        items
-          .iter()
-          .map(|item| match item {
-            Expr::String(s) => str_expr(s),
-            other => expr_to_box_form(other),
-          })
-          .collect(),
-      )
+      let operands: &[Expr] = match &args[0] {
+        Expr::List(items) => items,
+        Expr::FunctionCall { args: items, .. } => items,
+        _ => unreachable!("guarded by infix_display_items"),
+      };
+      let separator: Vec<Expr> = match (&args.get(1), &args[0]) {
+        (Some(Expr::String(s)), _) => vec![str_expr(s)],
+        (Some(op), _) => vec![expr_to_box_form(op)],
+        (None, Expr::FunctionCall { name: head, .. }) => vec![
+          str_expr(" "),
+          str_expr("~"),
+          str_expr(head),
+          str_expr("~"),
+          str_expr(" "),
+        ],
+        (None, _) => unreachable!("guarded by infix_display_items"),
+      };
+      let mut row = Vec::new();
+      for (i, operand) in operands.iter().enumerate() {
+        if i > 0 {
+          row.extend(separator.iter().cloned());
+        }
+        row.push(operator_form_operand_box(operand, true));
+      }
+      interpretation_box_of(row_box(row), expr)
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Prefix" || name == "Postfix")
+        && (1..=2).contains(&args.len())
+        && matches!(&args[0], Expr::FunctionCall { args: inner, .. }
+          if inner.len() == 1) =>
+    {
+      let Expr::FunctionCall {
+        name: head,
+        args: inner,
+      } = &args[0]
+      else {
+        unreachable!("guarded by the match arm")
+      };
+      let prefix = name == "Prefix";
+      let op = match args.get(1) {
+        Some(Expr::String(s)) => str_expr(s),
+        Some(other) => expr_to_box_form(other),
+        None if prefix => str_expr("@"),
+        None => str_expr("//"),
+      };
+      let row = if prefix {
+        let operand = operator_form_operand_box(&inner[0], false);
+        if args.len() == 2 {
+          vec![op, operand]
+        } else {
+          vec![str_expr(head), op, operand]
+        }
+      } else {
+        let operand = expr_to_box_form(&inner[0]);
+        if args.len() == 2 {
+          vec![operand, op]
+        } else {
+          vec![operand, op, str_expr(head)]
+        }
+      };
+      interpretation_box_of(row_box(row), expr)
     }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):
@@ -4889,15 +5211,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
-    // `Superscript[x, n]` sets `n` as a raised script, exactly like the
-    // `Subscript` rule above — not as the literal call `Superscript[x, n]`.
+    // `Superscript[x, n]` sets `n` as a raised script — through the
+    // FrontEnd's script template, `TemplateBox[{x, n}, "Superscript",
+    // SyntaxForm -> SuperscriptBox]`, which the renderers draw as a
+    // `SuperscriptBox` (see `script_template_box`).
     Expr::FunctionCall { name, args }
       if name == "Superscript" && args.len() == 2 =>
     {
-      call(
-        "SuperscriptBox",
-        vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
-      )
+      script_template(name, args.iter().map(expr_to_box_form).collect())
     }
     // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
     // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
@@ -4920,10 +5241,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Subsuperscript" && args.len() == 3 =>
     {
-      call(
-        "SubsuperscriptBox",
-        args.iter().map(expr_to_box_form).collect(),
-      )
+      script_template(name, args.iter().map(expr_to_box_form).collect())
     }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
     // above/below `a` — the box form is a direct `OverscriptBox`/
@@ -5101,6 +5419,23 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if name == "HoldForm" && args.len() == 1 =>
     {
       expr_to_box_form(&args[0])
+    }
+    // `PolynomialForm[p, opts]` sets `p` in standard order unless
+    // `TraditionalOrder -> True` asks for the descending one, tagged with
+    // the wrapper: `TagBox[…, PolynomialForm[#1, TraditionalOrder -> True] &]`.
+    Expr::FunctionCall { name, args }
+      if name == "PolynomialForm"
+        && !args.is_empty()
+        && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      let body = match polynomial_form_order(&args[1..]) {
+        Some(true) => tf_descending_sum(&args[0]).map_or_else(
+          || expr_to_box_form(&args[0]),
+          |sum| expr_to_box_form(&sum),
+        ),
+        _ => expr_to_box_form(&args[0]),
+      };
+      call("TagBox", vec![body, polynomial_form_tag(&args[1..])])
     }
     // StandardForm[expr] / TraditionalForm[expr]:
     //   TagBox[FormBox[<inner-box>, <form>], <form>, Editable -> True]
@@ -5741,6 +6076,15 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(traditional_boxes_to_standard).collect())
     }
+    // `TemplateBox[{m, n}, "Mod"]` reads as the row `m mod n` below.
+    Expr::FunctionCall { name, args }
+      if name == "TemplateBox"
+        && matches!(args.get(1), Some(Expr::String(t)) if t == "Mod")
+        && let Some(row) =
+          crate::functions::graphics::script_template_box(boxes) =>
+    {
+      traditional_boxes_to_standard(&row)
+    }
     Expr::FunctionCall { name, args } => {
       let args: Vec<Expr> =
         args.iter().map(traditional_boxes_to_standard).collect();
@@ -6074,11 +6418,32 @@ fn transformation_function_boxes(
     ]
     .into(),
   );
-  let grid = tf_box(
-    "GridBox",
+  let automatic =
+    || Expr::List(vec![Expr::List(vec![sym("Automatic")].into())].into());
+  let item_size = Expr::List(
     vec![
-      Expr::List(grid_rows.into()),
-      rule_expr(sym("GridBoxDividers"), dividers),
+      rule_expr(tf_string("Columns"), automatic()),
+      rule_expr(tf_string("Rows"), automatic()),
+    ]
+    .into(),
+  );
+  // The grid is tagged with the identity function, `#1 &`, as a notebook
+  // writes it.
+  let grid = tf_box(
+    "TagBox",
+    vec![
+      tf_box(
+        "GridBox",
+        vec![
+          Expr::List(grid_rows.into()),
+          rule_expr(sym("AutoDelete"), sym("False")),
+          rule_expr(sym("GridBoxDividers"), dividers),
+          rule_expr(sym("GridBoxItemSize"), item_size),
+        ],
+      ),
+      Expr::Function {
+        body: Box::new(Expr::Slot(1)),
+      },
     ],
   );
   Some(tf_row(vec![
@@ -6139,12 +6504,37 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
       operand,
     } => tf_flatten_additive(operand, !neg, out),
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args {
-        tf_flatten_additive(a, neg, out);
+      // A complex number inside a larger sum is one term, set in
+      // parentheses (`x + (2 + 3 i)`), not two loose ones. Woxi keeps its
+      // parts apart in the sum (`Plus[2, 3 I, x]`), so they are merged
+      // first, as FullForm shows them (a held sum keeps what was written).
+      let merged = if TF_HELD.get() {
+        args.to_vec()
+      } else {
+        crate::functions::expr_form::merge_complex_terms(args)
+      };
+      let terms: &[Expr] = if merged.len() > 1 { &merged } else { args };
+      for a in terms {
+        if merged.len() > 1 && tf_is_complex_with_real_part(a) {
+          out.push((neg, a.clone()));
+        } else {
+          tf_flatten_additive(a, neg, out);
+        }
       }
     }
     _ if tf_is_zero(expr) => {}
     _ => out.push((neg, expr.clone())),
+  }
+}
+
+/// Whether `expr` is a complex number with a nonzero real part, which Woxi
+/// stores as its `re + im I` sum.
+fn tf_is_complex_with_real_part(expr: &Expr) -> bool {
+  use crate::functions::expr_form::{ComplexParts, complex_full_form_parts};
+  match complex_full_form_parts(expr) {
+    Some(ComplexParts::Exact { re, .. }) => !matches!(re, Expr::Integer(0)),
+    Some(ComplexParts::Float { re, .. }) => re != 0.0,
+    None => false,
   }
 }
 
@@ -6780,6 +7170,16 @@ fn tf_operand(expr: &Expr) -> Expr {
   }
 }
 
+/// TraditionalForm box of one term of a sum: a complex number with a real
+/// part is parenthesized there (`x + (2 + 3 i)`, `x - (1 - i)`).
+fn tf_sum_term(expr: &Expr) -> Expr {
+  if tf_is_complex_with_real_part(expr) {
+    tf_parens(tf(expr))
+  } else {
+    tf_operand(expr)
+  }
+}
+
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -6806,7 +7206,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         if *neg {
           items.push(tf_string("-"));
         }
-        items.push(tf_operand(term));
+        items.push(tf_sum_term(term));
         continue;
       }
       let (neg, term) = match negated_term(term) {
@@ -6814,7 +7214,7 @@ fn tf_plus(expr: &Expr) -> Expr {
         None => (*neg, term.clone()),
       };
       items.push(tf_string(if neg { "-" } else { "+" }));
-      items.push(tf_operand(&term));
+      items.push(tf_sum_term(&term));
     }
     return tf_row(items);
   }
@@ -6857,14 +7257,14 @@ fn tf_order_sum_terms(
     .enumerate()
     .map(|(i, (neg, term))| match negated_term(term) {
       Some(positive) if i == 0 => {
-        let mut b = tf_operand(term);
+        let mut b = tf_sum_term(term);
         if !tf_delete_first_minus(&mut b) {
-          b = tf_operand(&positive);
+          b = tf_sum_term(&positive);
         }
         (!*neg, b, positive)
       }
-      Some(positive) => (!*neg, tf_operand(&positive), positive),
-      None => (*neg, tf_operand(term), term.clone()),
+      Some(positive) => (!*neg, tf_sum_term(&positive), positive),
+      None => (*neg, tf_sum_term(term), term.clone()),
     })
     .collect();
   if signed.len() > 1 && !large {
@@ -6916,6 +7316,70 @@ fn tf_sum_keeps_order(expr: &Expr) -> bool {
 /// of the same power go by the canonical order of their boxes less any
 /// numeric coefficient, so partial fractions read `1/x`, `1/(x + 2)`,
 /// `1/(x - 1)` whatever their numerators are.
+/// The `TraditionalOrder` option of a `PolynomialForm`: `Some(true)` or
+/// `Some(false)` when given as such, `None` for the default `Automatic`
+/// (which follows the order of the form it is typeset in).
+pub(crate) fn polynomial_form_order(opts: &[Expr]) -> Option<bool> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder") => {
+      Some(match replacement.as_ref() {
+        Expr::Identifier(v) if v == "True" => Some(true),
+        Expr::Identifier(v) if v == "False" => Some(false),
+        _ => None,
+      })
+    }
+    _ => None,
+  })?
+}
+
+/// The tag of the `TagBox` a `PolynomialForm` typesets to: the bare symbol
+/// without options, else the function re-applying them,
+/// `PolynomialForm[#1, TraditionalOrder -> False] &`.
+pub(crate) fn polynomial_form_tag(opts: &[Expr]) -> Expr {
+  if opts.is_empty() {
+    return Expr::Identifier("PolynomialForm".to_string());
+  }
+  let mut fargs = vec![Expr::Slot(1)];
+  fargs.extend(opts.iter().cloned());
+  Expr::Function {
+    body: Box::new(Expr::FunctionCall {
+      name: "PolynomialForm".to_string(),
+      args: fargs.into(),
+    }),
+  }
+}
+
+/// The terms of the sum `expr` in TraditionalForm's descending order, as a
+/// held `Plus` call, or `None` if `expr` is no sum.
+pub(crate) fn tf_descending_sum(expr: &Expr) -> Option<Expr> {
+  let mut terms = Vec::new();
+  tf_flatten_additive(expr, false, &mut terms);
+  if terms.len() < 2 {
+    return None;
+  }
+  tf_sort_by_degree(&mut terms);
+  let args = terms
+    .into_iter()
+    .map(|(neg, t)| {
+      if neg {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), t].into(),
+        }
+      } else {
+        t
+      }
+    })
+    .collect();
+  Some(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args,
+  })
+}
+
 fn tf_sort_by_degree(terms: &mut [(bool, Expr)]) {
   use crate::functions::list_helpers_ast::sorting::canonical_cmp;
   let mut keyed: Vec<((bool, f64), Option<Expr>, (bool, Expr))> = terms
@@ -7623,7 +8087,7 @@ fn tf_number_display_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
         tf_box("GridBox", vec![Expr::List(grid_rows.into())]),
         tf_string(")"),
       ]),
-      id_expr(name),
+      number_display_tag(name, &args[1..]),
     ],
   ))
 }
@@ -8204,7 +8668,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // Number-display forms typeset as the formatted number itself, not as a
     // `NumberForm(…)` call — `TraditionalForm[NumberForm[x, {4, 1}]]` is how a
     // Demonstration labels a readout.
-    "NumberForm" | "ScientificForm" | "EngineeringForm"
+    "NumberForm" | "ScientificForm" | "EngineeringForm" | "PaddedForm"
       if number_display_form_box(name, args).is_some() =>
     {
       number_display_form_box(name, args).unwrap()
@@ -8269,24 +8733,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         && !is_number_display_call(&args[0]) =>
     {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
-      call("TagBox", vec![tf(&formatted), id_expr(name)])
+      call("TagBox", vec![tf(&formatted), number_display_tag(name, &args[1..])])
     }
-    // `PolynomialForm[p, TraditionalOrder -> False]` (the default) sets the
-    // sums of `p` in their standard, ascending order instead of the
-    // descending one TraditionalForm uses; `TraditionalOrder -> True`
-    // keeps that descending order.
+    // `PolynomialForm[p, TraditionalOrder -> False]` sets the sums of `p`
+    // in their standard, ascending order instead of the descending one
+    // TraditionalForm uses; `True` and the default `Automatic` keep that
+    // descending order. The boxes are tagged with the wrapper (see
+    // `polynomial_form_tag`).
     "PolynomialForm"
       if !args.is_empty()
         && args[1..].iter().all(|a| matches!(a, Expr::Rule { .. })) =>
     {
-      let traditional = args[1..].iter().any(|opt| {
-        matches!(opt, Expr::Rule { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TraditionalOrder")
-            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
-      });
-      if traditional {
-        tf(&args[0])
-      } else {
+      let inner = if polynomial_form_order(&args[1..]) == Some(false) {
         struct Reset(bool);
         impl Drop for Reset {
           fn drop(&mut self) {
@@ -8295,7 +8753,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         }
         let _reset = Reset(TF_HELD.replace(true));
         tf(&args[0])
-      }
+      } else {
+        tf(&args[0])
+      };
+      call("TagBox", vec![inner, polynomial_form_tag(&args[1..])])
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
@@ -8916,17 +9377,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_box("SubscriptBox", vec![tf(&args[0]), sub])
     }
     "Superscript" if args.len() == 2 => {
-      tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
+      script_template(name, vec![tf(&args[0]), tf(&args[1])])
     }
     // `SuperStar[x]` / `SuperDagger[x]` set the mark as an exponent: `x*`, `x†`.
     "SuperStar" | "SuperDagger" if args.len() == 1 => {
       let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf_string(mark)])
     }
-    "Subsuperscript" if args.len() == 3 => tf_box(
-      "SubsuperscriptBox",
-      vec![tf(&args[0]), tf(&args[1]), tf(&args[2])],
-    ),
+    "Subsuperscript" if args.len() == 3 => {
+      script_template(name, vec![tf(&args[0]), tf(&args[1]), tf(&args[2])])
+    }
     // `Overscript[a, b]` / `Underscript[a, b]` and their `OverBar`/`UnderBar`
     // accent shorthands — same `…Box` mapping as the StandardForm converter
     // (`expr_to_box_form`), just recursing through `tf` for the pieces.
@@ -8963,7 +9423,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_box("OverscriptBox", vec![tf(&args[0]), tf_string(mark)])
     }
     // `Mod[m, n]` is the infix `m mod n`, with a sum, product or negative
-    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`.
+    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`. It boxes
+    // as the FrontEnd's template, `TemplateBox[{m, n}, "Mod"]`, which the
+    // renderers draw as that row (see `script_template_box`).
     "Mod" if args.len() == 2 => {
       let operand = |e: &Expr| {
         if tf_needs_paren_factor(e) || tf_is_product_node(e) {
@@ -8972,7 +9434,13 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
           tf(e)
         }
       };
-      tf_row(vec![operand(&args[0]), tf_string("mod"), operand(&args[1])])
+      tf_box(
+        "TemplateBox",
+        vec![
+          Expr::List(vec![operand(&args[0]), operand(&args[1])].into()),
+          tf_string("Mod"),
+        ],
+      )
     }
     // `AngleBracket[a, b]` is typeset as `〈a, b〉`.
     "AngleBracket" if !args.is_empty() => {
@@ -9164,7 +9632,7 @@ fn tf(expr: &Expr) -> Expr {
           tf_enclosed("{", params.iter().map(|p| tf_string(&tf_symbol(p))), "}")
         }
       };
-      tf_row(vec![params_box, tf_string("\u{21A6}"), tf(body)])
+      tf_row(vec![params_box, tf_string("\u{F4A1}"), tf(body)])
     }
     // A replacement left unevaluated (its rules were no rules) has no
     // traditional notation: like any other built-in function without one it
@@ -20975,5 +21443,6 @@ fn region_flat_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
       .collect::<Vec<_>>()
       .into(),
   );
-  Some(call1("Point", ev(call1("Reverse", call1("Sort", list)))?))
+  // The crossings come in the order of the line's segments.
+  Some(call1("Point", list))
 }

@@ -5293,7 +5293,8 @@ mod graph_predicates {
     ] {
       assert_eq!(
         interpret(&format!(
-          "With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
+          "Needs[\"GraphUtilities`\"]; \
+           With[{{e = PolyhedronData[\"{name}\", \"EdgeIndices\"]}}, \
            With[{{c = First[GraphUtilities`HamiltonianCycles[Rule @@@ e]]}}, \
            {{Sort[c] === Range[Max[e]], \
            And @@ (MemberQ[e, {{#1, #2}} | {{#2, #1}}] & @@@ \
@@ -8201,7 +8202,7 @@ mod graph_annotations {
   fn a_style_set_on_one_vertex_keeps_the_others_style() {
     clear_state();
     // A style for one vertex is a `vertex -> style` rule, and the value
-    // the graph gave every vertex stays with the others.
+    // the graph gave every vertex stays, bare, for the others.
     assert_eq!(
       interpret(
         "ToString[Options[SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, \
@@ -8211,9 +8212,13 @@ mod graph_annotations {
           .as_str()
       )
       .unwrap(),
-      "{VertexSize -> {1 -> {\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}, \
-       3 -> {\"Scaled\", 0.01}}, VertexStyle -> {1 -> RGBColor[0, 0, 1], \
-       2 -> RGBColor[1, 0, 0], 3 -> RGBColor[0, 0, 1]}}"
+      "{VertexSize -> {{\"Scaled\", 0.01}, 2 -> {\"Scaled\", 0.04}}, \
+       VertexStyle -> {RGBColor[0, 0, 1], 2 -> RGBColor[1, 0, 0]}}"
+    );
+    // Setting the vertex again replaces its rule.
+    assert_eq!(
+      interpret("g = SetProperty[{Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, VertexStyle -> Blue], 2}, VertexStyle -> Red]; ToString[Options[SetProperty[{g, 2}, VertexStyle -> Green]], InputForm]").unwrap(),
+      "{VertexStyle -> {RGBColor[0, 0, 1], 2 -> RGBColor[0, 1, 0]}}"
     );
     // Every rule of a list names the same vertex.
     assert_eq!(
@@ -9195,7 +9200,7 @@ mod graph_utilities_package {
   fn polyhedron_data_class_lists_members_and_names() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
-      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
+      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
     );
     assert_eq!(
       interpret("PolyhedronData[\"PlatonicDual\"]").unwrap(),
@@ -9208,9 +9213,11 @@ mod graph_utilities_package {
     );
   }
 
-  // The package's VertexList and ClosenessCentrality only exist once it is
-  // loaded in an *earlier* input: read in the same line as the `Needs`, the
-  // names are created before it runs (wolframscript leaves them unevaluated).
+  // Woxi evaluates the package's VertexList and ClosenessCentrality however
+  // the `Needs` came. wolframscript only does when the `Needs` is in the same
+  // input: loaded by an earlier one, the two (and every other package
+  // function shadowing a System symbol) stay unevaluated with `::shdw` (see
+  // conformance_gaps.md).
   #[test]
   fn vertex_list_of_rule_list() {
     interpret("Needs[\"GraphUtilities`\"]").unwrap();
@@ -9220,13 +9227,32 @@ mod graph_utilities_package {
     );
   }
 
+  /// The package is not autoloaded: before `Needs`, a qualified call stays
+  /// unevaluated and the plot has no options.
+  #[test]
+  fn functions_stay_unevaluated_until_loaded() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{GraphUtilities`VertexList[{a -> b}], \
+         GraphUtilities`WeakComponents[{1 -> 2}], \
+         Head[GraphUtilities`ExpressionTreePlot[f[a]]], \
+         Options[GraphUtilities`ExpressionTreePlot]}"
+      )
+      .unwrap(),
+      "{GraphUtilities`VertexList[{a -> b}], \
+       GraphUtilities`WeakComponents[{1 -> 2}], \
+       GraphUtilities`ExpressionTreePlot, {}}"
+    );
+  }
+
   /// The package's functions also take `GraphPlot`'s labeled edges
   /// `{u -> v, label}`; the labels are not vertices.
   #[test]
   fn vertex_list_of_labeled_rule_list() {
     assert_eq!(
       interpret(
-        "GraphUtilities`VertexList[{{a -> b, \"x\"}, {b -> c, \"y\"}, c -> d}]"
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`VertexList[{{a -> b, \"x\"}, {b -> c, \"y\"}, c -> d}]"
       )
       .unwrap(),
       "{a, b, c, d}"
@@ -9241,18 +9267,18 @@ mod graph_utilities_package {
     let g = "{{a -> b, 1}, {b -> c, 1}, {c -> a, 1}, {d -> e, 2}, \
              {e -> f, 2}, {f -> d, 2}, {c -> d, 3}}";
     assert_eq!(
-      interpret(&format!("GraphUtilities`CommunityStructurePartition[{g}]"))
+      interpret(&format!("Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructurePartition[{g}]"))
         .unwrap(),
       "{{a, b, c}, {d, e, f}}"
     );
     assert_eq!(
-      interpret(&format!("GraphUtilities`CommunityStructureAssignment[{g}]"))
+      interpret(&format!("Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructureAssignment[{g}]"))
         .unwrap(),
       "{1, 1, 1, 2, 2, 2}"
     );
     assert_eq!(
       interpret(
-        "GraphUtilities`CommunityStructureAssignment[{f -> e, e -> d, d -> f, \
+        "Needs[\"GraphUtilities`\"]; GraphUtilities`CommunityStructureAssignment[{f -> e, e -> d, d -> f, \
          d -> c, c -> b, b -> a, a -> c}]"
       )
       .unwrap(),
@@ -9333,6 +9359,7 @@ mod graph_utilities_package {
   fn expression_tree_plot_labels_vertices_by_index() {
     let etp =
       "GraphUtilities`ExpressionTreePlot[Or[\"x\", And[\"y\", Not[\"z\"]]]]";
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(&format!(
         "Cases[{etp}, Text[Framed[Style[HoldForm[a_], ___], ___], i_] :> i -> a, Infinity]"
@@ -9362,7 +9389,7 @@ mod graph_utilities_package {
   fn expression_tree_plot_without_labels_draws_points() {
     assert_eq!(
       interpret(
-        "Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], \
+        "Needs[\"GraphUtilities`\"]; Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], \
          Tooltip[Point[i_], l_] :> {i, l}, Infinity]"
       )
       .unwrap(),
@@ -9380,6 +9407,7 @@ mod graph_utilities_package {
       VertexRenderingFunction -> (vf[##] &), \
       EdgeRenderingFunction -> (ef[##] &), ImageSize -> 100, \
       PlotLabel -> \"t\"]";
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
     assert_eq!(
       interpret(&format!("Cases[{g}, _vf, Infinity]")).unwrap(),
       "{vf[{0.5, 1.}, f, 1], vf[{0., 0.}, HoldForm[a], 2], \
@@ -9410,14 +9438,14 @@ mod graph_utilities_package {
   fn expression_tree_plot_position_and_level() {
     assert_eq!(
       interpret(
-        "First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]"
+        "Needs[\"GraphUtilities`\"]; First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]"
       )
       .unwrap(),
       "{{0., 0.5}, {1., 1.}, {1., 0.}}"
     );
     assert_eq!(
       interpret(
-        "Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Top, 1], \
+        "Needs[\"GraphUtilities`\"]; Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Top, 1], \
          Text[Framed[Style[HoldForm[x_], ___], ___], _] :> Hold[x], Infinity]"
       )
       .unwrap(),

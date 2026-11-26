@@ -442,6 +442,7 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F3C9}' => "\u{2020}",              // ConjugateTranspose: †
     '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
     '\u{F4A0}' => "\u{2A2F}", // Cross: ⨯
+    '\u{F4A1}' => "\u{21A6}",              // Function: ↦
     '\u{F3DA}' => "\u{2297}",              // TensorProduct: ⊗
     '\u{F424}' => "\u{2270}",              // NotLessSlantEqual: ≰
     '\u{F429}' => "\u{2271}",              // NotGreaterSlantEqual: ≱
@@ -2328,10 +2329,81 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
   if parts.is_empty() {
     return None;
   }
+  Some(group_box_row(parts))
+}
+
+/// The binding of an infix operator atom in a linear-syntax row (the
+/// operator's `Precedence`), or `None` for an operand.
+fn box_row_operator_precedence(part: &Expr) -> Option<u16> {
+  let Expr::String(s) = part else {
+    return None;
+  };
+  Some(match s.as_str() {
+    ";" => 10,
+    "=" | ":=" | "^=" | "^:=" => 40,
+    "->" | ":>" | "\u{2192}" | "\u{f522}" => 120,
+    "||" | "\u{2228}" => 215,
+    "&&" | "\u{2227}" => 215,
+    "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=!=" | "\u{2260}"
+    | "\u{2264}" | "\u{2265}" => 290,
+    "+" | "-" | "\u{2212}" => 310,
+    "*" | "\u{00d7}" => 400,
+    "/" => 470,
+    _ => return None,
+  })
+}
+
+/// Group a linear-syntax row by its operators the way the FrontEnd parses
+/// it: the loosest operator splits the row, and each operand of several
+/// parts (a juxtaposed product, a tighter operator) becomes its own
+/// `RowBox` — `\(a\*SuperscriptBox["x", "2"] + b\)` is
+/// `RowBox[{RowBox[{"a", SuperscriptBox["x", "2"]}], "+", "b"}]`. A leading
+/// operator is a prefix sign of the operand after it.
+fn group_box_row(parts: Vec<Expr>) -> Expr {
   if parts.len() == 1 {
-    return Some(parts.into_iter().next().unwrap());
+    return parts.into_iter().next().unwrap();
   }
-  Some(call1("RowBox", Expr::List(parts.into())))
+  // The loosest infix operator: one that follows an operand.
+  let loosest = parts
+    .iter()
+    .enumerate()
+    .filter(|(i, p)| {
+      *i > 0 && box_row_operator_precedence(&parts[i - 1]).is_none() && {
+        box_row_operator_precedence(p).is_some()
+      }
+    })
+    .filter_map(|(_, p)| box_row_operator_precedence(p))
+    .min();
+  let Some(level) = loosest else {
+    // No infix operator: a juxtaposition, whose leading sign binds just
+    // the factor after it (`\(-a b\)` is `RowBox[{RowBox[{"-", "a"}],
+    // "b"}]`).
+    if box_row_operator_precedence(&parts[0]).is_some() && parts.len() > 2 {
+      let mut rest = parts;
+      let sign = rest.remove(0);
+      let factor = rest.remove(0);
+      rest.insert(0, call1("RowBox", Expr::List(vec![sign, factor].into())));
+      return call1("RowBox", Expr::List(rest.into()));
+    }
+    return call1("RowBox", Expr::List(parts.into()));
+  };
+  let mut out = Vec::new();
+  let mut operand: Vec<Expr> = Vec::new();
+  for (i, part) in parts.into_iter().enumerate() {
+    let infix = i > 0
+      && !operand.is_empty()
+      && box_row_operator_precedence(&part) == Some(level);
+    if infix {
+      out.push(group_box_row(std::mem::take(&mut operand)));
+      out.push(part);
+    } else {
+      operand.push(part);
+    }
+  }
+  if !operand.is_empty() {
+    out.push(group_box_row(operand));
+  }
+  call1("RowBox", Expr::List(out.into()))
 }
 
 #[derive(Debug)]
@@ -2403,6 +2475,17 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
     // RowBox sequence as its own string atom (e.g. `(`, `)`, `+`, `-`,
     // arithmetic operators in `\(c (1 + x)\)` → `RowBox[{c, RowBox[{(,
     // RowBox[{1, +, x}], )}]}]`).
+    // A multi-character operator (`==`, `->`, `<=`, `&&`, …) is one atom.
+    if let Some(op) = [
+      "===", "=!=", "==", "!=", "<=", ">=", "->", ":>", ":=", "&&", "||",
+    ]
+    .iter()
+    .find(|op| bytes[i..].starts_with(op.as_bytes()))
+    {
+      toks.push(BoxTok::Atom(op.to_string()));
+      i += op.len();
+      continue;
+    }
     if matches!(c, b'(' | b')' | b'+' | b'-' | b'*' | b'/' | b'=' | b',') {
       toks.push(BoxTok::Atom((c as char).to_string()));
       i += 1;
@@ -10232,6 +10315,12 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
     } => Some(39),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Not" if args.len() == 1 => Some(20),
+      // The connectives with an operator of their own (215) print as calls
+      // in InputForm but keep that operator's binding: `a + (Xor[b, c])`,
+      // `(Nand[a, b]) == c`, `-(Xor[a, b])` — not as a side of `->` or `|`.
+      "Xor" | "Nand" | "Nor" | "Xnor" | "Equivalent" if connective_parens() => {
+        Some(19)
+      }
       "Dot" if args.len() >= 2 => Some(40),
       "NonCommutativeMultiply" if args.len() >= 2 => Some(44),
       "Map" | "Apply" | "MapApply" | "MapAll" if args.len() == 2 => Some(49),
@@ -10927,14 +11016,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ExprForm::Input,
         );
       }
-      // Named slot Slot["name"] displays as #name (matching wolframscript).
-      if name == "Slot"
-        && args.len() == 1
-        && let Expr::String(key) = &args[0]
-        && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && key.chars().all(|c| c.is_ascii_alphanumeric())
-      {
-        return format!("#{key}");
+      if let Some(text) = slot_call_text(name, args) {
+        return text;
       }
       // `Part[base, i, …]` prints with double brackets, not as a call.
       if name == "Part" && !args.is_empty() {
@@ -12181,6 +12264,41 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         && let Some(items) = infix_display_items(args)
       {
         return items.iter().map(&fmt).collect();
+      }
+      // OutputForm-only: `Prefix[f[x]]` lays out as `f@ x`, `Postfix[f[x]]`
+      // as `x // f`; an operator given instead goes right before or after
+      // the operand (`!x`, `x!`). A sum or product after a prefix operator
+      // is bracketed: `f@ (a + b)`.
+      if is_output
+        && (name == "Prefix" || name == "Postfix")
+        && (1..=3).contains(&args.len())
+        && let Expr::FunctionCall {
+          name: head,
+          args: inner,
+        } = &args[0]
+        && inner.len() == 1
+      {
+        let operand = fmt(&inner[0]);
+        let op = args.get(1).map(&fmt);
+        if name == "Prefix" {
+          let operand = if matches!(
+            &inner[0],
+            Expr::FunctionCall { name, args } if (name == "Plus" || name == "Times") && args.len() >= 2
+          ) || matches!(&inner[0], Expr::BinaryOp { .. })
+          {
+            format!("({operand})")
+          } else {
+            operand
+          };
+          return match op {
+            Some(op) => format!("{op}{operand}"),
+            None => format!("{head}@ {operand}"),
+          };
+        }
+        return match op {
+          Some(op) => format!("{operand}{op}"),
+          None => format!("{operand} // {head}"),
+        };
       }
       if is_output
         && name == "Row"
@@ -16346,8 +16464,14 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
-      // Span keeps its head form inside FullForm (see `full_form_inner`).
-      format!("FullForm[{}]", full_form_inner(&args[0]))
+      // Span keeps its head form inside a displayed FullForm (see
+      // `full_form_inner`). `ToString[…, InputForm]` writes the content as
+      // plain InputForm instead: `FullForm[{1 ;; 4, a*(Xor[b, c])}]`.
+      if in_to_string() && in_true_input_form() {
+        format!("FullForm[{}]", expr_to_input_form(&args[0]))
+      } else {
+        format!("FullForm[{}]", full_form_inner(&args[0]))
+      }
     }
     // BaseForm: InputForm shows BaseForm[n, base] structure (not subscript notation)
     Expr::FunctionCall { name, args }
@@ -16740,20 +16864,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("{open} {} {close}", parts.join(", "))
     }
-    // Named slot Slot["name"] displays as #name (matching wolframscript),
-    // mirroring the format_expr arm. Must precede the generic FunctionCall
-    // arm below, which would otherwise render it as `Slot["name"]`.
+    // Slots written as calls display in slot notation, mirroring the
+    // format_expr arm. Must precede the generic FunctionCall arm below,
+    // which would otherwise render them as `Slot[…]`.
     Expr::FunctionCall { name, args }
-      if name == "Slot"
-        && args.len() == 1
-        && matches!(&args[0], Expr::String(key)
-          if key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-            && key.chars().all(|c| c.is_ascii_alphanumeric())) =>
+      if let Some(text) = slot_call_text(name, args) =>
     {
-      match &args[0] {
-        Expr::String(key) => format!("#{key}"),
-        _ => unreachable!(),
-      }
+      text
     }
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
@@ -20774,6 +20891,10 @@ pub fn hconcat_output_form_parts(parts: &[(String, Expr)]) -> String {
 }
 
 fn boxes_to_textbox(expr: &Expr) -> TextBox {
+  if let Some(plain_box) = crate::functions::graphics::script_template_box(expr)
+  {
+    return boxes_to_textbox(&plain_box);
+  }
   let items = |arg: &Expr| -> Vec<Expr> {
     match arg {
       Expr::List(items) => items.to_vec(),
@@ -20979,10 +21100,44 @@ fn rule_calls_as_arrows(text: &str) -> String {
   out
 }
 
+/// The slot notation of a slot written as a call, as wolframscript prints
+/// it: `Slot[2]` as `#2`, `Slot["name"]` as `#name`, `SlotSequence[3]` as
+/// `##3`. An argument the notation cannot spell (`Slot[-1]`, `Slot[x]`)
+/// keeps the call form.
+fn slot_call_text(name: &str, args: &[Expr]) -> Option<String> {
+  match (name, args) {
+    ("Slot", [Expr::Integer(n)]) if *n >= 0 => Some(format!("#{n}")),
+    ("Slot", [Expr::String(key)])
+      if key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.chars().all(|c| c.is_ascii_alphanumeric()) =>
+    {
+      Some(format!("#{key}"))
+    }
+    ("SlotSequence", [Expr::Integer(n)]) if *n >= 0 => Some(format!("##{n}")),
+    _ => None,
+  }
+}
+
 /// Convert a string containing Wolfram box-syntax Unicode markers to the
 /// `DisplayForm[<box>]` representation used in OutputForm.
 /// The box expression is shown with quoted atoms unquoted.
 fn box_string_to_display_form(s: &str) -> String {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  // A string that is one flat box expression — the `\!\(\*FormBox[…]\)`
+  // that `ToString[TraditionalForm[…]]` produces, written in FullForm —
+  // displays the way wolframscript shows it: the box expression read back
+  // and printed in OutputForm (`Function[f[Slot[1]]]` as `f[#1] & `,
+  // `1.5\`` as `1.5`, `Rule[a, b]` as `a -> b`).
+  let prefix: String = [BOX_START, BOX_OPEN, BOX_SEP].iter().collect();
+  if let Some(inner) = s
+    .strip_prefix(prefix.as_str())
+    .and_then(|rest| rest.strip_suffix(BOX_CLOSE))
+    && !inner.contains([BOX_START, BOX_OPEN, BOX_SEP, BOX_CLOSE])
+    && let Ok(boxes) = string_to_expr(inner)
+    && !matches!(boxes, Expr::Raw(_))
+  {
+    return format!("DisplayForm[{}]", expr_to_output(&boxes));
+  }
   // A box segment displays as `DisplayForm[<box expression>]`; the prose
   // around it (`"value to test against \!\(\*SubscriptBox[…]\)"`) stays put.
   crate::functions::string_ast::split_inline_boxes(s)

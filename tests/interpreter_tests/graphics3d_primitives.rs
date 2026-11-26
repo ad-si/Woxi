@@ -2013,7 +2013,8 @@ mod plot3d_family {
   }
 
   // Like wolframscript, the result pins its range to the sampled surface's
-  // extent; an explicit `PlotRange` is kept as given.
+  // extent; an explicit `PlotRange` is kept, spelled out per axis (a single
+  // pair is the vertical range, recorded for every axis).
   #[test]
   fn parametric_surface_result_pins_its_plot_range() {
     assert_eq!(
@@ -2030,7 +2031,7 @@ mod plot3d_family {
          {v, 0, 2}, PlotRange -> {0, 1}]]"
       )
       .unwrap(),
-      "{0, 1}"
+      "{{0, 1}, {0, 1}, {0, 1}}"
     );
   }
 }
@@ -3932,7 +3933,8 @@ mod range_padding {
          {u, 0, 1}, {v, 0, 1}, PlotPoints -> 3]]"
       )
       .unwrap(),
-      "Scaled[0.05]"
+      "{{Scaled[0.05], Scaled[0.05]}, {Scaled[0.05], Scaled[0.05]}, \
+       {Scaled[0.05], Scaled[0.05]}}"
     );
   }
 
@@ -4045,5 +4047,192 @@ mod range_padding {
     }
     assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
     assert!(svg.contains(">n = x<tspan"), "{svg}");
+  }
+}
+
+/// A `Point` in a `Graphics3D` without a `PointSize` takes Wolfram's 3D
+/// default, `PointSize[0.01]` of the picture's width.
+mod default_point_size {
+  use super::*;
+
+  fn first_radius(svg: &str) -> f64 {
+    svg
+      .split("<circle")
+      .nth(1)
+      .and_then(|s| s.split(" r=\"").nth(1))
+      .and_then(|s| s.split('"').next())
+      .and_then(|r| r.parse().ok())
+      .unwrap_or_else(|| panic!("no circle in {svg}"))
+  }
+
+  #[test]
+  fn scales_with_the_image_width() {
+    for width in [200.0, 360.0, 600.0] {
+      let s = svg(&format!(
+        "Graphics3D[Point[{{{{0, 0, 0}}, {{1, 1, 1}}}}], ImageSize -> {width}]"
+      ));
+      let r = first_radius(&s);
+      assert!((r - 0.005 * width).abs() < 0.02, "{width}: r = {r}");
+    }
+  }
+
+  #[test]
+  fn uses_the_shorter_side_of_a_wide_pinned_picture() {
+    let s = svg(
+      "Graphics3D[{Red, Point[{{0, 0, 0}, {1, 1, 1}}]}, \
+       ImageSize -> {500, 400}]",
+    );
+    assert!((first_radius(&s) - 2.0).abs() < 0.02, "{s}");
+  }
+
+  #[test]
+  fn an_explicit_point_size_still_wins() {
+    let s = svg(
+      "Graphics3D[{PointSize[0.03], Point[{{0, 0, 0}, {1, 1, 1}}]}, \
+       ImageSize -> 400]",
+    );
+    assert!((first_radius(&s) - 6.0).abs() < 0.02, "{s}");
+  }
+}
+
+/// `ParametricPlot3D` records its `PlotRange` and `PlotRangePadding` axis
+/// by axis, as wolframscript does: an automatic axis resolved to the
+/// surface's extent and padded by `Scaled[0.05]`, an `All` one kept as
+/// `All` and padded, an explicit one as given and unpadded. A `Show` led by
+/// the plot frames that box.
+mod parametric_plot_range_all {
+  use super::*;
+
+  const SCALED: &str = "{Scaled[0.05], Scaled[0.05]}";
+
+  fn recorded(options: &str) -> String {
+    interpret(&format!(
+      "Options[ParametricPlot3D[{{s, t, 2 s t}}, {{s, 0, 1}}, {{t, 0, 1}}\
+       {options}], {{PlotRange, PlotRangePadding}}]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn resolves_the_range_and_records_the_padding() {
+    clear_state();
+    for spec in ["", ", PlotRange -> Automatic"] {
+      assert_eq!(
+        recorded(spec),
+        format!(
+          "{{PlotRange -> {{{{0., 1.}}, {{0., 1.}}, {{0., 2.}}}}, \
+           PlotRangePadding -> {{{SCALED}, {SCALED}, {SCALED}}}}}"
+        )
+      );
+    }
+    assert_eq!(
+      recorded(", PlotRange -> All"),
+      format!(
+        "{{PlotRange -> {{All, All, All}}, \
+         PlotRangePadding -> {{{SCALED}, {SCALED}, {SCALED}}}}}"
+      )
+    );
+  }
+
+  #[test]
+  fn an_explicit_range_stays_unpadded() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Options[ParametricPlot3D[{s, t, s t}, {s, 0, 1}, {t, 0, 1}, \
+         PlotRange -> {{0, 2}, {0, 2}, {0, 2}}], \
+         {PlotRange, PlotRangePadding}]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, \
+       PlotRangePadding -> {{0, 0}, {0, 0}, {0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn each_axis_is_padded_by_its_own_kind() {
+    clear_state();
+    assert_eq!(
+      recorded(", PlotRange -> {All, {0, 1}, Automatic}"),
+      format!(
+        "{{PlotRange -> {{All, {{0, 1}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{SCALED}, {{0, 0}}, {SCALED}}}}}"
+      )
+    );
+    // A bare number is a symmetric range; a single pair is the vertical
+    // range, recorded for the other axes too, which stay padded; two pairs
+    // are the horizontal ranges.
+    assert_eq!(
+      recorded(", PlotRange -> 3"),
+      "{PlotRange -> {{-3, 3}, {-3, 3}, {-3, 3}}, \
+       PlotRangePadding -> {{0, 0}, {0, 0}, {0, 0}}}"
+    );
+    assert_eq!(
+      recorded(", PlotRange -> {0, 1/2}"),
+      format!(
+        "{{PlotRange -> {{{{0, 1/2}}, {{0, 1/2}}, {{0, 1/2}}}}, \
+         PlotRangePadding -> {{{SCALED}, {SCALED}, {{0, 0}}}}}}"
+      )
+    );
+    assert_eq!(
+      recorded(", PlotRange -> {{0, 1/2}, {0, 1/2}}"),
+      format!(
+        "{{PlotRange -> {{{{0, 1/2}}, {{0, 1/2}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{{0, 0}}, {{0, 0}}, {SCALED}}}}}"
+      )
+    );
+  }
+
+  #[test]
+  fn an_explicit_padding_is_spelled_out_per_side() {
+    clear_state();
+    assert_eq!(
+      recorded(", PlotRangePadding -> {1, {1, 2}, Automatic}"),
+      format!(
+        "{{PlotRange -> {{{{0., 1.}}, {{0., 1.}}, {{0., 2.}}}}, \
+         PlotRangePadding -> {{{{1, 1}}, {{1, 2}}, {SCALED}}}}}"
+      )
+    );
+    assert_eq!(
+      recorded(
+        ", PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, PlotRangePadding -> None"
+      ),
+      "{PlotRange -> {{0, 2}, {0, 2}, {0, 2}}, \
+       PlotRangePadding -> {{None, None}, {None, None}, {None, None}}}"
+    );
+  }
+
+  #[test]
+  fn a_space_curve_records_its_range_too() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Options[ParametricPlot3D[{t, t^2, 2 t}, {t, 0, 1}, \
+         PlotRange -> {{0, 2}, All, {0, 3}}], {PlotRange, PlotRangePadding}]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0, 2}, All, {0, 3}}, PlotRangePadding -> \
+       {{0, 0}, {Scaled[0.05], Scaled[0.05]}, {0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn a_show_led_by_it_frames_the_padded_box() {
+    let show = |pp_range: &str| {
+      svg(&format!(
+        "Show[ParametricPlot3D[{{s, t, s t}}, {{s, 0, 1}}, {{t, 0, 1}}, \
+         Mesh -> None, PlotRange -> {pp_range}], \
+         PlotRange -> {{{{-1, 2}}, {{-1, 2}}, {{-1, 2}}}}, ViewAngle -> 0.7, \
+         Boxed -> False, Axes -> None, ImageSize -> 400]"
+      ))
+    };
+    // The padded box is 1.1 times as wide, so the scene is drawn smaller
+    // than with the unpadded explicit range, and like the unnamed range.
+    assert_eq!(show("All"), show("Automatic"));
+    assert_ne!(
+      show("All"),
+      show("{{0, 1}, {0, 1}, {0, 1}}"),
+      "PlotRange -> All must pad like an automatic range"
+    );
   }
 }

@@ -981,6 +981,18 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
         "HypothesisTesting`{name}"
       ));
     }
+    // The package defines `Options[f]` for each function it implements
+    // (kept if the session already changed them with `SetOptions`).
+    for (name, _) in crate::functions::math_ast::LEGACY_OPTIONS {
+      let full = format!("HypothesisTesting`{name}");
+      if let Some(defaults) =
+        crate::functions::math_ast::legacy_default_options(name)
+      {
+        crate::FUNC_OPTIONS.with(|m| {
+          m.borrow_mut().entry(full).or_insert(defaults);
+        });
+      }
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "HierarchicalClustering`" {
@@ -1401,6 +1413,12 @@ fn evaluate_function_call_ast_inner(
       }
       _ => {}
     }
+  }
+  // `GraphUtilities\`` is not autoloaded: until `Needs`/`Get` loads it, a
+  // qualified call (`GraphUtilities\`VertexList[…]`) stays unevaluated, as
+  // in wolframscript.
+  if name.starts_with("GraphUtilities`") && !package_loaded("GraphUtilities`") {
+    return Ok(unevaluated(name, args));
   }
   if name == "GraphUtilities`ExpressionTreePlot" && !args.is_empty() {
     return crate::functions::tree_form::expression_tree_plot_ast(args);
@@ -13607,6 +13625,9 @@ fn evaluate_function_call_ast_inner(
         // A display wrapper for quantities; wolframscript's script mode
         // prints it as written (`QuantityForm[Quantity[3, Meters], …]`).
         | "QuantityForm"
+        // A typesetting wrapper that only its box forms read (it stays as
+        // written in script mode: `PolynomialForm[1 + 3*x + x^2]`).
+        | "PolynomialForm"
         // A geographic styling directive: like `RGBColor` it stays as
         // written and only a renderer reads it (e.g. the `GeoBackground`
         // recorded in a saved GeoGraphics' options).

@@ -12073,7 +12073,7 @@ mod join_non_list {
   fn graph_utilities_weak_components() {
     assert_eq!(
       interpret(
-        "{GraphUtilities`WeakComponents[{1 -> 2, 3 -> 4, 4 -> 5, 6 -> 6, 2 -> 1}], \
+        "Needs[\"GraphUtilities`\"]; {GraphUtilities`WeakComponents[{1 -> 2, 3 -> 4, 4 -> 5, 6 -> 6, 2 -> 1}], \
           GraphUtilities`WeakComponents[Graph[{1 -> 2, 3 -> 4, 5 -> 3, 7 -> 6}]], \
           GraphUtilities`WeakComponents[Combinatorica`FromUnorderedPairs[{{1, 2}, {3, 4}, {4, 5}}]]}"
       )

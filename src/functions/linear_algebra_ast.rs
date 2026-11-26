@@ -12878,11 +12878,12 @@ pub fn nonlinear_model_fit_ast(
             .zip(&predicted)
             .map(|(y, y_hat)| y - y_hat)
             .collect();
-          // Nonlinear models generally have no constant term, so Wolfram
-          // measures them against the *uncorrected* total sum of squares
-          // (Σ y², not Σ (y - ȳ)²), and the adjustment uses n rather than
-          // n - 1 degrees of freedom for that total.
-          let ss_tot: f64 = y_vals.iter().map(|y| y.powi(2)).sum();
+          // Wolfram measures a nonlinear fit against the corrected total
+          // sum of squares Σ (y - ȳ)², and the adjustment uses n rather
+          // than n - 1 degrees of freedom for that total:
+          // R² = 1 - SSE/SST, adj = 1 - (1 - R²) n/(n - p).
+          let mean = y_vals.iter().sum::<f64>() / y_vals.len().max(1) as f64;
+          let ss_tot: f64 = y_vals.iter().map(|y| (y - mean).powi(2)).sum();
           let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
           let r_squared = if ss_tot.abs() < 1e-30 {
             1.0

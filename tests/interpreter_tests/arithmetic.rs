@@ -3330,7 +3330,16 @@ mod infinity_arithmetic {
       "{True, True, \
        1.2247448713915890490986420373529`20.30102999566398*^25000, \
        6.66666666666666666666666666666667`20.*^-50001, \
-       0``19.522878745280337, 20., True}"
+       0``-49980.47712125472, 20., True}"
+    );
+    // WL's last bit differs (`-480.17609125905574`), so the accuracy is
+    // pinned to ten decimals.
+    assert_eq!(
+      interpret(
+        "{Round[Accuracy[1.5`20*^500], 10^-10], 1.5`20*^50 - 1.5`20*^50}"
+      )
+      .unwrap(),
+      "{-4801760912591/10000000000, 0``-30.477121254719663}"
     );
     assert_eq!(
       interpret("N[Exp[1.*^6] - Exp[1.*^6]/2]").unwrap(),
@@ -3361,7 +3370,16 @@ mod infinity_arithmetic {
     );
     assert_eq!(
       interpret("ToString[TeXForm[1.5`3*^10005]] // StringLength").unwrap(),
-      "10007"
+      "21"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[TeXForm[#]] & /@ {1.5`3*^5, 1.5`3*^7, 123.456`10*^100, \
+         1.5`20*^-7}"
+      )
+      .unwrap(),
+      "{150000., 1.50\\times 10^7, 1.234560000\\times 10^{102}, \
+       \\text{1.5$\\grave{ }$20.*${}^{\\wedge}$-7}}"
     );
   }
 
@@ -3374,12 +3392,25 @@ mod infinity_arithmetic {
     assert_eq!(interpret("Exp[1.*^9]^-2").unwrap(), "Underflow[]");
   }
 
-  // The value lies outside the machine range; this used to panic.
+  // The value lies outside the machine range; this used to panic. The
+  // mantissa keeps the precision of the number.
   #[test]
   fn mantissa_exponent_beyond_machine_range_does_not_panic() {
     assert_eq!(
       interpret("MantissaExponent[1.5`20*^5000]").unwrap(),
-      "MantissaExponent[1.5`20.*^5000]"
+      "{0.15`20., 5001}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[-1.5`20*^-5000]").unwrap(),
+      "{-0.15`20., -4999}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[1.5`20]").unwrap(),
+      "{0.15`20., 1}"
+    );
+    assert_eq!(
+      interpret("MantissaExponent[1.5`20*^5000, 2]").unwrap(),
+      "{0.58456564020360417067573715749585715928`20., 16611}"
     );
   }
 
@@ -8431,6 +8462,53 @@ mod cases {
     );
   }
 
+  /// StandardForm sets a one-argument `Transpose`, `ConjugateTranspose` and
+  /// `Conjugate` as a postfix superscript mark instead of spelling out the
+  /// head; the two-argument `Transpose` keeps its function form.
+  #[test]
+  fn standard_form_postfix_marks() {
+    assert_case("ToBoxes[Transpose[m]]", "SuperscriptBox[m, \u{F3C7}]");
+    assert_case(
+      "ToBoxes[ConjugateTranspose[m]]",
+      "SuperscriptBox[m, \u{F3C9}]",
+    );
+    assert_case("ToBoxes[Conjugate[z]]", "SuperscriptBox[z, *]");
+    assert_case(
+      "ToBoxes[f[Transpose[g[a]]]]",
+      "RowBox[{f, [, SuperscriptBox[RowBox[{g, [, a, ]}], \u{F3C7}], ]}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[m, {2, 1, 3}]]",
+      "RowBox[{Transpose, [, RowBox[{m, ,, RowBox[{{, RowBox[{2, ,, 1, ,, 3}], }}]}], ]}]",
+    );
+  }
+
+  /// An operator expression is bracketed before it takes a postfix mark,
+  /// and a marked expression is bracketed as a power base.
+  #[test]
+  fn standard_form_postfix_marks_bracket_compound_bases() {
+    assert_case(
+      "ToBoxes[Transpose[a + b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[a b]]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], *]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a^2]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, 2], )}], \u{F3C7}]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[a]^2]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], 2]",
+    );
+    assert_case(
+      "ToBoxes[ConjugateTranspose[Transpose[a]]]",
+      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], \u{F3C9}]",
+    );
+  }
+
   /// `HoldForm` draws as its content, so a held sum, product or power used
   /// as a power base or a factor is parenthesized like the bare expression:
   /// `HoldForm[a b/c]^2` sets as `(a b/c)²`, not as `a b/c` with only the
@@ -8557,15 +8635,15 @@ mod cases {
   fn traditional_form_mod_is_infix() {
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[x, 7]]]"#,
-      r#"TagBox[FormBox[RowBox[{x, mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{x, 7}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[2 x, m]]]"#,
-      r#"TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, m}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{RowBox[{(, RowBox[{2,  , x}], )}], m}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToBoxes[TraditionalForm[Mod[x, a + b]]]"#,
-      r#"TagBox[FormBox[RowBox[{x, mod, RowBox[{(, RowBox[{a, +, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TemplateBox[{x, RowBox[{(, RowBox[{a, +, b}], )}]}, Mod], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
     assert_case(
       r#"ToExpression["\!\(\*FormBox[RowBox[{RowBox[{\"(\", RowBox[{\"2\", \" \", \"x\"}], \")\"}], \"mod\", \"7\"}], TraditionalForm]\)"]"#,
@@ -9063,6 +9141,33 @@ mod cases {
     assert_case(
       "ToString[a - 2 b/3, TraditionalForm]",
       "DisplayForm[FormBox[RowBox[{a, -, FractionBox[RowBox[{2,  , b}], 3]}], TraditionalForm]]",
+    );
+  }
+
+  /// A complex number in a larger sum is one parenthesized term, subtracted
+  /// when its real part is negative, like a complex coefficient: `x + (2 +
+  /// 3 i)`, `x - (2 - 3 i)`. A sum that is only a complex number is not.
+  #[test]
+  fn traditional_form_sum_with_complex_constant_term() {
+    assert_case(
+      "ToString[x + (2 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, +, RowBox[{(, RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[z^3 + (-1 + I) z + (-1 + I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[z, 3], -, RowBox[{RowBox[{(, RowBox[{1, -, \u{F74E}}], )}],  , z}], -, RowBox[{(, RowBox[{1, -, \u{F74E}}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x^2 + (-2.5 + 3 I), TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{SuperscriptBox[x, 2], -, RowBox[{(, RowBox[{2.5`, -, RowBox[{3.`,  , \u{F74E}}]}], )}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[2 + 3 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{2, +, RowBox[{3,  , \u{F74E}}]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[x - 2 I, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{x, -, RowBox[{2,  , \u{F74E}}]}], TraditionalForm]]",
     );
   }
 
@@ -11023,7 +11128,7 @@ mod set_precision {
         "{Attributes[Derivative], N[Derivative[2][f]], N[Derivative[2][f][x], 8], N[Derivative[3][f][1/2], 10]}"
       )
       .unwrap(),
-      "{{NHoldAll, ReadProtected}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
+      "{{NHoldAll}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
     );
   }
 
@@ -16749,7 +16854,29 @@ mod exact_arithmetic_fuzz_edge_cases {
         "{Head[2.5 Log[1 + I]], Head[Log[1 + I, -2.5]], 2.5 x Log[1 + I]}"
       )
       .unwrap(),
-      "{Complex, Complex, 2.5*x*Log[1 + I]}"
+      "{Complex, Complex, (0.8664339756999317 + 1.9634954084936207*I)*x}"
+    );
+    assert_eq!(
+      interpret(
+        "{2.5 x E^I, 2.5 x Sqrt[1 + I], 2.5 x Log[-2], 2 x Log[1 + I]}"
+      )
+      .unwrap(),
+      "{(1.3507557646703494 + 2.1036774620197414*I)*x, \
+       (2.7467102836695245 + 1.1377246514055683*I)*x, \
+       (1.7328679513998633 + 7.853981633974483*I)*x, 2*x*Log[1 + I]}"
+    );
+  }
+
+  // The real part of a machine complex logarithm is Log of the modulus.
+  #[test]
+  fn machine_complex_log_real_part() {
+    assert_eq!(
+      interpret("InputForm[Log[1. + I]]").unwrap(),
+      "InputForm[0.3465735902799727 + 0.7853981633974483*I]"
+    );
+    assert_eq!(
+      interpret("Log[1.*^200 + 1.*^200 I]").unwrap(),
+      "460.8635921890891 + 0.7853981633974483*I"
     );
   }
 
@@ -16919,11 +17046,37 @@ mod precision_bounds {
         "Block[{$MaxPrecision = 20}, Precision /@ {N[Pi, 30] + 1, N[Pi, 30] * 2, N[Pi, 30]^2}]"
       )
       .unwrap(),
-      "{20., 20., 20.}"
+      "{20., 20., 19.69897000433602}"
     );
     assert_eq!(
       interpret("Block[{$MaxPrecision = 20}, ToString[N[Pi, 30]^2]]").unwrap(),
-      "9.8696044010893586188"
+      "9.869604401089358619"
+    );
+    let r = woxi::interpret_with_stdout(
+      "Block[{$MaxPrecision = 20}, Precision[N[Pi, 30]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "20.");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "N::preclg: Requested precision 30 is larger than $MaxPrecision. \
+         Using current $MaxPrecision of 20. instead. $MaxPrecision = \
+         Infinity specifies that any precision should be allowed."
+      ]
+    );
+  }
+
+  // The digits shown are Ceiling[precision - Log10[mantissa]].
+  #[test]
+  fn shown_digits_of_fractional_precision() {
+    assert_eq!(
+      interpret(
+        "ToString /@ {9.9`19.6, 1.1`19.4, N[Pi, 19.4], 1.`20, N[Pi, 30]^2}"
+      )
+      .unwrap(),
+      "{9.900000000000000000, 1.1000000000000000000, 3.141592653589793238, \
+       1.0000000000000000000, 9.8696044010893586188344909999}"
     );
   }
 
@@ -17096,46 +17249,82 @@ mod complex_arbitrary_precision_arithmetic {
 
   #[test]
   fn imaginary_monomials() {
-    assert_eq!(interpret("(0.5`30 I)^2").unwrap(), "-0.25`30.");
+    assert_eq!(
+      interpret("(0.5`30 I)^2").unwrap(),
+      "-0.25`29.69897000433602"
+    );
+    assert_eq!(
+      interpret("{(0.5`30 I)^3, (0.5`30 I)^-2}").unwrap(),
+      "{-0.125`29.522878745280337*I, -4.`29.69897000433602}"
+    );
     assert_eq!(interpret("2.5`20 I").unwrap(), "2.5`20.*I");
     assert_eq!(interpret("x (0.5`30 + I)").unwrap(), "(0.5`30. + I)*x");
   }
 }
 
-/// `PolynomialForm[p, TraditionalOrder -> False]` (the default) typesets
-/// the sums of `p` in standard, ascending order inside TraditionalForm;
-/// `TraditionalOrder -> True` keeps TraditionalForm's descending order. The
-/// wrapper and its options used to be drawn literally.
+/// `PolynomialForm[p, TraditionalOrder -> False]` typesets the sums of `p`
+/// in standard, ascending order; `TraditionalOrder -> True` in the
+/// descending one; the default `Automatic` follows the form (ascending in
+/// StandardForm, descending in TraditionalForm). The boxes are tagged with
+/// the wrapper and its options.
 mod polynomial_form_typesetting {
   use super::*;
 
   #[test]
   fn traditional_order_option() {
     assert_eq!(
-      interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> False]]]"
-      )
-      .unwrap(),
-      "DisplayForm[FormBox[RowBox[{1, +, RowBox[{3,  , x}], +, \
-       SuperscriptBox[x, 2]}], TraditionalForm]]"
+      interpret("ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> False]]]").unwrap(),
+      "DisplayForm[FormBox[TagBox[RowBox[{1, +, RowBox[{3,  , x}], +, SuperscriptBox[x, 2]}], PolynomialForm[#1, TraditionalOrder -> False] & ], TraditionalForm]]"
     );
     assert_eq!(
       interpret("ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2]]]")
         .unwrap(),
-      interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> False]]]"
-      )
-      .unwrap()
+      "DisplayForm[FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm], TraditionalForm]]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> True], TraditionalForm]").unwrap(),
+      "FormBox[TagBox[RowBox[{SuperscriptBox[x, 2], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ], TraditionalForm]"
+    );
+  }
+
+  /// The box text of the string is FullForm (the tag function as
+  /// `Function[PolynomialForm[Slot[1], …]]`), as wolframscript writes it.
+  #[test]
+  fn traditional_form_string_box_text_is_full_form() {
+    assert_eq!(
+      interpret("ToString[ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, TraditionalOrder -> False]]], InputForm]").unwrap(),
+      "\"\\!\\(\\*FormBox[TagBox[RowBox[{\\\"1\\\", \\\"+\\\", RowBox[{\\\"3\\\", \\\" \\\", \\\"x\\\"}], \\\"+\\\", SuperscriptBox[\\\"x\\\", \\\"2\\\"]}], Function[PolynomialForm[Slot[1], Rule[TraditionalOrder, False]]]], TraditionalForm]\\)\""
     );
     assert_eq!(
       interpret(
-        "ToString[TraditionalForm[PolynomialForm[1 + 3 x + x^2, \
-         TraditionalOrder -> True]]]"
+        "ToString[ToString[TraditionalForm[NumberForm[1.5, 3]]], InputForm]"
       )
       .unwrap(),
-      interpret("ToString[TraditionalForm[1 + 3 x + x^2]]").unwrap()
+      "\"\\!\\(\\*FormBox[TagBox[InterpretationBox[StyleBox[\\\"\\\\\\\"1.5\\\\\\\"\\\", Rule[ShowStringCharacters, False]], 1.5`, Rule[AutoDelete, True]], Function[NumberForm[Slot[1], 3]]], TraditionalForm]\\)\""
+    );
+    // Displayed, the box expression reads back in OutputForm.
+    assert_eq!(
+      interpret("ToString[TraditionalForm[NumberForm[1.5, 3]]]").unwrap(),
+      "DisplayForm[FormBox[TagBox[InterpretationBox[StyleBox[\"1.5\", ShowStringCharacters -> False], 1.5, AutoDelete -> True], NumberForm[#1, 3] & ], TraditionalForm]]"
+    );
+  }
+
+  #[test]
+  fn standard_form_boxes() {
+    assert_eq!(
+      interpret("ToBoxes[PolynomialForm[1 + 3 x + x^2]]").unwrap(),
+      "TagBox[RowBox[{1, +, RowBox[{3,  , x}], +, SuperscriptBox[x, 2]}], PolynomialForm]"
+    );
+    assert_eq!(
+      interpret(
+        "ToBoxes[PolynomialForm[1 + 3 x - x^2, TraditionalOrder -> True]]"
+      )
+      .unwrap(),
+      "TagBox[RowBox[{RowBox[{-, SuperscriptBox[x, 2]}], +, RowBox[{3,  , x}], +, 1}], PolynomialForm[#1, TraditionalOrder -> True] & ]"
+    );
+    assert_eq!(
+      interpret("PolynomialForm[1 + 3 x + x^2]").unwrap(),
+      "PolynomialForm[1 + 3*x + x^2]"
     );
   }
 }

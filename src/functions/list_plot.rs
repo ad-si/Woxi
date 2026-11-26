@@ -1599,6 +1599,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // `PlotMarkers -> marker` draws that glyph at every data point
         // instead of the default round dot, one marker per series.
         "PlotMarkers" => {
+          opts.point_marker_size =
+            crate::functions::plot::point_marker_size(replacement);
           opts.plot_markers =
             crate::functions::plot::parse_plot_markers(replacement);
         }
@@ -3090,7 +3092,8 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The data decide the dot size, not an interpolated curve through them.
-  parsed.opts.default_point_size = Some(source_point_size);
+  parsed.opts.default_point_size =
+    Some(parsed.opts.point_marker_size.unwrap_or(source_point_size));
   if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
     return render_panel_layout(
       &draw_series,
@@ -3820,8 +3823,17 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut points: Vec<(f64, f64)> = Vec::new();
     for (n_expr, n) in &samples {
       let substituted = substitute_var(body, &var_name, n_expr);
-      if let Ok(result) = evaluate_expr_to_expr(&substituted)
-        && let Some(y) = try_eval_to_f64(&result)
+      let Ok(result) = evaluate_expr_to_expr(&substituted) else {
+        continue;
+      };
+      // A body can reach the variable through a symbol holding an expression
+      // (`DiscretePlot[f, {n, 5}]` after `f = 2^n`): the variable only
+      // shows up once the body is evaluated, so the sample goes in again.
+      let y = try_eval_to_f64(&result).or_else(|| {
+        let substituted = substitute_var(&result, &var_name, n_expr);
+        try_eval_to_f64(&evaluate_expr_to_expr(&substituted).ok()?)
+      });
+      if let Some(y) = y
         && y.is_finite()
       {
         points.push((*n, y));

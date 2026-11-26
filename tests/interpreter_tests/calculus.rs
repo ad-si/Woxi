@@ -9059,8 +9059,14 @@ mod dsolve {
   fn power_coefficient_riccati_equation_solution_form() {
     assert_eq!(
       interpret("DSolve[x y'[x] + y[x]^2 == -x^2, y[x], x]").unwrap(),
-      "{{y[x] -> (x*(-BesselJ[1, x] - BesselY[1, x]*C[1]))/\
-       (BesselJ[0, x] + BesselY[0, x]*C[1])}}"
+      "{{y[x] -> (x*(-BesselY[1, x] - BesselJ[1, x]*C[1]))/\
+       (BesselY[0, x] + BesselJ[0, x]*C[1])}}"
+    );
+    // An integer order pairs `Y + C[1] J`.
+    assert_eq!(
+      interpret("DSolve[x y'[x] - y[x]^2 == x^2, y[x], x]").unwrap(),
+      "{{y[x] -> -((x*(-BesselY[1, x] - BesselJ[1, x]*C[1]))/\
+       (BesselY[0, x] + BesselJ[0, x]*C[1]))}}"
     );
   }
 
@@ -10866,7 +10872,8 @@ mod ndsolve {
 
   /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
   /// between two nodes it holds the value of the right node, at a node the
-  /// node's own value, and its derivative is zero.
+  /// node's own value (the first node takes the second's), and its
+  /// derivative is zero. Exact data gives exact values at any query point.
   #[test]
   fn interpolation_order_zero_is_a_step_function() {
     clear_state();
@@ -10877,12 +10884,20 @@ mod ndsolve {
          {f[0], f[1/2], f[1], f[1.5], f[2.9], f[3], f'[1.5]}"
       )
       .unwrap(),
-      "{0, 1, 1, 4., 9., 9, 0}"
+      "{1, 1, 1, 4, 9, 9, 0}"
     );
     assert_eq!(
       interpret("Interpolation[{2, 3, 5, 7}, InterpolationOrder -> 0][2.5]")
         .unwrap(),
-      "5."
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "h = Interpolation[{{0, 0}, {1, 1.5}, {2, 4}}, \
+         InterpolationOrder -> 0]; {h[0.5], h[1.5], h[1/2]}"
+      )
+      .unwrap(),
+      "{1.5, 4., 1.5}"
     );
     assert_eq!(
       interpret(
@@ -11406,6 +11421,52 @@ mod ndsolve {
       (val - expected).abs() < 1e-3 * expected,
       "Expected {expected}, got {val}"
     );
+  }
+
+  #[test]
+  fn ndsolve_keeps_the_steps_of_a_fast_initial_layer() {
+    // y' = -10^10 y decays within 1e-10 of the start, far inside the
+    // tolerance that keeps a clipped domain bound off its neighbors; the
+    // adaptive steps taken there must stay in the solution rather than be
+    // dropped, leaving the decay to be interpolated from t == 0 to a point
+    // far beyond it.
+    for (t, expected) in
+      [("10^-10", (-1.0_f64).exp()), ("3*10^-10", (-3.0_f64).exp())]
+    {
+      let val: f64 = interpret(&format!(
+        "sol = NDSolve[{{y'[t] == -10^10 y[t], y[0] == 1}}, y, {{t, 0, 1}}]; \
+         y[{t}] /. sol[[1]]"
+      ))
+      .unwrap()
+      .parse()
+      .expect("should be a number");
+      assert!(
+        (val - expected).abs() < 1e-4,
+        "y[{t}]: expected {expected}, got {val}"
+      );
+    }
+  }
+
+  #[test]
+  fn ndsolve_tiny_derivative_coefficient_from_a_singular_start() {
+    // q[t]^2 y'[t] starts with a coefficient of 1e-20 next to y[t] == 1,
+    // which a finite-difference mass matrix rounded to an exactly zero
+    // column, so the system was left unevaluated.
+    let result = interpret(
+      "sol = NDSolve[{q[t]^2 y'[t] == -y[t], q'[t] == 1, y[0] == 1, \
+       q[0] == 1.*^-10}, {y, q}, {t, 0, 1}]; {y[0.5], q[0.5]} /. sol[[1]]",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse().expect("should be a number"))
+      .collect();
+    assert!(
+      nums[0].abs() < 1e-12,
+      "y[0.5] should have decayed: {result}"
+    );
+    assert!((nums[1] - 0.5).abs() < 1e-8, "q[0.5] == 0.5: {result}");
   }
 
   #[test]
@@ -12750,13 +12811,29 @@ mod ndsolve {
     assert_eq!(result, "True");
   }
 
-  /// A piecewise diffusion coefficient reads as `D[c D[w, x], x]` (the
-  /// finite element form, `D` of a piecewise constant vanishing): the
-  /// flux stays continuous across the jump, so the steady profile between
-  /// `w == 0` and `w == 1` bends at `x == 1/2` to `w == 9/10` there for
-  /// `c` jumping from 1 to 9.
+  /// In a finite element problem (here written with `DirichletCondition`)
+  /// a piecewise diffusion coefficient reads as `D[c D[w, x], x]` (`D` of
+  /// a piecewise constant vanishing): the flux stays continuous across the
+  /// jump, so the steady profile between `w == 0` and `w == 1` bends at
+  /// `x == 1/2` to `w == 9/10` there for `c` jumping from 1 to 9.
   #[test]
   fn pde_piecewise_coefficient_keeps_flux_continuous() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
+       D[w[t, x], x, x], w[0, x] == x, \
+       DirichletCondition[w[t, x] == 0, x == 0], \
+       DirichletCondition[w[t, x] == 1, x == 1]}, w, \
+       {t, 0, 5}, {x, 0, 1}]; Round[{u[5, 0.25], u[5, 0.5], u[5, 0.75]}, \
+       10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "{9/20, 9/10, 19/20}");
+  }
+
+  /// The method of lines takes `c u_xx` as it is written: the steady
+  /// state has `u_xx == 0` on both sides of the jump, a straight line.
+  #[test]
+  fn pde_piecewise_coefficient_in_method_of_lines() {
     let result = interpret(
       "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
        D[w[t, x], x, x], w[0, x] == x, w[t, 0] == 0, w[t, 1] == 1}, w, \
@@ -12764,7 +12841,7 @@ mod ndsolve {
        10^-3]",
     )
     .unwrap();
-    assert_eq!(result, "{9/20, 9/10, 19/20}");
+    assert_eq!(result, "{1/4, 1/2, 3/4}");
   }
 
   /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`
@@ -13286,18 +13363,47 @@ mod ndsolve {
     assert_eq!(result, "{{{0., 0.2}, {0., 1.}, {0., 1.}}, 139}");
   }
 
-  /// Without any condition on its edges a rectangle keeps the zero natural
-  /// flux of the finite element method: the total heat stays what it was.
+  /// In finite element notation (a `NeumannValue` term) an edge without a
+  /// condition keeps the zero natural flux: the total heat stays what it
+  /// was.
   #[test]
   fn pde_2d_insulated_rectangle_conserves_heat() {
     let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y] + NeumannValue[0, x == 0], \
+       w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
+       {y, 0, 2}, {t, 0, 1}]; {Round[u[0, 1, 0], 10^-6], \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1, 2667}");
+  }
+
+  /// Without any condition and without finite element notation the method
+  /// of lines extrapolates beyond the edges, so the quadratic solution
+  /// `x^2 + y + 4 t` comes out exactly, with a warning per direction.
+  #[test]
+  fn pde_2d_without_conditions_extrapolates() {
+    let r = woxi::interpret_with_stdout(
       "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
        D[w[x, y, t], y, y], w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
        {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
        Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
     )
     .unwrap();
-    assert_eq!(result, "{1., 2667}");
+    assert_eq!(r.result, "{1., 10667}");
+    assert_eq!(
+      r.warnings,
+      ["x", "y"]
+        .iter()
+        .map(|v| format!(
+          "NDSolveValue::bcart: Warning: an insufficient number of boundary \
+           conditions have been specified for the direction of independent \
+           variable {v}. Artificial boundary effects may be present in the \
+           solution."
+        ))
+        .collect::<Vec<_>>()
+    );
   }
 
   /// `NeumannValue[g, y == 0]` is an inflow `g` per unit length of that
@@ -15566,15 +15672,25 @@ mod inverse_laplace_transform {
   fn symbolic_coefficients_via_apart() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
-      "a^(-2) - Cos[a*t]/a^2"
+      "(1 - Cos[a*t])/a^2"
     );
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
-      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+      "(1 - Cos[Pi*t])/Pi^2"
     );
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
-      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+      "(1 - E^(-(Pi*t)))/Pi"
+    );
+    // The common symbolic factor comes out at its lowest power; a numeric
+    // one stays in the terms.
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 (s^2 + a^2)), s, t]").unwrap(),
+      "(a*t - Sin[a*t])/a^3"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + 2)), s, t]").unwrap(),
+      "1/2 - 1/(2*E^(2*t))"
     );
   }
 
@@ -16404,7 +16520,16 @@ mod exp_to_trig {
     );
     assert_eq!(
       interpret("ExpToTrig[(1 + y)^2 E^(I x)]").unwrap(),
-      "(1 + y)^2*Cos[x] + I*(1 + y)^2*Sin[x]"
+      "(1 + y)^2*(Cos[x] + I*Sin[x])"
+    );
+    // A sum factor stays a factor; other factors distribute.
+    assert_eq!(
+      interpret("ExpToTrig[a (1 + y) E^(I x)]").unwrap(),
+      "a*(1 + y)*(Cos[x] + I*Sin[x])"
+    );
+    assert_eq!(
+      interpret("ExpToTrig[E^(I x)/(1 + y)^2]").unwrap(),
+      "Cos[x]/(1 + y)^2 + (I*Sin[x])/(1 + y)^2"
     );
     assert_eq!(
       interpret("ExpToTrig[2 E^x]").unwrap(),
@@ -27779,6 +27904,33 @@ mod sum_reads_index_dependent_symbols {
       )
       .unwrap(),
       "{14, 36, (k*(1 + k)*(1 + 2*k))/6}"
+    );
+  }
+
+  #[test]
+  fn a_symbol_mentioning_the_indices_of_a_multiple_sum() {
+    // The symbols are replaced once for the whole call, not again for
+    // every term of the enumerated grid.
+    assert_eq!(
+      interpret(
+        "r = n^2 + m; {Sum[r, {n, 3}, {m, 2}], Product[r, {n, 3}, {m, 2}], \
+         Sum[r, {n, 3}, {m, n}]}"
+      )
+      .unwrap(),
+      "{37, 19800, 46}"
+    );
+  }
+
+  #[test]
+  fn a_multiple_sum_over_the_parts_of_a_matrix() {
+    assert_eq!(
+      interpret(
+        "am = Table[Boole[Mod[i + j, 5] < 2], {i, 30}, {j, 30}]; \
+         {Sum[am[[i, 3]]*am[[i, j]]*am[[3, j]], {i, 30}, {j, 30}], \
+          Product[1 + am[[i, j]], {i, 4}, {j, 4}]}"
+      )
+      .unwrap(),
+      "{108, 128}"
     );
   }
 }

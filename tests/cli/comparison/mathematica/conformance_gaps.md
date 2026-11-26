@@ -139,6 +139,43 @@ Woxi prints `Hold[{1, 2}?f]` in both. A `Graph`'s options are the same story:
 InputForm wraps them in a `List` (and reorders them into its own canonical
 order), the printed form does not.
 
+The same holds for `FullForm`: `FullForm[a || Xor[b, c]]` prints
+`FullForm[a || Xor[b, c]]` (Woxi too), while `ToString[…, InputForm]` of it is
+`FullForm[a || (Xor[b, c])]` — a comparison of the two is a harness artifact.
+
+### A logical connective as the operand of `^`, `!`, `;;` or a held `+`
+
+InputForm brackets `Xor`/`Nand`/`Nor`/`Xnor`/`Equivalent` calls by their
+operator's precedence (215). Woxi does so under `&&`, `||`, `!`, an evaluated
+`+`/`*`, unary minus, comparisons and a call head, but not yet as a `Power`
+operand, a `Factorial` operand, a `Span` side, or a term of a held `Plus`:
+
+```sh
+wolframscript -code 'ToString[{a^Xor[b, c], Xor[b, c]!, Hold[Xor[a, b] + c]}, InputForm]'
+# {a^(Xor[b, c]), (Xor[b, c])!, Hold[(Xor[a, b]) + c]}
+```
+
+### A held `Rational[n, d]` call prints as the fraction
+
+Woxi stores a rational number as a `Rational[n, d]` call, so the literal call
+held unevaluated cannot be told apart from the number:
+`Hold[Rational[1, 2]]` prints `Hold[1/2]` (WL: `Hold[Rational[1, 2]]`) and
+`Hold[Rational[1, 2]] === Hold[1/2]` is `True` (WL: `False`).
+
+### `DateString` of a year beyond the machine range
+
+WL's date code overflows for machine-integer years of about `10^15` and more
+(`DateString[{10^16, 4, 15}, "ISODate"]` is `"1874919424-04-15"`), and a
+bignum year gets a leading `+` (`"+200000000000000000007-04-15"`) and, when
+negative, a day one off. Woxi keeps such dates unevaluated. **Not
+reproducible** (overflow artifacts).
+
+### `NumberForm` around a product with a rational coefficient
+
+`ToBoxes[NumberForm[x/3, 3]]` is `TagBox[FractionBox["x", <3>], …]` in WL;
+Woxi boxes the coefficient as its own fraction, `RowBox[{FractionBox[<1>,
+<3>], " ", "x"}]`.
+
 ### A nested `Plus`/`Times` operand is not bracketed
 
 `Times` and `Plus` only flatten once they evaluate, so a *held* expression can
@@ -1299,9 +1336,38 @@ near 10^646456993 where wolframscript's `$MaxNumber` is near
 (`Exp[10.`30^10]`, `10^-1100329811.`30`), where wolframscript still shows a
 number.
 
-`MantissaExponent` of an arbitrary-precision number outside the machine range
-stays unevaluated (`MantissaExponent[1.5`20*^5000]`), where wolframscript
-returns the mantissa and exponent.
+### Last digit of the accuracy of a cancelled arbitrary-precision sum
+
+```sh
+wolframscript -code 'x = 1.5`20*^50000; x - x'   # 0``-49980.47712125473
+woxi eval 'x = 1.5`20*^50000; x - x'             # 0``-49980.47712125472
+```
+
+Woxi computes `-Log10` of the error correctly rounded. wolframscript's value
+matches `(Log2[m] + e) Log10[2]` of the binary mantissa and exponent for this
+case, but that formula misses its accuracy of `1.5`20 - 1.5`20` by one unit
+in the last place too, so the rule is not known.
+
+### High-multiplicity roots of a machine-coefficient polynomial
+
+A root of multiplicity `m` of a polynomial with machine coefficients is only
+determined to about `$MachineEpsilon^(1/m)`. wolframscript's `Solve` reports
+such a root `m` times up to `m = 5`. From `m = 6` on it returns the copies
+scattered by rounding: `Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]` gives
+nine real roots between 3.5737 and 3.8321, with `I` listed before `-I` for
+odd `m`. For `(x - 1.1)^m (x - 1.2)` the copies are already scattered at
+`m = 4`, and at `m = 7` all eight roots come out near 1.1125. The scatter
+depends on wolframscript's own eigenvalue rounding, so it cannot be
+reproduced. Woxi merges the copies into the `m`-fold root for every `m`.
+Expressions that only depend on the coefficients, such as the power sums of
+the roots, agree.
+
+### Precision tags of inexact `Solve` roots
+
+`Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]` is `{{x -> -0.5`15.954589770191003},
+{x -> 1.`15.954589770191003}}` in wolframscript (machine-precision numbers
+written as arbitrary-precision ones) and `{{x -> -0.5}, {x -> 1.}}` in Woxi.
+The roots and their count agree.
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 
@@ -2077,6 +2143,14 @@ a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
 
 ## Algebra and calculus
 
+### `Simplify[(1 - Cos[9])/9]` picks the other of two equally simple forms
+
+wolframscript gives `(2*Sin[9/2]^2)/9`, Woxi keeps `(1 - Cos[9])/9`; both
+have the same leaf count, so this is the order in which Simplify meets its
+candidates. It shows in
+`InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. {a -> 3, t -> 5}
+// Simplify`.
+
 ### `Solve` of a radical identity in one unknown finds a spurious root
 
 An equation that holds for every value of its unknown, with radical
@@ -2090,6 +2164,26 @@ woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0
 
 Systems of two or more such equations are solved by Gaussian elimination
 and are not affected.
+
+### `ColorFunction` of a `ParametricPlot` curve: the fourth argument
+
+```sh
+woxi eval 'ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 6}, ColorFunction -> (Hue[#4] &)], "SVG"]'
+```
+
+wolframscript hands a curve's `ColorFunction` four arguments, as it does a
+region's `x, y, u, v` (a `Function[{x, y, u, v}, …]` colors a curve without a
+`Function::fpct` message). Woxi passes `u` again as the fourth; what
+wolframscript passes there has **not been verified**.
+
+### `NSolve` of a system with radicals: order inferred from one system
+
+Woxi sorts the solutions of a radical system descending by the values of
+its radicals, then of its variables. The rule is inferred from the
+equilibria of the restricted three-body problem (where the published output
+of a Demonstration shows `Last` picking the point between the masses); the
+complete wolframscript order of that list, and of other radical systems,
+has **not been verified**.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -4192,6 +4286,27 @@ built-in in one namespace — `Needs` on a context that ships with the language
 is a no-op — so the name works either way, which makes Woxi a superset here
 rather than a mismatch. Writing the `Needs` makes the two agree; there is no
 way to make Woxi *withhold* the symbol without giving up the flat namespace.
+
+A package with its own context is different: `GraphUtilities`VertexList[…]`
+before any `Needs["GraphUtilities`"]` stays unevaluated in both.
+
+### GraphUtilities` functions that shadow System symbols, loaded in an earlier input
+
+```sh
+printf 'Needs["GraphUtilities`"]\nPrint[GraphUtilities`VertexList[{a -> b}]]\n' > t.wls
+wolframscript -file t.wls
+# VertexList::shdw: Symbol VertexList appears in multiple contexts …
+# VertexList[{a -> b}]
+woxi run t.wls
+# {a, b}
+```
+
+With the `Needs` in the *same* input (`Needs["GraphUtilities`"];
+GraphUtilities`VertexList[{a -> b}]`) wolframscript answers `{a, b}` too. Loaded
+by an earlier input, every package function whose name is also a System
+symbol (`VertexList`, `ClosenessCentrality`, `AdjacencyMatrix`) stays
+unevaluated after a `::shdw` warning. Woxi evaluates them however the package
+was loaded, so the unit tests write the `Needs` into the same input.
 
 ### `Unevaluated` comes off for some heads and not others
 
@@ -6796,6 +6911,10 @@ neighborhood range, so it does not share the other filters' validation.
 More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
 systemic across `ImageTake`, `ImagePartition` and `DistanceTransform`.
+The hypothesis tests share it: `FisherRatioTest[a, b, 1, "TestStatistic"]`
+gives `FisherRatioTest::argb` (WL: `nonopt` … beyond position 3), and
+`VarianceEquivalenceTest[{a, b}, "TestStatistic", All]` stays unevaluated
+without WL's `nonopt` … beyond position 2.
 
 ### FindThreshold implements only the default method
 
@@ -7764,6 +7883,12 @@ method (`"Congruential"`, `"Rule30CA"`, `"MersenneTwister"`, …) gets its own
 reproducible stream (a key derived from the method is mixed into the seed),
 but none of them reproduces the named algorithm's numbers or statistical
 quirks. **Not reproducible.**
+The quasi-random methods `{"MKL", Method -> {"Sobol" | "Niederreiter",
+"Dimension" -> d}}` are the exception: they draw the actual low-discrepancy
+sequences (Bratley–Fox direction numbers, base-2 Niederreiter matrices,
+Gray-code order). Not yet checked against wolframscript: whether Intel MKL's
+streams start at the origin as Woxi's do (or skip it), use the same free
+choices in the Niederreiter matrices beyond dimension 2, and ignore the seed.
 
 ### Performance
 
@@ -9690,7 +9815,7 @@ which can differ from WL's (older) wording, the GO annotations are
 UniProt's current ones, and a class (`ProteinData["ActinBinding"]`) lists
 only the bundled proteins annotated directly with its term. Only the
 `"Name"`, `"StandardName"`, `"Sequence"`, `"SequenceLength"` and GO class
-properties are available.
+properties are available; the other properties WL lists are `Missing["NotAvailable"]`.
 
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
@@ -10915,6 +11040,14 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
 
+### Lone Latin letters in plot label strings
+
+Saved snapshots show a lowercase Greek letter standing alone as a word of a
+`PlotLabel` string (`"Outside μ ± ϵ: "`) in italics, and Woxi sets those in
+italics too. Whether the front end does the same for a lone Latin letter of
+a label string (the `a` of `"a plot"`) has not been verified against
+`wolframscript`, so Woxi keeps Latin letters in strings upright.
+
 ### A one-letter string subscripted in a graphics label is drawn upright
 
 A saved snapshot of `Graphics[{…, Inset[Style[Column[{Row[{Subscript["ζ",
@@ -11081,3 +11214,55 @@ unevaluated, so the plot samples the compiled function numerically and
 returns a `Graphics3D`. The unit test
 `compiled_vector_argument_iteration_is_not_run_symbolically` is in
 `EXACT_EXPR_SKIP`.
+
+## Unit-test conformance batch (2026-11-25)
+
+These divergences surfaced in one `make test-conformance` run against
+wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
+`NEAR_MATCH` for last-ulp cases.
+
+- **High-degree `Root`**: `Root[#^10000 - 3 #^7 + 1 &, 2]` stays unevaluated
+  in WL 15. It is not put in canonical form and `N` does nothing. `Reduce`
+  over the reals answers with `Root[{f, x0}]` approximations, or factors
+  `x^1001 + 3 x^7 + 1` through `Root[1 + 3*#1 + #1^143 &, 1, 0]^(1/7)`. Woxi
+  isolates and evaluates the roots.
+- **Inexact `Solve`/`NSolve` forms**: WL writes `0.125*(5. - 1.*Sqrt[9. -
+  32.*e])` where Woxi writes `0.625 - 0.5*Sqrt[0.5625 - 2.*e]`. WL also orders
+  NSolve rules by its own elimination order (`{y -> 0., x -> …}`) and lists
+  conjugate roots minus-first. A linear system with rational-function
+  coefficients is normalized differently.
+- **Huge-exponent bignums** (`10.^30000.`, `2.^1.*^6`, `Log[Exp[1.*^6]]`):
+  digits past the stated precision differ, and so does the last ulp of the
+  precision mark. `SetPrecision[1.5`20*^10002, Infinity]` is not exactly
+  `15*10^10001` in WL because its mantissa is binary.
+- **`DSolve`/`Integrate` forms**: WL folds `(-1 + x)*(1 + x)` into
+  `-1 + x^2` in a first-order linear solution.
+  `Derivative[1][EllipticK]` orders `EllipticK[#1]*(1 - #1)` inside the pure
+  function. `Integrate[x E^x/(1 + E^x), x]` should give
+  `x*Log[1 + E^x] + PolyLog[2, -E^x]`, but Woxi leaves it unevaluated.
+- **`NDSolve` internals**: WL's method of lines on a parameter-only "PDE"
+  uses 25 grid points and is less accurate than Woxi, and it ignores
+  `"MinPoints"`. `NDSolve`StateData` copies share state. `Plot` of an
+  `NDSolve` result re-evaluates the right-hand side. A
+  `DirichletCondition` added into the equation leaves `NDSolveValue`
+  unevaluated.
+- **Classifier queries**: `c["Method"]` on a `ClassifierFunction` returns
+  the whole classifier association in wolframscript.
+- **Entity data drift**: city ordering, CountryData figures, flags (WL:
+  `Graphics`) and descriptions, `"InfantMortalityFraction"` as a `Quantity`,
+  and ProteinData names, molecular functions and classes all differ from the
+  live knowledgebase.
+- **Other WL quirks**:
+  - `FindShortestTour[…, DistanceFunction -> GeoDistance]` stays unevaluated.
+  - `Det` of a matrix with entries like `1/(1 + Sqrt[2])` is returned
+    unsimplified.
+  - `NullSpace` does not see that `a/(1 - a) + a/(a - 1)` is zero.
+  - `CoordinateTransform["Spherical" -> "Cartesian", list]` stays
+    unevaluated.
+  - `TranslationTransform[…][Line[…]]` re-nests the point list.
+  - `ImageResize` uses nearest-neighbor when it enlarges a 1×2 image.
+  - `Normal[GraphicsComplex[…, Text["a", 3]]]` loses the coordinate.
+- **Plot internals**: a further ~110 structural plot assertions differ:
+  GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
+  sampling counts, and where directives sit (see the existing plot-internals
+  notes above).

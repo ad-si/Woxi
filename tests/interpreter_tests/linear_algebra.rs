@@ -5739,7 +5739,7 @@ mod nonlinear_model_fit {
           Round[10^6 fm[\"RSquared\"]]}"
       )
       .unwrap(),
-      "{{2434483, -637931}, 6027586, {210317, 257584}, 995656}"
+      "{{2434483, -637931}, 6027586, {210317, 257584}, 983448}"
     );
     assert_eq!(
       interpret(
@@ -5770,7 +5770,7 @@ mod nonlinear_model_fit {
           Round[10^6 fm[\"RSquared\"]], $MessageList}"
       )
       .unwrap(),
-      "{{16015275, 716998}, True, 999819, {}}"
+      "{{16015275, 716998}, True, 998686, {}}"
     );
   }
 
@@ -5972,20 +5972,20 @@ mod nonlinear_model_fit {
     );
   }
 
-  // Nonlinear fits are measured against the uncorrected total sum of
-  // squares (Σ y²), and AdjustedRSquared uses n (not n - 1) degrees of
-  // freedom for that total: R² = 1 - SSE/Σy², adj = 1 - (1 - R²) n/(n - p).
+  // Nonlinear fits are measured against the corrected total sum of
+  // squares Σ (y - ȳ)², and AdjustedRSquared uses n (not n - 1) degrees of
+  // freedom for that total: R² = 1 - SSE/SST, adj = 1 - (1 - R²) n/(n - p).
   #[test]
-  fn r_squared_uses_the_uncorrected_total_sum_of_squares() {
+  fn r_squared_uses_the_corrected_total_sum_of_squares() {
     assert_eq!(
       interpret(
         "fm = NonlinearModelFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}, {4, 7.8}}, \
          a x^b, {a, b}, x]; \
          {Round[10^8 fm[\"RSquared\"]], Round[10^8 fm[\"AdjustedRSquared\"]], \
-          Round[10^8 (1 - Total[fm[\"FitResiduals\"]^2]/Total[{2.1, 3.9, 6.2, 7.8}^2])]}"
+          Round[10^8 (1 - Total[fm[\"FitResiduals\"]^2]/Total[({2.1, 3.9, 6.2, 7.8} - 5)^2])]}"
       )
       .unwrap(),
-      "{99934064, 99868127, 99934064}"
+      "{99585194, 99170388, 99585194}"
     );
   }
 
@@ -6125,8 +6125,30 @@ mod transformation_function_apply {
       "Disk[{2, 0}, 2]"
     );
     assert_eq!(
+      interpret("ScalingTransform[{2, 2}][Disk[{1, 0}, r]]").unwrap(),
+      "Disk[{2, 0}, 2*Sqrt[r^2]]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 1}][Disk[{1, 0}, r]]").unwrap(),
+      "Disk[{2, 1}, r]"
+    );
+  }
+
+  // A ball under anything but a translation is an ellipsoid.
+  #[test]
+  fn ball_under_a_linear_map_is_an_ellipsoid() {
+    assert_eq!(
       interpret("ScalingTransform[{3, 3, 3}][Ball[{1, 0, 0}, r]]").unwrap(),
-      "Ball[{3, 0, 0}, 3*r]"
+      "Ellipsoid[{3, 0, 0}, {{9*r^2, 0, 0}, {0, 9*r^2, 0}, {0, 0, 9*r^2}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {0, 0, 1}][Ball[{1, 0, 0}, 1]]")
+        .unwrap(),
+      "Ellipsoid[{0, 1, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("TranslationTransform[{1, 1, 1}][Ball[{1, 0, 0}, 1]]").unwrap(),
+      "Ball[{2, 1, 1}, 1]"
     );
   }
 
@@ -6143,12 +6165,20 @@ mod transformation_function_apply {
     );
   }
 
-  // A non-uniform scaling does not keep a disk round, so it stays applied.
+  // A non-uniform map does not keep a disk round: it is an ellipsoid.
   #[test]
-  fn non_uniform_scaling_of_disk_stays_applied() {
+  fn non_uniform_scaling_of_disk_is_an_ellipsoid() {
     assert_eq!(
       interpret("ScalingTransform[{2, 1}][Disk[{1, 0}, 1]]").unwrap(),
-      "TransformationFunction[{{2, 0, 0}, {0, 1, 0}, {0, 0, 1}}][Disk[{1, 0}, 1]]"
+      "Ellipsoid[{2, 0}, {{4, 0}, {0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}][Disk[{1, 0}, {1, 2}]]").unwrap(),
+      "Ellipsoid[{2, 0}, {{4, 0}, {0, 36}}]"
+    );
+    assert_eq!(
+      interpret("ShearingTransform[Pi/4, {1, 0}, {0, 1}][Disk[]]").unwrap(),
+      "Ellipsoid[{0, 0}, {{2, 1}, {1, 1}}]"
     );
   }
 

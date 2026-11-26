@@ -990,6 +990,12 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(expanded) = expand_index_dependent_symbols(args) {
     return product_ast(&expanded);
   }
+  product_ast_expanded(args)
+}
+
+/// [`product_ast`] for a call whose factor already had its index-dependent
+/// symbols replaced (see [`sum_ast_expanded`]).
+fn product_ast_expanded(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Trailing options are not iterators; none of Product's change the answer
   // here, so they are accepted and dropped.
   {
@@ -1033,7 +1039,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for spec in &args[2..] {
           inner.push(substitute_into_spec(spec, &var, &value)?);
         }
-        let val = product_ast(&inner)?;
+        let val = product_ast_expanded(&inner)?;
         acc = crate::functions::math_ast::times_ast(&[acc, val])?;
       }
       return Ok(acc);
@@ -2278,6 +2284,16 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(expanded) = expand_index_dependent_symbols(args) {
     return sum_ast(&expanded);
   }
+  sum_ast_expanded(args)
+}
+
+/// [`sum_ast`] for a call whose summand already had its index-dependent
+/// symbols replaced (see [`expand_index_dependent_symbols`]). The terms of a
+/// multiple sum enumerated outermost-first go through here: substituting a
+/// concrete index value cannot bring in such a symbol, and looking again
+/// would read every symbol of the summand (a large matrix, say) once per
+/// term.
+fn sum_ast_expanded(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = sum_ast_unevaluated_body(args)?;
   // A sum that does not close is all-or-nothing in wolframscript: the call
   // comes back as written — every iterator spec (`{j, n}` stays `{j, n}`) and
@@ -2450,7 +2466,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for spec in &args[2..] {
           inner.push(substitute_into_spec(spec, &var, &value)?);
         }
-        terms.push(sum_ast(&inner)?);
+        terms.push(sum_ast_expanded(&inner)?);
       }
       return plus_all(terms);
     }

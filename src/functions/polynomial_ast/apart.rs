@@ -141,7 +141,17 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &args[0],
       ));
     }
-    return Ok(args[0].clone());
+    // A sum holding fractions, as `x/(x^2 - 1) + Sin[x]`.
+    let decomposed = match args.get(1) {
+      Some(Expr::Identifier(v)) => Some(apart_in_var(&args[0], v)?),
+      Some(_) => None,
+      None => apart_in_last_kernel(&args[0])?,
+    };
+    return Ok(
+      decomposed
+        .filter(|d| !is_unevaluated_apart(d))
+        .unwrap_or_else(|| args[0].clone()),
+    );
   }
 
   let var = if args.len() == 2 {
@@ -152,6 +162,9 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
+    if let Some(result) = apart_in_last_kernel(&args[0])? {
+      return Ok(result);
+    }
     // Find the variable automatically
     if let Some(v) = find_single_variable(&args[0]) {
       v
@@ -241,6 +254,50 @@ fn is_unevaluated_apart(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, .. } if name == "Apart")
 }
 
+/// `Apart[expr]` of an expression in several polynomial kernels (symbols,
+/// and non-symbol variables like `y[x]`, `Sin[x]` or `E^x`) decomposes in
+/// the last of them, the symbols ordered before the other kernels; the rest
+/// are constants. So `Apart[x Sin[x]/(x^2 - 1)]` stays undecomposed (it is
+/// linear in `Sin[x]`), while `Apart[(x + y)/((x - 1) (y - 1))]` splits in
+/// `y`. Returns `None` when there is no choice to make (a single symbol)
+/// or the decomposition fails.
+fn apart_in_last_kernel(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let kernels = eval_template(
+    "Module[{k = Union[Select[Variables[e$Apart], !NumericQ[#] &], \
+       Cases[e$Apart, Power[_?NumericQ, p_ /; !NumericQ[p]], {0, Infinity}]]}, \
+       Join[Sort[Select[k, Head[#] === Symbol &]], \
+         Sort[Select[k, Head[#] =!= Symbol &]]]]",
+    &[("e$Apart", expr)],
+  )?;
+  let Expr::List(ref kernels) = kernels else {
+    return Ok(None);
+  };
+  let Some(last) = kernels.last() else {
+    return Ok(None);
+  };
+  if kernels.len() == 1 && matches!(last, Expr::Identifier(_)) {
+    return Ok(None);
+  }
+  if let Expr::Identifier(name) = last {
+    let result = apart_in_var(expr, name)?;
+    return Ok((!is_unevaluated_apart(&result)).then_some(result));
+  }
+  const TMP: &str = "apart$Kernel";
+  let substituted = eval_template(
+    "e$Apart /. v$Apart -> apart$Kernel",
+    &[("e$Apart", expr), ("v$Apart", last)],
+  )?;
+  let result = apart_in_var(&substituted, TMP)?;
+  if is_unevaluated_apart(&result) {
+    return Ok(None);
+  }
+  eval_template(
+    "r$Apart /. apart$Kernel -> v$Apart",
+    &[("r$Apart", &result), ("v$Apart", last)],
+  )
+  .map(Some)
+}
+
 /// `Apart[expr]` of an expression in several variables whose denominator
 /// involves just one of them (as `Variables` counts them, so `y[x]` is a
 /// variable too) decomposes in that variable:
@@ -323,6 +380,22 @@ fn apart_in_var(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
     return eval_template(
       "e$Apart /. r$Apart",
       &[("e$Apart", &result), ("r$Apart", &backward)],
+    );
+  }
+  // A polynomial in `var` has no partial fractions: its coefficients,
+  // collected by powers of `var`, are each brought over a factored common
+  // denominator: `Apart[x/(x^2 - 1) + y, y]` → `x/((-1 + x) (1 + x)) + y`.
+  if matches!(
+    eval_template(
+      "PolynomialQ[e$Apart, v$Apart]",
+      &[("e$Apart", expr), ("v$Apart", &var_expr)],
+    )?,
+    Expr::Identifier(ref b) if b == "True"
+  ) {
+    return eval_template(
+      "Total[MapIndexed[Factor[Together[#1]] v$Apart^(#2[[1]] - 1) &, \
+         CoefficientList[e$Apart, v$Apart]]]",
+      &[("e$Apart", expr), ("v$Apart", &var_expr)],
     );
   }
   let dens = eval_template(

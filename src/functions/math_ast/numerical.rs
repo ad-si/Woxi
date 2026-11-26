@@ -71,6 +71,20 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
+    // A precision past `$MaxPrecision` is lowered to it.
+    let (_, max_precision) = crate::precision_bounds();
+    let precision_f64 = if precision_f64 > max_precision {
+      crate::emit_message(&format!(
+        "N::preclg: Requested precision {} is larger than $MaxPrecision. \
+         Using current $MaxPrecision of {} instead. $MaxPrecision = \
+         Infinity specifies that any precision should be allowed.",
+        expr_to_string(&args[1]),
+        expr_to_string(&Expr::Real(max_precision))
+      ));
+      max_precision
+    } else {
+      precision_f64
+    };
     return n_eval_arbitrary_precision_form(&args[0], precision_f64);
   }
   n_eval(&args[0])
@@ -4947,13 +4961,14 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // precision *is* the accuracy (Wolfram stores `0``a` as a 0 with
     // accuracy a, which we represent as a BigFloat whose precision field
     // already holds a — see the parser).
-    Expr::BigFloat(digits, prec) => {
-      let val: f64 = digits.parse().unwrap_or(0.0);
-      let prec_f = *prec;
-      if val == 0.0 {
-        return Ok(Expr::Real(prec_f));
+    Expr::BigFloat(_, prec) => {
+      // The magnitude may lie far outside the machine range (`1.5`20*^500`).
+      match super::arithmetic::scaled_parts(&args[0]) {
+        Some((m, k)) if m != 0.0 => {
+          Ok(Expr::Real(*prec - (m.abs().log10() + k as f64)))
+        }
+        _ => Ok(Expr::Real(*prec)),
       }
-      Ok(Expr::Real(prec_f - val.abs().log10()))
     }
     Expr::Identifier(name)
       if name == "Infinity"
@@ -5441,12 +5456,19 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
         collect_variables(item, vars);
       }
     }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => collect_power_variables(expr, left, right, vars),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      collect_power_variables(expr, &args[0], &args[1], vars);
+    }
     Expr::BinaryOp { op, left, right } => {
       match op {
         BinaryOperator::Plus
         | BinaryOperator::Minus
         | BinaryOperator::Times
-        | BinaryOperator::Power
         | BinaryOperator::Divide => {
           collect_variables(left, vars);
           collect_variables(right, vars);
@@ -5476,6 +5498,22 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
     _ => {
       vars.push(expr.clone());
     }
+  }
+}
+
+/// A power with a numeric exponent contributes the variables of its base;
+/// one with a symbolic exponent is a variable as a whole (`x^n`), unless its
+/// base is a number, which makes it no polynomial variable at all (`E^x`).
+fn collect_power_variables(
+  expr: &Expr,
+  base: &Expr,
+  exp: &Expr,
+  vars: &mut Vec<Expr>,
+) {
+  if crate::functions::predicate_ast::is_numeric_q(exp) {
+    collect_variables(base, vars);
+  } else if !crate::functions::predicate_ast::is_numeric_q(base) {
+    vars.push(expr.clone());
   }
 }
 
@@ -9844,7 +9882,13 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
 
   // Newton steps, keeping the iterate with the smallest |p(z)|: near the root
   // Newton may oscillate between two adjacent f64 values (both equally good).
-  for slot in roots.iter_mut() {
+  // Polishing only refines a root: an iterate that ends nearer another
+  // root's starting point than its own has left for that root (as one copy
+  // of a repeated root, scattered by rounding, can), so it is dropped and
+  // the root keeps its start.
+  let starts = roots.to_vec();
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  for (index, slot) in roots.iter_mut().enumerate() {
     let (mut zr, mut zi) = *slot;
     let (mut best_zr, mut best_zi) = (zr, zi);
     let (pr0, pi0) = eval_p(zr, zi);
@@ -9869,8 +9913,18 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
         break;
       }
     }
-    *slot = (best_zr, best_zi);
+    let polished = (best_zr, best_zi);
+    let own = dist(polished, starts[index]);
+    let strayed = starts
+      .iter()
+      .enumerate()
+      .any(|(other, &start)| other != index && dist(polished, start) < own);
+    if !strayed {
+      *slot = polished;
+    }
   }
+
+  merge_multiple_root_clusters(&monic, roots);
 
   // Snap to real / round trailing fp noise.
   for (r, i) in roots.iter_mut() {
@@ -9909,6 +9963,151 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
         paired[j] = true;
         break;
       }
+    }
+  }
+}
+
+/// Coefficients of the `j`-th derivative of the polynomial `coeffs`
+/// (`coeffs[i]` is the coefficient of x^i).
+fn poly_derivative_coeffs(coeffs: &[f64], j: usize) -> Vec<f64> {
+  (j..coeffs.len())
+    .map(|i| {
+      let falling = ((i - j + 1)..=i).fold(1.0_f64, |acc, k| acc * k as f64);
+      falling * coeffs[i]
+    })
+    .collect()
+}
+
+/// `Σ |c_i| |z|^i`, the size of the terms that `Σ c_i z^i` sums: the
+/// scale its rounding error is measured against.
+fn poly_abs_scale(coeffs: &[f64], z: (f64, f64)) -> f64 {
+  let r = z.0.hypot(z.1);
+  coeffs
+    .iter()
+    .rev()
+    .fold(0.0_f64, |acc, c| acc * r + c.abs())
+}
+
+/// Collapse the clusters a repeated root leaves behind into that root.
+///
+/// In machine arithmetic a root of multiplicity m is only determined to
+/// about eps^(1/m): a simultaneous root finder returns m points scattered on
+/// a small circle around it (the 9-fold root 3.7 of
+/// `(z - 3.7)^9 (z^2 + 1)` lands up to 0.1 away). wolframscript reports the
+/// root itself m times. A group of nearby roots is merged when the point
+/// it shrinks to — the simple root of `p^(m-1)` near the group's centroid —
+/// annihilates `p, p', …, p^(m-1)` to rounding level, which distinct close
+/// roots never do. A group that fails the test sheds its outermost member
+/// and is tried again.
+fn merge_multiple_root_clusters(monic: &[f64], roots: &mut [(f64, f64)]) {
+  let n = roots.len();
+  if n < 2 || monic.len() != n + 1 {
+    return;
+  }
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  // Single-linkage groups of roots closer than a tenth of their size.
+  let mut group = vec![usize::MAX; n];
+  let mut groups: Vec<Vec<usize>> = Vec::new();
+  for start in 0..n {
+    if group[start] != usize::MAX {
+      continue;
+    }
+    let id = groups.len();
+    group[start] = id;
+    let mut members = vec![start];
+    let mut k = 0;
+    while k < members.len() {
+      let a = roots[members[k]];
+      for j in 0..n {
+        if group[j] == usize::MAX {
+          let b = roots[j];
+          let size = a.0.hypot(a.1).max(b.0.hypot(b.1)).max(1.0);
+          if dist(a, b) < 0.1 * size {
+            group[j] = id;
+            members.push(j);
+          }
+        }
+      }
+      k += 1;
+    }
+    groups.push(members);
+  }
+
+  let derivatives: Vec<Vec<f64>> =
+    (0..=n).map(|j| poly_derivative_coeffs(monic, j)).collect();
+  let div = |a: (f64, f64), b: (f64, f64)| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  // The point a group of `m` roots shrinks to, if it is an m-fold root.
+  let fold = |roots: &[(f64, f64)], members: &[usize]| -> Option<(f64, f64)> {
+    let m = members.len();
+    let mut c = members.iter().fold((0.0, 0.0), |acc, &k| {
+      (acc.0 + roots[k].0, acc.1 + roots[k].1)
+    });
+    c = (c.0 / m as f64, c.1 / m as f64);
+    let radius = members
+      .iter()
+      .map(|&k| dist(roots[k], c))
+      .fold(0.0_f64, f64::max);
+    let start = c;
+    // Newton on p^(m-1), which has a simple root at an m-fold root of p.
+    let (f, df) = (&derivatives[m - 1], &derivatives[m]);
+    for _ in 0..20 {
+      let fv = poly_eval_complex(f, c.0, c.1);
+      let dv = poly_eval_complex(df, c.0, c.1);
+      if dv.0.hypot(dv.1) < 1e-300 {
+        break;
+      }
+      let step = div(fv, dv);
+      c = (c.0 - step.0, c.1 - step.1);
+      if step.0.hypot(step.1) <= 1e-16 * c.0.hypot(c.1).max(1.0) {
+        break;
+      }
+    }
+    // The group's own spread understates how far its centroid can sit from
+    // the root (all members may lean the same way), so Newton may move it
+    // up to the grouping distance.
+    let size = start.0.hypot(start.1).max(1.0);
+    if dist(c, start) > (2.0 * radius).max(0.1 * size) {
+      return None;
+    }
+    let annihilates = derivatives[..m].iter().all(|d| {
+      let v = poly_eval_complex(d, c.0, c.1);
+      v.0.hypot(v.1) <= 1e-11 * poly_abs_scale(d, c)
+    });
+    annihilates.then_some(c)
+  };
+
+  // The `m` members of `pool` nearest to `z`.
+  let nearest =
+    |roots: &[(f64, f64)], pool: &[usize], z: (f64, f64), m: usize| {
+      let mut sorted = pool.to_vec();
+      sorted.sort_by(|&a, &b| dist(roots[a], z).total_cmp(&dist(roots[b], z)));
+      sorted.truncate(m);
+      sorted
+    };
+  for mut pending in groups {
+    // The highest multiplicity first: a lower one would fold an m-fold root
+    // through a multiple root of p^(k-1), which Newton resolves poorly, and
+    // would leave the rest of its copies behind.
+    'group: while pending.len() > 1 {
+      let m_total = pending.len() as f64;
+      let centroid = pending.iter().fold((0.0, 0.0), |acc, &k| {
+        (acc.0 + roots[k].0 / m_total, acc.1 + roots[k].1 / m_total)
+      });
+      for m in (2..=pending.len()).rev() {
+        let start = nearest(roots, &pending, centroid, m);
+        if let Some(c) = fold(roots, &start) {
+          let chosen = nearest(roots, &pending, c, m);
+          for &k in &chosen {
+            roots[k] = c;
+          }
+          pending.retain(|k| !chosen.contains(k));
+          continue 'group;
+        }
+      }
+      break;
     }
   }
 }

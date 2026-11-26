@@ -231,11 +231,12 @@ $ wo 'PolyhedronData["RhombicTriacontahedron", "Circumradius"]'
 Missing[NotApplicable]
 ```
 
-A class names its members alphabetically:
+A class names its members alphabetically, except the Platonic solids, which
+come by face count:
 
 ```scrut
 $ wo 'PolyhedronData["Platonic"]'
-{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}
+{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}
 ```
 
 `"Faces"` gives the corners and the faces that index into them, in one

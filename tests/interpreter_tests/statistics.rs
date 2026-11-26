@@ -124,6 +124,27 @@ mod mann_whitney_test {
     );
   }
 
+  // The conclusion is a nested `Row` and the tables are styled grids, as
+  // in every hypothesis test.
+  #[test]
+  fn conclusion_and_table_structure() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[MannWhitneyTest[{Range[40], Range[30] + 22.5}, -3.1, \"TestConclusion\", SignificanceLevel -> 0.01], InputForm]").unwrap(),
+      "Row[{\"The null hypothesis that \", Row[{\"the \", \"median\", \" difference is \", -3.1, \" \"}], \"is rejected at the \", Row[{1., \" percent level \"}], Row[{\"based on the \", \"Mann\u{2010}Whitney\", \" test.\"}]}]"
+    );
+    assert_eq!(
+      interpret("ToString[MannWhitneyTest[{{1, 2, 3, 4}, {2.5, 7, 8}}, 0, \"PValueTable\"], InputForm]").unwrap(),
+      "Style[Grid[{{\"\", \"P\u{2010}Value\"}, {\"Mann\u{2010}Whitney\", 0.11428571428571428}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
+    );
+    assert_eq!(
+      // WL's ratio and p-value differ in the last bit, so the table's
+      // reals are rounded to twelve decimals.
+      interpret("ToString[VarianceEquivalenceTest[{{1, 2, 3, 4.}, {2, 5, 1, 7.}}, \"TestDataTable\"] /. r_Real :> N[Round[r, 10^-12]], InputForm]").unwrap(),
+      "Style[Grid[{{\"\", \"Statistic\", \"P\u{2010}Value\"}, {\"Fisher Ratio\", 0.21978021978, 0.245157188753}}, Alignment -> {Left, Automatic}, Dividers -> {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic], \"DialogStyle\"]"
+    );
+  }
+
   #[test]
   fn invalid_input_stays_unevaluated_with_a_message() {
     clear_state();
@@ -5637,14 +5658,149 @@ mod hypothesis_testing_legacy_package {
   #[test]
   fn mean_ci_known_variance_uses_normal_quantile() {
     clear_state();
+    // Loaded in its own input, so the bare `KnownVariance` below is the
+    // package's symbol.
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret("Round[MeanCI[{1, 2, 3, 9/2}, KnownVariance -> 2], 10^-6]")
+        .unwrap(),
+      "{154887/125000, 501363/125000}"
+    );
+  }
+
+  #[test]
+  fn options_of_another_context_are_ignored() {
+    // `KnownVariance` read on the line that loads the package is
+    // `Global`KnownVariance`, not the package's option: the interval stays
+    // the Student t one.
+    clear_state();
     assert_eq!(
       interpret(
         "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          KnownVariance -> 2], 10^-6]"
       )
       .unwrap(),
-      "{154887/125000, 501363/125000}"
+      "{249241/1000000, 5000759/1000000}"
     );
+  }
+
+  #[test]
+  fn unknown_options_are_ignored() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    // The interval and p-value functions ignore them silently, as well as
+    // options they do not declare and string option names.
+    let result = interpret_with_stdout(
+      "Round[{MeanCI[{1, 2, 3, 9/2}, foo -> 2, TwoSided -> True, \
+       \"KnownVariance\" -> 2], VarianceCI[{1, 2, 4}, foo -> 1], \
+       OneSidedPValue /. StudentTPValue[1.2, 4, ConfidenceLevel -> 0.9]}, \
+       10^-6] == Round[{MeanCI[{1, 2, 3, 9/2}], VarianceCI[{1, 2, 4}], \
+       OneSidedPValue /. StudentTPValue[1.2, 4]}, 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    // The tests report each one with `::optx` and carry on.
+    let result = interpret_with_stdout(
+      "Round[OneSidedPValue /. MeanDifferenceTest[{1, 2, 4}, {2, 5, 7}, 0, \
+       foo -> 1, ConfidenceLevel -> 0.9], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "31967/250000");
+    assert_eq!(
+      result.warnings[1..],
+      [
+        "MeanDifferenceTest::optx: Unknown option foo -> 1 in \
+         MeanDifferenceTest.",
+        "MeanDifferenceTest::optx: Unknown option ConfidenceLevel -> 0.9 in \
+         MeanDifferenceTest."
+      ]
+    );
+  }
+
+  #[test]
+  fn the_first_setting_of_an_option_wins() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9, ConfidenceLevel -> 0.5] \
+         == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn options_are_defined_once_the_package_is_loaded() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "{Options[MeanCI], Options[MeanDifferenceTest], Options[NormalPValue]}"
+      )
+      .unwrap(),
+      "{{ConfidenceLevel -> 0.95, KnownVariance -> None}, \
+       {FullReport -> False, KnownVariance -> None, EqualVariances -> False, \
+       SignificanceLevel -> None, TwoSided -> False}, {TwoSided -> False}}"
+    );
+    // A changed default is what a call without the option uses.
+    assert_eq!(
+      interpret(
+        "SetOptions[MeanCI, ConfidenceLevel -> 0.5]; \
+         MeanCI[{1, 2, 4}] == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn significance_level_appends_the_verdict() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "a = {-0.22, -0.35, 0.87, 0.48, -0.36}; \
+         Rest /@ {MeanTest[a, 0, SignificanceLevel -> 1/2], \
+         MeanTest[a, 0, SignificanceLevel -> 0.1, TwoSided -> True], \
+         MeanDifferenceTest[a, a + 1, 0, SignificanceLevel -> 0.1]}"
+      )
+      .unwrap(),
+      "{{Reject null hypothesis at significance level -> 1/2}, \
+       {Fail to reject null hypothesis at significance level -> 0.1}, \
+       {Reject null hypothesis at significance level -> 0.1}}"
+    );
+    // After the FullReport table and the p-value; a symbolic level stays an
+    // `If`.
+    assert_eq!(
+      interpret(
+        "{Length[MeanTest[a, 0, SignificanceLevel -> 0.5, \
+         FullReport -> True]], MeanTest[a, 0, SignificanceLevel -> s][[2, 0]], \
+         MeanTest[a, 0, SignificanceLevel -> None] === MeanTest[a, 0]}"
+      )
+      .unwrap(),
+      "{3, If, True}"
+    );
+  }
+
+  #[test]
+  fn obsolete_warning_is_issued_once_per_session() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    let first = interpret_with_stdout("MeanTest[{1, 2, 4}, 0];").unwrap();
+    let again =
+      interpret_with_stdout("MeanTest[{1, 2, 4}, 0]; MeanTest[{1, 2, 4}, 0];")
+        .unwrap();
+    assert_eq!(
+      first.warnings,
+      [
+        "General::obsfun: The function MeanTest is now obsolete and has been \
+        superseded by LocationTest."
+      ]
+    );
+    assert!(again.warnings.is_empty(), "{:?}", again.warnings);
   }
 
   #[test]
@@ -12606,7 +12762,7 @@ mod variance_equivalence_test {
     assert_eq!(
       interpret(&format!(
         "{DATA} t = VarianceEquivalenceTest[{{a, b}}, \"HypothesisTestData\"]\
-         [\"TestDataTable\", All][[1, 2 ;;]]; \
+         [\"TestDataTable\", All][[1, 1, 2 ;;]]; \
          {{t[[All, 1]], Round[t[[All, 2 ;;]] - {{{{12.945763586933854, \
          0.00032064628357147187}}, {{10.668480067914118, 0.005206837142022101}}, \
          {{2.666080185441466, 0.007674138656263988}}, {{21.277686762778508, \
@@ -12632,6 +12788,99 @@ mod variance_equivalence_test {
       ))
       .unwrap(),
       "{FisherRatio, Reject, Conover, 4609}"
+    );
+  }
+}
+
+/// `SeedRandom[seed, Method -> {"MKL", Method -> {"Sobol" | "Niederreiter",
+/// "Dimension" -> d}}]` switches to a quasi-random (low-discrepancy)
+/// sequence of `d`-dimensional points.
+mod quasi_random_methods {
+  use super::*;
+
+  fn seeded(method: &str, code: &str) -> String {
+    interpret(&format!(
+      "BlockRandom[SeedRandom[1, Method -> {{\"MKL\", Method -> {method}}}]; \
+       {code}]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn sobol_points_in_two_dimensions() {
+    assert_eq!(
+      seeded("{\"Sobol\", \"Dimension\" -> 2}", "RandomReal[1, {8, 2}]"),
+      "{{0., 0.}, {0.5, 0.5}, {0.75, 0.25}, {0.25, 0.75}, \
+       {0.375, 0.375}, {0.875, 0.875}, {0.625, 0.125}, {0.125, 0.625}}"
+    );
+  }
+
+  #[test]
+  fn one_dimensional_sequence_is_van_der_corput() {
+    for name in ["\"Sobol\"", "\"Niederreiter\""] {
+      assert_eq!(
+        seeded(name, "RandomReal[{2, 4}, 8]"),
+        "{2., 3., 3.5, 2.5, 2.75, 3.75, 3.25, 2.25}"
+      );
+    }
+  }
+
+  /// The first 2^m points of two-dimensional Sobol and Niederreiter
+  /// sequences put exactly one point into every dyadic box of area 2^-m.
+  #[test]
+  fn first_two_dimensions_form_a_net() {
+    for name in ["\"Sobol\"", "\"Niederreiter\""] {
+      assert_eq!(
+        seeded(
+          &format!("{{{name}, \"Dimension\" -> 2}}"),
+          "pts = RandomReal[1, {64, 2}]; \
+           Table[Length[Union[Floor[# {2^k, 2^(6 - k)}] & /@ pts]], \
+           {k, 0, 6}]"
+        ),
+        "{64, 64, 64, 64, 64, 64, 64}",
+        "{name}"
+      );
+    }
+  }
+
+  /// Every Sobol coordinate of the first 2^m points falls into a distinct
+  /// interval of length 2^-m, in every supported dimension.
+  #[test]
+  fn every_sobol_coordinate_is_stratified() {
+    assert_eq!(
+      seeded(
+        "{\"Sobol\", \"Dimension\" -> 40}",
+        "Union[Length[Union[Floor[32 #]]] & /@ \
+         Transpose[RandomReal[1, {32, 40}]]]"
+      ),
+      "{32}"
+    );
+  }
+
+  #[test]
+  fn reseeding_restarts_the_sequence() {
+    assert_eq!(
+      interpret(
+        "m = Method -> {\"MKL\", Method -> {\"Niederreiter\", \
+         \"Dimension\" -> 3}}; \
+         SeedRandom[4, m]; a = RandomReal[1, {5, 3}]; \
+         SeedRandom[9, m]; a == RandomReal[1, {5, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn block_random_restores_the_pseudo_random_stream() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; a = RandomReal[1, 3]; SeedRandom[3]; \
+         BlockRandom[SeedRandom[1, Method -> {\"MKL\", Method -> \
+         \"Sobol\"}]; RandomReal[1, 4]]; a == RandomReal[1, 3]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }

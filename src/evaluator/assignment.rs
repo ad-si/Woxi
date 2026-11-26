@@ -2213,6 +2213,15 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   {
     return Expr::Identifier(s.clone());
   }
+  // `List[a, b]` built by a rewrite (`h[g] /. h -> List`) is the same
+  // target list as a written `{a, b}`.
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "List"
+  {
+    return normalize_symbol_lhs(&Expr::List(
+      args.iter().cloned().collect::<Vec<_>>().into(),
+    ));
+  }
   let lhs = crate::evaluator::pattern_matching::with_short_form_blanks(lhs)
     .into_owned();
   // `f[Sequence[a__]]` is `f[a__]`: the left-hand side is evaluated far
