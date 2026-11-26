@@ -5635,6 +5635,95 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_invisible_standard_boxes_hide_contents() {
+    // Regression: only TraditionalForm boxed `Invisible[…]`; in StandardForm
+    // (also as a factor of a held product) it was written out as the call
+    // `Invisible[…]`, which a typeset row then showed as literal text.
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[Invisible[x]]").unwrap(),
+      "StyleBox[x, ShowContents -> False, StripOnInput -> False]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[Evaluate[y Invisible[x]]]]").unwrap(),
+      "RowBox[{y,  , StyleBox[x, ShowContents -> False, StripOnInput -> False]}]"
+    );
+    let svg = interpret(
+      "ExportString[Text[Style[Row[{HoldForm[Evaluate[y Invisible[\"\"]]], \" + \", z}], 18]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("Invisible"),
+      "Invisible[…] leaked as literal text: {svg}"
+    );
+  }
+
+  #[test]
+  fn test_held_rational_power_base_is_parenthesized() {
+    // Regression: a held `Rational` (`HoldForm[Evaluate[1/4]]`, unlike the
+    // held quotient `HoldForm[1/4]`) lost its parentheses under an
+    // exponent, so the fraction and its power read as two factors.
+    clear_state();
+    for form in ["HoldForm[Evaluate[1/4]]^2", "HoldForm[1/4]^2"] {
+      assert_eq!(
+        interpret(&format!("ToBoxes[{form}]")).unwrap(),
+        "SuperscriptBox[RowBox[{(, FractionBox[1, 4], )}], 2]"
+      );
+      assert_eq!(
+        interpret(&format!("ToBoxes[{form}, TraditionalForm]")).unwrap(),
+        "FormBox[SuperscriptBox[RowBox[{(, TagBox[FractionBox[1, 4], HoldForm], )}], 2], TraditionalForm]"
+      );
+    }
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[Evaluate[-3]]^n, TraditionalForm]").unwrap(),
+      "FormBox[SuperscriptBox[RowBox[{(, TagBox[RowBox[{-, 3}], HoldForm], )}], n], TraditionalForm]"
+    );
+    // A held symbol needs none.
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[x]^2, TraditionalForm]").unwrap(),
+      "FormBox[SuperscriptBox[TagBox[x, HoldForm], 2], TraditionalForm]"
+    );
+  }
+
+  #[test]
+  fn test_text_item_of_column_sets_fractions_at_script_size() {
+    // Regression: a `Text[…]` shown on its own drew its fractions one
+    // script level down (0.75 of the text size), but the same `Text` as an
+    // item of a top-level `Column` drew them at full size, so a line of
+    // fractions under a picture overflowed its pane.
+    clear_state();
+    let sizes = |code: &str| -> Vec<String> {
+      let svg = interpret_with_stdout(code)
+        .unwrap()
+        .graphics
+        .expect("drawn as a picture");
+      svg
+        .split("font-size=\"")
+        .skip(1)
+        .map(|rest| rest.split('"').next().unwrap().to_string())
+        .collect()
+    };
+    let text = "Text[Style[Row[{3/4, \" = \", x}], 20]]";
+    let alone = sizes(text);
+    assert!(
+      alone.iter().any(|s| s.parse::<f64>() == Ok(15.0)),
+      "{alone:?}"
+    );
+    let in_column = sizes(&format!("Column[{{\"head\", {text}}}]"));
+    assert!(
+      in_column.iter().any(|s| s.parse::<f64>() == Ok(15.0)),
+      "fraction digits must be at 0.75 of the text size: {in_column:?}"
+    );
+    let in_pane = sizes(&format!(
+      "Pane[Column[{{\"head\", {text}}}], ImageSize -> {{300, 100}}]"
+    ));
+    assert!(
+      in_pane.iter().any(|s| s.parse::<f64>() == Ok(15.0)),
+      "fraction digits must be at 0.75 of the text size: {in_pane:?}"
+    );
+  }
+
+  #[test]
   fn test_graphics3d_text_keeps_every_line_of_multiline_string() {
     // Regression: a `Text["a\nb", pos]` in Graphics3D painted only its
     // first line.
