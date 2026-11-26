@@ -30768,6 +30768,81 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A list mixing equations with plain functions draws each equation's
+    /// curve next to the functions' zero contours, and an entry that only
+    /// evaluates to a list (a held `Which` choosing between curve lists)
+    /// stands for the curves of that list. Both used to draw nothing for
+    /// the entries that were not of the list's leading kind.
+    #[test]
+    fn contour_plot_mixed_equation_and_function_list() {
+      let lines = |body: &str| {
+        interpret(&format!(
+          "Length[Cases[ContourPlot[{body}, {{x, 0, 3}}, {{y, 0, 3}}], \
+           _Line, Infinity]]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(lines("{x + y == 3, x - 1}"), "2");
+      assert_eq!(lines("{x + y == 3, {y - 2, x - 1}}"), "3");
+      assert_eq!(
+        lines("{x + y == 3, Which[1 < 2, {y - 2, x - 1}, True, x - 2]}"),
+        "3"
+      );
+      assert_eq!(
+        lines("{x + y == 3, Which[1 > 2, {y - 2, x - 1}, True, x - 2]}"),
+        "2"
+      );
+      // Each curve takes the style at its place in the flattened list.
+      assert_eq!(
+        interpret(
+          "DeleteDuplicates[Cases[ContourPlot[{x + y == 3, {y - 2, x - 1}}, \
+           {x, 0, 3}, {y, 0, 3}, ContourStyle -> {Red, Green, Blue}], \
+           _RGBColor, Infinity]]"
+        )
+        .unwrap(),
+        "{RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}"
+      );
+    }
+
+    /// An equation plot keeps the margin between its domain and its frame
+    /// when `Show` adds to it: the margin is an option of the result, next
+    /// to the domain as its `PlotRange`. It used to be dropped, putting a
+    /// curve along the domain's edge under the frame.
+    #[test]
+    fn contour_plot_equation_keeps_its_range_padding_under_show() {
+      assert_eq!(
+        interpret(
+          "Options[ContourPlot[x + y == 3, {x, 0, 3}, {y, 0, 3}], \
+           {PlotRangePadding, PlotRange}]"
+        )
+        .unwrap(),
+        "{PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}, PlotRange -> {{0., 3.}, {0., 3.}}}"
+      );
+      // A curve next to the left edge of the domain starts at the same
+      // place in the picture either way, clear of the frame.
+      let curve_start = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        let line = svg
+          .lines()
+          .find(|l| {
+            l.starts_with("<polyline")
+              && (l.contains("rgb(255,0,0)") || l.contains("#FF0000"))
+          })
+          .expect("the red curve");
+        let key = "points=\"";
+        let at = line.find(key).unwrap() + key.len();
+        let end = line[at..].find(',').unwrap();
+        line[at..at + end].parse().unwrap()
+      };
+      let plot =
+        "ContourPlot[x == 0.01, {x, 0, 3}, {y, 0, 3}, ContourStyle -> Red]";
+      let alone = curve_start(plot);
+      let shown =
+        curve_start(&format!("Show[{plot}, Epilog -> {{Point[{{1, 1}}]}}]"));
+      assert!((alone - shown).abs() < 2.0, "{alone} vs {shown}");
+    }
+
     /// Without a `Contours` option, `ContourPlot[{f, g}, …]` draws only the
     /// zero contour of each function, like `{f == 0, g == 0}`; it used to
     /// draw about ten automatic levels per function.
@@ -56231,6 +56306,52 @@ mod manipulate {
         ("t".to_string(), None, Some("P".to_string()), None),
         ("dt".to_string(), None, Some("P".to_string()), None),
       ]
+    );
+  }
+
+  /// A point `Locator` whose corner names other controls (`{w, h}`) keeps
+  /// that corner's code as a dynamic bound, so the front end can re-read it
+  /// after `w` or `h` moves; a constant corner stays static.
+  #[test]
+  fn locator_corner_naming_controls_is_a_dynamic_bound() {
+    let spec_of = |locator: &str| {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[Graphics[Point[p]], {{{{w, 10}}, 10, 40}}, \
+         {{{{h, 20}}, 20, 80}}, {locator}]"
+      ))
+      .unwrap();
+      extract_manipulate_spec(&expr).expect("well-formed manipulate")
+    };
+    let spec = spec_of("{{p, {1, 5}}, {0, 0}, {w, h}, Locator}");
+    assert_eq!(
+      spec.dynamic_bounds,
+      vec![("p".to_string(), None, Some("{w, h}".to_string()), None)]
+    );
+    assert_eq!(
+      woxi::with_scoped_globals(
+        &[
+          ("w".to_string(), "30".to_string()),
+          ("h".to_string(), "2 w".to_string()),
+        ],
+        || woxi::functions::graphics::manipulate_eval_corner_code("{w, h}")
+      ),
+      Some((30.0, 60.0))
+    );
+    // The form the saved output echoes wraps the corner in `Dynamic`.
+    let echoed = spec_of("{{p, {1, 5}}, {-w, -h}, Dynamic[{w, h}], Locator}");
+    assert_eq!(
+      echoed.dynamic_bounds,
+      vec![(
+        "p".to_string(),
+        Some("{-w, -h}".to_string()),
+        Some("{w, h}".to_string()),
+        None
+      )]
+    );
+    assert!(
+      spec_of("{{p, {1, 5}}, {0, 0}, {10, 20}, Locator}")
+        .dynamic_bounds
+        .is_empty()
     );
   }
 

@@ -2744,7 +2744,7 @@ impl ManipulateState {
       display_trees,
       (enabled, faces),
       visible,
-      resolved_bounds,
+      (resolved_bounds, resolved_corners),
       resolved_values,
       resolved_labels,
       resolved_button_labels,
@@ -2891,6 +2891,19 @@ impl ManipulateState {
           )
         })
         .collect();
+      // A 2D control's corners follow the other controls the same way (a
+      // point kept inside a box two sliders resize).
+      let corners: Vec<ResolvedCorner> = dynamic_bounds
+        .iter()
+        .filter_map(|(name, min_code, max_code, _)| {
+          let eval = |c: &Option<String>| {
+            c.as_deref()
+              .and_then(woxi::functions::graphics::manipulate_eval_corner_code)
+          };
+          let (lo, hi) = (eval(min_code), eval(max_code));
+          (lo.is_some() || hi.is_some()).then(|| (name.clone(), lo, hi))
+        })
+        .collect();
       // Likewise for choice lists built from another control's variable
       // (a level setter offering fewer levels in 3D).
       let values: Vec<(String, _)> = dynamic_values
@@ -2925,7 +2938,7 @@ impl ManipulateState {
         trees,
         (enabled, faces),
         visible,
-        resolved,
+        (resolved, corners),
         values,
         labels,
         button_labels,
@@ -2992,6 +3005,7 @@ impl ManipulateState {
     self.control_face = faces;
     self.control_is_visible = visible;
     self.apply_dynamic_bounds(&resolved_bounds);
+    self.apply_dynamic_corners(&resolved_corners);
     self.apply_dynamic_labels(resolved_labels);
     self.apply_button_labels(resolved_button_labels);
     // A re-resolved choice list may drop the value the body was just
@@ -3187,6 +3201,34 @@ impl ManipulateState {
     }
   }
 
+  /// Move each 2D control's range to its freshly resolved corners. The
+  /// point itself stays where it is, as Wolfram leaves it, and the range
+  /// widens to keep it reachable.
+  fn apply_dynamic_corners(&mut self, resolved: &[ResolvedCorner]) {
+    for (name, lo, hi) in resolved {
+      let Some(ControlState::Slider2D {
+        x,
+        y,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      }) = self.controls.iter_mut().find(
+        |c| matches!(c, ControlState::Slider2D { name: n, .. } if n == name),
+      )
+      else {
+        continue;
+      };
+      let (lo_x, lo_y) = lo.unwrap_or((*x_min, *y_min));
+      let (hi_x, hi_y) = hi.unwrap_or((*x_max, *y_max));
+      *x_min = lo_x.min(hi_x).min(*x);
+      *x_max = lo_x.max(hi_x).max(*x);
+      *y_min = lo_y.min(hi_y).min(*y);
+      *y_max = lo_y.max(hi_y).max(*y);
+    }
+  }
+
   /// Retitle each `Button[Dynamic[label], …]` with its freshly typeset
   /// caption (parallel to `controls`; `None` leaves a button as it is).
   fn apply_button_labels(&mut self, resolved: Vec<Option<Vec<LabelRun>>>) {
@@ -3278,6 +3320,10 @@ impl ManipulateState {
     selection_moved
   }
 }
+
+/// A 2D control's dynamic corners re-resolved to points:
+/// `(control name, min corner, max corner)`.
+type ResolvedCorner = (String, Option<(f64, f64)>, Option<(f64, f64)>);
 
 /// A dynamic bound re-resolved to numbers:
 /// `(control name, min, max, step)`.
@@ -10181,6 +10227,65 @@ mod mapped_layout_tests {
     let dump = format!("{node:?}");
     assert!(dump.contains("high") && dump.contains("150.00"), "{dump}");
     assert!(!dump.contains("Switch"), "{dump}");
+  }
+
+  /// A point `Locator` whose far corner is written with two other controls
+  /// (`{{p, …}, {0, 0}, {w, h}, Locator}`) stays draggable over the whole
+  /// box after those controls resize it; its range used to keep the corner
+  /// the initial values gave. The point itself is left where it is.
+  #[test]
+  fn locator_corner_follows_the_controls_it_names() {
+    let code = r#"Manipulate[
+      Graphics[{Point[p]}, PlotRange -> {{0, w}, {0, h}}],
+      {{w, 10}, 10, 40, 10},
+      {{h, 20}, 20, 80, 20},
+      {{p, {1, 5}}, {0, 0}, {w, h}, Locator}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let range = |state: &ManipulateState| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Slider2D {
+            name,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            x,
+            y,
+            ..
+          } if name == "p" => Some((*x_min, *x_max, *y_min, *y_max, *x, *y)),
+          _ => None,
+        })
+        .expect("p is a 2D control")
+    };
+    assert_eq!(range(&state), (0.0, 10.0, 0.0, 20.0, 1.0, 5.0));
+    for (name, value) in [("w", "30"), ("h", "40")] {
+      let idx = state
+        .controls
+        .iter()
+        .position(|c| c.name() == name)
+        .unwrap();
+      state.controls[idx].set_current_from_code(value);
+    }
+    state.reevaluate();
+    assert_eq!(range(&state), (0.0, 30.0, 0.0, 40.0, 1.0, 5.0));
+    // Shrinking the box below the point keeps the point reachable.
+    let idx = state.controls.iter().position(|c| c.name() == "p").unwrap();
+    state.controls[idx].set_current_from_code("{25, 35}");
+    for (name, value) in [("w", "10"), ("h", "20")] {
+      let idx = state
+        .controls
+        .iter()
+        .position(|c| c.name() == name)
+        .unwrap();
+      state.controls[idx].set_current_from_code(value);
+    }
+    state.reevaluate();
+    assert_eq!(range(&state), (0.0, 25.0, 0.0, 35.0, 25.0, 35.0));
   }
 
   /// A drag-a-coin game keeps its piece in a hidden `Locator` that starts

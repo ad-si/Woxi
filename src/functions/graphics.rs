@@ -56196,6 +56196,13 @@ fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
   )
 }
 
+/// Re-resolve the code of a 2D control's dynamic corner (`{w, h}`) against
+/// the interpreter's current globals, as [`manipulate_eval_bound_code`] does
+/// for a slider's bound. Returns `None` unless it is a finite number pair.
+pub fn manipulate_eval_corner_code(code: &str) -> Option<(f64, f64)> {
+  parse_manipulate_point(code).filter(|(x, y)| x.is_finite() && y.is_finite())
+}
+
 /// Re-resolve a dynamic bound's code fragment against the interpreter's
 /// current globals (the caller installs the live bindings via
 /// `with_scoped_globals`). Returns `None` when the code doesn't evaluate to
@@ -60085,6 +60092,26 @@ fn parse_manipulate_control(
         })
       })
       .collect();
+    // A corner that follows the other controls (`{{p, {1, 5}}, {0, 0},
+    // {w, h}, Locator}` keeps the point inside a box two sliders resize, or
+    // one the echo wraps in `Dynamic[…]`) is re-read by the front end after
+    // every change, like a slider's dynamic bound; its code is kept for that.
+    let corner_code = |index: usize| -> Option<String> {
+      let corners: Vec<&Expr> = items[1..]
+        .iter()
+        .filter(|it| {
+          !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            && !matches!(it, Expr::Identifier(s) if s == "Locator")
+        })
+        .collect();
+      if corners.len() != 2 || corner_bounds.len() != 2 {
+        return None;
+      }
+      let (corner, wrapped) = manipulate_bound_expr_deep(corners[index]);
+      (wrapped || expr_references_any(&corner, siblings))
+        .then(|| crate::syntax::expr_to_source_form(&corner))
+    };
+    let (min_corner_code, max_corner_code) = (corner_code(0), corner_code(1));
     // A custom control function that draws `LocatorPane[Dynamic[var, cb],
     // graphic, {{xmin, ymin}, {xmax, ymax}}]` carries the write-back
     // callback on the pane's `Dynamic`, and the coordinate range on the
@@ -60202,8 +60229,8 @@ fn parse_manipulate_control(
           exact_initial: is_exact_pair(&evaluated),
         },
         enabled,
-        min_code: None,
-        max_code: None,
+        min_code: min_corner_code,
+        max_code: max_corner_code,
         values_code: None,
         animate: None,
         tracking: tracking.clone(),
