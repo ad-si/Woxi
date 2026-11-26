@@ -30713,40 +30713,10 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
     }
     // Scattered points with a `Filling` carry a stem from each point to the
-    // fill level, drawn under the points at the filling opacity.
-    if sd.is_scatter
-      && let Some(ref_y) = sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
-    {
-      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
-      let mut stems: Vec<Expr> = vec![
-        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(fr as f64 / 255.0),
-            Expr::Real(fg as f64 / 255.0),
-            Expr::Real(fb as f64 / 255.0),
-          ],
-        ),
-      ];
-      for &(x, y) in sd
-        .points
-        .iter()
-        .filter(|(x, y)| x.is_finite() && y.is_finite())
-      {
-        stems.push(call1(
-          "Line",
-          Expr::List(
-            vec![
-              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-              Expr::List(vec![Expr::Real(x), Expr::Real(ref_y)].into()),
-            ]
-            .into(),
-          ),
-        ));
-      }
-      fill_layer.push(Expr::List(stems.into()));
-    }
+    // fill reference, drawn under the points at the filling opacity.
+    fill_layer.extend(crate::functions::plot::scatter_stem_primitives(
+      &ps.series, si, ps.y_range, 0.2,
+    ));
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));
     // `Opacity[a]` from `PlotStyle`; once any series is faded, the rest

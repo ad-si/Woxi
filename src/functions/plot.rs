@@ -3779,7 +3779,7 @@ fn series_fills(
 /// Linearly interpolate a polyline (in data order) at `x`. Returns `None`
 /// when `x` lies outside every segment's x-span, so filling between series
 /// with different x-domains stops at the overlap.
-fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
+pub(crate) fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
   for w in points.windows(2) {
     let (x0, y0) = w[0];
     let (x1, y1) = w[1];
@@ -10003,8 +10003,11 @@ pub(crate) fn render_merged_plot_source(
     source
       .series
       .iter()
-      .filter(|s| s.is_scatter != all_scatter)
-      .flat_map(|s| scatter_overlay_primitives(s, y_range)),
+      .enumerate()
+      .filter(|(_, s)| s.is_scatter != all_scatter)
+      .flat_map(|(i, _)| {
+        scatter_overlay_primitives(&source.series, i, y_range)
+      }),
   );
 
   let points: Vec<Vec<(f64, f64)>> =
@@ -10115,12 +10118,94 @@ fn series_filling_to_filling(
   }
 }
 
+/// The stems a filled scatter series draws, per fill: each finite point
+/// paired with the height its stem ends at — a constant level, or for
+/// `Filling -> {i -> {j}}` series `j` of `all` interpolated at the point's
+/// x. Shared by every renderer of a plot source so they agree on the stems.
+pub(crate) fn scatter_stems(
+  all: &[crate::syntax::PlotSeriesData],
+  index: usize,
+  y_range: (f64, f64),
+) -> Vec<(crate::syntax::SeriesFill, Vec<((f64, f64), f64)>)> {
+  let Some(series) = all.get(index).filter(|s| s.is_scatter) else {
+    return Vec::new();
+  };
+  series
+    .fills()
+    .into_iter()
+    .filter_map(|fill| {
+      let level = fill.filling.reference_y(y_range.0, y_range.1);
+      let target = match fill.filling {
+        crate::syntax::SeriesFilling::Series(j) if j != index => all.get(j),
+        _ => None,
+      };
+      let ends: Vec<((f64, f64), f64)> = series
+        .points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .filter_map(|&(x, y)| {
+          let ref_y = match target {
+            Some(t) => interp_polyline_y(&t.points, x),
+            None => level,
+          }?;
+          Some(((x, y), ref_y))
+        })
+        .collect();
+      (!ends.is_empty()).then_some((fill, ends))
+    })
+    .collect()
+}
+
+/// The stems of [`scatter_stems`] as one self-contained primitive list per
+/// fill: the fill's opacity (`default_opacity` unless `FillingStyle` set
+/// one) and color (the series color unless it set one), then a `Line` per
+/// stem.
+pub(crate) fn scatter_stem_primitives(
+  all: &[crate::syntax::PlotSeriesData],
+  index: usize,
+  y_range: (f64, f64),
+  default_opacity: f64,
+) -> Vec<Expr> {
+  let point =
+    |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  scatter_stems(all, index, y_range)
+    .into_iter()
+    .map(|(fill, ends)| {
+      let (r, g, b) = fill.color.unwrap_or(all[index].color);
+      let mut stems = vec![
+        call1(
+          "Opacity",
+          Expr::Real(fill.opacity.unwrap_or(default_opacity)),
+        ),
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(r as f64 / 255.0),
+            Expr::Real(g as f64 / 255.0),
+            Expr::Real(b as f64 / 255.0),
+          ],
+        ),
+        call1("AbsoluteThickness", Expr::Real(1.0)),
+      ];
+      stems.extend(ends.into_iter().map(|((x, y), ref_y)| {
+        call1(
+          "Line",
+          Expr::List(vec![point((x, y)), point((x, ref_y))].into()),
+        )
+      }));
+      Expr::List(stems.into())
+    })
+    .collect()
+}
+
 /// A scatter series shown on top of line series: its points (and the stems
 /// of a filled scatter) as graphics primitives in data coordinates.
 fn scatter_overlay_primitives(
-  series: &crate::syntax::PlotSeriesData,
+  all: &[crate::syntax::PlotSeriesData],
+  index: usize,
   y_range: (f64, f64),
 ) -> Vec<Expr> {
+  let series = &all[index];
   let point =
     |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
   let finite: Vec<(f64, f64)> = series
@@ -10132,20 +10217,14 @@ fn scatter_overlay_primitives(
   if finite.is_empty() {
     return Vec::new();
   }
-  let color = series_color_expr(series);
-  let mut prims = vec![color];
-  // Stems of a filled scatter series, drawn to the same reference level the
-  // standalone scatter plot would use.
-  if let Some(ref_y) = series_filling_to_filling(series.filling)
-    .and_then(|f| f.reference_y(y_range.0, y_range.1))
-  {
-    prims.push(call1("AbsoluteThickness", Expr::Real(1.0)));
-    for &(x, y) in &finite {
-      prims.push(call1(
-        "Line",
-        Expr::List(vec![point((x, y)), point((x, ref_y))].into()),
-      ));
-    }
+  // Stems of a filled scatter series, drawn to the same reference and at
+  // the same opacity the standalone scatter plot would use.
+  let mut prims = scatter_stem_primitives(all, index, y_range, 0.3);
+  prims.push(series_color_expr(series));
+  // `PlotStyle -> Opacity[a]` fades the dots; scoped to this series by a
+  // closing `Opacity[1]` since the primitives are spliced into one list.
+  if let Some(a) = series.opacity {
+    prims.push(call1("Opacity", Expr::Real(a)));
   }
   // A `PlotMarkers` series draws its glyph at every point instead of a dot.
   if let Some(marker) = &series.marker {
@@ -10165,6 +10244,9 @@ fn scatter_overlay_primitives(
     for &(x, y) in &finite {
       prims.push(call("Text", vec![content.clone(), point((x, y))]));
     }
+    if series.opacity.is_some() {
+      prims.push(call1("Opacity", Expr::Real(1.0)));
+    }
     return prims;
   }
   prims.push(series.point_size_expr.clone().unwrap_or_else(|| {
@@ -10178,6 +10260,9 @@ fn scatter_overlay_primitives(
     "Point",
     Expr::List(finite.into_iter().map(point).collect::<Vec<_>>().into()),
   ));
+  if series.opacity.is_some() {
+    prims.push(call1("Opacity", Expr::Real(1.0)));
+  }
   // Point labels sit above and right of their points, in the text color;
   // near the right end of the data they flip to the left so they stay
   // inside the plot, as in a standalone `ListPlot`.
@@ -16036,9 +16121,11 @@ where
         None => color,
       }
     };
+    // `PlotStyle -> Opacity[a]` fades the dots like it fades a curve.
+    let alpha = series_opacity(&opts.plot_style, series_idx);
     chart
       .draw_series(finite_pts.iter().map(|&(x, y)| {
-        Circle::new((x, y), marker_size, dot_color((x, y)).filled())
+        Circle::new((x, y), marker_size, dot_color((x, y)).mix(alpha).filled())
       }))
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
@@ -19948,27 +20035,37 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for (s, grid) in source.series.iter_mut().zip(&plot_opts.mesh_full_points) {
     s.mesh_full_points.clone_from(grid);
   }
-  // `build_plot_source` only knows the single global `Filling` mode; a
-  // per-series `Filling -> {i -> spec, …}` rule list is resolved here
-  // instead, so `source.series[i].filling` (which `Part`/`First` reads to
-  // reconstitute the plot's primitives, and which `Show` reads to re-render
-  // it) reflects each series' own target rather than staying unfilled.
-  // A curve-to-curve target (`{i -> {j}}`) is kept as `SeriesFilling::Series`.
-  // A series named by several rules keeps the later fills in
-  // `extra_fills`.
-  if !plot_opts.filling_rules.is_empty() {
+  apply_filling_rules_to_source(&mut source, &plot_opts);
+
+  // Return -Graphics- as the text representation
+  Ok(crate::graphics_result_with_source(svg, source))
+}
+
+/// `build_plot_source` only knows the single global `Filling` mode; a
+/// per-series `Filling -> {i -> spec, …}` rule list is resolved here
+/// instead, so `source.series[i].filling` (which `Part`/`First` reads to
+/// reconstitute the plot's primitives, and which `Show` reads to re-render
+/// it) reflects each series' own target rather than staying unfilled.
+/// A curve-to-curve target (`{i -> {j}}`) is kept as `SeriesFilling::Series`.
+/// A series named by several rules keeps the later fills in
+/// `extra_fills`.
+pub(crate) fn apply_filling_rules_to_source(
+  source: &mut crate::syntax::PlotSource,
+  opts: &PlotOptions,
+) {
+  if !opts.filling_rules.is_empty() {
     for (i, s) in source.series.iter_mut().enumerate() {
       let mut fills =
-        series_fills(&plot_opts, i)
-          .into_iter()
-          .map(|(target, style)| crate::syntax::SeriesFill {
+        series_fills(opts, i).into_iter().map(|(target, style)| {
+          crate::syntax::SeriesFill {
             filling: match target {
               FillTarget::Level(level) => level.to_series_filling(),
               FillTarget::Series(j) => crate::syntax::SeriesFilling::Series(j),
             },
             color: style.and_then(|fs| fs.color),
             opacity: style.and_then(|fs| fs.effective_opacity()),
-          });
+          }
+        });
       let main = fills.next().unwrap_or(crate::syntax::SeriesFill {
         filling: crate::syntax::SeriesFilling::None,
         color: s.fill_color,
@@ -19980,9 +20077,6 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       s.extra_fills = fills.collect();
     }
   }
-
-  // Return -Graphics- as the text representation
-  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// The size, in points, a plot's plotting area will roughly have: the image
