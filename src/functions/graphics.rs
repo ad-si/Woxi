@@ -13442,6 +13442,51 @@ fn coord_x(x: f64, bb: &BBox, svg_w: f64) -> f64 {
   clamp_far(coord_x_unclamped(x, bb, svg_w), svg_w)
 }
 
+/// Split a point primitive drawn under a clip rectangle (`clip_x`, `clip_y`
+/// in pixels) into the points to clip and those to draw whole: the ones
+/// whose center lies inside the rectangle while their disk crosses its
+/// edge. `None` when no point of `prim` does, so it is drawn as it is.
+fn split_edge_points(
+  prim: &Primitive,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+  clip_x: (f64, f64),
+  clip_y: (f64, f64),
+) -> Option<(Option<Primitive>, Primitive)> {
+  // Slack for a center that lands on the edge only up to rounding.
+  const EDGE_SLACK: f64 = 0.01;
+  let (points, style) = match prim {
+    Primitive::PointSingle { x, y, style } => (vec![(*x, *y)], style),
+    Primitive::PointMulti { points, style } => (points.clone(), style),
+    _ => return None,
+  };
+  let reach = point_radius(style.point_size, relative_width(svg_w))
+    + style.halo.as_ref().map_or(0.0, |halo| halo.radius);
+  let on_edge = |&(x, y): &(f64, f64)| {
+    let (cx, cy) = (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h));
+    let inside = cx >= clip_x.0 - EDGE_SLACK
+      && cx <= clip_x.1 + EDGE_SLACK
+      && cy >= clip_y.0 - EDGE_SLACK
+      && cy <= clip_y.1 + EDGE_SLACK;
+    inside
+      && (cx - reach < clip_x.0
+        || cx + reach > clip_x.1
+        || cy - reach < clip_y.0
+        || cy + reach > clip_y.1)
+  };
+  let (whole, clipped): (Vec<_>, Vec<_>) =
+    points.into_iter().partition(on_edge);
+  if whole.is_empty() {
+    return None;
+  }
+  let group = |points: Vec<(f64, f64)>| Primitive::PointMulti {
+    points,
+    style: style.clone(),
+  };
+  Some(((!clipped.is_empty()).then(|| group(clipped)), group(whole)))
+}
+
 fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
   clamp_far(coord_y_unclamped(y, bb, svg_h), svg_h)
 }
@@ -20730,7 +20775,31 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(ds) = shadow {
       svg.push_str(&format!("<g filter=\"url(#{})\">\n", ds.filter_id()));
     }
-    render_primitive(prim, prim_index, &bb, svg_w, svg_h, &mut svg);
+    // A point is drawn whole wherever its center lies in the clipped
+    // area: the disk of one sitting on the edge of the plot range reaches
+    // past the frame instead of being cut in half there.
+    let edge_points = if clip_primitives {
+      split_edge_points(
+        prim,
+        &bb,
+        svg_w,
+        svg_h,
+        (clip_x0, clip_x1),
+        (clip_y0, clip_y1),
+      )
+    } else {
+      None
+    };
+    if let Some((clipped, whole)) = &edge_points {
+      if let Some(clipped) = clipped {
+        render_primitive(clipped, prim_index, &bb, svg_w, svg_h, &mut svg);
+      }
+      svg.push_str("</g>\n<g>\n");
+      render_primitive(whole, prim_index, &bb, svg_w, svg_h, &mut svg);
+      svg.push_str(&format!("</g>\n<g clip-path=\"url(#{clip_id})\">\n"));
+    } else {
+      render_primitive(prim, prim_index, &bb, svg_w, svg_h, &mut svg);
+    }
     if shadow.is_some() {
       svg.push_str("</g>\n");
     }
