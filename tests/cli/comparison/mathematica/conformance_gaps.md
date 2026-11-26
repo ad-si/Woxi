@@ -1348,6 +1348,20 @@ matches `(Log2[m] + e) Log10[2]` of the binary mantissa and exponent for this
 case, but that formula misses its accuracy of `1.5`20 - 1.5`20` by one unit
 in the last place too, so the rule is not known.
 
+### High-multiplicity roots of a machine-coefficient polynomial
+
+A root of multiplicity `m` of a polynomial with machine coefficients is only
+determined to about `$MachineEpsilon^(1/m)`. wolframscript's `Solve` reports
+such a root `m` times up to `m = 5`. From `m = 6` on it returns the copies
+scattered by rounding: `Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]` gives
+nine real roots between 3.5737 and 3.8321, with `I` listed before `-I` for
+odd `m`. For `(x - 1.1)^m (x - 1.2)` the copies are already scattered at
+`m = 4`, and at `m = 7` all eight roots come out near 1.1125. The scatter
+depends on wolframscript's own eigenvalue rounding, so it cannot be
+reproduced. Woxi merges the copies into the `m`-fold root for every `m`.
+Expressions that only depend on the coefficients, such as the power sums of
+the roots, agree.
+
 ### Precision tags of inexact `Solve` roots
 
 `Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]` is `{{x -> -0.5`15.954589770191003},
