@@ -2193,9 +2193,12 @@ fn evaluate_function_call_ast_inner(
   let inline_opts_overloads = crate::FUNC_OPTS_INLINE.with(|m| {
     let map = m.borrow();
     match (map.get(name), &kept_overloads) {
-      (Some(all), Some(kept)) => {
-        Some(kept.iter().map(|&i| all.get(i).cloned().flatten()).collect())
-      }
+      (Some(all), Some(kept)) => Some(
+        kept
+          .iter()
+          .map(|&i| all.get(i).cloned().flatten())
+          .collect(),
+      ),
       (all, _) => all.cloned(),
     }
   });
@@ -16174,20 +16177,24 @@ fn bspline_basis_exact(
 /// of slot `i`) is given an argument that differs from its literal, with the
 /// arguments taken in the order of the slots.
 fn literal_slot_mismatch(conditions: &[Option<Expr>], args: &[Expr]) -> bool {
-  conditions.iter().zip(args).enumerate().any(|(i, (cond, arg))| {
-    if let Some(Expr::Comparison {
-      operands,
-      operators,
-    }) = cond
-      && let [Expr::Identifier(slot), literal] = operands.as_slice()
-      && matches!(operators.as_slice(), [ComparisonOp::SameQ])
-      && slot.strip_prefix("_dv").and_then(|n| n.parse().ok()) == Some(i)
-    {
-      !crate::functions::boolean_ast::same_q_pair(arg, literal)
-    } else {
-      false
-    }
-  })
+  conditions
+    .iter()
+    .zip(args)
+    .enumerate()
+    .any(|(i, (cond, arg))| {
+      if let Some(Expr::Comparison {
+        operands,
+        operators,
+      }) = cond
+        && let [Expr::Identifier(slot), literal] = operands.as_slice()
+        && matches!(operators.as_slice(), [ComparisonOp::SameQ])
+        && slot.strip_prefix("_dv").and_then(|n| n.parse().ok()) == Some(i)
+      {
+        !crate::functions::boolean_ast::same_q_pair(arg, literal)
+      } else {
+        false
+      }
+    })
 }
 
 /// The user-defined rules of `name` tried on `args` in order; the value of

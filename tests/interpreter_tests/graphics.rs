@@ -5017,7 +5017,10 @@ mod graphics {
             tag.contains(&format!("font-size=\"{size}\"")),
             "{graphic}: {tag}"
           );
-          assert!(tag.contains(&format!("fill=\"{fill}\"")), "{graphic}: {tag}");
+          assert!(
+            tag.contains(&format!("fill=\"{fill}\"")),
+            "{graphic}: {tag}"
+          );
         }
       }
     }

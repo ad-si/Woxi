@@ -8642,7 +8642,11 @@ fn in_graphics_text_style(label: &Expr, style: &StyleState) -> Expr {
   if (color.r, color.g, color.b) != (0.0, 0.0, 0.0) {
     directives.push(call(
       "RGBColor",
-      vec![Expr::Real(color.r), Expr::Real(color.g), Expr::Real(color.b)],
+      vec![
+        Expr::Real(color.r),
+        Expr::Real(color.g),
+        Expr::Real(color.b),
+      ],
     ));
   }
   if directives.is_empty() {
@@ -9415,9 +9419,10 @@ fn inset_primitives(
     {
       // The `Style`s around the display (`Style[Grid[…], 17]`) size and
       // color its text.
-      rendered = crate::evaluator::expr_to_svg(
-        &inset_display_in_graphics_font(&with_style_wrappers_of(&args[0], call)),
-      );
+      rendered =
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(
+          &with_style_wrappers_of(&args[0], call),
+        ));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     // A `Panel` — e.g. a readout table of computed values a diagram carries
