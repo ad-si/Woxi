@@ -7309,6 +7309,16 @@ internal hash order. Woxi keeps input order.
   unit grid of the widest layer (halves to the right), so the drawing is
   balanced like WL's; WL's exact coordinate assignment is not decoded, so
   a symmetric drawing (a diamond) can come out half a unit off center.
+- **Complete graphs with doubled edges** (every pair of vertices adjacent
+  and some pair joined more than once, e.g. a complete digraph listing
+  both directions) are laid out as a regular polygon in
+  `"CircularEmbedding"` order, read off stored notebook pictures for 3 and
+  7 vertices; other vertex counts are assumed to follow, not verified.
+- **`GraphPlot[…, VertexRenderingFunction :> f]`** (delayed rule): the
+  setting is dropped and the default vertices are drawn, as stored
+  notebook pictures show; only `VertexRenderingFunction -> f` is applied.
+  Whether the other legacy rendering options behave the same when delayed
+  is not verified.
 - **`GraphPlot` `PlotStyle`**: Woxi applies `PlotStyle -> s` to the edges
   only (unless `EdgeStyle` is given); how WL combines it with the default
   vertex style is not verified.
