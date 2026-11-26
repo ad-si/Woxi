@@ -17715,7 +17715,7 @@ fn render_primitive(
         .map(label_line_width_units)
         .fold(0.0, f64::max);
       let text_w = longest * fs * 0.6;
-      let text_h = text.split('\n').count() as f64 * fs;
+      let text_h = text_block_height(text, styled_ranges, fs);
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
       let ax = ax + style.text_scaled_shift.0 * bb.width();
       let ay = ay + style.text_scaled_shift.1 * bb.height();
@@ -17996,18 +17996,7 @@ fn render_primitive(
         // (`Column[{Style[a, 100], Style[b, 40]}]`), else the text's. Lines
         // sit half their two sizes apart, so equal sizes keep the plain
         // `fs` pitch while a large line leaves room above a small one.
-        let mut line_sizes = Vec::with_capacity(lines.len());
-        let mut offset = 0;
-        for line in &lines {
-          let end = offset + line.chars().count();
-          let size = line_styled_ranges(styled_ranges, offset, end)
-            .iter()
-            .filter_map(|r| r.size)
-            .reduce(f64::max)
-            .unwrap_or(fs);
-          line_sizes.push(size);
-          offset = end + 1;
-        }
+        let line_sizes = text_line_sizes(text, styled_ranges, fs);
         let pitches: Vec<f64> = line_sizes
           .windows(2)
           .map(|w| f64::midpoint(w[0], w[1]))
@@ -19694,6 +19683,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         scaled: false,
         direction,
         glyph_map: None,
+        styled_ranges,
         style,
         ..
       } = prim
@@ -19707,8 +19697,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let fs = style.font_size;
-      let text_w = text_label_range_width(text, style);
-      let text_h = text.split('\n').count() as f64 * fs;
+      let text_w = text_label_range_width(text, styled_ranges, style);
+      let text_h = text_block_height(text, styled_ranges, fs);
       // `Offset[…]` / `Scaled[{dx, dy}, pos]` anchors shift the label off
       // its base point.
       let x = x
@@ -29354,13 +29344,14 @@ fn text_overflow_padding(
         scaled: false,
         direction,
         glyph_map: None,
+        styled_ranges,
         style,
         ..
       } if !direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0) => {
         let fs = style.font_size;
         let plain = text.strip_prefix(STYLED_LABEL_MARKER).unwrap_or(text);
         let w = crate::functions::plot_padding::text_width(plain, fs);
-        let h = text.split('\n').count() as f64 * fs;
+        let h = text_block_height(text, styled_ranges, fs);
         let fx = (x - bb.x_min) / bb.width() + style.text_scaled_shift.0;
         let fy = (y - bb.y_min) / bb.height() + style.text_scaled_shift.1;
         let shift = (
@@ -29417,16 +29408,23 @@ fn text_overflow_padding(
 ///
 /// Inline box notation (`\!\(\*SubscriptBox[…]\)`) is measured by the
 /// characters it draws rather than its markup.
-fn text_label_range_width(text: &str, style: &StyleState) -> f64 {
+fn text_label_range_width(
+  text: &str,
+  styled_ranges: &[StyledRange],
+  style: &StyleState,
+) -> f64 {
   let fs = style.font_size;
   if let Some(markup) = text.strip_prefix(STYLED_LABEL_MARKER) {
     return crate::functions::plot_padding::text_width(markup, fs);
   }
-  let bold = if style.font_weight == "bold" {
-    crate::functions::plot_padding::BOLD_WIDTH_SCALE
-  } else {
-    1.0
+  let bold_scale = |bold: bool| {
+    if bold {
+      crate::functions::plot_padding::BOLD_WIDTH_SCALE
+    } else {
+      1.0
+    }
   };
+  let base_bold = style.font_weight == "bold";
   let line_width = |line: &str| {
     label_line_width_em(line).max(label_line_width(
       line,
@@ -29435,22 +29433,87 @@ fn text_label_range_width(text: &str, style: &StyleState) -> f64 {
   };
   let has_boxes = text.contains(crate::functions::string_ast::BOX_START)
     || text.contains("\\!\\(");
-  text
-    .split('\n')
-    .map(|line| {
-      if has_boxes {
+  if has_boxes {
+    return text
+      .split('\n')
+      .map(|line| {
         let norm = normalize_box_markers(line);
         let cs: Vec<char> = norm.chars().collect();
         let plain: String =
           parse_box_units(&cs).iter().map(box_expr_to_plain).collect();
         line_width(&plain)
-      } else {
-        line_width(line)
+      })
+      .fold(0.0, f64::max)
+      * fs
+      * bold_scale(base_bold);
+  }
+  // A run styled in its own size or weight (`Row[{Style[a, 24, Bold], b}]`)
+  // is as wide as that face draws it, so a line is measured run by run.
+  let mut offset = 0;
+  text
+    .split('\n')
+    .map(|line| {
+      let chars: Vec<char> = line.chars().collect();
+      let ranges =
+        line_styled_ranges(styled_ranges, offset, offset + chars.len());
+      offset += chars.len() + 1;
+      let face = |i: usize| {
+        ranges
+          .iter()
+          .filter(|r| r.start <= i && i < r.end)
+          .fold((fs, base_bold), |(size, bold), r| {
+            (r.size.unwrap_or(size), bold || r.bold)
+          })
+      };
+      let mut width = 0.0;
+      let mut start = 0;
+      while start < chars.len() {
+        let (size, bold) = face(start);
+        let mut end = start + 1;
+        while end < chars.len() && face(end) == (size, bold) {
+          end += 1;
+        }
+        let run: String = chars[start..end].iter().collect();
+        width += line_width(&run) * size * bold_scale(bold);
+        start = end;
       }
+      width
     })
     .fold(0.0, f64::max)
-    * fs
-    * bold
+}
+
+/// The size each line of a label is set in: the largest `Style[…, n]`
+/// falling on it (`Column[{Style[a, 100], Style[b, 40]}]`), else the
+/// label's own size `fs`.
+fn text_line_sizes(
+  text: &str,
+  styled_ranges: &[StyledRange],
+  fs: f64,
+) -> Vec<f64> {
+  let mut offset = 0;
+  text
+    .split('\n')
+    .map(|line| {
+      let end = offset + line.chars().count();
+      let size = line_styled_ranges(styled_ranges, offset, end)
+        .iter()
+        .filter_map(|r| r.size)
+        .reduce(f64::max)
+        .unwrap_or(fs);
+      offset = end + 1;
+      size
+    })
+    .collect()
+}
+
+/// The height of a label's block of lines, each as tall as the size it is
+/// set in (see [`text_line_sizes`]).
+fn text_block_height(
+  text: &str,
+  styled_ranges: &[StyledRange],
+  fs: f64,
+) -> f64 {
+  text_line_sizes(text, styled_ranges, fs).iter().sum()
 }
 
 /// Number of visible characters a box-notation label occupies, ignoring the

@@ -1797,6 +1797,89 @@ mod graphics {
       assert!(!svg.contains("<tspan"), "{svg}");
     }
 
+    /// The `y` of the first `<text>` element and the `x` reach of the first
+    /// `<polyline>` in a picture.
+    fn label_y_and_line_reach(svg: &str) -> (f64, f64, f64) {
+      let attr = |element: &str, name: &str| -> String {
+        let start = svg.find(element).expect("element") + element.len();
+        let rest = &svg[start..];
+        let key = format!("{name}=\"");
+        let from = rest.find(&key).expect("attribute") + key.len();
+        rest[from..].split('"').next().unwrap().to_string()
+      };
+      let y: f64 = attr("<text", "y").parse().unwrap();
+      let xs: Vec<f64> = attr("<polyline", "points")
+        .split_whitespace()
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      (y, lo, hi)
+    }
+
+    /// A label at the top of an automatic range is kept whole: the range
+    /// grows by half the label's height, each line counting the size its
+    /// own `Style` sets rather than the label's base size.
+    #[test]
+    fn a_label_of_styled_lines_takes_room_for_each_lines_own_size() {
+      for (label, height) in [
+        ("Row[{Style[\"ab\", 16], \"\\n\", Style[\"cd\", 24]}]", 40.0),
+        (
+          "Row[{Style[\"ab\", 30], \"\\n\", Style[\"cd\", 12], \"\\n\", \"e\"}]",
+          52.0,
+        ),
+        ("Row[{Style[\"ab\", 16], Style[\"cd\", 36]}]", 36.0),
+        ("Column[{Style[\"ab\", 28], Style[\"cd\", 20]}]", 48.0),
+      ] {
+        for position in ["{0, 2}", "{0, -1}"] {
+          let svg = export_svg(&format!(
+            "Graphics[{{Inset[{label}, {position}], \
+             Line[{{{{-1, 0}}, {{1, 0}}, {{0, 1}}}}]}}, \
+             ImageSize -> {{400, 400}}]"
+          ));
+          let (y, _, _) = label_y_and_line_reach(&svg);
+          let room = if position == "{0, 2}" { y } else { 400.0 - y };
+          assert!(
+            (room - height / 2.0).abs() < 1.0,
+            "{label} at {position}: {room} of room for {height}"
+          );
+        }
+      }
+    }
+
+    /// A label beside the drawing is as wide as its runs are drawn: a run
+    /// in a large `Style` size pushes the drawing further aside than the
+    /// same text in a small one.
+    #[test]
+    fn a_label_of_styled_runs_takes_room_for_each_runs_own_width() {
+      let reach = |size: u32, weight: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Inset[Row[{{Style[\"wide label\", {size}{weight}], \
+           \"x\"}}], {{2, 0}}], Line[{{{{-1, 0}}, {{1, 0}}, {{0, 1}}}}]}}, \
+           ImageSize -> {{400, 400}}]"
+        ));
+        let (_, lo, hi) = label_y_and_line_reach(&svg);
+        hi - lo
+      };
+      let (small, large) = (reach(10, ""), reach(30, ""));
+      assert!(large < small - 20.0, "{large} against {small}");
+      let (plain, bold) = (reach(30, ""), reach(30, ", Bold"));
+      assert!(bold < plain, "{bold} against {plain}");
+      // Three times the size takes three times the room past the anchor.
+      let room = |size: u32| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Inset[Row[{{Style[\"wide label\", {size}], \
+           Style[\"x\", {size}]}}], {{2, 0}}], \
+           Line[{{{{-1, 0}}, {{1, 0}}, {{0, 1}}}}]}}, ImageSize -> {{400, 400}}]"
+        ));
+        let (_, lo, hi) = label_y_and_line_reach(&svg);
+        // The anchor sits half the line's length right of its end.
+        400.0 - (hi + (hi - lo) / 2.0)
+      };
+      let ratio = room(30) / room(10);
+      assert!((ratio - 3.0).abs() < 0.2, "{ratio}");
+    }
+
     /// A string or scripted-string `Inset` in a plot's `Epilog` is a text
     /// label like `Text`: no quote marks around the strings.
     #[test]
