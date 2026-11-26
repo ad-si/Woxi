@@ -8615,6 +8615,9 @@ struct StyleState3D {
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
   /// (`Cylinder` and `Cone` are solid regions and always closed.)
   capped: bool,
+  /// Whether a capped `Tube` ends in a flat disk (`CapForm["Butt"]`,
+  /// `CapForm["Square"]`) rather than in the default hemisphere.
+  flat_caps: bool,
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat color.
   edges: bool,
@@ -8758,6 +8761,7 @@ impl Default for StyleState3D {
       opacity: 1.0,
       thickness: None,
       capped: true,
+      flat_caps: false,
       edges: true,
       faces: true,
       edge_color: None,
@@ -9152,10 +9156,13 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
-      // CapForm[None] leaves a tube's ends open; every named form ("Butt",
-      // "Square", "Round") closes them, as does the default.
+      // CapForm[None] leaves a tube's ends open; every named form closes
+      // them, as does the default: "Round" (the default) with a
+      // hemisphere, "Butt" and "Square" with a flat disk.
       "CapForm" if args.len() == 1 => {
         style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
+        style.flat_caps =
+          matches!(&args[0], Expr::String(s) if s == "Butt" || s == "Square");
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
@@ -12089,7 +12096,7 @@ fn collect_3d_primitives_styled(
             // gently bending (sampled) curve stays one mitred tube. A spline
             // is always swept as one tube, so even the sharp corners of a
             // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
-            let runs = if style.capped && !from_spline {
+            let runs = if style.capped && !style.flat_caps && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -12099,6 +12106,7 @@ fn collect_3d_primitives_styled(
                 &pts[from..=to],
                 &radii[from..=to],
                 style.capped,
+                style.flat_caps,
                 budget,
               );
               if !tris.is_empty() {
@@ -14569,6 +14577,7 @@ fn tessellate_tube(
   points: &[Point3D],
   radii: &[f64],
   capped: bool,
+  flat_caps: bool,
   max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   const TUBE_SIDES: usize = 24;
@@ -14799,13 +14808,16 @@ fn tessellate_tube(
   }
 
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
+  // `CapForm["Butt"]` cuts them off flat instead, with a disk (a
+  // hemisphere of no height).
   if capped && !closed {
-    const CAP_RINGS: usize = 6;
+    let cap_rings: usize = if flat_caps { 1 } else { 6 };
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
-      (1..=CAP_RINGS)
+      (1..=cap_rings)
         .map(|j| {
-          let theta = std::f64::consts::FRAC_PI_2 * j as f64 / CAP_RINGS as f64;
+          let theta = std::f64::consts::FRAC_PI_2 * j as f64 / cap_rings as f64;
           let (s, c) = theta.sin_cos();
+          let s = if flat_caps { 0.0 } else { s };
           ring
             .iter()
             .map(|q| {
@@ -16555,6 +16567,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             opacity: 1.0,
             thickness: None,
             capped: true,
+            flat_caps: false,
             edges: true,
             faces: true,
             edge_color: None,
@@ -26744,6 +26757,13 @@ fn parametric_plot3d_curve_ast(
         call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
+    // A curve drawn as a tube ends in a flat cut, not in the hemisphere a
+    // bare `Tube` gets: Wolfram's snapshot of a helix plotted with
+    // `PlotStyle -> {Tube[r]}` shows the disk closing its upper end. A
+    // `CapForm` in the style, read after this one, still has its way.
+    if tube_args.is_some() {
+      prim_items.push(call1("CapForm", Expr::String("Butt".into())));
+    }
     if let Some(style) = group_style {
       // Wrap whatever PlotStyle holds into a Directive[…] so that
       // collect_3d_primitives picks up nested colors/Thickness/etc.
@@ -26839,9 +26859,29 @@ fn parametric_plot3d_curve_ast(
     matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
   });
+  // The padding the plot gives its automatic range, spelled out as in the
+  // graphic wolframscript returns, so it stays with the plot when a `Show`
+  // led by it pins the range: the box is then that range widened by
+  // `Scaled[0.05]` on each side. A plot that names its own range is not
+  // padded, like the surfaces.
+  let automatic_range = !forwarded_opts.iter().any(|o| {
+    match crate::functions::graphics::option_name_value(o) {
+      Some(("PlotRange", v)) => {
+        !matches!(&*v, Expr::Identifier(n) if n == "All" || n == "Automatic")
+      }
+      Some(("PlotRangePadding", _)) => true,
+      _ => false,
+    }
+  });
   g3d_args.extend(forwarded_opts);
   if !has_axes {
     g3d_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if automatic_range {
+    g3d_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)),
+    ));
   }
 
   Ok(call("Graphics3D", g3d_args))
