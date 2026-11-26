@@ -10109,6 +10109,22 @@ against `wolframscript`, so the noise magnitude may differ.
   callout leader shapes, and the RSolve-precision and NIntegrate sample
   divergences in the `list-plot-app-*` tests.
 
+### `Show` cannot restyle a `ListDensityPlot`
+
+```sh
+woxi eval 'ExportString[Show[ListDensityPlot[{{1, 2}, {3, 4}}],
+           PlotLabel -> "label"], "SVG"]'
+# the plot, without the label
+```
+
+`ListDensityPlot` returns a pre-rendered picture without a symbolic
+`Graphics[…]` structure, so options given to `Show` (`PlotLabel`,
+`ImagePadding`, `ImageSize`, …) are dropped and other graphics cannot be
+laid over it. WL returns a `Graphics` of a `GraphicsComplex` that `Show`
+re-renders. (`DensityPlot`, `ReliefPlot`, `ArrayPlot` and `ListContourPlot`
+carry a structure and do work.) Not verified against wolframscript's exact
+output — none was available when this was found.
+
 ## Graphics primitives sweep leftovers (2026-11)
 
 Found by the visual Graphics-Tests comparison; not fixed yet.

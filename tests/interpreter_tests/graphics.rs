@@ -67995,6 +67995,40 @@ mod plots_with_nothing_to_draw {
     assert!(ranged.contains(">-1"), "{ranged}");
   }
 
+  /// Regression: ReliefPlot returned a bare picture, so `Show` could not
+  /// add options to it (`PlotLabel`, `ImagePadding`, … were dropped). Like
+  /// WL's, the result is a `Graphics` of one `Raster` over the data range.
+  #[test]
+  fn relief_plot_is_a_raster_graphics_show_can_restyle() {
+    let plot = "ReliefPlot[{{1, 2, 3}, {2, 5, 2}}]";
+    assert_eq!(
+      interpret(&format!(
+        "r = {plot}; {{Head[r[[1, 1]]], Dimensions[r[[1, 1, 1]]], \
+         r[[1, 1, 2]]}}"
+      ))
+      .unwrap(),
+      "{Raster, {2, 3, 4}, {{1., 1.}, {3., 2.}}}"
+    );
+    let labeled = export_svg(&format!(
+      "Show[{plot}, PlotLabel -> \"heights\", ImagePadding -> 20, \
+       ImageSize -> {{300, 300}}]"
+    ));
+    assert!(labeled.contains(">heights</text>"), "{labeled}");
+    assert!(labeled.contains("width=\"300\""), "{labeled}");
+    // The tick-less frame survives the re-render: the label is the only text.
+    assert_eq!(labeled.matches("<text").count(), 1, "{labeled}");
+    assert_eq!(
+      interpret(&format!("Options[{plot}, FrameTicks]")).unwrap(),
+      "{FrameTicks -> None}"
+    );
+    // An explicit `FrameTicks` is kept instead.
+    let ticked = export_svg(
+      "Show[ReliefPlot[{{1, 2, 3}, {2, 5, 2}}, FrameTicks -> Automatic], \
+       PlotLabel -> \"heights\"]",
+    );
+    assert!(ticked.matches("<text").count() > 1, "{ticked}");
+  }
+
   fn relief_plot_pixels(code: &str) -> ::image::RgbImage {
     use base64::Engine as _;
     let svg = export_svg(code);
