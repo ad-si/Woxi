@@ -11412,7 +11412,7 @@ mod random_function_simulation {
        {Head[ts], ts[\"Times\"], First[ts[\"States\"][[1]]]}",
     )
     .unwrap();
-    assert_eq!(path, "{TimeSeries, {0., 0.25, 0.5, 0.75, 1.}, 0.}");
+    assert_eq!(path, "{TemporalData, {0., 0.25, 0.5, 0.75, 1.}, 0.}");
     // WienerProcess always starts at 0 and has exactly one value per
     // sample time.
     let states = interpret(

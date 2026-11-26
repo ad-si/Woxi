@@ -1535,9 +1535,13 @@ fn render_item(
           // `ImageScaled` fraction works as in a plain `Graphics`.
           let mut placed = args.to_vec();
           placed[0] = object.clone();
-          let (fx, fy) =
-            crate::functions::graphics::inset_object_anchor(&placed)
-              .unwrap_or((0.5, 0.5));
+          // Without an `opos` the picture is centered on its position.
+          let (fx, fy) = args
+            .get(2)
+            .and_then(|_| {
+              crate::functions::graphics::inset_object_anchor(&placed)
+            })
+            .unwrap_or((0.5, 0.5));
           out.push_str(&crate::functions::graphics::embed_svg_centered(
             &svg,
             area.px(anchor.0) + (0.5 - fx) * w,
