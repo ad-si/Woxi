@@ -17974,6 +17974,7 @@ fn render_primitive(
         // on the anchor.
         let first_dy =
           -(pitches.iter().sum::<f64>() / 2.0 + (last_size - first_size) / 4.0);
+        let first_dy = (first_dy * 100.0).round() / 100.0;
         // Character offset of the current line within `text`, so each
         // line keeps the slanted parts (`Style[…, Italic]`) that fall on it.
         let mut line_start = 0;
