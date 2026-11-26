@@ -36714,6 +36714,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // An `Appearance` picture is centered on its locator: one drawing a
+    // point at the locator's own position (`Graphics[Point[p]]`) marks
+    // that position, not twice its coordinates.
+    #[test]
+    fn locator_pane_appearance_picture_is_centered_on_the_locator() {
+      let centers = |code: &str| -> Vec<(String, String)> {
+        let svg = woxi::interpret_with_stdout(code)
+          .unwrap()
+          .graphics
+          .expect("a picture");
+        svg
+          .split("<circle ")
+          .skip(1)
+          .map(|c| {
+            let attr = |name: &str| {
+              let start =
+                c.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+              c[start..].split('"').next().unwrap().to_string()
+            };
+            (attr("cx"), attr("cy"))
+          })
+          .collect()
+      };
+      let pane = |appearance: &str| {
+        format!(
+          "p = {{1, 2}}; q = {{3, 1}}; LocatorPane[Dynamic[{{p, q}}], \
+           Graphics[{{}}, PlotRange -> {{{{0, 4}}, {{0, 4}}}}], \
+           Appearance -> {appearance}]"
+        )
+      };
+      assert_eq!(
+        centers(&pane(
+          "{Graphics[{PointSize[0.05], Point[p]}], \
+           Graphics[{PointSize[0.05], Point[q]}]}"
+        )),
+        centers(&pane("Graphics[{PointSize[0.05], Point[{0, 0}]}]")),
+      );
+    }
+
     // A visual host shows the picture an interactive pane wraps even when
     // the pane is the whole result — a Manipulate body that *is* a
     // `ClickPane` rendered as a strip of source text.

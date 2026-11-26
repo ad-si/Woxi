@@ -51415,10 +51415,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           if let Some(ParsedControl::Visible {
             control: mut c,
             enabled: enabled2,
+            min_code: lo_code,
+            max_code: hi_code,
             ..
           }) = crate::with_scoped_globals(&initial_bindings, || {
             parse_manipulate_control(&promoted, &sibling_names)
           }) {
+            // Pane corners written in terms of other controls (`{n - 1,
+            // m - 1}` with sliders `n` and `m`) follow those controls.
+            if (lo_code.is_some() || hi_code.is_some())
+              && !dynamic_bounds.iter().any(|(n, ..)| *n == name)
+            {
+              dynamic_bounds.push((name.clone(), lo_code, hi_code, None));
+            }
             if let ManipulateControl::Slider2D {
               write_callback,
               x_min,
@@ -51429,6 +51438,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             } = &mut c
             {
               write_callback.clone_from(callback);
+              // A pane range with a third `{dx, dy}` entry moves its
+              // locators in those steps from the lower corner. A pane with
+              // a write-back function of its own leaves the snapping to it.
+              if write_callback.is_none() {
+                *write_callback =
+                  body_locator_pane_step_callback(&args[0], &name);
+              }
               // A hidden spec's corner bounds bound no widget, so they don't
               // confine the point: a `LocatorPane[Dynamic[var], graphic,
               // {{xmin, ymin}, {xmax, ymax}}]` in the body drags it over the
@@ -51438,7 +51454,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
                   .into_iter()
                   .find(|(v, range, _)| *v == name && range.is_some())
               {
-                let ((x0, y0), (x1, y1)) = pane_range(range.as_ref(), &graphic);
+                let ((x0, y0), (x1, y1)) =
+                  crate::with_scoped_globals(&initial_bindings, || {
+                    pane_range(range.as_ref(), &graphic)
+                  });
                 (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
               }
             }
@@ -52839,6 +52858,28 @@ fn body_locator_pane_corners(body: &Expr, var: &str) -> Option<(Expr, Expr)> {
       }
       _ => None,
     })
+}
+
+/// The write-back function that snaps `var` to the `{dx, dy}` step of the
+/// body's `LocatorPane[Dynamic[var], graphic, {{xmin, ymin}, {xmax, ymax},
+/// {dx, dy}}]`: a dragged point is moved to the nearest step counted from
+/// the lower corner. A scalar step applies to both coordinates. `None`
+/// when the pane's range names no step.
+fn body_locator_pane_step_callback(body: &Expr, var: &str) -> Option<String> {
+  let (_, range, _) = collect_body_locator_pane_vars(body)
+    .into_iter()
+    .find(|(n, _, _)| n == var)?;
+  let Some(Expr::List(parts)) = &range else {
+    return None;
+  };
+  let [lo, _, step] = parts.as_slice() else {
+    return None;
+  };
+  let (lo, step) = (
+    crate::syntax::expr_to_source_form(lo),
+    crate::syntax::expr_to_source_form(step),
+  );
+  Some(format!("({var} = {lo} + Round[# - {lo}, {step}]) &"))
 }
 
 /// Every `LocatorPane[Dynamic[var], graphic, range…]` drawn directly in a
@@ -57808,8 +57849,9 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// falling back to the unit square. Shared by the `LocatorPane`/`ClickPane`
 /// pane extractors.
 fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
+  // The corners may be followed by a `{dx, dy}` step.
   if let Some(Expr::List(corners)) = arg
-    && corners.len() == 2
+    && (2..=3).contains(&corners.len())
     && let (Some(lo), Some(hi)) =
       (list2_f64(&corners[0]), list2_f64(&corners[1]))
   {
@@ -68106,6 +68148,53 @@ mod manipulate_dynamic_control_list_tests {
         }
         other => panic!("expected a Slider2D for {name}, got {other:?}"),
       }
+    }
+  }
+
+  /// Hidden points dragged over a body `LocatorPane[Dynamic[{a, b}], g,
+  /// {{0, 0}, {n - 1, m - 1}, {1, 1}}]` take the pane's range at the
+  /// sliders' initial values (wherever the sliders are declared), keep
+  /// following them, and move in the pane's steps.
+  #[test]
+  fn body_locator_pane_range_follows_other_controls_and_steps() {
+    let s = spec(
+      "Manipulate[LocatorPane[Dynamic[{a, b}], \
+       Graphics[{Point[a], Point[b]}, PlotRange -> {{0, n - 1}, {0, m - 1}}], \
+       {{0, 0}, {n - 1, m - 1}, {1, 1}}], \
+       {{a, {1, 2}}, ControlType -> None}, \
+       {{b, {2, 1}}, ControlType -> None}, \
+       {{n, 12}, 2, 25, 1}, {{m, 7}, 2, 25, 1}]",
+    );
+    for name in ["a", "b"] {
+      match s.controls.iter().find(|c| c.name() == name) {
+        Some(ManipulateControl::Slider2D {
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          write_callback,
+          ..
+        }) => {
+          assert_eq!(
+            (*x_min, *x_max, *y_min, *y_max),
+            (0.0, 11.0, 0.0, 6.0),
+            "range of {name}"
+          );
+          assert_eq!(
+            write_callback.as_deref(),
+            Some(
+              format!("({name} = {{0, 0}} + Round[# - {{0, 0}}, {{1, 1}}]) &")
+                .as_str()
+            )
+          );
+        }
+        other => panic!("expected a Slider2D for {name}, got {other:?}"),
+      }
+      let bound = s.dynamic_bounds.iter().find(|(n, ..)| n == name);
+      assert!(
+        matches!(bound, Some((_, None, Some(hi), None)) if hi == "{n - 1, m - 1}"),
+        "dynamic bound of {name}: {bound:?}"
+      );
     }
   }
 

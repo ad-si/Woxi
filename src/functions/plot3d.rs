@@ -16157,8 +16157,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let setback_bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
   apply_arrow_setbacks_3d(&mut prims, &setback_bounds);
 
-  // An explicit `PlotRange` cuts off whatever of a line lies outside it.
-  if let Some(bounds) = plot_range {
+  // An explicit `PlotRange` cuts off whatever lies outside the box it
+  // displays: the range widened by its `PlotRangePadding`. A label set just
+  // past the surface of a `ParametricPlot3D` (whose automatic range is
+  // padded) is therefore still drawn when `Show` inherits that plot's range.
+  if let Some(bounds) =
+    plot_range.map(|raw| displayed_box_3d(raw, explicit_axes, range_padding))
+  {
     for prim in &mut prims {
       if let Primitive3D::Line3D { segments, .. } = prim {
         *segments = segments
