@@ -79332,3 +79332,81 @@ fn plot_label_box_string_literal_stays_upright() {
     );
   }
 }
+
+mod discrete_plot_extent_style {
+  use super::*;
+
+  // Regression: `PlotStyle` was dropped when `ExtentSize` draws each value
+  // as a filled step, so the steps kept the default series color.
+  #[test]
+  fn plot_style_colors_the_steps_and_their_filling() {
+    let svg = export_svg(
+      "DiscretePlot[h^2, {h, 0, 4}, ExtentSize -> 1/2, PlotStyle -> Red]",
+    );
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 5, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 5, "{svg}");
+    assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
+  }
+
+  // A list of styles hands them out to the series in turn.
+  #[test]
+  fn plot_style_list_styles_each_series() {
+    let svg = export_svg(
+      "DiscretePlot[{h, 2 h}, {h, 1, 3}, ExtentSize -> Full, \
+       PlotStyle -> {Red, Blue}]",
+    );
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 3, "{svg}");
+    assert_eq!(svg.matches("stroke=\"rgb(0,0,255)\"").count(), 3, "{svg}");
+  }
+
+  // Without the option the default series color stays.
+  #[test]
+  fn default_style_is_unchanged() {
+    let svg = export_svg("DiscretePlot[h^2, {h, 0, 4}, ExtentSize -> 1/2]");
+    assert_eq!(
+      svg.matches("stroke=\"rgb(61,153,204)\"").count(),
+      5,
+      "{svg}"
+    );
+  }
+}
+
+mod plot_epilog_inset_alignment {
+  use super::*;
+
+  /// The left edge (in the SVG's own units) of the nested picture a plot's
+  /// epilog insets.
+  fn inset_left(code: &str) -> f64 {
+    let svg = export_svg(code);
+    let at = svg.find("<svg x=\"").expect("an inset picture");
+    let rest = &svg[at + 8..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+  }
+
+  // Regression: a laid-out display inset into a plot's `Epilog` ignored an
+  // `opos` named by its sides, so `{Left, Top}` centered the display on the
+  // position and a label near the left edge was cut off by the frame.
+  #[test]
+  fn named_corner_of_a_display_sits_on_the_position() {
+    let plot = |opos: &str| {
+      format!(
+        "Plot[Sin[x], {{x, 0, 20}}, PlotRange -> {{-1, 1}}, Epilog -> \
+         {{Inset[Grid[{{{{\"abc def ghi\"}}}}], {{1, 0.5}}{opos}]}}]"
+      )
+    };
+    let centered = inset_left(&plot(""));
+    let left = inset_left(&plot(", {Left, Top}"));
+    let right = inset_left(&plot(", {Right, Top}"));
+    assert!(
+      left > centered && centered > right,
+      "{left} {centered} {right}"
+    );
+    // The centered display straddles the position evenly.
+    assert!(
+      ((left - centered) - (centered - right)).abs() < 0.5,
+      "{left} {centered} {right}"
+    );
+    // The numeric offset form names the same corner.
+    assert_eq!(left, inset_left(&plot(", {-1, 1}")));
+  }
+}
