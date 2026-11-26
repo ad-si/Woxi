@@ -9984,7 +9984,7 @@ pub(crate) fn stacked_label_picture(
 ) -> Option<(String, f64, f64)> {
   let boxes = match content {
     Expr::String(s)
-      if has_script_stacked_inline_box(s)
+      if has_stacked_inline_box(s)
         || label_has_large_operator_script(content) =>
     {
       inline_box_string_to_box_expr(s)
@@ -10813,9 +10813,25 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Row` holding a `Row[…]/Row[…]` quotient such as `dθ/dξ`) is laid out
   // the same way, so the fraction stacks inline with the rest of the label
   // instead of being printed as a multi-line text picture.
+  // The face a `Style` around the label asks for was peeled off into the
+  // text style; put it back so the boxes are measured and drawn in it.
+  let faced_content = {
+    let mut face = Vec::new();
+    if local_style.font_weight == "bold" {
+      face.push(id_expr("Bold"));
+    }
+    if local_style.font_style == "italic" {
+      face.push(id_expr("Italic"));
+    }
+    (!face.is_empty()).then(|| {
+      let mut style_args = vec![content.clone()];
+      style_args.extend(face);
+      call("Style", style_args)
+    })
+  };
   if frame_opts.is_empty()
     && let Some((svg, w, h)) = stacked_label_picture(
-      content,
+      faced_content.as_ref().unwrap_or(content),
       local_style.font_size,
       &local_style.font_family,
       &local_style.effective_color().to_svg_rgb(),
@@ -33810,8 +33826,16 @@ fn formula_has_graphics_operand(expr: &Expr) -> bool {
   walk(expr)
 }
 
-fn label_typesets_fraction(expr: &Expr) -> bool {
+pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
+    // A string whose inline box notation stacks material (a fraction, a
+    // root) is typeset as those boxes wherever it sits in the label.
+    Expr::String(s) => {
+      has_stacked_inline_box(s)
+        && ["FractionBox", "SqrtBox", "RadicalBox"]
+          .iter()
+          .any(|head| s.contains(head))
+    }
     // A bare rational number (`-7/4`) is drawn by the numeric fraction
     // label path, which puts a proper minus sign before the stacked
     // fraction.
@@ -33990,20 +34014,6 @@ fn has_string_operand(expr: &Expr) -> bool {
     Expr::UnaryOp { operand, .. } => has_string_operand(operand),
     _ => false,
   }
-}
-
-/// Whether a string's inline box notation stacks an over/underscript (an
-/// arrow with its rate above it) and nothing else vertical. Such a label has
-/// no faithful one-line reading, whereas fractions and roots keep their
-/// linear `(a)/(b)` text in a graphic.
-fn has_script_stacked_inline_box(s: &str) -> bool {
-  has_stacked_inline_box(s)
-    && ["OverscriptBox", "UnderscriptBox", "UnderoverscriptBox"]
-      .iter()
-      .any(|head| s.contains(head))
-    && !["FractionBox", "SqrtBox", "RadicalBox"]
-      .iter()
-      .any(|head| s.contains(head))
 }
 
 /// Whether a label holds inline box notation that hangs limits on a large
