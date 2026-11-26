@@ -38699,6 +38699,7 @@ pub fn combine_layout_svgs(
       opts.h_spacing = SpacingSpec::Points(1.5 * gap);
       opts.v_spacing = SpacingSpec::Points(1.5 * gap);
       opts.outer_margin = true;
+      opts.image_size_fit = ImageSizeFit::Exact;
       opts.spacings_explicit = true;
     }
   }
@@ -38744,10 +38745,34 @@ impl SpacingSpec {
       // because its plots carry padding around the frame; ours are tight,
       // so cells are simply butted together instead.
       Self::Points(pts) => (pts * (4.0 / 3.0)).max(0.0), // pt → px at 96 dpi
-      Self::Scaled(frac) => (frac * cell_dim).max(0.0),
+      // A negative fraction pulls neighboring cells over each other.
+      Self::Scaled(frac) => frac.max(MAX_CELL_OVERLAP) * cell_dim,
     }
   }
+
+  /// The spacing a `GraphicsRow`/`GraphicsColumn`/`GraphicsGrid` uses for
+  /// this setting. Their numeric `Spacings` count points of a cell at its
+  /// natural width, so a negative one overlaps the cells by that share of
+  /// their width however large the layout is drawn: `Spacings -> -180`
+  /// sets pictures half a cell apart.
+  fn for_graphics_layout(self) -> Self {
+    match self {
+      Self::Points(pts) if pts < 0.0 => {
+        Self::Scaled((pts / DEFAULT_WIDTH as f64).max(MAX_CELL_OVERLAP))
+      }
+      other => other,
+    }
+  }
+
+  /// Whether cells this far apart cover each other.
+  fn overlaps(self) -> bool {
+    matches!(self, Self::Scaled(frac) if frac < 0.0)
+  }
 }
+
+/// The most a negative spacing may pull one cell over the next, as a
+/// (negative) fraction of the cell: the cells always keep their order.
+const MAX_CELL_OVERLAP: f64 = -0.95;
 
 /// Parse a single spacing value from an expression.
 /// - Numeric → Points(n)
@@ -38811,6 +38836,28 @@ struct LayoutOptions {
   /// `FrameStyle -> style`: the color of the frame lines and dividers
   /// (black by default).
   frame_color: Option<Color>,
+  /// What an `ImageSize -> {w, h}` means for the size of the layout.
+  image_size_fit: ImageSizeFit,
+}
+
+/// How a layout treats an explicit `ImageSize -> {w, h}`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImageSizeFit {
+  /// The cells fit within it and the layout is only as large as they are.
+  Within,
+  /// The layout is one picture (`GraphicsRow`, `GraphicsColumn`,
+  /// `GraphicsGrid`) of exactly that size, the cells centered in it.
+  Exact,
+}
+
+/// The layout options of a `GraphicsRow`, `GraphicsColumn` or
+/// `GraphicsGrid`, which make one picture of their cells.
+fn parse_graphics_layout_options(args: &[Expr]) -> LayoutOptions {
+  let mut opts = parse_layout_options(args);
+  opts.h_spacing = opts.h_spacing.for_graphics_layout();
+  opts.v_spacing = opts.v_spacing.for_graphics_layout();
+  opts.image_size_fit = ImageSizeFit::Exact;
+  opts
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -38995,6 +39042,7 @@ fn compute_grid_layout(
         outer_margin: opts.outer_margin,
         row_align: opts.row_align.clone(),
         frame_color: opts.frame_color,
+        image_size_fit: opts.image_size_fit,
       };
       &opts_owned
     } else {
@@ -39116,17 +39164,27 @@ fn compute_grid_layout(
       (w, row_height_of(i, &heights))
     })
     .collect();
-  let max_nat_row_w = row_nat_dims
-    .iter()
-    .map(|(w, _)| *w)
-    .fold(0.0_f64, f64::max)
-    .max(10.0);
-
   let max_cols = parsed_rows
     .iter()
     .map(std::vec::Vec::len)
     .max()
     .unwrap_or(1);
+
+  // Cells that overlap are set at one even pitch, every column as wide as
+  // the widest cell: a narrow picture between two wide ones must not pull
+  // them onto each other.
+  let even_columns = opts.h_spacing.overlaps();
+  let max_nat_row_w = if even_columns {
+    let widest = parsed_rows
+      .iter()
+      .flatten()
+      .map(|(_, _, w, _)| *w)
+      .fold(0.0_f64, f64::max);
+    widest * max_cols as f64
+  } else {
+    row_nat_dims.iter().map(|(w, _)| *w).fold(0.0_f64, f64::max)
+  }
+  .max(10.0);
 
   // Uniform scale: the same factor applies to every cell so relative
   // proportions across rows stay intact. An explicit width is the width of
@@ -39137,11 +39195,16 @@ fn compute_grid_layout(
     Some(target_w) => {
       let cols = max_cols as f64;
       let (scaled_gap, fixed_gap) = match opts.h_spacing {
-        SpacingSpec::Scaled(f) => (f.max(0.0), 0.0),
+        SpacingSpec::Scaled(f) => (f.max(MAX_CELL_OVERLAP), 0.0),
         SpacingSpec::Points(_) => (0.0, opts.h_spacing.to_px(0.0)),
       };
-      // With an outer margin there are `cols` gaps in all, not `cols - 1`.
-      let gaps = if opts.outer_margin { cols } else { cols - 1.0 };
+      // With an outer margin there are `cols` gaps in all, not `cols - 1`;
+      // overlapping cells have no margin around them.
+      let gaps = if opts.outer_margin && !even_columns {
+        cols
+      } else {
+        cols - 1.0
+      };
       let cells_w = (target_w - gaps * fixed_gap).max(1.0);
       cells_w / (max_nat_row_w * (1.0 + scaled_gap * gaps / cols))
     }
@@ -39164,7 +39227,10 @@ fn compute_grid_layout(
           .map(|(_, _, w, _)| *w)
           .collect();
         let avg_w = widths.iter().sum::<f64>() / widths.len().max(1) as f64;
-        (opts.v_spacing.to_px(avg_w), num_nonempty as f64)
+        let v_gap = opts.v_spacing.to_px(avg_w);
+        // Rows that overlap have no margin above and below them.
+        let gaps = num_nonempty as f64 - if v_gap < 0.0 { 1.0 } else { 0.0 };
+        (v_gap, gaps)
       } else {
         (
           opts.v_spacing.to_px(avg_row_h),
@@ -39204,6 +39270,11 @@ fn compute_grid_layout(
     }
   }
 
+  if even_columns {
+    let widest = col_w.iter().copied().fold(0.0_f64, f64::max);
+    col_w.fill(widest);
+  }
+
   // Horizontal gap: `Scaled` is resolved against the average cell width
   // over the whole grid, so every row uses the same column pitch.
   let single_cells: Vec<f64> = scaled_rows
@@ -39217,8 +39288,11 @@ fn compute_grid_layout(
         .map(|((w, _), _)| *w)
     })
     .collect();
-  let avg_cell_w: f64 =
-    single_cells.iter().sum::<f64>() / single_cells.len().max(1) as f64;
+  let avg_cell_w: f64 = if even_columns {
+    col_w.first().copied().unwrap_or(0.0)
+  } else {
+    single_cells.iter().sum::<f64>() / single_cells.len().max(1) as f64
+  };
   let h_gap = opts.h_spacing.to_px(avg_cell_w);
 
   // A spanned cell that is wider than the columns it covers widens the last
@@ -39235,7 +39309,11 @@ fn compute_grid_layout(
       }
     }
   }
-  let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
+  let left_pad = if opts.outer_margin {
+    (h_gap / 2.0).max(0.0)
+  } else {
+    0.0
+  };
   let mut col_x: Vec<f64> = col_w
     .iter()
     .scan(left_pad, |x, w| {
@@ -39335,7 +39413,11 @@ fn compute_grid_layout(
     .fold(0.0_f64, f64::max)
     + left_pad;
 
-  let mut top_pad = if opts.outer_margin { v_gap / 2.0 } else { 0.0 };
+  let mut top_pad = if opts.outer_margin {
+    (v_gap / 2.0).max(0.0)
+  } else {
+    0.0
+  };
   let mut total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
     + (row_layouts.iter().filter(|r| r.row_h > 0.0).count() as f64 - 1.0)
       .max(0.0)
@@ -39344,7 +39426,7 @@ fn compute_grid_layout(
   let mut total_width = total_width;
   // `GraphicsGrid[…, ImageSize -> {w, h}]` is exactly that big, the cells
   // centered in it.
-  if opts.outer_margin
+  if opts.image_size_fit == ImageSizeFit::Exact
     && let (Some(tw), Some(th)) = (opts.target_width, opts.target_height)
   {
     let dx = ((tw - total_width) / 2.0).max(0.0);
@@ -39509,6 +39591,7 @@ fn default_layout_options() -> LayoutOptions {
     outer_margin: false,
     row_align: Vec::new(),
     frame_color: None,
+    image_size_fit: ImageSizeFit::Within,
   }
 }
 
@@ -40697,7 +40780,7 @@ fn render_items_at_size(
 /// and strokes come out at their intended pixel sizes instead of being
 /// scaled down to illegibility when the row is packed with many items.
 pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let opts = parse_layout_options(&args[1..]);
+  let opts = parse_graphics_layout_options(&args[1..]);
 
   // Prefer rewriting the unevaluated items so we can re-render each at
   // the final per-cell size. Fall back to post-evaluation scaling when
@@ -40823,7 +40906,7 @@ fn finish_graphics_row(svgs: Vec<String>, opts: &LayoutOptions) -> Expr {
 /// GraphicsColumn[{g1, g2, ...}] or GraphicsColumn[{g1, g2, ...}, opts...]
 /// Arranges graphics vertically in a single column.
 pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let opts = parse_layout_options(&args[1..]);
+  let opts = parse_graphics_layout_options(&args[1..]);
 
   // A column has one cell per row, so each cell takes the full column
   // width. Re-render at DEFAULT_WIDTH (or the explicit ImageSize) so
@@ -41035,7 +41118,7 @@ pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
 /// Arranges graphics in a 2D grid.
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let opts = parse_layout_options(&args[1..]);
+  let opts = parse_graphics_layout_options(&args[1..]);
 
   // GraphicsGrid is held by the dispatcher, so args[0] arrives
   // unevaluated. Resolve it to a list-of-lists before laying out the

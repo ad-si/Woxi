@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A negative `Spacings` of a `GraphicsRow`, `GraphicsColumn` or
+    `GraphicsGrid` overlaps the cells at an even pitch instead of butting
+    them together, and `ImageSize -> {w, h}` is the exact size of a
+    `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
 - `ContourPlot` draws every curve of a list that mixes equations with
     plain expressions (`{f == c, {g, h}}`, each expression as its zero
     contour) and of an entry that only evaluates to a list (a `Which`

@@ -10238,6 +10238,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - An automatically sized `GraphicsRow` of several pictures fits them into
   640 points; a row of variables holding already-rendered plots is not
   re-laid out at the cell width.
+- A negative numeric `Spacings` of a `GraphicsRow`/`GraphicsColumn`/
+  `GraphicsGrid` overlaps the cells by that share of a 360-point cell
+  (`Spacings -> -180`: half a cell apart), decoded from a rendered
+  notebook picture rather than from `wolframscript`; a positive one is
+  still a fixed gap in points. In such a row WL draws a `Graphics3D` with
+  an infinite `ViewPoint` (`{0, -Infinity, 0}`) about as tall as the whole
+  `ImageSize` and lets it spill over its cell; Woxi fits it to the cell.
 
 ## Plot ranges and ticks (graphics comparison sweep, 2026-11)
 

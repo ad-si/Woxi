@@ -40997,6 +40997,156 @@ mod graphics_grid {
     assert!(xs.len() >= 2 && xs[1] >= xs[0], "cells overlap: {xs:?}");
   }
 
+  /// The `x`, `y`, `width` and `height` of each cell of a layout picture.
+  fn layout_cells(svg: &str) -> Vec<[f64; 4]> {
+    svg
+      .split("<svg x=\"")
+      .skip(1)
+      .map(|cell| {
+        // `cell` starts with the value of `x`, the other attributes follow.
+        let tag = cell.split('>').next().unwrap();
+        let attr = |name: &str| -> f64 {
+          tag
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {tag}"))
+        };
+        let x: f64 = tag.split('"').next().unwrap().parse().unwrap();
+        [x, attr("y"), attr("width"), attr("height")]
+      })
+      .collect()
+  }
+
+  /// The `width` and `height` of a picture.
+  fn picture_size(svg: &str) -> (f64, f64) {
+    let attr = |name: &str| -> f64 {
+      svg
+        .split(&format!(" {name}=\""))
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no {name}: {svg}"))
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// A negative `Spacings` of a `GraphicsRow` overlaps the cells by that
+  /// many points of a 360-point cell, whatever size the row is drawn at.
+  #[test]
+  fn graphics_row_negative_spacing_overlaps_cells() {
+    for (spacing, share) in [(-180.0, 0.5), (-90.0, 0.75), (-36.0, 0.9)] {
+      let svg = export_svg(&format!(
+        "GraphicsRow[{{Graphics[Circle[]], Graphics[Disk[]], \
+         Graphics[Circle[]]}}, Spacings -> {spacing}]"
+      ));
+      let cells = layout_cells(&svg);
+      assert_eq!(cells.len(), 3, "{svg}");
+      let w = cells[0][2];
+      for pair in cells.windows(2) {
+        let pitch = pair[1][0] - pair[0][0];
+        assert!(
+          (pitch - share * w).abs() <= 1.0,
+          "Spacings -> {spacing}: pitch {pitch} of width {w}: {svg}"
+        );
+      }
+      let (width, _) = picture_size(&svg);
+      assert!(
+        (width - (cells[2][0] + w)).abs() <= 1.0,
+        "the row ends with its last cell: {svg}"
+      );
+    }
+  }
+
+  /// However negative the spacing, the cells keep their order.
+  #[test]
+  fn graphics_row_extreme_negative_spacing_keeps_cell_order() {
+    let svg = export_svg(
+      "GraphicsRow[{Graphics[Circle[]], Graphics[Disk[]], \
+       Graphics[Circle[]]}, Spacings -> -5000]",
+    );
+    let cells = layout_cells(&svg);
+    assert_eq!(cells.len(), 3, "{svg}");
+    assert!(
+      cells.windows(2).all(|p| p[1][0] > p[0][0]),
+      "cells out of order: {svg}"
+    );
+  }
+
+  /// Pictures of different proportions sit at one even pitch in a row of
+  /// overlapping cells, the middle one in the middle of the row.
+  #[test]
+  fn graphics_row_negative_spacing_keeps_even_pitch() {
+    let svg = export_svg(
+      "wide = Graphics[Rectangle[{0, 0}, {2, 1}]]; \
+       narrow = Graphics[Line[{{0, -1}, {0, 1}}]]; \
+       GraphicsRow[{wide, narrow, wide}, Spacings -> -120, \
+       ImageSize -> {480, 200}]",
+    );
+    let cells = layout_cells(&svg);
+    assert_eq!(cells.len(), 3, "{svg}");
+    let center = |c: &[f64; 4]| c[0] + c[2] / 2.0;
+    let (left, mid, right) =
+      (center(&cells[0]), center(&cells[1]), center(&cells[2]));
+    assert!(
+      ((mid - left) - (right - mid)).abs() <= 2.0,
+      "uneven pitch {left} {mid} {right}: {svg}"
+    );
+    assert!((mid - 240.0).abs() <= 2.0, "not centered: {svg}");
+    // Each picture reaches over the column of the next one.
+    assert!(
+      cells.windows(2).all(|p| p[0][0] + p[0][2] > p[1][0]),
+      "no overlap: {svg}"
+    );
+  }
+
+  /// A negative vertical spacing overlaps the rows of a `GraphicsColumn`.
+  #[test]
+  fn graphics_column_negative_spacing_overlaps_rows() {
+    let svg = export_svg(
+      "GraphicsColumn[{Graphics[Circle[]], Graphics[Disk[]]}, \
+       Spacings -> -90]",
+    );
+    let cells = layout_cells(&svg);
+    assert_eq!(cells.len(), 2, "{svg}");
+    let h = cells[0][3];
+    let pitch = cells[1][1] - cells[0][1];
+    assert!(
+      (pitch - 0.75 * h).abs() <= 1.0,
+      "pitch {pitch} of {h}: {svg}"
+    );
+  }
+
+  /// `ImageSize -> {w, h}` is the size of the whole `GraphicsRow` or
+  /// `GraphicsColumn`, with the cells centered in the spare room.
+  #[test]
+  fn graphics_row_and_column_fill_explicit_image_size() {
+    for (head, size) in [
+      ("GraphicsRow", (450.0, 300.0)),
+      ("GraphicsRow", (200.0, 400.0)),
+      ("GraphicsColumn", (450.0, 300.0)),
+      ("GraphicsColumn", (150.0, 500.0)),
+    ] {
+      let svg = export_svg(&format!(
+        "{head}[{{Graphics[Circle[]], Graphics[Disk[]]}}, \
+         ImageSize -> {{{}, {}}}]",
+        size.0, size.1
+      ));
+      assert_eq!(picture_size(&svg), size, "{head}: {svg}");
+      let cells = layout_cells(&svg);
+      assert_eq!(cells.len(), 2, "{svg}");
+      let (first, last) = (cells[0], cells[1]);
+      let before = (first[0], first[1]);
+      let after = (size.0 - last[0] - last[2], size.1 - last[1] - last[3]);
+      assert!(
+        (before.0 - after.0).abs() <= 2.0 && (before.1 - after.1).abs() <= 2.0,
+        "{head} not centered in {size:?}: {svg}"
+      );
+      assert!(before.0 >= -0.5 && before.1 >= -0.5, "{head}: {svg}");
+    }
+  }
+
   #[test]
   fn grid_style_bold() {
     clear_state();
