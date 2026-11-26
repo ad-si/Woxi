@@ -35116,7 +35116,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     // A lone spike in the data does not stretch the automatic contour
     // levels over its height: the rest of the array still gets its lines,
-    // unless `PlotRange -> All` asks for the full range.
+    // unless `PlotRange -> All` asks for the full range (whose levels,
+    // 100 apart, leave the bulk only the one at 0).
     #[test]
     fn list_contour_plot_outlier_keeps_the_levels_on_the_bulk() {
       clear_state();
@@ -35126,11 +35127,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {i, 12}, {j, 12}]; \
            far[g_] := Count[Cases[Normal[g], Line[q_] :> q, Infinity], \
            q_ /; Min[q[[All, 1]]] > 6]; \
-           {far[ListContourPlot[m]] > 3, \
+           {far[ListContourPlot[m]], \
            far[ListContourPlot[m, PlotRange -> All]]}"
         )
         .unwrap(),
-        "{True, 0}"
+        "{5, 1}"
       );
     }
 

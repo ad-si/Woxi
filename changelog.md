@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `ListContourPlot` keeps a lone spike in the data from stretching its
+    automatic contour levels (the outlier fence `ContourPlot` already
+    applied), and interpolates an array linearly over a triangulation of
+    its nodes instead of bilinearly over each cell.
+- Contour plots split a saddle cell along the same diagonal for the
+    shaded bands and the contour lines, which could previously join
+    opposite pairs of corners and run lines through a band.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
