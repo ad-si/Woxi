@@ -350,6 +350,21 @@ pub(crate) enum ContourSpec {
   Levels(Vec<f64>),
   /// Contours -> Automatic: ~10 levels at "nice" round values
   Automatic,
+  /// Contours -> {Automatic, n}: at most n levels at "nice" round values
+  AutomaticUpTo(usize),
+}
+
+impl ContourSpec {
+  /// The spec of a `Contours -> {Automatic, n}` list, which caps the
+  /// number of automatically chosen levels instead of listing levels.
+  pub(crate) fn automatic_up_to(items: &[Expr]) -> Option<Self> {
+    match items {
+      [Expr::Identifier(a), Expr::Integer(n)] if a == "Automatic" && *n > 0 => {
+        Some(ContourSpec::AutomaticUpTo(*n as usize))
+      }
+      _ => None,
+    }
+  }
 }
 
 /// Options shared by the density / contour plot family.
@@ -713,6 +728,11 @@ fn parse_density_contour_options(
         "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
+          }
+          Expr::List(items)
+            if let Some(spec) = ContourSpec::automatic_up_to(items) =>
+          {
+            contours = spec;
           }
           Expr::List(items) => {
             let levels: Vec<f64> = items
@@ -2346,6 +2366,7 @@ pub(crate) fn resolve_contour_levels(
 ) -> Vec<f64> {
   match spec {
     ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    ContourSpec::AutomaticUpTo(n) => nice_contour_levels(v_min, v_max, *n),
     // Wolfram splits the range into `n + 1` parts, truncates that step to
     // two significant digits, and draws the first `n` multiples of it
     // above the bottom of the range (so `Contours -> 6` over `-4..4` gives
@@ -4132,7 +4153,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
         ContourSpec::Levels(_) => return None,
         ContourSpec::Automatic => Some(&zero),
-        ContourSpec::Count(_) => None,
+        ContourSpec::Count(_) | ContourSpec::AutomaticUpTo(_) => None,
       };
       let mut bodies = Vec::new();
       for (index, f) in funcs.iter().enumerate() {
@@ -4710,6 +4731,7 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          own_y_range: None,
           continues_previous: false,
           arrowheads: None,
           color_function: None,

@@ -3323,6 +3323,21 @@ pub(crate) fn computed_graph_embedding(
 /// with springs; the exact cutoff in between is not documented.
 const MAX_TIDY_TREE_VERTICES: usize = 32;
 
+/// Whether every pair of distinct vertices of `graph` is adjacent and at
+/// least one pair is joined by several edges (antiparallel or repeated).
+fn is_complete_multigraph(graph: &DiGraph<usize, RenderEdgeData>) -> bool {
+  let n = graph.node_count();
+  let mut pairs = std::collections::HashSet::new();
+  let mut repeated = false;
+  for e in graph.edge_references() {
+    let (s, d) = (e.source().index(), e.target().index());
+    if s != d && !pairs.insert((s.min(d), s.max(d))) {
+      repeated = true;
+    }
+  }
+  repeated && n >= 3 && pairs.len() == n * (n - 1) / 2
+}
+
 /// Automatic layout of `graph`. `plain_lines` says the edges are drawn
 /// without arrows (`GraphPlot` of a rule list): the plot then ignores edge
 /// directions, so a directed acyclic graph is not put in layers but
@@ -3399,6 +3414,13 @@ fn compute_layout(
         .map(|(along, depth)| orient_layers(along, depth, LayerDirection::Top))
         .collect();
       return unit_mean_edge(pts, graph);
+    }
+    // A graph whose vertices are all adjacent to each other and joined
+    // by more than one edge per pair (a complete digraph with both
+    // directions listed, say) comes out as a regular polygon, as in
+    // Wolfram.
+    if is_complete_multigraph(graph) {
+      return circular_layout_in_order(&circular_vertex_order(graph));
     }
     // Small paths and single cycles retain their circular arrangement;
     // additional cycles need a spring embedding even with few vertices.
