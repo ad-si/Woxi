@@ -11090,7 +11090,7 @@ mod contour_saddle_tests {
   fn saddle_bands_tile_the_cell() {
     for (diag, anti) in [(1.0, 0.0), (0.0, 1.0), (3.0, -2.0)] {
       let grid = saddle(diag, anti);
-      let level = (diag + anti) / 2.0;
+      let level = f64::midpoint(diag, anti);
       let regions =
         contour_band_regions(&grid, &[level], (diag.min(anti), diag.max(anti)));
       let total: f64 = regions.iter().map(|r| area(&r.points)).sum();
