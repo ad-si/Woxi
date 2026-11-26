@@ -68,7 +68,16 @@ static KNOWN_WOLFRAM_FUNCTIONS: LazyLock<HashSet<&'static str>> =
 /// Check if a function name is a known Wolfram Language function
 /// that hasn't been implemented yet.
 pub fn is_known_wolfram_function(name: &str) -> bool {
-  KNOWN_WOLFRAM_FUNCTIONS.contains(name)
+  !starts_lowercase(name) && KNOWN_WOLFRAM_FUNCTIONS.contains(name)
+}
+
+/// Whether `name` starts with a lowercase ASCII letter. No `System`` symbol
+/// does (see `no_builtin_starts_lowercase`), so the names of most user
+/// symbols — `x`, `g`, `list$12` — are told apart from them without hashing
+/// the name and probing the tables, which every evaluated call and every
+/// comparison of two symbols otherwise does.
+fn starts_lowercase(name: &str) -> bool {
+  name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
 }
 
 /// Every symbol name in functions.csv, regardless of whether Woxi implements
@@ -107,7 +116,8 @@ static FORMAL_SYMBOLS: LazyLock<rustc_hash::FxHashSet<&'static str>> =
 /// True if `name` is a `System`` symbol, i.e. listed in functions.csv or
 /// one of the formal symbols.
 pub fn is_builtin_symbol(name: &str) -> bool {
-  ALL_BUILTIN_NAMES.contains(name) || FORMAL_SYMBOLS.contains(name)
+  !starts_lowercase(name)
+    && (ALL_BUILTIN_NAMES.contains(name) || FORMAL_SYMBOLS.contains(name))
 }
 
 /// Built-ins whose `effect_level` in functions.csv says that evaluating
@@ -235,4 +245,33 @@ pub fn all_builtin_symbol_names() -> Vec<&'static str> {
   let mut names: Vec<&str> = ALL_BUILTIN_NAMES.iter().copied().collect();
   names.sort_unstable();
   names
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// `is_builtin_symbol` and `is_known_wolfram_function` answer for a name
+  /// starting with a lowercase letter without looking it up.
+  #[test]
+  fn no_builtin_starts_lowercase() {
+    for name in ALL_BUILTIN_NAMES
+      .iter()
+      .chain(FORMAL_SYMBOLS.iter())
+      .chain(IMPLEMENTATION_STATUS.keys())
+    {
+      assert!(!starts_lowercase(name), "{name}");
+    }
+  }
+
+  #[test]
+  fn builtin_symbols_are_recognized() {
+    for name in ["Plus", "Sin", "$Version", "Pi", "E", "I", "List"] {
+      assert!(is_builtin_symbol(name), "{name}");
+    }
+    for name in ["x", "g", "list$12", "plus", "", "myFunction", "Zzyzx"] {
+      assert!(!is_builtin_symbol(name), "{name}");
+      assert!(!is_known_wolfram_function(name), "{name}");
+    }
+  }
 }

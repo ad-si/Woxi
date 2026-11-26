@@ -325,7 +325,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(evaluated) = init {
       let evaluated = crate::evaluator::assignment::own_value_expr(&evaluated);
       ENV.with(|e| {
-        e.borrow_mut()
+        e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
       });
     }

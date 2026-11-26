@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- Expanding and summing large expressions in undefined functions
+    (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
+    `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
+    built and ordered once from the ranks of their few distinct calls
+    instead of being sorted, compared and copied term by term, and
+    `f[k] = value` stores a long value as evaluated like `x = value` does.
+    Calls of a user-defined function no longer copy all of its rules, and a
+    `Sum` or `Block` over a symbol without definitions no longer makes every
+    large stored value evaluate anew.
 - `ListContourPlot` keeps a lone spike in the data from stretching its
     automatic contour levels (the outlier fence `ContourPlot` already
     applied), and interpolates an array linearly over a triangulation of

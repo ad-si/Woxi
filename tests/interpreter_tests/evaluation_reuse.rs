@@ -89,6 +89,49 @@ mod evaluation_reuse {
     }
 
     #[test]
+    fn block_of_a_defined_symbol_reaches_a_stored_value_and_is_undone() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "r = Table[v[i], {i, 20}]; r; v[i_] := i^2; \
+           {Block[{v}, ToString[r[[3]]]], r[[3]]}"
+        )
+        .unwrap(),
+        "{v[3], 9}"
+      );
+    }
+
+    #[test]
+    fn sum_index_with_a_value_is_localized_and_restored() {
+      clear_state();
+      assert_eq!(
+        interpret("k = 7; c = 2; {Sum[c k, {k, 3}], k}").unwrap(),
+        "{12, 7}"
+      );
+    }
+
+    #[test]
+    fn a_memoized_value_mentioning_its_function_is_read_anew() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "f[1] = Table[f[2] + i, {i, 20}]; f[1]; f[2] = 10; Total[f[1]]"
+        )
+        .unwrap(),
+        "410"
+      );
+      clear_state();
+      assert_eq!(
+        interpret(
+          "m[1] = Table[q^i, {i, 20}]; m[1]; q = 2; t = Total[m[1]]; q =.; \
+           {t, m[1][[2]]}"
+        )
+        .unwrap(),
+        "{2097150, q^2}"
+      );
+    }
+
+    #[test]
     fn assignment_inside_a_loop_reaches_a_stored_value() {
       clear_state();
       assert_eq!(
@@ -234,6 +277,22 @@ mod evaluation_reuse {
       assert_eq!(interpret("a").unwrap(), "{{-299, 2}}");
     }
 
+    // Localizing a symbol that has no definitions (the index of a `Sum`
+    // whose summand mentions a variable, a `Block` variable) takes nothing
+    // away and puts nothing back, so it must not look like a change to
+    // every definition there is.
+    #[test]
+    fn reading_a_list_between_sums_is_cheap() {
+      let elapsed = reads_between("Sum[k + i, {k, 3}]");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+    }
+
+    #[test]
+    fn reading_a_list_between_blocks_is_cheap() {
+      let elapsed = reads_between("Block[{u = i}, u^2]");
+      assert!(elapsed.as_secs() < 5, "300 reads took {elapsed:?}");
+    }
+
     #[test]
     fn reading_a_list_between_delayed_assignments_is_cheap() {
       let elapsed = reads_between("b := i");
@@ -254,6 +313,21 @@ mod evaluation_reuse {
       assert_eq!(
         interpret("{Length[x], First[Last[x]]}").unwrap(),
         "{20300, 300}"
+      );
+    }
+
+    // The value of `f[lit] = …` is stored as evaluated, like a symbol's: its
+    // first read must not rebuild every term either (issue #2142).
+    #[test]
+    fn the_first_read_of_a_large_memoized_value_is_cheap() {
+      clear_state();
+      interpret("res[1] = Expand[(a + b + c + d + e)^30];").unwrap();
+      let start = std::time::Instant::now();
+      assert_eq!(interpret("Length[res[1]]").unwrap(), "46376");
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_millis() < 500,
+        "reading a 46376-term sum took {elapsed:?}"
       );
     }
 

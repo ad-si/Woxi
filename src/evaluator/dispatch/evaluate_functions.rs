@@ -1268,6 +1268,46 @@ fn numeric_array_list_operation(
   Some(Ok(result))
 }
 
+/// The rules defined for `name`, as a copy the caller can keep while
+/// evaluating (which may redefine them). Every call of a user-defined
+/// function asks for them, so the copy is made once per change to the
+/// definitions and shared until the next one: copying the bodies of all of a
+/// function's rules on each of its calls was a large part of what a small
+/// recursive function cost.
+fn user_overloads(
+  name: &str,
+) -> Option<std::rc::Rc<Vec<crate::evaluator::symbol_values::FuncDef>>> {
+  type Snapshot = (
+    u64,
+    std::rc::Rc<Vec<crate::evaluator::symbol_values::FuncDef>>,
+  );
+  thread_local! {
+    static SNAPSHOTS: std::cell::RefCell<rustc_hash::FxHashMap<String, Snapshot>> =
+      std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+  }
+  // Every change to `FUNC_DEFS` advances this epoch (see `crate::epoch`).
+  let epoch = crate::epoch::current_protected_epoch();
+  if let Some(defs) = SNAPSHOTS.with(|s| {
+    s.borrow()
+      .get(name)
+      .filter(|(at, _)| *at == epoch)
+      .map(|(_, defs)| defs.clone())
+  }) {
+    return Some(defs);
+  }
+  let Some(defs) = crate::FUNC_DEFS.with(|m| m.borrow().get(name).cloned())
+  else {
+    SNAPSHOTS.with(|s| s.borrow_mut().remove(name));
+    return None;
+  };
+  let defs = std::rc::Rc::new(defs);
+  SNAPSHOTS.with(|s| {
+    s.borrow_mut()
+      .insert(name.to_string(), (epoch, defs.clone()))
+  });
+  Some(defs)
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -2142,19 +2182,19 @@ fn evaluate_function_call_ast_inner(
   let head_has_hold_all_complete =
     crate::func_attrs_contains(name, Attributes::HoldAllComplete)
       || get_builtin_attributes(name).contains(Attributes::HoldAllComplete);
-  let overloads = crate::FUNC_DEFS.with(|m| {
-    let defs = m.borrow();
-    let raw = defs.get(name).cloned();
+  let overloads = user_overloads(name).map(|defs| {
     if head_has_hold_all_complete {
-      raw.map(|v| {
-        v.into_iter()
+      std::rc::Rc::new(
+        defs
+          .iter()
           .filter(|(params, _, _, _, _, _)| {
             !params.iter().any(|p| p.starts_with("_up"))
           })
-          .collect::<Vec<_>>()
-      })
+          .cloned()
+          .collect::<Vec<_>>(),
+      )
     } else {
-      raw
+      defs
     }
   });
   let inline_opts_overloads = crate::FUNC_OPTS_INLINE.with(|m| {

@@ -166,6 +166,26 @@ impl Poly {
     r
   }
   pub(super) fn mul(&self, o: &Poly) -> Poly {
+    // A single term shifts every exponent vector of the other polynomial
+    // by the same amount: the terms stay distinct and in order, so none of
+    // them has to be looked up among the others.
+    for (one, many) in [(self, o), (o, self)] {
+      if one.t.len() == 1
+        && let Some((shift, factor)) = one.t.iter().next()
+      {
+        return Poly {
+          nv: self.nv,
+          t: many
+            .t
+            .iter()
+            .map(|(m, c)| {
+              let m: Mono = m.iter().zip(shift).map(|(a, b)| a + b).collect();
+              (m, c.mul(factor))
+            })
+            .collect(),
+        };
+      }
+    }
     let mut r = Poly::zero(self.nv);
     for (ma, ca) in &self.t {
       for (mb, cb) in &o.t {
