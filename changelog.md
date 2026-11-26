@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- `ContourPlot` draws every curve of a list that mixes equations with
+    plain expressions (`{f == c, {g, h}}`, each expression as its zero
+    contour) and of an entry that only evaluates to a list (a `Which`
+    choosing between curve lists); such a list drew at most the
+    expressions and often nothing.
+- An equation `ContourPlot` keeps the margin between its domain and its
+    frame under `Show` (`PlotRangePadding` and the domain as `PlotRange`
+    are options of the result), so a curve along the domain's edge is no
+    longer hidden under the frame once something is added to the plot.
+- A `Manipulate` point `Locator` whose corner names other controls
+    (`{{p, …}, {0, 0}, {w, h}, Locator}`) follows them in Woxi Studio:
+    the point stays draggable over the whole box after `w` or `h` grows.
 - `PolyhedronData["Dodecahedron", "NetFaces"]` is the familiar net of two
     six-pentagon rosettes joined along one edge and
     `PolyhedronData["RhombicDodecahedron", "NetFaces"]` a zigzag strip of
