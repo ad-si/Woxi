@@ -87,33 +87,44 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
     ..Default::default()
   };
 
-  saved.own = ENV.with(|e| e.borrow_mut().remove(sym));
-  saved.down = crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
-  saved.memo = crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
-  saved.attrs = crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
-  saved.options = crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
-  saved.options_delayed =
-    crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow_mut().remove(sym));
-  saved.opts_inline =
-    crate::FUNC_OPTS_INLINE.with(|m| m.borrow_mut().remove(sym));
-  saved.format = crate::evaluator::assignment::FORMAT_VALUES
-    .with(|m| m.borrow_mut().remove(sym));
-  saved.sub = crate::evaluator::assignment::SUB_VALUES
-    .with(|m| m.borrow_mut().remove(sym));
-  saved.n =
-    crate::evaluator::assignment::N_VALUES.with(|m| m.borrow_mut().remove(sym));
+  saved.own = ENV.with(|e| {
+    if e.borrow().contains_key(sym) {
+      e.borrow_mut_own_value(sym).remove(sym)
+    } else {
+      None
+    }
+  });
+  saved.down = take_entry(&crate::FUNC_DEFS, sym);
+  saved.memo = take_entry(&crate::MEMO_VALUES, sym);
+  saved.attrs = take_entry(&crate::FUNC_ATTRS, sym);
+  saved.options = take_entry(&crate::FUNC_OPTIONS, sym);
+  saved.options_delayed = crate::FUNC_OPTIONS_DELAYED.with(|m| {
+    if m.borrow().contains(sym) {
+      m.borrow_mut().remove(sym)
+    } else {
+      false
+    }
+  });
+  saved.opts_inline = take_entry(&crate::FUNC_OPTS_INLINE, sym);
+  saved.format = take_entry(&crate::evaluator::assignment::FORMAT_VALUES, sym);
+  saved.sub = take_entry(&crate::evaluator::assignment::SUB_VALUES, sym);
+  saved.n = take_entry(&crate::evaluator::assignment::N_VALUES, sym);
 
   // `f::msg` and `Default[f, …]` hang off another head's DownValues but are
   // f's values, so they go too.
   for head in BORROWED_HEADS {
     let mine = crate::FUNC_DEFS.with(|m| {
+      if !m
+        .borrow()
+        .get(head)
+        .is_some_and(|entries| entries.iter().any(|d| belongs_to(head, sym, d)))
+      {
+        return Vec::new();
+      }
       let mut map = m.borrow_mut();
       let Some(entries) = map.get_mut(head) else {
         return Vec::new();
       };
-      if !entries.iter().any(|d| belongs_to(head, sym, d)) {
-        return Vec::new();
-      }
       let (mine, rest): (Vec<FuncDef>, Vec<FuncDef>) = std::mem::take(entries)
         .into_iter()
         .partition(|d| belongs_to(head, sym, d));
@@ -127,7 +138,7 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
 
   // An UpValue is stored twice: under its tag symbol, and mirrored into the
   // outer head's DownValues so dispatch finds it. Take both halves.
-  saved.up = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
+  saved.up = take_entry(&crate::UPVALUES, sym);
   if let Some(up_defs) = &saved.up {
     for (outer_func, params, _, _, _, body, _, _) in up_defs {
       let body_str = expr_to_string(body);
@@ -154,8 +165,7 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
 
   // Attributes last: a builtin has no FUNC_ATTRS entry to remove, so its
   // defaults have to be masked explicitly for `Attributes[sym]` to be `{}`.
-  saved.attrs_removed =
-    crate::FUNC_ATTRS_REMOVED.with(|m| m.borrow_mut().remove(sym));
+  saved.attrs_removed = take_entry(&crate::FUNC_ATTRS_REMOVED, sym);
   let builtin = get_builtin_attributes(sym);
   if !builtin.is_empty() {
     crate::FUNC_ATTRS_REMOVED.with(|m| {
@@ -176,7 +186,16 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
 pub(crate) fn restore_symbol_values(saved: SymbolValues) {
   let sym = saved.name.as_str();
 
-  restore_map(&crate::ENV, sym, saved.own);
+  ENV.with(|e| match saved.own {
+    Some(value) => {
+      e.borrow_mut_own_value(sym).insert(sym.to_string(), value);
+    }
+    None => {
+      if e.borrow().contains_key(sym) {
+        e.borrow_mut_own_value(sym).remove(sym);
+      }
+    }
+  });
   restore_map(&crate::FUNC_DEFS, sym, saved.down);
   restore_map(&crate::MEMO_VALUES, sym, saved.memo);
   restore_map(&crate::FUNC_ATTRS, sym, saved.attrs);
@@ -193,11 +212,13 @@ pub(crate) fn restore_symbol_values(saved: SymbolValues) {
   restore_map(&crate::UPVALUES, sym, saved.up);
 
   crate::FUNC_OPTIONS_DELAYED.with(|m| {
-    let mut set = m.borrow_mut();
-    if saved.options_delayed {
-      set.insert(sym.to_string());
-    } else {
-      set.remove(sym);
+    if m.borrow().contains(sym) != saved.options_delayed {
+      let mut set = m.borrow_mut();
+      if saved.options_delayed {
+        set.insert(sym.to_string());
+      } else {
+        set.remove(sym);
+      }
     }
   });
 
@@ -223,15 +244,35 @@ fn restore_map<V: 'static>(
   sym: &str,
   value: Option<V>,
 ) {
-  store.with(|m| {
-    let mut map = m.borrow_mut();
-    match value {
-      Some(v) => {
-        map.insert(sym.to_string(), v);
-      }
-      None => {
-        map.remove(sym);
+  store.with(|m| match value {
+    Some(v) => {
+      m.borrow_mut().insert(sym.to_string(), v);
+    }
+    // Nothing to clear leaves the store, and with it the definitions
+    // epoch, as it was.
+    None => {
+      if m.borrow().contains_key(sym) {
+        m.borrow_mut().remove(sym);
       }
     }
   });
+}
+
+/// Take a symbol's entry out of one of the definition maps. A symbol without
+/// one leaves the map untouched, and with it the definitions epoch (see
+/// `crate::epoch`): localizing the index of a `Sum` or `Table` must not make
+/// every large value evaluate anew.
+fn take_entry<V: 'static>(
+  store: &'static std::thread::LocalKey<
+    crate::epoch::EpochCell<std::collections::HashMap<String, V>>,
+  >,
+  sym: &str,
+) -> Option<V> {
+  store.with(|m| {
+    if m.borrow().contains_key(sym) {
+      m.borrow_mut().remove(sym)
+    } else {
+      None
+    }
+  })
 }

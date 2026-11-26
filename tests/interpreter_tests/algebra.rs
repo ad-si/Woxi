@@ -639,6 +639,70 @@ mod expand {
     );
   }
 
+  // The terms of a product of sums of calls are assembled in canonical
+  // order as they are; a rule attached to `Times` (here an upvalue of the
+  // calls) still has to see every product.
+  #[test]
+  fn expanded_call_products_obey_rules_for_times() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "before = ToString[Expand[(g[1] + g[3]) (g[2] + g[4])], InputForm]; \
+         g /: g[1] g[2] := seven; \
+         {before, Expand[(g[1] + g[3]) (g[2] + g[4])]}"
+      )
+      .unwrap(),
+      "{g[1]*g[2] + g[2]*g[3] + g[1]*g[4] + g[3]*g[4], \
+       seven + g[2]*g[3] + g[1]*g[4] + g[3]*g[4]}"
+    );
+  }
+
+  // Calls that evaluate to something else, to each other, or to the same
+  // thing are multiplied out as what they evaluate to.
+  #[test]
+  fn expanded_call_products_use_evaluated_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "e = Hold[Expand[(g[1] + g[2]) (g[3] + g[4])]]; g[3] = g[1]; g[4] = 5; \
+         ReleaseHold[e]"
+      )
+      .unwrap(),
+      "5*g[1] + g[1]^2 + 5*g[2] + g[1]*g[2]"
+    );
+  }
+
+  // `-1` distributes over a sum of products of calls, flipping the sign of
+  // each coefficient in place (issue #2142).
+  #[test]
+  fn minus_a_sum_of_call_products() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = g[1] g[2] - 3 g[3] + g[1]/2 - g[4] h[1]; \
+         {-s, -(g[2] - g[1]), -(1 + g[1]), -(x + g[1]), -(g[1]^2 + g[2]), s - s}"
+      )
+      .unwrap(),
+      "{-1/2*g[1] - g[1]*g[2] + 3*g[3] + g[4]*h[1], g[1] - g[2], -1 - g[1], \
+       -x - g[1], -g[1]^2 - g[2], 0}"
+    );
+  }
+
+  // Radicals of one integer still merge after a long sum is expanded, and a
+  // sum without two such terms is returned as it is.
+  #[test]
+  fn expand_merges_integer_radicals_among_other_terms() {
+    clear_state();
+    assert_eq!(
+      interpret("Expand[a/Sqrt[3] + a Sqrt[3] + g[1] (g[2] + g[3])]").unwrap(),
+      "(4*a)/Sqrt[3] + g[1]*g[2] + g[1]*g[3]"
+    );
+    assert_eq!(
+      interpret("Expand[Sqrt[3] g[1] (g[2] + g[3])]").unwrap(),
+      "Sqrt[3]*g[1]*g[2] + Sqrt[3]*g[1]*g[3]"
+    );
+  }
+
   #[test]
   fn expanded_kernels_follow_later_definitions() {
     assert_eq!(
@@ -26279,6 +26343,51 @@ mod nroots_bare_polynomial_and_repeated_roots {
     assert_eq!(
       interpret("NRoots[(z - 1)^3 (z^2 + 1) == 0, z]").unwrap(),
       "z == 0. - 1.*I || z == 0. + 1.*I || z == 1. || z == 1. || z == 1."
+    );
+  }
+}
+
+mod solve_high_degree_machine_polynomials {
+  use super::*;
+
+  #[test]
+  fn every_root_is_finite_and_accurate() {
+    // Regression: the simultaneous iteration overflowed for degrees around
+    // 40 and up, so every root came out as `Indeterminate` (and sorting the
+    // NaNs could panic). The backward error of each root is checked against
+    // the size of the terms it cancels.
+    for degree in [40, 60, 100] {
+      for solver in ["Solve", "NSolve"] {
+        assert_eq!(
+          interpret(&format!(
+            "SeedRandom[3]; c = RandomReal[{{-2, 2}}, {degree} + 1]; \
+             e = Range[0, {degree}]; r = x /. {solver}[c . x^e == 0, x]; \
+             {{Length[r], FreeQ[r, Indeterminate], \
+              Max[Map[Abs[c . #^e]/(Abs[c] . Abs[#]^e) &, r]] < 10^-12}}"
+          ))
+          .unwrap(),
+          format!("{{{degree}, True, True}}"),
+          "{solver} at degree {degree}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn roots_of_a_matrix_polynomial_determinant_are_found() {
+    // The characteristic polynomial of a lag-10 system of 4 series has
+    // degree 40; its roots are the reciprocals of the companion matrix's
+    // eigenvalues, so their product is the reciprocal leading coefficient.
+    assert_eq!(
+      interpret(
+        "SeedRandom[7]; a = RandomReal[{-0.3, 0.3}, {10, 4, 4}]; \
+         det = Det[IdentityMatrix[4] - Sum[a[[i]] x^i, {i, 10}]]; \
+         r = x /. Solve[det == 0, x]; lead = Coefficient[det, x, 40]; \
+         {Length[r], FreeQ[r, Indeterminate], \
+          Abs[Times @@ r lead - 1] < 10^-6}"
+      )
+      .unwrap(),
+      "{40, True, True}"
     );
   }
 }

@@ -1607,18 +1607,20 @@ fn delayed_entry(key: &Expr, value: &Expr) -> Option<Expr> {
 }
 
 fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
-  let mut current = subject.clone();
+  use std::borrow::Cow;
+  // The subject is only borrowed while the path walks down it: copying the
+  // element list of every level made each lookup cost as much as the
+  // expression is wide, so a loop of lookups into a big matrix crawled.
+  let mut current: Cow<Expr> = Cow::Borrowed(subject);
   let mut delayed = false;
   for comp in path {
-    match comp {
-      ExtractComp::Idx(0) => {
-        current = match &current {
-          Expr::CurriedCall { func, .. } => (**func).clone(),
-          other => Expr::Identifier(
-            crate::evaluator::pattern_matching::get_expr_head(other),
-          ),
-        };
-      }
+    let next: Cow<Expr> = match comp {
+      ExtractComp::Idx(0) => Cow::Owned(match current.as_ref() {
+        Expr::CurriedCall { func, .. } => (**func).clone(),
+        other => Expr::Identifier(
+          crate::evaluator::pattern_matching::get_expr_head(other),
+        ),
+      }),
       ExtractComp::Idx(n) => {
         use crate::functions::expr_form::{ExprForm, decompose_expr};
         // A rational and a complex number are atoms, so the specification
@@ -1626,57 +1628,74 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         if crate::evaluator::part_extraction::is_atomic_number_expr(&current) {
           return ExtractOutcome::Partd;
         }
-        let items: Vec<Expr> = match &current {
-          Expr::List(items) => items.to_vec(),
-          Expr::FunctionCall { args, .. } => args.to_vec(),
-          Expr::CurriedCall { args, .. } => args.clone(),
-          Expr::Association(pairs) => pairs
-            .iter()
-            .map(|(k, v)| match delayed_entry(k, v) {
-              Some(raw) => raw,
-              None => v.clone(),
-            })
-            .collect(),
-          // Operator nodes (Plus, Power, …) decompose to head + children.
+        // The zero-based slot `n` names among `len` elements.
+        let slot = |len: usize| -> Option<usize> {
+          let len = len as i128;
+          let idx = if *n < 0 { len + n } else { n - 1 };
+          (0..len).contains(&idx).then_some(idx as usize)
+        };
+        // Operator nodes (Plus, Power, …) decompose to head + children.
+        let decomposed;
+        let items: &[Expr] = match current.as_ref() {
+          Expr::List(items) => items,
+          Expr::FunctionCall { args, .. } => args,
+          Expr::CurriedCall { args, .. } => args,
+          Expr::Association(pairs) => {
+            let Some(idx) = slot(pairs.len()) else {
+              return ExtractOutcome::Partw;
+            };
+            let (k, v) = &pairs[idx];
+            let raw = delayed_entry(k, v);
+            delayed |= raw.is_some();
+            let value = raw.unwrap_or_else(|| v.clone());
+            current = Cow::Owned(value);
+            continue;
+          }
           other => match decompose_expr(other) {
-            ExprForm::Composite { children, .. } => children,
+            ExprForm::Composite { children, .. } => {
+              decomposed = children;
+              &decomposed
+            }
             ExprForm::Atom(_) => return ExtractOutcome::Partd,
           },
         };
-        let len = items.len() as i128;
-        let idx = if *n < 0 { len + n } else { n - 1 };
-        if idx < 0 || idx >= len {
+        let Some(idx) = slot(items.len()) else {
           return ExtractOutcome::Partw;
+        };
+        match &current {
+          // Still inside the borrowed subject: keep borrowing.
+          Cow::Borrowed(Expr::List(items)) => Cow::Borrowed(&items[idx]),
+          Cow::Borrowed(Expr::FunctionCall { args, .. }) => {
+            Cow::Borrowed(&args[idx])
+          }
+          Cow::Borrowed(Expr::CurriedCall { args, .. }) => {
+            Cow::Borrowed(&args[idx])
+          }
+          _ => Cow::Owned(items[idx].clone()),
         }
-        if let Expr::Association(pairs) = &current {
-          let (k, v) = &pairs[idx as usize];
-          delayed |= delayed_entry(k, v).is_some();
-        }
-        current = items[idx as usize].clone();
       }
       ExtractComp::Key(key) => {
-        let Expr::Association(pairs) = &current else {
+        let Expr::Association(pairs) = current.as_ref() else {
           return ExtractOutcome::Partd;
         };
         let key_str = expr_to_string(key);
         match pairs.iter().find(|(k, _)| expr_to_string(k) == key_str) {
-          Some((k, v)) => {
-            current = match delayed_entry(k, v) {
-              Some(raw) => {
-                delayed = true;
-                raw
-              }
-              None => v.clone(),
-            };
-          }
+          Some((k, v)) => Cow::Owned(match delayed_entry(k, v) {
+            Some(raw) => {
+              delayed = true;
+              raw
+            }
+            None => v.clone(),
+          }),
           None => {
-            return ExtractOutcome::Keyw(key.clone(), current.clone());
+            return ExtractOutcome::Keyw(key.clone(), current.into_owned());
           }
         }
       }
-    }
+    };
+    current = next;
   }
-  ExtractOutcome::Found(current, delayed)
+  ExtractOutcome::Found(current.into_owned(), delayed)
 }
 
 /// Unified Extract: `Extract[expr, pos]`, `Extract[expr, {pos1, …}]`,

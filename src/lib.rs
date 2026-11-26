@@ -3731,7 +3731,19 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   // If the result is a Grid expression, render it as SVG (visual mode
   // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-    render_grid_if_needed(result_expr)
+    // `StyleForm` is displayed exactly as `Style`. A result that is not
+    // drawn keeps its own spelling, since it is then printed as text.
+    match functions::graphics::style_forms_as_style(&result_expr) {
+      Some(styled) => {
+        let rendered = render_grid_if_needed(styled);
+        if contains_graphics_placeholder(&rendered) {
+          rendered
+        } else {
+          result_expr
+        }
+      }
+      None => render_grid_if_needed(result_expr),
+    }
   } else {
     result_expr
   };
@@ -5313,6 +5325,20 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
 }
 
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // A `Text[…]` item of a layout sets its math one script level down, as
+  // the same `Text` does on its own (see `render_visual_display_pipeline`).
+  if matches!(expr, syntax::Expr::FunctionCall { name, args }
+    if name == "Text" && args.len() == 1)
+  {
+    functions::graphics::with_inline_text_math(|| {
+      render_inline_display_wrapper_impl(expr)
+    })
+  } else {
+    render_inline_display_wrapper_impl(expr)
+  }
+}
+
+fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
   // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
   // `Text[…]`: the text face covers the styled content.
   if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
@@ -5577,6 +5603,16 @@ pub(crate) fn render_event_handler_if_needed(
 /// fraction in it is drawn at the reduced size of a nested one — the
 /// `Text` itself is gone by the time the layout renderers see the content.
 fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
+  // `StyleForm` is displayed exactly as `Style`. A result that no pass
+  // draws keeps its own spelling, since it is then printed as text.
+  if let Some(styled) = functions::graphics::style_forms_as_style(expr) {
+    let rendered = render_visual_display_pipeline(&styled);
+    return if contains_graphics_placeholder(&rendered) {
+      rendered
+    } else {
+      expr.clone()
+    };
+  }
   if is_shown_as_text(expr) {
     functions::graphics::with_inline_text_math(|| {
       render_visual_display_pipeline_impl(expr)
@@ -7118,6 +7154,9 @@ fn expr_exceeds_token_budget_depth(
 }
 
 fn generate_output_svg(expr: &syntax::Expr) {
+  // `StyleForm` is displayed exactly as `Style`.
+  let respelled = functions::graphics::style_forms_as_style(expr);
+  let expr = respelled.as_ref().unwrap_or(expr);
   // Very large results are not typeset: the box conversion + glyph layout +
   // SVG string would each be orders of magnitude bigger than the data
   // itself (this made large CSV `Import`s appear to hang in the browser).

@@ -278,7 +278,57 @@ pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
   }
 }
 
+/// `canonical_cmp` of two expressions that none of its special cases
+/// concern: machine integers, symbols without built-in meaning, and calls
+/// of such symbols. A number precedes a symbol, which precedes a call;
+/// symbols order by name, and calls by head, then argument count, then
+/// argument by argument. `None` for every other pair.
+///
+/// The general comparison reaches the same answers only after probing each
+/// operand for every special form it knows (and rendering symbols to
+/// compare them), which made ordering the factors and terms of a large
+/// expression in undefined functions — `g[a, b]*g[c, d] + …` — crawl.
+fn plain_canonical_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  use crate::functions::math_ast::canonical_polynomial::is_plain_symbol;
+  use std::cmp::Ordering;
+  // 0: machine integer, 1: plain symbol, 2: call of a plain symbol.
+  let class = |e: &Expr| match e {
+    Expr::Integer(_) => Some(0u8),
+    Expr::Identifier(name) if is_plain_symbol(name) => Some(1),
+    Expr::FunctionCall { name, .. } if is_plain_symbol(name) => Some(2),
+    _ => None,
+  };
+  let (ca, cb) = (class(a)?, class(b)?);
+  if ca != cb {
+    return Some(ca.cmp(&cb));
+  }
+  Some(match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x.cmp(y),
+    (Expr::Identifier(x), Expr::Identifier(y)) => wolfram_string_cmp(x, y),
+    (
+      Expr::FunctionCall { name: na, args: aa },
+      Expr::FunctionCall { name: nb, args: ab },
+    ) => wolfram_string_cmp(na, nb)
+      .then_with(|| aa.len().cmp(&ab.len()))
+      .then_with(|| {
+        aa.iter()
+          .zip(ab.iter())
+          .map(|(x, y)| canonical_cmp(x, y))
+          .find(|o| o.is_ne())
+          .unwrap_or(Ordering::Equal)
+      }),
+    _ => return None,
+  })
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  #[cfg(test)]
+  let general_only = plain_order_tests::GENERAL_ONLY.get();
+  #[cfg(not(test))]
+  let general_only = false;
+  if !general_only && let Some(order) = plain_canonical_cmp(a, b) {
+    return order;
+  }
   if matches!(a, Expr::Association(_)) || matches!(b, Expr::Association(_)) {
     return compare_exprs(a, b).cmp(&0).reverse();
   }
@@ -3130,4 +3180,113 @@ fn times_factors_for_order(e: &Expr) -> Option<Vec<&Expr>> {
   // rather than letting that stored position change the product's order.
   factors.sort_by(|a, b| canonical_cmp(a, b));
   Some(factors)
+}
+
+#[cfg(test)]
+mod plain_order_tests {
+  use super::*;
+  use std::cell::Cell;
+
+  thread_local! {
+    /// Bypass `plain_canonical_cmp`, to compare it with the general code.
+    pub(super) static GENERAL_ONLY: Cell<bool> = const { Cell::new(false) };
+  }
+
+  fn parse(source: &str) -> Expr {
+    crate::parse_to_expr(source).unwrap()
+  }
+
+  /// Integers, symbols and (nested) calls of undefined heads, among them
+  /// names differing only in case, equal expressions, and calls differing
+  /// in head, argument count and one argument.
+  const PLAIN: [&str; 30] = [
+    "-7",
+    "0",
+    "3",
+    "12",
+    "a",
+    "A",
+    "ab",
+    "aB",
+    "b",
+    "x",
+    "x1",
+    "x10",
+    "x2",
+    "$v",
+    "f[]",
+    "f[a]",
+    "f[b]",
+    "f[a, b]",
+    "f[b, a]",
+    "F[a]",
+    "g[a]",
+    "g[1]",
+    "g[2]",
+    "g[10]",
+    "g[x[1], x[2]]",
+    "g[x[2], x[1]]",
+    "g[x[1], x[10]]",
+    "g[f[a], 3]",
+    "h[g[x[1], x[2]], a]",
+    "x[1]",
+  ];
+
+  #[test]
+  fn plain_order_is_the_canonical_order() {
+    let exprs: Vec<Expr> = PLAIN.iter().map(|s| parse(s)).collect();
+    for (a, sa) in exprs.iter().zip(PLAIN) {
+      for (b, sb) in exprs.iter().zip(PLAIN) {
+        let fast = plain_canonical_cmp(a, b)
+          .unwrap_or_else(|| panic!("{sa} and {sb} are plain"));
+        GENERAL_ONLY.set(true);
+        let general = canonical_cmp(a, b);
+        GENERAL_ONLY.set(false);
+        assert_eq!(fast, general, "{sa} against {sb}");
+        assert_eq!(canonical_cmp(a, b), general, "{sa} against {sb}");
+      }
+    }
+  }
+
+  /// Anything with built-in meaning is left to the general comparison.
+  #[test]
+  fn plain_order_declines_everything_else() {
+    let plain = parse("g[a]");
+    for source in [
+      "1.5", "1/2", "\"s\"", "Pi", "Infinity", "Sin[x]", "a + b", "2 a", "a^2",
+      "{a}", "List", "x_", "ctx`a", "ctx`f[a]",
+    ] {
+      let other = parse(source);
+      assert!(plain_canonical_cmp(&plain, &other).is_none(), "{source}");
+      assert!(plain_canonical_cmp(&other, &plain).is_none(), "{source}");
+    }
+  }
+
+  /// A call with an argument the fast path does not know still orders by
+  /// its plain parts first and by the general comparison of the rest.
+  #[test]
+  fn plain_calls_with_other_arguments_use_the_general_order() {
+    let sources = [
+      "g[a, 1/2]",
+      "g[a, 1.5]",
+      "g[a, Pi]",
+      "g[a, b + c]",
+      "g[a, {1}]",
+      "g[a, \"s\"]",
+      "g[b, 1/2]",
+      "g[Sin[x]]",
+      "g[2 a]",
+      "g[a^2]",
+    ];
+    let exprs: Vec<Expr> = sources.iter().map(|s| parse(s)).collect();
+    for (a, sa) in exprs.iter().zip(sources) {
+      for (b, sb) in exprs.iter().zip(sources) {
+        let fast = canonical_cmp(a, b);
+        GENERAL_ONLY.set(true);
+        let general = canonical_cmp(a, b);
+        GENERAL_ONLY.set(false);
+        assert_eq!(fast, general, "{sa} against {sb}");
+      }
+    }
+  }
 }

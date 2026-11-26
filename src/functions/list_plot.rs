@@ -1702,6 +1702,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "FrameLabel" => {
           crate::functions::plot::apply_frame_label_option(replacement, opts);
         }
+        "RotateLabel" => {
+          crate::functions::plot::apply_rotate_label_option(replacement, opts);
+        }
         "Frame" => {
           crate::functions::plot::apply_frame_option(replacement, opts);
         }
@@ -3167,6 +3170,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  crate::functions::plot::apply_filling_rules_to_source(&mut source, opts);
   source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
   source.settles_all_range = true;
@@ -3893,12 +3897,30 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .and_then(|fs| crate::functions::plot::parse_filling_style(&fs));
     let mut items: Vec<Expr> = Vec::new();
     let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
+    // `PlotStyle`: one style for every series, or a list that the series
+    // cycle through.
+    let plot_style = option("PlotStyle")
+      .map(|value| evaluate_expr_to_expr(&value).unwrap_or(value));
     for (k, points) in all_series.iter().enumerate() {
       let (r, g, b) = palette[k % palette.len()];
       let color = Expr::FunctionCall {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
       };
+      let series_style = match &plot_style {
+        Some(Expr::List(entries)) => entries.get(k % entries.len().max(1)),
+        Some(Expr::Identifier(s)) if s == "Automatic" || s == "None" => None,
+        other => other.as_ref(),
+      };
+      // The series' directives, written after the defaults they override.
+      let mut style_directives: Vec<Expr> = Vec::new();
+      let mut parsed = crate::functions::plot::SeriesStyle::default();
+      if let Some(entry) = series_style {
+        crate::functions::plot::apply_style_directive(entry, &mut parsed);
+        flatten_directives(entry, &mut style_directives);
+      }
+      // The steps' own color and opacity also paint the area under them.
+      let color = parsed.color_expr.clone().unwrap_or(color);
       // `Directive[extra…, paint, AbsoluteThickness[2]]`.
       let style = |extra: Vec<Expr>, paint: Expr| {
         let mut directives = extra;
@@ -3915,6 +3937,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if filling {
         let opacity = filling_style
           .and_then(|fs| fs.effective_opacity())
+          .or(parsed.opacity)
           .unwrap_or(0.2);
         let fill_color =
           filling_style.and_then(|fs| fs.color).map(|(r, g, b)| {
@@ -3949,9 +3972,15 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(vec![point(n + left, y), point(n + right, y)].into())
         })
         .collect();
+      let mut line_style = style(Vec::new(), color.clone());
+      if let Expr::FunctionCall { args, .. } = &mut line_style {
+        let mut directives = args.to_vec();
+        directives.extend(style_directives);
+        *args = directives.into();
+      }
       items.push(Expr::List(
         vec![
-          style(Vec::new(), color.clone()),
+          line_style,
           Expr::FunctionCall {
             name: "Line".to_string(),
             args: vec![Expr::List(steps.into())].into(),
@@ -3973,6 +4002,14 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PlotLegends",
       "PlotStyle",
     ]));
+    // An end of the plot range the caller set explicitly is drawn exactly
+    // there, without padding; the vertical axis stands at the left end.
+    let [[x_min, x_max], [y_min, y_max]] =
+      explicit_plot_range_ends(option("PlotRange").as_ref());
+    let padding = |end: Option<f64>, fraction: f64| match end {
+      Some(_) => Expr::Integer(0),
+      None => scaled(fraction),
+    };
     let defaults = [
       ("Axes", Expr::Identifier("True".to_string())),
       (
@@ -3986,7 +4023,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
         },
       ),
-      ("AxesOrigin", point(0.0, 0.0)),
+      ("AxesOrigin", point(x_min.unwrap_or(n_min + left), 0.0)),
       (
         "PlotRange",
         pair(point(n_min + left, n_max + right), point(y_lo, y_hi)),
@@ -3994,8 +4031,8 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (
         "PlotRangePadding",
         pair(
-          pair(scaled(0.02), scaled(0.02)),
-          pair(scaled(0.05), scaled(0.05)),
+          pair(padding(x_min, 0.02), padding(x_max, 0.02)),
+          pair(padding(y_min, 0.05), padding(y_max, 0.05)),
         ),
       ),
     ];
@@ -4042,6 +4079,48 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {}
   }
   list_plot_ast(&list_args)
+}
+
+/// The leaf directives of a style: `Directive[…]` and `{…}` wrappers are
+/// spliced, so the result can extend another `Directive`.
+fn flatten_directives(style: &Expr, out: &mut Vec<Expr>) {
+  match style {
+    Expr::List(items) => {
+      items.iter().for_each(|item| flatten_directives(item, out));
+    }
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().for_each(|item| flatten_directives(item, out));
+    }
+    leaf => out.push(leaf.clone()),
+  }
+}
+
+/// The ends of a `PlotRange` value that are explicit numbers, as
+/// `[[x_min, x_max], [y_min, y_max]]`. `{{x1, x2}, {y1, y2}}` sets both
+/// axes, `{y1, y2}` only the vertical one; `Automatic`, `All` and `Full`
+/// ends stay `None`.
+fn explicit_plot_range_ends(range: Option<&Expr>) -> [[Option<f64>; 2]; 2] {
+  let ends = |axis: &Expr| -> [Option<f64>; 2] {
+    match axis {
+      Expr::List(pair) if pair.len() == 2 => {
+        [try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1])]
+      }
+      _ => [None, None],
+    }
+  };
+  let Some(range) = range else {
+    return [[None, None], [None, None]];
+  };
+  let range = evaluate_expr_to_expr(range).unwrap_or_else(|_| range.clone());
+  match &range {
+    Expr::List(axes)
+      if axes.len() == 2 && axes.iter().any(|a| matches!(a, Expr::List(_))) =>
+    {
+      [ends(&axes[0]), ends(&axes[1])]
+    }
+    Expr::List(_) => [[None, None], ends(&range)],
+    _ => [[None, None], [None, None]],
+  }
 }
 
 /// Cap on rendered points per channel. Longer audio is reduced to a min/max
