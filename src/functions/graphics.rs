@@ -11957,6 +11957,15 @@ pub(crate) fn locator_markers(args: &[Expr]) -> Vec<LocatorMark> {
     crate::truncate_captured_graphics(captured);
     return markers;
   }
+  // An appearance graphic of zero width has no extent, so it marks
+  // nothing: `ImageSize -> If[shown, 12, 0]` hides a Locator on demand.
+  if let Some(Expr::FunctionCall { name, args: gargs }) = appearance
+    && name == "Graphics"
+    && crate::functions::field_plot::image_size_is_zero_width(gargs, 1)
+  {
+    crate::truncate_captured_graphics(captured);
+    return markers;
+  }
   // The appearance as a picture pre-rendered at its own ImageSize, or (for
   // a string, a styled glyph, …) as the expression to inset at each point.
   enum Appearance {
@@ -52692,13 +52701,27 @@ pub fn manipulate_locator_markers(
       Expr::FunctionCall { name, args }
         if matches!(
           name.as_str(),
-          "Control" | "Row" | "Column" | "Grid" | "Panel" | "Framed"
+          "Control"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Panel"
+            | "Framed"
+            | "Item"
+            | "Pane"
+            | "PaneSelector"
+            | "TabView"
+            | "OpenerView"
         ) =>
       {
         for arg in args {
           collect(arg, out);
         }
       }
+      // A pane of a `PaneSelector`/`TabView` (`key -> controls`). A
+      // Locator is drawn on the graphic whichever pane is on screen.
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. } => collect(replacement, out),
       _ => {}
     }
   }

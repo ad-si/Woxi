@@ -9907,7 +9907,7 @@ fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
 /// Whether `args[start..]` holds an `ImageSize` whose width is an explicit
 /// zero (`ImageSize -> 0`, `{0}` or `{0, h}`): a picture with no extent.
 /// The first `ImageSize` is the one in effect, as for the size itself.
-fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
+pub(crate) fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
   args
     .iter()
     .skip(start)
