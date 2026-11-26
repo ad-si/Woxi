@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `InverseZTransform` inverts a rational function with machine-number
+    coefficients through its numeric poles
+    (`InverseZTransform[(0.7 z)/(z - 1.5), z, n]`), with poles at the
+    origin as `DiscreteDelta` delays; it used to stay unevaluated.
+- An explicit `PlotRange` side whose two ends coincide (`{0, 0}`) shows
+    one unit on either side of that value, as in Wolfram, instead of an
+    empty picture without axes.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
