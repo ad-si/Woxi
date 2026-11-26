@@ -2355,6 +2355,12 @@ pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
 /// normalizes to. Anything else, including exact `I` or a zero real part,
 /// is `None`. A zero imaginary part (`0.001 + 0.*I`) is accepted.
 pub fn machine_complex_shape(expr: &Expr) -> Option<(f64, f64)> {
+  machine_complex_shape_any_real(expr).filter(|(re, _)| *re != 0.0)
+}
+
+/// [`machine_complex_shape`] that also takes a zero real part
+/// (`0. + 0.*I`, `0. + 2.5*I`).
+pub fn machine_complex_shape_any_real(expr: &Expr) -> Option<(f64, f64)> {
   let (infix, sign, re_e, im_e): (bool, f64, &Expr, &Expr) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -2389,7 +2395,6 @@ pub fn machine_complex_shape(expr: &Expr) -> Option<(f64, f64)> {
     return None;
   };
   if i != "I"
-    || *re == 0.0
     || (infix && *im < 0.0)
     || !re.is_finite()
     || !im.is_finite()
@@ -2409,6 +2414,14 @@ pub fn canonical_machine_complex(expr: &Expr) -> Option<(f64, f64)> {
 pub fn is_normalized_machine_complex(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { .. })
     && machine_complex_shape(expr).is_some()
+}
+
+/// [`machine_complex_shape_any_real`] without the negative zeros, which the
+/// general `Plus` path may still fold away (`-0. + 0.*I`).
+pub fn signed_machine_complex_shape(expr: &Expr) -> Option<(f64, f64)> {
+  let negative_zero = |x: f64| x == 0.0 && x.is_sign_negative();
+  machine_complex_shape_any_real(expr)
+    .filter(|(re, im)| !negative_zero(*re) && !negative_zero(*im))
 }
 
 /// The `Plus[re, Times[im, I]]` form the general `Plus` path leaves a
@@ -2457,6 +2470,20 @@ pub fn fast_machine_complex_binop(
       }),
     }
   }
+  // A positive machine-size base to a machine-complex power is
+  // `exp(w log z)`, as the general `Power` path computes it.
+  if matches!(op, BinaryOperator::Power)
+    && let Some(base) = match l {
+      Expr::Real(x) if *x > 0.0 && *x != 1.0 && x.is_finite() => Some(*x),
+      Expr::Integer(n) if *n >= 2 && *n < (1i128 << 53) => Some(*n as f64),
+      _ => None,
+    }
+    && let Some((c, d)) = machine_complex_shape_any_real(r)
+  {
+    let (re, im) = super::machine_complex_powf(base, 0.0, c, d);
+    return (re.is_finite() && im.is_finite())
+      .then(|| machine_complex_result(re, im));
+  }
   let lo = classify(l)?;
   let ro = classify(r)?;
   let parts = |o: &Operand| match o {
@@ -2466,6 +2493,44 @@ pub fn fast_machine_complex_binop(
     Operand::ExactI => (0.0, 1.0),
   };
   let is_cx = |o: &Operand| matches!(o, Operand::Complex(..));
+  let ((a, b), (c, d)) = (parts(&lo), parts(&ro));
+  // A product of two machine-complex numbers (a zero imaginary part
+  // included) keeps both parts whatever they come out as:
+  // `(1. + 2. I) (1. - 2. I)` is `5. + 0.*I`, and an exact `0` factor gives
+  // the machine complex zero.
+  if matches!(op, BinaryOperator::Times) {
+    let complex_like =
+      |o: &Operand| matches!(o, Operand::Complex(..) | Operand::ZeroImag(_));
+    let exact_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+    let exact_one = |e: &Expr| matches!(e, Expr::Integer(1));
+    // An exact `1` leaves the other factor as it is.
+    if exact_one(l) && complex_like(&ro) {
+      return Some(r.clone());
+    }
+    if exact_one(r) && complex_like(&lo) {
+      return Some(l.clone());
+    }
+    let product = if complex_like(&lo) && complex_like(&ro) {
+      Some((a * c - b * d, a * d + b * c))
+    } else if (exact_zero(l) && complex_like(&ro))
+      || (exact_zero(r) && complex_like(&lo))
+    {
+      Some((0.0, 0.0))
+    } else {
+      None
+    };
+    if let Some((re, im)) = product {
+      let negative_zero = |x: f64| x == 0.0 && x.is_sign_negative();
+      if !re.is_finite()
+        || !im.is_finite()
+        || negative_zero(re)
+        || negative_zero(im)
+      {
+        return None;
+      }
+      return Some(build_complex_float_expr_keep_real(re, im));
+    }
+  }
   if !is_cx(&lo) && !is_cx(&ro) {
     return None;
   }
@@ -2475,14 +2540,10 @@ pub fn fast_machine_complex_binop(
   {
     return None;
   }
-  let ((a, b), (c, d)) = (parts(&lo), parts(&ro));
   let (re, im) = match op {
     BinaryOperator::Plus => (a + c, b + d),
     BinaryOperator::Minus => (a - c, b - d),
     BinaryOperator::Times => match (&lo, &ro) {
-      (Operand::Complex(..), Operand::Complex(..)) => {
-        (a * c - b * d, a * d + b * c)
-      }
       (Operand::Real(x), Operand::Complex(p, q))
       | (Operand::Complex(p, q), Operand::Real(x)) => (x * p, x * q),
       _ => return None,
@@ -2491,6 +2552,12 @@ pub fn fast_machine_complex_binop(
       (Operand::Real(x) | Operand::ZeroImag(x), Operand::Complex(p, q)) => {
         let (rc, rd) = wolfram_powi_complex(*p, *q, -1);
         (x * rc, x * rd)
+      }
+      // A complex quotient is the product with the reciprocal (`z/z`
+      // cancels in the general path instead).
+      (Operand::Complex(..), Operand::Complex(p, q)) if (a, b) != (*p, *q) => {
+        let (rc, rd) = wolfram_powi_complex(*p, *q, -1);
+        (a * rc - b * rd, a * rd + b * rc)
       }
       _ => return None,
     },

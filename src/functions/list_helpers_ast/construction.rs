@@ -2521,10 +2521,8 @@ fn resolve_negative_positions(data: &Expr, dims: &[usize]) -> Option<Expr> {
 /// optional `/; cond`) into explicit `{i, j, ...} -> value` rules over the
 /// grid `dims`. The rule's left-hand side must be a `List` pattern (after
 /// stripping any outer `Condition`) whose length equals the rank of `dims`.
-/// Each position in the grid is tested with `MatchQ` and, when it matches,
-/// the value is obtained with `Replace` (which binds the pattern variables to
-/// the indices). Returns None when `data` is not such a pattern rule, leaving
-/// other constructor forms untouched.
+/// Returns None when `data` is not such a pattern rule, leaving other
+/// constructor forms untouched.
 fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
   let lhs: &Expr = match data {
     Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => pattern,
@@ -2551,33 +2549,8 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
   if !pats.iter().any(expr_contains_pattern) {
     return None;
   }
-  let total: usize = dims.iter().product();
-  // Guard against pathological sizes.
-  if total == 0 || total > 1_000_000 {
-    return None;
-  }
-  let mut rules: Vec<Expr> = Vec::new();
-  for flat in 0..total {
-    let mut rem = flat;
-    let mut pos = vec![0i128; dims.len()];
-    for k in (0..dims.len()).rev() {
-      pos[k] = (rem % dims[k]) as i128 + 1;
-      rem /= dims[k];
-    }
-    let pos_list = Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
-    let match_q = call("MatchQ", vec![pos_list.clone(), lhs.clone()]);
-    let matched = matches!(
-      crate::evaluator::evaluate_expr_to_expr(&match_q),
-      Ok(Expr::Identifier(ref s)) if s == "True"
-    );
-    if !matched {
-      continue;
-    }
-    let replaced = call("Replace", vec![pos_list.clone(), data.clone()]);
-    let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
-    rules.push(rule_expr(pos_list, val));
-  }
-  Some(Expr::List(rules.into()))
+  // One rule is a rule list of one.
+  expand_pattern_rule_list(&Expr::List(vec![data.clone()].into()), dims)
 }
 
 /// Expand a LIST of position rules that mixes explicit positions with
@@ -2599,7 +2572,58 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
     Alternatives(std::collections::HashSet<Vec<i128>>, Expr),
     /// The whole rule, applied per position via MatchQ + Replace.
     Pattern(Expr),
+    /// `{i_, j_, …} /; cond -> rhs` with one plain named blank per
+    /// dimension: the indices are substituted straight into the condition
+    /// and the right side, without a MatchQ and a Replace per position.
+    Indexed {
+      rule: Expr,
+      names: Vec<String>,
+      condition: Option<Expr>,
+      rhs: Expr,
+      /// Whether the right side has to be evaluated at each position.
+      rhs_varies: bool,
+    },
   }
+
+  // The index names of a `{i_, j_, …}` left side (optionally under a
+  // Condition), when every slot is a distinct, plain named blank.
+  let indexed_parts = |lhs: &Expr| -> Option<(Vec<String>, Option<Expr>)> {
+    let (inner, condition) = match lhs {
+      Expr::FunctionCall { name, args }
+        if name == "Condition" && args.len() == 2 =>
+      {
+        (&args[0], Some(args[1].clone()))
+      }
+      other => (other, None),
+    };
+    let Expr::List(slots) = inner else {
+      return None;
+    };
+    let names: Vec<String> = slots
+      .iter()
+      .map(|slot| match slot {
+        Expr::Pattern {
+          name,
+          head: None,
+          blank_type: 1,
+        } if !name.is_empty() => Some(name.clone()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?;
+    let distinct = names
+      .iter()
+      .enumerate()
+      .all(|(k, name)| !names[..k].contains(name));
+    if names.len() != dims.len() || !distinct {
+      return None;
+    }
+    // The bounds of a condition (`i >= (n - m)/2 + 1`) are the same at
+    // every position: work them out once.
+    let index_names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let condition =
+      condition.map(|c| fold_constant_arithmetic(&c, &index_names));
+    Some((names, condition))
+  };
 
   let explicit_pos = |e: &Expr| -> Option<Vec<i128>> {
     let pos: Vec<i128> = match e {
@@ -2643,6 +2667,19 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
     {
       needs_matching = true;
       matchers.push(Matcher::Alternatives(set, value()?));
+    } else if let Some((names, condition)) = indexed_parts(lhs) {
+      needs_matching = true;
+      let rhs_varies = delayed
+        || names
+          .iter()
+          .any(|name| crate::syntax::mentions_symbol(rhs, name));
+      matchers.push(Matcher::Indexed {
+        rule: item.clone(),
+        names,
+        condition,
+        rhs: rhs.clone(),
+        rhs_varies,
+      });
     } else if expr_contains_pattern(lhs) {
       needs_matching = true;
       matchers.push(Matcher::Pattern(item.clone()));
@@ -2666,7 +2703,7 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
     let found = match m {
       Matcher::Explicit(p, _) => Some(vec![p.clone()]),
       Matcher::Alternatives(set, _) => Some(set.iter().cloned().collect()),
-      Matcher::Pattern(rule) => match rule {
+      Matcher::Pattern(rule) | Matcher::Indexed { rule, .. } => match rule {
         Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
           pattern_rule_candidates(pattern, dims)
         }
@@ -2708,6 +2745,38 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
         Matcher::Alternatives(set, v) if set.contains(&pos) => {
           rules.push(explicit_rule(&pos, v.clone()));
         }
+        Matcher::Indexed {
+          names,
+          condition,
+          rhs,
+          rhs_varies,
+          ..
+        } => {
+          let indices: Vec<Expr> =
+            pos.iter().map(|&p| Expr::Integer(p)).collect();
+          let bindings: Vec<(&str, &Expr)> = names
+            .iter()
+            .map(String::as_str)
+            .zip(indices.iter())
+            .collect();
+          if let Some(condition) = condition {
+            let at =
+              crate::syntax::substitute_variables(condition, &bindings);
+            if !matches!(
+              crate::evaluator::evaluate_expr_to_expr(&at),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            ) {
+              continue;
+            }
+          }
+          let val = if *rhs_varies {
+            let at = crate::syntax::substitute_variables(rhs, &bindings);
+            crate::evaluator::evaluate_expr_to_expr(&at).ok()?
+          } else {
+            rhs.clone()
+          };
+          rules.push(explicit_rule(&pos, val));
+        }
         Matcher::Pattern(rule) => {
           let pos_list =
             Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
@@ -2738,6 +2807,111 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
     }
   }
   Some(Expr::List(rules.into()))
+}
+
+/// Whether `expr` is arithmetic on numbers and on symbols holding a number,
+/// none of them one of `indices`: its value is the same wherever a rule is
+/// tried, and working it out has no effect to repeat.
+fn is_constant_arithmetic(expr: &Expr, indices: &[&str]) -> bool {
+  let all =
+    |items: &[Expr]| items.iter().all(|e| is_constant_arithmetic(e, indices));
+  match expr {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::Identifier(name) => {
+      !indices.contains(&name.as_str())
+        && matches!(
+          crate::variable_value(name),
+          Some(Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+        )
+    }
+    Expr::BinaryOp {
+      op:
+        BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      is_constant_arithmetic(left, indices)
+        && is_constant_arithmetic(right, indices)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_constant_arithmetic(operand, indices),
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Subtract" | "Minus" | "Divide"
+      ) && all(args)
+    }
+    _ => false,
+  }
+}
+
+/// `cond` with every constant arithmetic operand of its comparisons and
+/// logical connectives (see [`is_constant_arithmetic`]) replaced by its
+/// value, when that is a number.
+fn fold_constant_arithmetic(cond: &Expr, indices: &[&str]) -> Expr {
+  let fold = |e: &Expr| fold_constant_arithmetic(e, indices);
+  let is_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+  };
+  if !is_number(cond) && is_constant_arithmetic(cond, indices) {
+    return match crate::evaluator::evaluate_expr_to_expr(cond) {
+      Ok(value) if is_number(&value) => value,
+      _ => cond.clone(),
+    };
+  }
+  match cond {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(fold).collect(),
+      operators: operators.clone(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(fold(left)),
+      right: Box::new(fold(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(fold(operand)),
+    },
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "And"
+          | "Or"
+          | "Not"
+          | "Equal"
+          | "Unequal"
+          | "Less"
+          | "LessEqual"
+          | "Greater"
+          | "GreaterEqual"
+          | "Plus"
+          | "Times"
+          | "Power"
+          | "Subtract"
+          | "Minus"
+          | "Divide"
+          | "Abs"
+      ) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(fold).collect::<Vec<_>>().into(),
+      }
+    }
+    other => other.clone(),
+  }
 }
 
 /// The positions of a rank-2 array that a pattern rule's left side can
@@ -3665,7 +3839,7 @@ fn nested_list_dims(expr: &Expr) -> Option<Expr> {
 fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
   fn walk(
     e: &Expr,
-    bg: &str,
+    bg: &SparseBackground,
     path: &mut Vec<usize>,
     out: &mut Vec<Vec<usize>>,
   ) {
@@ -3677,18 +3851,51 @@ fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
       }
       return;
     }
-    if expr_to_string(e) != bg {
+    if !is_sparse_background(e, bg) {
       out.push(path.clone());
     }
   }
   let mut out = Vec::new();
-  walk(
-    dense,
-    &expr_to_string(background),
-    &mut Vec::new(),
-    &mut out,
-  );
+  walk(dense, &SparseBackground::new(background), &mut Vec::new(), &mut out);
   out
+}
+
+/// A SparseArray background, for testing elements against it. An element
+/// sits at the background when both print alike; number atoms are compared
+/// directly, since printing every element of a large array is slow.
+pub(crate) struct SparseBackground<'a> {
+  expr: &'a Expr,
+  text: String,
+}
+
+impl<'a> SparseBackground<'a> {
+  pub(crate) fn new(expr: &'a Expr) -> Self {
+    Self {
+      expr,
+      text: expr_to_string(expr),
+    }
+  }
+}
+
+pub(crate) fn is_sparse_background(
+  e: &Expr,
+  background: &SparseBackground,
+) -> bool {
+  match (e, background.expr) {
+    (Expr::Integer(a), Expr::Integer(b)) => a == b,
+    // An integer never prints as a machine real (`0` against `0.`), nor
+    // the other way around.
+    (Expr::Integer(_), Expr::Real(_)) | (Expr::Real(_), Expr::Integer(_)) => {
+      false
+    }
+    // Nor does a compound value (a machine complex number, a symbolic
+    // expression) print as a number atom.
+    (
+      Expr::FunctionCall { .. } | Expr::BinaryOp { .. },
+      Expr::Integer(_) | Expr::Real(_),
+    ) => false,
+    _ => expr_to_string(e) == background.text,
+  }
 }
 
 /// Element of a dense nested list at a 1-based index path.
@@ -3699,6 +3906,71 @@ fn nested_list_at(dense: &Expr, path: &[usize]) -> Option<Expr> {
     cur = items.get(i - 1)?;
   }
   Some(cur.clone())
+}
+
+/// `head` over one canonical SparseArray and otherwise scalar operands,
+/// taken on the stored values alone: the result has the same stored
+/// positions, the head applied to each value and to the background. `None`
+/// when a value comes out at the new background (the positions change then),
+/// which is left to the general path.
+fn map_single_sparse_array(head: &str, args: &[Expr]) -> Option<Expr> {
+  let mut sparse = args.iter().enumerate().filter(|(_, a)| {
+    matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray")
+  });
+  let (at, array) = sparse.next()?;
+  if sparse.next().is_some() || !is_sparse_array_object(array) {
+    return None;
+  }
+  let Expr::FunctionCall { args: parts, .. } = array else {
+    return None;
+  };
+  let Expr::List(data) = &parts[3] else {
+    return None;
+  };
+  let [version, layout, Expr::List(values)] = data.as_slice() else {
+    return None;
+  };
+  if values.is_empty() {
+    return None;
+  }
+  // A stored value at the old background is not a stored position at all.
+  let old_background = SparseBackground::new(&parts[2]);
+  if values
+    .iter()
+    .any(|v| matches!(v, Expr::List(_)) || is_sparse_background(v, &old_background))
+  {
+    return None;
+  }
+  let apply = |operand: Expr| -> Option<Expr> {
+    let mut operands = args.to_vec();
+    operands[at] = operand;
+    crate::evaluator::evaluate_function_call_ast(head, &operands).ok()
+  };
+  let background = apply(parts[2].clone())?;
+  let mapped = apply(Expr::List(values.clone()))?;
+  let Expr::List(mapped_values) = &mapped else {
+    return None;
+  };
+  let new_background = SparseBackground::new(&background);
+  if mapped_values.len() != values.len()
+    || mapped_values
+      .iter()
+      .any(|v| is_sparse_background(v, &new_background))
+  {
+    return None;
+  }
+  Some(Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      parts[0].clone(),
+      parts[1].clone(),
+      background,
+      Expr::List(
+        vec![version.clone(), layout.clone(), mapped].into(),
+      ),
+    ]
+    .into(),
+  })
 }
 
 /// Elementwise arithmetic (`Plus`, `Times`, `Power`, …) over operands of which
@@ -3718,6 +3990,10 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
     return None;
   }
 
+  if let Some(mapped) = map_single_sparse_array(head, args) {
+    return Some(mapped);
+  }
+
   // Each operand contributes its dense form (SparseArray) or itself (scalar);
   // the background column uses the SparseArray backgrounds instead.
   let mut dense_args = Vec::with_capacity(args.len());
@@ -3732,8 +4008,10 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
     }
   }
 
+  // The operands are evaluated already: apply the head to them as they are
+  // (evaluating the call would evaluate every stored value once more).
   let apply = |operands: Vec<Expr>| -> Option<Expr> {
-    crate::evaluator::evaluate_expr_to_expr(&call(head, operands)).ok()
+    crate::evaluator::evaluate_function_call_ast(head, &operands).ok()
   };
 
   // Like Wolfram, evaluate the head once on the backgrounds and once per
@@ -3787,19 +4065,32 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
     } else {
       (values, background)
     };
-  let background_str = expr_to_string(&background);
-  let mut rules = Vec::with_capacity(paths.len());
-  for (path, value) in paths.into_iter().zip(values) {
-    if expr_to_string(&value) == background_str {
-      continue;
-    }
-    rules.push(rule_expr(
-      Expr::List(path.iter().map(|&i| Expr::Integer(i as i128)).collect()),
-      value,
-    ));
+  let result_background = SparseBackground::new(&background);
+  let entries: Vec<(Vec<usize>, Expr)> = paths
+    .into_iter()
+    .zip(values)
+    .filter(|(_, value)| !is_sparse_background(value, &result_background))
+    .collect();
+  let Expr::List(dim_items) = &dims else {
+    return None;
+  };
+  let dims: Vec<usize> = dim_items
+    .iter()
+    .map(|d| match d {
+      Expr::Integer(n) => usize::try_from(*n).ok(),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if dims.contains(&0) {
+    return None;
   }
-
-  sparse_array_normalize_ast(&[Expr::List(rules.into()), dims, background]).ok()
+  Some(
+    crate::evaluator::dispatch::list_operations::build_sparse_array_csr(
+      &dims,
+      &background,
+      &entries,
+    ),
+  )
 }
 
 /// Coerce `values` and `background` to one machine number type, the way a
