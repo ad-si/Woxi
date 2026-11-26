@@ -8,6 +8,28 @@
     twelve rhombi, both with exact coordinates, instead of a breadth-first
     unfolding; `"NetFaces"` of a solid with a predefined net now agrees
     with its `"NetCoordinates"` and `"NetFaceIndices"`.
+- `ContourPlot3D`, `RegionPlot3D` and `ListContourPlot3D` draw the empty
+    box with its axes and labels when no point of the range is on the
+    surface (or in the region), as wolframscript does, instead of failing;
+    a `Manipulate` over such a plot went blank at those control values.
+- A `Text[…]` item of a `Grid` starts at script level 0 again: a fraction
+    in it keeps the text size and a `∑`/`∏` in it stacks its limits under
+    and over the sign, instead of being set one level deep like the
+    grid's other items.
+- 2D text output parenthesizes a power base that prints with an operator
+    of its own (`(a b)^c`, `(a/b)^c`, `(a^b)^c`, `(a!)^2`), and sets the
+    exponent of a tall base on the row above its baseline
+    (`(1 + 1/x)^2`). The one-line text of a `Row`/`Column` item does the
+    same, parenthesizes a product denominator and writes a held `Product`
+    with `∏`.
+- `ContourPlot`, `ListContourPlot` and the density / volume plots read
+    `Contours -> {Automatic, n}` as at most `n` automatically chosen round
+    levels; it was taken for a list of explicit levels, leaving the lone
+    level `n`.
+- A `Graphics3D` `PlotRange` with an interval of no extent on one axis
+    (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
+    keeps the explicit intervals of the others; the whole range was
+    dropped, so the scene filled its frame.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
@@ -238,6 +260,12 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Woxi Studio & Wolfram Demonstrations
 
+- A `Manipulate` choice label that sets a matrix among its words
+    (`Row[{"mapped by ", Dynamic@MatrixForm[m]}]`) is typeset as a picture,
+    and a `Dynamic` inside a choice label follows the values the body assigns.
+- `Show[…, ImageSize -> {w, h}, AspectRatio -> Full]` stretches the drawing
+    over the whole picture, and a flat automatic plot range opens up before an
+    explicit `PlotRangePadding` pads it.
 - `Manipulate` supports color controls with an initial color but no range
     or choice list. Scalar and `Slider2D` bounds can depend on other controls,
     including through `Dynamic` wrappers.

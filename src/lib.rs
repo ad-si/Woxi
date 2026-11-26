@@ -60,6 +60,9 @@ thread_local! {
     // Track whether Options[f] was set with `:=` (SetDelayed) so Definition can
     // re-emit the matching operator. Symbols set with plain `=` are absent.
     pub static FUNC_OPTIONS_DELAYED: crate::epoch::EpochCell<std::collections::HashSet<String>> = crate::epoch::EpochCell::new(std::collections::HashSet::new());
+    // Obsolete package functions that already issued their one-per-session
+    // `General::obsfun` warning.
+    pub static OBSOLETE_WARNED: crate::epoch::EpochCell<std::collections::HashSet<String>> = crate::epoch::EpochCell::new(std::collections::HashSet::new());
     // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)
     // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
     pub static UPVALUES: crate::epoch::EpochCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = crate::epoch::EpochCell::new(HashMap::new());
@@ -2803,6 +2806,7 @@ pub fn clear_state() {
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS_DELAYED.with(|m| m.borrow_mut().clear());
+  OBSOLETE_WARNED.with(|m| m.borrow_mut().clear());
   FUNC_OPTS_INLINE.with(|m| m.borrow_mut().clear());
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
@@ -5309,6 +5313,20 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
 }
 
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // A `Text[…]` item of a layout sets its math one script level down, as
+  // the same `Text` does on its own (see `render_visual_display_pipeline`).
+  if matches!(expr, syntax::Expr::FunctionCall { name, args }
+    if name == "Text" && args.len() == 1)
+  {
+    functions::graphics::with_inline_text_math(|| {
+      render_inline_display_wrapper_impl(expr)
+    })
+  } else {
+    render_inline_display_wrapper_impl(expr)
+  }
+}
+
+fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
   // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
   // `Text[…]`: the text face covers the styled content.
   if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
