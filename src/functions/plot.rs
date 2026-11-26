@@ -1458,7 +1458,7 @@ fn has_branch_cut(body: &Expr) -> bool {
 /// Automatic` breaks the curve at. `ArcCot` counts too: on the reals it
 /// jumps from `-Pi/2` to `Pi/2` where its argument crosses zero.
 fn has_step_function(body: &Expr) -> bool {
-  const STEP_HEADS: [&str; 14] = [
+  const STEP_HEADS: [&str; 16] = [
     "Floor",
     "Ceiling",
     "Round",
@@ -1468,6 +1468,8 @@ fn has_step_function(body: &Expr) -> bool {
     "Quotient",
     "Sign",
     "UnitStep",
+    "UnitBox",
+    "HeavisidePi",
     "HeavisideTheta",
     "Boole",
     "SquareWave",
@@ -1483,11 +1485,14 @@ fn has_step_function(body: &Expr) -> bool {
     .any(has_step_function)
 }
 
-/// Whether `body` holds a conditional (`Piecewise`, `Which`, `If`) whose
-/// branches the curve may jump between. Wolfram works out the plot body
-/// with the variable left symbolic to find such conditionals, so one hidden
-/// behind a user function (`f[x_] := Which[x < 1, a, True, b]`) counts too.
-fn has_conditional_jump(body: &Expr, var: &str) -> bool {
+/// Whether `Exclusions -> Automatic` looks for jumps in the curve of
+/// `body`: it holds a step function, a branch cut taken of something
+/// complex, or a conditional (`Piecewise`, `Which`, `If`) whose branches
+/// the curve may jump between. Wolfram works out the plot body with the
+/// variable left symbolic to find these, so one hidden behind a user
+/// function (`f[x_] := Which[x < 1, a, True, b]`, or `Arg[g[x]]` with a
+/// complex-valued `g`) counts too.
+fn has_automatic_exclusions(body: &Expr, var: &str) -> bool {
   fn conditional(e: &Expr) -> bool {
     if matches!(e, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Piecewise" | "Which" | "If"))
@@ -1519,14 +1524,18 @@ fn has_conditional_jump(body: &Expr, var: &str) -> bool {
         .any(interpolates),
     }
   }
-  if conditional(body) {
-    return !interpolates(body);
+  let jumps = |e: &Expr| {
+    has_step_function(e)
+      || has_branch_cut(e)
+      || (conditional(e) && !interpolates(e))
+  };
+  if jumps(body) {
+    return true;
   }
-  if !calls_user_function(body) {
+  if conditional(body) || !calls_user_function(body) {
     return false;
   }
-  let expanded = eval_body_var_symbolic(body, var);
-  conditional(&expanded) && !interpolates(&expanded)
+  jumps(&eval_body_var_symbolic(body, var))
 }
 
 /// The x positions where the sampled curve `points` of `body` jumps: each
@@ -2567,10 +2576,18 @@ pub(crate) fn axes_label_svg_at(
 /// The SVG markup of an axis label, one entry per line of the label (a
 /// `"a\nb"` string has two).
 fn label_markup_lines(label: &str) -> Vec<String> {
-  let markup = crate::functions::graphics::box_string_to_svg_scaled(
-    label,
-    RESOLUTION_SCALE as f64,
-  );
+  // Axis and frame labels are set in TraditionalForm: a one-letter symbol
+  // in a plain string's box code is italic, its text upright. A styled
+  // label arrives as finished markup, typeset that way already.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   if markup.contains('\n') {
     crate::functions::graphics::split_markup_lines(&markup)
   } else {
@@ -3443,6 +3460,9 @@ pub(crate) struct FillStyle {
   /// `Dashed`/`Dashing[…]`: the dash and gap length, in points, of a
   /// list plot's filling stems.
   pub dashing: Option<(f64, f64)>,
+  /// `AbsoluteThickness[…]`/`Thickness[…]`/`Thick`/`Thin`: the width, in
+  /// points, of a list plot's filling stems.
+  pub thickness: Option<f64>,
 }
 
 impl FillStyle {
@@ -3512,6 +3532,14 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
       {
         fs.dashing = dash_pair(e);
       }
+      Expr::Identifier(s) if matches!(s.as_str(), "Thick" | "Thin") => {
+        fs.thickness = parse_style_directives(e).and_then(|st| st.thickness);
+      }
+      Expr::FunctionCall { name, .. }
+        if name == "AbsoluteThickness" || name == "Thickness" =>
+      {
+        fs.thickness = parse_style_directives(e).and_then(|st| st.thickness);
+      }
       other => {
         if let Some(c) = parse_color(other) {
           fs.color = Some(color_to_rgb8(c));
@@ -3530,9 +3558,14 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
     opacity: None,
     below_color: None,
     dashing: None,
+    thickness: None,
   };
   walk(&val, &mut fs);
-  if fs.color.is_none() && fs.opacity.is_none() && fs.dashing.is_none() {
+  if fs.color.is_none()
+    && fs.opacity.is_none()
+    && fs.dashing.is_none()
+    && fs.thickness.is_none()
+  {
     None
   } else {
     Some(fs)
@@ -3560,6 +3593,7 @@ fn fill_paint(
     opacity: None,
     below_color: None,
     dashing: None,
+    thickness: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
   RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
@@ -4263,6 +4297,9 @@ pub(crate) struct PlotOptions {
   pub frame_label_top: Option<String>,
   /// Label on the right frame edge (FrameLabel 4-element form: right of {left,right})
   pub frame_label_right: Option<String>,
+  /// `RotateLabel`: whether the left and right frame labels are turned to
+  /// read upward along their edge (the default) or stay upright.
+  pub rotate_label: bool,
   /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
   pub date_axis: bool,
   /// Whether x-axis is logarithmic (data is in log10 space)
@@ -4667,6 +4704,7 @@ impl Default for PlotOptions {
       frame_label_left: None,
       frame_label_top: None,
       frame_label_right: None,
+      rotate_label: true,
       frame_label_bottom_graphic: None,
       frame_label_top_graphic: None,
       date_axis: false,
@@ -5439,6 +5477,32 @@ pub(crate) fn plot_labels_svg(
       label, cx, cy, rotated, sf,
     )
   };
+  // How far a side label's picture reaches away from its edge: its height
+  // when turned along the edge, its width when upright.
+  let side_picture_across = |label: &str, h: f64| {
+    if opts.rotate_label {
+      h
+    } else {
+      crate::functions::graphics::axes_label_picture_size(label)
+        .map_or(h, |(w, _)| w * sf)
+    }
+  };
+  // An upright (`RotateLabel -> False`) side label: its lines centered on
+  // `cx` and stacked downward, the block centered on the frame's height.
+  let upright_width =
+    |label: &str| plot_padding::label_width(label, pt_of(label)) * sf;
+  let upright_side_label = |label: &str, cx: f64, fill: &str| {
+    let pt = pt_of(label);
+    let top =
+      margin_top + plot_h / 2.0 - block_height(lines_of(label), pt) * sf / 2.0;
+    let base_y = top + ascent(pt) * sf;
+    let (keep, markup) = text_svg(label, cx);
+    format!(
+      "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
+         fill=\"{fill}\"{keep}>{markup}</text>\n",
+    )
+  };
   if let Some(x_label) = &opts.frame_label_bottom
     && let Some(h) = picture_h(x_label)
   {
@@ -5487,12 +5551,19 @@ pub(crate) fn plot_labels_svg(
   if let Some(y_label) = &opts.frame_label_left
     && let Some(h) = picture_h(y_label)
   {
+    let across = side_picture_across(y_label, h);
     labels_svg.push_str(&picture(
       y_label,
-      plot_x0 - room_left - gap - h / 2.0,
+      plot_x0 - room_left - gap - across / 2.0,
       margin_top + plot_h / 2.0,
-      true,
+      opts.rotate_label,
     ));
+  } else if let Some(y_label) = &opts.frame_label_left
+    && !y_label.is_empty()
+    && !opts.rotate_label
+  {
+    let cx = plot_x0 - room_left - gap - upright_width(y_label) / 2.0;
+    labels_svg.push_str(&upright_side_label(y_label, cx, edge_fill(1)));
   } else if let Some(y_label) = &opts.frame_label_left
     && !y_label.is_empty()
   {
@@ -5627,12 +5698,20 @@ pub(crate) fn plot_labels_svg(
   if let Some(right_label) = &opts.frame_label_right
     && let Some(h) = picture_h(right_label)
   {
+    let across = side_picture_across(right_label, h);
     labels_svg.push_str(&picture(
       right_label,
-      plot_x0 + plot_w + room_right + gap + h / 2.0,
+      plot_x0 + plot_w + room_right + gap + across / 2.0,
       margin_top + plot_h / 2.0,
-      true,
+      opts.rotate_label,
     ));
+  } else if let Some(right_label) = &opts.frame_label_right
+    && !right_label.is_empty()
+    && !opts.rotate_label
+  {
+    let cx =
+      plot_x0 + plot_w + room_right + gap + upright_width(right_label) / 2.0;
+    labels_svg.push_str(&upright_side_label(right_label, cx, edge_fill(3)));
   } else if let Some(right_label) = &opts.frame_label_right
     && !right_label.is_empty()
   {
@@ -9160,6 +9239,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        own_y_range: None,
         continues_previous: plot_style
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
@@ -9842,10 +9922,14 @@ pub(crate) fn render_merged_plot_source(
     merged_plot_source_options(source);
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
-  } else if !overrides.aspect_automatic && opts.aspect_ratio.is_none() {
+  } else if !overrides.aspect_automatic
+    && !opts.aspect_full
+    && opts.aspect_ratio.is_none()
+  {
     // The ratio the shown plot was drawn with (a `ContourPlot`'s square
     // frame) stays when `Show` only resizes it: `Show[plot, ImageSize ->
-    // {w, h}]` letterboxes that shape rather than stretching it.
+    // {w, h}]` letterboxes that shape rather than stretching it — unless
+    // `AspectRatio -> Full` asks for the stretch.
     opts.aspect_ratio = source.aspect_ratio;
   }
   opts.aspect_automatic = overrides.aspect_automatic;
@@ -9908,6 +9992,7 @@ pub(crate) fn render_merged_plot_source(
             opacity: fill.opacity,
             below_color: None,
             dashing: None,
+            thickness: None,
           },
         );
         Some((i, target, style))
@@ -13841,6 +13926,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      own_y_range: None,
       continues_previous: false,
       color_function: None,
       arrowheads: None,
@@ -15844,11 +15930,20 @@ where
   // WL 15 draws the stems of a filled scatter at Opacity[0.3], a little
   // stronger than the 0.2 of a filled curve's area.
   for (fill_target, fill_style) in series_fills(opts, series_idx) {
+    // A thickness in the `FillingStyle` widens the stems (1 pt otherwise).
+    let stem_width = fill_style
+      .and_then(|fs| fs.thickness)
+      .map_or(RESOLUTION_SCALE, |t| {
+        (t * RESOLUTION_SCALE as f64).round().max(1.0) as u32
+      });
     let stem_style = match fill_style {
-      None => RGBColor(r, g, b).mix(0.3),
-      fs => fill_paint(fs, (r, g, b)),
+      // A style of only a thickness or dashing keeps the default paint.
+      Some(fs) if fs.color.is_some() || fs.opacity.is_some() => {
+        fill_paint(Some(fs), (r, g, b))
+      }
+      _ => RGBColor(r, g, b).mix(0.3),
     }
-    .stroke_width(RESOLUTION_SCALE);
+    .stroke_width(stem_width);
     // A two-color `{below, above}` style paints the stems of points under
     // their reference in the first color.
     let below_style =
@@ -15861,7 +15956,7 @@ where
                 .and_then(|fs| fs.effective_opacity())
                 .unwrap_or(1.0),
             )
-            .stroke_width(RESOLUTION_SCALE)
+            .stroke_width(stem_width)
         });
     let stem_dashes = fill_style.and_then(|fs| fs.dashing);
     let stem_targets: Vec<((f64, f64), f64)> = match fill_target {
@@ -17443,6 +17538,18 @@ pub(crate) fn parse_frame_option(value: &Expr) -> bool {
   }
 }
 
+/// `RotateLabel -> False` keeps the left and right frame labels upright;
+/// any other setting leaves them turned along their edge.
+pub(crate) fn apply_rotate_label_option(value: &Expr, opts: &mut PlotOptions) {
+  opts.rotate_label = parse_rotate_label(value);
+}
+
+/// Whether a `RotateLabel` setting turns the side labels: everything but
+/// `False` does.
+pub(crate) fn parse_rotate_label(value: &Expr) -> bool {
+  !matches!(value, Expr::Identifier(v) if v == "False")
+}
+
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   let fl = parse_frame_label(value);
   // A stacked-fraction label is kept as its picture markup, which the
@@ -18339,6 +18446,7 @@ pub(crate) fn apply_common_plot_option(
         crate::functions::plot_layout::parse_plot_layout(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
+    "RotateLabel" => apply_rotate_label_option(replacement, plot_opts),
     "FrameTicksStyle" => {
       plot_opts.tick_label_style = LabelStyleSpec::parse(replacement);
       plot_opts.frame_ticks_styles = parse_frame_edge_styles(replacement);
@@ -19456,11 +19564,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
     // So does a branch cut a complex-valued part of it is taken across.
     let mut excluded_here = excluded.clone();
-    if auto_exclusions
-      && (has_step_function(func_body)
-        || has_branch_cut(func_body)
-        || has_conditional_jump(func_body, &var_name))
-    {
+    if auto_exclusions && has_automatic_exclusions(func_body, &var_name) {
       excluded_here.extend(jump_points(&points, func_body, &var_name));
     }
     if plot_opts.exclusions_style.iter().any(Option::is_some) {

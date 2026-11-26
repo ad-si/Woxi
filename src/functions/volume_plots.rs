@@ -259,6 +259,11 @@ impl PlotOptions {
           Ok(Expr::Integer(n)) if *n > 0 => {
             opts.contours = ContourSpec::Count(*n as usize);
           }
+          Ok(Expr::List(items))
+            if let Some(spec) = ContourSpec::automatic_up_to(items) =>
+          {
+            opts.contours = spec;
+          }
           Ok(Expr::List(items)) => {
             let levels: Vec<f64> = items
               .iter()

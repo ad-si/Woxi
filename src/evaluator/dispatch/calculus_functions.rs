@@ -821,9 +821,16 @@ pub fn dispatch_calculus_functions(
     "Interpolation" | "ListInterpolation" if !args.is_empty() => {
       return Some(crate::functions::ode_ast::interpolation_ast(args, name));
     }
-    "InterpolatingFunctionDomain" if args.len() == 1 => {
+    "InterpolatingFunctionDomain"
+    | "InterpolatingFunctionCoordinates"
+    | "InterpolatingFunctionGrid"
+    | "InterpolatingFunctionValuesOnGrid"
+      if args.len() == 1 =>
+    {
       return Some(
-        crate::functions::ode_ast::interpolating_function_domain_ast(args),
+        crate::functions::ode_ast::interpolating_function_anatomy_ast(
+          name, args,
+        ),
       );
     }
     "NDSolve" if args.len() >= 3 => {
