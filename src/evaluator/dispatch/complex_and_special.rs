@@ -3525,6 +3525,9 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
     || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
+    // A held rational is a stacked fraction, bracketed like a quotient.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
 }
 
 /// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
@@ -5413,6 +5416,20 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if name == "Framed" && !args.is_empty() =>
     {
       framed_box(expr_to_box_form(&args[0]), &args[1..])
+    }
+    // `Invisible[expr]` keeps the room `expr` takes but draws nothing: its
+    // box is the content's, with `ShowContents -> False`.
+    Expr::FunctionCall { name, args }
+      if name == "Invisible" && args.len() == 1 =>
+    {
+      call(
+        "StyleBox",
+        vec![
+          expr_to_box_form(&args[0]),
+          rule_expr(id_expr("ShowContents"), bool_expr(false)),
+          rule_expr(id_expr("StripOnInput"), bool_expr(false)),
+        ],
+      )
     }
     // HoldForm[expr] → just the content
     Expr::FunctionCall { name, args }
@@ -8425,6 +8442,13 @@ fn tf_script_base(expr: &Expr) -> Expr {
 /// Whether `expr` is bracketed as the base of a script: everything that is
 /// neither an atom nor a function value, `(x y)²`, `(k!)⁴`, `(ⅆs)²`.
 fn tf_script_needs_parens(expr: &Expr) -> bool {
+  // `HoldForm` draws nothing, so what it holds decides.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "HoldForm"
+    && args.len() == 1
+  {
+    return tf_script_needs_parens(&args[0]);
+  }
   let marked = matches!(expr, Expr::FunctionCall { name, args }
     if args.len() == 1 && matches!(name.as_str(),
       "Conjugate" | "Transpose" | "ConjugateTranspose" | "SuperStar"

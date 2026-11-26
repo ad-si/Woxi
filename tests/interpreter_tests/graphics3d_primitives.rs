@@ -988,6 +988,31 @@ mod framing {
 mod plot_range_clipping {
   use super::*;
 
+  /// An axis given an interval of no extent (`{0, 0}`) is framed by the
+  /// contents, while the other axes keep their explicit intervals. The
+  /// whole `PlotRange` used to be dropped, so every scene filled its
+  /// frame regardless of the fixed ranges.
+  #[test]
+  fn an_axis_interval_without_extent_is_automatic() {
+    let scene = |range: &str| {
+      svg(&format!(
+        "Graphics3D[Cylinder[{{{{0, 0, 0}}, {{0, 1, 0}}}}, 2], \
+         PlotRange -> {range}]"
+      ))
+    };
+    assert_eq!(
+      scene("{{-5, 5}, {0, 0}, {-5, 5}}"),
+      scene("{{-5, 5}, Automatic, {-5, 5}}")
+    );
+    assert_ne!(
+      scene("{{-5, 5}, {0, 0}, {-5, 5}}"),
+      scene("Automatic"),
+      "the explicit intervals of the other axes must still frame the scene"
+    );
+    // A reversed interval is still not a frame at all.
+    assert_eq!(scene("{{-5, 5}, {1, 0}, {-5, 5}}"), scene("Automatic"));
+  }
+
   // `PlotRange -> {…, {0, 1}}` cuts the unit sphere down to its upper
   // half instead of letting it spill below the box.
   #[test]
@@ -4046,7 +4071,10 @@ mod range_padding {
       assert!(picture.contains(part), "{part} missing in {picture}");
     }
     assert_eq!(svg.matches("<svg x=").count(), 1, "{svg}");
-    assert!(svg.contains(">n = x<tspan"), "{svg}");
+    assert!(
+      svg.contains(">n = <tspan font-style=\"italic\">x</tspan><tspan"),
+      "{svg}"
+    );
   }
 }
 
