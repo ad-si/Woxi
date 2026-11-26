@@ -20555,6 +20555,19 @@ fn is_additive_expr(e: &Expr) -> bool {
   ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
 }
 
+/// Whether `e` prints as a product or a quotient, which a one-line
+/// denominator parenthesizes: `a/(b c)`, not `a/b c`.
+fn is_multiplicative_expr(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, args }
+    if name == "Times" && args.len() >= 2)
+}
+
 /// `Rational[n, d] * factor` set as one fraction, `n factor` over `d` — the
 /// way `Pi/2` and `3 Pi/4` typeset. A numerator other than 1 is the
 /// coefficient in front of the factor; a negative one moves its sign out
@@ -24732,8 +24745,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     }
     let base_markup = expr_to_svg_markup(base);
     let exp_markup = expr_to_svg_markup(exp);
-    // Wrap base in parens if it's a lower-precedence additive expression
-    let base_fmt = if is_additive_expr(base) {
+    // A base that prints with an operator of its own is parenthesized:
+    // `(a + b)^2`, `(a b)^c`.
+    let base_fmt = if crate::syntax::power_base_needs_parens(base) {
       format!("({base_markup})")
     } else {
       base_markup
@@ -24811,7 +24825,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       if matches!(op, BinaryOperator::Power) {
         let base_markup = expr_to_svg_markup(left);
         let exp_markup = expr_to_svg_markup(right);
-        let base_fmt = if is_additive_expr(left) {
+        let base_fmt = if crate::syntax::power_base_needs_parens(left) {
           format!("({base_markup})")
         } else {
           base_markup
@@ -24845,7 +24859,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       } else {
         left_str
       };
-      let right_fmt = if is_mult && is_additive_expr(right.as_ref()) {
+      let right_fmt = if (is_mult && is_additive_expr(right.as_ref()))
+        || (matches!(op, BinaryOperator::Divide)
+          && is_multiplicative_expr(right.as_ref()))
+      {
         format!("({right_str})")
       } else {
         right_str
@@ -24928,17 +24945,28 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           .collect::<Vec<_>>()
           .join(" \u{2248} "),
 
-        // Sum[body, {k, lo, hi}] → ∑ with the bounds as sub/superscript
-        "Sum" if args.len() == 2 => match &args[1] {
-          Expr::List(it) if it.len() == 3 => format!(
-            "\u{2211}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
-            expr_to_svg_markup(&it[0]),
-            expr_to_svg_markup(&it[1]),
-            expr_to_svg_markup(&it[2]),
-            expr_to_svg_markup(&args[0])
-          ),
+        // Sum[body, {k, lo, hi}] → ∑ with the bounds as sub/superscript,
+        // and Product[…] → ∏ likewise
+        "Sum" | "Product" if args.len() == 2 => match &args[1] {
+          Expr::List(it) if it.len() == 3 => {
+            let body = expr_to_svg_markup(&args[0]);
+            // A sum as the operand is parenthesized: `∑ (a + b)`.
+            let body = if is_additive_expr(&args[0]) {
+              format!("({body})")
+            } else {
+              body
+            };
+            format!(
+              "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
+              if name == "Sum" { '\u{2211}' } else { '\u{220F}' },
+              expr_to_svg_markup(&it[0]),
+              expr_to_svg_markup(&it[1]),
+              expr_to_svg_markup(&it[2]),
+              body
+            )
+          }
           _ => format!(
-            "Sum[{}, {}]",
+            "{name}[{}, {}]",
             expr_to_svg_markup(&args[0]),
             expr_to_svg_markup(&args[1])
           ),
@@ -33291,11 +33319,17 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   // numerator and denominator, not only its size.
   let mut styled: Option<&Expr> = None;
   let mut family: Option<String> = None;
+  // The `ScriptLevel` a style wrapper sets, which holds instead of the
+  // one an item of a grid starts at.
+  let mut script_level: Option<u32> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
         if name == "Text" && args.len() == 1 =>
       {
+        // A `Text` is an inline cell of its own, which starts at script
+        // level 0 again whatever layout it is an item of.
+        script_level = Some(0);
         content = &args[0];
         styled = None;
       }
@@ -33320,18 +33354,112 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
         if style.font_family.is_some() {
           family.clone_from(&style.font_family);
         }
+        // So does the innermost `ScriptLevel` (the style read here spans
+        // the whole run of wrappers).
+        if let Some(level) = style_script_level(content) {
+          script_level = Some(level);
+        }
         content = style.content;
       }
       _ => break,
     }
   }
+  // The style may sit inside the form wrapper (`TraditionalForm[Style[x,
+  // ScriptLevel -> 0]]`, what the text face of a `Text[TraditionalForm[x]]`
+  // item is pushed into).
+  if script_level.is_none()
+    && let Expr::FunctionCall { name, args } = content
+    && args.len() == 1
+    && matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+  {
+    script_level = style_script_level(&args[0]);
+  }
   // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
   // denominator and scripts in that face too.
   with_box_font_family(family.as_deref(), || {
-    with_grid_item_script_level(size, || {
-      traditional_inline_box_content_svg(content, styled, size)
-    })
+    match script_level {
+      Some(level) => with_box_script_level(level, size, || {
+        traditional_inline_box_content_svg(content, styled, size)
+      }),
+      None => with_grid_item_script_level(size, || {
+        traditional_inline_box_content_svg(content, styled, size)
+      }),
+    }
   })
+}
+
+/// The level a `ScriptLevel -> n` option of the style wrapper `styled`
+/// (`Style[expr, ScriptLevel -> 0]`) sets its content at.
+fn style_script_level(styled: &Expr) -> Option<u32> {
+  let Expr::FunctionCall { name, args } = styled else {
+    return None;
+  };
+  if !is_style_wrapper(name) || args.is_empty() {
+    return None;
+  }
+  // The wrapper nearest the content wins.
+  if let Some(level) = style_script_level(&args[0]) {
+    return Some(level);
+  }
+  // The last of several wins, as with any repeated option.
+  args
+    .iter()
+    .skip(1)
+    .filter_map(|opt| match option_kv(opt) {
+      Some(("ScriptLevel", Expr::Integer(level))) => {
+        u32::try_from(*level).ok()
+      }
+      _ => None,
+    })
+    .last()
+}
+
+/// The `ScriptLevel -> 0` a `Text[…]` display starts its content at: a
+/// `Text` is an inline cell of its own, so a fraction or a large operator
+/// in it is set at display size even when the `Text` is an item of a
+/// `Grid` or a `Column`, whose other items sit one script level deep.
+fn text_script_level() -> Expr {
+  Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ScriptLevel".to_string())),
+    replacement: Box::new(Expr::Integer(0)),
+  }
+}
+
+/// `styled`, the `Style[…]` the text face of a `Text[…]` item is (also
+/// inside the form wrapper the face was pushed into), carrying the script
+/// level a `Text` starts its content at.
+fn at_text_script_level(styled: &Expr) -> Expr {
+  match styled {
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "TraditionalForm" | "StandardForm") =>
+    {
+      call1(name, at_text_script_level(&args[0]))
+    }
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      let mut styled = args.to_vec();
+      styled.push(text_script_level());
+      call("Style", styled)
+    }
+    other => other.clone(),
+  }
+}
+
+/// Run `f`, which typesets a cell at `size`, at the script level `level`
+/// (see [`BOX_SCRIPT_LEVEL`]), restoring the surrounding level after.
+fn with_box_script_level<T>(level: u32, size: f64, f: impl FnOnce() -> T) -> T {
+  struct Restore(u32, f64);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_SCRIPT_LEVEL.with(|l| l.set(self.0));
+      BOX_ROOT_FONT_SIZE.with(|r| r.set(self.1));
+    }
+  }
+  let _restore = Restore(
+    BOX_SCRIPT_LEVEL.with(|l| l.replace(level)),
+    BOX_ROOT_FONT_SIZE.with(|r| r.replace(size)),
+  );
+  f()
 }
 
 /// Run `f`, which typesets a cell at `size`, one script level deep when the
@@ -41767,7 +41895,19 @@ fn resolve_display_item_face(expr: &Expr) -> (Expr, bool) {
       || matches!(&args[0], Expr::FunctionCall { name, args }
         if name == "Style" && args.first().is_some_and(is_row)))
   {
-    return (in_text_face(&resolved), shows_text);
+    let in_face = in_text_face(&resolved);
+    // A row or a formula keeps the level its `Text` starts at; the items
+    // of a `Column` are raised again by the grid that lays them out.
+    let core = match &args[0] {
+      Expr::FunctionCall { name, args } if name == "Style" => &args[0],
+      other => other,
+    };
+    let is_column =
+      matches!(core, Expr::FunctionCall { name, .. } if name == "Column");
+    if !is_column {
+      return (at_text_script_level(&in_face), shows_text);
+    }
+    return (in_face, shows_text);
   }
   (resolved, shows_text)
 }

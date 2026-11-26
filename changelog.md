@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- A `Text[…]` item of a `Grid` starts at script level 0 again: a fraction
+    in it keeps the text size and a `∑`/`∏` in it stacks its limits under
+    and over the sign, instead of being set one level deep like the
+    grid's other items.
+- 2D text output parenthesizes a power base that prints with an operator
+    of its own (`(a b)^c`, `(a/b)^c`, `(a^b)^c`, `(a!)^2`), and sets the
+    exponent of a tall base on the row above its baseline
+    (`(1 + 1/x)^2`). The one-line text of a `Row`/`Column` item does the
+    same, parenthesizes a product denominator and writes a held `Product`
+    with `∏`.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
