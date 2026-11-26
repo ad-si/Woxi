@@ -53,11 +53,12 @@ $ wo 'BooleanConvert[(a || b) && c, "IF"]'
 If[a, If[c, True, False], If[b, If[c, True, False], False]]
 ```
 
-`"BDT"` is the same binary decision tree:
+`"BDT"` is the reduced binary decision diagram, each node written out as
+`(v && then) || ( !v && else)`:
 
 ```scrut
-$ wo 'BooleanConvert[a && !b, "BDT"]'
-If[a, If[b, False, True], False]
+$ wo 'BooleanConvert[(a || b) && c, "BDT"]'
+(a && c) || ( !a && b && c)
 ```
 
 `"IMPLIES"` writes the function with `Implies` and `Not` only:

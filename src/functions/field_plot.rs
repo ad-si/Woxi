@@ -3550,6 +3550,76 @@ fn contour_graphics_complex(items: &[Expr]) -> Expr {
   )
 }
 
+/// The `PlotRange` a field plot over `{x, …}`/`{y, …}` iterators reports
+/// for its x/y axes, axis by axis as Wolfram does: `Full` (the default, as
+/// `{Full, Full, Automatic}`) keeps the iterator bounds as written,
+/// `Automatic` (also what a value-only range like `{zmin, zmax}` leaves the
+/// axes) is the domain in machine reals, `All` stays `All`, and an explicit
+/// `{min, max}` is numericized.
+fn field_plot_domain_range(
+  args: &[Expr],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> Expr {
+  let reals =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  let numeric = |e: &Expr| match try_eval_to_f64(e) {
+    Some(v) => Expr::Real(v),
+    None => e.clone(),
+  };
+  let exact = |i: usize, lo: f64, hi: f64| match args.get(i) {
+    Some(Expr::List(it)) if it.len() == 3 => {
+      let bound = |e: &Expr| evaluate_expr_to_expr(e).unwrap_or(e.clone());
+      Expr::List(vec![bound(&it[1]), bound(&it[2])].into())
+    }
+    _ => reals(lo, hi),
+  };
+  let is_axis_spec = |e: &Expr| {
+    matches!(e, Expr::List(_))
+      || matches!(e, Expr::Identifier(n)
+        if n == "All" || n == "Full" || n == "Automatic")
+  };
+  let spec = args.iter().skip(3).rev().find_map(|a| {
+    crate::functions::graphics::option_name_value(a)
+      .filter(|(n, _)| *n == "PlotRange")
+      .map(|(_, v)| evaluate_expr_to_expr(&v).unwrap_or(v.into_owned()))
+  });
+  let full = || Expr::Identifier("Full".to_string());
+  let auto = || Expr::Identifier("Automatic".to_string());
+  let (xs, ys) = match &spec {
+    None => (full(), full()),
+    Some(Expr::Identifier(n))
+      if n == "All" || n == "Full" || n == "Automatic" =>
+    {
+      (spec.clone().unwrap(), spec.clone().unwrap())
+    }
+    Some(Expr::List(l)) if l.len() == 3 => (l[0].clone(), l[1].clone()),
+    Some(Expr::List(l))
+      if l.len() == 2 && is_axis_spec(&l[0]) && is_axis_spec(&l[1]) =>
+    {
+      (l[0].clone(), l[1].clone())
+    }
+    // A single number `r` is the symmetric range `{-r, r}` on every axis.
+    Some(r) if try_eval_to_f64(r).is_some() => {
+      let r = try_eval_to_f64(r).unwrap();
+      let side = Expr::List(vec![Expr::Real(-r), Expr::Real(r)].into());
+      (side.clone(), side)
+    }
+    Some(_) => (auto(), auto()),
+  };
+  let axis = |spec: &Expr, i: usize, lo: f64, hi: f64| match spec {
+    Expr::Identifier(n) if n == "Full" => exact(i, lo, hi),
+    Expr::Identifier(n) if n == "All" => spec.clone(),
+    Expr::List(b) if b.len() == 2 => {
+      Expr::List(b.iter().map(numeric).collect::<Vec<_>>().into())
+    }
+    _ => reals(lo, hi),
+  };
+  Expr::List(
+    vec![axis(&xs, 1, x_min, x_max), axis(&ys, 2, y_min, y_max)].into(),
+  )
+}
+
 fn field_plot_structure(
   items: Vec<Expr>,
   args: &[Expr],
@@ -3598,12 +3668,10 @@ fn field_plot_structure(
       }
     }
   }
-  let pair =
-    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
   if pin_range {
     explicit.push(rule_expr(
       id_expr("PlotRange"),
-      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+      field_plot_domain_range(args, (x_min, x_max), (y_min, y_max)),
     ));
   }
   if !explicit.iter().any(|o| name_of(o) == Some("Frame")) {
@@ -4858,15 +4926,9 @@ fn contour_plot_equations(
     crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
       != Some("PlotRange")
   });
-  {
-    let pair = |lo: f64, hi: f64| {
-      Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
-    };
-    source_options.push(rule_expr(
-      id_expr("PlotRange"),
-      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
-    ));
-  }
+  let domain_range =
+    field_plot_domain_range(args, (x_min, x_max), (y_min, y_max));
+  source_options.push(rule_expr(id_expr("PlotRange"), domain_range.clone()));
   // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
   // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot). Like the scalar form, it
   // carries the sampled domain as its `PlotRange`, so the frame spans the
@@ -4879,12 +4941,7 @@ fn contour_plot_equations(
     })
     .cloned()
     .collect();
-  let pair =
-    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
-  structure_options.push(rule_expr(
-    id_expr("PlotRange"),
-    Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
-  ));
+  structure_options.push(rule_expr(id_expr("PlotRange"), domain_range));
   let structure = call(
     "Graphics",
     vec![
@@ -4908,6 +4965,7 @@ fn contour_plot_equations(
     aspect_ratio: Some(area.plot_h / area.plot_w)
       .filter(|r| r.is_finite() && *r > 0.0),
     legends: Vec::new(),
+    legend_positions: Vec::new(),
     settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
@@ -8354,23 +8412,26 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The automatic value range fences off outliers (a lone spike would
+  // otherwise push every level away from the bulk of the data) the way a
+  // `ListPlot` of the same values clips its automatic y range, while
+  // `Contours -> n` spaces its levels over every value. The extent is that
+  // of the data itself, before the triangulation adds nodes.
+  let (v_min, v_max) = match opts.contours {
+    ContourSpec::Count(_) if opts.value_range.is_none() => (v_min, v_max),
+    _ => {
+      let values = grid.iter().flatten().copied();
+      crate::functions::plot::list_value_extent(values, opts.full_value_range)
+        .unwrap_or((f64::INFINITY, f64::NEG_INFINITY))
+    }
+  };
+
   // Matrix data is interpolated linearly over a triangulation of its
   // nodes rather than bilinearly over each cell.
   let grid = if nearest || is_triples_data(rows) {
     grid
   } else {
     triangulated_grid(&grid)
-  };
-
-  // As in `ContourPlot`, the automatic value range fences off outliers (a
-  // lone spike would otherwise push every level away from the bulk of the
-  // data), while `Contours -> n` spaces its levels over every value.
-  let (v_min, v_max) = match opts.contours {
-    ContourSpec::Count(_) if opts.value_range.is_none() => (v_min, v_max),
-    _ => {
-      let values: Vec<f64> = grid.iter().flatten().copied().collect();
-      opts.sampled_range(&values)
-    }
   };
   // The levels are chosen over all the data and the colors over the part
   // a `RegionFunction` keeps.
@@ -9235,7 +9296,33 @@ fn array_plot_ast_inset(
       spec.x.resolve(n_cols as f64, auto_x / n_cols as f64),
       spec.y.resolve(n_rows as f64, auto_y / n_rows as f64),
     ),
-    None => ((auto_x, auto_x), (auto_y, auto_y)),
+    // That margin is a length on the picture, the same on every side
+    // whatever shape the cells take: under an explicit `AspectRatio` the
+    // cells are stretched along the shorter dimension, and the margin there
+    // spans correspondingly fewer of them.
+    None => match aspect_ratio {
+      Some(aspect) if n_cols >= n_rows => {
+        let width = n_cols as f64 + 2.0 * auto_x;
+        let cell_h = (width * aspect - 2.0 * auto_y) / n_rows as f64;
+        let pad_y = if cell_h > 0.0 {
+          auto_y / cell_h
+        } else {
+          auto_y
+        };
+        ((auto_x, auto_x), (pad_y, pad_y))
+      }
+      Some(aspect) => {
+        let height = n_rows as f64 + 2.0 * auto_y;
+        let cell_w = (height / aspect - 2.0 * auto_x) / n_cols as f64;
+        let pad_x = if cell_w > 0.0 {
+          auto_x / cell_w
+        } else {
+          auto_x
+        };
+        ((pad_x, pad_x), (auto_y, auto_y))
+      }
+      None => ((auto_x, auto_x), (auto_y, auto_y)),
+    },
   };
   let total_cols = n_cols as f64 + pad_l + pad_r;
   let total_rows = n_rows as f64 + pad_b + pad_t;
@@ -9880,7 +9967,7 @@ fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
 /// Whether `args[start..]` holds an `ImageSize` whose width is an explicit
 /// zero (`ImageSize -> 0`, `{0}` or `{0, h}`): a picture with no extent.
 /// The first `ImageSize` is the one in effect, as for the size itself.
-fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
+pub(crate) fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
   args
     .iter()
     .skip(start)

@@ -5055,13 +5055,23 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // The base is parenthesized when it's additive, a product or a
       // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
       // unambiguously instead of 1+x² looking like 1 + x².
+      // So is a base that sets with a superscript of its own (`(a^b)^c`,
+      // `(f')^2`) or a postfix operator (`(a!)^2`).
       let base = canonical_operator_call(&args[0]);
-      let base_box =
-        if needs_paren_as_power_base(&base) || is_postfix_marked_call(&base) {
-          paren_box(expr_to_box_form(&base))
-        } else {
-          expr_to_box_form(&base)
-        };
+      let boxed = expr_to_box_form(&base);
+      let superscripted = matches!(&boxed, Expr::FunctionCall { name, .. }
+        if name == "SuperscriptBox");
+      let factorial = matches!(&base, Expr::FunctionCall { name, args }
+        if (name == "Factorial" || name == "Factorial2") && args.len() == 1);
+      let base_box = if needs_paren_as_power_base(&base)
+        || is_postfix_marked_call(&base)
+        || superscripted
+        || factorial
+      {
+        paren_box(boxed)
+      } else {
+        boxed
+      };
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
     }
@@ -5431,11 +5441,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         ],
       )
     }
-    // HoldForm[expr] → just the content
+    // `HoldForm[expr]` draws as its content but marks the box tree with a
+    // `TagBox` naming it, as the TraditionalForm boxes do.
     Expr::FunctionCall { name, args }
       if name == "HoldForm" && args.len() == 1 =>
     {
-      expr_to_box_form(&args[0])
+      call(
+        "TagBox",
+        vec![expr_to_box_form(&args[0]), id_expr("HoldForm")],
+      )
     }
     // `PolynomialForm[p, opts]` sets `p` in standard order unless
     // `TraditionalOrder -> True` asks for the descending one, tagged with
@@ -8390,7 +8404,9 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "PlusMinus" => "\u{00B1}",
     "MinusPlus" => "\u{2213}",
     "Congruent" => "\u{2261}",
-    _ => return None,
+    // An operator-only head (`RightArrow`, `Equilibrium`, `CupCap`, …) is
+    // written with its own character: `a → b`.
+    _ => return crate::syntax::inert_infix_char(head),
   })
 }
 

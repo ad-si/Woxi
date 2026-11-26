@@ -5886,6 +5886,59 @@ mod tests {
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate lays
+  /// its `Locator` control out inside a `PaneSelector` pane and hides the
+  /// marker in the other view with `ImageSize -> If[…, 12, 0]` on its
+  /// appearance graphic. Regression check: the marker is drawn on the
+  /// picture in one view and nothing is drawn in the other. This is a
+  /// self-authored, construct-equivalent example.
+  #[test]
+  fn locator_in_a_selector_pane_marks_the_plot_until_sized_to_zero() {
+    let code = r#"Manipulate[
+      Graphics[{If[mode == 1, Blue, Red], Line[{{0, 0}, {1, 0}, q}]},
+        PlotRange -> {{0, 1}, {0, 1}}],
+      Grid[{{Control[{{mode, 1, ""}, {1 -> "edit", 2 -> "view"}, Setter}],
+        PaneSelector[{1 -> Grid[{{Control[{{flag, True, "flag"}, {True, False}}],
+          Control[{{q, {0.4, 0.6}}, Locator,
+            Appearance -> Graphics[{Disk[]}, ImageSize -> If[mode == 1, 14, 0]]}]}}]},
+          Dynamic@mode]}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state
+      .current_svg()
+      .expect("the picture is drawn")
+      .to_string();
+    assert!(
+      svg.contains(r#"width="14.00" height="14.00""#)
+        && svg.contains("<ellipse"),
+      "the disk marks the point: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
+    let mode = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("the mode control");
+    assert!(state.select_discrete_index(mode, 1));
+    state.reevaluate();
+    let svg = state.current_svg().expect("the picture is drawn");
+    assert!(
+      !svg.contains("<ellipse"),
+      "no marker in the view mode: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
+  }
+
   /// A saved locator position outside the range derived from its initial
   /// value stays reachable: the 2D slider's range grows to include it.
   #[test]
@@ -8046,6 +8099,35 @@ mod tests {
 
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["cutoff"]);
+  }
+
+  /// A control label written as a product of its text and a `Spacer[n]`
+  /// (`"name" Spacer[12]`, padding the label out to line controls up) is
+  /// the text followed by blank space; the label must not spell out the
+  /// product as `name*Spacer[12]`.
+  #[test]
+  fn control_label_times_spacer_shows_only_the_text() {
+    let code = r#"Manipulate[
+      If[show, k, -k],
+      {{show, True, "visible" Spacer[12]}, {True, False}},
+      {{k, 3, Spacer[5] "level"}, 1, 9, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    let labels: Vec<String> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Discrete { label, .. }
+        | ControlState::Continuous { label, .. } => Some(label.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    assert_eq!(labels[0].trim(), "visible");
+    assert_eq!(labels[1].trim(), "level");
   }
 
   /// A sampled Demonstration titles a control with `Row[{"title",
@@ -10752,6 +10834,44 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
   }
 
+  /// Points dragged over a `LocatorPane` whose range is `{{0, 0}, {n - 1,
+  /// m - 1}, {1, 1}}` snap to the pane's steps, and the box they move in
+  /// grows and shrinks with the sliders `n` and `m`.
+  #[test]
+  fn locator_pane_points_snap_to_steps_in_a_range_following_sliders() {
+    let code = r#"Manipulate[
+      LocatorPane[Dynamic[{a, b}],
+        Graphics[{Point[a], Point[b]}, PlotRange -> {{0, n - 1}, {0, m - 1}}],
+        {{0, 0}, {n - 1, m - 1}, {1, 1}}],
+      {{a, {1, 2}}, ControlType -> None},
+      {{b, {2, 1}}, ControlType -> None},
+      {{n, 12}, 2, 25, 1}, {{m, 7}, 2, 25, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let index = |state: &ManipulateState, name: &str| {
+      state
+        .controls
+        .iter()
+        .position(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("{name} control"))
+    };
+    let corner =
+      |state: &ManipulateState| match &state.controls[index(state, "a")] {
+        ControlState::Slider2D { x_max, y_max, .. } => (*x_max, *y_max),
+        other => panic!("expected a 2D control, got {other:?}"),
+      };
+    assert_eq!(corner(&state), (11.0, 6.0));
+    let a = index(&state, "a");
+    state.slider2d_change(a, 0, 3.4);
+    state.slider2d_change(a, 1, 4.6);
+    assert_eq!(state.controls[a].current_code(), "{3, 5}");
+    let n = index(&state, "n");
+    state.slide_continuous(n, 20.0);
+    state.reevaluate();
+    assert_eq!(corner(&state), (19.0, 6.0));
+  }
+
   /// A Locator's point is bound as written, coordinate by coordinate: the
   /// integer of `{0.5, 80}` stays exact, so a label formatting it with
   /// `NumberForm[…, {3, 1}]` reads `80` as in Wolfram rather than `80.0`.
@@ -11808,6 +11928,28 @@ mod tooltip_region_tests {
     let center = note.x + note.width / 2.0;
     assert!((center - 200.0).abs() < 4.0, "{note:?}");
     assert!(note.y + note.height < 100.0, "{note:?}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a ring of sites
+  /// stepped by nested `For` loops). Its body defines `f[t_, i_] = …` from
+  /// the controls once those loops have left the globals `t` and `i` set,
+  /// then draws `Array[f, …]`. The controls are scoped lexically, so the
+  /// assignment's pattern variables are its own and the loop counters do
+  /// not leak into the definition — which used to draw every cell alike.
+  /// This is a self-authored, construct-equivalent example.
+  #[test]
+  fn body_assignment_keeps_its_own_pattern_variables() {
+    let code = r#"Manipulate[
+      For[k = 0, k < n, k++, cell[n, k] = Mod[k, 2]];
+      shade[k_] = 1 - cell[n, k - 1];
+      Array[shade, n],
+      {{n, 4, "cells"}, 2, 8, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("{1, 0, 1, 0}"));
   }
 
   /// A picture without any `Tooltip` has no hover regions.
