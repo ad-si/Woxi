@@ -1741,15 +1741,23 @@ pub(crate) fn shield_nested_scopes(
 }
 
 /// Rename, inside `expr`, the pattern variables of every immediate rule or
-/// assignment (`->`, `=`, `^=`) that rebinds one of `names` (`x` → `x$`).
+/// assignment (`->`, `=`, `^=`) that mentions one of `names` (`x` → `x$`).
 ///
 /// For code run under `Block[{x = …}, …]` that stands in for lexical
 /// scoping: Wolfram localizes a Manipulate's controls lexically, so in
 /// `Entity["Isotope", x_] -> x` the rule's own `x` shadows the control and
 /// its right side stays the bare symbol. Under a Block the right side would
-/// evaluate to the control's value instead. Delayed forms (`:>`, `:=`) and
-/// `Function` substitute their variables lexically and need no renaming.
-/// Returns None when no rule needed renaming.
+/// evaluate to the control's value instead.
+///
+/// The same lexical scoping renames the pattern variables of a nested rule
+/// or assignment that mentions a control at all (see
+/// [`shield_nested_scopes`]): with a control `n`, `f[t_] = g[n, t]` is
+/// stored as `f[t$_] = g[n, t$]`, so a value the global `t` happens to hold
+/// (a loop counter, say) does not leak into the right side.
+///
+/// Delayed forms (`:>`, `:=`) and `Function` substitute their variables
+/// lexically and need no renaming. Returns None when no rule needed
+/// renaming.
 pub(crate) fn shield_rules_rebinding(
   expr: &Expr,
   names: &[String],
@@ -1767,10 +1775,11 @@ fn shield_rules_rebinding_rec(
   if !mentions_any_symbol(expr, names) {
     return expr.clone();
   }
+  // `expr` mentions a control (checked above), so every pattern variable
+  // of an eager rule at this node is renamed.
   let rebound = |lhs: &Expr| -> Vec<String> {
     let mut pats = Vec::new();
     collect_pattern_names(lhs, &mut pats);
-    pats.retain(|p| names.contains(p));
     pats.sort();
     pats.dedup();
     pats

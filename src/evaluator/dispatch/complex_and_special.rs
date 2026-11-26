@@ -8390,7 +8390,9 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "PlusMinus" => "\u{00B1}",
     "MinusPlus" => "\u{2213}",
     "Congruent" => "\u{2261}",
-    _ => return None,
+    // An operator-only head (`RightArrow`, `Equilibrium`, `CupCap`, …) is
+    // written with its own character: `a → b`.
+    _ => return crate::syntax::inert_infix_char(head),
   })
 }
 

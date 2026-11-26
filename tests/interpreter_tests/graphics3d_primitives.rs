@@ -1071,6 +1071,28 @@ mod framing {
 mod plot_range_clipping {
   use super::*;
 
+  /// A label is cut off by the box the scene displays, which is the plot
+  /// range widened by its padding: `Show` inheriting the padded automatic
+  /// range of a `ParametricPlot3D` keeps a label set just off the surface,
+  /// and drops one further out. With no padding the range itself cuts.
+  #[test]
+  fn text_is_cut_off_by_the_padded_box() {
+    let labels = |options: &str| {
+      let s = svg(&format!(
+        "Show[{{ParametricPlot3D[{{(3 + Cos[v]) Cos[u], (3 + Cos[v]) Sin[u], \
+         Sin[v]}}, {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}{options}], \
+         Graphics3D[{{Text[\"Qa\", {{4.2, 0, 0}}], Text[\"Qb\", {{0, 0, 1.08}}], \
+         Text[\"Qc\", {{0, 0, 1.3}}], Text[\"Qd\", {{4.5, 0, 0}}]}}]}}]"
+      ));
+      ["Qa", "Qb", "Qc", "Qd"].map(|l| s.contains(&format!(">{l}<")))
+    };
+    assert_eq!(labels(""), [true, true, false, false]);
+    assert_eq!(
+      labels(", PlotRangePadding -> None"),
+      [false, false, false, false]
+    );
+  }
+
   /// An axis given an interval of no extent (`{0, 0}`) is framed by the
   /// contents, while the other axes keep their explicit intervals. The
   /// whole `PlotRange` used to be dropped, so every scene filled its
