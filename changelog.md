@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `ContourPlot`, `ListContourPlot` and the density / volume plots read
+    `Contours -> {Automatic, n}` as at most `n` automatically chosen round
+    levels; it was taken for a list of explicit levels, leaving the lone
+    level `n`.
+- A `Graphics3D` `PlotRange` with an interval of no extent on one axis
+    (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
+    keeps the explicit intervals of the others; the whole range was
+    dropped, so the scene filled its frame.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,

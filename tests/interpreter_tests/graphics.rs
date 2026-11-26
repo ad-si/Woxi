@@ -78721,3 +78721,36 @@ mod row_image_size_box {
     );
   }
 }
+
+mod contours_automatic_with_maximum {
+  use super::*;
+
+  fn plot(contours: &str) -> String {
+    export_svg(&format!(
+      "ContourPlot[x + y, {{x, 0, 1}}, {{y, 0, 1}}, Contours -> {contours}]"
+    ))
+  }
+
+  /// `Contours -> {Automatic, n}` chooses round levels itself, at most `n`
+  /// of them. It used to be read as a list of explicit levels, leaving the
+  /// single level `n`.
+  #[test]
+  fn caps_the_number_of_round_levels() {
+    assert_eq!(plot("{Automatic, 3}"), plot("{1/2, 1, 3/2}"));
+    assert_eq!(plot("{Automatic, 1}"), plot("{1}"));
+    assert_ne!(plot("{Automatic, 3}"), plot("{3}"));
+    assert_ne!(plot("{Automatic, 3}"), plot("Automatic"));
+  }
+
+  #[test]
+  fn list_contour_plot_takes_it_too() {
+    let plot = |contours: &str| {
+      export_svg(&format!(
+        "ListContourPlot[Table[i + j, {{i, 0, 4}}, {{j, 0, 4}}], \
+         Contours -> {contours}]"
+      ))
+    };
+    assert_ne!(plot("{Automatic, 3}"), plot("{3}"));
+    assert_eq!(plot("{Automatic, 3}"), plot("{2, 4, 6}"));
+  }
+}
