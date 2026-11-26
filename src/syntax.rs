@@ -188,6 +188,9 @@ pub struct PlotSource {
   /// the merge, as Wolfram combines the `Legended` plots it is given.
   /// Empty = the legend comes from `options` (a single plot).
   pub legends: Vec<(usize, String)>,
+  /// Where each entry of `legends` is drawn (the position of its own plot's
+  /// `Placed[…, pos]` legend), parallel to `legends`.
+  pub(crate) legend_positions: Vec<crate::functions::plot::LegendPosition>,
   /// Whether the plot settles `PlotRange -> All` into the numeric range of
   /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
   /// then keeps that range like an automatic one, clipping other graphics
@@ -2348,7 +2351,7 @@ fn box_row_operator_precedence(part: &Expr) -> Option<u16> {
   Some(match s.as_str() {
     ";" => 10,
     "=" | ":=" | "^=" | "^:=" => 40,
-    "->" | ":>" | "\u{2192}" | "\u{f522}" => 120,
+    "->" | ":>" | "\u{f522}" => 120,
     "||" | "\u{2228}" => 215,
     "&&" | "\u{2227}" => 215,
     "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=!=" | "\u{2260}"
@@ -3481,10 +3484,12 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let arrow_at = (1..children.len())
         .find(|&i| {
           let g = gap(i);
-          g.contains("->") || g.contains(":>") || g.contains('\u{2192}')
+          RULE_ARROWS.iter().any(|arrow| g.contains(arrow))
         })
         .unwrap_or(children.len() - 1);
-      let is_delayed = gap(arrow_at).contains(":>");
+      let is_delayed = DELAYED_RULE_ARROWS
+        .iter()
+        .any(|arrow| gap(arrow_at).contains(arrow));
       let mut pattern = pair_to_expr(children[0].clone());
       if arrow_at == 2 {
         // pattern /; condition -> replacement
@@ -6147,12 +6152,7 @@ fn parse_association(pair: Pair<Rule>) -> Expr {
     let args: Vec<Expr> = inner_pairs
       .into_iter()
       .map(|p| match p.as_rule() {
-        Rule::AssociationItem => {
-          let mut inner = p.into_inner();
-          let key = pair_to_expr(inner.next().unwrap());
-          let val = pair_to_expr(inner.next().unwrap());
-          rule_expr(key, val)
-        }
+        Rule::AssociationItem => parse_association_item(p),
         _ => pair_to_expr(p.into_inner().next().unwrap()),
       })
       .collect();
@@ -6161,10 +6161,15 @@ fn parse_association(pair: Pair<Rule>) -> Expr {
 }
 
 fn parse_association_item(pair: Pair<Rule>) -> Expr {
+  let is_delayed = is_assoc_item_delayed(pair.as_str());
   let mut inner = pair.into_inner();
   let key = pair_to_expr(inner.next().unwrap());
   let val = pair_to_expr(inner.next().unwrap());
-  rule_expr(key, val)
+  if is_delayed {
+    rule_delayed_expr(key, val)
+  } else {
+    rule_expr(key, val)
+  }
 }
 
 fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
@@ -6391,8 +6396,9 @@ fn base_operator_precedence(op: &str) -> u8 {
     // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
     // `lhs :> rhs /; test` is `RuleDelayed[lhs, Condition[rhs, test]]`.
     "/;" => 12,
-    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" | ":>" | "\\[RuleDelayed]"
-    | "\u{F51F}" => 11, // Rule/RuleDelayed (lower than boolean operators)
+    "->" | "\\[Rule]" | "\u{F522}" | ":>" | "\\[RuleDelayed]" | "\u{F51F}" => {
+      11
+    } // Rule/RuleDelayed (lower than boolean operators)
     "||" => 15,                              // Or
     "&&" => 18,                              // And
     "\\[And]" | "\u{2227}" => 18,            // \[And] (same as &&)
@@ -6722,7 +6728,6 @@ fn build_expr_with_precedence(
       || assoc_op_str == "@*"
       || assoc_op_str == "/*"
       || assoc_op_str == "->"
-      || assoc_op_str == "\u{2192}"
       || assoc_op_str == "\\[Rule]"
       || assoc_op_str == "\u{F522}"
       || assoc_op_str == ":>"
@@ -7186,9 +7191,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     "." => call("Dot", vec![left.clone(), right.clone()]),
     "**" => call("NonCommutativeMultiply", vec![left.clone(), right.clone()]),
     "//@" => call("MapAll", vec![left.clone(), right.clone()]),
-    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" => {
-      rule_expr(left.clone(), right.clone())
-    }
+    "->" | "\\[Rule]" | "\u{F522}" => rule_expr(left.clone(), right.clone()),
     ":>" | "\\[RuleDelayed]" | "\u{F51F}" => {
       rule_delayed_expr(left.clone(), right.clone())
     }
@@ -7367,6 +7370,20 @@ pub enum InfixGrouping {
   None,
 }
 
+/// The spellings of the delayed rule arrow, `:>`.
+const DELAYED_RULE_ARROWS: [&str; 3] = [":>", "\\[RuleDelayed]", "\u{F51F}"];
+
+/// Every spelling of a rule arrow, `->` or `:>`. `\[RightArrow]` (U+2192) is
+/// not one of them: it is the inert infix operator `RightArrow`.
+const RULE_ARROWS: [&str; 6] = [
+  "->",
+  "\\[Rule]",
+  "\u{F522}",
+  ":>",
+  "\\[RuleDelayed]",
+  "\u{F51F}",
+];
+
 /// The generated infix operator a token spells — its character, or its
 /// `\[Name]` escape.
 fn generic_infix_operator(
@@ -7389,9 +7406,6 @@ fn generic_infix_operator(
 /// heads have no built-in meaning; heads that evaluate (Plus, Times, …) or
 /// whose character is invisible or private-use keep the call form.
 pub fn inert_infix_char(name: &str) -> Option<&'static str> {
-  if name == "RightArrow" {
-    return Some("\u{2192}");
-  }
   if matches!(
     name,
     "Plus" | "Times" | "InvisibleTimes" | "ImplicitPlus" | "Application"
@@ -8291,6 +8305,13 @@ pub static GENERIC_INFIX_OPERATORS: &[(
     492,
     InfixGrouping::Flat,
   ), // 580
+  (
+    "\u{2192}",
+    "RightArrow",
+    "RightArrow",
+    198,
+    InfixGrouping::Flat,
+  ), // 270
   (
     "\u{21E5}",
     "RightArrowBar",

@@ -6247,6 +6247,13 @@ snapshot of a box 1.6 times as tall as it is deep does pin down one
 exception: the x axis, along the front face, stays on the bottom front edge
 although the top back one is nearer the viewer; Woxi follows that.)
 
+Another Demonstration's snapshots, of a `Plot3D` with the default
+`BoxRatios` (`{1, 1, 0.4}`) and `ViewPoint`, `AxesLabel` set and
+`ImageSize -> {450, 350}`, also put the y axis on the upper-left box edge,
+where Woxi takes the lower-right one. Both upper-left cases give an explicit
+`{width, height}` image size, so the choice may depend on the picture's
+shape on screen rather than on the box alone; that is still unconfirmed.
+
 ### Direction of 3D tick marks
 
 Wolfram draws a 3D tick mark in the scene along one of the two other
@@ -11292,6 +11299,25 @@ unevaluated, so the plot samples the compiled function numerically and
 returns a `Graphics3D`. The unit test
 `compiled_vector_argument_iteration_is_not_run_symbolically` is in
 `EXACT_EXPR_SKIP`.
+
+### StandardForm boxes of operator-only heads
+
+`ToBoxes[RightArrow[a, b]]` is `RowBox[{"a", "\[RightArrow]", "b"}]` in
+Wolfram, and likewise for the other heads that only stand for an operator
+character (`LeftArrow`, `Equilibrium`, `CupCap`, `Element`, `Subset`, …).
+Woxi writes the call's source, `RowBox[{RightArrow, [, RowBox[{a, ,, b}],
+]}]`. `ToBoxes[…, TraditionalForm]`, the displayed output and the labels of a
+graphic are infix. Not yet checked against wolframscript.
+
+### Automatic `ArrayPlot` margin under an explicit `AspectRatio`
+
+Woxi keeps the automatic margin between the cells and the frame the same
+length on every side when `AspectRatio` stretches the cells (1/48 of the
+longer side across, 1/50 down, as without the option). That is measured from
+a picture Wolfram stored for a 240 x 40 array at `AspectRatio -> 0.7`, where
+both margins are about 11 pixels; the `PlotRangePadding` that
+`AbsoluteOptions` reports for such a plot is not yet checked against
+wolframscript.
 
 ## Unit-test conformance batch (2026-11-25)
 

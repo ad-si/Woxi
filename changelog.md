@@ -9,6 +9,42 @@
     `VertexShape` picture is as large as `VertexSize` says; and two edges
     leading away from one vertex are drawn as a tree with that root on top
     instead of a horizontal path.
+- `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
+    tube instead of drawing it in the plain color, each color given as a
+    color or a list of directives, and an option right after the curve
+    (`Tube[pts, VertexColors -> …]`) is no longer read as a radius of zero.
+- `\[RightArrow]` (`→`, U+2192) is the inert infix operator `RightArrow`
+    like in Wolfram, no longer a spelling of the rule arrow: `a → b` is
+    `RightArrow[a, b]`. `\[Rule]` and `\[RuleDelayed]` are accepted
+    right after `/.` (`expr /. x \[Rule] 3` was a parse error), and
+    `<|a \[Rule] 1, b :> 2|>` keeps its delayed entry.
+- Heads that only stand for an operator character (`RightArrow`,
+    `Equilibrium`, `CupCap`, …) are written infix in `TraditionalForm`
+    boxes and in the labels and legends of a graphic, where they read
+    `RightArrow(a, b)`.
+- `Show` draws each plot's `PlotLegends -> Placed[labels, pos]` legend at
+    its own position instead of stacking every entry at the first plot's.
+- `ArrayPlot` keeps its automatic margin between the cells and the frame
+    even on all sides under an explicit `AspectRatio`.
+- Woxi Studio gives an immediate assignment or rule in a `Manipulate`
+    body that mentions a control its own pattern variables
+    (`f[t_] = g[n, t]` is `f[t$_] = g[n, t$]`, as the lexically scoped
+    controls make it in Wolfram), so a value the global `t` holds — a loop
+    counter, say — no longer leaks into the definition.
+- `AxesStyle` styles the axes of 3D plots and `Graphics3D`: a color, a
+    font size, `Bold` or `Italic` reach the axis line, its label, its tick
+    marks and its tick labels (`TicksStyle` still overrides the ticks), and
+    `{sx, sy, sz}` styles the three axes separately.
+- `RotationTransform` and `RotationMatrix` by a machine-real angle about
+    a 3D axis, and a `TransformationFunction` of machine reals applied to
+    points, are computed in machine arithmetic instead of through the
+    symbolic formula: a loop of a few thousand rotations (a turtle drawing
+    a branching structure) took over a minute and now takes seconds.
+- An unboxed `Graphics3D` of fixed width and height whose contents run
+    along one axis only (a straight line parallel to it) is fitted with
+    the ranges made up for the other two axes, so the line is drawn
+    centered and clear of the frame as in Wolfram's pictures, instead of
+    from corner to corner.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
@@ -35,6 +71,14 @@
     `GraphicsGrid` overlaps the cells at an even pitch instead of butting
     them together, and `ImageSize -> {w, h}` is the exact size of a
     `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
+- A `Line` running far outside an explicit `PlotRange` (a hyperbola from
+    `ParametricPlot` sampled next to its pole, combined under `Show`) is
+    cut near the picture instead of being written to the SVG with
+    coordinates billions of pixels away; Woxi Studio drew such a picture
+    blank.
+- A `Manipulate` control label padded with a spacer
+    (`"name" Spacer[12]`) shows its text in Woxi Studio instead of
+    `name*Spacer[12]`.
 - `ContourPlot` draws every curve of a list that mixes equations with
     plain expressions (`{f == c, {g, h}}`, each expression as its zero
     contour) and of an entry that only evaluates to a list (a `Which`
