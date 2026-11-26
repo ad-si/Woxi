@@ -44438,6 +44438,60 @@ mod framed {
     assert!(svg.contains(">x</text>"));
   }
 
+  /// Regression: a `Style` whose directives are given as one list (or a
+  /// `Directive`) lost all of them once it sat in a `Framed` inside a
+  /// typeset label — the frame showed plain text of the label's own size.
+  #[test]
+  fn framed_style_with_directive_list_in_plot_label_keeps_its_styling() {
+    clear_state();
+    let label = |style: &str| {
+      interpret(&format!(
+        "ExportString[Graphics[{{Circle[]}}, PlotLabel -> \
+         Row[{{\"a \", Framed[{style}], \" b\"}}]], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    let flat = label("Style[7, Blue, Bold, 16, Background -> Yellow]");
+    assert!(flat.contains("fill=\"rgb(0,0,255)\""), "{flat}");
+    assert!(flat.contains("font-weight=\"bold\""), "{flat}");
+    assert!(flat.contains("fill=\"rgb(255,255,0)\""), "{flat}");
+    assert!(flat.contains("font-size=\"16.0\""), "{flat}");
+    for style in [
+      "Style[7, {Blue, Bold, 16, Background -> Yellow}]",
+      "Style[7, Directive[Blue, Bold, 16, Background -> Yellow]]",
+      "Style[7, {Blue, {Bold, 16}}, Background -> Yellow]",
+    ] {
+      assert_eq!(label(style), flat, "{style} must draw like the flat form");
+    }
+  }
+
+  /// Regression: `Background` on a `Style` directly inside `Framed`/`Panel`
+  /// was dropped, while its color and weight were kept.
+  #[test]
+  fn framed_style_background_is_painted_behind_the_text() {
+    clear_state();
+    for (wrapper, style) in [
+      ("Framed", "Style[7, Blue, Background -> Yellow]"),
+      ("Framed", "Style[7, {Blue, Background -> Yellow}]"),
+      ("Panel", "Style[\"ab\", Background -> Yellow]"),
+    ] {
+      let svg =
+        interpret(&format!("ExportString[{wrapper}[{style}], \"SVG\"]"))
+          .unwrap();
+      let rect = svg.find("fill=\"rgb(255,255,0)\"");
+      let text = svg.find("<text");
+      assert!(
+        rect.is_some() && rect < text,
+        "{wrapper}[{style}] should paint the background before the text: \
+         {svg}"
+      );
+    }
+    // Without a `Background` nothing is painted behind the text.
+    let plain =
+      interpret("ExportString[Framed[Style[7, Blue]], \"SVG\"]").unwrap();
+    assert_eq!(plain.matches("<rect").count(), 1, "{plain}");
+  }
+
   #[test]
   fn export_string_svg_list_with_framed_renders_row() {
     // Regression: exporting a list that mixes plain numbers and Framed
