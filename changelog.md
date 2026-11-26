@@ -240,6 +240,12 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Woxi Studio & Wolfram Demonstrations
 
+- A `Manipulate` choice label that sets a matrix among its words
+    (`Row[{"mapped by ", Dynamic@MatrixForm[m]}]`) is typeset as a picture,
+    and a `Dynamic` inside a choice label follows the values the body assigns.
+- `Show[…, ImageSize -> {w, h}, AspectRatio -> Full]` stretches the drawing
+    over the whole picture, and a flat automatic plot range opens up before an
+    explicit `PlotRangePadding` pads it.
 - `Manipulate` supports color controls with an initial color but no range
     or choice list. Scalar and `Slider2D` bounds can depend on other controls,
     including through `Dynamic` wrappers.

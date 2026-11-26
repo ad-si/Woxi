@@ -3038,6 +3038,53 @@ mod graphics {
       );
     }
 
+    /// A raw `Graphics` already in `Log` space (how a notebook stores a log
+    /// plot) leading a `Show` keeps its `PlotRange` as given: a log plot
+    /// layered over it used to push that range through `Log` a second time.
+    #[test]
+    fn show_log_plot_over_log_space_graphics_keeps_its_plot_range() {
+      for plot in [
+        "LogLogPlot[2000/x, {x, 10, 10^5}]",
+        "LogPlot[Exp[x], {x, 2, 11}]",
+        "ListLogLogPlot[{{10, 1}, {1000, 100}}, Joined -> True]",
+      ] {
+        assert_eq!(
+          interpret(&format!(
+            "PlotRange[Show[Graphics[{{Line[{{{{3., -1.}}, {{4., 3.}}}}]}}, \
+             PlotRange -> {{{{Log[7], Log[100000]}}, {{-1.77, Log[200]}}}}, \
+             Frame -> True], {plot}]]"
+          ))
+          .unwrap(),
+          "{{1.9459101490553132, 11.512925464970229}, \
+           {-1.77, 5.298317366548036}}",
+          "{plot}"
+        );
+      }
+    }
+
+    /// A curve merged behind another plot by `Show` is cut at the range of
+    /// the plot that sampled it, not at the leading plot's: layered onto a
+    /// taller graphic, all of it is drawn (it used to stop at the leading
+    /// plot's top). A pole is still trimmed by its own plot.
+    #[test]
+    fn nested_show_keeps_a_later_plots_curve_beyond_the_first_range() {
+      let top = |plots: &str| {
+        interpret(&format!(
+          "Max[Cases[Show[Graphics[{{}}, PlotRange -> {{{{0, 5}}, {{0, 100}}}}], \
+           Show[{plots}]], Line[q_] :> q[[All, 2]], Infinity]]"
+        ))
+        .unwrap()
+        .parse::<f64>()
+        .unwrap()
+      };
+      let linear = top("Plot[x, {x, 0, 1}], Plot[10 x, {x, 0, 5}]");
+      assert!((linear - 50.0).abs() < 1e-3, "{linear}");
+      let log = top("LogPlot[x, {x, 1, 2}], LogPlot[10 x, {x, 1, 5}]");
+      assert!((log.exp() - 50.0).abs() < 1e-3, "{log}");
+      let pole = top("Plot[x, {x, 0, 1}], Plot[1/(x - 2), {x, 0, 5}]");
+      assert!(pole < 100.0, "{pole}");
+    }
+
     /// `GridLines -> Automatic` on a log plot shown with other graphics
     /// draws its horizontal lines at the log ticks.
     #[test]
@@ -7200,6 +7247,63 @@ mod graphics {
           (28.0..39.0).contains(&cx),
           "expected the point ~1/3 into the image (padded {{-1,2}} span), \
            cx={cx}"
+        );
+      }
+
+      // A flat automatic range (a horizontal line alone) opens up to
+      // `{-1, 1}` around 0, or from 0 to twice its value, before an explicit
+      // `PlotRangePadding` pads it — as it does under the default padding.
+      // It stayed zero-high, so the line sat on the picture's top edge.
+      #[test]
+      fn flat_automatic_range_opens_up_before_padding() {
+        for (y, padding) in [(0, "Scaled[0.05]"), (4, "None"), (-4, "0")] {
+          let svg = export_svg(&format!(
+            "Graphics[{{Line[{{{{-100, {y}}}, {{100, {y}}}}}], \
+             Point[{{0, {y}}}]}}, PlotRangePadding -> {padding}, \
+             AspectRatio -> Full, ImageSize -> {{200, 100}}]"
+          ));
+          let (_, cy) = point_px(&svg);
+          assert!(
+            (45.0..55.0).contains(&cy),
+            "y = {y}, padding {padding}: expected the line mid-height, cy={cy}"
+          );
+        }
+      }
+
+      // `Show[plot, …, AspectRatio -> Full]` with an `ImageSize -> {w, h}`
+      // stretches the drawing over the whole picture, like the plot alone
+      // does: the `Full` was dropped, leaving a 1/GoldenRatio drawing in a
+      // square picture.
+      #[test]
+      fn show_with_full_aspect_ratio_fills_the_image_size() {
+        // A plot on its own keeps the requested height.
+        let svg = export_svg(
+          "Show[Plot[3 x, {x, -100, 100}], ImageSize -> {280, 280}, \
+           AspectRatio -> Full]",
+        );
+        assert!(
+          svg.starts_with("<svg width=\"280\" height=\"280\""),
+          "{}",
+          &svg[..60]
+        );
+        // Layered with primitives, the curve runs from the bottom of the
+        // picture to its top.
+        let svg = export_svg(
+          "Show[Plot[3 x, {x, -100, 100}], Graphics[Point[{100, 300}]], \
+           ImageSize -> {280, 280}, AspectRatio -> Full]",
+        );
+        let (_, cy) = point_px(&svg);
+        assert!(cy < 20.0, "expected the point near the top, cy={cy}");
+        let start_y: f64 = svg
+          .split("<polyline points=\"")
+          .nth(1)
+          .and_then(|s| s.split([' ', '"']).next())
+          .and_then(|xy| xy.split(',').nth(1))
+          .and_then(|y| y.parse().ok())
+          .expect("the curve's first point");
+        assert!(
+          start_y > 250.0,
+          "expected the curve to start near the bottom, y={start_y}"
         );
       }
 
@@ -56054,6 +56158,53 @@ mod manipulate {
     }
   }
 
+  /// A 2D slider's label keeps its styling: the italic subscript of
+  /// `Subscript["P", Style["xy", Italic]]` survives as label runs instead
+  /// of being flattened to the plain text `Pxy`. Regression: `Slider2D`
+  /// controls carried only the flattened label.
+  #[test]
+  fn control_slider2d_keeps_styled_label_runs() {
+    let expr = interpret_to_expr(
+      "Control[{{p, {1, 2}, Subscript[\"P\", Style[\"xy\", Italic]]}, \
+       {0, 0}, {5, 5}}]",
+    )
+    .unwrap();
+    let spec = extract_control_spec(&expr).expect("well-formed control");
+    let ManipulateControl::Slider2D {
+      label, label_runs, ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected Slider2D control, got {:?}", spec.controls[0]);
+    };
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(&text, label);
+    let base = label_runs.first().expect("a run for the base");
+    assert_eq!(base.text, "P");
+    assert!(!base.italic && !base.subscript);
+    let script = label_runs.last().expect("a run for the subscript");
+    assert_eq!(script.text, "xy");
+    assert!(script.italic && script.subscript);
+  }
+
+  /// A `LabelStyle` option styles a 2D slider's label like any other
+  /// control's.
+  #[test]
+  fn manipulate_label_style_applies_to_slider2d_label() {
+    let expr = interpret_to_expr(
+      "Manipulate[p, {{p, {1, 2}, \"point\"}, {0, 0}, {5, 5}}, \
+       LabelStyle -> Italic]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed spec");
+    let ManipulateControl::Slider2D { label_runs, .. } = &spec.controls[0]
+    else {
+      panic!("expected Slider2D control, got {:?}", spec.controls[0]);
+    };
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "point");
+    assert!(label_runs.iter().all(|r| r.italic), "runs: {label_runs:?}");
+  }
+
   #[test]
   fn control_interval_slider() {
     let expr =
@@ -78496,6 +78647,78 @@ mod graphics3d_review_ticks_heads_framing {
     );
     let svg = export_svg(g);
     assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
+  }
+}
+
+mod row_image_size_box {
+  use super::*;
+
+  fn root_size(svg: &str) -> (String, String) {
+    let open = svg.split_once('>').map_or(svg, |(open, _)| open);
+    let attr = |name: &str| {
+      open
+        .split_once(&format!(" {name}=\""))
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map_or_default(|(value, _)| value.to_string())
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `Row[{graphic}, ImageSize -> {w, h}]` is a `w` × `h` box: an
+  /// automatically sized picture is redrawn to fit it, as in a `Pane` of
+  /// that size, instead of keeping its default 360-point square.
+  #[test]
+  fn an_auto_sized_picture_fits_the_row_box() {
+    clear_state();
+    let svg = export_svg("Row[{Graphics[{Disk[]}]}, ImageSize -> {200, 50}]");
+    assert_eq!(root_size(&svg), ("200".to_string(), "50".to_string()));
+    assert!(svg.contains("viewBox=\"0 0 50 50\""), "{svg}");
+  }
+
+  /// A picture of labels alone has no shape of its own, so it takes the
+  /// shape of the row's box and its text stays centered and readable.
+  #[test]
+  fn a_picture_of_labels_takes_the_shape_of_the_row_box() {
+    clear_state();
+    for (w, h) in [(360, 16), (240, 30)] {
+      let svg = export_svg(&format!(
+        "Row[{{Graphics[{{Style[Text[\"some readout\"], 12]}}]}}, \
+         ImageSize -> {{{w}, {h}}}, BaselinePosition -> Center]"
+      ));
+      assert_eq!(root_size(&svg), (w.to_string(), h.to_string()));
+      assert!(svg.contains(&format!("viewBox=\"0 0 {w} {h}\"")), "{svg}");
+      assert!(svg.contains(">some readout</text>"), "{svg}");
+    }
+  }
+
+  /// In a notebook `Column` such a row takes only the strip it names.
+  #[test]
+  fn a_sized_row_in_a_column_takes_only_its_strip() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Row[{Graphics[{Text[\"readout\"]}]}, ImageSize -> {360, 16}], \
+       Graphics[{Disk[]}, ImageSize -> {360, 50}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("a rendered column");
+    let (_, height) = root_size(&svg);
+    assert!(height.parse::<f64>().unwrap() < 100.0, "{svg}");
+  }
+
+  /// A picture with its own `ImageSize`, and a row that names a width
+  /// alone, are left as they were.
+  #[test]
+  fn sized_pictures_and_width_only_rows_keep_their_size() {
+    clear_state();
+    let own = export_svg(
+      "Row[{Graphics[{Disk[]}, ImageSize -> 30]}, ImageSize -> {200, 50}]",
+    );
+    assert!(own.contains("viewBox=\"0 0 30 30\""), "{own}");
+    let width_only = export_svg("Row[{Graphics[{Disk[]}]}, ImageSize -> 400]");
+    assert!(
+      width_only.contains("viewBox=\"0 0 360 360\""),
+      "{width_only}"
+    );
   }
 }
 
