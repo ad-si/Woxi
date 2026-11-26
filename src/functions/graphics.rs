@@ -49700,6 +49700,12 @@ pub struct ManipulateSpec {
   /// `collect_row_joined_controls`). The first control of each such row
   /// does not appear here.
   pub row_joined_controls: Vec<String>,
+  /// Names of the controls that sit directly below the control before them
+  /// inside one item of such a line, because the `Row` holds a
+  /// `Column[{Control[…], Control[…]}]`: the column is a single block of
+  /// the line, with the row's other controls beside it rather than below.
+  /// The first control of each such column does not appear here.
+  pub column_stacked_controls: Vec<String>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -50949,6 +50955,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // `Row[{Control[…], Control[…]}]` argument (see
   // `collect_row_joined_controls`).
   let mut row_joined_controls: Vec<String> = Vec::new();
+  // Names of the controls stacked below another control by a
+  // `Column[{Control[…], Control[…]}]` item of such a row.
+  let mut column_stacked_controls: Vec<String> = Vec::new();
   // An evaluated `Animate[…, AnimationRunning -> False]` carries the option
   // in its control specification (`{x, 0, 1, AnimationRunning -> False,
   // …}`), not among the Manipulate's own options.
@@ -51017,7 +51026,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     collect_row_joined_buttons(spec, &mut row_joined_buttons);
-    collect_row_joined_controls(spec, &place_map, &mut row_joined_controls);
+    collect_row_joined_controls(
+      spec,
+      &place_map,
+      &mut row_joined_controls,
+      &mut column_stacked_controls,
+    );
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -52483,6 +52497,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements,
     successive_placements,
     row_joined_controls,
+    column_stacked_controls,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -55245,10 +55260,14 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<RowJoinedButton>) {
 /// through `place_map`, see `place_slot_variables`), so a custom layout
 /// `Row[{Place[1], Spacer[50], Place[2]}]` joins those controls the same
 /// way.
+/// A `Column[{Control[…], Control[…]}]` among a row's items is one block
+/// of that line: its controls after the first are recorded in `stacked`
+/// (see `ManipulateSpec::column_stacked_controls`).
 fn collect_row_joined_controls(
   spec: &Expr,
   place_map: &[Vec<String>],
   out: &mut Vec<String>,
+  stacked: &mut Vec<String>,
 ) {
   match spec {
     // Each row of a `Grid` lays its cells out side by side like a `Row`.
@@ -55261,9 +55280,9 @@ fn collect_row_joined_controls(
       for row in rows {
         match row {
           Expr::List(cells) => {
-            joined_line_controls(cells, true, place_map, out);
+            joined_line_controls(cells, true, place_map, out, stacked);
           }
-          other => collect_row_joined_controls(other, place_map, out),
+          other => collect_row_joined_controls(other, place_map, out, stacked),
         }
       }
     }
@@ -55271,16 +55290,16 @@ fn collect_row_joined_controls(
       let Some(Expr::List(items)) = args.first() else {
         return;
       };
-      joined_line_controls(items, false, place_map, out);
+      joined_line_controls(items, false, place_map, out, stacked);
     }
     Expr::FunctionCall { args, .. } => {
       for a in args {
-        collect_row_joined_controls(a, place_map, out);
+        collect_row_joined_controls(a, place_map, out, stacked);
       }
     }
     Expr::List(items) => {
       for a in items {
-        collect_row_joined_controls(a, place_map, out);
+        collect_row_joined_controls(a, place_map, out, stacked);
       }
     }
     _ => {}
@@ -55296,6 +55315,7 @@ fn joined_line_controls(
   skip_non_controls: bool,
   place_map: &[Vec<String>],
   out: &mut Vec<String>,
+  stacked: &mut Vec<String>,
 ) {
   let mut after_control = false;
   // The non-control pieces since the last control: they form the
@@ -55343,6 +55363,23 @@ fn joined_line_controls(
         }
       }
       Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+      // A column of controls is one block of the line: its first control
+      // joins the line like a lone control would, and the others stack
+      // below it inside that block.
+      Expr::FunctionCall { name, args: c }
+        if name == "Column"
+          && let Some(vars) = column_control_variables(c, place_map) =>
+      {
+        for (i, var) in vars.into_iter().enumerate() {
+          if i > 0 {
+            stacked.push(var);
+          } else if after_control || is_live_panel_caption(&caption) {
+            out.push(var);
+          }
+        }
+        after_control = true;
+        caption.clear();
+      }
       // A button is a panel row of its own that the control after it joins.
       Expr::FunctionCall { name, args: b }
         if name == "Button" && b.len() >= 2 =>
@@ -55366,13 +55403,60 @@ fn joined_line_controls(
         after_control = false;
         if expr_contains_call(other, &["Control"]) {
           caption.clear();
-          collect_row_joined_controls(other, place_map, out);
+          collect_row_joined_controls(other, place_map, out, stacked);
         } else {
           caption.push(other);
         }
       }
     }
   }
+}
+
+/// The variables of a `Column[{…}, opts…]` (given by its arguments) whose
+/// items are all controls — `Control[spec]` or a `Place[n]` standing for
+/// declared ones — in the order they stack. `Spacer[…]` items and the
+/// `Null` a dangling comma leaves behind are skipped. `None` when the
+/// column holds anything else (a caption, a nested layout, …) or no
+/// control at all.
+fn column_control_variables(
+  args: &[Expr],
+  place_map: &[Vec<String>],
+) -> Option<Vec<String>> {
+  let Some(Expr::List(items)) = args.first() else {
+    return None;
+  };
+  let mut vars = Vec::new();
+  for item in items {
+    let item = match item {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Item" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      _ => item,
+    };
+    match item {
+      Expr::Identifier(name) if name == "Null" => {}
+      Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+      Expr::FunctionCall { name, args: c }
+        if name == "Control" && !c.is_empty() =>
+      {
+        vars.push(control_spec_variable(&c[0])?);
+      }
+      Expr::FunctionCall { name, args: p } if is_place_head(name) => {
+        let [Expr::Integer(n)] = p.as_slice() else {
+          return None;
+        };
+        let slot = place_map.get(usize::try_from(*n).ok()?.checked_sub(1)?)?;
+        if slot.is_empty() {
+          return None;
+        }
+        vars.extend(slot.iter().cloned());
+      }
+      _ => return None,
+    }
+  }
+  (!vars.is_empty()).then_some(vars)
 }
 
 /// Whether the caption pieces a `Row` places in front of a `Control[…]`
@@ -58090,6 +58174,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animation_rate: None,
@@ -58179,6 +58264,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animation_rate: None,
@@ -58281,6 +58367,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animation_rate: None,
@@ -58553,6 +58640,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animation_rate: None,
@@ -58624,6 +58712,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animation_rate: None,
@@ -58704,6 +58793,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
+    column_stacked_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animation_rate: animate.and_then(|_| control_spec_animation_rate(&args[0])),
@@ -71022,6 +71112,43 @@ mod manipulate_button_enabled_tests {
     .expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.row_joined_controls, vec!["q", "r", "w"]);
+    assert!(spec.column_stacked_controls.is_empty());
+  }
+
+  /// A `Column[{Control[…], …}]` item of a `Row` is one block of the line:
+  /// its controls after the first stack below it, and the row's next
+  /// control (or the column's first one, after an earlier control) joins
+  /// the line. The `Null` of a dangling comma and `Place[n]` items are
+  /// handled alike; a column holding anything but controls, or one that is
+  /// not in a `Row`, stacks nothing.
+  #[test]
+  fn column_of_controls_in_a_row_is_one_block_of_the_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, c, d, e, f, g, h, i, j, k}, \
+       Row[{Spacer[10], \
+       Column[{Control[{a, 0, 1}], Control[{b, 0, 1}], Control[{c, 0, 1}],}, \
+       Alignment -> Right], Spacer[10], Control[{d, {True, False}}]}], \
+       Row[{Control[{e, 0, 1}], \
+       Column[{Control[{f, 0, 1}], Control[{g, 0, 1}]}]}], \
+       Row[{Column[{\"caption\", Control[{h, 0, 1}]}], Control[{i, 0, 1}]}], \
+       Column[{Control[{j, 0, 1}], Control[{k, 0, 1}]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.row_joined_controls, vec!["d", "f"]);
+    assert_eq!(spec.column_stacked_controls, vec!["b", "c", "g"]);
+
+    let placed = crate::parse_to_expr(
+      "Manipulate[{p, q, r}, \
+       {{p, 0}, 0, 1, ControlPlacement -> 1}, \
+       {{q, 0}, 0, 1, ControlPlacement -> 2}, \
+       {{r, 0}, 0, 1, ControlPlacement -> 3}, \
+       Row[{Column[{Place[1], Place[2]}], Place[3]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&placed).expect("extract spec");
+    assert_eq!(spec.row_joined_controls, vec!["r"]);
+    assert_eq!(spec.column_stacked_controls, vec!["q"]);
   }
 
   #[test]

@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- Woxi Studio: a `Column[{Control[…], Control[…]}]` written inside a
+    `Row[{…}]` of a `Manipulate`'s control layout is drawn as one block of
+    that line, with the row's other controls and buttons beside the column
+    instead of each control taking a line of its own.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

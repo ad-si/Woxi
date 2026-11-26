@@ -1343,6 +1343,10 @@ pub struct ManipulateState {
   /// Names of the controls drawn on the same line as the control before
   /// them (see `ManipulateSpec::row_joined_controls`).
   row_joined_controls: Vec<String>,
+  /// Names of the controls stacked below the control before them inside
+  /// one item of a panel line (see
+  /// `ManipulateSpec::column_stacked_controls`).
+  column_stacked_controls: Vec<String>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -1610,6 +1614,22 @@ impl ManipulateState {
         })
   }
 
+  /// Whether the control at `ctrl_idx` sits directly below the control
+  /// before it inside one item of a panel line, because a
+  /// `Row[{Column[{Control[…], Control[…]}], Control[…]}]` argument stacks
+  /// them in a column with the row's other controls beside it.
+  pub fn stacks_under_previous_control(&self, ctrl_idx: usize) -> bool {
+    ctrl_idx > 0
+      && self
+        .controls
+        .get(ctrl_idx)
+        .map(|c| c.name())
+        .is_some_and(|name| {
+          !name.is_empty()
+            && self.column_stacked_controls.iter().any(|n| n == name)
+        })
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1726,6 +1746,7 @@ impl ManipulateState {
       content_width: spec.content_width,
       content_height: spec.content_height,
       row_joined_controls: spec.row_joined_controls,
+      column_stacked_controls: spec.column_stacked_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       animation_rate: spec.animation_rate,
@@ -4700,6 +4721,60 @@ mod tests {
         .any(|c| matches!(c, ControlState::Heading { .. })),
       "the button must not be frozen into a heading"
     );
+  }
+
+  /// A `Row[{Column[{Control[…], …}], Control[…], Button[…]}]` argument
+  /// keeps its column of controls as one block of the panel line: the
+  /// column's later controls stack below its first, and the control and
+  /// button written after the column sit beside it. Regression: the column
+  /// was flattened, so every control took a line of its own and only the
+  /// button stayed beside the last one.
+  #[test]
+  fn column_of_controls_in_a_row_stacks_beside_the_rows_other_controls() {
+    let code = r#"Manipulate[
+      {a, b, c, flag, seed},
+      {{seed, 1}, ControlType -> None},
+      Row[{Spacer[30],
+        Column[{
+          Control@{{a, 2, "a"}, 1, 3, 1, SetterBar},
+          Control@{{b, 2, "b"}, 1, 3, 1, SetterBar},
+          Control@{{c, 2, "c"}, 1, 3, 1, SetterBar},
+        }, Alignment -> Right],
+        Spacer[30],
+        Control@{{flag, False, "flag"}, {True, False}},
+        Spacer[30],
+        Button["again", seed = seed + 1; flag = False]}],
+      {d, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    let layout: Vec<(String, bool, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Button { label, .. } => format!("button {label}"),
+          other => other.name().to_string(),
+        };
+        (
+          key,
+          state.joins_previous_control(i),
+          state.stacks_under_previous_control(i),
+        )
+      })
+      .collect();
+    let expected: Vec<(String, bool, bool)> = vec![
+      ("a".into(), false, false),
+      ("b".into(), false, true),
+      ("c".into(), false, true),
+      ("flag".into(), true, false),
+      ("button again".into(), true, false),
+      ("d".into(), false, false),
+    ];
+    assert_eq!(layout, expected);
   }
 
   /// Controls sharing one `Row[{Control[…], Spacer[…], Control[…]}]`
