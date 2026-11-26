@@ -596,7 +596,10 @@ impl ControlState {
           && let Some(vals) =
             items.iter().map(as_f64).collect::<Option<Vec<_>>>()
         {
-          *exact = items.iter().map(|c| matches!(c, Expr::Integer(_))).collect();
+          *exact = items
+            .iter()
+            .map(|c| matches!(c, Expr::Integer(_)))
+            .collect();
           *values = vals;
         }
       }

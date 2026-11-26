@@ -49402,7 +49402,10 @@ mod manipulate {
   #[test]
   fn vector_binding_code_is_exact_until_moved() {
     use woxi::functions::graphics::vector_binding_code;
-    assert_eq!(vector_binding_code(&[0.0, 0.0, 1.0], &[true; 3]), "{0, 0, 1}");
+    assert_eq!(
+      vector_binding_code(&[0.0, 0.0, 1.0], &[true; 3]),
+      "{0, 0, 1}"
+    );
     assert_eq!(
       vector_binding_code(&[0.0, 0.5, 1.0], &[false; 3]),
       "{0., 0.5, 1.}"
@@ -49438,7 +49441,10 @@ mod manipulate {
       "got {bindings:?}"
     );
     let json = woxi::functions::graphics::manipulate_spec_to_json(&spec);
-    assert!(json.contains(r#""exactInit":[true,false,false]"#), "got {json}");
+    assert!(
+      json.contains(r#""exactInit":[true,false,false]"#),
+      "got {json}"
+    );
   }
 
   // An invisible bare Locator (`{{p, init}, Locator, Appearance -> None}`,
