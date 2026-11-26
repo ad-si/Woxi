@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `ContourPlot3D`, `RegionPlot3D` and `ListContourPlot3D` draw the empty
+    box with its axes and labels when no point of the range is on the
+    surface (or in the region), as wolframscript does, instead of failing;
+    a `Manipulate` over such a plot went blank at those control values.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
