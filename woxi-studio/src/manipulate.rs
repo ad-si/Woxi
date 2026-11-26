@@ -11839,6 +11839,28 @@ mod tooltip_region_tests {
     assert!(note.y + note.height < 100.0, "{note:?}");
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a ring of sites
+  /// stepped by nested `For` loops). Its body defines `f[t_, i_] = …` from
+  /// the controls once those loops have left the globals `t` and `i` set,
+  /// then draws `Array[f, …]`. The controls are scoped lexically, so the
+  /// assignment's pattern variables are its own and the loop counters do
+  /// not leak into the definition — which used to draw every cell alike.
+  /// This is a self-authored, construct-equivalent example.
+  #[test]
+  fn body_assignment_keeps_its_own_pattern_variables() {
+    let code = r#"Manipulate[
+      For[k = 0, k < n, k++, cell[n, k] = Mod[k, 2]];
+      shade[k_] = 1 - cell[n, k - 1];
+      Array[shade, n],
+      {{n, 4, "cells"}, 2, 8, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("{1, 0, 1, 0}"));
+  }
+
   /// A picture without any `Tooltip` has no hover regions.
   #[test]
   fn a_picture_without_tooltips_has_no_hover_regions() {

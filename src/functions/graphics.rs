@@ -26145,6 +26145,19 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           other => expr_to_svg_markup(other),
         },
 
+        // An operator-only head (`RightArrow`, `Equilibrium`, …) is written
+        // with its character between the arguments: `a → b`.
+        _ if args.len() >= 2
+          && crate::syntax::inert_infix_char(name).is_some() =>
+        {
+          let op = crate::syntax::inert_infix_char(name).unwrap_or_default();
+          args
+            .iter()
+            .map(expr_to_svg_markup)
+            .collect::<Vec<_>>()
+            .join(&format!(" {op} "))
+        }
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -28988,6 +29001,18 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
         args: args.iter().map(traditionalize_styled_label).collect(),
       }
     }
+    // So are the operands of an operator-only head: `Style["N", Italic] →
+    // ∞` keeps the italic N beside the arrow.
+    Expr::FunctionCall { name, args }
+      if args.len() >= 2
+        && crate::syntax::inert_infix_char(name).is_some()
+        && contains_visible_style(e) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(traditionalize_styled_label).collect(),
+      }
+    }
     Expr::BinaryOp {
       op: op @ crate::syntax::BinaryOperator::Power,
       left,
@@ -29070,6 +29095,14 @@ fn contains_visible_style(e: &Expr) -> bool {
     // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: a power keeps
     // the styling of its base and exponent, the exponent raised.
     Expr::FunctionCall { name, args } if name == "Power" => {
+      args.iter().any(contains_visible_style)
+    }
+    // `Style["N", Italic] → ∞`: the operands of an operator-only head
+    // (`RightArrow`, `Equilibrium`, …) keep their styling around its
+    // character.
+    Expr::FunctionCall { name, args }
+      if args.len() >= 2 && crate::syntax::inert_infix_char(name).is_some() =>
+    {
       args.iter().any(contains_visible_style)
     }
     Expr::BinaryOp {
@@ -31640,6 +31673,29 @@ fn plot_source_legends(ps: &crate::syntax::PlotSource) -> Vec<(usize, String)> {
     .unwrap_or_default()
 }
 
+/// Where each of a plot's legend entries is drawn, parallel to
+/// [`plot_source_legends`]: the positions a previous `Show` merged, else
+/// the position of its `PlotLegends` option (`Placed[labels, pos]`).
+fn plot_source_legend_positions(
+  ps: &crate::syntax::PlotSource,
+  entries: usize,
+) -> Vec<crate::functions::plot::LegendPosition> {
+  if ps.legend_positions.len() == entries && !ps.legends.is_empty() {
+    return ps.legend_positions.clone();
+  }
+  let position = ps
+    .options
+    .iter()
+    .find_map(|o| match option_name_value(o) {
+      Some(("PlotLegends", value)) => {
+        Some(crate::functions::plot::parse_plot_legends(&value).3)
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+  vec![position; entries]
+}
+
 /// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
 /// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
 /// otherwise the
@@ -32247,6 +32303,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // the series each one labels: `Show` of two plots with `PlotLegends`
     // shows both legends, as Wolfram does for the `Legended` plots.
     let mut legends: Vec<(usize, String)> = Vec::new();
+    let mut legend_positions = Vec::new();
     let mut legend_sources = 0;
     for ps in &plot_sources {
       if any_curves && ps.series.is_empty() {
@@ -32258,6 +32315,8 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let own_legends = plot_source_legends(ps);
       if !own_legends.is_empty() {
         legend_sources += 1;
+        legend_positions
+          .extend(plot_source_legend_positions(ps, own_legends.len()));
         legends.extend(own_legends.into_iter().map(|(i, l)| (offset + i, l)));
       }
       let shift = |f: &mut crate::syntax::SeriesFilling| {
@@ -32464,6 +32523,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Vec::new()
       },
+      legend_positions,
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
         plot_sources
@@ -63432,22 +63492,22 @@ pub fn manipulate_block_code(
 
 /// Wolfram localizes Manipulate controls lexically, so a rule in the body
 /// that rebinds a control name (`Entity["Isotope", isotope_] -> isotope`)
-/// shadows it. [`manipulate_block_code`] binds controls with a Block, so
-/// such rules get their own pattern variables renamed first (see
-/// `shield_rules_rebinding`). Only bodies that spell a pattern named after
-/// a control (`isotope_`) are re-read; the rest pass through untouched.
+/// shadows it, and an immediate rule or assignment that mentions a control
+/// gets its pattern variables renamed (`f[t_] = g[n, t]` is stored as
+/// `f[t$_] = g[n, t$]`). [`manipulate_block_code`] binds controls with a
+/// Block, so such rules get their own pattern variables renamed first (see
+/// `shield_rules_rebinding`). Only bodies that spell a named pattern
+/// (`t_`) are re-read; the rest pass through untouched.
 pub fn shield_control_rebinding_rules(
   body_code: &str,
   names: &[String],
 ) -> String {
-  let has_pattern = names.iter().any(|n| {
-    body_code.match_indices(n.as_str()).any(|(i, _)| {
-      let before_ok = body_code[..i]
+  let has_pattern = body_code.char_indices().any(|(i, c)| {
+    c == '_'
+      && body_code[..i]
         .chars()
         .next_back()
-        .is_none_or(|c| !(c.is_alphanumeric() || c == '$' || c == '`'));
-      before_ok && body_code[i + n.len()..].starts_with('_')
-    })
+        .is_some_and(|p| p.is_alphanumeric() || p == '$')
   });
   if !has_pattern {
     return body_code.to_string();

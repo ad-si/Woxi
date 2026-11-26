@@ -21471,6 +21471,98 @@ mod plot3d {
       assert_eq!(scaled, bare);
     }
 
+    /// The position and text of the legend entry `label` in `svg`.
+    fn legend_entry_at(svg: &str, label: &str) -> (f64, f64) {
+      let end = svg
+        .find(&format!(">{label}</text"))
+        .unwrap_or_else(|| panic!("no legend entry {label}: {svg}"));
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let attr = |name: &str| -> f64 {
+        let start = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+        tag[start..start + tag[start..].find('"').unwrap()]
+          .parse()
+          .unwrap()
+      };
+      (attr("x"), attr("y"))
+    }
+
+    #[test]
+    fn show_draws_each_plots_placed_legend_at_its_own_position() {
+      // Every plot's legend stays where its own `Placed[…, {x, y}]` puts
+      // it: the first entry bottom right, the second top left.
+      let svg = export_svg(
+        r#"Show[
+          ListLinePlot[{1, 2, 3}, PlotLegends -> Placed[{"first"}, {0.8, 0.3}]],
+          ListLinePlot[{3, 2, 1}, PlotLegends -> Placed[{"second"}, {0.3, 0.8}]]]"#,
+      );
+      let (first_x, first_y) = legend_entry_at(&svg, "first");
+      let (second_x, second_y) = legend_entry_at(&svg, "second");
+      assert!(first_x > second_x + 1000.0, "{first_x} {second_x}");
+      assert!(first_y > second_y + 500.0, "{first_y} {second_y}");
+      // Each sits where the plot alone would draw it.
+      let alone = export_svg(
+        r#"ListLinePlot[{3, 2, 1},
+          PlotLegends -> Placed[{"second"}, {0.3, 0.8}]]"#,
+      );
+      assert_eq!(legend_entry_at(&alone, "second"), (second_x, second_y));
+      // Entries sharing a position still stack in one legend.
+      let stacked = export_svg(
+        r#"Show[
+          ListLinePlot[{1, 2, 3}, PlotLegends -> Placed[{"first"}, {0.8, 0.3}]],
+          ListLinePlot[{3, 2, 1}, PlotLegends -> Placed[{"second"}, {0.8, 0.3}]]]"#,
+      );
+      let (first_x, first_y) = legend_entry_at(&stacked, "first");
+      let (second_x, second_y) = legend_entry_at(&stacked, "second");
+      assert_eq!(first_x, second_x);
+      assert!(second_y > first_y, "{first_y} {second_y}");
+    }
+
+    #[test]
+    fn show_keeps_the_placed_position_of_a_later_plots_legend() {
+      // A legend only the second plot carries is still drawn inside the
+      // picture at its `Placed` point, not beside the plot.
+      let plain =
+        export_svg("Show[ListLinePlot[{1, 2, 3}], ListLinePlot[{3, 2, 1}]]");
+      let svg = export_svg(
+        r#"Show[ListLinePlot[{1, 2, 3}],
+          ListLinePlot[{3, 2, 1}, PlotLegends -> Placed[{"second"}, {0.3, 0.8}]]]"#,
+      );
+      let view_box = |s: &str| {
+        let start = s.find("viewBox=\"").unwrap() + 9;
+        s[start..start + s[start..].find('"').unwrap()].to_string()
+      };
+      assert_eq!(view_box(&svg), view_box(&plain));
+      let (x, _) = legend_entry_at(&svg, "second");
+      assert!(x < 1800.0, "{x}");
+    }
+
+    #[test]
+    fn legend_label_of_an_operator_only_head_is_written_infix() {
+      // `RightArrow[a, b]` reads `a → b` in a legend, keeping the styling
+      // of its operands, rather than the call `RightArrow(a, b)`.
+      let svg = export_svg(
+        r#"ListLinePlot[{1, 2, 3}, PlotLegends ->
+          {Row[{Style["N", Italic] \[RightArrow] Infinity}]}]"#,
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">N</tspan> \u{2192} \u{221E}</text>"
+        ),
+        "{svg}"
+      );
+      assert!(!svg.contains("RightArrow"), "{svg}");
+      let svg = export_svg(
+        "ListLinePlot[{1, 2, 3}, PlotLegends -> {LeftRightArrow[p, q]}]",
+      );
+      assert!(svg.contains(">p \u{2194} q</text>"), "{svg}");
+      // A frame label is set the same way.
+      let svg = export_svg(
+        "ListLinePlot[{1, 2, 3}, Frame -> True, \
+         FrameLabel -> {Equilibrium[p, q]}]",
+      );
+      assert!(svg.contains(">p \u{21CC} q</text>"), "{svg}");
+    }
+
     #[test]
     fn show_of_a_plot_and_graphics_keeps_the_plot_legends() {
       // `Show[plot, Graphics[…]]` draws the curves as primitives together
@@ -34107,6 +34199,48 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         ),
         "{svg}"
       );
+    }
+
+    #[test]
+    fn array_plot_margin_is_even_under_an_explicit_aspect_ratio() {
+      // The automatic margin between the cells and the frame is a length
+      // on the picture (1/48 of the longer side across, 1/50 down). An
+      // explicit `AspectRatio` stretches the cells but not that margin:
+      // here the 4 x 2 array fills a square, its rows twice as tall as
+      // without the option, and the margins stay as they were.
+      let first_cell = |svg: &str| -> (f64, f64, f64, f64) {
+        let start = svg.find("fill=\"#000000\"").unwrap();
+        let tag = &svg[svg[..start].rfind("<rect").unwrap()..start];
+        let attr = |name: &str| -> f64 {
+          let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[at..at + tag[at..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x"), attr("y"), attr("width"), attr("height"))
+      };
+      let natural = export_svg(
+        "ArrayPlot[{{1, 0, 1, 0}, {0, 1, 0, 1}}, ImageSize -> {200, 200}]",
+      );
+      let square = export_svg(
+        "ArrayPlot[{{1, 0, 1, 0}, {0, 1, 0, 1}}, AspectRatio -> 1, \
+         ImageSize -> {200, 200}]",
+      );
+      let (nx, ny, nw, nh) = first_cell(&natural);
+      let (sx, sy, sw, sh) = first_cell(&square);
+      assert_eq!((sx, sw), (nx, nw));
+      assert!((sy - ny).abs() <= 1.0, "{sy} {ny}");
+      assert!((sh / nh - 2.0).abs() < 0.01, "{sh} {nh}");
+      // A tall array stretched sideways keeps its margins the same way.
+      let tall = "{{1, 0}, {0, 1}, {1, 0}, {0, 1}}";
+      let natural =
+        export_svg(&format!("ArrayPlot[{tall}, ImageSize -> {{200, 200}}]"));
+      let square = export_svg(&format!(
+        "ArrayPlot[{tall}, AspectRatio -> 1, ImageSize -> {{200, 200}}]"
+      ));
+      let (nx, ny, nw, nh) = first_cell(&natural);
+      let (sx, sy, sw, sh) = first_cell(&square);
+      assert_eq!((sy, sh), (ny, nh));
+      assert!((sx - nx).abs() <= 1.0, "{sx} {nx}");
+      assert!((sw / nw - 2.0).abs() < 0.01, "{sw} {nw}");
     }
 
     #[test]
@@ -50264,14 +50398,41 @@ mod manipulate {
     );
     clear_state();
     assert_eq!(interpret(&code).unwrap(), "{5, 3, 3, Hold[h[x$_] = x$]}");
-    // A body with no pattern named after a control passes through as is.
+    // A body whose rules mention no control passes through as is.
     assert_eq!(
       woxi::functions::graphics::shield_control_rebinding_rules(
-        "f[xs_] -> x",
+        "f[xs_] -> y",
         &["x".to_string()],
       ),
-      "f[xs_] -> x"
+      "f[xs_] -> y"
     );
+  }
+
+  // As part of a scheduled QA routine, Woxi Studio was tested against a
+  // randomly sampled Wolfram Demonstration notebook (a ring of sites updated
+  // by nested `For` loops). Its body defines `f[t_, i_] = …` from the
+  // controls after those loops left the globals `t` and `i` set. Wolfram
+  // scopes the controls lexically, which renames the pattern variables of a
+  // nested immediate assignment that mentions a control (`f[t$_, i$_] = …`),
+  // so the loop counters do not leak into the definition. This is a
+  // self-authored, construct-equivalent example.
+  #[test]
+  fn body_assignment_mentioning_a_control_renames_its_pattern_variables() {
+    let bindings = vec![("n".to_string(), "3".to_string())];
+    let body = "For[k = 0, k < n, k++, Null]; g[k_] = n + k; \
+                h[k_] = k; {g[10], h[10], Array[g, 2], 5 /. k_ -> k + n}";
+    assert_eq!(
+      woxi::functions::graphics::shield_control_rebinding_rules(
+        "g[k_] = n + k; h[k_] = k",
+        &["n".to_string()],
+      ),
+      "g[k$_] = n + k$; h[k_] = k"
+    );
+    let code = manipulate_block_code(body, &bindings);
+    clear_state();
+    // `h` mentions no control, so its right side is the loop counter's
+    // value, as in Wolfram; `g` and the rule use their own argument.
+    assert_eq!(interpret(&code).unwrap(), "{13, 3, {4, 5}, 8}");
   }
 
   // A list-valued `FrameLabel` labels the edges of the content area: the

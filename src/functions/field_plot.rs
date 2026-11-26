@@ -4908,6 +4908,7 @@ fn contour_plot_equations(
     aspect_ratio: Some(area.plot_h / area.plot_w)
       .filter(|r| r.is_finite() && *r > 0.0),
     legends: Vec::new(),
+    legend_positions: Vec::new(),
     settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
@@ -9235,7 +9236,33 @@ fn array_plot_ast_inset(
       spec.x.resolve(n_cols as f64, auto_x / n_cols as f64),
       spec.y.resolve(n_rows as f64, auto_y / n_rows as f64),
     ),
-    None => ((auto_x, auto_x), (auto_y, auto_y)),
+    // That margin is a length on the picture, the same on every side
+    // whatever shape the cells take: under an explicit `AspectRatio` the
+    // cells are stretched along the shorter dimension, and the margin there
+    // spans correspondingly fewer of them.
+    None => match aspect_ratio {
+      Some(aspect) if n_cols >= n_rows => {
+        let width = n_cols as f64 + 2.0 * auto_x;
+        let cell_h = (width * aspect - 2.0 * auto_y) / n_rows as f64;
+        let pad_y = if cell_h > 0.0 {
+          auto_y / cell_h
+        } else {
+          auto_y
+        };
+        ((auto_x, auto_x), (pad_y, pad_y))
+      }
+      Some(aspect) => {
+        let height = n_rows as f64 + 2.0 * auto_y;
+        let cell_w = (height / aspect - 2.0 * auto_x) / n_cols as f64;
+        let pad_x = if cell_w > 0.0 {
+          auto_x / cell_w
+        } else {
+          auto_x
+        };
+        ((pad_x, pad_x), (auto_y, auto_y))
+      }
+      None => ((auto_x, auto_x), (auto_y, auto_y)),
+    },
   };
   let total_cols = n_cols as f64 + pad_l + pad_r;
   let total_rows = n_rows as f64 + pad_b + pad_t;

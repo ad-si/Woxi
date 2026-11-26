@@ -11287,6 +11287,25 @@ returns a `Graphics3D`. The unit test
 `compiled_vector_argument_iteration_is_not_run_symbolically` is in
 `EXACT_EXPR_SKIP`.
 
+### StandardForm boxes of operator-only heads
+
+`ToBoxes[RightArrow[a, b]]` is `RowBox[{"a", "\[RightArrow]", "b"}]` in
+Wolfram, and likewise for the other heads that only stand for an operator
+character (`LeftArrow`, `Equilibrium`, `CupCap`, `Element`, `Subset`, …).
+Woxi writes the call's source, `RowBox[{RightArrow, [, RowBox[{a, ,, b}],
+]}]`. `ToBoxes[…, TraditionalForm]`, the displayed output and the labels of a
+graphic are infix. Not yet checked against wolframscript.
+
+### Automatic `ArrayPlot` margin under an explicit `AspectRatio`
+
+Woxi keeps the automatic margin between the cells and the frame the same
+length on every side when `AspectRatio` stretches the cells (1/48 of the
+longer side across, 1/50 down, as without the option). That is measured from
+a picture Wolfram stored for a 240 x 40 array at `AspectRatio -> 0.7`, where
+both margins are about 11 pixels; the `PlotRangePadding` that
+`AbsoluteOptions` reports for such a plot is not yet checked against
+wolframscript.
+
 ## Unit-test conformance batch (2026-11-25)
 
 These divergences surfaced in one `make test-conformance` run against
