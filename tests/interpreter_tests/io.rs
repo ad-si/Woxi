@@ -2569,43 +2569,65 @@ mod grid_graphics {
       .collect()
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a process flow diagram
+  /// with mass balance tables). Its tables are `Grid[…, Frame -> {False,
+  /// All}]`, which the front end draws with every row boxed: the lines
+  /// between the rows and the table's left and right edges, but no line
+  /// between the columns. Only the row lines were drawn.
   #[test]
-  fn grid_frame_pair_rules_only_rows() {
-    // `Frame -> {False, All}`: no column lines, a line at every row edge.
+  fn grid_frame_pair_boxes_every_row() {
     clear_state();
     let result = interpret_with_stdout(
       "Grid[{{1, 2}, {3, 4}, {5, 6}}, Frame -> {False, All}]",
     )
     .unwrap();
     let lines = svg_line_endpoints(&result.graphics.unwrap());
-    assert_eq!(lines.len(), 4, "3 rows have 4 row edges: {lines:?}");
-    assert!(
-      lines.iter().all(|l| l[1] == l[3]),
-      "all horizontal: {lines:?}"
-    );
+    let horizontal: Vec<_> = lines.iter().filter(|l| l[1] == l[3]).collect();
+    let vertical: Vec<_> = lines.iter().filter(|l| l[0] == l[2]).collect();
+    assert_eq!(horizontal.len(), 4, "3 rows have 4 row edges: {lines:?}");
+    assert_eq!(vertical.len(), 2, "the left and right edges: {lines:?}");
+    // The vertical edges sit at the ends of the row lines and run the
+    // whole height of the table.
+    let (left, right) = (horizontal[0][0], horizontal[0][2]);
+    let mut xs: Vec<f64> = vertical.iter().map(|l| l[0]).collect();
+    xs.sort_by(f64::total_cmp);
+    assert_eq!(xs, vec![left, right], "{lines:?}");
+    let top = horizontal.iter().map(|l| l[1]).fold(f64::MAX, f64::min);
+    let bottom = horizontal.iter().map(|l| l[1]).fold(f64::MIN, f64::max);
+    for l in &vertical {
+      assert_eq!((l[1].min(l[3]), l[1].max(l[3])), (top, bottom), "{l:?}");
+    }
   }
 
   #[test]
-  fn grid_frame_pair_rules_only_columns() {
-    // `Frame -> {All, None}`: a line at every column edge, no row lines.
+  fn grid_frame_pair_boxes_every_column() {
+    // `Frame -> {All, None}`: a line at every column edge, and the top and
+    // bottom edges that close the columns' frames.
     clear_state();
     let result = interpret_with_stdout(
       "Grid[{{1, 2, 3}, {4, 5, 6}}, Frame -> {All, None}]",
     )
     .unwrap();
     let lines = svg_line_endpoints(&result.graphics.unwrap());
-    assert_eq!(lines.len(), 4, "3 columns have 4 column edges: {lines:?}");
-    assert!(
-      lines.iter().all(|l| l[0] == l[2]),
-      "all vertical: {lines:?}"
+    assert_eq!(
+      lines.iter().filter(|l| l[0] == l[2]).count(),
+      4,
+      "3 columns have 4 column edges: {lines:?}"
+    );
+    assert_eq!(
+      lines.iter().filter(|l| l[1] == l[3]).count(),
+      2,
+      "the top and bottom edges: {lines:?}"
     );
   }
 
   #[test]
-  fn grid_frame_pair_matches_dividers() {
-    // `Frame -> {xspec, yspec}` rules the same lines as `Dividers`.
+  fn grid_frame_pair_shares_the_lines_of_dividers() {
+    // `Frame -> {xspec, yspec}` rules the lines `Dividers` does; a spec
+    // that does not frame every row or column adds nothing to them.
     clear_state();
-    for spec in ["{False, All}", "{All, False}", "{None, {True, False}}"] {
+    for spec in ["{None, {True, False}}", "{Center, Center}"] {
       let framed = interpret_with_stdout(&format!(
         "Grid[{{{{a, b}}, {{c, d}}, {{e, f}}}}, Frame -> {spec}]"
       ))
@@ -2622,6 +2644,24 @@ mod grid_graphics {
         "{spec}"
       );
     }
+  }
+
+  /// A box shown through `DisplayForm` typesets an expression among its
+  /// arguments: the numerator `Subscript["m", "4"]` of a `FractionBox` in a
+  /// `Grid` item is m with a lowered 4, not the text `Subscript[m, 4]`.
+  #[test]
+  fn grid_item_fraction_box_typesets_its_expression_arguments() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"r\", DisplayForm[FractionBox[Subscript[\"m\", \"4\"], \
+       \"KCl\"]]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("Subscript"), "{svg}");
+    assert!(svg.contains(">m</text>"), "{svg}");
+    assert!(svg.contains(">4</text>"), "{svg}");
+    assert!(svg.contains(">KCl</text>"), "{svg}");
   }
 
   #[test]

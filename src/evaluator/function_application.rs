@@ -4530,6 +4530,62 @@ fn evaluate_bspline_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   Expr::List(result.into_iter().map(Expr::Real).collect())
 }
 
+/// A matrix of machine reals applied to a point of plain integer or real
+/// coordinates, in machine arithmetic: every component of the image is a
+/// machine real then, and building and evaluating a symbolic dot product
+/// per component is what made a loop transforming thousands of points
+/// slow. `None` for anything else (exact or symbolic entries, a
+/// homogeneous coordinate of zero), which the general construction handles.
+fn apply_machine_transformation(
+  rows: &[Expr],
+  coords: &[Expr],
+) -> Option<Expr> {
+  let n = coords.len();
+  if n == 0 || rows.len() != n + 1 {
+    return None;
+  }
+  let mut hom = Vec::with_capacity(n + 1);
+  for c in coords {
+    hom.push(match c {
+      Expr::Real(f) => *f,
+      Expr::Integer(i) => *i as f64,
+      _ => return None,
+    });
+  }
+  hom.push(1.0);
+  let mut image = Vec::with_capacity(n + 1);
+  for row in rows {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    if cells.len() != n + 1 {
+      return None;
+    }
+    let mut sum = 0.0;
+    for (cell, x) in cells.iter().zip(&hom) {
+      let Expr::Real(a) = cell else {
+        return None;
+      };
+      sum += a * x;
+    }
+    if !sum.is_finite() {
+      return None;
+    }
+    image.push(sum);
+  }
+  let h = image.pop()?;
+  if h == 0.0 {
+    return None;
+  }
+  Some(Expr::List(
+    image
+      .into_iter()
+      .map(|v| Expr::Real(if h == 1.0 { v } else { v / h }))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// Apply TransformationFunction[matrix] to a point vector.
 /// The matrix is an (n+1)x(n+1) augmented matrix for affine transformation.
 /// Given point {x1, ..., xn}, computes matrix . {x1, ..., xn, 1} and returns
@@ -4590,6 +4646,10 @@ fn apply_transformation_function(
       .map(|pt| apply_transformation_function(matrix, std::slice::from_ref(pt)))
       .collect();
     return Ok(Expr::List(mapped?.into()));
+  }
+
+  if let Some(mapped) = apply_machine_transformation(rows, coords) {
+    return Ok(mapped);
   }
 
   let n = coords.len();

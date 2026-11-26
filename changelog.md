@@ -6,6 +6,16 @@
     font size, `Bold` or `Italic` reach the axis line, its label, its tick
     marks and its tick labels (`TicksStyle` still overrides the ticks), and
     `{sx, sy, sz}` styles the three axes separately.
+- `RotationTransform` and `RotationMatrix` by a machine-real angle about
+    a 3D axis, and a `TransformationFunction` of machine reals applied to
+    points, are computed in machine arithmetic instead of through the
+    symbolic formula: a loop of a few thousand rotations (a turtle drawing
+    a branching structure) took over a minute and now takes seconds.
+- An unboxed `Graphics3D` of fixed width and height whose contents run
+    along one axis only (a straight line parallel to it) is fitted with
+    the ranges made up for the other two axes, so the line is drawn
+    centered and clear of the frame as in Wolfram's pictures, instead of
+    from corner to corner.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
@@ -32,6 +42,14 @@
     `GraphicsGrid` overlaps the cells at an even pitch instead of butting
     them together, and `ImageSize -> {w, h}` is the exact size of a
     `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
+- A `Line` running far outside an explicit `PlotRange` (a hyperbola from
+    `ParametricPlot` sampled next to its pole, combined under `Show`) is
+    cut near the picture instead of being written to the SVG with
+    coordinates billions of pixels away; Woxi Studio drew such a picture
+    blank.
+- A `Manipulate` control label padded with a spacer
+    (`"name" Spacer[12]`) shows its text in Woxi Studio instead of
+    `name*Spacer[12]`.
 - `ContourPlot` draws every curve of a list that mixes equations with
     plain expressions (`{f == c, {g, h}}`, each expression as its zero
     contour) and of an entry that only evaluates to a list (a `Which`
