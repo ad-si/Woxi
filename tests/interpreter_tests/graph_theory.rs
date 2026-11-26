@@ -11535,3 +11535,82 @@ mod layered_plot_shape {
     assert!(w - rightmost > 70.0, "marker at {rightmost} of {w}");
   }
 }
+
+mod graph_base_style {
+  use super::*;
+
+  /// The opening tag of the SVG text element drawing `label`.
+  fn label_tag(svg: &str, label: &str) -> String {
+    let at = svg.find(&format!(">{label}<")).expect(label);
+    let start = svg[..at].rfind("<text").unwrap();
+    svg[start..at].to_string()
+  }
+
+  /// Without a `BaseStyle` the vertex and edge labels are 10-point upright
+  /// text.
+  #[test]
+  fn labels_default_to_ten_point_normal_weight() {
+    let svg = interpret(
+      "ExportString[TreePlot[{{\"r\" -> \"s\", \"e\"}}, VertexLabeling -> \
+       True], \"SVG\"]",
+    )
+    .unwrap();
+    for label in ["r", "s", "e"] {
+      let tag = label_tag(&svg, label);
+      assert!(tag.contains("font-size=\"10\""), "{tag}");
+      assert!(tag.contains("font-weight=\"normal\""), "{tag}");
+    }
+  }
+
+  /// Regression: `BaseStyle` was dropped by the graph plots, so their labels
+  /// kept the default weight and size.
+  #[test]
+  fn base_style_sets_label_weight_and_size() {
+    for plot in ["TreePlot", "LayeredGraphPlot", "GraphPlot"] {
+      let svg = interpret(&format!(
+        "ExportString[{plot}[{{{{\"r\" -> \"s\", \"e\"}}}}, VertexLabeling \
+         -> True, BaseStyle -> {{Bold, FontSize -> 18}}], \"SVG\"]"
+      ))
+      .unwrap();
+      for label in ["r", "s", "e"] {
+        let tag = label_tag(&svg, label);
+        assert!(tag.contains("font-size=\"18\""), "{plot}: {tag}");
+        assert!(tag.contains("font-weight=\"bold\""), "{plot}: {tag}");
+      }
+    }
+  }
+
+  /// `Larger` scales the 10-point label size the graph starts from, and a
+  /// weight alone leaves that size as it is.
+  #[test]
+  fn base_style_relative_size_starts_from_the_label_size() {
+    let svg = |style: &str| {
+      interpret(&format!(
+        "ExportString[Graph[{{\"r\" -> \"s\"}}, VertexLabels -> \"Name\", \
+         BaseStyle -> {style}], \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    let larger = label_tag(&svg("{Bold, Larger}"), "r");
+    assert!(larger.contains("font-size=\"12.5\""), "{larger}");
+    assert!(larger.contains("font-weight=\"bold\""), "{larger}");
+    let bold = label_tag(&svg("Bold"), "r");
+    assert!(bold.contains("font-size=\"10\""), "{bold}");
+  }
+
+  /// A vertex named by a fraction box is typeset in the base style too:
+  /// the stacked numerator and denominator take its size and weight.
+  #[test]
+  fn base_style_reaches_fraction_box_labels() {
+    let svg = interpret(
+      "ExportString[TreePlot[{DisplayForm[FractionBox[7, 9]] -> \"s\"}, \
+       VertexLabeling -> True, BaseStyle -> {Bold, FontSize -> 18}], \"SVG\"]",
+    )
+    .unwrap();
+    for part in ["7", "9"] {
+      let tag = label_tag(&svg, part);
+      assert!(tag.contains("font-size=\"18.0\""), "{tag}");
+    }
+    assert!(svg.contains("<g font-weight=\"bold\">"), "{svg}");
+  }
+}

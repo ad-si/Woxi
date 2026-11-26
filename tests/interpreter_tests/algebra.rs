@@ -26283,6 +26283,51 @@ mod nroots_bare_polynomial_and_repeated_roots {
   }
 }
 
+mod solve_high_degree_machine_polynomials {
+  use super::*;
+
+  #[test]
+  fn every_root_is_finite_and_accurate() {
+    // Regression: the simultaneous iteration overflowed for degrees around
+    // 40 and up, so every root came out as `Indeterminate` (and sorting the
+    // NaNs could panic). The backward error of each root is checked against
+    // the size of the terms it cancels.
+    for degree in [40, 60, 100] {
+      for solver in ["Solve", "NSolve"] {
+        assert_eq!(
+          interpret(&format!(
+            "SeedRandom[3]; c = RandomReal[{{-2, 2}}, {degree} + 1]; \
+             e = Range[0, {degree}]; r = x /. {solver}[c . x^e == 0, x]; \
+             {{Length[r], FreeQ[r, Indeterminate], \
+              Max[Map[Abs[c . #^e]/(Abs[c] . Abs[#]^e) &, r]] < 10^-12}}"
+          ))
+          .unwrap(),
+          format!("{{{degree}, True, True}}"),
+          "{solver} at degree {degree}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn roots_of_a_matrix_polynomial_determinant_are_found() {
+    // The characteristic polynomial of a lag-10 system of 4 series has
+    // degree 40; its roots are the reciprocals of the companion matrix's
+    // eigenvalues, so their product is the reciprocal leading coefficient.
+    assert_eq!(
+      interpret(
+        "SeedRandom[7]; a = RandomReal[{-0.3, 0.3}, {10, 4, 4}]; \
+         det = Det[IdentityMatrix[4] - Sum[a[[i]] x^i, {i, 10}]]; \
+         r = x /. Solve[det == 0, x]; lead = Coefficient[det, x, 40]; \
+         {Length[r], FreeQ[r, Indeterminate], \
+          Abs[Times @@ r lead - 1] < 10^-6}"
+      )
+      .unwrap(),
+      "{40, True, True}"
+    );
+  }
+}
+
 mod solve_substitution_of_symbols {
   use super::*;
 
