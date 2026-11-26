@@ -5658,14 +5658,149 @@ mod hypothesis_testing_legacy_package {
   #[test]
   fn mean_ci_known_variance_uses_normal_quantile() {
     clear_state();
+    // Loaded in its own input, so the bare `KnownVariance` below is the
+    // package's symbol.
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret("Round[MeanCI[{1, 2, 3, 9/2}, KnownVariance -> 2], 10^-6]")
+        .unwrap(),
+      "{154887/125000, 501363/125000}"
+    );
+  }
+
+  #[test]
+  fn options_of_another_context_are_ignored() {
+    // `KnownVariance` read on the line that loads the package is
+    // `Global`KnownVariance`, not the package's option: the interval stays
+    // the Student t one.
+    clear_state();
     assert_eq!(
       interpret(
         "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          KnownVariance -> 2], 10^-6]"
       )
       .unwrap(),
-      "{154887/125000, 501363/125000}"
+      "{249241/1000000, 5000759/1000000}"
     );
+  }
+
+  #[test]
+  fn unknown_options_are_ignored() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    // The interval and p-value functions ignore them silently, as well as
+    // options they do not declare and string option names.
+    let result = interpret_with_stdout(
+      "Round[{MeanCI[{1, 2, 3, 9/2}, foo -> 2, TwoSided -> True, \
+       \"KnownVariance\" -> 2], VarianceCI[{1, 2, 4}, foo -> 1], \
+       OneSidedPValue /. StudentTPValue[1.2, 4, ConfidenceLevel -> 0.9]}, \
+       10^-6] == Round[{MeanCI[{1, 2, 3, 9/2}], VarianceCI[{1, 2, 4}], \
+       OneSidedPValue /. StudentTPValue[1.2, 4]}, 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    // The tests report each one with `::optx` and carry on.
+    let result = interpret_with_stdout(
+      "Round[OneSidedPValue /. MeanDifferenceTest[{1, 2, 4}, {2, 5, 7}, 0, \
+       foo -> 1, ConfidenceLevel -> 0.9], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "31967/250000");
+    assert_eq!(
+      result.warnings[1..],
+      [
+        "MeanDifferenceTest::optx: Unknown option foo -> 1 in \
+         MeanDifferenceTest.",
+        "MeanDifferenceTest::optx: Unknown option ConfidenceLevel -> 0.9 in \
+         MeanDifferenceTest."
+      ]
+    );
+  }
+
+  #[test]
+  fn the_first_setting_of_an_option_wins() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9, ConfidenceLevel -> 0.5] \
+         == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn options_are_defined_once_the_package_is_loaded() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "{Options[MeanCI], Options[MeanDifferenceTest], Options[NormalPValue]}"
+      )
+      .unwrap(),
+      "{{ConfidenceLevel -> 0.95, KnownVariance -> None}, \
+       {FullReport -> False, KnownVariance -> None, EqualVariances -> False, \
+       SignificanceLevel -> None, TwoSided -> False}, {TwoSided -> False}}"
+    );
+    // A changed default is what a call without the option uses.
+    assert_eq!(
+      interpret(
+        "SetOptions[MeanCI, ConfidenceLevel -> 0.5]; \
+         MeanCI[{1, 2, 4}] == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn significance_level_appends_the_verdict() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "a = {-0.22, -0.35, 0.87, 0.48, -0.36}; \
+         Rest /@ {MeanTest[a, 0, SignificanceLevel -> 1/2], \
+         MeanTest[a, 0, SignificanceLevel -> 0.1, TwoSided -> True], \
+         MeanDifferenceTest[a, a + 1, 0, SignificanceLevel -> 0.1]}"
+      )
+      .unwrap(),
+      "{{Reject null hypothesis at significance level -> 1/2}, \
+       {Fail to reject null hypothesis at significance level -> 0.1}, \
+       {Reject null hypothesis at significance level -> 0.1}}"
+    );
+    // After the FullReport table and the p-value; a symbolic level stays an
+    // `If`.
+    assert_eq!(
+      interpret(
+        "{Length[MeanTest[a, 0, SignificanceLevel -> 0.5, \
+         FullReport -> True]], MeanTest[a, 0, SignificanceLevel -> s][[2, 0]], \
+         MeanTest[a, 0, SignificanceLevel -> None] === MeanTest[a, 0]}"
+      )
+      .unwrap(),
+      "{3, If, True}"
+    );
+  }
+
+  #[test]
+  fn obsolete_warning_is_issued_once_per_session() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    let first = interpret_with_stdout("MeanTest[{1, 2, 4}, 0];").unwrap();
+    let again =
+      interpret_with_stdout("MeanTest[{1, 2, 4}, 0]; MeanTest[{1, 2, 4}, 0];")
+        .unwrap();
+    assert_eq!(
+      first.warnings,
+      [
+        "General::obsfun: The function MeanTest is now obsolete and has been \
+        superseded by LocationTest."
+      ]
+    );
+    assert!(again.warnings.is_empty(), "{:?}", again.warnings);
   }
 
   #[test]
