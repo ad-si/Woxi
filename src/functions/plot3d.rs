@@ -17092,8 +17092,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           | Primitive3D::Cone { .. }
       )
     });
-  let fit_contents = !show_box
-    && (explicit_height || round_solids_only)
+  // In a picture of fixed width and height, contents with depth whose box
+  // is the taller shape for the frame are framed by that box, before
+  // `PlotRangePadding` widens it: its far top and near bottom corners keep
+  // round ends off the edges. A Demonstration's unboxed beaker under a thin
+  // pipette (a 7 × 7 × 40 box of cylinders) at `ImageSize -> {150, 250}` is
+  // drawn 230 px tall, 17 px below the top edge and 4 px above the bottom
+  // one in all four snapshots, where the contents alone would touch both
+  // edges (and the padded box would draw them 219 px tall). A box that is
+  // the wider shape for the frame (the short and wide cylinder above, whose
+  // box corners stick out sideways) leaves the fit to the contents, and so
+  // does an explicit `SphericalRegion -> False`.
+  let contents_extent = primitives_extent(&prims);
+  let flat_contents = contents_extent.into_iter().any(range_is_flat);
+  let unboxed_automatic = !show_box
     && !full_width
     && !aspect_full
     && !show_axes
@@ -17102,7 +17114,39 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !spherical_region
     && view_angle.is_none()
     && px_min.is_finite();
-  if !fit_contents {
+  let contents_box = {
+    let [xs, ys, zs] = contents_extent;
+    let mut b = (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    );
+    for x in [xs.0, xs.1] {
+      for y in [ys.0, ys.1] {
+        for z in [zs.0, zs.1] {
+          let (px, py) = project(Point3D { x, y, z }, &camera);
+          b = (b.0.min(px), b.1.max(px), b.2.min(py), b.3.max(py));
+        }
+      }
+    }
+    b
+  };
+  let fit_contents_box = unboxed_automatic
+    && explicit_height
+    && !spherical_region_off
+    && !flat_contents
+    && (contents_box.3 - contents_box.2) * f64::from(svg_width)
+      >= (contents_box.1 - contents_box.0) * f64::from(svg_height);
+  let fit_contents = unboxed_automatic
+    && !fit_contents_box
+    && (explicit_height || round_solids_only);
+  if fit_contents_box {
+    px_min = px_min.min(contents_box.0);
+    px_max = px_max.max(contents_box.1);
+    py_min = py_min.min(contents_box.2);
+    py_max = py_max.max(contents_box.3);
+  } else if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);

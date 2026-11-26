@@ -15385,6 +15385,38 @@ mod plot3d {
       assert!(wide.0 > 1.05 * pinned.0, "got {wide:?} vs {pinned:?}");
     }
 
+    /// An unboxed scene with depth in a picture of fixed width and height
+    /// is framed by the box around its contents, not by the contents
+    /// themselves: the box's far top and near bottom corners keep round
+    /// ends off the edges. Wolfram's snapshots of a wide beaker under a
+    /// thin pipette (cylinders in a 7 × 7 × 40 box) at
+    /// `ImageSize -> {150, 250}` draw the scene 230 px tall and 47 px wide.
+    /// Woxi fitted the round ends to the edges, cutting their outlines.
+    #[test]
+    fn an_unboxed_scene_with_depth_keeps_its_box_margins_when_pinned() {
+      let scene = |top: f64, size: &str, opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[{{Cylinder[{{{{0, 0, 0}}, {{0, 0, 19}}}}, 3.5],            Cylinder[{{{{0, 0, {top}}}, {{0, 0, 25}}}}, 0.2]}},            Boxed -> False, ImageSize -> {size}{opts}]"
+        ))
+      };
+      let (w, h) = scene(40.0, "{150, 250}", "");
+      assert!((h - 229.0).abs() < 4.0, "got {w} x {h}");
+      assert!((w - 46.0).abs() < 2.0, "got {w} x {h}");
+      // The same picture inside a `Manipulate` frame.
+      assert_eq!(
+        woxi::with_manipulate_frame(|| scene(40.0, "{150, 250}", "")),
+        (w, h)
+      );
+      // The margin is a share of the picture, whatever its size and the
+      // height of the scene.
+      let (w2, h2) = scene(40.0, "{300, 500}", "");
+      assert!((h2 / h - 2.0).abs() < 0.02, "got {w2} x {h2}");
+      for top in [30.0, 60.0, 90.0] {
+        let (_, h) = scene(top, "{150, 250}", "");
+        assert!((205.0..247.0).contains(&h), "top = {top}: got {h}");
+      }
+    }
+
     /// A cylinder's round cap is drawn as a smooth circle, not a visible
     /// polygon: seen from above, its outline covers more than 99.5 % of the
     /// circle around it. Wolfram's snapshots show smooth rims even on a
