@@ -2,6 +2,24 @@
 
 # Unreleased
 
+- `\[RightArrow]` (`→`, U+2192) is the inert infix operator `RightArrow`
+    like in Wolfram, no longer a spelling of the rule arrow: `a → b` is
+    `RightArrow[a, b]`. `\[Rule]` and `\[RuleDelayed]` are accepted
+    right after `/.` (`expr /. x \[Rule] 3` was a parse error), and
+    `<|a \[Rule] 1, b :> 2|>` keeps its delayed entry.
+- Heads that only stand for an operator character (`RightArrow`,
+    `Equilibrium`, `CupCap`, …) are written infix in `TraditionalForm`
+    boxes and in the labels and legends of a graphic, where they read
+    `RightArrow(a, b)`.
+- `Show` draws each plot's `PlotLegends -> Placed[labels, pos]` legend at
+    its own position instead of stacking every entry at the first plot's.
+- `ArrayPlot` keeps its automatic margin between the cells and the frame
+    even on all sides under an explicit `AspectRatio`.
+- Woxi Studio gives an immediate assignment or rule in a `Manipulate`
+    body that mentions a control its own pattern variables
+    (`f[t_] = g[n, t]` is `f[t$_] = g[n, t$]`, as the lexically scoped
+    controls make it in Wolfram), so a value the global `t` holds — a loop
+    counter, say — no longer leaks into the definition.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are

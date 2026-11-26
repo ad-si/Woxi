@@ -1727,6 +1727,16 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       let width = args.first().and_then(try_eval_to_f64).unwrap_or(1.0);
       Some(" ".repeat(width.max(0.0).round() as usize))
     }
+    // An operator-only head (`RightArrow`, `Equilibrium`, …) is written
+    // with its character between the arguments: `a → b`.
+    Expr::FunctionCall { name, args }
+      if args.len() >= 2 && crate::syntax::inert_infix_char(name).is_some() =>
+    {
+      let op = crate::syntax::inert_infix_char(name)?;
+      let parts: Vec<String> =
+        args.iter().map(expr_to_label).collect::<Option<Vec<_>>>()?;
+      Some(parts.join(&format!(" {op} ")))
+    }
     // `Row[{…}]` joins its parts, with an optional separator.
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       let Expr::List(items) = &args[0] else {
