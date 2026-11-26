@@ -76300,21 +76300,22 @@ fn epilog_stacked_text_uniform_lines_keep_pitch() {
 }
 
 /// A multi-line `Graphics` `Text` whose lines are styled to different
-/// sizes spaces them by those sizes rather than by the base font size,
-/// while equal lines keep the base pitch.
+/// sizes spaces them by those sizes rather than by the base font size:
+/// two lines sit the line pitch (4/3) of the mean of their sizes apart,
+/// and equal lines the pitch of the base size.
 #[test]
 fn graphics_text_column_lines_sized_by_their_styles() {
   let svg =
     export_svg("Graphics[Text[Column[{Style[7, 100], Style[3, 40]}], {0, 0}]]");
-  assert!(svg.contains("dy=\"-20\""), "{svg}");
-  assert!(svg.contains("dy=\"70\""), "{svg}");
+  assert!(svg.contains("dy=\"-31.67\""), "{svg}");
+  assert!(svg.contains("dy=\"93.33\""), "{svg}");
   let svg = export_svg("Graphics[Text[Column[{\"a\", \"b\", \"c\"}], {0, 0}]]");
   assert!(
-    svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
+    svg.contains("dy=\"-13.33\" dominant-baseline=\"central\">a</tspan>"),
     "{svg}"
   );
   assert!(
-    svg.contains("dy=\"10\" dominant-baseline=\"central\">b</tspan>"),
+    svg.contains("dy=\"13.33\" dominant-baseline=\"central\">b</tspan>"),
     "{svg}"
   );
 }
