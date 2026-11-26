@@ -12089,12 +12089,14 @@ fn collect_3d_primitives_styled(
           // Without a radius of the `Tube`'s own, a radius list written as
           // the curve's second argument (`Tube[BSplineCurve[pts, {r1, …}]]`)
           // sets the radii the same way.
+          let is_option = |a: &Expr| {
+            matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          };
           let control_radii = |inner: &[Expr]| -> Option<Vec<f64>> {
-            let spec = args.get(1).or_else(|| {
-              inner.get(1).filter(|a| {
-                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-              })
-            })?;
+            let spec = args
+              .get(1)
+              .filter(|a| !is_option(a))
+              .or_else(|| inner.get(1).filter(|a| !is_option(a)))?;
             let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
             let Expr::List(items) = &spec else {
               return None;
@@ -12148,16 +12150,23 @@ fn collect_3d_primitives_styled(
           };
           // Likewise a single radius written as the curve's second argument
           // (`Tube[BSplineCurve[pts, r]]`) is the tube's radius.
-          let radius_spec = args.get(1).or_else(|| match &args[0] {
-            Expr::FunctionCall { name, args: inner }
-              if name == "BSplineCurve" =>
-            {
-              inner.get(1).filter(|a| {
-                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-              })
-            }
-            _ => None,
-          });
+          let radius_spec =
+            args
+              .get(1)
+              .filter(|a| !is_option(a))
+              .or_else(|| match &args[0] {
+                Expr::FunctionCall { name, args: inner }
+                  if name == "BSplineCurve" =>
+                {
+                  inner.get(1).filter(|a| !is_option(a))
+                }
+                _ => None,
+              });
+          // `VertexColors -> {c1, c2, …}` gives each point of the curve a
+          // color, blended along the tube between them.
+          let palette = complex_vertex_colors(&args[1..]);
+          let color_alpha = palette.as_ref().and_then(|p| p.1).unwrap_or(1.0);
+          let vertex_colors = palette.map(|p| p.0);
           for pts in curves {
             let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
               rs
@@ -12210,6 +12219,18 @@ fn collect_3d_primitives_styled(
                 .fold(0.0f64, f64::max);
               vec![extent / 100.0; pts.len()]
             };
+            // A tube with a color per point is cut finely enough for the
+            // colors to blend along it.
+            let colors = vertex_colors
+              .as_ref()
+              .filter(|c| c.len() == pts.len() && !from_spline);
+            let (pts, radii, colors) = match colors {
+              Some(colors) => {
+                let (p, r, c) = subdivide_colored_tube(&pts, &radii, colors);
+                (p, r, Some(c))
+              }
+              None => (pts, radii, None),
+            };
             let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
             // At a sharp corner of a polyline Wolfram ends one rounded run
             // and starts the next, so the two overlap in a rounded elbow; a
@@ -12228,7 +12249,22 @@ fn collect_3d_primitives_styled(
                 style.caps,
                 budget,
               );
-              if !tris.is_empty() {
+              if let Some(colors) = &colors {
+                for (color, band) in
+                  tube_color_bands(tris, &pts[from..=to], &colors[from..=to])
+                {
+                  let mut band_style = style.clone();
+                  band_style.without_face_form();
+                  band_style.opacity *= color_alpha;
+                  band_style.color = Some(color);
+                  prims.push(Primitive3D::Surface3D {
+                    tris: band,
+                    style: band_style,
+                    smooth: true,
+                    outlined: false,
+                  });
+                }
+              } else if !tris.is_empty() {
                 prims.push(Primitive3D::Surface3D {
                   tris,
                   style: style.clone(),
@@ -14693,6 +14729,102 @@ fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
     runs.push((start, pts.len() - 1));
   }
   runs
+}
+
+/// How many pieces each segment of a `VertexColors` tube is cut into, each
+/// drawn in one color of the blend.
+const TUBE_COLOR_STEPS: usize = 12;
+
+/// Cut every segment of a `VertexColors` tube into `TUBE_COLOR_STEPS`
+/// pieces, carrying the radii and the per-point colors (unit-range RGB)
+/// linearly along it, so that the colors blend in fine steps.
+fn subdivide_colored_tube(
+  points: &[Point3D],
+  radii: &[f64],
+  colors: &[(f64, f64, f64)],
+) -> (Vec<Point3D>, Vec<f64>, Vec<(f64, f64, f64)>) {
+  let (mut pts, mut rs, mut cs) = (vec![], vec![], vec![]);
+  for i in 0..points.len().saturating_sub(1) {
+    let (a, b) = (points[i], points[i + 1]);
+    for k in 0..TUBE_COLOR_STEPS {
+      let f = k as f64 / TUBE_COLOR_STEPS as f64;
+      let mix = |x: f64, y: f64| x * (1.0 - f) + y * f;
+      pts.push(Point3D {
+        x: mix(a.x, b.x),
+        y: mix(a.y, b.y),
+        z: mix(a.z, b.z),
+      });
+      rs.push(mix(radii[i], radii[i + 1]));
+      cs.push((
+        mix(colors[i].0, colors[i + 1].0),
+        mix(colors[i].1, colors[i + 1].1),
+        mix(colors[i].2, colors[i + 1].2),
+      ));
+    }
+  }
+  if let (Some(p), Some(r), Some(c)) =
+    (points.last(), radii.last(), colors.last())
+  {
+    pts.push(*p);
+    rs.push(*r);
+    cs.push(*c);
+  }
+  (pts, rs, cs)
+}
+
+/// Split the facets of a tube along `points` into one band per segment,
+/// each in the mean of the `colors` (unit-range RGB, one per point) at the
+/// segment's two ends, the way a `VertexColors` line is drawn. The caps
+/// take the color of the segment they close.
+fn tube_color_bands(
+  tris: Vec<(Point3D, Point3D, Point3D)>,
+  points: &[Point3D],
+  colors: &[(f64, f64, f64)],
+) -> Vec<((u8, u8, u8), Vec<(Point3D, Point3D, Point3D)>)> {
+  if points.len() < 2 || colors.len() != points.len() {
+    return vec![];
+  }
+  // Where along the polyline (segment index plus the fraction of the way
+  // through that segment) the point of it nearest to `p` lies.
+  let position = |p: &Point3D| -> f64 {
+    let mut best = (f64::INFINITY, 0.0);
+    for (i, w) in points.windows(2).enumerate() {
+      let d = [w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z];
+      let rel = [p.x - w[0].x, p.y - w[0].y, p.z - w[0].z];
+      let len2 = v_dot(d, d);
+      let t = if len2 > 0.0 {
+        (v_dot(rel, d) / len2).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      let off = [rel[0] - t * d[0], rel[1] - t * d[1], rel[2] - t * d[2]];
+      let dist2 = v_dot(off, off);
+      if dist2 < best.0 {
+        best = (dist2, i as f64 + t);
+      }
+    }
+    best.1
+  };
+  let mut bands: std::collections::BTreeMap<usize, Vec<_>> =
+    std::collections::BTreeMap::new();
+  for tri in tris {
+    // The middle of the stretch of tube the facet spans, so that the two
+    // triangles of one quad of the mesh always land in the same band.
+    let at = [position(&tri.0), position(&tri.1), position(&tri.2)];
+    let lo = at.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = at.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let band = (f64::midpoint(lo, hi) as usize).min(points.len() - 2);
+    bands.entry(band).or_default().push(tri);
+  }
+  let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  bands
+    .into_iter()
+    .map(|(i, tris)| {
+      let (a, b) = (colors[i], colors[i + 1]);
+      let mean = |x: f64, y: f64| q(f64::midpoint(x, y));
+      ((mean(a.0, b.0), mean(a.1, b.1), mean(a.2, b.2)), tris)
+    })
+    .collect()
 }
 
 fn tessellate_tube(

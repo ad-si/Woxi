@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
+    tube instead of drawing it in the plain color, each color given as a
+    color or a list of directives, and an option right after the curve
+    (`Tube[pts, VertexColors -> …]`) is no longer read as a radius of zero.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
