@@ -71933,6 +71933,91 @@ mod field_plot_conformance {
   }
 
   #[test]
+  fn discrete_plot_extent_steps_honor_plot_style() {
+    // Regression: `PlotStyle` was dropped for `ExtentSize` steps, which
+    // stayed in the default palette.
+    let directives = |opts: &str| {
+      interpret(&format!(
+        "Cases[DiscretePlot[{{n, 2 n}}, {{n, 1, 3}}, ExtentSize -> Full{opts}], \
+         {{d_Directive, __}} :> d, Infinity]"
+      ))
+      .unwrap()
+    };
+    // One style per series; a style's opacity also fills the steps.
+    assert_eq!(
+      directives(
+        ", PlotStyle -> {Directive[Blue, Opacity[0.5]], {Red, Thick}}"
+      ),
+      "{Directive[Opacity[0.5], RGBColor[0, 0, 1], AbsoluteThickness[2]], \
+       Directive[RGBColor[0, 0, 1], AbsoluteThickness[2], RGBColor[0, 0, 1], \
+       Opacity[0.5]], \
+       Directive[Opacity[0.2], RGBColor[1, 0, 0], AbsoluteThickness[2]], \
+       Directive[RGBColor[1, 0, 0], AbsoluteThickness[2], RGBColor[1, 0, 0], \
+       Thickness[Large]]}"
+    );
+    // A lone style paints every series; a shorter list is cycled.
+    assert_eq!(
+      directives(", PlotStyle -> Green"),
+      directives(", PlotStyle -> {Green}")
+    );
+    assert!(!directives(", PlotStyle -> Green").contains("0.24, 0.6, 0.8"));
+    // `FillingStyle` still wins over the series style for the area.
+    assert!(
+      directives(", PlotStyle -> Opacity[0.5], FillingStyle -> Opacity[0.7]")
+        .starts_with("{Directive[Opacity[0.7], RGBColor[0.24, 0.6, 0.8]")
+    );
+    // `Automatic` keeps the defaults.
+    assert_eq!(directives(", PlotStyle -> Automatic"), directives(""));
+    let svg = export_svg(
+      "DiscretePlot[n, {n, 1, 3}, ExtentSize -> Full, \
+       PlotStyle -> Directive[Blue, Opacity[0.5]]]",
+    );
+    assert!(
+      svg.contains("rgb(0,0,255)") || svg.contains("#0000ff"),
+      "{svg}"
+    );
+    assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
+  }
+
+  #[test]
+  fn discrete_plot_extent_steps_keep_explicit_plot_range_unpadded() {
+    // Regression: an explicit `PlotRange` was still padded, and the
+    // vertical axis stood at 0 inside the first step instead of at the
+    // left end of the range.
+    let options = |opts: &str| {
+      interpret(&format!(
+        "{{AxesOrigin, PlotRangePadding}} /. Options[DiscretePlot[n, \
+         {{n, 0, 3}}, ExtentSize -> Full{opts}]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      options(""),
+      "{{-0.5, 0.}, {{Scaled[0.02], Scaled[0.02]}, \
+       {Scaled[0.05], Scaled[0.05]}}}"
+    );
+    assert_eq!(
+      options(", PlotRange -> {{-1, 4}, {0, 5}}"),
+      "{{-1., 0.}, {{0, 0}, {0, 0}}}"
+    );
+    // Only the explicit ends lose their padding.
+    assert_eq!(
+      options(", PlotRange -> {{Automatic, 4}, {0, All}}"),
+      "{{-0.5, 0.}, {{Scaled[0.02], 0}, {0, Scaled[0.05]}}}"
+    );
+    // `{y1, y2}` sets the vertical range alone.
+    assert_eq!(
+      options(", PlotRange -> {0, 5}"),
+      "{{-0.5, 0.}, {{Scaled[0.02], Scaled[0.02]}, {0, 0}}}"
+    );
+    assert_eq!(
+      options(", PlotRange -> All"),
+      "{{-0.5, 0.}, {{Scaled[0.02], Scaled[0.02]}, \
+       {Scaled[0.05], Scaled[0.05]}}}"
+    );
+  }
+
+  #[test]
   fn date_list_plot_pairs_every_dataset_with_the_start_date() {
     // Regression: two value lists with a start date plotted as one line.
     let svg = export_svg(
