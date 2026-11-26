@@ -79091,6 +79091,74 @@ mod fitted_3d_scene_keeps_edge_dots_whole {
   }
 }
 
+// An unboxed 3D scene at a fixed width and height whose contents extend
+// along one axis only is fitted together with the ranges Wolfram makes up
+// for the other two: a straight line along an axis is drawn centered and
+// clear of the corners rather than from corner to corner.
+mod fitted_3d_scene_keeps_made_up_range_of_flat_contents {
+  use super::*;
+
+  /// First and last point of the only `<polyline>` in the SVG.
+  fn line_ends(code: &str) -> ((f64, f64), (f64, f64)) {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let key = "<polyline points=\"";
+    let start = svg.find(key).expect(&svg) + key.len();
+    let end = start + svg[start..].find('"').unwrap();
+    let pts: Vec<(f64, f64)> = svg[start..end]
+      .split_whitespace()
+      .map(|p| {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect();
+    (pts[0], *pts.last().unwrap())
+  }
+
+  // Wolfram's snapshot of this line spans 257 × 280 of the 350 × 350
+  // picture, centered at (177, 171.5).
+  #[test]
+  fn line_along_the_y_axis() {
+    let ((x0, y0), (x1, y1)) = line_ends(
+      "Graphics3D[Line[{{0, 0, 0}, {0, 22, 0}}], \
+       ImageSize -> {350, 350}, Boxed -> False]",
+    );
+    let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
+    assert!((dx - 257.0).abs() < 5.0, "dx = {dx}");
+    assert!((dy - 280.0).abs() < 5.0, "dy = {dy}");
+    assert!((f64::midpoint(x0, x1) - 177.0).abs() < 3.0, "{x0} {x1}");
+    assert!((f64::midpoint(y0, y1) - 171.5).abs() < 3.0, "{y0} {y1}");
+  }
+
+  // The same holds for a line of any length and along any axis: it stays
+  // clear of the frame it used to run into.
+  #[test]
+  fn lines_along_other_axes_stay_clear_of_the_frame() {
+    for line in [
+      "{{0, 0, 0}, {0, 0, 40}}",
+      "{{3, 0, 2}, {18, 0, 2}}",
+      "{{1, 1, 1}, {1, 7, 1}}",
+    ] {
+      let ((x0, y0), (x1, y1)) = line_ends(&format!(
+        "Graphics3D[Line[{line}], ImageSize -> {{300, 300}}, Boxed -> False]"
+      ));
+      for v in [x0, y0, x1, y1] {
+        assert!(v > 4.0 && v < 296.0, "{line}: {x0},{y0} {x1},{y1}");
+      }
+    }
+  }
+
+  // Contents extending along all three axes are still fitted on their own.
+  #[test]
+  fn elongated_contents_still_fill_the_frame() {
+    let ((_, y0), (_, y1)) = line_ends(
+      "Graphics3D[Line[{{0, 0, 0}, {1, 1, 30}}], \
+       ImageSize -> {300, 300}, Boxed -> False]",
+    );
+    assert!(y0.max(y1) > 295.0 && y0.min(y1) < 5.0, "{y0} {y1}");
+  }
+}
+
 mod plot_label_default_color {
   use super::*;
 

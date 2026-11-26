@@ -17270,8 +17270,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !flat_contents
     && (contents_box.3 - contents_box.2) * f64::from(svg_width)
       >= (contents_box.1 - contents_box.0) * f64::from(svg_height);
+  // Contents extending along one axis only (a straight line parallel to
+  // it, or a single point) keep the box around the ranges Wolfram makes up
+  // for the other two axes: a Demonstration's unboxed line of length 22
+  // along the y axis at `ImageSize -> {350, 350}` spans 257 × 280 of the
+  // frame, centered, as its padded 2 × 22 × 2 box does, rather than running
+  // from corner to corner. Contents lying in a plane keep the fit to
+  // themselves (a planar net of dots reaches the picture's edges).
+  let line_contents = contents_extent
+    .into_iter()
+    .filter(|&r| range_is_flat(r))
+    .count()
+    >= 2;
   let fit_contents = unboxed_automatic
     && !fit_contents_box
+    && !line_contents
     && (explicit_height || round_solids_only);
   if fit_contents_box {
     px_min = px_min.min(contents_box.0);
