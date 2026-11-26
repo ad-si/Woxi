@@ -41944,6 +41944,14 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     Expr::String(_) | Expr::Graphics { .. } | Expr::Image { .. } => {
       expr.clone()
     }
+    // `Tooltip[content, tip]` shows its content; the tip only appears on
+    // hover. Wrapped whole in `TraditionalForm[…]` it would be printed as
+    // the literal call instead.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip" && !args.is_empty() =>
+    {
+      traditionalize_layout_items(&args[0])
+    }
     // `Null` draws nothing, and a span marker (`SpanFromLeft`) only says a
     // neighboring cell continues into its slot: wrapped in
     // `TraditionalForm[…]` it would no longer merge the cells and be
@@ -53684,6 +53692,21 @@ fn has_proxy_local(locals: &Expr) -> bool {
   })
 }
 
+/// Whether a `DynamicModule` body is a statement sequence whose value is
+/// an explicit `Dynamic[…]` (`setup; Dynamic[step; picture]`): the module
+/// shows that `Dynamic`, which refreshes on its own while the locals live
+/// on, just as when the `Dynamic` is the whole body.
+fn ends_in_dynamic(body: &Expr) -> bool {
+  match body {
+    Expr::CompoundExpr(items) => items.last().is_some_and(ends_in_dynamic),
+    Expr::FunctionCall { name, args } if name == "CompoundExpression" => {
+      args.last().is_some_and(ends_in_dynamic)
+    }
+    Expr::FunctionCall { name, .. } => name == "Dynamic",
+    _ => false,
+  }
+}
+
 fn unwrap_dynamic_module_locals(
   body: &Expr,
   state: &mut Vec<(String, String)>,
@@ -53716,7 +53739,8 @@ fn unwrap_dynamic_module_locals(
       Expr::FunctionCall { name, args }
         if name == "DynamicModule"
           && args.len() >= 2
-          && expr_contains_call(&args[1], &["Dynamic"])
+          && (expr_contains_call(&args[1], &["Dynamic"])
+            || ends_in_dynamic(&args[1]))
           && (matches!(&args[1], Expr::FunctionCall { name: inner, .. } if inner == "Dynamic")
             || !has_proxy_local(&args[0])) =>
       {

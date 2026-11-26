@@ -3878,6 +3878,32 @@ mod graphics {
       );
     }
 
+    /// A `Tooltip[content, tip]` item of a plot label row shows its
+    /// content — the tip only appears on hover — whether the content is a
+    /// string, a styled item or a row of its own.
+    #[test]
+    fn plot_label_row_shows_the_content_of_a_tooltip_item() {
+      for content in [
+        "\"speed\"",
+        "Style[\"speed\", Italic]",
+        "Row[{\"sp\", \"eed\"}]",
+        "Subscript[\"speed\", \"max\"]",
+      ] {
+        for plot in ["ListPlot[{{1, 2}, {2, 3}}", "Plot[x, {x, 0, 1}"] {
+          let code = format!(
+            "{plot}, PlotLabel -> Row[{{Tooltip[{content}, \"A hint.\"], \" = \", 2}}]]"
+          );
+          let svg = export_svg(&code);
+          assert!(!svg.contains("Tooltip"), "{code}: {svg}");
+          assert!(!svg.contains("A hint."), "{code}: {svg}");
+          assert!(
+            svg.contains("speed") || svg.contains("eed"),
+            "{code}: {svg}"
+          );
+        }
+      }
+    }
+
     /// A graphics label `Text[TraditionalForm["…"]]` shows the string's
     /// text, not the `FormBox` source it serializes to.
     #[test]

@@ -10942,6 +10942,53 @@ mod repeated_option_tests {
     assert_eq!(state.text_output.as_deref(), Some("3"));
   }
 
+  /// A `DynamicModule` whose body is a statement sequence ending in a
+  /// `Dynamic` (`setup; Dynamic[step; value]`) keeps its locals alive while
+  /// that `Dynamic` refreshes: a step counter keeps counting up instead of
+  /// restarting from its initializer on every refresh.
+  #[test]
+  fn module_locals_persist_when_the_body_ends_in_a_dynamic() {
+    let code = r#"Manipulate[
+      DynamicModule[{count = 0},
+        If[!started, started = True; total = 100];
+        Dynamic[If[run, count++; total = total + 1]; {count, total}]],
+      {{run, False}, {True, False}},
+      {{total, 0}, ControlType -> None},
+      {{started, False}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("{0, 100}"));
+    assert!(!state.wants_tick(), "a stopped simulation needs no timer");
+    assert!(state.select_discrete(0, "True"));
+    state.reevaluate();
+    // Each refresh may step more than once while the widget settles, so
+    // only the direction is pinned: the local keeps counting up, in step
+    // with the hidden variable, rather than restarting from 0.
+    let read = |state: &ManipulateState| -> (i64, i64) {
+      let text = state.text_output.clone().expect("text output");
+      let nums: Vec<i64> = text
+        .trim_matches(|c| c == '{' || c == '}')
+        .split(", ")
+        .map(|n| n.parse().expect("integer"))
+        .collect();
+      (nums[0], nums[1])
+    };
+    let (count, total) = read(&state);
+    assert!(count >= 1, "the step ran: {count}");
+    assert_eq!(total - 100, count);
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    state.tick();
+    state.tick();
+    let (later, later_total) = read(&state);
+    assert!(
+      later >= count + 2,
+      "the local kept counting: {count} -> {later}"
+    );
+    assert_eq!(later_total - 100, later);
+  }
+
   /// A slider and a setter row sharing one variable: the slider starts on
   /// the exact `2/3`, whose `"Labeled"` readout Wolfram typesets as a stacked
   /// fraction. A drag makes it bind machine reals, but picking a setter
