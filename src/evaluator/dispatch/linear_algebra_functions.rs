@@ -5322,6 +5322,84 @@ fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// through `Together` so the radical form matches wolframscript (e.g. `1/3 -
 /// 1/Sqrt[3]` → `(1 - Sqrt[3])/3`). Returns `None` for a non-numeric axis or
 /// point so the caller can leave the expression unevaluated.
+/// The rows of the homogeneous 4×4 matrix of a rotation by a machine-real
+/// angle `theta` about a 3D `axis` (through `point`, when given) whose
+/// coordinates are plain numbers, computed directly in machine arithmetic.
+///
+/// The result is a matrix of machine reals either way; going through the
+/// symbolic Rodrigues formula (`Expand`, `Together`) costs milliseconds per
+/// call, which a loop building thousands of rotations cannot afford.
+/// `None` when the angle is not a machine real or a coordinate is not an
+/// integer, rational or real — those keep the exact construction.
+fn rotation_transform_3d_machine(
+  theta: &Expr,
+  axis: &[Expr],
+  point: Option<&[Expr]>,
+) -> Option<Vec<Expr>> {
+  let Expr::Real(theta) = theta else {
+    return None;
+  };
+  let plain = |e: &Expr| match e {
+    Expr::Integer(_) | Expr::Real(_) => {
+      crate::functions::math_ast::try_eval_to_f64(e)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.iter().all(|a| matches!(a, Expr::Integer(_))) =>
+    {
+      crate::functions::math_ast::try_eval_to_f64(e)
+    }
+    _ => None,
+  };
+  let triple = |v: &[Expr]| -> Option<[f64; 3]> {
+    if v.len() != 3 {
+      return None;
+    }
+    Some([plain(&v[0])?, plain(&v[1])?, plain(&v[2])?])
+  };
+  let a = triple(axis)?;
+  let p = match point {
+    Some(p) => Some(triple(p)?),
+    None => None,
+  };
+  let norm = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+  if !theta.is_finite() || !norm.is_finite() || norm == 0.0 {
+    return None;
+  }
+  let u = a.map(|c| c / norm);
+  let (sin, cos) = theta.sin_cos();
+  let cross = [[0.0, -u[2], u[1]], [u[2], 0.0, -u[0]], [-u[1], u[0], 0.0]];
+  let mut rows = Vec::with_capacity(4);
+  for i in 0..3 {
+    let r: [f64; 3] = std::array::from_fn(|j| {
+      let diag = if i == j { cos } else { 0.0 };
+      diag + (1.0 - cos) * u[i] * u[j] + sin * cross[i][j]
+    });
+    // Rotating about the axis through `p`: t = p - R.p.
+    let t = p.map_or(0.0, |p| p[i] - (r[0] * p[0] + r[1] * p[1] + r[2] * p[2]));
+    if !r.iter().all(|c| c.is_finite()) || !t.is_finite() {
+      return None;
+    }
+    rows.push(Expr::List(
+      r.iter()
+        .chain(std::iter::once(&t))
+        .map(|&c| Expr::Real(c))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+  rows.push(Expr::List(
+    vec![
+      Expr::Real(0.0),
+      Expr::Real(0.0),
+      Expr::Real(0.0),
+      Expr::Real(1.0),
+    ]
+    .into(),
+  ));
+  Some(rows)
+}
+
 fn rotation_transform_3d_axis(
   theta: &Expr,
   axis: &[Expr],
@@ -5333,6 +5411,12 @@ fn rotation_transform_3d_axis(
     .any(|e| crate::functions::math_ast::try_eval_to_f64(e).is_none())
   {
     return None;
+  }
+  if let Some(rows) = rotation_transform_3d_machine(theta, axis, point) {
+    return Some(evaluate_expr_to_expr(&call1(
+      "TransformationFunction",
+      Expr::List(rows.into()),
+    )));
   }
   let int = Expr::Integer;
   let times = |a: Expr, b: Expr| times(vec![a, b]);
