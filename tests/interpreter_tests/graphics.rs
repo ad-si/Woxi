@@ -291,6 +291,94 @@ mod graphics {
       assert!((x_of(&shifted) - x_of(&plain) - 22.0).abs() < 0.02);
     }
 
+    /// The pixel coordinates of every `<polyline>` in `svg`.
+    fn polyline_points(svg: &str) -> Vec<Vec<(f64, f64)>> {
+      svg
+        .split("<polyline points=\"")
+        .skip(1)
+        .map(|rest| {
+          rest[..rest.find('"').unwrap()]
+            .split(' ')
+            .map(|p| {
+              let (x, y) = p.split_once(',').unwrap();
+              (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect()
+        })
+        .collect()
+    }
+
+    /// Regression: data far outside the plot range (a diverging iteration)
+    /// was written out as pixel coordinates of 1e15 and more, which
+    /// overflowed Woxi Studio's SVG renderer.
+    #[test]
+    fn primitives_far_outside_the_plot_range_stay_near_the_picture() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 1}, {2, 1*^15}}], Point[{2, -1*^15}], \
+         Arrow[{{1, 1}, {-1*^18, 2}}], Disk[{1*^15, 1*^15}, 1], \
+         Polygon[{{0, 0}, {1, 0}, {1, 1*^20}}], Text[\"a\", {1, 1*^15}]}, \
+         PlotRange -> {{0, 3}, {0, 3}}]",
+      );
+      let body = &svg[svg.find("<g clip-path").unwrap()..];
+      let mut seen = 0;
+      for attr in ["points=\"", "cx=\"", "cy=\"", " x=\"", " y=\""] {
+        for rest in body.split(attr).skip(1) {
+          for n in rest[..rest.find('"').unwrap()].split([' ', ',']) {
+            let v: f64 = n.parse().unwrap();
+            assert!(v.abs() < 2.0e5, "coordinate {v} in {body}");
+            seen += 1;
+          }
+        }
+      }
+      assert!(seen > 10, "{body}");
+    }
+
+    /// An edge running to a far-away vertex is cut on its way there, so
+    /// the part crossing the picture keeps its direction.
+    #[test]
+    fn line_to_a_far_vertex_keeps_its_direction() {
+      let near = polyline_points(&export_svg(
+        "Graphics[Line[{{0, 0}, {1, 2}}], PlotRange -> {{0, 3}, {0, 3}}]",
+      ));
+      let far = polyline_points(&export_svg(
+        "Graphics[Line[{{0, 0}, {1*^15, 2*^15}}], PlotRange -> {{0, 3}, {0, 3}}]",
+      ));
+      let slope = |l: &[(f64, f64)]| (l[1].1 - l[0].1) / (l[1].0 - l[0].0);
+      assert_eq!(far.len(), 1);
+      assert_eq!(far[0][0], near[0][0]);
+      assert!((slope(&far[0]) - slope(&near[0])).abs() < 1e-3, "{far:?}");
+    }
+
+    /// A line that leaves the far region and comes back is drawn as the
+    /// pieces inside it; one that never comes near the picture is dropped.
+    #[test]
+    fn line_through_far_vertices_splits_into_its_visible_pieces() {
+      let lines = polyline_points(&export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 1}, {2, 1*^15}, {2.5, 2}, {3, 3}}], \
+         Line[{{1*^15, 1*^15}, {2*^15, 1*^15}}]}, \
+         PlotRange -> {{0, 3}, {0, 3}}]",
+      ));
+      assert_eq!(lines.len(), 2, "{lines:?}");
+      assert_eq!(lines[0].len(), 3);
+      assert_eq!(lines[1].len(), 3);
+      // The cut ends sit on the edges' own lines: straight above the
+      // vertices next to the far one.
+      assert!((lines[0][2].0 - lines[0][1].0).abs() < 0.01, "{lines:?}");
+      assert!((lines[1][0].0 - lines[1][1].0).abs() < 0.01, "{lines:?}");
+    }
+
+    /// Lines within reach of the picture are written exactly as given.
+    #[test]
+    fn line_moderately_outside_the_plot_range_is_not_cut() {
+      let lines = polyline_points(&export_svg(
+        "Graphics[Line[{{0, 0}, {1, 1}, {2, 500}, {3, 0}}], \
+         PlotRange -> {{0, 3}, {0, 3}}]",
+      ));
+      assert_eq!(lines.len(), 1);
+      assert_eq!(lines[0].len(), 4);
+      assert!(lines[0][2].1 < -50_000.0, "{lines:?}");
+    }
+
     #[test]
     fn graphics_with_texture_directive() {
       // Texture[image] is a graphics directive — Graphics with it inside

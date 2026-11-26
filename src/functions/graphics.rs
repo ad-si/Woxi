@@ -13334,13 +13334,134 @@ fn apply_setback(
 
 // ── SVG generation ───────────────────────────────────────────────────────
 
-fn coord_x(x: f64, bb: &BBox, svg_w: f64) -> f64 {
+/// How far past the picture, in pixels, a coordinate may be written out.
+/// Data far outside the plot range (a diverging iteration, say) would
+/// otherwise put coordinates of 1e15 px and more into the SVG; renderers
+/// keep them in single precision at best, and resvg (Woxi Studio's
+/// renderer) overflows sizing the clipped group's layer from them.
+const FAR_PX: f64 = 100_000.0;
+
+fn coord_x_unclamped(x: f64, bb: &BBox, svg_w: f64) -> f64 {
   (x - bb.x_min) / bb.width() * svg_w
 }
 
-fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
+fn coord_y_unclamped(y: f64, bb: &BBox, svg_h: f64) -> f64 {
   // Flip y: Wolfram is y-up, SVG is y-down
   (bb.y_max - y) / bb.height() * svg_h
+}
+
+/// Hold a pixel coordinate within [`FAR_PX`] of the picture's `extent`.
+/// `NaN` passes through unchanged.
+fn clamp_far(px: f64, extent: f64) -> f64 {
+  px.clamp(-FAR_PX, extent.max(0.0) + FAR_PX)
+}
+
+fn coord_x(x: f64, bb: &BBox, svg_w: f64) -> f64 {
+  clamp_far(coord_x_unclamped(x, bb, svg_w), svg_w)
+}
+
+fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
+  clamp_far(coord_y_unclamped(y, bb, svg_h), svg_h)
+}
+
+/// Cut a polyline in pixel coordinates to the region [`FAR_PX`] around the
+/// picture, so a vertex far outside it leaves the part of its edges that
+/// crosses the picture exactly where it was (clamping the vertex alone
+/// would tilt them). The polyline falls apart where it leaves the region;
+/// pieces that never enter it are dropped. A polyline already inside it
+/// (or one holding a non-finite coordinate) comes back as it is.
+fn clip_far_polyline(
+  pts: &[(f64, f64)],
+  svg_w: f64,
+  svg_h: f64,
+) -> Vec<Vec<(f64, f64)>> {
+  let (x_lo, x_hi) = (-FAR_PX, svg_w.max(0.0) + FAR_PX);
+  let (y_lo, y_hi) = (-FAR_PX, svg_h.max(0.0) + FAR_PX);
+  let inside =
+    |&(x, y): &(f64, f64)| x >= x_lo && x <= x_hi && y >= y_lo && y <= y_hi;
+  if pts.iter().all(|p| inside(p) || !(p.0.is_finite() && p.1.is_finite())) {
+    return vec![pts.to_vec()];
+  }
+  if pts.iter().any(|p| p.0.is_nan() || p.1.is_nan()) {
+    return vec![
+      pts
+        .iter()
+        .map(|&(x, y)| (clamp_far(x, svg_w), clamp_far(y, svg_h)))
+        .collect(),
+    ];
+  }
+  let mut pieces: Vec<Vec<(f64, f64)>> = Vec::new();
+  let mut current: Vec<(f64, f64)> = Vec::new();
+  for w in pts.windows(2) {
+    let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    // Liang–Barsky: the parameter interval of the edge inside the region.
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    let mut visible = true;
+    for (p, q) in [
+      (-dx, x0 - x_lo),
+      (dx, x_hi - x0),
+      (-dy, y0 - y_lo),
+      (dy, y_hi - y0),
+    ] {
+      if p == 0.0 {
+        if q < 0.0 {
+          visible = false;
+        }
+      } else if p.is_infinite() {
+        // An endpoint at infinity: only the finite end can be kept.
+        if q < 0.0 {
+          visible = false;
+        } else if p > 0.0 {
+          t1 = t1.min(0.0);
+        }
+      } else {
+        let t = q / p;
+        if p < 0.0 {
+          t0 = t0.max(t);
+        } else {
+          t1 = t1.min(t);
+        }
+      }
+    }
+    if !visible || t0 > t1 {
+      if current.len() > 1 {
+        pieces.push(std::mem::take(&mut current));
+      } else {
+        current.clear();
+      }
+      continue;
+    }
+    let at = |t: f64| {
+      if t <= 0.0 {
+        (x0, y0)
+      } else if t >= 1.0 {
+        (x1, y1)
+      } else {
+        (
+          clamp_far(x0 + t * dx, svg_w),
+          clamp_far(y0 + t * dy, svg_h),
+        )
+      }
+    };
+    let (a, b) = (at(t0), at(t1));
+    if t0 > 0.0 || current.is_empty() {
+      if current.len() > 1 {
+        pieces.push(std::mem::take(&mut current));
+      } else {
+        current.clear();
+      }
+      current.push(a);
+    }
+    current.push(b);
+    if t1 < 1.0 {
+      pieces.push(std::mem::take(&mut current));
+    }
+  }
+  if current.len() > 1 {
+    pieces.push(current);
+  }
+  pieces
 }
 
 /// The region an unbounded primitive (`InfiniteLine`, `HalfPlane`, …) is
@@ -16895,11 +17016,32 @@ fn render_primitive(
       let vertex_colors =
         vertex_colors.as_ref().filter(|c| c.len() == total_points);
       let mut point_idx = 0usize;
-      for (seg_idx, seg) in segments.iter().enumerate() {
-        let screen_pts: Vec<(f64, f64)> = seg
-          .iter()
-          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
-          .collect();
+      // Each segment, cut where it runs far outside the picture. Vertex
+      // colors are tied to the points as given, so such a line keeps them
+      // all (held near the picture) instead.
+      let pieces = segments.iter().enumerate().flat_map(|(seg_idx, seg)| {
+        let pieces = if vertex_colors.is_some() || seg.len() < 2 {
+          vec![
+            seg
+              .iter()
+              .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+              .collect(),
+          ]
+        } else {
+          let raw: Vec<(f64, f64)> = seg
+            .iter()
+            .map(|&(x, y)| {
+              (
+                coord_x_unclamped(x, bb, svg_w),
+                coord_y_unclamped(y, bb, svg_h),
+              )
+            })
+            .collect();
+          clip_far_polyline(&raw, svg_w, svg_h)
+        };
+        pieces.into_iter().map(move |piece| (seg_idx, piece))
+      });
+      for (seg_idx, screen_pts) in pieces {
         let pts: Vec<String> = screen_pts
           .iter()
           .map(|&(x, y)| format!("{x:.2},{y:.2}"))
