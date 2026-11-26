@@ -71329,6 +71329,47 @@ mod plot_range_clipping_and_exclusions {
     );
     assert_eq!(svg.matches("<polyline").count(), 1);
   }
+
+  /// A branch cut or a step function hidden behind a user function is
+  /// found too: Wolfram works the body out with the variable left
+  /// symbolic before it looks for the functions that jump.
+  #[test]
+  fn automatic_exclusions_see_through_user_functions() {
+    let pieces = |code: &str| {
+      clear_state();
+      export_svg(code).matches("<polyline").count()
+    };
+    let phase = "g[w_] := (E^(I w) - 1/2)/(E^(I w) + 9/10); ";
+    assert_eq!(
+      pieces(&format!(
+        "{phase}Plot[Arg[g[3 x]^3], {{x, -1, 1}}, Axes -> False]"
+      )),
+      pieces(
+        "Plot[Arg[((E^(3 I x) - 1/2)/(E^(3 I x) + 9/10))^3], {x, -1, 1}, \
+         Axes -> False]"
+      )
+    );
+    assert!(
+      pieces(&format!(
+        "{phase}Plot[Arg[g[3 x]^3], {{x, -1, 1}}, Axes -> False]"
+      )) > 1
+    );
+    assert_eq!(
+      pieces(&format!(
+        "{phase}Plot[Arg[g[3 x]^3], {{x, -1, 1}}, Exclusions -> None, \
+         Axes -> False]"
+      )),
+      1
+    );
+    assert_eq!(
+      pieces("s[x_] := Floor[x]; Plot[s[x], {x, 0, 3}, Axes -> False]"),
+      3
+    );
+    assert_eq!(
+      pieces("s[x_] := x^2; Plot[s[x], {x, 0, 3}, Axes -> False]"),
+      1
+    );
+  }
 }
 
 /// `FrameTicks`, `FrameTicksStyle`, `FrameStyle` and `LabelStyle` on each
