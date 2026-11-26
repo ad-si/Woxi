@@ -2423,6 +2423,14 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
     }
   }
 
+  // The simultaneous iteration can throw an approximation so far out that
+  // the next evaluation of a high-degree polynomial overflows, after which
+  // every root is NaN. Aberth's method from the Cauchy circle is robust
+  // there.
+  if roots.iter().any(|&(r, i)| !r.is_finite() || !i.is_finite()) {
+    return crate::functions::math_ast::aberth_complex_roots(coeffs);
+  }
+
   crate::functions::math_ast::polish_and_pair_roots(coeffs, &mut roots);
   roots
 }

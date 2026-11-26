@@ -933,11 +933,11 @@ fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// `"NetFaces"`: a planar net of the solid — the faces unfolded into the
+/// `"NetFaces"`: a planar net of the solid — its predefined net (see
+/// `predefined_net`) when it has one, otherwise the faces unfolded into the
 /// plane along a breadth-first spanning tree of the face adjacency graph,
 /// as `GraphicsComplex[points, Polygon[faces]]` over 2D points (faces share
-/// the points of the edges the unfolding keeps joined). Solids with a
-/// predefined net (see `predefined_net`) return that layout instead.
+/// the points of the edges the unfolding keeps joined).
 fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   if let Some((coords, faces)) = predefined_net(info.name) {
     return Ok(call(
@@ -1097,72 +1097,74 @@ fn predefined_net(name: &str) -> Option<(&'static str, &'static str)> {
         {9, 13, 11}, {13, 17, 15}, {2, 4, 6}, {6, 8, 10}, {10, 12, 14}, \
         {14, 16, 18}}",
     )),
-    // Two "flowers" of six unit pentagons, each a center with a petal on
-    // every edge, joined along one petal edge. Face 1 is the center of one
-    // flower with faces 2-6 around it clockwise, face 12 the center of the
-    // other with faces 7-11 around it clockwise; faces 6 and 7 are joined.
-    // Every face is listed counterclockwise.
+    // Two rosettes of a pentagon ringed by five more, the second turned
+    // half a turn and joined to the first along one edge of two petals
+    // (unit edges; the center of the first face is the origin). Each face
+    // runs counterclockwise.
     "Dodecahedron" => Some((
-      "{{0, 0}, {(1 - Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-3 - Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, {(-1 - Sqrt[5])/2, 0}, \
-        {(-1 - Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
-        {(-1 - Sqrt[5])/2, 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {0, 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-1 - Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {1/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, {1, 0}, \
-        {(3 + Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
-        {(1 + Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
-        {-1/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
-        {1/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-3 - 3*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
-        {(-2 - Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-3 - Sqrt[5])/2, 0}, \
-        {(-2 - Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-5 - 3*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-9 - 3*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, {-2 - Sqrt[5], 0}, \
-        {(-7 - 3*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
-        {(-9 - 3*Sqrt[5])/4, -Sqrt[(5 + Sqrt[5])/8]}, {-3 - Sqrt[5], 0}, \
-        {(-11 - 5*Sqrt[5])/4, -Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-5 - 2*Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/8] - Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-13 - 5*Sqrt[5])/4, -Sqrt[(5 - Sqrt[5])/8]}, \
-        {(-11 - 5*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-15 - 5*Sqrt[5])/4, Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-7 - 3*Sqrt[5])/2, 0}, \
-        {(-6 - 3*Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-5 - 2*Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-9 - 5*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-13 - 5*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-11 - 3*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-4 - Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/8] + Sqrt[(5 + Sqrt[5])/8]}, \
-        {(-7 - 3*Sqrt[5])/4, Sqrt[(5 - Sqrt[5])/8] + 2*Sqrt[(5 + Sqrt[5])/8]}}",
-      "{{1, 2, 3, 4, 5}, {6, 3, 2, 7, 8}, {9, 2, 1, 10, 11}, \
-        {12, 1, 5, 13, 14}, {15, 5, 4, 16, 17}, {18, 4, 3, 19, 20}, \
-        {20, 21, 22, 23, 18}, {24, 22, 25, 26, 27}, {28, 25, 29, 30, 31}, \
-        {32, 29, 33, 34, 35}, {36, 33, 21, 37, 38}, {29, 25, 22, 21, 33}}",
+      "{{1/4 + 1/4*Sqrt[5], -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {1/2, \
+        (1/8 + 3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1/2, (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1/4 - 1/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {0, (-1/4 - \
+        1/20*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1/4 - 1/4*Sqrt[5], (1/4 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {1/4 + 1/4*Sqrt[5], (1/4 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {0, (1/2 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {3/4 + 1/4*Sqrt[5], (3/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {5/4 + 1/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {1 + 1/2*Sqrt[5], (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {1/2 + 1/2*Sqrt[5], (-1/4 - \
+        1/20*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1/4 + 1/4*Sqrt[5], (-3/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {3/4 + 1/4*Sqrt[5], (-3/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {1/4 - 1/4*Sqrt[5], (-3/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1/2 - 1/2*Sqrt[5], (-1/4 - \
+        1/20*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-3/4 - 1/4*Sqrt[5], (-3/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-5/4 - 1/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {-3/4 - 1/4*Sqrt[5], (3/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-1 - 1/2*Sqrt[5], (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-2 - 1/2*Sqrt[5], (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-7/4 - 3/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {-3/2 - 1/2*Sqrt[5], (-1/4 - \
+        1/20*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-2 - 1/2*Sqrt[5], (-1/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-11/4 - 3/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {-5/2 - Sqrt[5], (-1/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-9/4 - 3/4*Sqrt[5], (-3/8 - \
+        7/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-3 - Sqrt[5], (-1/4 - \
+        1/20*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-5/2 - Sqrt[5], (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-7/2 - Sqrt[5], (1/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-13/4 - 5/4*Sqrt[5], \
+        -1/20*Sqrt[5]*Sqrt[10 - 2*Sqrt[5]]}, {-11/4 - 5/4*Sqrt[5], (3/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-9/4 - 3/4*Sqrt[5], (3/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-2 - Sqrt[5], (1/2 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-3 - Sqrt[5], (1/2 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-5/2 - 1/2*Sqrt[5], (1/2 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-7/4 - 1/4*Sqrt[5], (3/8 + \
+        3/40*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}, {-3/2 - 1/2*Sqrt[5], (1/2 + \
+        1/5*Sqrt[5])*Sqrt[10 - 2*Sqrt[5]]}}",
+      "{{1, 2, 3, 4, 5}, {6, 3, 2, 7, 8}, {9, 2, 1, 10, 11}, {12, 1, 5, \
+        13, 14}, {15, 5, 4, 16, 17}, {18, 4, 3, 19, 20}, {20, 21, 22, 23, \
+        18}, {24, 22, 25, 26, 27}, {28, 25, 29, 30, 31}, {32, 29, 33, 34, \
+        35}, {36, 33, 21, 37, 38}, {29, 25, 22, 21, 33}}",
     )),
-    // A zigzag strip of unit rhombi: three rhombi meet with their obtuse
-    // corners at each of six hubs alternating between an upper and a lower
-    // row. Every face is listed counterclockwise from an acute corner,
-    // with an upper-row hub second and a lower-row hub last.
+    // A zigzag strip of twelve unit rhombi: every three in a row share an
+    // obtuse corner, alternately at the top and at the bottom of the
+    // strip. Each face runs counterclockwise from its lowest point.
     "RhombicDodecahedron" => Some((
-      "{{-Sqrt[6]/3, Sqrt[3]/3}, {-4*Sqrt[6]/9, -2*Sqrt[3]/9}, \
-        {-Sqrt[6]/9, -5*Sqrt[3]/9}, {0, 0}, {0, 2*Sqrt[3]/3}, \
-        {Sqrt[6]/9, -5*Sqrt[3]/9}, {Sqrt[6]/3, Sqrt[3]/3}, \
-        {4*Sqrt[6]/9, -8*Sqrt[3]/9}, {4*Sqrt[6]/9, -2*Sqrt[3]/9}, \
-        {5*Sqrt[6]/9, Sqrt[3]/3}, {7*Sqrt[6]/9, -5*Sqrt[3]/9}, \
-        {8*Sqrt[6]/9, 0}, {8*Sqrt[6]/9, 2*Sqrt[3]/3}, \
-        {Sqrt[6], -5*Sqrt[3]/9}, {11*Sqrt[6]/9, Sqrt[3]/3}, \
-        {4*Sqrt[6]/3, -8*Sqrt[3]/9}, {4*Sqrt[6]/3, -2*Sqrt[3]/9}, \
-        {13*Sqrt[6]/9, Sqrt[3]/3}, {5*Sqrt[6]/3, -5*Sqrt[3]/9}, \
-        {16*Sqrt[6]/9, 0}, {16*Sqrt[6]/9, 2*Sqrt[3]/3}, \
-        {17*Sqrt[6]/9, -5*Sqrt[3]/9}, {19*Sqrt[6]/9, Sqrt[3]/3}, \
-        {20*Sqrt[6]/9, -8*Sqrt[3]/9}, {20*Sqrt[6]/9, -2*Sqrt[3]/9}, \
-        {23*Sqrt[6]/9, -5*Sqrt[3]/9}}",
-      "{{3, 4, 1, 2}, {1, 4, 7, 5}, {7, 4, 6, 9}, {6, 8, 11, 9}, \
-        {11, 12, 10, 9}, {10, 12, 15, 13}, {15, 12, 14, 17}, \
-        {14, 16, 19, 17}, {19, 20, 18, 17}, {18, 20, 23, 21}, \
-        {23, 20, 22, 25}, {22, 24, 26, 25}}",
+      "{{Sqrt[6]/9, (11*Sqrt[3])/9}, {0, (2*Sqrt[3])/3}, {Sqrt[6]/3, \
+        Sqrt[3]/3}, {(4*Sqrt[6])/9, (8*Sqrt[3])/9}, {(4*Sqrt[6])/9, \
+        (14*Sqrt[3])/9}, {(5*Sqrt[6])/9, Sqrt[3]/3}, {(7*Sqrt[6])/9, \
+        (11*Sqrt[3])/9}, {(8*Sqrt[6])/9, 0}, {(8*Sqrt[6])/9, \
+        (2*Sqrt[3])/3}, {Sqrt[6], (11*Sqrt[3])/9}, {(11*Sqrt[6])/9, \
+        Sqrt[3]/3}, {(4*Sqrt[6])/3, (8*Sqrt[3])/9}, {(4*Sqrt[6])/3, \
+        (14*Sqrt[3])/9}, {(13*Sqrt[6])/9, Sqrt[3]/3}, {(5*Sqrt[6])/3, \
+        (11*Sqrt[3])/9}, {(16*Sqrt[6])/9, 0}, {(16*Sqrt[6])/9, \
+        (2*Sqrt[3])/3}, {(17*Sqrt[6])/9, (11*Sqrt[3])/9}, {(19*Sqrt[6])/9, \
+        Sqrt[3]/3}, {(20*Sqrt[6])/9, (8*Sqrt[3])/9}, {(20*Sqrt[6])/9, \
+        (14*Sqrt[3])/9}, {(7*Sqrt[6])/3, Sqrt[3]/3}, {(23*Sqrt[6])/9, \
+        (11*Sqrt[3])/9}, {(8*Sqrt[6])/3, 0}, {(8*Sqrt[6])/3, \
+        (2*Sqrt[3])/3}, {3*Sqrt[6], Sqrt[3]/3}}",
+      "{{3, 4, 1, 2}, {4, 7, 5, 1}, {6, 9, 7, 4}, {8, 11, 9, 6}, {11, 12, \
+        10, 9}, {12, 15, 13, 10}, {14, 17, 15, 12}, {16, 19, 17, 14}, {19, \
+        20, 18, 17}, {20, 23, 21, 18}, {22, 25, 23, 20}, {24, 26, 25, 22}}",
     )),
     _ => None,
   }

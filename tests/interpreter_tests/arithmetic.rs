@@ -10149,6 +10149,56 @@ mod cases {
     assert_case(r#"Extract[<|a -> 1, b -> 2|>, Key[b]]"#, r#"2"#);
   }
   #[test]
+  fn extract_walks_nested_parts_without_copying() {
+    // Every kind of step a path can take: list, call, curried call,
+    // operator node, association value, head, and an index from the end.
+    assert_case(
+      r#"Extract[{{1, f[x, g[y][z, w]]}, <|k -> {a + b, c}|>}, {{1, 2, 2, 2}, {1, 2, 2, 0}, {2, 1, 1, -1}, {1, -1, 0}, {2, Key[k], 2}}]"#,
+      r#"{w, g[y], b, f, c}"#,
+    );
+    // An index of zero inside a matrix names the row's head, and a negative
+    // one counts from the end, so summing looked-up cells stays symbolic.
+    assert_case(
+      r#"Total[(Extract[{{1, 2}, {3, 4}}, #] &) /@ {{1, 0}, {1, 1}, {2, 0}, {2, -1}}]"#,
+      r#"5 + 2*List"#,
+    );
+  }
+  #[test]
+  fn extract_cost_does_not_grow_with_the_matrix() {
+    // Regression: each lookup used to copy the element list of every level
+    // it passed, so sampling cells of a wide matrix one by one took time
+    // proportional to its size per cell.
+    let lookups = |rows: usize, cols: usize| {
+      woxi::interpret(&format!(
+        "m = Table[Mod[i j, 17], {{i, {rows}}}, {{j, {cols}}}]; \
+         pos = Table[{{1 + Mod[k, 19], 1 + Mod[7 k, 19]}}, {{k, 20000}}];"
+      ))
+      .unwrap();
+      let seconds = (0..3)
+        .map(|_| {
+          woxi::interpret(
+            "First[AbsoluteTiming[s = Total[(Extract[m, #] &) /@ pos];]]",
+          )
+          .unwrap()
+          .parse::<f64>()
+          .unwrap()
+        })
+        .fold(f64::INFINITY, f64::min);
+      // The cells sampled lie in the corner both matrices share.
+      assert_eq!(
+        woxi::interpret("s == Total[(m[[#[[1]], #[[2]]]] &) /@ pos]").unwrap(),
+        "True"
+      );
+      seconds
+    };
+    let small = lookups(20, 20);
+    let big = lookups(300, 2000);
+    assert!(
+      big < 5.0 * small + 0.05,
+      "20000 lookups took {big}s in a 300x2000 matrix, {small}s in a 20x20 one"
+    );
+  }
+  #[test]
   fn spaced_semicolons_before_newline_are_not_span() {
     // `; ;` is a statement plus an empty one, not the `;;` Span operator,
     // so the next line stays its own statement.

@@ -9738,10 +9738,65 @@ fn substitute_slot_with_identifier(expr: &Expr, k: usize, name: &str) -> Expr {
   }
 }
 
+/// Smith's complex division `a / b`, which avoids squaring `|b|` (that
+/// overflows for high-degree polynomials with large roots).
+fn complex_div_smith(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+  let ((ar, ai), (br, bi)) = (a, b);
+  if br.abs() >= bi.abs() {
+    let t = bi / br;
+    let d = br + bi * t;
+    ((ar + ai * t) / d, (ai - ar * t) / d)
+  } else {
+    let t = br / bi;
+    let d = br * t + bi;
+    ((ar * t + ai) / d, (ai * t - ar) / d)
+  }
+}
+
+/// The Newton ratio `p(z) / p'(z)` of a real-coefficient polynomial at a
+/// complex point, or None where `p'(z)` vanishes.
+///
+/// `z^n` overflows f64 far from the origin for high degrees, turning the
+/// plain quotient into `inf / inf`. There the ratio is taken through the
+/// reversed polynomial `q(w) = w^n p(1/w)` at `w = 1/z`, which stays bounded:
+/// `p'(z) / p(z) = w (n - w q'(w) / q(w))`.
+fn newton_ratio_complex(
+  coeffs: &[f64],
+  zr: f64,
+  zi: f64,
+) -> Option<(f64, f64)> {
+  let (pr, pi_) = poly_eval_complex(coeffs, zr, zi);
+  let (dr, di) = poly_deriv_eval_complex(coeffs, zr, zi);
+  if pr.is_finite() && pi_.is_finite() && dr.is_finite() && di.is_finite() {
+    if dr == 0.0 && di == 0.0 {
+      return None;
+    }
+    return Some(complex_div_smith((pr, pi_), (dr, di)));
+  }
+  let n = (coeffs.len() - 1) as f64;
+  let reversed: Vec<f64> = coeffs.iter().rev().copied().collect();
+  let (wr, wi) = complex_div_smith((1.0, 0.0), (zr, zi));
+  let q = poly_eval_complex(&reversed, wr, wi);
+  let dq = poly_deriv_eval_complex(&reversed, wr, wi);
+  if q == (0.0, 0.0) {
+    return None;
+  }
+  // t = w q'(w) / q(w)
+  let (tr, ti) =
+    complex_div_smith((dq.0 * wr - dq.1 * wi, dq.0 * wi + dq.1 * wr), q);
+  // p'/p = w (n - t)
+  let (ur, ui) = (n - tr, -ti);
+  let ratio = (wr * ur - wi * ui, wr * ui + wi * ur);
+  if ratio == (0.0, 0.0) || !ratio.0.is_finite() || !ratio.1.is_finite() {
+    return None;
+  }
+  Some(complex_div_smith((1.0, 0.0), ratio))
+}
+
 /// Aberth's method for finding all complex roots of a real-coefficient
 /// polynomial `p(x) = c_0 + c_1 x + … + c_n x^n`. Returns a vector of
 /// `(re, im)` pairs of length `n` (degree of polynomial).
-fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
+pub(crate) fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
   let n = coeffs.len() - 1;
   if n == 0 {
     return vec![];
@@ -9764,27 +9819,16 @@ fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
       (r * theta.cos(), r * theta.sin())
     })
     .collect();
-  for _ in 0..200 {
+  // Far-out starting points close in on the roots by a factor of about
+  // `1 - 2/(n+1)` per sweep, so the sweep budget grows with the degree.
+  for _ in 0..200 + 50 * n {
     let mut max_change: f64 = 0.0;
     let mut new_zs: Vec<(f64, f64)> = Vec::with_capacity(n);
     for k in 0..n {
       let (zr, zi) = zs[k];
-      let (pr, pi_) = poly_eval_complex(coeffs, zr, zi);
-      let (dr, di) = poly_deriv_eval_complex(coeffs, zr, zi);
-      if dr == 0.0 && di == 0.0 {
+      let Some((qr, qi)) = newton_ratio_complex(coeffs, zr, zi) else {
         new_zs.push((zr, zi));
         continue;
-      }
-      // q = p(z) / p'(z). Smith's division avoids squaring |p'|, which
-      // overflows for high-degree polynomials with large roots.
-      let (qr, qi) = if dr.abs() >= di.abs() {
-        let t = di / dr;
-        let d = dr + di * t;
-        ((pr + pi_ * t) / d, (pi_ - pr * t) / d)
-      } else {
-        let t = dr / di;
-        let d = dr * t + di;
-        ((pr * t + pi_) / d, (pi_ * t - pr) / d)
       };
       // sum_{j != k} 1 / (z_k - z_j)
       let mut sr = 0.0f64;
@@ -9882,7 +9926,13 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
 
   // Newton steps, keeping the iterate with the smallest |p(z)|: near the root
   // Newton may oscillate between two adjacent f64 values (both equally good).
-  for slot in roots.iter_mut() {
+  // Polishing only refines a root: an iterate that ends nearer another
+  // root's starting point than its own has left for that root (as one copy
+  // of a repeated root, scattered by rounding, can), so it is dropped and
+  // the root keeps its start.
+  let starts = roots.to_vec();
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  for (index, slot) in roots.iter_mut().enumerate() {
     let (mut zr, mut zi) = *slot;
     let (mut best_zr, mut best_zi) = (zr, zi);
     let (pr0, pi0) = eval_p(zr, zi);
@@ -9907,7 +9957,15 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
         break;
       }
     }
-    *slot = (best_zr, best_zi);
+    let polished = (best_zr, best_zi);
+    let own = dist(polished, starts[index]);
+    let strayed = starts
+      .iter()
+      .enumerate()
+      .any(|(other, &start)| other != index && dist(polished, start) < own);
+    if !strayed {
+      *slot = polished;
+    }
   }
 
   merge_multiple_root_clusters(&monic, roots);
@@ -10065,34 +10123,35 @@ fn merge_multiple_root_clusters(monic: &[f64], roots: &mut [(f64, f64)]) {
     annihilates.then_some(c)
   };
 
-  for mut members in groups {
-    while members.len() > 1 {
-      if let Some(c) = fold(roots, &members) {
-        for &k in &members {
-          roots[k] = c;
-        }
-        break;
-      }
-      // Drop the member farthest from the others' centroid and retry.
-      let m = members.len() as f64;
-      let sum = members.iter().fold((0.0, 0.0), |acc, &k| {
-        (acc.0 + roots[k].0, acc.1 + roots[k].1)
+  // The `m` members of `pool` nearest to `z`.
+  let nearest =
+    |roots: &[(f64, f64)], pool: &[usize], z: (f64, f64), m: usize| {
+      let mut sorted = pool.to_vec();
+      sorted.sort_by(|&a, &b| dist(roots[a], z).total_cmp(&dist(roots[b], z)));
+      sorted.truncate(m);
+      sorted
+    };
+  for mut pending in groups {
+    // The highest multiplicity first: a lower one would fold an m-fold root
+    // through a multiple root of p^(k-1), which Newton resolves poorly, and
+    // would leave the rest of its copies behind.
+    'group: while pending.len() > 1 {
+      let m_total = pending.len() as f64;
+      let centroid = pending.iter().fold((0.0, 0.0), |acc, &k| {
+        (acc.0 + roots[k].0 / m_total, acc.1 + roots[k].1 / m_total)
       });
-      let (worst, _) = members
-        .iter()
-        .enumerate()
-        .map(|(pos, &k)| {
-          let rest = (
-            (sum.0 - roots[k].0) / (m - 1.0),
-            (sum.1 - roots[k].1) / (m - 1.0),
-          );
-          (pos, dist(roots[k], rest))
-        })
-        .fold(
-          (0, -1.0_f64),
-          |best, cur| if cur.1 > best.1 { cur } else { best },
-        );
-      members.remove(worst);
+      for m in (2..=pending.len()).rev() {
+        let start = nearest(roots, &pending, centroid, m);
+        if let Some(c) = fold(roots, &start) {
+          let chosen = nearest(roots, &pending, c, m);
+          for &k in &chosen {
+            roots[k] = c;
+          }
+          pending.retain(|k| !chosen.contains(k));
+          continue 'group;
+        }
+      }
+      break;
     }
   }
 }
