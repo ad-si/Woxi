@@ -3849,7 +3849,10 @@ mod graphics {
           let svg = export_svg(&code);
           assert!(!svg.contains("Tooltip"), "{code}: {svg}");
           assert!(!svg.contains("A hint."), "{code}: {svg}");
-          assert!(svg.contains("speed") || svg.contains("eed"), "{code}: {svg}");
+          assert!(
+            svg.contains("speed") || svg.contains("eed"),
+            "{code}: {svg}"
+          );
         }
       }
     }
