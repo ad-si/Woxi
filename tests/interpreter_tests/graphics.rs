@@ -56348,10 +56348,9 @@ mod manipulate {
         None
       )]
     );
-    assert!(
-      spec_of("{{p, {1, 5}}, {0, 0}, {10, 20}, Locator}")
-        .dynamic_bounds
-        .is_empty()
+    assert_eq!(
+      spec_of("{{p, {1, 5}}, {0, 0}, {10, 20}, Locator}").dynamic_bounds,
+      vec![]
     );
   }
 
