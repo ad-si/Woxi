@@ -9974,6 +9974,9 @@ pub(crate) fn render_merged_plot_source(
   // filled to the axis in three colors stay three colors, rather than all
   // taking the first plot's, and a curve filled by several rules keeps
   // every one of them.
+  // The first plot's `Filling` option is therefore not applied wholesale:
+  // a line shown over filled points stays unfilled.
+  opts.filling = Filling::None;
   opts.filling_rules = drawn
     .iter()
     .enumerate()
