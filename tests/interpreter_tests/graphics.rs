@@ -35602,6 +35602,47 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    // A lone spike in the data does not stretch the automatic contour
+    // levels over its height: the rest of the array still gets its lines,
+    // unless `PlotRange -> All` asks for the full range (whose levels,
+    // 100 apart, leave the bulk only the one at 0).
+    #[test]
+    fn list_contour_plot_outlier_keeps_the_levels_on_the_bulk() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "m = Table[If[i == 1 && j == 1, 1000., Sin[i/2.] + Cos[j/2.]], \
+           {i, 12}, {j, 12}]; \
+           far[g_] := Count[Cases[Normal[g], Line[q_] :> q, Infinity], \
+           q_ /; Min[q[[All, 1]]] > 6]; \
+           {far[ListContourPlot[m]], \
+           far[ListContourPlot[m, PlotRange -> All]]}"
+        )
+        .unwrap(),
+        "{5, 1}"
+      );
+    }
+
+    // An array is interpolated linearly over the triangles its cells
+    // split into along the low-to-high diagonal. On a checkerboard cell
+    // with the high values on that diagonal, the 0.5 contour therefore
+    // cuts off the two low corners, each line running from `x + y = 2.5`
+    // to `x + y = 3.5` (it would stay on one of them if it cut off the
+    // high corners instead).
+    #[test]
+    fn list_contour_plot_matrix_is_triangulated() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = ListContourPlot[{{1, 0}, {0, 1}}, Contours -> {0.5}]; \
+           Cases[Normal[g], Line[q_] :> \
+           Round[Max[Total /@ q] - Min[Total /@ q], 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{1., 1.}"
+      );
+    }
+
     // `RegionFunction -> f` leaves blank every part of the plane where
     // `f[x, y, z]` is not `True`: the bands of {x, y, x + y} triples cut
     // at x < 2 stop at x = 2.

@@ -2530,43 +2530,66 @@ fn contour_band_regions(
         continue;
       }
       flush(&mut regions, &mut run);
-      let base: [PtV; 4] = [
+      let corners: [PtV; 4] = [
         ((i as f64, j as f64), v00),
         ((i as f64 + 1.0, j as f64), v10),
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
-      let mut clipped: Vec<PtV> = base.to_vec();
-      if clip_lo {
-        clipped = clip_polygon(&clipped, v_min, true);
-      }
-      if clip_hi {
-        clipped = clip_polygon(&clipped, v_max, false);
-      }
-      if clipped.len() < 3 {
-        continue;
-      }
-      for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = clipped.clone();
-        if b > 0 {
-          poly = clip_polygon(&poly, levels[b - 1], true);
+      // A saddle cell (one diagonal's corners above the other's) is split
+      // along the diagonal the contour lines resolve it by (see
+      // `marching_squares_segments_excluding`), so the bands and the
+      // lines join the same corners.
+      let pieces: Vec<Vec<PtV>> = if is_saddle_cell(v00, v10, v01, v11) {
+        vec![
+          vec![corners[0], corners[1], corners[2]],
+          vec![corners[0], corners[2], corners[3]],
+        ]
+      } else {
+        vec![corners.to_vec()]
+      };
+      for mut clipped in pieces {
+        if clip_lo {
+          clipped = clip_polygon(&clipped, v_min, true);
         }
-        if b < levels.len() {
-          poly = clip_polygon(&poly, levels[b], false);
+        if clip_hi {
+          clipped = clip_polygon(&clipped, v_max, false);
         }
-        if poly.len() < 3 {
+        if clipped.len() < 3 {
           continue;
         }
-        regions.push(BandRegion {
-          band: b,
-          points: poly.iter().map(|&(p, _)| p).collect(),
-          is_rect: false,
-        });
+        for b in b_lo..=b_hi {
+          let mut poly: Vec<PtV> = clipped.clone();
+          if b > 0 {
+            poly = clip_polygon(&poly, levels[b - 1], true);
+          }
+          if b < levels.len() {
+            poly = clip_polygon(&poly, levels[b], false);
+          }
+          if poly.len() < 3 {
+            continue;
+          }
+          regions.push(BandRegion {
+            band: b,
+            points: poly.iter().map(|&(p, _)| p).collect(),
+            is_rect: false,
+          });
+        }
       }
     }
     flush(&mut regions, &mut run);
   }
   regions
+}
+
+/// Whether a grid cell is a saddle: the corners on one diagonal (`v00`,
+/// `v11`) all lie above, or all below, the corners on the other. A level
+/// between the two pairs can join either pair across such a cell; it is
+/// resolved by splitting the cell along the `v00`–`v11` diagonal.
+fn is_saddle_cell(v00: f64, v10: f64, v01: f64, v11: f64) -> bool {
+  let (diag_lo, diag_hi) = (v00.min(v11), v00.max(v11));
+  let (anti_lo, anti_hi) = (v10.min(v01), v10.max(v01));
+  diag_lo > anti_hi || diag_hi < anti_lo
 }
 
 /// The color of band `b`, from the value at its middle.
@@ -2958,15 +2981,14 @@ fn marching_squares_segments_excluding(
         3 | 12 => push(left, right),
         4 | 11 => push(left, top),
         5 | 10 => push(bottom, top),
-        6 => {
-          // Saddle: v10 and v01 above the level
+        // Saddle (`v10` and `v01` on one side of the level, `v00` and
+        // `v11` on the other): the cell is split along its `v00`–`v11`
+        // diagonal, which the level does not cross, so each triangle cuts
+        // off its own off-diagonal corner. `contour_band_regions` splits
+        // the same way.
+        6 | 9 => {
           push(bottom, right);
           push(left, top);
-        }
-        9 => {
-          // Saddle: v00 and v11 above the level
-          push(bottom, left);
-          push(right, top);
         }
         7 | 8 => push(right, top),
         _ => {}
@@ -8259,6 +8281,55 @@ fn region_masked_grid(
     .collect()
 }
 
+/// How finely [`triangulated_grid`] may subdivide a cell, and the grid
+/// size beyond which it no longer subdivides.
+const TRIANGULATION_MAX_SUBDIVISION: usize = 4;
+
+/// Refine a node grid `grid[col][row]` so that the values inside each cell
+/// follow the piecewise-linear interpolant over the cell's two triangles
+/// (split along the diagonal from its low corner to its high corner), the
+/// way Wolfram's `ListContourPlot` interpolates an array of heights.
+///
+/// Contours traced on the raw cells would treat each cell bilinearly, and
+/// a saddle cell (opposite corners high, the others low) is then ambiguous:
+/// its shaded bands and its contour lines can join the corners differently.
+/// On the refined grid the interpolant is linear almost everywhere, so both
+/// follow the same triangulation. Every original node stays a node.
+fn triangulated_grid(grid: &[Vec<f64>]) -> Vec<Vec<f64>> {
+  let nc = grid.len();
+  let nr = grid.first().map_or(0, Vec::len);
+  if nc < 2 || nr < 2 {
+    return grid.to_vec();
+  }
+  let fine = FIELD_GRID * 4;
+  let k = fine
+    .div_ceil(nc.max(nr) - 1)
+    .clamp(1, TRIANGULATION_MAX_SUBDIVISION);
+  if k == 1 {
+    return grid.to_vec();
+  }
+  let step = 1.0 / k as f64;
+  (0..=(nc - 1) * k)
+    .map(|a| {
+      let i = (a / k).min(nc - 2);
+      let tx = (a - i * k) as f64 * step;
+      (0..=(nr - 1) * k)
+        .map(|b| {
+          let j = (b / k).min(nr - 2);
+          let ty = (b - j * k) as f64 * step;
+          let (v00, v10) = (grid[i][j], grid[i + 1][j]);
+          let (v01, v11) = (grid[i][j + 1], grid[i + 1][j + 1]);
+          if tx >= ty {
+            v00 + tx * (v10 - v00) + ty * (v11 - v10)
+          } else {
+            v00 + ty * (v01 - v00) + tx * (v11 - v01)
+          }
+        })
+        .collect()
+    })
+    .collect()
+}
+
 pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -8283,8 +8354,26 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // As in `ContourPlot`, the levels are chosen over all the data and the
-  // colors over the part a `RegionFunction` keeps.
+  // Matrix data is interpolated linearly over a triangulation of its
+  // nodes rather than bilinearly over each cell.
+  let grid = if nearest || is_triples_data(rows) {
+    grid
+  } else {
+    triangulated_grid(&grid)
+  };
+
+  // As in `ContourPlot`, the automatic value range fences off outliers (a
+  // lone spike would otherwise push every level away from the bulk of the
+  // data), while `Contours -> n` spaces its levels over every value.
+  let (v_min, v_max) = match opts.contours {
+    ContourSpec::Count(_) if opts.value_range.is_none() => (v_min, v_max),
+    _ => {
+      let values: Vec<f64> = grid.iter().flatten().copied().collect();
+      opts.sampled_range(&values)
+    }
+  };
+  // The levels are chosen over all the data and the colors over the part
+  // a `RegionFunction` keeps.
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
   let (grid, v_min, v_max) = match &opts.region_function {
     Some(region) if !nearest => {
@@ -11093,6 +11182,104 @@ mod robust_range_tests {
       (0.0, 1.0),
     );
     assert_eq!((same, r), (coarse, 1));
+  }
+}
+
+#[cfg(test)]
+mod contour_saddle_tests {
+  use super::{
+    contour_band_regions, marching_squares_segments, triangulated_grid,
+  };
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A single cell `grid[col][row]` with `diag` on the corners of its
+  /// low-to-high diagonal and `anti` on the other two.
+  fn saddle(diag: f64, anti: f64) -> Vec<Vec<f64>> {
+    vec![vec![diag, anti], vec![anti, diag]]
+  }
+
+  // The bands of a saddle cell tile it: with the cell clipped as one
+  // quadrilateral the two bands overlapped across its center.
+  #[test]
+  fn saddle_bands_tile_the_cell() {
+    for (diag, anti) in [(1.0, 0.0), (0.0, 1.0), (3.0, -2.0)] {
+      let grid = saddle(diag, anti);
+      let level = f64::midpoint(diag, anti);
+      let regions =
+        contour_band_regions(&grid, &[level], (diag.min(anti), diag.max(anti)));
+      let total: f64 = regions.iter().map(|r| area(&r.points)).sum();
+      assert!((total - 1.0).abs() < 1e-9, "got area {total}");
+      // Each off-diagonal corner is cut off as a triangle with legs 1/2,
+      // so their band covers a quarter of the cell.
+      let anti_band = usize::from(anti > diag);
+      let cut: f64 = regions
+        .iter()
+        .filter(|r| r.band == anti_band)
+        .map(|r| area(&r.points))
+        .sum();
+      assert!((cut - 0.25).abs() < 1e-9, "got area {cut}");
+    }
+  }
+
+  // The contour lines of a saddle cell cut off the same two corners as
+  // its bands, whichever diagonal is the high one.
+  #[test]
+  fn saddle_lines_cut_off_the_off_diagonal_corners() {
+    for (diag, anti) in [(1.0, 0.0), (0.0, 1.0)] {
+      let grid = saddle(diag, anti);
+      let mut segments =
+        marching_squares_segments(&grid, 0.5, 0.0, 0.0, 1.0, 1.0);
+      for (a, b) in &mut segments {
+        if a > b {
+          std::mem::swap(a, b);
+        }
+      }
+      segments.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      // Screen coordinates: row 0 is at the bottom (y = 1).
+      assert_eq!(
+        segments,
+        vec![((0.0, 0.5), (0.5, 0.0)), ((0.5, 1.0), (1.0, 0.5))]
+      );
+    }
+  }
+
+  #[test]
+  fn triangulated_grid_is_linear_on_each_triangle() {
+    // Columns of rows: v00 = 0, v01 = 4, v10 = 8, v11 = 0.
+    let grid = vec![vec![0.0, 4.0], vec![8.0, 0.0]];
+    let fine = triangulated_grid(&grid);
+    let k = fine.len() - 1;
+    assert!(k > 1 && fine[0].len() == k + 1);
+    // The nodes are kept.
+    assert_eq!(
+      (fine[0][0], fine[0][k], fine[k][0], fine[k][k]),
+      (0.0, 4.0, 8.0, 0.0)
+    );
+    // The diagonal joins the two zero corners, so it is zero throughout
+    // (a bilinear interpolant would rise to 3 at the center).
+    for (a, column) in fine.iter().enumerate() {
+      assert_eq!(column[a], 0.0);
+    }
+    // Off the diagonal each triangle is linear up to its own corner.
+    let step = 1.0 / k as f64;
+    assert!((fine[k][1] - 8.0 * (1.0 - step)).abs() < 1e-12);
+    assert!((fine[1][k] - 4.0 * (1.0 - step)).abs() < 1e-12);
+    // A grid already at the full resolution is returned as it is.
+    let large = vec![vec![1.0; 3]; 401];
+    assert_eq!(triangulated_grid(&large), large);
   }
 }
 
