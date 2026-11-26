@@ -28,6 +28,14 @@
     `GraphicsGrid` overlaps the cells at an even pitch instead of butting
     them together, and `ImageSize -> {w, h}` is the exact size of a
     `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
+- A `Line` running far outside an explicit `PlotRange` (a hyperbola from
+    `ParametricPlot` sampled next to its pole, combined under `Show`) is
+    cut near the picture instead of being written to the SVG with
+    coordinates billions of pixels away; Woxi Studio drew such a picture
+    blank.
+- A `Manipulate` control label padded with a spacer
+    (`"name" Spacer[12]`) shows its text in Woxi Studio instead of
+    `name*Spacer[12]`.
 - `ContourPlot` draws every curve of a list that mixes equations with
     plain expressions (`{f == c, {g, h}}`, each expression as its zero
     contour) and of an entry that only evaluates to a list (a `Which`
