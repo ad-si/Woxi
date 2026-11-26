@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A negative `Spacings` of a `GraphicsRow`, `GraphicsColumn` or
+    `GraphicsGrid` overlaps the cells at an even pitch instead of butting
+    them together, and `ImageSize -> {w, h}` is the exact size of a
+    `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
