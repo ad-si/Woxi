@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Style[expr, {Red, Bold, …}]` and `Style[expr, Directive[…]]` keep their
+    color, weight, size and background inside a `Framed` that sits in a
+    typeset label (a `PlotLabel` written as a `Row`), and `Background` on a
+    `Style` directly inside `Framed` or `Panel` is painted behind the text.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
