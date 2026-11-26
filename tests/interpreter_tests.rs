@@ -5020,6 +5020,52 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graph_plot_ignores_delayed_vertex_rendering_function() {
+    // `VertexRenderingFunction :> f` (a delayed rule) is not read by
+    // `GraphPlot`: the default vertices, the `VertexLabeling` labels and
+    // the arrows are drawn exactly as without the setting.
+    clear_state();
+    let plain = interpret(
+      "ExportString[GraphPlot[{a -> b, b -> c, c -> a, a -> d}, \
+         DirectedEdges -> True, VertexLabeling -> True], \"SVG\"]",
+    )
+    .unwrap();
+    let delayed = interpret(
+      "ExportString[GraphPlot[{a -> b, b -> c, c -> a, a -> d}, \
+         DirectedEdges -> True, VertexLabeling -> True, \
+         VertexRenderingFunction :> ({Red, Disk[#, .1]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(plain, delayed);
+    // An immediate rule still hands the drawing to the function.
+    let immediate = interpret(
+      "ExportString[GraphPlot[{a -> b, b -> c, c -> a, a -> d}, \
+         DirectedEdges -> True, VertexLabeling -> True, \
+         VertexRenderingFunction -> ({Red, Disk[#, .1]} &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_ne!(plain, immediate);
+  }
+
+  #[test]
+  fn test_complete_graph_with_doubled_edges_is_laid_out_on_a_circle() {
+    // Every pair of vertices adjacent, with both directions listed: the
+    // automatic layout is a regular polygon, the first vertex at
+    // 90 + 360/n degrees and the others following clockwise.
+    clear_state();
+    for n in [3, 4, 7] {
+      let out = interpret(&format!(
+        "With[{{n = {n}}}, Max[Abs[Flatten[GraphEmbedding[Graph[Flatten[\
+           Table[If[i == j, Nothing, i -> j], {{i, n}}, {{j, n}}]]]] - \
+           Table[N[{{Cos[Pi/2 + 2 Pi (1 - k)/n], Sin[Pi/2 + 2 Pi (1 - k)/n]}}], \
+             {{k, 0, n - 1}}]]]] < 10^-9]"
+      ))
+      .unwrap();
+      assert_eq!(out, "True", "n = {n}");
+    }
+  }
+
+  #[test]
   fn test_graph_plot_vertex_shape_function_and_all_labels() {
     // A function-valued `VertexShapeFunction` draws each vertex as
     // `f[pos, name, size]`, and `VertexLabels -> All` still labels them.
