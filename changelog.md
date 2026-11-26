@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- Woxi Studio deals a `Manipulate`'s `ControlPlacement -> {pos1, pos2, …}`
+    out over the whole control panel: captions take a turn like controls,
+    a `Delimiter` stays with the item before it, and the list starts over
+    when it runs out, so `{Left, Right}` puts two sets of controls in a
+    column on either side of the output. Only the first named controls
+    were placed and the rest landed above the output.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,

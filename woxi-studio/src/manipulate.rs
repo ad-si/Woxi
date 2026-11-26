@@ -1264,6 +1264,9 @@ pub struct ManipulateState {
   /// Per-control `ControlPlacement -> side` overrides, as `(control name,
   /// side)` (see `ManipulateSpec::control_placements`).
   control_placements: Vec<(String, ControlPlacement)>,
+  /// The sides `ControlPlacement -> {pos1, pos2, …}` deals out to the
+  /// successive panel items (see `ManipulateSpec::successive_placements`).
+  successive_placements: Vec<ControlPlacement>,
   /// The width of `ContentSize -> {w, h}`: output text wider than it (a
   /// long list) breaks into lines at this width.
   pub content_width: Option<f64>,
@@ -1470,7 +1473,9 @@ impl ManipulateState {
 
   /// Which side of the output the control at `ctrl_idx` sits on: its own
   /// `ControlPlacement -> side` option when it states one, otherwise the
-  /// widget-level placement shared by the rest of the panel.
+  /// side a widget-level list of placements deals out to it (see
+  /// [`Self::dealt_placement`]), otherwise the widget-level placement shared
+  /// by the rest of the panel.
   pub fn placement_of(&self, ctrl_idx: usize) -> ControlPlacement {
     self
       .controls
@@ -1483,7 +1488,30 @@ impl ManipulateState {
           .find(|(name, _)| name == ctrl.name())
           .map(|(_, side)| *side)
       })
+      .or_else(|| self.dealt_placement(ctrl_idx))
       .unwrap_or(self.control_placement)
+  }
+
+  /// The side `ControlPlacement -> {pos1, pos2, …}` gives the panel item at
+  /// `ctrl_idx`. The items take the listed sides in turn, a caption as much
+  /// as a slider, and the list starts over when it runs out, so `{Left,
+  /// Right}` deals them out alternately. A `Delimiter` takes no turn: it
+  /// closes the group of the item before it and so stays on that side, as
+  /// does a control sharing the line of the one before it.
+  fn dealt_placement(&self, ctrl_idx: usize) -> Option<ControlPlacement> {
+    if self.successive_placements.is_empty() || ctrl_idx >= self.controls.len()
+    {
+      return None;
+    }
+    let takes_turn = |idx: usize| {
+      !matches!(self.controls[idx], ControlState::Divider)
+        && !self.joins_previous_control(idx)
+    };
+    // The item whose turn decides the side: this one, or the closest one
+    // before it that takes a turn.
+    let owner = (0..=ctrl_idx).rev().find(|idx| takes_turn(*idx))?;
+    let turn = (0..owner).filter(|idx| takes_turn(*idx)).count();
+    Some(self.successive_placements[turn % self.successive_placements.len()])
   }
 
   /// Whether the control at `ctrl_idx` shares a line of the control panel
@@ -1609,6 +1637,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
+      successive_placements: spec.successive_placements,
       content_width: spec.content_width,
       content_height: spec.content_height,
       row_joined_controls: spec.row_joined_controls,

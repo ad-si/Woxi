@@ -188,6 +188,11 @@ fn main() {
         let hidden = !state.control_is_visible.get(i).copied().unwrap_or(true);
         let mark = if hidden { " [hidden]" } else { "" };
         println!("  {c:?}{mark}");
+        // Only a control placed apart from the rest of the panel says so.
+        let side = state.placement_of(i);
+        if side != state.control_placement {
+          println!("    placement: {side:?}");
+        }
         if let Some(icon) = state.label_svg(c.name()) {
           println!("    label icon: {}x{}", icon.width, icon.height);
         }

@@ -48498,6 +48498,14 @@ pub struct ManipulateSpec {
   /// form (`ControlPlacement -> n`, for a `Place[n]` layout template) is
   /// not a side and is ignored.
   pub control_placements: Vec<(String, ControlPlacement)>,
+  /// Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of the
+  /// successive items of the control panel. Every item but a `Delimiter`
+  /// takes the next side — a plain caption as much as a slider — and the
+  /// list starts over once it is used up, so `{Left, Right}` deals the
+  /// items out alternately into a column on either side of the output. A
+  /// `Delimiter` stays with the item before it. Empty when the option is
+  /// absent or names a single side for the whole panel.
+  pub successive_placements: Vec<ControlPlacement>,
   /// Names of the controls that share a line of the control panel with the
   /// control before them, because a `Row[{Control[…], Spacer[…],
   /// Control[…]}]` argument places both side by side (see
@@ -49715,7 +49723,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut frame_edge_labels: Vec<(Expr, &str)> = Vec::new();
   let mut rotate_label = false;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
-  // successive controls, applied once the controls are known.
+  // successive panel items (see `ManipulateSpec::successive_placements`).
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
   let mut bookmarks: Vec<(String, String)> = Vec::new();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
@@ -50006,7 +50014,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         content_height = manipulate_content_height(replacement);
       }
       // `ControlPlacement -> {Top, Top, Left, Right}` places successive
-      // controls on the listed sides, one entry per control.
+      // panel items on the listed sides, starting over at the end.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
         && let Expr::List(items) = replacement.as_ref()
         && items.len() > 1
@@ -51224,21 +51232,6 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 
   apply_widget_label_style(&mut controls, &widget_label_style);
 
-  // Hand out the successive placements to the named controls in order; a
-  // control's own `ControlPlacement` option keeps precedence.
-  if !successive_placements.is_empty() {
-    let mut names: Vec<&str> = Vec::new();
-    for c in &controls {
-      if !c.name().is_empty() && !names.contains(&c.name()) {
-        names.push(c.name());
-      }
-    }
-    for (name, side) in names.into_iter().zip(successive_placements) {
-      if !control_placements.iter().any(|(n, _)| n == name) {
-        control_placements.push((name.to_string(), side));
-      }
-    }
-  }
   // An `Animate` without an explicit `Animator`/`Trigger` spec takes the
   // rate its evaluated form moved into a plain control spec.
   if animated && animation_var.is_none() && animation_rate.is_none() {
@@ -51260,6 +51253,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels,
     control_backgrounds,
     control_placements,
+    successive_placements,
     row_joined_controls,
     dynamic_locator_defaults,
     animation_var,
@@ -56768,6 +56762,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
@@ -56855,6 +56850,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
@@ -56955,6 +56951,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
@@ -57223,6 +57220,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
@@ -57291,6 +57289,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
@@ -57369,6 +57368,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
     control_placements: Vec::new(),
+    successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
@@ -68169,11 +68169,11 @@ mod manipulate_control_placement_tests {
     );
   }
 
-  /// `ControlPlacement -> {pos1, pos2, …}` gives the sides of successive
-  /// controls in order; a control's own `ControlPlacement` still wins, and
-  /// controls beyond the end of the list keep the widget default.
+  /// `ControlPlacement -> {pos1, pos2, …}` is recorded as the list of sides
+  /// the frontend deals out to the successive panel items; a control's own
+  /// `ControlPlacement` is kept apart, since it takes precedence.
   #[test]
-  fn successive_placements_list_assigns_controls_in_order() {
+  fn successive_placements_list_is_recorded_in_order() {
     let expr = crate::parse_to_expr(
       "Manipulate[Plot[a Sin[b x] + c + d, {x, 0, 6}], \
        {a, 1, 2}, {b, 1, 3, ControlPlacement -> Bottom}, \
@@ -68185,12 +68185,31 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.control_placement, ControlPlacement::Top);
     assert_eq!(
       spec.control_placements,
+      vec![("b".to_string(), ControlPlacement::Bottom)]
+    );
+    assert_eq!(
+      spec.successive_placements,
       vec![
-        ("b".to_string(), ControlPlacement::Bottom),
-        ("a".to_string(), ControlPlacement::Top),
-        ("c".to_string(), ControlPlacement::Right),
+        ControlPlacement::Top,
+        ControlPlacement::Left,
+        ControlPlacement::Right,
       ]
     );
+  }
+
+  /// A single side, bare or as a one-element list, places the whole panel
+  /// and leaves nothing to deal out.
+  #[test]
+  fn single_side_records_no_successive_placements() {
+    for code in [
+      "Manipulate[a, {a, 0, 1}, ControlPlacement -> Left]",
+      "Manipulate[a, {a, 0, 1}, ControlPlacement -> {Left}]",
+      "Manipulate[a, {a, 0, 1}]",
+    ] {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      assert!(spec.successive_placements.is_empty(), "{code}");
+    }
   }
 
   /// A `ControlPlacement` naming something Wolfram does not accept leaves
