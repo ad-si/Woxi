@@ -48236,9 +48236,10 @@ pub enum ManipulateControl {
     /// button reads e.g. "next" or "show solution" depending on the state.
     /// `None` for a static caption.
     label_code: Option<String>,
-    /// The button sits on the same line as the button before it, because
-    /// both come from one `Row[{Button[…], Button[…], …}]` argument (or one
-    /// `ButtonBar`), the way Wolfram lays such a row out side by side.
+    /// The button sits on the same line as the button or control before
+    /// it, because both come from one `Row[{Button[…], Button[…], …}]` or
+    /// `Row[{Control[…], Button[…]}]` argument (or one `ButtonBar`), the
+    /// way Wolfram lays such a row out side by side.
     joins_previous: bool,
     /// The button face color of a `Background -> color` option as an
     /// `(r, g, b)` triple in `0.0..=1.0` (e.g. a red "-" and a green "+"
@@ -49738,8 +49739,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     Vec::with_capacity(args.len().saturating_sub(1));
   // `(label, action)` of every button that shares a line with the button
   // before it in a `Row[{Button[…], Button[…], …}]` argument (see
-  // `collect_row_joined_buttons`).
-  let mut row_joined_buttons: Vec<(String, String)> = Vec::new();
+  // `collect_row_joined_buttons`), or with the `Control[…]` before it in
+  // such a row, whose variable is then the third entry.
+  let mut row_joined_buttons: Vec<RowJoinedButton> = Vec::new();
   // Names of the controls placed right after another control in a
   // `Row[{Control[…], Control[…]}]` argument (see
   // `collect_row_joined_controls`).
@@ -50216,11 +50218,19 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           continue;
         }
-        let joins_previous =
-          matches!(controls.last(), Some(ManipulateControl::Button { .. }))
-            && row_joined_buttons
-              .iter()
-              .any(|(l, a)| *l == label && *a == action);
+        let joins_previous = controls.last().is_some_and(|prev| {
+          row_joined_buttons.iter().any(|(l, a, after)| {
+            *l == label
+              && *a == action
+              && match after {
+                None => matches!(prev, ManipulateControl::Button { .. }),
+                Some(var) => {
+                  !matches!(prev, ManipulateControl::Button { .. })
+                    && prev.name() == var
+                }
+              }
+          })
+        });
         controls.push(ManipulateControl::Button {
           label,
           label_runs,
@@ -53886,19 +53896,27 @@ fn split_implicit_product(e: &Expr) -> Vec<Expr> {
   }
 }
 
+/// The `(label, action)` of a button sharing a panel line with the item
+/// before it in its `Row`: another button (`None`), or the `Control[…]` of
+/// the named variable.
+type RowJoinedButton = (String, String, Option<String>);
+
 /// Record the `(label, action)` of each `Button[label, action, …]` that a
-/// `Row[{…}]` places directly after another button, so the two share one
-/// line of the control panel instead of each getting a row of its own.
-/// Layout containers (`Column[{Row[…], Row[…]}]`, …) are searched for such
-/// rows. `Spacer[…]` and string items between two buttons keep them on the
-/// same line; any other item (a slider, a picture) breaks the run.
-fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
+/// `Row[{…}]` places directly after another button or after a
+/// `Control[…]` (a slider with its "new sample" button beside it), so the
+/// two share one line of the control panel instead of each getting a row
+/// of its own. Layout containers (`Column[{Row[…], Row[…]}]`, …) are
+/// searched for such rows. `Spacer[…]` and string items in between keep
+/// them on the same line; any other item (a picture) breaks the run.
+fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<RowJoinedButton>) {
   match spec {
     Expr::FunctionCall { name, args } if name == "Row" => {
       let Some(Expr::List(items)) = args.first() else {
         return;
       };
-      let mut after_button = false;
+      // What the next button would sit beside: `Some(None)` for a button,
+      // `Some(Some(var))` for the control of `var`.
+      let mut after: Option<Option<String>> = None;
       for item in items {
         let item = match item {
           Expr::FunctionCall { name, args: inner }
@@ -53912,18 +53930,23 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
           Expr::FunctionCall { name, args: b }
             if name == "Button" && b.len() >= 2 =>
           {
-            if after_button {
+            if let Some(beside) = after.take() {
               let label =
                 flatten_label_runs(&manipulate_label_runs(&b[0], false));
               let action = crate::syntax::expr_to_source_form(&b[1]);
-              out.push((label, action));
+              out.push((label, action, beside));
             }
-            after_button = true;
+            after = Some(None);
+          }
+          Expr::FunctionCall { name, args: c }
+            if name == "Control" && !c.is_empty() =>
+          {
+            after = control_spec_variable(&c[0]).map(Some);
           }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
           Expr::String(_) => {}
           other => {
-            after_button = false;
+            after = None;
             collect_row_joined_buttons(other, out);
           }
         }
@@ -54056,6 +54079,13 @@ fn joined_line_controls(
         }
       }
       Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+      // A button is a panel row of its own that the control after it joins.
+      Expr::FunctionCall { name, args: b }
+        if name == "Button" && b.len() >= 2 =>
+      {
+        after_control = true;
+        caption.clear();
+      }
       Expr::String(_) => {
         after_control = true;
         caption.push(item);
@@ -69347,7 +69377,8 @@ mod manipulate_button_enabled_tests {
 
   /// Buttons written side by side in one `Row[{…}]` argument share one line
   /// of the control panel; a second `Row` starts a new line, and a slider
-  /// between two buttons breaks the run. Each `ButtonBar` is one line too.
+  /// between two buttons stays on their line. Each `ButtonBar` is one line
+  /// too.
   #[test]
   fn row_of_buttons_shares_one_line() {
     let expr = crate::parse_to_expr(
@@ -69380,10 +69411,52 @@ mod manipulate_button_enabled_tests {
       ("d", false),
       ("e", true),
       ("f", false),
-      ("g", false),
+      ("g", true),
       ("h", false),
       ("i", true),
       ("j", false),
+    ]
+    .iter()
+    .map(|(l, j)| (l.to_string(), *j))
+    .collect();
+    assert_eq!(joins, expected);
+    assert_eq!(spec.row_joined_controls, vec!["x"]);
+  }
+
+  /// A button written after a `Control[…]` in one `Row[{…}]` shares the
+  /// control's line, but only when that control is the one drawn before
+  /// it: after a control without a row of its own (`ControlType -> None`)
+  /// or in an argument of its own, the button starts a new line.
+  #[test]
+  fn button_after_control_in_row_shares_its_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, c, k}, \
+       Row[{Control[{{a, 3, \"size\"}, 1, 9, 1}], Spacer[10], \
+       Button[\"again\", k = k + 1], Button[\"zero\", k = 0]}], \
+       {b, 0, 1}, \
+       Button[\"alone\", k = 5], \
+       Row[{Control[{{c, 0}, ControlType -> None}], Button[\"hidden\", k = 6]}], \
+       {{k, 0}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let joins: Vec<(String, bool)> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button {
+          label,
+          joins_previous,
+          ..
+        } => Some((label.clone(), *joins_previous)),
+        _ => None,
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = [
+      ("again", true),
+      ("zero", true),
+      ("alone", false),
+      ("hidden", false),
     ]
     .iter()
     .map(|(l, j)| (l.to_string(), *j))
