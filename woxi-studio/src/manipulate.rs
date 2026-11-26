@@ -1521,8 +1521,20 @@ impl ManipulateState {
   /// Control[…]}]` argument placed both side by side. The item before it
   /// may also be a panel display standing in for a control (a
   /// `ControlType -> TogglerBar` bar drawn just before `ctrl_idx`), so even
-  /// the first declared control can join a line.
+  /// the first declared control can join a line. A button joins the line
+  /// of the control its `Row` places it after (a run of buttons is drawn
+  /// as one item, so a button after a button is not a line item itself).
   pub fn joins_previous_control(&self, ctrl_idx: usize) -> bool {
+    if let Some(ControlState::Button { joins_previous, .. }) =
+      self.controls.get(ctrl_idx)
+    {
+      return *joins_previous
+        && ctrl_idx > 0
+        && !matches!(
+          self.controls.get(ctrl_idx - 1),
+          Some(ControlState::Button { .. })
+        );
+    }
     (ctrl_idx > 0 || self.panel_displays.iter().any(|(_, at)| *at == 0))
       && self
         .controls
@@ -8989,6 +9001,40 @@ mod tests {
     let shown = format!("{:?}", state.display_trees);
     assert!(shown.contains("text: \"4\""), "{shown}");
     assert!(shown.contains("text: \"1\""), "{shown}");
+  }
+
+  /// A button written after a slider in one `Row[{Control[…], Spacer[…],
+  /// Button[…]}]` shares the slider's line of the control panel, and still
+  /// runs its action. Regression: the button dropped to a line of its own.
+  #[test]
+  fn button_after_slider_in_one_row_shares_its_line() {
+    let code = r#"Manipulate[
+      Graphics[Table[Disk[{i, Mod[i k, 5]}, 0.3], {i, m}]],
+      Row[{Control[{{m, 4, "count"}, 2, 8, 1}], Spacer[10],
+        Button["shuffle", k = k + 3]}],
+      Row[{Button["reset", k = 1], Control[{{t, 0, "shift"}, 0, 1}]}],
+      {{k, 1}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let joins: Vec<bool> = (0..state.controls.len())
+      .map(|i| state.joins_previous_control(i))
+      .collect();
+    // count, shuffle (beside count), reset, shift (beside reset).
+    assert_eq!(joins, vec![false, true, false, true]);
+    let ControlState::Button { action, .. } = &state.controls[1] else {
+      panic!("expected the shuffle button, got {:?}", state.controls[1]);
+    };
+    let action = action.clone();
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "press failed: {:?}", state.error);
+    assert!(
+      state.state.iter().any(|(n, v)| n == "k" && v == "4"),
+      "{:?}",
+      state.state
+    );
   }
 
   /// A `Row` of `Control@` specs whose first is a `ControlType ->
