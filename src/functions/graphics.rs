@@ -4105,7 +4105,12 @@ fn collect_primitives(
             Expr::FunctionCall { name, args: gargs }
               if name == "Grid" && grid_needs_table_layout(gargs) =>
             {
-              match inset_primitives(&text_offset_as_inset_args(args), errors) {
+              // The table is drawn as a picture of its own, so the font
+              // directives in effect (`Style[Text[Grid[…]], 17]`) go in
+              // with it.
+              let mut styled = text_offset_as_inset_args(args);
+              styled[0] = in_graphics_text_style(&styled[0], style);
+              match inset_primitives(&styled, errors) {
                 Some(inner) => prims.extend(inner),
                 None => parse_text(args, style, prims),
               }
@@ -6497,6 +6502,14 @@ const SCRIPT_SHIFT_EM: f64 = 1.0 / 3.0;
 /// Size of a script relative to its surrounding text (`font-size="70%"`).
 const SCRIPT_SCALE: f64 = 0.7;
 
+/// The distance between the lines of a multi-line graphics label (a string
+/// with line breaks, or a `Column` of text), in ems of its font. The front
+/// end sets the lines of a 15-point label 20 points apart (measured from the
+/// stored snapshot of a diagram whose labels are `Column`s of text), where
+/// stacking them one em apart left no room between a line's descenders and
+/// the next line's ascenders.
+const LABEL_LINE_PITCH_EM: f64 = 4.0 / 3.0;
+
 /// The height (in ems of the surrounding text) a line needs so that its
 /// raised and lowered scripts stay inside it when it is centered on its
 /// row (`dominant-baseline="central"`).
@@ -7095,7 +7108,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if is_box_display_wrapper(name, args) =>
     {
-      box_expr_to_plain(&args[0])
+      box_expr_to_plain(&box_display_content(name, args))
     }
     Expr::FunctionCall { name, args }
       if matches!(
@@ -8623,6 +8636,62 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
 /// into it in: a graphic's base style is smaller than a notebook cell's.
 const GRAPHICS_INSET_FONT_SIZE: i128 = 10;
 
+/// `orig`'s `Style` wrappers put around `inner`, the object found by
+/// peeling them (and any `Labeled`/`Pane`) off `orig`.
+fn with_style_wrappers_of(orig: &Expr, inner: &Expr) -> Expr {
+  match orig {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      if is_style_wrapper(name) {
+        let mut styled = vec![with_style_wrappers_of(&args[0], inner)];
+        styled.extend(args[1..].iter().cloned());
+        call(name, styled)
+      } else if name == "Labeled" || name == "Pane" {
+        with_style_wrappers_of(&args[0], inner)
+      } else {
+        inner.clone()
+      }
+    }
+    _ => inner.clone(),
+  }
+}
+
+/// `label` under the font directives a graphic has in effect where they
+/// differ from its defaults (size, weight, slant and color), for a label
+/// that is composed to a picture of its own rather than drawn as text.
+fn in_graphics_text_style(label: &Expr, style: &StyleState) -> Expr {
+  let option = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  let mut directives = Vec::new();
+  if style.font_size != GRAPHICS_TEXT_FONT_SIZE {
+    directives.push(option("FontSize", Expr::Real(style.font_size)));
+  }
+  if style.font_weight == "bold" {
+    directives.push(Expr::Identifier("Bold".to_string()));
+  }
+  if style.font_style == "italic" {
+    directives.push(Expr::Identifier("Italic".to_string()));
+  }
+  let color = style.effective_color();
+  if (color.r, color.g, color.b) != (0.0, 0.0, 0.0) {
+    directives.push(call(
+      "RGBColor",
+      vec![
+        Expr::Real(color.r),
+        Expr::Real(color.g),
+        Expr::Real(color.b),
+      ],
+    ));
+  }
+  if directives.is_empty() {
+    return label.clone();
+  }
+  let mut args = vec![label.clone()];
+  args.extend(directives);
+  call("Style", args)
+}
+
 /// A laid-out display (`Grid`, `Column`, `Row`, `TableForm`, a `Framed` or
 /// `Panel` box) as an `Inset` shows it: set in the graphic's own font size
 /// rather than the notebook's, so a table of readouts takes the room it
@@ -9383,8 +9452,12 @@ fn inset_primitives(
       // locators on it, so inset it is that picture, not its source text.
       || (name == "LocatorPane" && call_args.len() >= 2) =>
     {
+      // The `Style`s around the display (`Style[Grid[…], 17]`) size and
+      // color its text.
       rendered =
-        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(call));
+        crate::evaluator::expr_to_svg(&inset_display_in_graphics_font(
+          &with_style_wrappers_of(&args[0], call),
+        ));
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
     // A `Panel` — e.g. a readout table of computed values a diagram carries
@@ -17994,12 +18067,15 @@ fn render_primitive(
         ));
         // Each line's own size: the largest `Style[…, n]` falling on it
         // (`Column[{Style[a, 100], Style[b, 40]}]`), else the text's. Lines
-        // sit half their two sizes apart, so equal sizes keep the plain
-        // `fs` pitch while a large line leaves room above a small one.
+        // sit half their two sizes' line pitches apart, so equal sizes keep
+        // the plain pitch while a large line leaves room above a small one.
         let line_sizes = text_line_sizes(text, styled_ranges, fs);
         let pitches: Vec<f64> = line_sizes
           .windows(2)
-          .map(|w| f64::midpoint(w[0], w[1]))
+          .map(|w| {
+            let pitch = LABEL_LINE_PITCH_EM * f64::midpoint(w[0], w[1]);
+            (pitch * 100.0).round() / 100.0
+          })
           .collect();
         let first_size = line_sizes.first().copied().unwrap_or(fs);
         let last_size = line_sizes.last().copied().unwrap_or(fs);
@@ -18007,6 +18083,7 @@ fn render_primitive(
         // on the anchor.
         let first_dy =
           -(pitches.iter().sum::<f64>() / 2.0 + (last_size - first_size) / 4.0);
+        let first_dy = (first_dy * 100.0).round() / 100.0;
         // Character offset of the current line within `text`, so each
         // line keeps the slanted parts (`Style[…, Italic]`) that fall on it.
         let mut line_start = 0;
@@ -29555,14 +29632,22 @@ fn text_line_sizes(
     .collect()
 }
 
-/// The height of a label's block of lines, each as tall as the size it is
-/// set in (see [`text_line_sizes`]).
+/// The height of a label's block of lines, from the first line's top to the
+/// last line's bottom: neighboring lines sit a line pitch of their mean size
+/// apart (see [`text_line_sizes`]), so a single line is one em tall.
 fn text_block_height(
   text: &str,
   styled_ranges: &[StyledRange],
   fs: f64,
 ) -> f64 {
-  text_line_sizes(text, styled_ranges, fs).iter().sum()
+  let sizes = text_line_sizes(text, styled_ranges, fs);
+  let first = sizes.first().copied().unwrap_or(fs);
+  let last = sizes.last().copied().unwrap_or(fs);
+  let pitches: f64 = sizes
+    .windows(2)
+    .map(|w| LABEL_LINE_PITCH_EM * f64::midpoint(w[0], w[1]))
+    .sum();
+  first / 2.0 + pitches + last / 2.0
 }
 
 /// Number of visible characters a box-notation label occupies, ignoring the
@@ -33895,10 +33980,13 @@ fn traditional_inline_box_content_svg(
   // a radical over a stacked fraction (`SqrtBox[FractionBox[…]]`) needs the
   // box layout, not the one-line text rendering that writes `√a/b`.
   if is_box_display_wrapper(name, args) {
-    if !box_is_two_dimensional(&args[0]) {
+    // An expression among the boxes (`FractionBox[Subscript[m, 4], "x"]`)
+    // is typeset, not spelled out.
+    let content = box_display_content(name, args);
+    if !box_is_two_dimensional(&content) {
       return None;
     }
-    let boxes = crate::strip_number_precision_markers(&args[0]);
+    let boxes = crate::strip_number_precision_markers(&content);
     let layout = layout_box(&boxes, size);
     if layout.width <= 0.0 || layout.height <= 0.0 {
       return None;
@@ -35999,11 +36087,22 @@ fn grid_svg_styled_internal_reporting(
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
-      // `Frame -> {xspec, yspec}` rules the grid's column and row lines
-      // exactly as `Dividers -> {xspec, yspec}` does, so it shares that
-      // parser (e.g. `Frame -> {False, All}` draws only horizontal lines).
+      // `Frame -> {xspec, yspec}` frames the grid's columns and rows. Its
+      // lines are those `Dividers -> {xspec, yspec}` rules, so it shares
+      // that parser; a frame goes all the way around what it frames, so
+      // `Frame -> {False, All}` boxes every row — the lines between the
+      // rows and the left and right edges — and `{All, False}` every column.
       let key = match replacement.as_ref() {
-        Expr::List(items) if name == "Frame" && items.len() == 2 => "Dividers",
+        Expr::List(items) if name == "Frame" && items.len() == 2 => {
+          let all = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "All");
+          if all(&items[1]) {
+            dividers_col_border = true;
+          }
+          if all(&items[0]) {
+            dividers_row_border = true;
+          }
+          "Dividers"
+        }
         _ => name.as_str(),
       };
       match key {
@@ -43161,7 +43260,8 @@ fn label_holds_displayed_fraction_box(expr: &Expr) -> bool {
       box_has_fraction(&box_display_content(name, args))
     }
     Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) || name == "Row" || name == "Column" =>
+      if is_style_wrapper(name)
+        || matches!(name.as_str(), "Row" | "Column" | "Grid") =>
     {
       args.iter().any(label_holds_displayed_fraction_box)
     }

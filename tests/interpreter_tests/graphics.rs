@@ -1819,17 +1819,21 @@ mod graphics {
 
     /// A label at the top of an automatic range is kept whole: the range
     /// grows by half the label's height, each line counting the size its
-    /// own `Style` sets rather than the label's base size.
+    /// own `Style` sets rather than the label's base size, and neighboring
+    /// lines sitting 4/3 of their mean size apart.
     #[test]
     fn a_label_of_styled_lines_takes_room_for_each_lines_own_size() {
       for (label, height) in [
-        ("Row[{Style[\"ab\", 16], \"\\n\", Style[\"cd\", 24]}]", 40.0),
+        (
+          "Row[{Style[\"ab\", 16], \"\\n\", Style[\"cd\", 24]}]",
+          140.0 / 3.0,
+        ),
         (
           "Row[{Style[\"ab\", 30], \"\\n\", Style[\"cd\", 12], \"\\n\", \"e\"}]",
-          52.0,
+          188.0 / 3.0,
         ),
         ("Row[{Style[\"ab\", 16], Style[\"cd\", 36]}]", 36.0),
-        ("Column[{Style[\"ab\", 28], Style[\"cd\", 20]}]", 48.0),
+        ("Column[{Style[\"ab\", 28], Style[\"cd\", 20]}]", 56.0),
       ] {
         for position in ["{0, 2}", "{0, -1}"] {
           let svg = export_svg(&format!(
@@ -5086,9 +5090,116 @@ mod graphics {
         "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
       );
       assert!(
-        svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
+        svg.contains("dy=\"-13.33\" dominant-baseline=\"central\">a</tspan>"),
         "{svg}"
       );
+    }
+
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook (a process flow
+    /// diagram with mass balance tables). Its stream labels are `Column`s
+    /// of text set across the arrows: the front end sets their 15-point
+    /// lines 20 points apart, so the first line clears the arrow it sits
+    /// on. The lines were stacked one em apart and the arrows struck
+    /// through them.
+    #[test]
+    fn text_multiline_lines_are_a_line_pitch_apart() {
+      for label in [
+        "Style[Column[{\"a\", \"b\", \"c\"}], 15]",
+        "Style[\"a\\nb\\nc\", 15]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(svg.contains("dy=\"-20\""), "{label}: {svg}");
+        assert_eq!(svg.matches("dy=\"20\"").count(), 2, "{label}: {svg}");
+      }
+    }
+
+    /// The label's box grows with its lines, so an offset still names a
+    /// point of that box: with its top edge on the anchor (`{0, 1}`) the
+    /// three-line label hangs wholly below it.
+    #[test]
+    fn text_multiline_offset_uses_the_stacked_height() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 15], {0, 0}, \
+         {0, 1}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 200]",
+      );
+      let tag = svg.split("<text").nth(1).unwrap();
+      let y: f64 = tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      // The block is 15 + 2 * 20 points high and centered on `y`.
+      assert!((y - (100.0 + 27.5)).abs() < 1.0, "{y}: {svg}");
+    }
+
+    /// A table in a label is drawn as a picture of its own; the font
+    /// directives around the `Text`, around the `Grid` inside it and around
+    /// an inset `Grid` reach its text.
+    #[test]
+    fn text_grid_picture_takes_the_surrounding_style() {
+      for (graphic, size, fill) in [
+        (
+          "Graphics[Style[Text[Grid[{{\"r\", \"s\"}}, Frame -> True]], 17]]",
+          "17",
+          "black",
+        ),
+        (
+          "Graphics[Text[Style[Grid[{{\"r\", \"s\"}}, Frame -> True], 17, Red]]]",
+          "17",
+          "rgb(255,0,0)",
+        ),
+        (
+          "Graphics[Inset[Style[Grid[{{\"r\", \"s\"}}, Frame -> True], 17]]]",
+          "17",
+          "black",
+        ),
+        (
+          "Graphics[{Blue, Text[Grid[{{\"r\", \"s\"}}, Frame -> True]]}]",
+          "10",
+          "rgb(0,0,255)",
+        ),
+        (
+          "Graphics[Text[Grid[{{\"r\", \"s\"}}, Frame -> True]]]",
+          "10",
+          "black",
+        ),
+      ] {
+        let svg = export_svg(graphic);
+        for cell in ["r", "s"] {
+          let tag = svg
+            .split("<text")
+            .find(|t| t.contains(&format!(">{cell}</text>")))
+            .unwrap_or_else(|| panic!("{graphic}: {svg}"));
+          assert!(
+            tag.contains(&format!("font-size=\"{size}\"")),
+            "{graphic}: {tag}"
+          );
+          assert!(
+            tag.contains(&format!("fill=\"{fill}\"")),
+            "{graphic}: {tag}"
+          );
+        }
+      }
+    }
+
+    /// A fraction box in an unframed `Grid` label keeps its bar, and the
+    /// expression in its numerator is typeset, framed or not.
+    #[test]
+    fn text_grid_fraction_box_is_stacked() {
+      for options in ["", ", Frame -> True"] {
+        let svg = export_svg(&format!(
+          "Graphics[Text[Grid[{{{{\"r\", DisplayForm[FractionBox[\
+           Subscript[\"m\", \"4\"], \"KCl\"]]}}}}{options}]]]"
+        ));
+        assert!(!svg.contains("Subscript"), "{svg}");
+        assert!(!svg.contains("m4KCl"), "{svg}");
+        assert!(svg.contains(">m</text>"), "{svg}");
+        assert!(svg.contains(">KCl</text>"), "{svg}");
+        assert!(svg.contains("<line"), "{svg}");
+      }
     }
 
     /// A `Framed` item stacked in a label's `Column` sets its content
@@ -77499,21 +77610,22 @@ fn epilog_stacked_text_uniform_lines_keep_pitch() {
 }
 
 /// A multi-line `Graphics` `Text` whose lines are styled to different
-/// sizes spaces them by those sizes rather than by the base font size,
-/// while equal lines keep the base pitch.
+/// sizes spaces them by those sizes rather than by the base font size:
+/// two lines sit the line pitch (4/3) of the mean of their sizes apart,
+/// and equal lines the pitch of the base size.
 #[test]
 fn graphics_text_column_lines_sized_by_their_styles() {
   let svg =
     export_svg("Graphics[Text[Column[{Style[7, 100], Style[3, 40]}], {0, 0}]]");
-  assert!(svg.contains("dy=\"-20\""), "{svg}");
-  assert!(svg.contains("dy=\"70\""), "{svg}");
+  assert!(svg.contains("dy=\"-31.67\""), "{svg}");
+  assert!(svg.contains("dy=\"93.33\""), "{svg}");
   let svg = export_svg("Graphics[Text[Column[{\"a\", \"b\", \"c\"}], {0, 0}]]");
   assert!(
-    svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
+    svg.contains("dy=\"-13.33\" dominant-baseline=\"central\">a</tspan>"),
     "{svg}"
   );
   assert!(
-    svg.contains("dy=\"10\" dominant-baseline=\"central\">b</tspan>"),
+    svg.contains("dy=\"13.33\" dominant-baseline=\"central\">b</tspan>"),
     "{svg}"
   );
 }
