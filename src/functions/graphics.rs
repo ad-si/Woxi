@@ -10579,6 +10579,52 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       return;
     }
   }
+  // A label that is itself a box tree holding a fraction
+  // (`DisplayForm[FractionBox[1, 2]]`) is laid out in the label's own
+  // style, so the size and weight a `Style` wrapper or the graphic's
+  // `BaseStyle` give it reach the stacked fraction.
+  if frame_opts.is_empty()
+    && let Expr::FunctionCall {
+      name: wrapper,
+      args: wargs,
+    } = content
+    && is_box_display_wrapper(wrapper, wargs)
+    && let boxes = box_display_content(wrapper, wargs)
+    && box_has_fraction(&boxes)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let mut boxes = crate::strip_number_precision_markers(&boxes);
+    if local_style.font_weight == "bold" {
+      boxes = call(
+        "StyleBox",
+        vec![boxes, rule_expr(id_expr("FontWeight"), id_expr("Bold"))],
+      );
+    }
+    let layout = layout_box(&boxes, local_style.font_size);
+    if layout.width > 0.0 && layout.height > 0.0 {
+      let (svg, w, h) = align_inset_picture(
+        layout_to_svg(&layout, &local_style.effective_color().to_svg_rgb()),
+        layout.width.ceil().max(1.0),
+        layout.height.ceil().max(1.0),
+        picture_offset.unwrap_or_default(),
+      );
+      prims.push(Primitive::InsetGraphic {
+        svg,
+        x,
+        y,
+        w,
+        h,
+        scaled,
+        size: None,
+        size_scaled: false,
+        source: None,
+      });
+      return;
+    }
+  }
   // A label whose layout shows a typeset fraction box (`Column[{Row[{
   // DisplayForm[FractionBox[1, 2]], …}]}]`) is composed to a picture the
   // same way, so each fraction stacks its numerator over its denominator.
