@@ -6280,6 +6280,25 @@ fn locator_marker(
           ],
         )
       }
+      // Without a size to scale to, the picture is still centered on the
+      // locator: `Graphics[Point[p]]` as the marker of the locator at `p`
+      // draws its point there, not at `p + p`.
+      (true, None, Some(((x0, x1), (y0, y1)))) => {
+        let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+        if cx == 0.0 && cy == 0.0 {
+          return translate(&prims);
+        }
+        call(
+          "Translate",
+          vec![
+            prims,
+            call(
+              "Plus",
+              vec![point.clone(), Expr::List(vec![num(-cx), num(-cy)].into())],
+            ),
+          ],
+        )
+      }
       _ => translate(&prims),
     }
   };

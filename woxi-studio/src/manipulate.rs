@@ -10834,6 +10834,44 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
   }
 
+  /// Points dragged over a `LocatorPane` whose range is `{{0, 0}, {n - 1,
+  /// m - 1}, {1, 1}}` snap to the pane's steps, and the box they move in
+  /// grows and shrinks with the sliders `n` and `m`.
+  #[test]
+  fn locator_pane_points_snap_to_steps_in_a_range_following_sliders() {
+    let code = r#"Manipulate[
+      LocatorPane[Dynamic[{a, b}],
+        Graphics[{Point[a], Point[b]}, PlotRange -> {{0, n - 1}, {0, m - 1}}],
+        {{0, 0}, {n - 1, m - 1}, {1, 1}}],
+      {{a, {1, 2}}, ControlType -> None},
+      {{b, {2, 1}}, ControlType -> None},
+      {{n, 12}, 2, 25, 1}, {{m, 7}, 2, 25, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let index = |state: &ManipulateState, name: &str| {
+      state
+        .controls
+        .iter()
+        .position(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("{name} control"))
+    };
+    let corner =
+      |state: &ManipulateState| match &state.controls[index(state, "a")] {
+        ControlState::Slider2D { x_max, y_max, .. } => (*x_max, *y_max),
+        other => panic!("expected a 2D control, got {other:?}"),
+      };
+    assert_eq!(corner(&state), (11.0, 6.0));
+    let a = index(&state, "a");
+    state.slider2d_change(a, 0, 3.4);
+    state.slider2d_change(a, 1, 4.6);
+    assert_eq!(state.controls[a].current_code(), "{3, 5}");
+    let n = index(&state, "n");
+    state.slide_continuous(n, 20.0);
+    state.reevaluate();
+    assert_eq!(corner(&state), (19.0, 6.0));
+  }
+
   /// A Locator's point is bound as written, coordinate by coordinate: the
   /// integer of `{0.5, 80}` stays exact, so a label formatting it with
   /// `NumberForm[…, {3, 1}]` reads `80` as in Wolfram rather than `80.0`.
