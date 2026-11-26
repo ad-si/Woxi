@@ -372,7 +372,9 @@ fn attenuate(attenuation: &[f64; 3], dist: f64) -> Option<f64> {
 
 fn parse_light(expr: &Expr) -> Option<Light> {
   let Expr::List(items) = expr else {
-    return None;
+    // A bare color among the lights is ambient light of that color:
+    // `Lighting -> {White}` draws every face in its own flat color.
+    return parse_rgb(expr).map(Light::Ambient);
   };
   let kind = match items.first()? {
     Expr::String(s) | Expr::Identifier(s) => s.as_str(),

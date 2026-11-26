@@ -2144,6 +2144,11 @@ pub fn dispatch_math_functions(
     "CorrelationFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_function_ast(args));
     }
+    "PartialCorrelationFunction" if args.len() == 2 => {
+      return Some(
+        crate::functions::math_ast::partial_correlation_function_ast(args),
+      );
+    }
     // SliceDistribution[proc, t] materializes the process time-slice
     // distribution.
     "SliceDistribution" if args.len() == 2 => {

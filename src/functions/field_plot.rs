@@ -280,6 +280,8 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
       svg_width = w;
       svg_height = h;
       full_width = fw;
+      // The first setting of a repeated option is the one in effect.
+      break;
     }
   }
   (svg_width, svg_height, full_width)
@@ -350,6 +352,21 @@ pub(crate) enum ContourSpec {
   Levels(Vec<f64>),
   /// Contours -> Automatic: ~10 levels at "nice" round values
   Automatic,
+  /// Contours -> {Automatic, n}: at most n levels at "nice" round values
+  AutomaticUpTo(usize),
+}
+
+impl ContourSpec {
+  /// The spec of a `Contours -> {Automatic, n}` list, which caps the
+  /// number of automatically chosen levels instead of listing levels.
+  pub(crate) fn automatic_up_to(items: &[Expr]) -> Option<Self> {
+    match items {
+      [Expr::Identifier(a), Expr::Integer(n)] if a == "Automatic" && *n > 0 => {
+        Some(ContourSpec::AutomaticUpTo(*n as usize))
+      }
+      _ => None,
+    }
+  }
 }
 
 /// Options shared by the density / contour plot family.
@@ -713,6 +730,11 @@ fn parse_density_contour_options(
         "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
+          }
+          Expr::List(items)
+            if let Some(spec) = ContourSpec::automatic_up_to(items) =>
+          {
+            contours = spec;
           }
           Expr::List(items) => {
             let levels: Vec<f64> = items
@@ -2346,6 +2368,7 @@ pub(crate) fn resolve_contour_levels(
 ) -> Vec<f64> {
   match spec {
     ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    ContourSpec::AutomaticUpTo(n) => nice_contour_levels(v_min, v_max, *n),
     // Wolfram splits the range into `n + 1` parts, truncates that step to
     // two significant digits, and draws the first `n` multiples of it
     // above the bottom of the range (so `Contours -> 6` over `-4..4` gives
@@ -3619,6 +3642,48 @@ fn field_plot_structure(
   call("Graphics", structure_args)
 }
 
+/// The colored cells (`colors[col][row]`, row 0 at the bottom) as a
+/// `Raster` spanning the given ranges (rows from the bottom up), so `Show`
+/// can re-render the plot with further options or lay other graphics over
+/// it. Cells without a color stay transparent. `smooth` shades linearly
+/// between the cells instead of drawing them as flat blocks.
+fn color_raster(
+  colors: &[Vec<Option<(u8, u8, u8)>>],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  smooth: bool,
+) -> Expr {
+  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+  let n_rows = colors.first().map_or(0, Vec::len);
+  let rows: Vec<Expr> = (0..n_rows)
+    .map(|j| {
+      let row: Vec<Expr> = colors
+        .iter()
+        .map(|col| {
+          let ((r, g, b), alpha) = match col[j] {
+            Some(rgb) => (rgb, 1.0),
+            None => ((0, 0, 0), 0.0),
+          };
+          Expr::List(
+            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
+          )
+        })
+        .collect();
+      Expr::List(row.into())
+    })
+    .collect();
+  let corner =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut raster_args = vec![
+    Expr::List(rows.into()),
+    Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+  ];
+  if smooth {
+    raster_args.push(rule_expr(id_expr("Resampling"), str_expr("Linear")));
+  }
+  call("Raster", raster_args)
+}
+
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
@@ -3750,39 +3815,11 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // color stay transparent.
   // A body with no numeric values (an equation, say) leaves the plot blank:
   // no raster, but the empty frame still merges under `Show`.
-  let raster = colors.as_ref().map(|colors| {
-    let channel = |c: u8| Expr::Real(c as f64 / 255.0);
-    let rows: Vec<Expr> = (0..FIELD_GRID)
-      .map(|j| {
-        let row: Vec<Expr> = colors
-          .iter()
-          .map(|col| {
-            let ((r, g, b), alpha) = match col[j] {
-              Some(rgb) => (rgb, 1.0),
-              None => ((0, 0, 0), 0.0),
-            };
-            Expr::List(
-              vec![channel(r), channel(g), channel(b), Expr::Real(alpha)]
-                .into(),
-            )
-          })
-          .collect();
-        Expr::List(row.into())
-      })
-      .collect();
-    let corner =
-      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    call(
-      "Raster",
-      vec![
-        Expr::List(rows.into()),
-        Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
-        // The density shades smoothly between its samples, as the
-        // standalone plot draws it, rather than in blocks.
-        rule_expr(id_expr("Resampling"), str_expr("Linear")),
-      ],
-    )
-  });
+  // The density shades smoothly between its samples, as the standalone
+  // plot draws it, rather than in blocks.
+  let raster = colors
+    .as_ref()
+    .map(|colors| color_raster(colors, (x_min, x_max), (y_min, y_max), true));
   let mut structure_items: Vec<Expr> = raster.into_iter().collect();
   structure_items.extend(mesh_structure_items(
     &mesh_grids,
@@ -4135,53 +4172,60 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a `Contours` option each function draws only its zero contour, as
   // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
   // gives each function its own `n` levels.
-  let eq_bodies =
-    eq_bodies.or_else(|| match body {
-      Expr::List(items) if !items.is_empty() => {
-        let mut funcs = Vec::new();
-        flatten_function_list(items, &mut funcs);
-        if funcs.is_empty() {
-          return None;
-        }
-        let spec = parse_density_contour_options(args, 3).contours;
-        let zero = vec![0.0];
-        let fixed = match &spec {
-          ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
-          ContourSpec::Levels(_) => return None,
-          ContourSpec::Automatic => Some(&zero),
-          ContourSpec::Count(_) => None,
-        };
-        let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
-          parse_iterator(&args[1], "ContourPlot"),
-          parse_iterator(&args[2], "ContourPlot"),
-        ) else {
-          return None;
-        };
-        let mut bodies = Vec::new();
-        for (index, f) in funcs.into_iter().enumerate() {
-          let levels = if let Some(levels) = fixed {
-            levels.clone()
-          } else {
-            let (v_min, v_max) = sampled_value_range(
-              f,
-              &xvar,
-              &yvar,
-              (x_min, x_max),
-              (y_min, y_max),
-            );
-            if !v_min.is_finite() || !v_max.is_finite() {
-              continue;
-            }
-            resolve_contour_levels(&spec, v_min, v_max)
-          };
-          bodies.extend(levels.iter().map(|&c| {
-            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
-          }));
-        }
-        Some(bodies)
+  let eq_bodies = eq_bodies.or_else(|| match body {
+    Expr::List(items) if !items.is_empty() => {
+      let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
+        parse_iterator(&args[1], "ContourPlot"),
+        parse_iterator(&args[2], "ContourPlot"),
+      ) else {
+        return None;
+      };
+      let mut funcs = Vec::new();
+      flatten_function_list(items, &[xvar.as_str(), yvar.as_str()], &mut funcs);
+      if funcs.is_empty() {
+        return None;
       }
-      _ => None,
-    });
+      let spec = parse_density_contour_options(args, 3).contours;
+      let zero = vec![0.0];
+      let fixed = match &spec {
+        ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
+        ContourSpec::Levels(_) => return None,
+        ContourSpec::Automatic => Some(&zero),
+        ContourSpec::Count(_) | ContourSpec::AutomaticUpTo(_) => None,
+      };
+      let mut bodies = Vec::new();
+      for (index, f) in funcs.iter().enumerate() {
+        // An equation among the functions is its own implicit curve,
+        // whatever `Contours` asks of the functions beside it.
+        if let Some(zero_body) = equation_zero_body(f) {
+          bodies.push((zero_body, index));
+          continue;
+        }
+        let levels = if let Some(levels) = fixed {
+          levels.clone()
+        } else {
+          let (v_min, v_max) = sampled_value_range(
+            f,
+            &xvar,
+            &yvar,
+            (x_min, x_max),
+            (y_min, y_max),
+          );
+          if !v_min.is_finite() || !v_max.is_finite() {
+            continue;
+          }
+          resolve_contour_levels(&spec, v_min, v_max)
+        };
+        bodies.extend(
+          levels.iter().map(|&c| {
+            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
+          }),
+        );
+      }
+      Some(bodies)
+    }
+    _ => None,
+  });
   if let Some(bodies) = eq_bodies {
     return contour_plot_equations(&bodies, args);
   }
@@ -4420,11 +4464,19 @@ fn contour_legend(
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
-fn flatten_function_list<'a>(items: &'a [Expr], out: &mut Vec<&'a Expr>) {
+fn flatten_function_list(items: &[Expr], vars: &[&str], out: &mut Vec<Expr>) {
   for item in items {
     match item {
-      Expr::List(inner) => flatten_function_list(inner, out),
-      other => out.push(other),
+      Expr::List(inner) => flatten_function_list(inner, vars, out),
+      // An entry that only evaluates to a list (`Which[a < b, {f, g}, …]`,
+      // held by the plot) stands for the curves of that list.
+      Expr::FunctionCall { .. } if equation_zero_body(item).is_none() => {
+        match &crate::functions::plot::eval_body_vars_symbolic(item, vars) {
+          Expr::List(inner) => flatten_function_list(inner, vars, out),
+          _ => out.push(item.clone()),
+        }
+      }
+      other => out.push(other.clone()),
     }
   }
 }
@@ -4717,6 +4769,7 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          own_y_range: None,
           continues_previous: false,
           arrowheads: None,
           color_function: None,
@@ -4785,6 +4838,34 @@ fn contour_plot_equations(
   }
   if !has(&source_options, "Frame") {
     source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
+  // The margin drawn between the curves' domain and the frame is an option
+  // of the result, as it is for the shaded form, so a `Show` that adds to
+  // the plot (an `Epilog`, another graphic) keeps it.
+  if !has(&source_options, "PlotRangePadding") {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(opts.range_padding)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
+  // The sampled domain is the result's `PlotRange`, which that margin
+  // pads; the call's own `PlotRange` bounds the function values instead.
+  source_options.retain(|o| {
+    crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
+      != Some("PlotRange")
+  });
+  {
+    let pair = |lo: f64, hi: f64| {
+      Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+    ));
   }
   // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
   // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot). Like the scalar form, it
@@ -7506,10 +7587,11 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut opts = parse_density_contour_options(args, 1);
   // ReliefPlot's frame carries no ticks unless `FrameTicks` asks for them.
-  if !args[1..].iter().any(|o| {
+  let tickless = !args[1..].iter().any(|o| {
     crate::functions::graphics::option_name_value(o)
       .is_some_and(|(n, _)| n == "FrameTicks")
-  }) {
+  });
+  if tickless {
     opts.frame_ticks = crate::functions::plot::FrameEdgeTicks::none();
   }
   let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
@@ -7623,6 +7705,21 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // The shaded cells as a `Raster` over the data range, so `Show` can add
+  // options (`PlotLabel`, `ImagePadding`, …) or merge other graphics.
+  // The tick-less frame is an option of the result, so a re-render keeps it.
+  let mut structure_source = args.to_vec();
+  if tickless {
+    structure_source.push(rule_expr(id_expr("FrameTicks"), id_expr("None")));
+  }
+  let structure = field_plot_structure(
+    vec![color_raster(&colors, data_range.0, data_range.1, false)],
+    &structure_source,
+    data_range.0,
+    data_range.1,
+    true,
+    opts.range_padding,
+  );
   // Upscale by pixel repetition so a viewer's image smoothing cannot blur
   // the cell edges of a small matrix.
   let factor = 256usize.div_ceil(colors.len().min(colors[0].len()).max(1));
@@ -7651,7 +7748,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// Parse list data and return a grid of z-values with axis ranges.
@@ -9079,7 +9176,9 @@ fn array_plot_ast_inset(
     }
   }
 
-  if matrix.is_empty() {
+  // An `ImageSize` of zero width leaves the picture no extent, so nothing
+  // is drawn: `ImageSize -> 10 Length[row]` for a row that has run empty.
+  if matrix.is_empty() || image_size_is_zero_width(args, 1) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -9776,6 +9875,34 @@ fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
     }
     _ => false,
   })
+}
+
+/// Whether `args[start..]` holds an `ImageSize` whose width is an explicit
+/// zero (`ImageSize -> 0`, `{0}` or `{0, h}`): a picture with no extent.
+/// The first `ImageSize` is the one in effect, as for the size itself.
+fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
+  args
+    .iter()
+    .skip(start)
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| (**replacement).clone());
+        let width = match &value {
+          Expr::List(items) => items.first().cloned(),
+          other => Some(other.clone()),
+        };
+        Some(width.is_some_and(|w| {
+          !matches!(w, Expr::Identifier(_) | Expr::List(_))
+            && try_eval_to_f64(&w) == Some(0.0)
+        }))
+      }
+      _ => None,
+    })
+    .unwrap_or(false)
 }
 
 /// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`

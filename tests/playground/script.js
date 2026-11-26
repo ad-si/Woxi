@@ -448,7 +448,7 @@ function renderManipulate(item) {
     } else if (ctrl.kind === "interval") {
       current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
     } else if (ctrl.kind === "vector") {
-      current[ctrl.name] = { values: ctrl.initial.slice(), exact: ctrl.exactInit }
+      current[ctrl.name] = { values: ctrl.initial.slice(), exact: ctrl.exactInit.slice() }
     } else if (ctrl.kind === "locator") {
       current[ctrl.name] = { points: ctrl.points.map((p) => [p[0], p[1]]) }
     }
@@ -534,10 +534,11 @@ function renderManipulate(item) {
       } else if (ctrl.kind === "interval") {
         bindings[ctrl.name] = `{${v.low}, ${v.high}}`
       } else if (ctrl.kind === "vector") {
-        // Exact while untouched, machine reals once a slider moved.
+        // As written while untouched (exact integers stay exact), machine
+        // reals once a slider moved.
         const real = (n) => (Number.isInteger(n) ? `${n}.` : String(n))
         bindings[ctrl.name] =
-          `{${v.values.map((n) => (v.exact ? String(n) : real(n))).join(", ")}}`
+          `{${v.values.map((n, i) => (v.exact[i] ? String(n) : real(n))).join(", ")}}`
       } else if (ctrl.kind === "locator") {
         // Locator positions are machine reals: integral coordinates keep a
         // trailing dot so they substitute as Real, not Integer.
@@ -1285,7 +1286,7 @@ function renderManipulate(item) {
         value.textContent = fmt(init)
         input.addEventListener("input", () => {
           current[ctrl.name].values[i] = Number(input.value)
-          current[ctrl.name].exact = false
+          current[ctrl.name].exact.fill(false)
           value.textContent = fmt(input.value)
           requestUpdate()
         })
