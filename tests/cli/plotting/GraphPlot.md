@@ -76,6 +76,14 @@ $ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> (Text[#2, #] &
 Graphics
 ```
 
+Given as a delayed rule the setting is not read, and the default
+vertices are drawn:
+
+```scrut
+$ wo 'GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction :> (Point[#] &)] === GraphPlot[{1 -> 2, 2 -> 3}]'
+True
+```
+
 `VertexRenderingFunction -> None` leaves the vertices undrawn:
 
 ```scrut
