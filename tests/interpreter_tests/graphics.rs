@@ -8909,6 +8909,39 @@ mod plot3d {
     assert!(!unlit.contains("<feColorMatrix"), "{unlit}");
   }
 
+  /// A bare color in a `Lighting` list is ambient light of that color, so
+  /// `Lighting -> {White}` draws each face in its own flat color.
+  /// Regression: the list was unreadable and the default lights tinted the
+  /// faces.
+  #[test]
+  fn graphics3d_bare_color_in_lighting_list_is_ambient() {
+    let svg = |lighting: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{RGBColor[0.2, 0.4, 0.6], Cuboid[], LightGray, \
+         Polygon[{{{{2, 0, 0}}, {{3, 0, 0}}, {{3, 1, 1}}}}]}}, \
+         Lighting -> {lighting}]"
+      ))
+    };
+    let default = svg("Automatic");
+    for (bare, spelled) in [
+      ("{White}", "{{\"Ambient\", White}}"),
+      ("{GrayLevel[0.5]}", "{{\"Ambient\", GrayLevel[0.5]}}"),
+      (
+        "{RGBColor[1, 0.5, 0], {\"Directional\", White, {0, 0, 1}}}",
+        "{{\"Ambient\", RGBColor[1, 0.5, 0]}, \
+         {\"Directional\", White, {0, 0, 1}}}",
+      ),
+    ] {
+      let lit = svg(bare);
+      assert_eq!(lit, svg(spelled), "{bare}");
+      assert_ne!(lit, default, "{bare}");
+    }
+    // Every face keeps its own color under white ambient light.
+    let flat = svg("{White}");
+    assert!(flat.contains("rgb(51,102,153)"), "{flat}");
+    assert!(flat.contains("rgb(217,217,217)"), "{flat}");
+  }
+
   /// A `Texture` in a `ParametricPlot3D` `PlotStyle` paints the surface with
   /// the image, placed by `TextureCoordinateFunction` (with its arguments
   /// scaled to 0..1 by default); the symbolic surface keeps the texture.
