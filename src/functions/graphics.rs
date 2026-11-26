@@ -14570,7 +14570,7 @@ fn render_axes(
       // The label at the crossing is dropped where the y axis runs on
       // below it.
       if axes.1
-        && (t - axis_x_data).abs() < step.unwrap_or(1.0) * 1e-6
+        && crate::functions::plot_axes::tick_at_crossing(t, axis_x_data, step)
         && crate::functions::plot_axes::crossing_label_blocked(
           svg_h - axis_y_px,
         )
@@ -14653,7 +14653,7 @@ fn render_axes(
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
       // … and where the x axis runs on left of it.
       if axes.0
-        && (t - axis_y_data).abs() < step.unwrap_or(1.0) * 1e-6
+        && crate::functions::plot_axes::tick_at_crossing(t, axis_y_data, step)
         && crate::functions::plot_axes::crossing_label_blocked(axis_x_px)
       {
         continue;
@@ -15196,8 +15196,8 @@ fn graphics_decorations(
             l.unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
           // The label at the crossing is kept only while the other axis
           // stops short of it (`Decorations::extents` decides).
-          let at_crossing =
-            other && (t - crossing).abs() < step.unwrap_or(1.0) * 1e-6;
+          let at_crossing = other
+            && crate::functions::plot_axes::tick_at_crossing(t, crossing, step);
           (frac(t), l, at_crossing)
         })
         .filter(|(f, l, _)| f.is_finite() && !l.is_empty())

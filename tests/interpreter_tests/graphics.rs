@@ -28385,6 +28385,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn show_drops_crossing_label_of_near_zero_axis() {
+      // A curve decaying towards zero puts the automatic x axis at its
+      // lowest point (about 0.0003 here), a hair above the `0.0` tick. That
+      // tick still sits on the axis, so its label is dropped like the one
+      // at an exact crossing instead of being struck through by the axis.
+      let text = r#"Graphics[{Text["a", {-1, 0.5}]}]"#;
+      let near = export_svg(&format!(
+        "Show[Plot[Exp[-x^2/2], {{x, -4, 2}}, PlotRange -> All], {text}]"
+      ));
+      assert!(!near.contains(">0.0</text>"), "{near}");
+      assert!(!near.contains(">0</text>"), "{near}");
+      assert!(near.contains(">0.2</text>"), "{near}");
+      // The same holds for the vertical axis of a curve run sideways.
+      let side = export_svg(&format!(
+        "Show[ParametricPlot[{{Exp[-u^2/2], u}}, {{u, -4, 2}}, \
+         PlotRange -> All, AspectRatio -> 1/2], {text}]"
+      ));
+      assert!(!side.contains(">0.0</text>"), "{side}");
+      assert!(!side.contains(">0</text>"), "{side}");
+    }
+
+    #[test]
     fn histogram_explicit_plot_range_is_padded() {
       // Histogram's `PlotRangePadding` is in `Scaled` units, which pad an
       // explicit `PlotRange` too, so the tick at its right end (6) stays
