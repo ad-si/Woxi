@@ -2131,7 +2131,9 @@ fn evaluate_expr_to_expr_uncached(
       // InterpolatingFunctionDomain[f]` is `InterpolatingFunctionDomain[f]`).
       if let Some(short) =
         name.strip_prefix("DifferentialEquations`InterpolatingFunctionAnatomy`")
-        && matches!(short, "InterpolatingFunctionDomain")
+        && crate::functions::ode_ast::INTERPOLATING_FUNCTION_ANATOMY
+          .iter()
+          .any(|(function, _)| *function == short)
       {
         return evaluate_expr_to_expr(&Expr::FunctionCall {
           name: short.to_string(),

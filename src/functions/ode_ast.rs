@@ -17672,24 +17672,38 @@ fn same_abscissa(a: f64, b: f64) -> bool {
   (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs())
 }
 
-/// `InterpolatingFunctionDomain[interp]`, from the
-/// `DifferentialEquations`InterpolatingFunctionAnatomy`` package. Reports the
-/// same domain as `interp["Domain"]` (a list of `{min, max}` pairs, one per
-/// independent variable), so it delegates to `evaluate_interpolating_function`
-/// rather than re-deriving the domain.
-pub fn interpolating_function_domain_ast(
+/// The `DifferentialEquations`InterpolatingFunctionAnatomy`` package
+/// functions and the `InterpolatingFunction` property each of them reads.
+pub const INTERPOLATING_FUNCTION_ANATOMY: &[(&str, &str)] = &[
+  ("InterpolatingFunctionDomain", "Domain"),
+  ("InterpolatingFunctionCoordinates", "Coordinates"),
+  ("InterpolatingFunctionGrid", "Grid"),
+  ("InterpolatingFunctionValuesOnGrid", "ValuesOnGrid"),
+];
+
+/// `InterpolatingFunctionDomain[interp]` and its siblings
+/// (`…Coordinates`, `…Grid`, `…ValuesOnGrid`), from the
+/// `DifferentialEquations`InterpolatingFunctionAnatomy`` package. Each
+/// reports the same thing as the matching property (`interp["Domain"]`,
+/// `interp["ValuesOnGrid"]`, …), so it delegates to
+/// `evaluate_interpolating_function` rather than re-deriving it.
+pub fn interpolating_function_anatomy_ast(
+  name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let interp = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   if let Expr::FunctionCall {
-    name,
+    name: head,
     args: func_args,
   } = &interp
-    && name == "InterpolatingFunction"
+    && head == "InterpolatingFunction"
+    && let Some((_, property)) = INTERPOLATING_FUNCTION_ANATOMY
+      .iter()
+      .find(|(function, _)| *function == name)
   {
-    return evaluate_interpolating_function(func_args, &[str_expr("Domain")]);
+    return evaluate_interpolating_function(func_args, &[str_expr(property)]);
   }
-  Ok(unevaluated("InterpolatingFunctionDomain", &[interp]))
+  Ok(unevaluated(name, &[interp]))
 }
 
 /// Find the interval index for x_val using binary search.

@@ -8712,6 +8712,18 @@ fn named_line_thickness(name: &str) -> Option<f64> {
   crate::functions::graphics::symbolic_thickness(name).map(|t| -t)
 }
 
+/// How the ends of a `Tube` are closed, as `CapForm` sets it. (`Cylinder`
+/// and `Cone` are solid regions and always closed.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TubeCaps {
+  /// `CapForm[None]`: the tube is left hollow.
+  Open,
+  /// The default and `CapForm["Round"]`: a hemisphere closes each end.
+  Round,
+  /// `CapForm["Butt"]` and `CapForm["Square"]`: a flat disk closes each.
+  Flat,
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone, Debug)]
 struct StyleState3D {
@@ -8723,10 +8735,8 @@ struct StyleState3D {
   /// Stroke width in pixels for Line3D primitives. None means
   /// [`DEFAULT_LINE_3D_WIDTH`].
   thickness: Option<f64>,
-  /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
-  /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
-  /// (`Cylinder` and `Cone` are solid regions and always closed.)
-  capped: bool,
+  /// How a `Tube`'s ends are closed.
+  caps: TubeCaps,
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat color.
   edges: bool,
@@ -8869,7 +8879,7 @@ impl Default for StyleState3D {
       back_color: None,
       opacity: 1.0,
       thickness: None,
-      capped: true,
+      caps: TubeCaps::Round,
       edges: true,
       faces: true,
       edge_color: None,
@@ -9264,10 +9274,15 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
-      // CapForm[None] leaves a tube's ends open; every named form ("Butt",
-      // "Square", "Round") closes them, as does the default.
+      // CapForm[None] leaves a tube's ends open; every named form closes
+      // them, as does the default: "Round" (the default) with a
+      // hemisphere, "Butt" and "Square" with a flat disk.
       "CapForm" if args.len() == 1 => {
-        style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
+        style.caps = match &args[0] {
+          Expr::Identifier(s) if s == "None" => TubeCaps::Open,
+          Expr::String(s) if s == "Butt" || s == "Square" => TubeCaps::Flat,
+          _ => TubeCaps::Round,
+        };
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
@@ -12201,7 +12216,7 @@ fn collect_3d_primitives_styled(
             // gently bending (sampled) curve stays one mitred tube. A spline
             // is always swept as one tube, so even the sharp corners of a
             // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
-            let runs = if style.capped && !from_spline {
+            let runs = if style.caps == TubeCaps::Round && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -12210,7 +12225,7 @@ fn collect_3d_primitives_styled(
               let tris = tessellate_tube(
                 &pts[from..=to],
                 &radii[from..=to],
-                style.capped,
+                style.caps,
                 budget,
               );
               if !tris.is_empty() {
@@ -13807,7 +13822,10 @@ fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
           p2,
           radius,
           style,
-        } if style.opacity >= 1.0 && style.faces && style.capped => {
+        } if style.opacity >= 1.0
+          && style.faces
+          && style.caps != TubeCaps::Open =>
+        {
           OccluderShape::Cylinder {
             p1: *p1,
             p2: *p2,
@@ -14639,7 +14657,7 @@ fn tessellate_cylinder(
 /// interior vertex), so consecutive segments share a ring and the surface
 /// stays closed through a bend.  The rings are kept aligned by transporting
 /// one reference normal along the curve rather than recomputing it per
-/// segment, which would twist the tube.  With `capped`, flat disks close
+/// segment, which would twist the tube.  With caps other than `TubeCaps::Open`, hemispheres or disks close
 /// both ends — Wolfram's default; `CapForm[None]` drops them.
 /// Cosine of the turn above which a tube's polyline is split into
 /// separately capped runs.
@@ -14680,7 +14698,7 @@ fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
 fn tessellate_tube(
   points: &[Point3D],
   radii: &[f64],
-  capped: bool,
+  caps: TubeCaps,
   max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   const TUBE_SIDES: usize = 24;
@@ -14911,13 +14929,17 @@ fn tessellate_tube(
   }
 
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
-  if capped && !closed {
-    const CAP_RINGS: usize = 6;
+  // `CapForm["Butt"]` cuts them off flat instead, with a disk (a
+  // hemisphere of no height).
+  if caps != TubeCaps::Open && !closed {
+    let flat_caps = caps == TubeCaps::Flat;
+    let cap_rings: usize = if flat_caps { 1 } else { 6 };
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
-      (1..=CAP_RINGS)
+      (1..=cap_rings)
         .map(|j| {
-          let theta = std::f64::consts::FRAC_PI_2 * j as f64 / CAP_RINGS as f64;
+          let theta = std::f64::consts::FRAC_PI_2 * j as f64 / cap_rings as f64;
           let (s, c) = theta.sin_cos();
+          let s = if flat_caps { 0.0 } else { s };
           ring
             .iter()
             .map(|q| {
@@ -15917,10 +15939,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "PlotRange" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if let Some(r) = try_eval_to_f64(&value) {
-            if r > 0.0 {
-              plot_range = Some([(-r, r); 3]);
-            }
+          if try_eval_to_f64(&value).is_some() {
+            plot_range = parse_cube_or_axis_ranges(&value).or(plot_range);
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
@@ -16666,7 +16686,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             back_color: None,
             opacity: 1.0,
             thickness: None,
-            capped: true,
+            caps: TubeCaps::Round,
             edges: true,
             faces: true,
             edge_color: None,
@@ -17204,8 +17224,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           | Primitive3D::Cone { .. }
       )
     });
-  let fit_contents = !show_box
-    && (explicit_height || round_solids_only)
+  // In a picture of fixed width and height, contents with depth whose box
+  // is the taller shape for the frame are framed by that box, before
+  // `PlotRangePadding` widens it: its far top and near bottom corners keep
+  // round ends off the edges. A Demonstration's unboxed beaker under a thin
+  // pipette (a 7 × 7 × 40 box of cylinders) at `ImageSize -> {150, 250}` is
+  // drawn 230 px tall, 17 px below the top edge and 4 px above the bottom
+  // one in all four snapshots, where the contents alone would touch both
+  // edges (and the padded box would draw them 219 px tall). A box that is
+  // the wider shape for the frame (the short and wide cylinder above, whose
+  // box corners stick out sideways) leaves the fit to the contents, and so
+  // does an explicit `SphericalRegion -> False`.
+  let contents_extent = primitives_extent(&prims);
+  let flat_contents = contents_extent.into_iter().any(range_is_flat);
+  let unboxed_automatic = !show_box
     && !full_width
     && !aspect_full
     && !show_axes
@@ -17214,7 +17246,39 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !spherical_region
     && view_angle.is_none()
     && px_min.is_finite();
-  if !fit_contents {
+  let contents_box = {
+    let [xs, ys, zs] = contents_extent;
+    let mut b = (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    );
+    for x in [xs.0, xs.1] {
+      for y in [ys.0, ys.1] {
+        for z in [zs.0, zs.1] {
+          let (px, py) = project(Point3D { x, y, z }, &camera);
+          b = (b.0.min(px), b.1.max(px), b.2.min(py), b.3.max(py));
+        }
+      }
+    }
+    b
+  };
+  let fit_contents_box = unboxed_automatic
+    && explicit_height
+    && !spherical_region_off
+    && !flat_contents
+    && (contents_box.3 - contents_box.2) * f64::from(svg_width)
+      >= (contents_box.1 - contents_box.0) * f64::from(svg_height);
+  let fit_contents = unboxed_automatic
+    && !fit_contents_box
+    && (explicit_height || round_solids_only);
+  if fit_contents_box {
+    px_min = px_min.min(contents_box.0);
+    px_max = px_max.max(contents_box.1);
+    py_min = py_min.min(contents_box.2);
+    py_max = py_max.max(contents_box.3);
+  } else if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -18687,10 +18751,13 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
       Expr::List(pair) if pair.len() == 2 => {
         let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
         let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-        if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
-          return None;
+        match hi.partial_cmp(&lo) {
+          Some(std::cmp::Ordering::Greater) => Some((lo, hi)),
+          // An interval of no extent cannot frame anything, so that axis
+          // falls back to the automatic range while the others stay fixed.
+          Some(std::cmp::Ordering::Equal) => None,
+          _ => return None,
         }
-        Some((lo, hi))
       }
       _ => return None,
     };
@@ -18724,6 +18791,15 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
     ranges[i] = (lo, hi);
   }
   Some(ranges)
+}
+
+/// The region a parametric 3D plot's `PlotRange` pins: the cube `[-s, s]³`
+/// for a single positive number `s`, else one explicit interval per axis.
+fn parse_cube_or_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
+  match try_eval_to_f64(expr) {
+    Some(s) => (s > 0.0 && s.is_finite()).then_some([(-s, s); 3]),
+    None => parse_axis_ranges(expr),
+  }
 }
 
 /// The three axis labels an `AxesLabel` value names. A lone label (or a
@@ -23637,12 +23713,6 @@ fn contour3d_render(
     })
     .collect();
 
-  if world_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "ContourPlot3D: the surface has no points in the given range".into(),
-    ));
-  }
-
   // `FitToSurfaces` boxes the plot to the extent of what was drawn. The box
   // is that range padded by `Scaled[0.02]` on each side (none around an
   // explicit `PlotRange`), as Wolfram's `ContourPlot3D`, `RegionPlot3D` and
@@ -23650,6 +23720,9 @@ fn contour3d_render(
   let explicit_range = matches!(plot_range, Some(ContourBox::Explicit(_)));
   let plot_range = match plot_range {
     Some(ContourBox::Explicit(r)) => r,
+    // Nothing was drawn (a level no sample reaches, a region that is
+    // empty): the box is the sampled one, drawn empty as Wolfram does.
+    Some(ContourBox::FitToSurfaces) if world_triangles.is_empty() => ranges,
     Some(ContourBox::FitToSurfaces) => {
       let mut r = [(f64::INFINITY, f64::NEG_INFINITY); 3];
       for p in world_triangles.iter().flat_map(|(t, _)| t.iter()) {
@@ -26710,7 +26783,9 @@ fn parametric_plot3d_curve_ast(
       } = opt
         && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
       {
-        plot_range = parse_axis_ranges(replacement);
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone());
+        plot_range = parse_cube_or_axis_ranges(&value);
       }
       forwarded_opts.push(opt.clone());
     }
@@ -26856,6 +26931,13 @@ fn parametric_plot3d_curve_ast(
         call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
+    // A curve drawn as a tube ends in a flat cut, not in the hemisphere a
+    // bare `Tube` gets: Wolfram's snapshot of a helix plotted with
+    // `PlotStyle -> {Tube[r]}` shows the disk closing its upper end. A
+    // `CapForm` in the style, read after this one, still has its way.
+    if tube_args.is_some() {
+      prim_items.push(call1("CapForm", Expr::String("Butt".into())));
+    }
     if let Some(style) = group_style {
       // Wrap whatever PlotStyle holds into a Directive[…] so that
       // collect_3d_primitives picks up nested colors/Thickness/etc.
@@ -26951,6 +27033,19 @@ fn parametric_plot3d_curve_ast(
     matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
   });
+  // A curve whose range cannot be recorded axis by axis (a flat one) still
+  // spells out the padding of its automatic range, so it stays with the
+  // plot when a `Show` led by it pins the range. A plot that names its own
+  // range is not padded, like the surfaces.
+  let automatic_range = !forwarded_opts.iter().any(|o| {
+    match crate::functions::graphics::option_name_value(o) {
+      Some(("PlotRange", v)) => {
+        !matches!(&*v, Expr::Identifier(n) if n == "All" || n == "Automatic")
+      }
+      Some(("PlotRangePadding", _)) => true,
+      _ => false,
+    }
+  });
   // The range and padding are recorded axis by axis, as for a surface.
   let extents = curve_points_extent(&g3d_args[0]);
   let recorded = extents
@@ -26994,6 +27089,11 @@ fn parametric_plot3d_curve_ast(
   if let Some((range, padding)) = recorded {
     g3d_args.push(rule_expr(id_expr("PlotRange"), range));
     g3d_args.push(rule_expr(id_expr("PlotRangePadding"), padding));
+  } else if automatic_range {
+    g3d_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)),
+    ));
   }
 
   Ok(call("Graphics3D", g3d_args))
@@ -27896,7 +27996,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "PlotRange" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if let Some(ranges) = parse_axis_ranges(&value) {
+          if let Some(ranges) = parse_cube_or_axis_ranges(&value) {
             plot_range = Some(ranges);
           }
         }

@@ -11981,6 +11981,61 @@ mod ndsolve {
   }
 
   #[test]
+  fn interpolating_function_anatomy_grid_accessors() {
+    // The package's other accessors report the matching properties.
+    let load = "Needs[\"DifferentialEquations`InterpolatingFunctionAnatomy`\"]; \
+                f = Interpolation[{1, 4, 9, 16}];";
+    assert_eq!(
+      interpret(&format!("{load} InterpolatingFunctionValuesOnGrid[f]"))
+        .unwrap(),
+      "{1, 4, 9, 16}"
+    );
+    assert_eq!(
+      interpret(&format!("{load} InterpolatingFunctionGrid[f]")).unwrap(),
+      "{{1}, {2}, {3}, {4}}"
+    );
+    assert_eq!(
+      interpret(&format!("{load} InterpolatingFunctionCoordinates[f]"))
+        .unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    // Same answer as the property, for every accessor.
+    assert_eq!(
+      interpret(&format!(
+        "{load} {{InterpolatingFunctionValuesOnGrid[f] === f[\"ValuesOnGrid\"], \
+         InterpolatingFunctionGrid[f] === f[\"Grid\"], \
+         InterpolatingFunctionCoordinates[f] === f[\"Coordinates\"]}}"
+      ))
+      .unwrap(),
+      "{True, True, True}"
+    );
+    // Anything else stays unevaluated.
+    assert_eq!(
+      interpret("InterpolatingFunctionValuesOnGrid[foo]").unwrap(),
+      "InterpolatingFunctionValuesOnGrid[foo]"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_values_on_grid_of_vector_solution() {
+    // A vector-valued NDSolve solution has one row of components per grid
+    // point; the context-qualified name (as a notebook that loaded the
+    // package via `Get` spells it) resolves to the same function.
+    assert_eq!(
+      interpret(
+        "f = NDSolve[{X'[t] == -X[t], X[0] == {1., 2., 3.}}, X, {t, 0, 1}]\
+           [[1, 1, 2]]; \
+         v = DifferentialEquations`InterpolatingFunctionAnatomy`\
+         InterpolatingFunctionValuesOnGrid[f]; \
+         {Length[v] == Length[InterpolatingFunctionGrid[f]], \
+          Dimensions[v][[2]], First[v], MatrixQ[v, NumericQ]}"
+      )
+      .unwrap(),
+      "{True, 3, {1., 2., 3.}, True}"
+    );
+  }
+
+  #[test]
   fn symbolic_initial_condition_value() {
     // An exact symbolic IC value (like the trebuchet's
     // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericize.
