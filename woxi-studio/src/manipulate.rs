@@ -1639,7 +1639,10 @@ impl ManipulateState {
     let DynamicFeedback {
       vars: dynamic_feedback_vars,
       own_writes: dynamic_feedback_writes,
-    } = dynamic_feedback(&body, spec.body_in_dynamic);
+    } = dynamic_feedback(
+      &body,
+      spec.body_wrapper == woxi::functions::graphics::BodyWrapper::Dynamic,
+    );
     let mut state = ManipulateState {
       body,
       initialization: spec.initialization,
