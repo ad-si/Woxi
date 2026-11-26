@@ -734,13 +734,12 @@ fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
 }
 
 /// `RandomFunction[proc, {t0, t1, dt}]` — one realization of a random
-/// process, sampled at `t0, t0 + dt, …` up to `t1`. Returned as a
-/// `TimeSeries[{{t0, v0}, …}]` object (Woxi's canonical internal form for
-/// `TemporalData`, the same one `TemporalData[values, times]` itself
-/// normalizes to — see the module doc comment), so every existing
-/// `["Values"]`/`["Times"]`/… property accessor already works on it, plus
-/// the `["States"]` accessor added above for wolframscript's own
-/// process-realization report.
+/// process, sampled at `t0, t0 + dt, …` up to `t1`. Returned, like a
+/// several-realization `RandomFunction[proc, tspec, n]`, as the path-list
+/// `TemporalData[{values}, {{t0, …}}]` that [`temporal_paths`] reads, so
+/// `Normal` gives the list of its paths (one here) the way wolframscript
+/// does, and every `["Values"]`/`["Times"]`/`["States"]`/… property answers
+/// through [`apply_multi_path_temporal_data`].
 ///
 /// A continuous-time Markov process's value one step later depends only on
 /// its current value, not on how it got there, so simulating a full path is
@@ -769,10 +768,31 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => return unchanged(),
     }
   }
-  if count == 1 {
-    return Ok(time_series(paths.pop().unwrap()));
-  }
   Ok(multi_path_temporal_data(&paths))
+}
+
+/// `Normal[td]` for a path-list `TemporalData[{p1, …}, tspec]`: the list of
+/// its paths, each as `{{t, value}, …}` pairs. `None` for anything else (a
+/// `TimeSeries` normalizes to its own single path elsewhere).
+pub fn temporal_data_normal(expr: &Expr) -> Option<Expr> {
+  if !matches!(expr, Expr::FunctionCall { name, .. } if name == "TemporalData")
+  {
+    return None;
+  }
+  let paths = temporal_paths(expr)?;
+  Some(Expr::List(
+    paths
+      .into_iter()
+      .map(|path| {
+        Expr::List(
+          path
+            .into_iter()
+            .map(|(t, v)| Expr::List(vec![t, v].into()))
+            .collect(),
+        )
+      })
+      .collect(),
+  ))
 }
 
 /// Several realizations sharing one time axis, as the multi-path

@@ -280,6 +280,8 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
       svg_width = w;
       svg_height = h;
       full_width = fw;
+      // The first setting of a repeated option is the one in effect.
+      break;
     }
   }
   (svg_width, svg_height, full_width)
@@ -350,6 +352,21 @@ pub(crate) enum ContourSpec {
   Levels(Vec<f64>),
   /// Contours -> Automatic: ~10 levels at "nice" round values
   Automatic,
+  /// Contours -> {Automatic, n}: at most n levels at "nice" round values
+  AutomaticUpTo(usize),
+}
+
+impl ContourSpec {
+  /// The spec of a `Contours -> {Automatic, n}` list, which caps the
+  /// number of automatically chosen levels instead of listing levels.
+  pub(crate) fn automatic_up_to(items: &[Expr]) -> Option<Self> {
+    match items {
+      [Expr::Identifier(a), Expr::Integer(n)] if a == "Automatic" && *n > 0 => {
+        Some(ContourSpec::AutomaticUpTo(*n as usize))
+      }
+      _ => None,
+    }
+  }
 }
 
 /// Options shared by the density / contour plot family.
@@ -713,6 +730,11 @@ fn parse_density_contour_options(
         "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
+          }
+          Expr::List(items)
+            if let Some(spec) = ContourSpec::automatic_up_to(items) =>
+          {
+            contours = spec;
           }
           Expr::List(items) => {
             let levels: Vec<f64> = items
@@ -2346,6 +2368,7 @@ pub(crate) fn resolve_contour_levels(
 ) -> Vec<f64> {
   match spec {
     ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    ContourSpec::AutomaticUpTo(n) => nice_contour_levels(v_min, v_max, *n),
     // Wolfram splits the range into `n + 1` parts, truncates that step to
     // two significant digits, and draws the first `n` multiples of it
     // above the bottom of the range (so `Contours -> 6` over `-4..4` gives
@@ -2507,43 +2530,66 @@ fn contour_band_regions(
         continue;
       }
       flush(&mut regions, &mut run);
-      let base: [PtV; 4] = [
+      let corners: [PtV; 4] = [
         ((i as f64, j as f64), v00),
         ((i as f64 + 1.0, j as f64), v10),
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
-      let mut clipped: Vec<PtV> = base.to_vec();
-      if clip_lo {
-        clipped = clip_polygon(&clipped, v_min, true);
-      }
-      if clip_hi {
-        clipped = clip_polygon(&clipped, v_max, false);
-      }
-      if clipped.len() < 3 {
-        continue;
-      }
-      for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = clipped.clone();
-        if b > 0 {
-          poly = clip_polygon(&poly, levels[b - 1], true);
+      // A saddle cell (one diagonal's corners above the other's) is split
+      // along the diagonal the contour lines resolve it by (see
+      // `marching_squares_segments_excluding`), so the bands and the
+      // lines join the same corners.
+      let pieces: Vec<Vec<PtV>> = if is_saddle_cell(v00, v10, v01, v11) {
+        vec![
+          vec![corners[0], corners[1], corners[2]],
+          vec![corners[0], corners[2], corners[3]],
+        ]
+      } else {
+        vec![corners.to_vec()]
+      };
+      for mut clipped in pieces {
+        if clip_lo {
+          clipped = clip_polygon(&clipped, v_min, true);
         }
-        if b < levels.len() {
-          poly = clip_polygon(&poly, levels[b], false);
+        if clip_hi {
+          clipped = clip_polygon(&clipped, v_max, false);
         }
-        if poly.len() < 3 {
+        if clipped.len() < 3 {
           continue;
         }
-        regions.push(BandRegion {
-          band: b,
-          points: poly.iter().map(|&(p, _)| p).collect(),
-          is_rect: false,
-        });
+        for b in b_lo..=b_hi {
+          let mut poly: Vec<PtV> = clipped.clone();
+          if b > 0 {
+            poly = clip_polygon(&poly, levels[b - 1], true);
+          }
+          if b < levels.len() {
+            poly = clip_polygon(&poly, levels[b], false);
+          }
+          if poly.len() < 3 {
+            continue;
+          }
+          regions.push(BandRegion {
+            band: b,
+            points: poly.iter().map(|&(p, _)| p).collect(),
+            is_rect: false,
+          });
+        }
       }
     }
     flush(&mut regions, &mut run);
   }
   regions
+}
+
+/// Whether a grid cell is a saddle: the corners on one diagonal (`v00`,
+/// `v11`) all lie above, or all below, the corners on the other. A level
+/// between the two pairs can join either pair across such a cell; it is
+/// resolved by splitting the cell along the `v00`–`v11` diagonal.
+fn is_saddle_cell(v00: f64, v10: f64, v01: f64, v11: f64) -> bool {
+  let (diag_lo, diag_hi) = (v00.min(v11), v00.max(v11));
+  let (anti_lo, anti_hi) = (v10.min(v01), v10.max(v01));
+  diag_lo > anti_hi || diag_hi < anti_lo
 }
 
 /// The color of band `b`, from the value at its middle.
@@ -2935,15 +2981,14 @@ fn marching_squares_segments_excluding(
         3 | 12 => push(left, right),
         4 | 11 => push(left, top),
         5 | 10 => push(bottom, top),
-        6 => {
-          // Saddle: v10 and v01 above the level
+        // Saddle (`v10` and `v01` on one side of the level, `v00` and
+        // `v11` on the other): the cell is split along its `v00`–`v11`
+        // diagonal, which the level does not cross, so each triangle cuts
+        // off its own off-diagonal corner. `contour_band_regions` splits
+        // the same way.
+        6 | 9 => {
           push(bottom, right);
           push(left, top);
-        }
-        9 => {
-          // Saddle: v00 and v11 above the level
-          push(bottom, left);
-          push(right, top);
         }
         7 | 8 => push(right, top),
         _ => {}
@@ -3597,6 +3642,48 @@ fn field_plot_structure(
   call("Graphics", structure_args)
 }
 
+/// The colored cells (`colors[col][row]`, row 0 at the bottom) as a
+/// `Raster` spanning the given ranges (rows from the bottom up), so `Show`
+/// can re-render the plot with further options or lay other graphics over
+/// it. Cells without a color stay transparent. `smooth` shades linearly
+/// between the cells instead of drawing them as flat blocks.
+fn color_raster(
+  colors: &[Vec<Option<(u8, u8, u8)>>],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  smooth: bool,
+) -> Expr {
+  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+  let n_rows = colors.first().map_or(0, Vec::len);
+  let rows: Vec<Expr> = (0..n_rows)
+    .map(|j| {
+      let row: Vec<Expr> = colors
+        .iter()
+        .map(|col| {
+          let ((r, g, b), alpha) = match col[j] {
+            Some(rgb) => (rgb, 1.0),
+            None => ((0, 0, 0), 0.0),
+          };
+          Expr::List(
+            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
+          )
+        })
+        .collect();
+      Expr::List(row.into())
+    })
+    .collect();
+  let corner =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut raster_args = vec![
+    Expr::List(rows.into()),
+    Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+  ];
+  if smooth {
+    raster_args.push(rule_expr(id_expr("Resampling"), str_expr("Linear")));
+  }
+  call("Raster", raster_args)
+}
+
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
@@ -3728,39 +3815,11 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // color stay transparent.
   // A body with no numeric values (an equation, say) leaves the plot blank:
   // no raster, but the empty frame still merges under `Show`.
-  let raster = colors.as_ref().map(|colors| {
-    let channel = |c: u8| Expr::Real(c as f64 / 255.0);
-    let rows: Vec<Expr> = (0..FIELD_GRID)
-      .map(|j| {
-        let row: Vec<Expr> = colors
-          .iter()
-          .map(|col| {
-            let ((r, g, b), alpha) = match col[j] {
-              Some(rgb) => (rgb, 1.0),
-              None => ((0, 0, 0), 0.0),
-            };
-            Expr::List(
-              vec![channel(r), channel(g), channel(b), Expr::Real(alpha)]
-                .into(),
-            )
-          })
-          .collect();
-        Expr::List(row.into())
-      })
-      .collect();
-    let corner =
-      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    call(
-      "Raster",
-      vec![
-        Expr::List(rows.into()),
-        Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
-        // The density shades smoothly between its samples, as the
-        // standalone plot draws it, rather than in blocks.
-        rule_expr(id_expr("Resampling"), str_expr("Linear")),
-      ],
-    )
-  });
+  // The density shades smoothly between its samples, as the standalone
+  // plot draws it, rather than in blocks.
+  let raster = colors
+    .as_ref()
+    .map(|colors| color_raster(colors, (x_min, x_max), (y_min, y_max), true));
   let mut structure_items: Vec<Expr> = raster.into_iter().collect();
   structure_items.extend(mesh_structure_items(
     &mesh_grids,
@@ -4113,53 +4172,60 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a `Contours` option each function draws only its zero contour, as
   // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
   // gives each function its own `n` levels.
-  let eq_bodies =
-    eq_bodies.or_else(|| match body {
-      Expr::List(items) if !items.is_empty() => {
-        let mut funcs = Vec::new();
-        flatten_function_list(items, &mut funcs);
-        if funcs.is_empty() {
-          return None;
-        }
-        let spec = parse_density_contour_options(args, 3).contours;
-        let zero = vec![0.0];
-        let fixed = match &spec {
-          ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
-          ContourSpec::Levels(_) => return None,
-          ContourSpec::Automatic => Some(&zero),
-          ContourSpec::Count(_) => None,
-        };
-        let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
-          parse_iterator(&args[1], "ContourPlot"),
-          parse_iterator(&args[2], "ContourPlot"),
-        ) else {
-          return None;
-        };
-        let mut bodies = Vec::new();
-        for (index, f) in funcs.into_iter().enumerate() {
-          let levels = if let Some(levels) = fixed {
-            levels.clone()
-          } else {
-            let (v_min, v_max) = sampled_value_range(
-              f,
-              &xvar,
-              &yvar,
-              (x_min, x_max),
-              (y_min, y_max),
-            );
-            if !v_min.is_finite() || !v_max.is_finite() {
-              continue;
-            }
-            resolve_contour_levels(&spec, v_min, v_max)
-          };
-          bodies.extend(levels.iter().map(|&c| {
-            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
-          }));
-        }
-        Some(bodies)
+  let eq_bodies = eq_bodies.or_else(|| match body {
+    Expr::List(items) if !items.is_empty() => {
+      let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
+        parse_iterator(&args[1], "ContourPlot"),
+        parse_iterator(&args[2], "ContourPlot"),
+      ) else {
+        return None;
+      };
+      let mut funcs = Vec::new();
+      flatten_function_list(items, &[xvar.as_str(), yvar.as_str()], &mut funcs);
+      if funcs.is_empty() {
+        return None;
       }
-      _ => None,
-    });
+      let spec = parse_density_contour_options(args, 3).contours;
+      let zero = vec![0.0];
+      let fixed = match &spec {
+        ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
+        ContourSpec::Levels(_) => return None,
+        ContourSpec::Automatic => Some(&zero),
+        ContourSpec::Count(_) | ContourSpec::AutomaticUpTo(_) => None,
+      };
+      let mut bodies = Vec::new();
+      for (index, f) in funcs.iter().enumerate() {
+        // An equation among the functions is its own implicit curve,
+        // whatever `Contours` asks of the functions beside it.
+        if let Some(zero_body) = equation_zero_body(f) {
+          bodies.push((zero_body, index));
+          continue;
+        }
+        let levels = if let Some(levels) = fixed {
+          levels.clone()
+        } else {
+          let (v_min, v_max) = sampled_value_range(
+            f,
+            &xvar,
+            &yvar,
+            (x_min, x_max),
+            (y_min, y_max),
+          );
+          if !v_min.is_finite() || !v_max.is_finite() {
+            continue;
+          }
+          resolve_contour_levels(&spec, v_min, v_max)
+        };
+        bodies.extend(
+          levels.iter().map(|&c| {
+            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
+          }),
+        );
+      }
+      Some(bodies)
+    }
+    _ => None,
+  });
   if let Some(bodies) = eq_bodies {
     return contour_plot_equations(&bodies, args);
   }
@@ -4398,11 +4464,19 @@ fn contour_legend(
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
-fn flatten_function_list<'a>(items: &'a [Expr], out: &mut Vec<&'a Expr>) {
+fn flatten_function_list(items: &[Expr], vars: &[&str], out: &mut Vec<Expr>) {
   for item in items {
     match item {
-      Expr::List(inner) => flatten_function_list(inner, out),
-      other => out.push(other),
+      Expr::List(inner) => flatten_function_list(inner, vars, out),
+      // An entry that only evaluates to a list (`Which[a < b, {f, g}, …]`,
+      // held by the plot) stands for the curves of that list.
+      Expr::FunctionCall { .. } if equation_zero_body(item).is_none() => {
+        match &crate::functions::plot::eval_body_vars_symbolic(item, vars) {
+          Expr::List(inner) => flatten_function_list(inner, vars, out),
+          _ => out.push(item.clone()),
+        }
+      }
+      other => out.push(other.clone()),
     }
   }
 }
@@ -4695,6 +4769,7 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          own_y_range: None,
           continues_previous: false,
           arrowheads: None,
           color_function: None,
@@ -4763,6 +4838,34 @@ fn contour_plot_equations(
   }
   if !has(&source_options, "Frame") {
     source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
+  // The margin drawn between the curves' domain and the frame is an option
+  // of the result, as it is for the shaded form, so a `Show` that adds to
+  // the plot (an `Epilog`, another graphic) keeps it.
+  if !has(&source_options, "PlotRangePadding") {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(opts.range_padding)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
+  // The sampled domain is the result's `PlotRange`, which that margin
+  // pads; the call's own `PlotRange` bounds the function values instead.
+  source_options.retain(|o| {
+    crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
+      != Some("PlotRange")
+  });
+  {
+    let pair = |lo: f64, hi: f64| {
+      Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+    ));
   }
   // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
   // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot). Like the scalar form, it
@@ -7484,10 +7587,11 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut opts = parse_density_contour_options(args, 1);
   // ReliefPlot's frame carries no ticks unless `FrameTicks` asks for them.
-  if !args[1..].iter().any(|o| {
+  let tickless = !args[1..].iter().any(|o| {
     crate::functions::graphics::option_name_value(o)
       .is_some_and(|(n, _)| n == "FrameTicks")
-  }) {
+  });
+  if tickless {
     opts.frame_ticks = crate::functions::plot::FrameEdgeTicks::none();
   }
   let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
@@ -7601,6 +7705,21 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // The shaded cells as a `Raster` over the data range, so `Show` can add
+  // options (`PlotLabel`, `ImagePadding`, …) or merge other graphics.
+  // The tick-less frame is an option of the result, so a re-render keeps it.
+  let mut structure_source = args.to_vec();
+  if tickless {
+    structure_source.push(rule_expr(id_expr("FrameTicks"), id_expr("None")));
+  }
+  let structure = field_plot_structure(
+    vec![color_raster(&colors, data_range.0, data_range.1, false)],
+    &structure_source,
+    data_range.0,
+    data_range.1,
+    true,
+    opts.range_padding,
+  );
   // Upscale by pixel repetition so a viewer's image smoothing cannot blur
   // the cell edges of a small matrix.
   let factor = 256usize.div_ceil(colors.len().min(colors[0].len()).max(1));
@@ -7629,7 +7748,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// Parse list data and return a grid of z-values with axis ranges.
@@ -8162,6 +8281,55 @@ fn region_masked_grid(
     .collect()
 }
 
+/// How finely [`triangulated_grid`] may subdivide a cell, and the grid
+/// size beyond which it no longer subdivides.
+const TRIANGULATION_MAX_SUBDIVISION: usize = 4;
+
+/// Refine a node grid `grid[col][row]` so that the values inside each cell
+/// follow the piecewise-linear interpolant over the cell's two triangles
+/// (split along the diagonal from its low corner to its high corner), the
+/// way Wolfram's `ListContourPlot` interpolates an array of heights.
+///
+/// Contours traced on the raw cells would treat each cell bilinearly, and
+/// a saddle cell (opposite corners high, the others low) is then ambiguous:
+/// its shaded bands and its contour lines can join the corners differently.
+/// On the refined grid the interpolant is linear almost everywhere, so both
+/// follow the same triangulation. Every original node stays a node.
+fn triangulated_grid(grid: &[Vec<f64>]) -> Vec<Vec<f64>> {
+  let nc = grid.len();
+  let nr = grid.first().map_or(0, Vec::len);
+  if nc < 2 || nr < 2 {
+    return grid.to_vec();
+  }
+  let fine = FIELD_GRID * 4;
+  let k = fine
+    .div_ceil(nc.max(nr) - 1)
+    .clamp(1, TRIANGULATION_MAX_SUBDIVISION);
+  if k == 1 {
+    return grid.to_vec();
+  }
+  let step = 1.0 / k as f64;
+  (0..=(nc - 1) * k)
+    .map(|a| {
+      let i = (a / k).min(nc - 2);
+      let tx = (a - i * k) as f64 * step;
+      (0..=(nr - 1) * k)
+        .map(|b| {
+          let j = (b / k).min(nr - 2);
+          let ty = (b - j * k) as f64 * step;
+          let (v00, v10) = (grid[i][j], grid[i + 1][j]);
+          let (v01, v11) = (grid[i][j + 1], grid[i + 1][j + 1]);
+          if tx >= ty {
+            v00 + tx * (v10 - v00) + ty * (v11 - v10)
+          } else {
+            v00 + ty * (v01 - v00) + tx * (v11 - v01)
+          }
+        })
+        .collect()
+    })
+    .collect()
+}
+
 pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -8186,8 +8354,26 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // As in `ContourPlot`, the levels are chosen over all the data and the
-  // colors over the part a `RegionFunction` keeps.
+  // Matrix data is interpolated linearly over a triangulation of its
+  // nodes rather than bilinearly over each cell.
+  let grid = if nearest || is_triples_data(rows) {
+    grid
+  } else {
+    triangulated_grid(&grid)
+  };
+
+  // As in `ContourPlot`, the automatic value range fences off outliers (a
+  // lone spike would otherwise push every level away from the bulk of the
+  // data), while `Contours -> n` spaces its levels over every value.
+  let (v_min, v_max) = match opts.contours {
+    ContourSpec::Count(_) if opts.value_range.is_none() => (v_min, v_max),
+    _ => {
+      let values: Vec<f64> = grid.iter().flatten().copied().collect();
+      opts.sampled_range(&values)
+    }
+  };
+  // The levels are chosen over all the data and the colors over the part
+  // a `RegionFunction` keeps.
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
   let (grid, v_min, v_max) = match &opts.region_function {
     Some(region) if !nearest => {
@@ -8990,7 +9176,9 @@ fn array_plot_ast_inset(
     }
   }
 
-  if matrix.is_empty() {
+  // An `ImageSize` of zero width leaves the picture no extent, so nothing
+  // is drawn: `ImageSize -> 10 Length[row]` for a row that has run empty.
+  if matrix.is_empty() || image_size_is_zero_width(args, 1) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -9687,6 +9875,34 @@ fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
     }
     _ => false,
   })
+}
+
+/// Whether `args[start..]` holds an `ImageSize` whose width is an explicit
+/// zero (`ImageSize -> 0`, `{0}` or `{0, h}`): a picture with no extent.
+/// The first `ImageSize` is the one in effect, as for the size itself.
+fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
+  args
+    .iter()
+    .skip(start)
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| (**replacement).clone());
+        let width = match &value {
+          Expr::List(items) => items.first().cloned(),
+          other => Some(other.clone()),
+        };
+        Some(width.is_some_and(|w| {
+          !matches!(w, Expr::Identifier(_) | Expr::List(_))
+            && try_eval_to_f64(&w) == Some(0.0)
+        }))
+      }
+      _ => None,
+    })
+    .unwrap_or(false)
 }
 
 /// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`
@@ -10966,6 +11182,104 @@ mod robust_range_tests {
       (0.0, 1.0),
     );
     assert_eq!((same, r), (coarse, 1));
+  }
+}
+
+#[cfg(test)]
+mod contour_saddle_tests {
+  use super::{
+    contour_band_regions, marching_squares_segments, triangulated_grid,
+  };
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A single cell `grid[col][row]` with `diag` on the corners of its
+  /// low-to-high diagonal and `anti` on the other two.
+  fn saddle(diag: f64, anti: f64) -> Vec<Vec<f64>> {
+    vec![vec![diag, anti], vec![anti, diag]]
+  }
+
+  // The bands of a saddle cell tile it: with the cell clipped as one
+  // quadrilateral the two bands overlapped across its center.
+  #[test]
+  fn saddle_bands_tile_the_cell() {
+    for (diag, anti) in [(1.0, 0.0), (0.0, 1.0), (3.0, -2.0)] {
+      let grid = saddle(diag, anti);
+      let level = f64::midpoint(diag, anti);
+      let regions =
+        contour_band_regions(&grid, &[level], (diag.min(anti), diag.max(anti)));
+      let total: f64 = regions.iter().map(|r| area(&r.points)).sum();
+      assert!((total - 1.0).abs() < 1e-9, "got area {total}");
+      // Each off-diagonal corner is cut off as a triangle with legs 1/2,
+      // so their band covers a quarter of the cell.
+      let anti_band = usize::from(anti > diag);
+      let cut: f64 = regions
+        .iter()
+        .filter(|r| r.band == anti_band)
+        .map(|r| area(&r.points))
+        .sum();
+      assert!((cut - 0.25).abs() < 1e-9, "got area {cut}");
+    }
+  }
+
+  // The contour lines of a saddle cell cut off the same two corners as
+  // its bands, whichever diagonal is the high one.
+  #[test]
+  fn saddle_lines_cut_off_the_off_diagonal_corners() {
+    for (diag, anti) in [(1.0, 0.0), (0.0, 1.0)] {
+      let grid = saddle(diag, anti);
+      let mut segments =
+        marching_squares_segments(&grid, 0.5, 0.0, 0.0, 1.0, 1.0);
+      for (a, b) in &mut segments {
+        if a > b {
+          std::mem::swap(a, b);
+        }
+      }
+      segments.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      // Screen coordinates: row 0 is at the bottom (y = 1).
+      assert_eq!(
+        segments,
+        vec![((0.0, 0.5), (0.5, 0.0)), ((0.5, 1.0), (1.0, 0.5))]
+      );
+    }
+  }
+
+  #[test]
+  fn triangulated_grid_is_linear_on_each_triangle() {
+    // Columns of rows: v00 = 0, v01 = 4, v10 = 8, v11 = 0.
+    let grid = vec![vec![0.0, 4.0], vec![8.0, 0.0]];
+    let fine = triangulated_grid(&grid);
+    let k = fine.len() - 1;
+    assert!(k > 1 && fine[0].len() == k + 1);
+    // The nodes are kept.
+    assert_eq!(
+      (fine[0][0], fine[0][k], fine[k][0], fine[k][k]),
+      (0.0, 4.0, 8.0, 0.0)
+    );
+    // The diagonal joins the two zero corners, so it is zero throughout
+    // (a bilinear interpolant would rise to 3 at the center).
+    for (a, column) in fine.iter().enumerate() {
+      assert_eq!(column[a], 0.0);
+    }
+    // Off the diagonal each triangle is linear up to its own corner.
+    let step = 1.0 / k as f64;
+    assert!((fine[k][1] - 8.0 * (1.0 - step)).abs() < 1e-12);
+    assert!((fine[1][k] - 4.0 * (1.0 - step)).abs() < 1e-12);
+    // A grid already at the full resolution is returned as it is.
+    let large = vec![vec![1.0; 3]; 401];
+    assert_eq!(triangulated_grid(&large), large);
   }
 }
 

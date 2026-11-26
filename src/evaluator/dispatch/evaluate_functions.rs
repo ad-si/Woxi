@@ -1268,6 +1268,46 @@ fn numeric_array_list_operation(
   Some(Ok(result))
 }
 
+/// The rules defined for `name`, as a copy the caller can keep while
+/// evaluating (which may redefine them). Every call of a user-defined
+/// function asks for them, so the copy is made once per change to the
+/// definitions and shared until the next one: copying the bodies of all of a
+/// function's rules on each of its calls was a large part of what a small
+/// recursive function cost.
+fn user_overloads(
+  name: &str,
+) -> Option<std::rc::Rc<Vec<crate::evaluator::symbol_values::FuncDef>>> {
+  type Snapshot = (
+    u64,
+    std::rc::Rc<Vec<crate::evaluator::symbol_values::FuncDef>>,
+  );
+  thread_local! {
+    static SNAPSHOTS: std::cell::RefCell<rustc_hash::FxHashMap<String, Snapshot>> =
+      std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+  }
+  // Every change to `FUNC_DEFS` advances this epoch (see `crate::epoch`).
+  let epoch = crate::epoch::current_protected_epoch();
+  if let Some(defs) = SNAPSHOTS.with(|s| {
+    s.borrow()
+      .get(name)
+      .filter(|(at, _)| *at == epoch)
+      .map(|(_, defs)| defs.clone())
+  }) {
+    return Some(defs);
+  }
+  let Some(defs) = crate::FUNC_DEFS.with(|m| m.borrow().get(name).cloned())
+  else {
+    SNAPSHOTS.with(|s| s.borrow_mut().remove(name));
+    return None;
+  };
+  let defs = std::rc::Rc::new(defs);
+  SNAPSHOTS.with(|s| {
+    s.borrow_mut()
+      .insert(name.to_string(), (epoch, defs.clone()))
+  });
+  Some(defs)
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -2143,9 +2183,9 @@ fn evaluate_function_call_ast_inner(
     crate::func_attrs_contains(name, Attributes::HoldAllComplete)
       || get_builtin_attributes(name).contains(Attributes::HoldAllComplete);
   // A head can carry thousands of literal rules (the `Subscript[a, b] = …`
-  // definitions a notebook saved with its Manipulate). Copying them all on
-  // every call made each further definition and each use quadratic, so the
-  // literal rules these arguments cannot match are left out of the copy.
+  // definitions a notebook saved with its Manipulate). Matching against them
+  // all on every call made each further definition and each use quadratic,
+  // so the literal rules these arguments cannot match are left out.
   // An Orderless head matches its arguments in any order and an
   // `Unevaluated` wrapper is seen through, so those calls keep every rule.
   let skip_mismatched_literals = !has_orderless
@@ -2155,38 +2195,39 @@ fn evaluate_function_call_ast_inner(
         if name == "Unevaluated" && ua.len() == 1)
     });
   let mut kept_overloads: Option<Vec<usize>> = None;
-  let overloads = crate::FUNC_DEFS.with(|m| {
-    let defs = m.borrow();
-    let raw = match defs.get(name) {
-      Some(all) if skip_mismatched_literals => {
-        let kept: Vec<usize> = (0..all.len())
-          .filter(|&i| {
-            let (params, conditions, _, _, blank_types, _) = &all[i];
-            !(params.len() == args.len()
-              && blank_types.iter().all(|&bt| bt < 2)
-              && literal_slot_mismatch(conditions, args))
-          })
-          .collect();
-        if kept.len() == all.len() {
-          Some(all.clone())
-        } else {
-          let copy = kept.iter().map(|&i| all[i].clone()).collect();
-          kept_overloads = Some(kept);
-          Some(copy)
-        }
+  let overloads = user_overloads(name).map(|defs| {
+    let defs = if skip_mismatched_literals {
+      let kept: Vec<usize> = (0..defs.len())
+        .filter(|&i| {
+          let (params, conditions, _, _, blank_types, _) = &defs[i];
+          !(params.len() == args.len()
+            && blank_types.iter().all(|&bt| bt < 2)
+            && literal_slot_mismatch(conditions, args))
+        })
+        .collect();
+      if kept.len() == defs.len() {
+        defs
+      } else {
+        let copy =
+          std::rc::Rc::new(kept.iter().map(|&i| defs[i].clone()).collect());
+        kept_overloads = Some(kept);
+        copy
       }
-      other => other.cloned(),
+    } else {
+      defs
     };
     if head_has_hold_all_complete {
-      raw.map(|v| {
-        v.into_iter()
+      std::rc::Rc::new(
+        defs
+          .iter()
           .filter(|(params, _, _, _, _, _)| {
             !params.iter().any(|p| p.starts_with("_up"))
           })
-          .collect::<Vec<_>>()
-      })
+          .cloned()
+          .collect::<Vec<_>>(),
+      )
     } else {
-      raw
+      defs
     }
   });
   // The inline options are stored per rule, in the order of the rules.
@@ -5711,6 +5752,15 @@ fn evaluate_function_call_ast_inner(
           .iter()
           .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
           .filter(|a| !(layered && is_layer_size(a)))
+          // `GraphPlot` reads its legacy `VertexRenderingFunction` only
+          // from an immediate rule: given as `VertexRenderingFunction :>
+          // f` the setting is dropped, so the default vertices (and any
+          // `VertexLabeling` labels) are drawn.
+          .filter(|a| {
+            !(name == "GraphPlot"
+              && matches!(a, Expr::RuleDelayed { pattern, .. }
+                if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexRenderingFunction")))
+          })
           .cloned(),
       );
       // `GraphPlot[g, Method -> "CircularEmbedding"]` names the embedding

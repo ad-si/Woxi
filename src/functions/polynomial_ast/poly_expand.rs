@@ -19,11 +19,14 @@
 use super::mfactor::{Mono, Poly, Q, q_to_expr};
 use super::*;
 use crate::functions::list_helpers_ast::wolfram_string_order;
-use crate::functions::math_ast::canonical_polynomial::is_plain_symbol;
+use crate::functions::math_ast::canonical_polynomial::{
+  is_plain_symbol, plain_factor_orders, plain_product_in_order,
+};
 use crate::helpers::plus;
 use num_bigint::BigInt;
 use num_traits::{One, Signed};
-use std::collections::{BTreeSet, HashMap};
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 /// Expand and combine `expr` when it is a polynomial with rational
@@ -55,7 +58,9 @@ pub(super) fn expand_polynomial(expr: &Expr) -> Option<Expr> {
 /// The generic expander combines like terms by their printed form after
 /// every multiplication, so expanding a product of sums of such calls (the
 /// Dirac trace recursion of issue #1772) spent most of its time printing.
-pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
+pub(super) fn expand_polynomial_with_kernels<'e>(
+  expr: &'e Expr,
+) -> Option<Expr> {
   #[cfg(test)]
   if tests::GENERIC_ONLY.get() {
     return None;
@@ -69,33 +74,56 @@ pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
     return None;
   }
   let symbols: Vec<String> = names.into_iter().collect();
-  let lookup = |e: &Expr| match e {
-    Expr::FunctionCall { .. } => kernels.index(e).map(|i| symbols.len() + i),
+  let nk = kernels.list.len();
+  let nv = symbols.len() + nk;
+  // Kernels alone, all plain calls: number them from the last one `Plus`
+  // compares its terms by to the first, so that the polynomial's own term
+  // order (the first variable most significant) is the order of the sum.
+  let orders = if symbols.is_empty() {
+    plain_factor_orders(&kernels.list).filter(|o| o.plus_rank.is_some())
+  } else {
+    None
+  };
+  let var_of: Vec<usize> =
+    match orders.as_ref().and_then(|o| o.plus_rank.as_ref()) {
+      Some(rank) => rank.iter().map(|r| nk - 1 - r).collect(),
+      None => (symbols.len()..nv).collect(),
+    };
+  let lookup = |e: &'e Expr| match e {
+    Expr::FunctionCall { .. } => kernels.index(e).map(|i| var_of[i]),
     _ => symbol_index(e, &symbols),
   };
-  let p = to_poly(expr, symbols.len() + kernels.list.len(), &lookup)?;
+  let p = to_poly(expr, nv, &lookup)?;
   let eval = crate::evaluator::evaluate_expr_to_expr;
   let call = crate::evaluator::evaluate_function_call_ast;
-  let gens: Vec<Expr> = symbols
-    .into_iter()
-    .map(Expr::Identifier)
-    .chain(kernels.list)
-    .map(|g| {
-      let mut g = eval(&g).ok()?;
-      // A kernel can occur in thousands of monomials. Share its arguments
-      // even when the call is small: cloning g[a, b] must not copy a and b
-      // (and their subtrees) for every occurrence. Mutation still detaches
-      // through ExprList's copy-on-write storage, and evaluation keeps its
-      // normal epoch checks.
-      if p.t.len() > 1
-        && let Expr::FunctionCall { args, .. } = &mut g
-        && !args.is_empty()
-      {
-        args.share();
-      }
-      Some(g)
-    })
-    .collect::<Option<_>>()?;
+  let mut gens: Vec<Expr> = symbols.into_iter().map(Expr::Identifier).collect();
+  gens.resize(nv, Expr::Integer(0));
+  let mut unchanged = true;
+  for (i, kernel) in kernels.list.iter().enumerate() {
+    let mut g = eval(kernel).ok()?;
+    unchanged &= crate::evaluator::pattern_matching::expr_equal(&g, kernel);
+    // A kernel can occur in thousands of monomials. Share its arguments
+    // even when the call is small: cloning g[a, b] must not copy a and b
+    // (and their subtrees) for every occurrence. Mutation still detaches
+    // through ExprList's copy-on-write storage, and evaluation keeps its
+    // normal epoch checks.
+    if p.t.len() > 1
+      && let Expr::FunctionCall { args, .. } = &mut g
+      && !args.is_empty()
+    {
+      args.share();
+    }
+    gens[var_of[i]] = g;
+  }
+  for g in &mut gens[..nv - nk] {
+    *g = eval(g).ok()?;
+  }
+  if unchanged
+    && let Some(orders) = &orders
+    && let Some(sum) = plain_kernel_sum(&p, &gens, &orders.times, &var_of)
+  {
+    return Some(sum);
+  }
   let mut terms: Vec<Expr> = Vec::with_capacity(p.t.len());
   for (m, c) in &p.t {
     let mut factors: Vec<Expr> = Vec::new();
@@ -123,6 +151,46 @@ pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
   }
 }
 
+/// The sum `p` stands for when its generators `gens` are distinct plain
+/// calls that evaluate to themselves and no term has one of them twice: every
+/// product is then the coefficient times its calls in the order `Times`
+/// gives them (`times_order`, as kernel numbers, with `var_of` their
+/// variables), and the terms of `p`, numbered as they are, come in the order
+/// `Plus` gives them. So the sum is built as it is, where evaluating each
+/// product and the sum sorted the same few calls over and over. `None` when
+/// a rule a user attached to `Times` or `Plus` has to see them, or when a
+/// term is not such a product.
+fn plain_kernel_sum(
+  p: &Poly,
+  gens: &[Expr],
+  times_order: &[usize],
+  var_of: &[usize],
+) -> Option<Expr> {
+  use crate::evaluator::head_has_user_rules;
+  if p.t.is_empty()
+    || p.t.keys().any(|m| m.iter().any(|&e| e > 1))
+    || head_has_user_rules("Times")
+    || (p.t.len() > 1 && head_has_user_rules("Plus"))
+  {
+    return None;
+  }
+  let vars: Vec<usize> = times_order.iter().map(|&k| var_of[k]).collect();
+  let mut terms: Vec<Expr> = Vec::with_capacity(p.t.len());
+  for (m, c) in &p.t {
+    let factors: Vec<Expr> = vars
+      .iter()
+      .filter(|&&v| m[v] == 1)
+      .map(|&v| gens[v].clone())
+      .collect();
+    terms.push(plain_product_in_order(&q_to_expr(c), factors)?);
+  }
+  Some(if terms.len() == 1 {
+    terms.pop().unwrap()
+  } else {
+    plus(terms)
+  })
+}
+
 /// The index of the plain symbol `e` among `names`.
 fn symbol_index(e: &Expr, names: &[String]) -> Option<usize> {
   match e {
@@ -138,31 +206,71 @@ fn is_kernel(e: &Expr) -> bool {
 
 /// The distinct opaque calls of a polynomial, in order of appearance.
 #[derive(Default)]
-struct Kernels {
+struct Kernels<'a> {
   list: Vec<Expr>,
-  by_hash: HashMap<u64, Vec<usize>>,
+  by_hash: rustc_hash::FxHashMap<u64, Vec<usize>>,
+  /// The kernels already looked up, by where their arguments are stored. A
+  /// kernel that occurs in thousands of terms usually is the same shared
+  /// call in each of them (see `expand_polynomial_with_kernels`), which is
+  /// then found without hashing and comparing its whole tree again. The
+  /// expressions are borrowed for as long as the table lives, so equal
+  /// addresses (and heads) mean the same call.
+  by_address:
+    RefCell<rustc_hash::FxHashMap<(*const Expr, usize), Vec<(&'a str, usize)>>>,
 }
 
-impl Kernels {
-  fn index(&self, e: &Expr) -> Option<usize> {
-    self
+impl<'a> Kernels<'a> {
+  /// Where the arguments of the call `e` are stored, with its head; `None`
+  /// for a call without arguments, which stores none.
+  fn address(e: &'a Expr) -> Option<((*const Expr, usize), &'a str)> {
+    match e {
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        Some(((args.as_ptr(), args.len()), name.as_str()))
+      }
+      _ => None,
+    }
+  }
+
+  fn index(&self, e: &'a Expr) -> Option<usize> {
+    let address = Self::address(e);
+    if let Some((key, head)) = address
+      && let Some(known) = self.by_address.borrow().get(&key)
+      && let Some(&(_, i)) = known.iter().find(|(h, _)| *h == head)
+    {
+      return Some(i);
+    }
+    let found = self
       .by_hash
       .get(&structural_hash(e))?
       .iter()
       .copied()
       .find(|&i| {
         crate::evaluator::pattern_matching::expr_equal(&self.list[i], e)
-      })
+      })?;
+    if let Some((key, head)) = address {
+      self
+        .by_address
+        .borrow_mut()
+        .entry(key)
+        .or_default()
+        .push((head, found));
+    }
+    Some(found)
   }
 
-  fn insert(&mut self, e: &Expr) {
+  fn insert(&mut self, e: &'a Expr) {
     if self.index(e).is_none() {
-      self
-        .by_hash
-        .entry(structural_hash(e))
-        .or_default()
-        .push(self.list.len());
+      let i = self.list.len();
+      self.by_hash.entry(structural_hash(e)).or_default().push(i);
       self.list.push(e.clone());
+      if let Some((key, head)) = Self::address(e) {
+        self
+          .by_address
+          .borrow_mut()
+          .entry(key)
+          .or_default()
+          .push((head, i));
+      }
     }
   }
 }
@@ -170,7 +278,7 @@ impl Kernels {
 /// A hash consistent with `expr_equal`: structurally equal expressions hash
 /// alike.
 fn structural_hash(e: &Expr) -> u64 {
-  fn go(e: &Expr, h: &mut std::collections::hash_map::DefaultHasher) {
+  fn go(e: &Expr, h: &mut rustc_hash::FxHasher) {
     match e {
       Expr::Integer(n) => (0u8, n).hash(h),
       Expr::Identifier(s) => (1u8, s).hash(h),
@@ -191,7 +299,7 @@ fn structural_hash(e: &Expr) -> u64 {
       _ => 5u8.hash(h),
     }
   }
-  let mut h = std::collections::hash_map::DefaultHasher::new();
+  let mut h = rustc_hash::FxHasher::default();
   go(e, &mut h);
   h.finish()
 }
@@ -215,12 +323,13 @@ pub(super) fn polynomial_in_symbols(
 
 /// Check that `expr` is a polynomial the fast path handles, collecting the
 /// names of its symbols and, when `kernels` is given, its opaque calls.
-fn collect_generators(
-  expr: &Expr,
+fn collect_generators<'a>(
+  expr: &'a Expr,
   names: &mut BTreeSet<String>,
-  mut kernels: Option<&mut Kernels>,
+  mut kernels: Option<&mut Kernels<'a>>,
 ) -> bool {
-  let mut go = |e: &Expr| collect_generators(e, names, kernels.as_deref_mut());
+  let mut go =
+    |e: &'a Expr| collect_generators(e, names, kernels.as_deref_mut());
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => true,
     Expr::Identifier(name) => {
@@ -289,13 +398,18 @@ fn rational_literal(e: &Expr) -> Option<Q> {
 }
 
 /// The index of a generator, None for any other expression.
-type GenLookup<'a> = dyn Fn(&Expr) -> Option<usize> + 'a;
+type GenLookup<'a, 'e> = dyn Fn(&'e Expr) -> Option<usize> + 'a;
 
 /// A single term `c * x^i * y^j * …` straight to its exponent vector, without
 /// building and multiplying one-term polynomials. False when `expr` is not a
 /// product of rational numbers and powers of the generators.
-fn monomial(expr: &Expr, gens: &GenLookup, m: &mut Mono, c: &mut Q) -> bool {
-  let mut symbol_power = |base: &Expr, k: u32| match gens(base) {
+fn monomial<'e>(
+  expr: &'e Expr,
+  gens: &GenLookup<'_, 'e>,
+  m: &mut Mono,
+  c: &mut Q,
+) -> bool {
+  let mut symbol_power = |base: &'e Expr, k: u32| match gens(base) {
     Some(i) => {
       m[i] += k;
       true
@@ -337,7 +451,11 @@ fn monomial(expr: &Expr, gens: &GenLookup, m: &mut Mono, c: &mut Q) -> bool {
   }
 }
 
-fn to_poly(expr: &Expr, nv: usize, gens: &GenLookup) -> Option<Poly> {
+fn to_poly<'e>(
+  expr: &'e Expr,
+  nv: usize,
+  gens: &GenLookup<'_, 'e>,
+) -> Option<Poly> {
   let mut m: Mono = vec![0; nv];
   let mut c = Q::one();
   if monomial(expr, gens, &mut m, &mut c) {
@@ -345,22 +463,41 @@ fn to_poly(expr: &Expr, nv: usize, gens: &GenLookup) -> Option<Poly> {
     p.add_term(m, c);
     return Some(p);
   }
-  let sum = |items: &mut dyn Iterator<Item = &Expr>| -> Option<Poly> {
-    let mut acc = Poly::zero(nv);
+  let sum = |items: &mut dyn Iterator<Item = &'e Expr>| -> Option<Poly> {
+    // The terms of an expanded sum usually arrive in the order the
+    // polynomial keeps them in: as long as they do, they are collected and
+    // the map is built from them in one go, where inserting them one by
+    // one searches the growing map for each.
+    let mut ascending: Vec<(Mono, Q)> = Vec::new();
+    let mut acc: Option<Poly> = None;
+    let collected = |run: &mut Vec<(Mono, Q)>| Poly {
+      nv,
+      t: std::mem::take(run).into_iter().collect(),
+    };
     for item in items {
       let mut m: Mono = vec![0; nv];
       let mut c = Q::one();
       if monomial(item, gens, &mut m, &mut c) {
-        acc.add_term(m, c);
+        match &mut acc {
+          Some(acc) => acc.add_term(m, c),
+          None
+            if !c.is_zero()
+              && ascending.last().is_none_or(|(last, _)| *last < m) =>
+          {
+            ascending.push((m, c));
+          }
+          None => acc.insert(collected(&mut ascending)).add_term(m, c),
+        }
         continue;
       }
+      let acc = acc.get_or_insert_with(|| collected(&mut ascending));
       for (m, c) in to_poly(item, nv, gens)?.t {
         acc.add_term(m, c);
       }
     }
-    Some(acc)
+    Some(acc.unwrap_or_else(|| collected(&mut ascending)))
   };
-  let product = |items: &mut dyn Iterator<Item = &Expr>| -> Option<Poly> {
+  let product = |items: &mut dyn Iterator<Item = &'e Expr>| -> Option<Poly> {
     let mut acc = Poly::one(nv);
     for item in items {
       acc = acc.mul(&to_poly(item, nv, gens)?);
@@ -691,6 +828,85 @@ mod tests {
       );
     }
     assert!(expanded > 400);
+  }
+
+  /// Products of sums of calls alone, where no term has a call twice: the
+  /// sum is then assembled in order as it is (see `plain_kernel_sum`), and
+  /// has to be the sum the generic expander and one evaluation pass give.
+  #[test]
+  fn sums_of_call_products_match_the_generic_expander() {
+    const CALLS: [&str; 11] = [
+      "g[x[1], x[2]]",
+      "g[x[2], x[1]]",
+      "g[x[1], x[10]]",
+      "g[a]",
+      "f[a, b]",
+      "h[]",
+      "F[a]",
+      "g[b]",
+      "x[3]",
+      "f[x + 1]",
+      "g[2 a]",
+    ];
+    const COEFFS: [&str; 6] = ["", "-", "2 ", "-3 ", "1/2 ", "2^70 "];
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    for _ in 0..400 {
+      // Each sum draws from its own calls, so the product is multilinear;
+      // one in four draws from all of them, which is not.
+      let overlap = rng.next(4) == 0;
+      let mut pool: Vec<&str> = CALLS.to_vec();
+      let mut sums = Vec::new();
+      for _ in 0..=rng.next(3) {
+        let mut terms = Vec::new();
+        for _ in 0..=rng.next(3) {
+          if pool.is_empty() {
+            break;
+          }
+          let i = rng.next(pool.len() as u64) as usize;
+          let call = if overlap {
+            pool[i]
+          } else {
+            pool.swap_remove(i)
+          };
+          let coeff = COEFFS[rng.next(COEFFS.len() as u64) as usize];
+          terms.push(format!("{coeff}{call}"));
+        }
+        if !terms.is_empty() {
+          sums.push(format!("({})", terms.join(" + ")));
+        }
+      }
+      let source = sums.join(" ");
+      let expr = eval(&source);
+      let Some(fast) = expand_polynomial_with_kernels(&expr) else {
+        continue;
+      };
+      let generic = crate::evaluator::evaluate_expr_to_expr(&generic(&expr));
+      assert_eq!(
+        crate::syntax::expr_to_string(&fast),
+        crate::syntax::expr_to_string(&generic.unwrap()),
+        "Expand[{source}]"
+      );
+    }
+  }
+
+  /// Calls that evaluate to another call, to a number or to the same call
+  /// are multiplied out as what they evaluate to, through `Times` and
+  /// `Plus`.
+  #[test]
+  fn kernels_that_evaluate_to_something_else() {
+    crate::interpret("pk[3] = pk[1]; pk[4] = 5; pk[6] := pk[5];").unwrap();
+    for (source, expanded) in [
+      (
+        "(pk[1] + pk[2]) (pk[3] + pk[4])",
+        "5*pk[1] + pk[1]^2 + 5*pk[2] + pk[1]*pk[2]",
+      ),
+      ("(pk[5] + pk[2]) (pk[6] - pk[2])", "-pk[2]^2 + pk[5]^2"),
+      ("pk[2] (pk[5] + pk[6])", "2*pk[2]*pk[5]"),
+    ] {
+      let unevaluated = crate::parse_to_expr(source).unwrap();
+      let fast = expand_polynomial_with_kernels(&unevaluated).unwrap();
+      assert_eq!(crate::syntax::expr_to_string(&fast), expanded, "{source}");
+    }
   }
 
   #[test]

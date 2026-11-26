@@ -2,6 +2,72 @@
 
 # Unreleased
 
+- Expanding and summing large expressions in undefined functions
+    (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
+    `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
+    built and ordered once from the ranks of their few distinct calls
+    instead of being sorted, compared and copied term by term, and
+    `f[k] = value` stores a long value as evaluated like `x = value` does.
+    Calls of a user-defined function no longer copy all of its rules, and a
+    `Sum` or `Block` over a symbol without definitions no longer makes every
+    large stored value evaluate anew.
+- `ListContourPlot` keeps a lone spike in the data from stretching its
+    automatic contour levels (the outlier fence `ContourPlot` already
+    applied), and interpolates an array linearly over a triangulation of
+    its nodes instead of bilinearly over each cell.
+- Contour plots split a saddle cell along the same diagonal for the
+    shaded bands and the contour lines, which could previously join
+    opposite pairs of corners and run lines through a band.
+- Woxi Studio deals a `Manipulate`'s `ControlPlacement -> {pos1, pos2, …}`
+    out over the whole control panel: captions take a turn like controls,
+    a `Delimiter` stays with the item before it, and the list starts over
+    when it runs out, so `{Left, Right}` puts two sets of controls in a
+    column on either side of the output. Only the first named controls
+    were placed and the rest landed above the output.
+- A negative `Spacings` of a `GraphicsRow`, `GraphicsColumn` or
+    `GraphicsGrid` overlaps the cells at an even pitch instead of butting
+    them together, and `ImageSize -> {w, h}` is the exact size of a
+    `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
+- `ContourPlot` draws every curve of a list that mixes equations with
+    plain expressions (`{f == c, {g, h}}`, each expression as its zero
+    contour) and of an entry that only evaluates to a list (a `Which`
+    choosing between curve lists); such a list drew at most the
+    expressions and often nothing.
+- An equation `ContourPlot` keeps the margin between its domain and its
+    frame under `Show` (`PlotRangePadding` and the domain as `PlotRange`
+    are options of the result), so a curve along the domain's edge is no
+    longer hidden under the frame once something is added to the plot.
+- A `Manipulate` point `Locator` whose corner names other controls
+    (`{{p, …}, {0, 0}, {w, h}, Locator}`) follows them in Woxi Studio:
+    the point stays draggable over the whole box after `w` or `h` grows.
+- `PolyhedronData["Dodecahedron", "NetFaces"]` is the familiar net of two
+    six-pentagon rosettes joined along one edge and
+    `PolyhedronData["RhombicDodecahedron", "NetFaces"]` a zigzag strip of
+    twelve rhombi, both with exact coordinates, instead of a breadth-first
+    unfolding; `"NetFaces"` of a solid with a predefined net now agrees
+    with its `"NetCoordinates"` and `"NetFaceIndices"`.
+- `ContourPlot3D`, `RegionPlot3D` and `ListContourPlot3D` draw the empty
+    box with its axes and labels when no point of the range is on the
+    surface (or in the region), as wolframscript does, instead of failing;
+    a `Manipulate` over such a plot went blank at those control values.
+- A `Text[…]` item of a `Grid` starts at script level 0 again: a fraction
+    in it keeps the text size and a `∑`/`∏` in it stacks its limits under
+    and over the sign, instead of being set one level deep like the
+    grid's other items.
+- 2D text output parenthesizes a power base that prints with an operator
+    of its own (`(a b)^c`, `(a/b)^c`, `(a^b)^c`, `(a!)^2`), and sets the
+    exponent of a tall base on the row above its baseline
+    (`(1 + 1/x)^2`). The one-line text of a `Row`/`Column` item does the
+    same, parenthesizes a product denominator and writes a held `Product`
+    with `∏`.
+- `ContourPlot`, `ListContourPlot` and the density / volume plots read
+    `Contours -> {Automatic, n}` as at most `n` automatically chosen round
+    levels; it was taken for a list of explicit levels, leaving the lone
+    level `n`.
+- A `Graphics3D` `PlotRange` with an interval of no extent on one axis
+    (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
+    keeps the explicit intervals of the others; the whole range was
+    dropped, so the scene filled its frame.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
@@ -232,6 +298,12 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Woxi Studio & Wolfram Demonstrations
 
+- A `Manipulate` choice label that sets a matrix among its words
+    (`Row[{"mapped by ", Dynamic@MatrixForm[m]}]`) is typeset as a picture,
+    and a `Dynamic` inside a choice label follows the values the body assigns.
+- `Show[…, ImageSize -> {w, h}, AspectRatio -> Full]` stretches the drawing
+    over the whole picture, and a flat automatic plot range opens up before an
+    explicit `PlotRangePadding` pads it.
 - `Manipulate` supports color controls with an initial color but no range
     or choice list. Scalar and `Slider2D` bounds can depend on other controls,
     including through `Dynamic` wrappers.

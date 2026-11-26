@@ -3744,6 +3744,12 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::sparse_array_normalize_ast(args));
     }
     "Normal" if args.len() == 1 => {
+      // Normal[TemporalData[{p1, …}, tspec]] is the list of its paths.
+      if let Some(paths) =
+        crate::functions::timeseries_ast::temporal_data_normal(&args[0])
+      {
+        return Some(Ok(paths));
+      }
       // Normal[QuantityArray[…]] is the explicit array of Quantity elements.
       if let Some(list) =
         crate::functions::quantity_ast::quantity_array_to_list(&args[0])

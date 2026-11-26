@@ -635,6 +635,15 @@ fn arith_rules_may_apply(head: &str, args: &[Expr]) -> bool {
   })
 }
 
+/// Whether any user-defined rule — a DownValue, a memoized value, or an
+/// upvalue of whatever tag — is attached to `head`, so that a call of it has
+/// to go through the rule-aware function-call path.
+pub(crate) fn head_has_user_rules(head: &str) -> bool {
+  crate::FUNC_DEFS.with(|m| m.borrow().get(head).is_some_and(|v| !v.is_empty()))
+    || crate::MEMO_VALUES
+      .with(|m| m.borrow().get(head).is_some_and(|c| !c.is_empty()))
+}
+
 /// `-a`, `a - b` and `a / b` are shorthand for `Times[-1, a]`,
 /// `Plus[a, Times[-1, b]]` and `Times[a, Power[b, -1]]`. When any head such a
 /// shorthand expands to carries user-defined rules (typically upvalues
@@ -2122,7 +2131,9 @@ fn evaluate_expr_to_expr_uncached(
       // InterpolatingFunctionDomain[f]` is `InterpolatingFunctionDomain[f]`).
       if let Some(short) =
         name.strip_prefix("DifferentialEquations`InterpolatingFunctionAnatomy`")
-        && matches!(short, "InterpolatingFunctionDomain")
+        && crate::functions::ode_ast::INTERPOLATING_FUNCTION_ANATOMY
+          .iter()
+          .any(|(function, _)| *function == short)
       {
         return evaluate_expr_to_expr(&Expr::FunctionCall {
           name: short.to_string(),
