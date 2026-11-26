@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- A `Text[Style[Row[…], …]]` item whose strings hold line breaks flows
+    line by line in a `Column` given an alignment, `LineSpacing -> {c, n}`
+    sets the pitch of the lines of such a text and `TextAlignment` places
+    them, also inside a sized `Pane`.
+- `StyleForm` in tick labels, frame labels and other plot options is
+    typeset like `Style` instead of showing its own source.
+- An empty script slot in a string's box code
+    (`"\!\(\*SubscriptBox[\(S\), \(\)]\)"`) typesets as nothing in a
+    graphic's `Text` instead of `Null`.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
