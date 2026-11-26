@@ -3597,6 +3597,48 @@ fn field_plot_structure(
   call("Graphics", structure_args)
 }
 
+/// The colored cells (`colors[col][row]`, row 0 at the bottom) as a
+/// `Raster` spanning the given ranges (rows from the bottom up), so `Show`
+/// can re-render the plot with further options or lay other graphics over
+/// it. Cells without a color stay transparent. `smooth` shades linearly
+/// between the cells instead of drawing them as flat blocks.
+fn color_raster(
+  colors: &[Vec<Option<(u8, u8, u8)>>],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  smooth: bool,
+) -> Expr {
+  let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+  let n_rows = colors.first().map_or(0, Vec::len);
+  let rows: Vec<Expr> = (0..n_rows)
+    .map(|j| {
+      let row: Vec<Expr> = colors
+        .iter()
+        .map(|col| {
+          let ((r, g, b), alpha) = match col[j] {
+            Some(rgb) => (rgb, 1.0),
+            None => ((0, 0, 0), 0.0),
+          };
+          Expr::List(
+            vec![channel(r), channel(g), channel(b), Expr::Real(alpha)].into(),
+          )
+        })
+        .collect();
+      Expr::List(row.into())
+    })
+    .collect();
+  let corner =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut raster_args = vec![
+    Expr::List(rows.into()),
+    Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+  ];
+  if smooth {
+    raster_args.push(rule_expr(id_expr("Resampling"), str_expr("Linear")));
+  }
+  call("Raster", raster_args)
+}
+
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
@@ -3728,39 +3770,11 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // color stay transparent.
   // A body with no numeric values (an equation, say) leaves the plot blank:
   // no raster, but the empty frame still merges under `Show`.
-  let raster = colors.as_ref().map(|colors| {
-    let channel = |c: u8| Expr::Real(c as f64 / 255.0);
-    let rows: Vec<Expr> = (0..FIELD_GRID)
-      .map(|j| {
-        let row: Vec<Expr> = colors
-          .iter()
-          .map(|col| {
-            let ((r, g, b), alpha) = match col[j] {
-              Some(rgb) => (rgb, 1.0),
-              None => ((0, 0, 0), 0.0),
-            };
-            Expr::List(
-              vec![channel(r), channel(g), channel(b), Expr::Real(alpha)]
-                .into(),
-            )
-          })
-          .collect();
-        Expr::List(row.into())
-      })
-      .collect();
-    let corner =
-      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    call(
-      "Raster",
-      vec![
-        Expr::List(rows.into()),
-        Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
-        // The density shades smoothly between its samples, as the
-        // standalone plot draws it, rather than in blocks.
-        rule_expr(id_expr("Resampling"), str_expr("Linear")),
-      ],
-    )
-  });
+  // The density shades smoothly between its samples, as the standalone
+  // plot draws it, rather than in blocks.
+  let raster = colors
+    .as_ref()
+    .map(|colors| color_raster(colors, (x_min, x_max), (y_min, y_max), true));
   let mut structure_items: Vec<Expr> = raster.into_iter().collect();
   structure_items.extend(mesh_structure_items(
     &mesh_grids,
@@ -7484,10 +7498,11 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut opts = parse_density_contour_options(args, 1);
   // ReliefPlot's frame carries no ticks unless `FrameTicks` asks for them.
-  if !args[1..].iter().any(|o| {
+  let tickless = !args[1..].iter().any(|o| {
     crate::functions::graphics::option_name_value(o)
       .is_some_and(|(n, _)| n == "FrameTicks")
-  }) {
+  });
+  if tickless {
     opts.frame_ticks = crate::functions::plot::FrameEdgeTicks::none();
   }
   let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
@@ -7601,6 +7616,21 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // The shaded cells as a `Raster` over the data range, so `Show` can add
+  // options (`PlotLabel`, `ImagePadding`, …) or merge other graphics.
+  // The tick-less frame is an option of the result, so a re-render keeps it.
+  let mut structure_source = args.to_vec();
+  if tickless {
+    structure_source.push(rule_expr(id_expr("FrameTicks"), id_expr("None")));
+  }
+  let structure = field_plot_structure(
+    vec![color_raster(&colors, data_range.0, data_range.1, false)],
+    &structure_source,
+    data_range.0,
+    data_range.1,
+    true,
+    opts.range_padding,
+  );
   // Upscale by pixel repetition so a viewer's image smoothing cannot blur
   // the cell edges of a small matrix.
   let factor = 256usize.div_ceil(colors.len().min(colors[0].len()).max(1));
@@ -7629,7 +7659,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// Parse list data and return a grid of z-values with axis ranges.
