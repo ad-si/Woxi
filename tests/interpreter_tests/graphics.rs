@@ -42813,7 +42813,10 @@ mod grid_frame_and_background {
     assert!(!displayed.contains("StyleForm"), "{displayed}");
     assert!(!displayed.contains("FontSize"), "{displayed}");
     for entry in ["q", "1", "2", "3", "4"] {
-      assert!(displayed.contains(&format!(">{entry}</text>")), "{displayed}");
+      assert!(
+        displayed.contains(&format!(">{entry}</text>")),
+        "{displayed}"
+      );
     }
 
     let top = export_svg(
