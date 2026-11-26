@@ -78871,3 +78871,94 @@ mod rotate_label {
     );
   }
 }
+
+mod text_item_script_level {
+  use super::*;
+
+  const PRODUCT: &str =
+    "HoldForm[Product[(2 n)^2/((-1 + 2 n) (1 + 2 n)), {n, 1, 4}]]";
+
+  /// The y positions the box layout translates its parts to.
+  fn translate_ys(svg: &str) -> Vec<f64> {
+    svg
+      .split("translate(")
+      .skip(1)
+      .filter_map(|t| {
+        t.split(')').next()?.split(',').nth(1)?.trim().parse().ok()
+      })
+      .collect()
+  }
+
+  /// Regression: a `Text[…]` item of a `Grid` was set one script level deep
+  /// like the grid's other items, so its fraction shrank to 0.75 of the
+  /// text size. A `Text` starts at script level 0 again.
+  #[test]
+  fn fraction_in_a_text_item_keeps_the_text_size() {
+    let svg = export_svg(
+      "Style[Grid[{{Text[TraditionalForm[x/y]], \
+       Text[Style[Row[{p/q, \" = \", 3}], Bold]]}}], 20]",
+    );
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"20.0\""), "{svg}");
+    assert!(!svg.contains("font-size=\"15.0\""), "{svg}");
+    // An item that is not a `Text` still sits one level deep.
+    let svg = export_svg("Style[Grid[{{TraditionalForm[x/y]}}], 20]");
+    assert!(svg.contains("font-size=\"15.0\""), "{svg}");
+  }
+
+  /// Regression: the limits of a large operator in a `Text[…]` item were
+  /// set beside the sign, as scripts; at script level 0 they are stacked
+  /// under and over it, which makes the picture taller.
+  #[test]
+  fn large_operator_in_a_text_item_stacks_its_limits() {
+    let text = export_svg(&format!(
+      "Grid[{{{{Text[Style[Row[{{{PRODUCT}, \" = \", 1.5}}], 16]]}}}}]"
+    ));
+    let plain =
+      export_svg(&format!("Grid[{{{{Row[{{{PRODUCT}, \" = \", 1.5}}]}}}}]"));
+    // The fraction of the `Text` item is set at the full 16 pt.
+    assert!(text.contains("font-size=\"16.0\""), "{text}");
+    // Stacked limits put the lower limit below the sign, further down than
+    // anything in the one-line layout of the plain item reaches.
+    let lowest =
+      |svg: &str| translate_ys(svg).into_iter().fold(0.0_f64, f64::max);
+    assert!(lowest(&text) > lowest(&plain) + 5.0, "{text}\n{plain}");
+  }
+}
+
+mod markup_power_and_quotient_parens {
+  use super::*;
+
+  /// Regression: the one-line text of a `Column` item dropped the
+  /// parentheses of a power's product base and of a product denominator.
+  #[test]
+  fn operator_bases_and_product_denominators_are_parenthesized() {
+    let svg = export_svg("Column[{(a b)^c}]");
+    assert!(
+      svg.contains(">(a b)<tspan baseline-shift=\"super\""),
+      "{svg}"
+    );
+    let svg = export_svg("Column[{(a^b)^c}]");
+    assert!(svg.contains(">(a<tspan"), "{svg}");
+    let svg = export_svg("Column[{x^2, f[x]^2}]");
+    assert!(svg.contains(">x<tspan baseline-shift=\"super\""), "{svg}");
+    assert!(
+      svg.contains(">f[x]<tspan baseline-shift=\"super\""),
+      "{svg}"
+    );
+  }
+
+  /// A held `Product` is written with `∏` and its limits, like `Sum` with
+  /// `∑`, and its quotient operand keeps its grouping.
+  #[test]
+  fn held_product_in_a_column_is_written_with_its_sign() {
+    let svg = export_svg(
+      "Column[{HoldForm[Product[(2 n)^2/((1 + n) (2 + n)), {n, 1, 4}]]}]",
+    );
+    assert!(svg.contains('\u{220F}'), "{svg}");
+    assert!(!svg.contains("Product["), "{svg}");
+    assert!(svg.contains("/((1 + n)"), "{svg}");
+    let svg = export_svg("Column[{HoldForm[Sum[a + b, {n, 1, 4}]]}]");
+    assert!(svg.contains("(a + b)"), "{svg}");
+  }
+}

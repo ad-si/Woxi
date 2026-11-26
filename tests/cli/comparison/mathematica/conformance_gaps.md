@@ -10154,6 +10154,16 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
   wolframscript); the same sum at a `Grid` cell or `Row` item level is not
   covered.
+- A `Text[…]` item of a `Grid` is set at script level 0 (full-size
+  fraction, stacked `∑`/`∏` limits), as the front end draws it. A `Text[…]`
+  shown on its own is still set one script level down (fraction at 0.75),
+  which is inconsistent with that; which of the two a bare `Text[a/b]`
+  follows in the front end is not verified.
+- A held `Sum`/`Product`/`Integrate` in StandardForm (`ToBoxes[HoldForm[
+  Product[f[n], {n, 1, 4}]]]`, a notebook output, a bare `Column` item) is
+  typeset as the call `Product[…]`; wolframscript makes the `∏` boxes
+  (`UnderoverscriptBox`). Only the TraditionalForm path and the one-line
+  item text write the sign.
 - A TraditionalForm expression drawn in a graphic's text (a polynomial
   `PlotLabel` such as `x^3 - 2 x^2 - 3 x`) has no space around its infix
   operators: Woxi draws `x³-2x²-3x`, Wolfram's front end `x³ − 2x² − 3x`.

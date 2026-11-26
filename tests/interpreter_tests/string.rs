@@ -16682,3 +16682,57 @@ fn to_string_row_sets_multiline_parts_on_the_baseline() {
     "   2 1\na x  -\n     2"
   );
 }
+
+mod output_form_power_base_parens {
+  use super::*;
+
+  /// Regression: a power whose base prints with an operator of its own lost
+  /// the parentheses around it in 2D output (`(a b)^c` read as `a b^c`).
+  #[test]
+  fn operator_bases_are_parenthesized() {
+    assert_eq!(interpret("ToString[(a b)^c]").unwrap(), "     c\n(a b)");
+    assert_eq!(
+      interpret("ToString[HoldForm[(2 n)^2]]").unwrap(),
+      "     2\n(2 n)"
+    );
+    assert_eq!(
+      interpret("ToString[HoldForm[(a!)^2]]").unwrap(),
+      "    2\n(a!)"
+    );
+    assert_eq!(
+      interpret("ToString[HoldForm[(a && b)^2]]").unwrap(),
+      "        2\n(a && b)"
+    );
+    assert_eq!(
+      interpret("ToString[1 + (a b)^c]").unwrap(),
+      "         c\n1 + (a b)"
+    );
+  }
+
+  /// A self-delimiting base keeps its bare form.
+  #[test]
+  fn self_delimiting_bases_stay_bare() {
+    assert_eq!(interpret("ToString[x^2]").unwrap(), " 2\nx");
+    assert_eq!(interpret("ToString[f[x]^2]").unwrap(), "    2\nf[x]");
+    assert_eq!(
+      interpret("ToString[HoldForm[Sqrt[x]^2]]").unwrap(),
+      "       2\nSqrt[x]"
+    );
+  }
+
+  /// The exponent of a tall base sits on the row above the baseline, beside
+  /// the base, not above the whole of it.
+  #[test]
+  fn exponent_of_a_tall_base_sits_above_the_baseline() {
+    assert_eq!(
+      interpret("ToString[(1 + 1/x)^2]").unwrap(),
+      "     1 2\n(1 + -)\n     x"
+    );
+    assert_eq!(interpret("ToString[(a/b)^c]").unwrap(), " a c\n(-)\n b");
+    assert_eq!(interpret("ToString[(a^b)^c]").unwrap(), "  b c\n(a )");
+    assert_eq!(
+      interpret("ToString[((a^b)^c)^d]").unwrap(),
+      "   b c d\n((a ) )"
+    );
+  }
+}
