@@ -3893,20 +3893,38 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .and_then(|fs| crate::functions::plot::parse_filling_style(&fs));
     let mut items: Vec<Expr> = Vec::new();
     let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
+    // `PlotStyle -> style` restyles every series, `PlotStyle -> {s1, s2, …}`
+    // the series in turn (cyclically); `Automatic` and `None` entries keep
+    // the default look.
+    let plot_style = option("PlotStyle")
+      .map(|ps| evaluate_expr_to_expr(&ps).unwrap_or(ps))
+      .map_or_default(|ps| match ps {
+        Expr::List(ref styles) => styles.to_vec(),
+        single => vec![single],
+      });
     for (k, points) in all_series.iter().enumerate() {
       let (r, g, b) = palette[k % palette.len()];
       let color = Expr::FunctionCall {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
       };
-      // `Directive[extra…, paint, AbsoluteThickness[2]]`.
-      let style = |extra: Vec<Expr>, paint: Expr| {
+      let user_style = (!plot_style.is_empty())
+        .then(|| &plot_style[k % plot_style.len()])
+        .filter(|s| {
+          !matches!(s, Expr::Identifier(n) if n == "Automatic" || n == "None")
+        });
+      // `Directive[extra…, paint, AbsoluteThickness[2], user style]`: the
+      // user's directives come last so that they override the defaults.
+      let style = |extra: Vec<Expr>, paint: Expr, restyle: bool| {
         let mut directives = extra;
         directives.push(paint);
         directives.push(Expr::FunctionCall {
           name: "AbsoluteThickness".to_string(),
           args: vec![Expr::Integer(2)].into(),
         });
+        if restyle {
+          directives.extend(user_style.cloned());
+        }
         Expr::FunctionCall {
           name: "Directive".to_string(),
           args: directives.into(),
@@ -3928,12 +3946,15 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .into(),
             }
           });
+        // A `FillingStyle` color wins over the `PlotStyle` one.
+        let restyle = fill_color.is_none();
         let mut group = vec![style(
           vec![Expr::FunctionCall {
             name: "Opacity".to_string(),
             args: vec![Expr::Real(opacity)].into(),
           }],
           fill_color.unwrap_or_else(|| color.clone()),
+          restyle,
         )];
         group.extend(points.iter().map(|&(n, y)| Expr::FunctionCall {
           name: "Rectangle".to_string(),
@@ -3951,7 +3972,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       items.push(Expr::List(
         vec![
-          style(Vec::new(), color.clone()),
+          style(Vec::new(), color.clone(), true),
           Expr::FunctionCall {
             name: "Line".to_string(),
             args: vec![Expr::List(steps.into())].into(),

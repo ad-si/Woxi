@@ -71552,6 +71552,49 @@ mod field_plot_conformance {
   }
 
   #[test]
+  fn discrete_plot_extent_steps_honor_plot_style() {
+    // Regression: `PlotStyle` was dropped for `ExtentSize` steps, which
+    // always came out in the default series colors.
+    let directives = |body: &str, opts: &str| {
+      interpret(&format!(
+        "Cases[DiscretePlot[{body}, {{n, 1, 3}}, ExtentSize -> 1/2{opts}], \
+         _Directive, Infinity]"
+      ))
+      .unwrap()
+    };
+    // One style restyles both the steps and their filling.
+    assert_eq!(
+      directives("n", ", PlotStyle -> Darker[Green]"),
+      "{Directive[Opacity[0.2], RGBColor[0.24, 0.6, 0.8], \
+       AbsoluteThickness[2], RGBColor[0, 2/3, 0]], \
+       Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2], \
+       RGBColor[0, 2/3, 0]]}"
+    );
+    // A list styles the series in turn; `Automatic` keeps the default.
+    assert_eq!(
+      directives(
+        "{n, 2 n}",
+        ", PlotStyle -> {Automatic, Red}, Filling -> None"
+      ),
+      "{Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], \
+       Directive[RGBColor[0.95, 0.627, 0.1425], AbsoluteThickness[2], \
+       RGBColor[1, 0, 0]]}"
+    );
+    // The filling keeps its own `FillingStyle` color.
+    assert_eq!(
+      directives("n", ", PlotStyle -> Red, FillingStyle -> Blue"),
+      "{Directive[Opacity[1.], RGBColor[0., 0., 1.], AbsoluteThickness[2]], \
+       Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2], \
+       RGBColor[1, 0, 0]]}"
+    );
+    let svg = export_svg(
+      "DiscretePlot[n, {n, 1, 3}, ExtentSize -> 1/2, PlotStyle -> Red]",
+    );
+    assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+    assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
+  }
+
+  #[test]
   fn date_list_plot_pairs_every_dataset_with_the_start_date() {
     // Regression: two value lists with a start date plotted as one line.
     let svg = export_svg(
