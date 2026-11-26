@@ -24958,7 +24958,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             };
             format!(
               "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}={}</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan> {}",
-              if name == "Sum" { '\u{2211}' } else { '\u{220F}' },
+              if name == "Sum" {
+                '\u{2211}'
+              } else {
+                '\u{220F}'
+              },
               expr_to_svg_markup(&it[0]),
               expr_to_svg_markup(&it[1]),
               expr_to_svg_markup(&it[2]),
@@ -33376,15 +33380,13 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   }
   // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
   // denominator and scripts in that face too.
-  with_box_font_family(family.as_deref(), || {
-    match script_level {
-      Some(level) => with_box_script_level(level, size, || {
-        traditional_inline_box_content_svg(content, styled, size)
-      }),
-      None => with_grid_item_script_level(size, || {
-        traditional_inline_box_content_svg(content, styled, size)
-      }),
-    }
+  with_box_font_family(family.as_deref(), || match script_level {
+    Some(level) => with_box_script_level(level, size, || {
+      traditional_inline_box_content_svg(content, styled, size)
+    }),
+    None => with_grid_item_script_level(size, || {
+      traditional_inline_box_content_svg(content, styled, size)
+    }),
   })
 }
 
@@ -33406,9 +33408,7 @@ fn style_script_level(styled: &Expr) -> Option<u32> {
     .iter()
     .skip(1)
     .filter_map(|opt| match option_kv(opt) {
-      Some(("ScriptLevel", Expr::Integer(level))) => {
-        u32::try_from(*level).ok()
-      }
+      Some(("ScriptLevel", Expr::Integer(level))) => u32::try_from(*level).ok(),
       _ => None,
     })
     .last()

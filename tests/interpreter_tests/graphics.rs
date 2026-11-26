@@ -78511,13 +78511,7 @@ mod text_item_script_level {
       .split("translate(")
       .skip(1)
       .filter_map(|t| {
-        t.split(')')
-          .next()?
-          .split(',')
-          .nth(1)?
-          .trim()
-          .parse()
-          .ok()
+        t.split(')').next()?.split(',').nth(1)?.trim().parse().ok()
       })
       .collect()
   }
@@ -78553,9 +78547,8 @@ mod text_item_script_level {
     assert!(text.contains("font-size=\"16.0\""), "{text}");
     // Stacked limits put the lower limit below the sign, further down than
     // anything in the one-line layout of the plain item reaches.
-    let lowest = |svg: &str| {
-      translate_ys(svg).into_iter().fold(0.0_f64, f64::max)
-    };
+    let lowest =
+      |svg: &str| translate_ys(svg).into_iter().fold(0.0_f64, f64::max);
     assert!(lowest(&text) > lowest(&plain) + 5.0, "{text}\n{plain}");
   }
 }
@@ -78568,12 +78561,18 @@ mod markup_power_and_quotient_parens {
   #[test]
   fn operator_bases_and_product_denominators_are_parenthesized() {
     let svg = export_svg("Column[{(a b)^c}]");
-    assert!(svg.contains(">(a b)<tspan baseline-shift=\"super\""), "{svg}");
+    assert!(
+      svg.contains(">(a b)<tspan baseline-shift=\"super\""),
+      "{svg}"
+    );
     let svg = export_svg("Column[{(a^b)^c}]");
     assert!(svg.contains(">(a<tspan"), "{svg}");
     let svg = export_svg("Column[{x^2, f[x]^2}]");
     assert!(svg.contains(">x<tspan baseline-shift=\"super\""), "{svg}");
-    assert!(svg.contains(">f[x]<tspan baseline-shift=\"super\""), "{svg}");
+    assert!(
+      svg.contains(">f[x]<tspan baseline-shift=\"super\""),
+      "{svg}"
+    );
   }
 
   /// A held `Product` is written with `∏` and its limits, like `Sum` with
