@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A plot title that is a `Row` broken into several lines by its strings
+    (`PlotLabel -> Row[{"first line.\nratio ", a/b, "."}]`) stacks a
+    fraction, radical or over-/underscript standing in one of its lines
+    instead of flattening it to `a/b`, and sets that fraction at the
+    reduced size of math inside running text.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

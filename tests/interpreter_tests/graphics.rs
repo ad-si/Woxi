@@ -16269,6 +16269,73 @@ mod plot3d {
       assert!(!has_fraction_bar(&svg), "{svg}");
       assert!(svg.contains(">P = Q<tspan"), "{svg}");
     }
+
+    /// A `Row` title whose strings break it into several lines still
+    /// stacks a fraction standing in one of them (also with blank lines
+    /// trailing the text, and in a 3D title) instead of flattening it to
+    /// `a/b` in a text span. Regression: only a one-line title was typeset
+    /// as a picture.
+    #[test]
+    fn multi_line_row_plot_label_stacks_a_fraction() {
+      for expr in [
+        "Graphics[Disk[], PlotLabel -> \
+         Row[{\"first line.\\nratio \", a/b, \" = \", 0.5, \".\"}]]",
+        "Graphics[Disk[], PlotLabel -> \
+         Row[{\"first line.\\nratio \", a/b, \" = \", 0.5, \".\\n\\n\"}]]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> \
+         Style[Row[{\"ratio \", 6 Pi/(8 Pi + 3 Sqrt[3]), \"\\nlast line\"}], 12]]",
+        "Graphics3D[Sphere[], PlotLabel -> \
+         Row[{\"first line.\\nratio \", a/b, \".\"}]]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(has_fraction_bar(&svg), "{expr}: {svg}");
+        assert!(!svg.contains("a/b") && !svg.contains("π/("), "{expr}");
+        // Both lines of text are still drawn.
+        assert!(svg.contains(">ratio </text>"), "{expr}: {svg}");
+        assert!(
+          svg.contains(">first line.</text>")
+            || svg.contains(">last line</text>"),
+          "{expr}: {svg}"
+        );
+      }
+      // A multi-line title without anything stacked stays text lines.
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Row[{\"first line.\\nvalue \", 0.5}]]",
+      );
+      assert!(!has_fraction_bar(&svg), "{svg}");
+      assert!(svg.contains("<tspan"), "{svg}");
+    }
+
+    /// A fraction standing in a line of a multi-line `Row` is math inside
+    /// running text, which Wolfram sets a script level down: its numerator
+    /// and denominator are 0.75 of the text size, while a fraction in a
+    /// one-line title keeps the full size.
+    #[test]
+    fn multi_line_row_plot_label_sets_the_fraction_at_script_size() {
+      let digit_sizes = |label: &str| -> Vec<String> {
+        let svg =
+          export_svg(&format!("Graphics[Disk[], PlotLabel -> {label}]"));
+        let mut sizes = Vec::new();
+        for digit in ["2", "3"] {
+          let needle = format!(" xml:space=\"preserve\">{digit}</text>");
+          let end = svg.find(&needle).unwrap_or_else(|| panic!("{svg}"));
+          let start = svg[..end].rfind("font-size=\"").expect("font size");
+          let size = &svg[start + 11..];
+          sizes.push(size[..size.find('"').expect("quote")].to_string());
+        }
+        sizes
+      };
+      assert_eq!(
+        digit_sizes("Row[{\"p is \", 2/3, \".\"}]"),
+        ["12.0", "12.0"]
+      );
+      for label in [
+        "Row[{\"first line.\\np is \", 2/3, \".\"}]",
+        "Row[{\"p is \", 2/3, \".\\n\\n\"}]",
+      ] {
+        assert_eq!(digit_sizes(label), ["9.0", "9.0"], "{label}");
+      }
+    }
   }
 
   mod parametric_plot3d_curve {

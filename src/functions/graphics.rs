@@ -22607,14 +22607,18 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           return BoxLayout::text("", font_size);
         }
         // A line break inside a string of the row (`Row[{"a\nb", x}]`)
-        // ends the line there: the row's lines stack, each centered.
+        // ends the line there: the row's lines stack, each centered. The
+        // lines are running text, so a fraction standing in one is set a
+        // script level down, as Wolfram sets math inside text.
         if let Some(lines) = row_box_lines(items) {
-          let laid: Vec<BoxLayout> = lines
-            .into_iter()
-            .map(|line| {
-              layout_box(&call1("RowBox", Expr::List(line.into())), font_size)
-            })
-            .collect();
+          let laid: Vec<BoxLayout> = with_inline_text_math(|| {
+            lines
+              .into_iter()
+              .map(|line| {
+                layout_box(&call1("RowBox", Expr::List(line.into())), font_size)
+              })
+              .collect()
+          });
           return stack_box_lines_centered(&laid);
         }
         let mut children: Vec<BoxLayout> =
@@ -28703,7 +28707,40 @@ fn layout_box_at_script_level_one(expr: &Expr, font_size: f64) -> BoxLayout {
   layout_box_nested(expr, font_size)
 }
 
-/// A one-line `PlotLabel` whose `TraditionalForm` boxes stack — a fraction
+/// Whether the boxes of a title can be set as one picture: a one-line
+/// title, or a `Row` whose strings hold line breaks with a part that
+/// stacks (a fraction, a radical, an over- or underscript) — that one is
+/// set line by line (see `row_box_lines`), so a fraction standing in one of
+/// its lines stacks just as it does in a one-line title. A multi-line `Row`
+/// of plain text parts stays a block of text lines.
+pub(crate) fn label_sets_one_picture(expr: &Expr) -> bool {
+  fn stacks(part: &Expr) -> bool {
+    if matches!(part, Expr::String(_)) {
+      return false;
+    }
+    let boxes = crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional_quoted(part);
+    let source = crate::syntax::expr_to_string(&boxes);
+    [
+      "FractionBox[",
+      "SqrtBox[",
+      "RadicalBox[",
+      "UnderoverscriptBox[",
+      "OverscriptBox[",
+      "UnderscriptBox[",
+    ]
+    .iter()
+    .any(|head| source.contains(head))
+  }
+  matches!(
+    peel_style_wrapper(expr),
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && matches!(args.first(), Some(Expr::List(items))
+          if row_box_lines(items).is_some() && items.iter().any(stacks))
+  ) || expr_to_svg_markup_lines(expr).len() == 1
+}
+
+/// A `PlotLabel` whose `TraditionalForm` boxes stack — a fraction
 /// (`x^(1/e)` sets its exponent as `1` over `e`), a radical, an over- or
 /// underscript — typeset as a picture in the title font, the way Wolfram
 /// draws it, instead of flattening the fraction to `1/e` in a text span.
@@ -28714,7 +28751,7 @@ fn layout_box_at_script_level_one(expr: &Expr, font_size: f64) -> BoxLayout {
 /// not a fraction happens to stand in it.
 fn plot_label_structured_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   if matches!(peel_style_wrapper(expr), Expr::String(_))
-    || expr_to_svg_markup_lines(expr).len() != 1
+    || !label_sets_one_picture(expr)
   {
     return None;
   }
