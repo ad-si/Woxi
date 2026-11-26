@@ -2693,8 +2693,7 @@ impl ManipulateState {
     if !self.body.contains("Dynamic[") {
       return;
     }
-    let settled = |mut bindings: Vec<(String, String)>,
-                   stepped: &[String]| {
+    let settled = |mut bindings: Vec<(String, String)>, stepped: &[String]| {
       bindings.retain(|(name, _)| !stepped.contains(name));
       bindings
     };
@@ -10996,7 +10995,10 @@ mod dynamic_feedback_tests {
       DynamicFeedback::default()
     );
     // …unless the whole body is the content of a peeled `Dynamic`.
-    assert_eq!(dynamic_feedback("n = n + 1; Disk[{n, 0}]", true).vars, ["n"]);
+    assert_eq!(
+      dynamic_feedback("n = n + 1; Disk[{n, 0}]", true).vars,
+      ["n"]
+    );
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
