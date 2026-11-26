@@ -7013,16 +7013,19 @@ pub fn covariance_function_data(
   data: &Expr,
   lag: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let Expr::List(items) = data else {
-    return None;
-  };
   let Expr::Integer(h) = lag else {
     return None;
   };
   let h = *h;
-  if items.is_empty() || !all_numeric_scalars(items) {
-    return None;
-  }
+  // A list of `{time, value}` pairs (or a temporal object) is estimated
+  // from its values; any other numeric list is used as it is.
+  let items: Vec<Expr> = match data {
+    Expr::List(items) if !items.is_empty() && all_numeric_scalars(items) => {
+      items.to_vec()
+    }
+    _ => series_values(data)?,
+  };
+  let items = &items[..];
   let n = items.len();
   // The lag magnitude must be strictly less than the series length.
   if h.unsigned_abs() >= n as u128 {
@@ -7535,6 +7538,27 @@ fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
     Expr::FunctionCall { name, args } => (name.as_str(), args),
     _ => return None,
   };
+  // `ARProcess[{a…}, v]` and `MAProcess[{b…}, v]` (each with an optional
+  // leading constant) are the ARMA process with no terms of the other kind.
+  if matches!(name, "ARProcess" | "MAProcess") {
+    let (coefficients, v) = match args.as_slice() {
+      [Expr::List(coefficients), v] => (coefficients, v),
+      [c, Expr::List(coefficients), v] if !matches!(c, Expr::List(_)) => {
+        (coefficients, v)
+      }
+      _ => return None,
+    };
+    // A vector process (matrix coefficients) is not a scalar ARMA one.
+    if coefficients.iter().any(|c| matches!(c, Expr::List(_))) {
+      return None;
+    }
+    let coefficients: Vec<Expr> = coefficients.to_vec();
+    return Some(if name == "ARProcess" {
+      (coefficients, Vec::new(), v.clone())
+    } else {
+      (Vec::new(), coefficients, v.clone())
+    });
+  }
   if name != "ARMAProcess" {
     return None;
   }
@@ -7563,6 +7587,10 @@ fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
 
 fn arma_covariance(proc: &Expr, s: &Expr, t: &Expr) -> Option<Expr> {
   let (ar, ma, sigma2) = extract_arma_params(proc)?;
+  // The symbolic closed forms below are in `ARMAProcess`'s own shapes.
+  if !matches!(proc, Expr::FunctionCall { name, .. } if name == "ARMAProcess") {
+    return arma_covariance_at_lag(&ar, &ma, &sigma2, s, t);
+  }
   match (ar.len(), ma.len()) {
     (1, 0) => Some(cov_ar1(&ar[0], &sigma2, s, t)),
     (0, 1) => Some(cov_ma1(&ma[0], &sigma2, s, t)),
@@ -8690,6 +8718,163 @@ pub fn central_moment_generating_function_ast(
 
 // ─── CorrelationFunction ─────────────────────────────────────────────
 
+/// The values of a scalar time series handed to the estimators
+/// (`CorrelationFunction`, `CovarianceFunction`,
+/// `PartialCorrelationFunction`): a list of real numbers, a list of
+/// `{time, value}` pairs (one path of `Normal[TemporalData[…]]`), or the
+/// first path of a `TimeSeries`/`TemporalData` object. `None` for anything
+/// else, including an empty series.
+pub fn series_values(data: &Expr) -> Option<Vec<Expr>> {
+  let is_numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let values: Vec<Expr> = match data {
+    Expr::List(items) if items.iter().all(is_numeric) => items.to_vec(),
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::List(pair) if pair.len() == 2 && is_numeric(&pair[0]) => {
+          Some(pair[1].clone())
+        }
+        _ => None,
+      })
+      .collect::<Option<Vec<Expr>>>()?,
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "TemporalData" | "TimeSeries") =>
+    {
+      crate::functions::timeseries_ast::temporal_paths(data)?
+        .into_iter()
+        .next()?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect()
+    }
+    _ => return None,
+  };
+  (!values.is_empty() && values.iter().all(is_numeric)).then_some(values)
+}
+
+/// `CorrelationFunction[proc, h]` for an ARMA-family process with numeric
+/// coefficients: the autocovariance at lag `h` over the variance. `None`
+/// when `proc` is no such process.
+fn arma_family_correlation(
+  proc: &Expr,
+  lag: i128,
+) -> Option<Result<Expr, InterpreterError>> {
+  extract_arma_params(proc)?;
+  let gamma = |h: i128| {
+    arma_covariance(proc, &Expr::Integer(0), &Expr::Integer(h))
+      .and_then(|g| crate::evaluator::evaluate_expr_to_expr(&g).ok())
+      .filter(crate::functions::predicate_ast::is_numeric_q)
+  };
+  let (g0, gh) = (gamma(0)?, gamma(lag.abs())?);
+  Some(crate::evaluator::evaluate_expr_to_expr(&div2(gh, g0)))
+}
+
+/// PartialCorrelationFunction[data, h] / PartialCorrelationFunction[proc, h]
+/// — the partial autocorrelation at lag h ≥ 1: the last coefficient φ(h, h)
+/// of the best linear predictor of order h, found from the autocorrelations
+/// ρ(1…h) by the Durbin–Levinson recursion
+///   φ(k, k) = (ρ(k) − Σ_j φ(k−1, j) ρ(k−j)) / (1 − Σ_j φ(k−1, j) ρ(j)),
+///   φ(k, j) = φ(k−1, j) − φ(k, k) φ(k−1, k−j)        (j = 1…k−1).
+/// `data` is any series `CorrelationFunction` estimates from, `proc` an
+/// ARMA-family process with numeric coefficients.
+pub fn partial_correlation_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || unevaluated("PartialCorrelationFunction", args);
+  let [series, Expr::Integer(h)] = args else {
+    return Ok(uneval());
+  };
+  if *h < 1 {
+    return Ok(uneval());
+  }
+  let is_process = extract_arma_params(series).is_some();
+  let values = if is_process {
+    None
+  } else {
+    match series_values(series) {
+      Some(values) => Some(Expr::List(values.into())),
+      None => return Ok(uneval()),
+    }
+  };
+  if let Some(Expr::List(values)) = &values
+    && *h >= values.len() as i128
+  {
+    crate::emit_message(&format!(
+      "PartialCorrelationFunction::bdlag: The lag specification {h} should \
+       be a symbol, an integer with magnitude less than the length of the \
+       data or a range specification indicating such integers.",
+    ));
+    return Ok(uneval());
+  }
+  let mut rho: Vec<Expr> = Vec::with_capacity(*h as usize);
+  for k in 1..=*h {
+    let r = match &values {
+      Some(values) => {
+        correlation_function_ast(&[values.clone(), Expr::Integer(k)])?
+      }
+      None => match arma_family_correlation(series, k) {
+        Some(r) => r?,
+        None => return Ok(uneval()),
+      },
+    };
+    if matches!(&r, Expr::Identifier(name) if name == "Indeterminate") {
+      return Ok(r);
+    }
+    if !crate::functions::predicate_ast::is_numeric_q(&r) {
+      return Ok(uneval());
+    }
+    rho.push(r);
+  }
+
+  // Machine-precision autocorrelations recurse in plain floating point.
+  if rho.iter().all(|r| matches!(r, Expr::Real(_)))
+    && let Some(r) = rho.iter().map(expr_to_num).collect::<Option<Vec<f64>>>()
+  {
+    let mut phi: Vec<f64> = Vec::new();
+    for k in 0..r.len() {
+      let num = r[k] - (0..k).map(|j| phi[j] * r[k - 1 - j]).sum::<f64>();
+      let den = 1.0 - (0..k).map(|j| phi[j] * r[j]).sum::<f64>();
+      let last = num / den;
+      let mut next: Vec<f64> =
+        (0..k).map(|j| phi[j] - last * phi[k - 1 - j]).collect();
+      next.push(last);
+      phi = next;
+    }
+    return Ok(Expr::Real(*phi.last().unwrap()));
+  }
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let mut phi: Vec<Expr> = Vec::new();
+  for k in 0..rho.len() {
+    let mut num = vec![rho[k].clone()];
+    let mut den = vec![Expr::Integer(1)];
+    for j in 0..k {
+      num.push(neg(times(vec![phi[j].clone(), rho[k - 1 - j].clone()])));
+      den.push(neg(times(vec![phi[j].clone(), rho[j].clone()])));
+    }
+    let den = eval(plus(den))?;
+    let is_zero = matches!(&den, Expr::Integer(0))
+      || matches!(&den, Expr::Real(v) if *v == 0.0);
+    if is_zero {
+      return Ok(id_expr("Indeterminate"));
+    }
+    let last = eval(div2(plus(num), den))?;
+    let mut next = Vec::with_capacity(k + 1);
+    for j in 0..k {
+      next.push(eval(plus(vec![
+        phi[j].clone(),
+        neg(times(vec![last.clone(), phi[k - 1 - j].clone()])),
+      ]))?);
+    }
+    next.push(last);
+    phi = next;
+  }
+  Ok(phi.pop().unwrap())
+}
+
 /// CorrelationFunction[data, k] — the sample autocorrelation at lag k:
 /// Sum[(x_i - mean)(x_{i+|k|} - mean)] / Sum[(x_i - mean)^2].
 /// Symmetric in the lag sign; |k| must be smaller than the data length
@@ -8701,21 +8886,18 @@ pub fn correlation_function_ast(
   if args.len() != 2 {
     return Ok(uneval());
   }
-  let data = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => return Ok(uneval()),
-  };
-  let is_numeric = |e: &Expr| {
-    matches!(e, Expr::Integer(_) | Expr::Real(_))
-      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
-  };
-  if !data.iter().all(is_numeric) {
-    return Ok(uneval());
-  }
   let k = match &args[1] {
     Expr::Integer(k) => *k,
     _ => return Ok(uneval()),
   };
+  // CorrelationFunction[proc, h] of an ARMA-family process: γ(h)/γ(0).
+  if let Some(rho) = arma_family_correlation(&args[0], k) {
+    return rho;
+  }
+  let Some(values) = series_values(&args[0]) else {
+    return Ok(uneval());
+  };
+  let data = &values;
   let n = data.len() as i128;
   if k.abs() >= n {
     crate::emit_message(&format!(
@@ -8727,7 +8909,23 @@ pub fn correlation_function_ast(
   }
   let lag = k.unsigned_abs() as usize;
 
-  let mean = mean_ast(&[args[0].clone()])?;
+  // Machine-precision data: the same sums in plain floating point, which
+  // keeps a long series (and the many lags of a partial correlation) fast.
+  if data.iter().any(|x| matches!(x, Expr::Real(_)))
+    && let Some(xs) = data.iter().map(expr_to_num).collect::<Option<Vec<f64>>>()
+  {
+    let mean = xs.iter().sum::<f64>() / xs.len() as f64;
+    let numerator: f64 = (0..xs.len() - lag)
+      .map(|i| (xs[i] - mean) * (xs[i + lag] - mean))
+      .sum();
+    let denominator: f64 = xs.iter().map(|x| (x - mean) * (x - mean)).sum();
+    if denominator == 0.0 {
+      return Ok(id_expr("Indeterminate"));
+    }
+    return Ok(Expr::Real(numerator / denominator));
+  }
+
+  let mean = mean_ast(&[Expr::List(values.clone().into())])?;
   let dev = |x: &Expr| plus(vec![x.clone(), neg(mean.clone())]);
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&plus(terms))

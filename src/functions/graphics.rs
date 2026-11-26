@@ -1711,7 +1711,7 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
 /// fractions `(from the left, from the top)` of the picture: a symbolic
 /// corner `{Left, Top}` …, an `ImageScaled` fraction of the picture, or a
 /// point in the object's own coordinates. An `Offset[…, p]` yields `p`.
-fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
+pub(crate) fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
   // Without an explicit `opos`, a position named by the region's sides
   // (`{Center, Bottom}`, `{Right, Top}`) puts the object's matching point
   // there, so the object stays inside the region.

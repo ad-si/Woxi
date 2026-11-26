@@ -3891,6 +3891,10 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // bare color fills opaquely), as for `Plot`'s filling.
     let filling_style = option("FillingStyle")
       .and_then(|fs| crate::functions::plot::parse_filling_style(&fs));
+    let plot_style = match option("PlotStyle") {
+      Some(style) => Some(evaluate_expr_to_expr(&style)?),
+      None => None,
+    };
     let mut items: Vec<Expr> = Vec::new();
     let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
     for (k, points) in all_series.iter().enumerate() {
@@ -3899,7 +3903,20 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
       };
-      // `Directive[extra…, paint, AbsoluteThickness[2]]`.
+      // `PlotStyle` restyles the series: one style for all of them, or a
+      // list handing them out in turn.
+      let plot_style = match &plot_style {
+        Some(Expr::List(styles)) if !styles.is_empty() => {
+          Some(styles[k % styles.len()].clone())
+        }
+        Some(Expr::List(_)) => None,
+        other => other.clone(),
+      }
+      .filter(|style| {
+        !matches!(style, Expr::Identifier(s) if s == "Automatic" || s == "None")
+      });
+      // `Directive[extra…, paint, AbsoluteThickness[2], PlotStyle…]`: the
+      // caller's style comes last, so its color and thickness win.
       let style = |extra: Vec<Expr>, paint: Expr| {
         let mut directives = extra;
         directives.push(paint);
@@ -3907,6 +3924,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "AbsoluteThickness".to_string(),
           args: vec![Expr::Integer(2)].into(),
         });
+        directives.extend(plot_style.clone());
         Expr::FunctionCall {
           name: "Directive".to_string(),
           args: directives.into(),
