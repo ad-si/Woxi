@@ -27497,9 +27497,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "π<tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
+          "<tspan font-style=\"italic\">π</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
         ) && svg.contains(
-          "π<tspan baseline-shift=\"super\" font-size=\"70%\">0</tspan>"
+          "<tspan font-style=\"italic\">π</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">0</tspan>"
         ),
         "PlotLabel superscripts not rendered: {svg}"
       );
@@ -27536,7 +27536,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "π<tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
+          "<tspan font-style=\"italic\">π</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
         ),
         "PlotLabel superscript not rendered: {svg}"
       );
@@ -28457,7 +28457,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "π<tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
+          "<tspan font-style=\"italic\">π</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
         ),
         "PlotLabel superscript not rendered: {svg}"
       );
@@ -28688,7 +28688,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         svg.contains(
-          "π<tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
+          "<tspan font-style=\"italic\">π</tspan><tspan baseline-shift=\"super\" font-size=\"70%\">-</tspan>"
         ),
         "PlotLabel superscript not rendered: {svg}"
       );
@@ -78496,5 +78496,74 @@ mod graphics3d_review_ticks_heads_framing {
     );
     let svg = export_svg(g);
     assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
+  }
+}
+
+/// Axis, frame and title labels are set in `TraditionalForm`: a one-letter
+/// symbol in the box code a label string embeds is italic, while the
+/// string's plain text, digits and longer names stay upright. Regression:
+/// only symbol labels (`FrameLabel -> x`) were italic; the same letter
+/// written in a string's inline boxes was drawn upright.
+#[test]
+fn plot_label_strings_italicize_single_letter_box_symbols() {
+  let label = r#""rate (\!\(\*SubsuperscriptBox[\(Q\), \(2\), \(*\)]\))""#;
+  let italic_q = "rate (<tspan font-style=\"italic\">Q</tspan>";
+  for plot in [
+    format!(
+      "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {{{label}, {label}}}]"
+    ),
+    format!("Plot[x, {{x, 0, 1}}, AxesLabel -> {{{label}, {label}}}]"),
+    format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"),
+    format!(
+      "ListPlot[{{1, 2}}, Frame -> True, FrameLabel -> {{Style[{label}, 16], Style[{label}, Red]}}]"
+    ),
+    format!(
+      "Plot[x, {{x, 0, 1}}, AxesLabel -> {{Row[{{\"a \", Style[{label}, Bold]}}], None}}]"
+    ),
+  ] {
+    let svg = export_svg(&plot);
+    assert!(svg.contains(italic_q), "{plot}: {svg}");
+    // The digit and the star of the scripts are not letters.
+    assert!(!svg.contains("italic\">2<"), "{plot}: {svg}");
+    assert!(!svg.contains("italic\">*<"), "{plot}: {svg}");
+  }
+  // A name of several letters is a word, not a variable.
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, AxesLabel -> {"\!\(\*SubscriptBox[\(y\), \(max\)]\)", None}]"#,
+  );
+  assert!(
+    svg.contains(
+      "<tspan font-style=\"italic\">y</tspan>\
+       <tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan>"
+    ),
+    "{svg}"
+  );
+  // A label with no box code is plain text, upright even when one letter.
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", "u"}]"#,
+  );
+  assert!(!svg.contains("italic"), "{svg}");
+}
+
+/// A `\(\"c\"\)` group of a label's box code holds a string, which is
+/// literal text: upright and without its quotes, unlike the symbol a bare
+/// `\(c\)` names.
+#[test]
+fn plot_label_box_string_literal_stays_upright() {
+  for (script, markup) in [
+    (r#"\(\"c\"\)"#, "c"),
+    (r#"\(c\)"#, "<tspan font-style=\"italic\">c</tspan>"),
+  ] {
+    let svg = export_svg(&format!(
+      "Plot[x, {{x, 0, 1}}, Frame -> True, \
+       FrameLabel -> {{\"\\!\\(\\*SubscriptBox[\\(T\\), {script}]\\)\", None}}]"
+    ));
+    assert!(
+      svg.contains(&format!(
+        "<tspan font-style=\"italic\">T</tspan>\
+         <tspan baseline-shift=\"sub\" font-size=\"70%\">{markup}</tspan>"
+      )),
+      "{script}: {svg}"
+    );
   }
 }

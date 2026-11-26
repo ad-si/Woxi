@@ -27258,7 +27258,7 @@ fn parse_box_units_tagged(cs: &[char]) -> Vec<(Expr, bool)> {
           }
           match find_box_group_close(cs, i + 2) {
             Some(close) => {
-              res.push((parse_box_to_expr(&cs[i + 2..close]), true));
+              res.push((parse_box_group(&cs[i + 2..close]), true));
               i = close + 2;
             }
             None => i += 1,
@@ -27337,6 +27337,20 @@ fn parse_box_units_tagged(cs: &[char]) -> Vec<(Expr, bool)> {
     res.push((Expr::String(plain), false));
   }
   res
+}
+
+/// Parse the content of a `\(…\)` group. A group holding just a string
+/// literal (`\(\"c\"\)`) is that string's box, quotes included: it is
+/// literal text, drawn without the quotes and upright whatever the form,
+/// unlike the symbol the bare `\(c\)` names.
+fn parse_box_group(cs: &[char]) -> Expr {
+  let trimmed = trim_char_slice(cs);
+  match quoted_box_literal(trimmed) {
+    Some(text) if !text.is_empty() && !text.contains("\\!\\(") => {
+      Expr::String(format!("\"{text}\""))
+    }
+    _ => parse_box_to_expr(cs),
+  }
 }
 
 /// Parse box-notation content into a single box Expr (wrapping multiple units
@@ -28537,6 +28551,12 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
     {
       traditionalize_styled_label(&args[0])
     }
+    // The box code a string embeds is typeset traditionally like any other
+    // unstyled part (an italic X in `"stage \!\(\*SubscriptBox[\(X\),
+    // \(1\)]\)"`); its plain text stays as written.
+    Expr::String(s) if inline_box_string_to_box_expr(s).is_some() => {
+      call1("TraditionalForm", e.clone())
+    }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
     _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
@@ -28672,6 +28692,11 @@ pub fn box_string_to_svg_scaled(s: &str, scale: f64) -> String {
 pub fn box_string_to_svg(s: &str) -> String {
   if let Some(markup) = s.strip_prefix(STYLED_LABEL_MARKER) {
     return markup.to_string();
+  }
+  // A plot's own labels (title, axes, frame) are set in `TraditionalForm`,
+  // so the box code such a label embeds is typeset that way too.
+  if LABEL_GREEK_ITALICS.with(std::cell::Cell::get) {
+    return traditional_box_string_to_svg(s);
   }
   let norm = normalize_box_markers(s);
   let cs: Vec<char> = norm.chars().collect();
