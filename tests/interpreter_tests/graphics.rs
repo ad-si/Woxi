@@ -80426,3 +80426,112 @@ mod show_filled_points_and_stacked_labels {
     assert_eq!(lines("{None, None}"), lines("None"));
   }
 }
+
+/// `AxesStyle` on a 3D box styles each axis as a whole: its line, its
+/// label and (unless `TicksStyle` says otherwise) its tick marks and tick
+/// labels. `{sx, sy, sz}` styles the axes one by one.
+mod axes_style_3d {
+  use super::*;
+
+  fn plot(options: &str) -> String {
+    export_svg(&format!(
+      "Plot3D[x y, {{x, 0, 1}}, {{y, 0, 1}}, AxesLabel -> {{a, b, c}}{options}]"
+    ))
+  }
+
+  /// The opening tags of the picture's text elements.
+  fn text_tags(svg: &str) -> Vec<&str> {
+    svg
+      .match_indices("<text")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect()
+  }
+
+  #[test]
+  fn bold_sets_axis_and_tick_labels_bold() {
+    let svg = plot(", AxesStyle -> Bold");
+    let tags = text_tags(&svg);
+    assert!(tags.len() > 3, "{svg}");
+    assert!(
+      tags.iter().all(|t| t.contains("font-weight=\"bold\"")),
+      "{svg}"
+    );
+    assert!(!plot("").contains("font-weight=\"bold\""));
+  }
+
+  #[test]
+  fn graphics3d_takes_the_style_too() {
+    let svg = export_svg(
+      "Graphics3D[Sphere[], Axes -> True, AxesStyle -> Directive[Bold, Italic]]",
+    );
+    let tags = text_tags(&svg);
+    assert!(!tags.is_empty(), "{svg}");
+    assert!(
+      tags.iter().all(|t| t.contains("font-weight=\"bold\"")
+        && t.contains("font-style=\"italic\"")),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn ticks_style_overrides_the_axes_style_for_tick_labels() {
+    let svg = plot(", AxesStyle -> Bold, TicksStyle -> Plain");
+    let bold = text_tags(&svg)
+      .iter()
+      .filter(|t| t.contains("font-weight=\"bold\""))
+      .count();
+    // Only the three axis labels stay bold.
+    assert_eq!(bold, 3, "{svg}");
+  }
+
+  #[test]
+  fn color_reaches_line_label_and_ticks() {
+    let plain = plot("");
+    let svg = plot(", AxesStyle -> Red");
+    let red = "rgb(255,0,0)";
+    assert!(!plain.contains(red));
+    assert!(svg.contains(&format!("stroke=\"{red}\"")), "{svg}");
+    let tags = text_tags(&svg);
+    assert!(
+      tags.iter().all(|t| t.contains(&format!("fill=\"{red}\""))),
+      "{svg}"
+    );
+    // `TicksStyle` recolors the ticks; the axis labels keep the axes color.
+    let mixed = plot(", AxesStyle -> Red, TicksStyle -> Blue");
+    let reds = text_tags(&mixed)
+      .iter()
+      .filter(|t| t.contains(&format!("fill=\"{red}\"")))
+      .count();
+    assert_eq!(reds, 3, "{mixed}");
+    assert!(mixed.contains("fill=\"rgb(0,0,255)\""), "{mixed}");
+  }
+
+  #[test]
+  fn a_list_of_three_styles_each_axis() {
+    let svg =
+      plot(", AxesStyle -> {Red, Directive[Blue, Italic, 16], Automatic}");
+    let tags = text_tags(&svg);
+    let count =
+      |needle: &str| tags.iter().filter(|t| t.contains(needle)).count();
+    let per_axis = count("fill=\"rgb(255,0,0)\"");
+    assert!(per_axis > 1, "{svg}");
+    // The second axis alone is blue, italic and set at 16 points.
+    let blue = count("fill=\"rgb(0,0,255)\"");
+    assert!(blue > 1, "{svg}");
+    assert_eq!(count("font-style=\"italic\""), blue, "{svg}");
+    assert_eq!(count("font-size=\"16\""), blue, "{svg}");
+    // The third keeps the default look.
+    assert!(tags.len() > per_axis + blue, "{svg}");
+  }
+
+  #[test]
+  fn font_size_resizes_axis_and_tick_labels() {
+    let svg = plot(", AxesStyle -> 18");
+    let tags = text_tags(&svg);
+    assert!(tags.iter().all(|t| t.contains("font-size=\"18\"")), "{svg}");
+    // A `TicksStyle` size still wins for the tick labels.
+    let mixed = plot(", AxesStyle -> 18, TicksStyle -> 7");
+    assert!(mixed.contains("font-size=\"7\""), "{mixed}");
+    assert!(mixed.contains("font-size=\"18\""), "{mixed}");
+  }
+}

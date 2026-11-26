@@ -4451,16 +4451,7 @@ fn generate_svg(
       _ => None,
     })
     .unwrap_or([None, None, None]);
-  let (label_face, tick_faces) = axes_text_faces(options);
-  let (tick_colors, tick_sizes) = ticks_style_option_3d(options);
-  let look = AxesLook {
-    tick_colors,
-    tick_sizes,
-    label_size: label_font_size(options),
-    label_face,
-    tick_faces,
-    ..AxesLook::default()
-  };
+  let look = AxesLook::from_options(options);
   // The frame is fitted to the axes exactly as they are drawn below — the
   // same ticks and label size — so wide or large tick labels stay inside.
   let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
@@ -5674,9 +5665,13 @@ fn draw_axes_on_box_with_ticks(
     }
     // `TicksStyle` recolors this axis's tick marks and their labels, and
     // a font size in it resizes the labels (over any `LabelStyle` size).
-    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
-    let tick_font_size =
-      look.tick_sizes[ai].map_or(tick_font_size, |s| s.round() as i32);
+    // `AxesStyle` restyles the whole axis (line, label, ticks) first.
+    let axis_color = look.axis_colors[ai].as_deref().unwrap_or(&axis_color);
+    let font_size = look.axis_sizes[ai].map_or(font_size, |s| s.round() as i32);
+    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(axis_color);
+    let tick_font_size = look.tick_sizes[ai]
+      .or(look.axis_sizes[ai])
+      .map_or(tick_font_size, |s| s.round() as i32);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -5769,7 +5764,7 @@ fn draw_axes_on_box_with_ticks(
         };
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{content}</text>\n",
-          font_face_attrs(look.label_face),
+          font_face_attrs(look.label_faces[ai]),
         ));
         for (i, line) in lines.iter().enumerate() {
           let line_y = ly - block_shift + i as f64 * pitch;
@@ -5901,9 +5896,15 @@ pub(crate) struct AxesLook {
   pub tick_sizes: [Option<f64>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
-  /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
-  /// `LabelStyle`).
-  pub label_face: (bool, bool),
+  /// The color `AxesStyle` gives each axis: its line and label, and its
+  /// tick marks and tick labels unless `TicksStyle` recolors them.
+  pub axis_colors: [Option<String>; 3],
+  /// The font size `AxesStyle` gives each axis's label and tick labels
+  /// (over any `LabelStyle` size).
+  pub axis_sizes: [Option<f64>; 3],
+  /// The `(bold, italic)` face of each axis's label (`BaseStyle`,
+  /// `LabelStyle`, then `AxesStyle`).
+  pub label_faces: [(bool, bool); 3],
   /// The `(bold, italic)` face of each axis's tick labels: the label face,
   /// overridden by `TicksStyle` (`TicksStyle -> Plain` keeps them upright
   /// under `BaseStyle -> Italic`).
@@ -5917,9 +5918,68 @@ impl Default for AxesLook {
       tick_colors: [None, None, None],
       tick_sizes: [None, None, None],
       label_size: None,
-      label_face: (false, false),
+      axis_colors: [None, None, None],
+      axis_sizes: [None, None, None],
+      label_faces: [(false, false); 3],
       tick_faces: [(false, false); 3],
     }
+  }
+}
+
+impl AxesLook {
+  /// The look the text and axis style options among `opts` give
+  /// (`BaseStyle`, `LabelStyle`, `AxesStyle`, `TicksStyle`), with every
+  /// axis shown.
+  fn from_options(opts: &[Expr]) -> Self {
+    let (label_faces, tick_faces) = axes_text_faces(opts);
+    let (tick_colors, tick_sizes) = ticks_style_option_3d(opts);
+    let axes = axis_style_specs_3d(opts, "AxesStyle");
+    let color = |e: &Expr| {
+      crate::functions::plot::parse_style_directives(e)
+        .and_then(|style| style.color)
+        .map(super::graphics::Color::to_svg_rgb)
+    };
+    let size = |e: &Expr| {
+      crate::functions::plot::LabelStyleSpec::parse(e)
+        .and_then(|spec| spec.font_size)
+    };
+    AxesLook {
+      tick_colors,
+      tick_sizes,
+      label_size: label_font_size(opts),
+      axis_colors: axes.each_ref().map(|s| s.as_ref().and_then(color)),
+      axis_sizes: axes.each_ref().map(|s| s.as_ref().and_then(size)),
+      label_faces,
+      tick_faces,
+      ..AxesLook::default()
+    }
+  }
+}
+
+/// The value of the per-axis style option `key` (`AxesStyle`,
+/// `TicksStyle`) among `opts`, dealt out to the three axes:
+/// `{sx, sy, sz}` styles each axis on its own, any other value all three
+/// alike. The last setting of the option wins.
+fn axis_style_specs_3d(opts: &[Expr], key: &str) -> [Option<Expr>; 3] {
+  let value = opts.iter().rev().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  });
+  match &value {
+    Some(Expr::List(items)) if items.len() == 3 => {
+      [0, 1, 2].map(|i| Some(items[i].clone()))
+    }
+    _ => [value.clone(), value.clone(), value],
   }
 }
 
@@ -5960,11 +6020,11 @@ fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
   face
 }
 
-/// The `(bold, italic)` faces of a 3D box's axis labels and of each axis's
-/// tick labels: `BaseStyle` and then `LabelStyle` style all of that text,
-/// and `TicksStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles just
-/// the tick labels.
-fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
+/// The `(bold, italic)` faces of each axis label of a 3D box and of each
+/// axis's tick labels: `BaseStyle` and then `LabelStyle` style all of that
+/// text, `AxesStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles an
+/// axis's label and tick labels, and `TicksStyle` just the tick labels.
+fn axes_text_faces(opts: &[Expr]) -> ([(bool, bool); 3], [(bool, bool); 3]) {
   let apply = |face: (bool, bool), spec: &Expr| {
     let (bold, italic) = font_face_overrides(spec);
     (bold.unwrap_or(face.0), italic.unwrap_or(face.1))
@@ -5991,16 +6051,13 @@ fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
       label = apply(label, &spec);
     }
   }
-  let ticks = match option("TicksStyle") {
-    Some(Expr::List(ref items)) if items.len() == 3 => [
-      apply(label, &items[0]),
-      apply(label, &items[1]),
-      apply(label, &items[2]),
-    ],
-    Some(spec) => [apply(label, &spec); 3],
-    None => [label; 3],
+  let restyle = |faces: [(bool, bool); 3], key: &str| {
+    let specs = axis_style_specs_3d(opts, key);
+    [0, 1, 2]
+      .map(|i| specs[i].as_ref().map_or(faces[i], |s| apply(faces[i], s)))
   };
-  (label, ticks)
+  let labels = restyle([label; 3], "AxesStyle");
+  (labels, restyle(labels, "TicksStyle"))
 }
 
 /// The SVG attributes for a `(bold, italic)` text face (empty for plain).
@@ -15785,13 +15842,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_view_point = false;
   let mut orthographic = false;
   let mut show_axes = false;
-  let (label_face, tick_faces) = axes_text_faces(&args[1..]);
-  let mut axes_look = AxesLook {
-    label_size: label_font_size(&args[1..]),
-    label_face,
-    tick_faces,
-    ..AxesLook::default()
-  };
+  let mut axes_look = AxesLook::from_options(&args[1..]);
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -16013,10 +16064,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
-        }
-        "TicksStyle" => {
-          (axes_look.tick_colors, axes_look.tick_sizes) =
-            parse_ticks_style_3d(replacement);
         }
         _ => {}
       }
