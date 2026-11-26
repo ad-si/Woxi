@@ -3155,6 +3155,138 @@ mod tests {
       );
     }
 
+    /// The x and y extent of every `<polygon>` vertex in `svg`.
+    fn polygon_extent(svg: &str) -> ((f64, f64), (f64, f64)) {
+      let mut x = (f64::INFINITY, f64::NEG_INFINITY);
+      let mut y = (f64::INFINITY, f64::NEG_INFINITY);
+      for points in svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .filter_map(|p| p.split('"').next())
+      {
+        for point in points.split_whitespace() {
+          let (px, py) = point.split_once(',').expect("an x,y pair");
+          let (px, py): (f64, f64) =
+            (px.parse().expect("x"), py.parse().expect("y"));
+          x = (x.0.min(px), x.1.max(px));
+          y = (y.0.min(py), y.1.max(py));
+        }
+      }
+      (x, y)
+    }
+
+    #[test]
+    fn show_keeps_the_range_padding_of_a_parametric_curve() {
+      // A `ParametricPlot3D` curve carries `PlotRangePadding ->
+      // Scaled[0.05]`, so a `Show` led by it that pins the `PlotRange`
+      // displays that range with a twentieth of the box left free on each
+      // side. Under an explicit `ViewAngle` the scene is measured against
+      // the longest side of that box, so it is drawn 0.9 the size of an
+      // unpadded one.
+      let shown = |lead: &str, padding: &str| {
+        let (x, _) = polygon_extent(&svg_of(&format!(
+          "Show[{lead}, Graphics3D[Polygon[{{{{0, 2, 0}}, {{2, 0, 0}}, \
+           {{0, -2, 0}}, {{-2, 0, 0}}}}]], ViewPoint -> {{2, 9, 4}}, \
+           Axes -> False, Boxed -> False, ImageSize -> {{320, 360}}, \
+           ViewAngle -> Pi/30, \
+           PlotRange -> {{{{-3, 3}}, {{-3, 3}}, {{-1, 6}}}}{padding}]"
+        )));
+        x.1 - x.0
+      };
+      let curve = "ParametricPlot3D[{Cos[t], Sin[t], t/4}, {t, 0, 12}]";
+      let width = shown(curve, "");
+      let padded = shown(curve, ", PlotRangePadding -> Scaled[0.05]");
+      let unpadded = shown(curve, ", PlotRangePadding -> None");
+      assert!(
+        (width - padded).abs() < 0.2,
+        "the curve's own padding applies: {width} vs {padded}"
+      );
+      assert!(
+        (width - 0.9 * unpadded).abs() < 0.5,
+        "the range fills 0.9 of the padded box: {width} vs {unpadded}"
+      );
+      // A curve drawn as a tube is padded alike.
+      let tube = shown(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/4}, {t, 0, 12}, \
+         PlotStyle -> {Tube[0.1]}]",
+        "",
+      );
+      assert!(
+        (tube - width).abs() < 0.2,
+        "a tube plot is padded the same: {tube} vs {width}"
+      );
+      // A plain `Graphics3D` in the lead has no such padding to pass on.
+      let plain = shown("Graphics3D[Point[{0, 0, 0}]]", "");
+      assert!(
+        (plain - unpadded).abs() < 0.2,
+        "an explicit range of a Graphics3D is not padded: {plain}"
+      );
+    }
+
+    #[test]
+    fn butt_cap_form_cuts_a_tube_off_flat() {
+      // Seen from the side, a tube with the default round caps reaches a
+      // radius past each end point; `CapForm["Butt"]` and
+      // `CapForm["Square"]` close it with a flat disk at the end point.
+      let length = |cap: &str| {
+        let (_, y) = polygon_extent(&svg_of(&format!(
+          "Graphics3D[{{{cap}Tube[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 0.25]}}, \
+           ViewPoint -> {{0, -50, 0}}, Boxed -> False, \
+           PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{-1, 2}}}}, \
+           ImageSize -> {{300, 300}}]"
+        )));
+        y.1 - y.0
+      };
+      let round = length("");
+      let butt = length("CapForm[\"Butt\"], ");
+      assert!(
+        (round / butt - 1.5).abs() < 0.02,
+        "round caps add a radius at each end: {round} vs {butt}"
+      );
+      assert!((length("CapForm[\"Round\"], ") - round).abs() < 0.01);
+      assert!((length("CapForm[\"Square\"], ") - butt).abs() < 0.01);
+      // The flat end is closed, unlike that of an open tube.
+      let from_above = |cap: &str| {
+        svg_of(&format!(
+          "Graphics3D[{{{cap}Tube[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 0.25]}}, \
+           ViewPoint -> {{0, -1, 3}}]"
+        ))
+      };
+      assert_ne!(
+        from_above("CapForm[\"Butt\"], "),
+        from_above("CapForm[None], ")
+      );
+    }
+
+    #[test]
+    fn parametric_plot3d_tube_ends_flat() {
+      // A curve plotted with `PlotStyle -> {Tube[r]}` ends in a flat cut:
+      // a straight tube along z, seen from the side, is as long as the
+      // curve, not a diameter longer.
+      let (x, y) = polygon_extent(&svg_of(
+        "ParametricPlot3D[{0, 0, t}, {t, 0, 2}, PlotStyle -> {Tube[0.25]}, \
+         ViewPoint -> {0, -50, 0}, Boxed -> False, Axes -> False, \
+         PlotRange -> {{-2, 2}, {-2, 2}, {-1, 3}}, ImageSize -> {300, 300}]",
+      ));
+      let ratio = (y.1 - y.0) / (x.1 - x.0);
+      assert!(
+        (ratio - 4.0).abs() < 0.05,
+        "2 long and 0.5 across, with no caps beyond the ends: {ratio}"
+      );
+      // A `CapForm` in the style still rounds the ends.
+      let (x, y) = polygon_extent(&svg_of(
+        "ParametricPlot3D[{0, 0, t}, {t, 0, 2}, \
+         PlotStyle -> {CapForm[\"Round\"], Tube[0.25]}, \
+         ViewPoint -> {0, -50, 0}, Boxed -> False, Axes -> False, \
+         PlotRange -> {{-2, 2}, {-2, 2}, {-1, 3}}, ImageSize -> {300, 300}]",
+      ));
+      let ratio = (y.1 - y.0) / (x.1 - x.0);
+      assert!(
+        (ratio - 5.0).abs() < 0.05,
+        "round caps add a radius at each end: {ratio}"
+      );
+    }
+
     #[test]
     fn parametric_plot3d_first_repeated_plot_style_wins() {
       // A repeated option takes its first setting, so the later
