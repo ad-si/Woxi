@@ -43494,6 +43494,69 @@ mod grid_frame_and_background {
     assert!(width < 60, "column sized from the source text: {width}");
   }
 
+  /// A `StyleForm` item is styled content wherever it sits: in a `Row`
+  /// inside a displayed `Grid` that also holds a picture, and around
+  /// `TraditionalForm` at the top level. Regression: both printed the
+  /// wrapper's own source text.
+  #[test]
+  fn style_form_renders_like_style_in_every_layout() {
+    let displayed = woxi::interpret_with_stdout(
+      r#"Grid[{{Row[{StyleForm[TraditionalForm[q], FontSize -> 12], " = ",
+          StyleForm[TraditionalForm[{{1, 2}, {3, 4}}], FontSize -> 12]}]},
+        {Graphics[Disk[]]}}]"#,
+    )
+    .unwrap()
+    .graphics
+    .expect("a displayed picture");
+    assert!(!displayed.contains("StyleForm"), "{displayed}");
+    assert!(!displayed.contains("FontSize"), "{displayed}");
+    for entry in ["q", "1", "2", "3", "4"] {
+      assert!(
+        displayed.contains(&format!(">{entry}</text>")),
+        "{displayed}"
+      );
+    }
+
+    let top = export_svg(
+      r#"StyleForm[TraditionalForm[{{1, 2}, {3, 4}}], FontSize -> 12]"#,
+    );
+    assert!(!top.contains("StyleForm"), "{top}");
+    assert_eq!(
+      top,
+      export_svg(r#"Style[TraditionalForm[{{1, 2}, {3, 4}}], FontSize -> 12]"#)
+    );
+  }
+
+  /// A `StyleForm` result that is not drawn still prints under its own name.
+  #[test]
+  fn style_form_keeps_its_name_as_text() {
+    assert_eq!(
+      interpret("StyleForm[x, FontSize -> 12]").unwrap(),
+      "StyleForm[x, FontSize -> 12]"
+    );
+  }
+
+  /// `Alignment -> {h}` gives a `Row` its horizontal alignment, just as the
+  /// bare `h` does.
+  #[test]
+  fn row_alignment_list_of_one_sets_the_horizontal_alignment() {
+    for side in ["Center", "Right", "Left"] {
+      assert_eq!(
+        export_svg(&format!(
+          r#"Row[{{"a", "b"}}, ImageSize -> 300, Alignment -> {{{side}}}]"#
+        )),
+        export_svg(&format!(
+          r#"Row[{{"a", "b"}}, ImageSize -> 300, Alignment -> {side}]"#
+        )),
+        "{side}"
+      );
+    }
+    assert_ne!(
+      export_svg(r#"Row[{"a", "b"}, ImageSize -> 300, Alignment -> {Center}]"#),
+      export_svg(r#"Row[{"a", "b"}, ImageSize -> 300]"#)
+    );
+  }
+
   /// `SpanFromLeft` means "the cell to my left continues here": it draws
   /// nothing, its neighbor is laid out across the merged columns, and the
   /// divider between them is interrupted. Regression: the symbol's name was
@@ -53612,6 +53675,21 @@ mod manipulate {
         ("b".to_string(), true),
       ]
     );
+  }
+
+  /// An `Invisible[…]` factor is a typeset spacer, so a label written as
+  /// its product with a styled symbol sets the two side by side, without
+  /// a `*` between them.
+  #[test]
+  fn invisible_factor_in_a_label_product_sets_no_times_sign() {
+    for styled in ["StyleForm[k, FontSize -> 12]", "Style[k, 12]"] {
+      let label = first_continuous_label(&format!(
+        "Manipulate[x, {{{{x, 1, Invisible[3/4] {styled}}}, 0, 2}}]"
+      ));
+      assert!(!label.contains('*'), "{styled}: {label:?}");
+      assert!(label.ends_with('k'), "{styled}: {label:?}");
+      assert!(label.starts_with(' '), "{styled}: {label:?}");
+    }
   }
 
   fn first_continuous_label(code: &str) -> String {

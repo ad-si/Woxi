@@ -8084,6 +8084,16 @@ fn export_svg(expr: &Expr) -> String {
 }
 
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
+  // `StyleForm` is displayed exactly as `Style`.
+  match crate::functions::graphics::style_forms_as_style(expr) {
+    Some(styled) => styled_expr_to_svg(&styled),
+    None => styled_expr_to_svg(expr),
+  }
+}
+
+/// [`expr_to_svg`] for an expression whose `StyleForm`s are already
+/// respelled as `Style`.
+fn styled_expr_to_svg(expr: &Expr) -> String {
   // A list of typeset matrices sets each in two dimensions between the
   // braces, not as the source text of the list.
   if let Some(row) = crate::functions::graphics::list_with_grids_as_row(expr) {
