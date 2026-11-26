@@ -44542,7 +44542,17 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Row", args) {
     return row_to_svg(&styled);
   }
-  let svg = row_layout_svg(args)?;
+  let fitted = row_pictures_fitted_to_box(args);
+  let svg = match &fitted {
+    // The row keeps the height its `ImageSize -> {w, h}` names, the
+    // fitted pictures centered on its line.
+    Some((fitted_args, width, height)) => {
+      let row = row_layout_svg(fitted_args)?;
+      let (row_w, row_h) = parse_svg_wh(&row);
+      place_in_pane_box(&row, row_w, row_h, *width, *height, Some((0.0, 0.5)))
+    }
+    None => row_layout_svg(args)?,
+  };
   let opts: Vec<Expr> = args
     .iter()
     .skip(1)
@@ -44550,6 +44560,111 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     .cloned()
     .collect();
   Some(decorate_layout_svg(svg, &opts))
+}
+
+/// Whether the content of a `Graphics[content, opts…]` has no extent of its
+/// own: only `Text` labels, possibly styled, with no shape to give the
+/// picture a plot range or an aspect ratio.
+fn graphics_content_is_text_only(content: &Expr) -> bool {
+  fn walk(e: &Expr, texts: &mut usize) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(|i| walk(i, texts)),
+      Expr::FunctionCall { name, args } if name == "Text" => {
+        *texts += 1;
+        // An explicit position stretches the plot range between labels.
+        args.len() == 1
+      }
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        walk(&args[0], texts)
+      }
+      other => {
+        parse_color(other).is_some() || is_non_color_graphics_directive(other)
+      }
+    }
+  }
+  let mut texts = 0;
+  walk(content, &mut texts) && texts > 0
+}
+
+/// The arguments of a `Row[items, …, ImageSize -> {w, h}]` whose
+/// automatically sized pictures are redrawn to fit that `w` × `h` box, as
+/// a `Pane` of that size fits its picture, together with the box. A
+/// picture of labels alone has no shape to keep, so it takes the box's.
+/// `None` when the row names no such box or holds no such picture.
+fn row_pictures_fitted_to_box(args: &[Expr]) -> Option<(Vec<Expr>, f64, f64)> {
+  use crate::evaluator::dispatch::io_functions::pane_size_component;
+  let Some(Expr::List(items)) = args.first() else {
+    return None;
+  };
+  let size = args
+    .iter()
+    .skip(1)
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ImageSize")
+    .map(|(_, v)| v)?;
+  let Expr::List(dims) = size else {
+    return None;
+  };
+  let [w, h] = dims.as_slice() else {
+    return None;
+  };
+  let (width, height) = (
+    pane_size_component(w).filter(|w| *w > 0.0)?,
+    pane_size_component(h).filter(|h| *h > 0.0)?,
+  );
+  let mut any = false;
+  let fitted: Vec<Expr> = items
+    .iter()
+    .map(|item| {
+      let picture_args = match item {
+        Expr::FunctionCall { name, args } if name == "Graphics" => Some(args),
+        Expr::Graphics { structure, .. } => match structure.as_deref() {
+          Some(Expr::FunctionCall { name, args }) if name == "Graphics" => {
+            Some(args)
+          }
+          _ => None,
+        },
+        _ => None,
+      };
+      let shapeless = pane_picture_is_auto_sized(item)
+        && items.len() == 1
+        && picture_args.is_some_and(|pargs| {
+          pargs.first().is_some_and(graphics_content_is_text_only)
+            && !pargs
+              .iter()
+              .skip(1)
+              .filter_map(option_kv)
+              .any(|(k, _)| matches!(k, "PlotRange" | "AspectRatio"))
+        });
+      let redrawn = if shapeless {
+        picture_args.map(|pargs| {
+          let mut new_args = pargs.to_vec();
+          new_args.push(rule_expr(
+            id_expr("ImageSize"),
+            Expr::List(vec![Expr::Real(width), Expr::Real(height)].into()),
+          ));
+          call("Graphics", new_args)
+        })
+      } else {
+        fit_auto_sized_picture_to_box(item, width, height)
+      };
+      match redrawn {
+        Some(picture) => {
+          any = true;
+          picture
+        }
+        None => item.clone(),
+      }
+    })
+    .collect();
+  if !any {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  new_args[0] = Expr::List(fitted.into());
+  Some((new_args, width, height))
 }
 
 fn row_layout_svg(args: &[Expr]) -> Option<String> {
