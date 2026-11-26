@@ -30206,7 +30206,7 @@ mod cylinder_sides_tests {
     let mut last = 0;
     for k in 1..=100 {
       let sides = cylinder_sides(k as f64 / 400.0, 1.0, 9);
-      assert!(sides >= last && sides % 4 == 0, "{k}: {sides}");
+      assert!(sides >= last && sides.is_multiple_of(4), "{k}: {sides}");
       assert!((MIN_CYLINDER_SIDES..=CYLINDER_SIDES).contains(&sides));
       last = sides;
     }
