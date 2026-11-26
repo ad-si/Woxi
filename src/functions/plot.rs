@@ -9205,6 +9205,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        own_y_range: None,
         continues_previous: plot_style
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
@@ -9887,10 +9888,14 @@ pub(crate) fn render_merged_plot_source(
     merged_plot_source_options(source);
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
-  } else if !overrides.aspect_automatic && opts.aspect_ratio.is_none() {
+  } else if !overrides.aspect_automatic
+    && !opts.aspect_full
+    && opts.aspect_ratio.is_none()
+  {
     // The ratio the shown plot was drawn with (a `ContourPlot`'s square
     // frame) stays when `Show` only resizes it: `Show[plot, ImageSize ->
-    // {w, h}]` letterboxes that shape rather than stretching it.
+    // {w, h}]` letterboxes that shape rather than stretching it — unless
+    // `AspectRatio -> Full` asks for the stretch.
     opts.aspect_ratio = source.aspect_ratio;
   }
   opts.aspect_automatic = overrides.aspect_automatic;
@@ -13883,6 +13888,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      own_y_range: None,
       continues_previous: false,
       color_function: None,
       arrowheads: None,
