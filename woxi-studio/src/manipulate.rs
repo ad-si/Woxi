@@ -8048,6 +8048,35 @@ mod tests {
     assert_eq!(names, ["cutoff"]);
   }
 
+  /// A control label written as a product of its text and a `Spacer[n]`
+  /// (`"name" Spacer[12]`, padding the label out to line controls up) is
+  /// the text followed by blank space; the label must not spell out the
+  /// product as `name*Spacer[12]`.
+  #[test]
+  fn control_label_times_spacer_shows_only_the_text() {
+    let code = r#"Manipulate[
+      If[show, k, -k],
+      {{show, True, "visible" Spacer[12]}, {True, False}},
+      {{k, 3, Spacer[5] "level"}, 1, 9, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    let labels: Vec<String> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Discrete { label, .. }
+        | ControlState::Continuous { label, .. } => Some(label.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    assert_eq!(labels[0].trim(), "visible");
+    assert_eq!(labels[1].trim(), "level");
+  }
+
   /// A sampled Demonstration titles a control with `Row[{"title",
   /// Spacer[n]}]` and pins its readouts with left-aligned `Text`. The
   /// spacer is layout, so the control heading must not spell out the
