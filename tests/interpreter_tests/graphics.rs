@@ -67243,10 +67243,10 @@ mod plots_with_nothing_to_draw {
       "{FrameTicks -> None}"
     );
     // An explicit `FrameTicks` is kept instead.
-    let ticked = export_svg(&format!(
-      "Show[ReliefPlot[{{{{1, 2, 3}}, {{2, 5, 2}}}}, \
-       FrameTicks -> Automatic], PlotLabel -> \"heights\"]"
-    ));
+    let ticked = export_svg(
+      "Show[ReliefPlot[{{1, 2, 3}, {2, 5, 2}}, FrameTicks -> Automatic], \
+       PlotLabel -> \"heights\"]",
+    );
     assert!(ticked.matches("<text").count() > 1, "{ticked}");
   }
 
