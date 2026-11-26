@@ -168,6 +168,8 @@ pub enum ControlState {
   Slider2D {
     name: String,
     label: String,
+    /// Styled runs of the label (see `ManipulateControl::Slider2D`).
+    label_runs: Vec<LabelRun>,
     x_min: f64,
     x_max: f64,
     y_min: f64,
@@ -3447,6 +3449,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       ManipulateControl::Slider2D {
         name,
         label,
+        label_runs,
         x_min,
         x_max,
         y_min,
@@ -3459,6 +3462,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       } => ControlState::Slider2D {
         name: name.clone(),
         label: label.clone(),
+        label_runs: label_runs.clone(),
         x_min: *x_min,
         x_max: *x_max,
         y_min: *y_min,
@@ -4531,6 +4535,53 @@ mod tests {
       joins,
       vec![("k", false), ("a", true), ("s", false), ("n", true)]
     );
+  }
+
+  /// 2D sliders placed in a `Row` of `Control@` wrappers keep the styled
+  /// label of their spec — a base letter with an italic subscript — as
+  /// label runs, next to vertical sliders labeled the same way. Regression:
+  /// the 2D slider's label was flattened to plain text ("Pxy") while the
+  /// plain sliders beside it showed the subscript.
+  #[test]
+  fn slider2d_in_control_row_keeps_subscript_label_runs() {
+    let code = r#"Manipulate[
+      Graphics3D[{Sphere[Join[pxy, {pz}], 0.4], Sphere[Join[qxy, {qz}], 0.4]},
+        PlotRange -> 5],
+      Row[{"plane: ",
+        Control@{{pxy, {-3, 3}, Subscript["P", Style["xy", Italic]]},
+          {-5, -5}, {5, 5}, Appearance -> Tiny}, " ",
+        Control@{{qxy, {1, 1}, Subscript["Q", Style["xy", Italic]]},
+          {-5, -5}, {5, 5}, Appearance -> Tiny}}],
+      Row[{
+        Control@{{pz, 1, Subscript["P", Style["z", Italic]]}, -5, 5,
+          ControlType -> VerticalSlider},
+        Control@{{qz, 2, Subscript["Q", Style["z", Italic]]}, -5, 5,
+          ControlType -> VerticalSlider}}],
+      ControlPlacement -> {Top, Left}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    for (name, base) in [("pxy", "P"), ("qxy", "Q")] {
+      let ctrl = state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("{name} control"));
+      let ControlState::Slider2D {
+        label, label_runs, ..
+      } = ctrl
+      else {
+        panic!("{name} must be a 2D slider: {ctrl:?}");
+      };
+      let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+      assert_eq!(&text, label);
+      assert_eq!(label_runs[0].text, base);
+      assert!(!label_runs[0].subscript);
+      let script = label_runs.last().unwrap();
+      assert_eq!(script.text, "xy");
+      assert!(script.italic && script.subscript, "runs: {label_runs:?}");
+    }
   }
 
   /// A layout template `Row[{Spacer[…], Place[1], Spacer[…], Place[2]}]`
