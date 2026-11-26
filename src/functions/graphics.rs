@@ -993,6 +993,30 @@ impl BBox {
     self.x_min > self.x_max || self.y_min > self.y_max
   }
 
+  /// One flat side (e.g. a horizontal line) spans from 0 to twice its
+  /// value, or {-1, 1} at 0, as in Wolfram. A single point (both sides
+  /// flat) is left alone.
+  fn with_flat_side_widened(self) -> Self {
+    let flat_x = self.x_max - self.x_min < 1e-10;
+    let flat_y = self.y_max - self.y_min < 1e-10;
+    let mut bb = self;
+    if flat_x != flat_y {
+      let widen = |v: f64| {
+        if v.abs() < 1e-10 {
+          (-1.0, 1.0)
+        } else {
+          (v.min(2.0 * v).min(0.0), v.max(2.0 * v).max(0.0))
+        }
+      };
+      if flat_x {
+        (bb.x_min, bb.x_max) = widen(bb.x_min);
+      } else {
+        (bb.y_min, bb.y_max) = widen(bb.y_min);
+      }
+    }
+    bb
+  }
+
   /// Pad each axis by `frac` of its span; with `uniform` both axes get
   /// `frac` of the horizontal span, i.e. the same margin in pixels all
   /// round. An explicit `aspect` (height / width of the drawing area)
@@ -1008,26 +1032,7 @@ impl BBox {
     if self.is_empty() {
       return self;
     }
-    let flat_x = self.x_max - self.x_min < 1e-10;
-    let flat_y = self.y_max - self.y_min < 1e-10;
-    let mut bb = self;
-    // One flat side (e.g. a horizontal line) spans from 0 to twice its
-    // value, or {-1, 1} at 0, as in Wolfram. A single point keeps a fixed
-    // margin all round.
-    if flat_x != flat_y {
-      let widen = |v: f64| {
-        if v.abs() < 1e-10 {
-          (-1.0, 1.0)
-        } else {
-          (v.min(2.0 * v).min(0.0), v.max(2.0 * v).max(0.0))
-        }
-      };
-      if flat_x {
-        (bb.x_min, bb.x_max) = widen(bb.x_min);
-      } else {
-        (bb.y_min, bb.y_max) = widen(bb.y_min);
-      }
-    }
+    let bb = self.with_flat_side_widened();
     let (mut dx, mut dy) =
       ((bb.x_max - bb.x_min) * frac, (bb.y_max - bb.y_min) * frac);
     if uniform {
@@ -15036,6 +15041,7 @@ fn graphics_decorations(
   ticks: (&TickSpec, &TickSpec),
   frame: Option<(&[EdgeTicks; 4], &[Option<Vec<(f64, String)>>; 4])>,
   frame_label: Option<&(String, String, String, String)>,
+  rotate_label: bool,
   axes_label: Option<&(String, String)>,
   title_lines: usize,
   title_font: f64,
@@ -15172,6 +15178,16 @@ fn graphics_decorations(
         )
       };
       d.frame_label_lengths = [length(b), length(l), length(t), length(r)];
+      // An upright side label reaches its width away from the edge and
+      // its height along it.
+      if !rotate_label {
+        for edge in [1, 3] {
+          if let Some(height) = d.frame_labels[edge] {
+            d.frame_labels[edge] = Some(d.frame_label_lengths[edge]);
+            d.frame_label_lengths[edge] = height;
+          }
+        }
+      }
     }
   } else if axes.0 || axes.1 {
     d.axes = axes;
@@ -18816,6 +18832,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // markup: the captions that sit outside the frame, in the order
   // bottom, left, top, right.
   let mut frame_label: Option<(String, String, String, String)> = None;
+  // `RotateLabel -> False` keeps the left and right frame labels upright.
+  let mut rotate_label = true;
   // `Ticks -> {xspec, yspec}`: which tick marks each axis carries.
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
@@ -19022,6 +19040,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         // `FrameLabel -> {bottom, left}` / `{{left, right}, {bottom, top}}`
         // captions the frame edges.
+        "RotateLabel" => {
+          rotate_label =
+            crate::functions::plot::parse_rotate_label(replacement);
+        }
         "FrameLabel" => {
           let fl = crate::functions::plot::parse_frame_label(replacement);
           if !fl.bottom.is_empty()
@@ -19256,8 +19278,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `PlotRangePadding` pads whatever the effective range ends up being,
     // whether that came from the primitives' automatic bounding box or an
     // explicit `PlotRange`.
-    let (x_min, x_max) = plot_range_x.unwrap_or((bb.x_min, bb.x_max));
-    let (y_min, y_max) = plot_range_y.unwrap_or((bb.y_min, bb.y_max));
+    // A flat automatic range (a horizontal line and nothing else) is
+    // opened up first, exactly as the default padding below opens it.
+    let open = bb.with_flat_side_widened();
+    let (x_min, x_max) = plot_range_x.unwrap_or((open.x_min, open.x_max));
+    let (y_min, y_max) = plot_range_y.unwrap_or((open.y_min, open.y_max));
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
@@ -19831,6 +19856,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (&ticks_x, &ticks_y),
     frame.then_some((&frame_tick_modes, &frame_tick_lists)),
     frame_label.as_ref(),
+    rotate_label,
     axes_label.as_ref(),
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
@@ -20437,13 +20463,43 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::plot::join_label_lines(&text_label_lines(bottom), x, pitch),
       ));
     }
+    // An upright (`RotateLabel -> False`) side caption: its lines centered
+    // on `x` and stacked downward, the block centered on the frame's height.
+    let upright_width = |label: &str| {
+      text_label_lines(label)
+        .iter()
+        .map(|line| crate::functions::plot_padding::text_width(line, flf))
+        .fold(0.0, f64::max)
+    };
+    let upright = |label: &str, x: f64, fill: &str| {
+      let lines = text_label_lines(label);
+      let y = svg_h / 2.0 - block_height(lines.len(), flf) / 2.0 + ascent(flf);
+      format!(
+        "<text x=\"{x:.1}\" y=\"{y:.1}\" fill=\"{fill}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
+        crate::functions::plot::join_label_lines(&lines, x, pitch),
+      )
+    };
+    // How far a side caption's picture reaches away from its edge.
+    let across = |label: &str, h: f64| {
+      if rotate_label {
+        h
+      } else {
+        axes_label_picture_size(label).map_or(h, |(w, _)| w)
+      }
+    };
     if let Some(h) = picture_h(left) {
       svg.push_str(&frame_label_picture_svg(
         left,
-        -(room(1) + h / 2.0),
+        -(room(1) + across(left, h) / 2.0),
         svg_h / 2.0,
-        true,
+        rotate_label,
         1.0,
+      ));
+    } else if !left.is_empty() && !rotate_label {
+      svg.push_str(&upright(
+        left,
+        -(room(1) + upright_width(left) / 2.0),
+        &frame_label_fills[1],
       ));
     } else if !left.is_empty() {
       // Rotated counterclockwise the glyphs rise to the left of the
@@ -20478,10 +20534,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(h) = picture_h(right) {
       svg.push_str(&frame_label_picture_svg(
         right,
-        svg_w + room(3) + h / 2.0,
+        svg_w + room(3) + across(right, h) / 2.0,
         svg_h / 2.0,
-        true,
+        rotate_label,
         1.0,
+      ));
+    } else if !right.is_empty() && !rotate_label {
+      svg.push_str(&upright(
+        right,
+        svg_w + room(3) + upright_width(right) / 2.0,
+        &frame_label_fills[3],
       ));
     } else if !right.is_empty() {
       // Reading upwards like the left one.
@@ -30108,6 +30170,7 @@ pub(crate) fn log_scaled_plot_source(
   };
   let mut scaled = ps.clone();
   for s in &mut scaled.series {
+    s.own_y_range = s.own_y_range.map(range_y);
     s.points.iter_mut().for_each(|p| *p = point(*p));
     s.mesh_full_points.iter_mut().for_each(|p| *p = point(*p));
     filling(&mut s.filling);
@@ -30283,6 +30346,15 @@ fn svg_tick_label_expr(label: &str) -> Expr {
   }
 }
 
+/// The y range a plot source cuts its curves at: the plot's own range, not
+/// the padded one it is drawn in.
+fn plot_source_clip_y_range(ps: &crate::syntax::PlotSource) -> (f64, f64) {
+  ps.plot_range
+    .map(|(_, y)| y)
+    .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
+    .unwrap_or(ps.y_range)
+}
+
 /// The drawing primitives a rendered plot's sampled series stand for —
 /// filled regions, the series color and thickness, and the `Line` /
 /// `Point` the samples make up. `Show` merges these with the primitives of
@@ -30305,11 +30377,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   // The curves are cut at the plot's own range, not at the padded one it
   // is drawn in: the `PlotRangePadding` margin stays blank, as in a plot
   // drawn on its own (and in Wolfram).
-  let clip_y = ps
-    .plot_range
-    .map(|(_, y)| y)
-    .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
-    .unwrap_or(ps.y_range);
+  let source_clip_y = plot_source_clip_y_range(ps);
   // Every fill (and scatter stem) is gathered first and emitted before
   // any series' curve or points, as in the Wolfram Language's own plot
   // output: a `Filling -> {1 -> {2}}` area must not paint over the line
@@ -30322,6 +30390,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     if si < skip_until {
       continue;
     }
+    // A series merged in from another plot is cut at that plot's range.
+    let clip_y = sd
+      .own_y_range
+      .filter(|y| y.0.is_finite() && y.1.is_finite() && y.0 < y.1)
+      .unwrap_or(source_clip_y);
     // Filled region (Filling -> …) as a Polygon underneath the curve,
     // wrapped in its own list so the fill color/opacity directives
     // don't leak onto the line drawn after it. FillingStyle appearance
@@ -31751,7 +31824,9 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           *j += offset;
         }
       };
+      let own_y_range = plot_source_clip_y_range(ps);
       all_series.extend(ps.series.iter().cloned().map(|mut s| {
+        s.own_y_range.get_or_insert(own_y_range);
         shift(&mut s.filling);
         s.extra_fills.iter_mut().for_each(|f| shift(&mut f.filling));
         s
@@ -31979,8 +32054,13 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // The `PlotRange` the log plot was given names data values; a range
-    // given to `Show` itself is already in the picture's `Log` space.
-    if (log_x || log_y) && !show_sets_plot_range {
+    // given to `Show` itself is already in the picture's `Log` space, and
+    // so is the one of a leading raw `Graphics` (a log plot stored as its
+    // `Log`-space primitives with `Charting`ScaledTicks`).
+    if (log_x || log_y)
+      && !show_sets_plot_range
+      && first_graphic_is_plot == Some(true)
+    {
       for opt in &mut merged_options {
         if let Expr::Rule {
           pattern,
@@ -32189,7 +32269,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if option_name(pattern) == Some("AspectRatio")
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Full"))
       });
-      if let Some(i) = full_aspect {
+      // An `ImageSize -> {w, h}` is such a frame: the drawing then
+      // stretches over the whole of it, as it does for a lone plot.
+      let size_names_frame = merged_options.iter().any(|o| {
+        option_name_value(o).is_some_and(|(name, value)| {
+          name == "ImageSize"
+            && matches!(&*value, Expr::List(items)
+              if items.len() == 2
+                && items.iter().all(|i| expr_to_f64(i).is_some()))
+        })
+      });
+      if let Some(i) = full_aspect
+        && !size_names_frame
+      {
         merged_options.remove(i);
       }
       if plot_options_need_aspect_ratio(&merged_options) {
@@ -44644,7 +44736,17 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Row", args) {
     return row_to_svg(&styled);
   }
-  let svg = row_layout_svg(args)?;
+  let fitted = row_pictures_fitted_to_box(args);
+  let svg = match &fitted {
+    // The row keeps the height its `ImageSize -> {w, h}` names, the
+    // fitted pictures centered on its line.
+    Some((fitted_args, width, height)) => {
+      let row = row_layout_svg(fitted_args)?;
+      let (row_w, row_h) = parse_svg_wh(&row);
+      place_in_pane_box(&row, row_w, row_h, *width, *height, Some((0.0, 0.5)))
+    }
+    None => row_layout_svg(args)?,
+  };
   let opts: Vec<Expr> = args
     .iter()
     .skip(1)
@@ -44652,6 +44754,111 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
     .cloned()
     .collect();
   Some(decorate_layout_svg(svg, &opts))
+}
+
+/// Whether the content of a `Graphics[content, opts…]` has no extent of its
+/// own: only `Text` labels, possibly styled, with no shape to give the
+/// picture a plot range or an aspect ratio.
+fn graphics_content_is_text_only(content: &Expr) -> bool {
+  fn walk(e: &Expr, texts: &mut usize) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(|i| walk(i, texts)),
+      Expr::FunctionCall { name, args } if name == "Text" => {
+        *texts += 1;
+        // An explicit position stretches the plot range between labels.
+        args.len() == 1
+      }
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        walk(&args[0], texts)
+      }
+      other => {
+        parse_color(other).is_some() || is_non_color_graphics_directive(other)
+      }
+    }
+  }
+  let mut texts = 0;
+  walk(content, &mut texts) && texts > 0
+}
+
+/// The arguments of a `Row[items, …, ImageSize -> {w, h}]` whose
+/// automatically sized pictures are redrawn to fit that `w` × `h` box, as
+/// a `Pane` of that size fits its picture, together with the box. A
+/// picture of labels alone has no shape to keep, so it takes the box's.
+/// `None` when the row names no such box or holds no such picture.
+fn row_pictures_fitted_to_box(args: &[Expr]) -> Option<(Vec<Expr>, f64, f64)> {
+  use crate::evaluator::dispatch::io_functions::pane_size_component;
+  let Some(Expr::List(items)) = args.first() else {
+    return None;
+  };
+  let size = args
+    .iter()
+    .skip(1)
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ImageSize")
+    .map(|(_, v)| v)?;
+  let Expr::List(dims) = size else {
+    return None;
+  };
+  let [w, h] = dims.as_slice() else {
+    return None;
+  };
+  let (width, height) = (
+    pane_size_component(w).filter(|w| *w > 0.0)?,
+    pane_size_component(h).filter(|h| *h > 0.0)?,
+  );
+  let mut any = false;
+  let fitted: Vec<Expr> = items
+    .iter()
+    .map(|item| {
+      let picture_args = match item {
+        Expr::FunctionCall { name, args } if name == "Graphics" => Some(args),
+        Expr::Graphics { structure, .. } => match structure.as_deref() {
+          Some(Expr::FunctionCall { name, args }) if name == "Graphics" => {
+            Some(args)
+          }
+          _ => None,
+        },
+        _ => None,
+      };
+      let shapeless = pane_picture_is_auto_sized(item)
+        && items.len() == 1
+        && picture_args.is_some_and(|pargs| {
+          pargs.first().is_some_and(graphics_content_is_text_only)
+            && !pargs
+              .iter()
+              .skip(1)
+              .filter_map(option_kv)
+              .any(|(k, _)| matches!(k, "PlotRange" | "AspectRatio"))
+        });
+      let redrawn = if shapeless {
+        picture_args.map(|pargs| {
+          let mut new_args = pargs.to_vec();
+          new_args.push(rule_expr(
+            id_expr("ImageSize"),
+            Expr::List(vec![Expr::Real(width), Expr::Real(height)].into()),
+          ));
+          call("Graphics", new_args)
+        })
+      } else {
+        fit_auto_sized_picture_to_box(item, width, height)
+      };
+      match redrawn {
+        Some(picture) => {
+          any = true;
+          picture
+        }
+        None => item.clone(),
+      }
+    })
+    .collect();
+  if !any {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  new_args[0] = Expr::List(fitted.into());
+  Some((new_args, width, height))
 }
 
 fn row_layout_svg(args: &[Expr]) -> Option<String> {
@@ -48265,6 +48472,9 @@ pub enum ManipulateControl {
     x_initial: f64,
     y_initial: f64,
     label: String,
+    /// Styled runs of the label (`Subscript["A", Style["xy", Italic]]`
+    /// keeps its italic subscript); empty for a plain default label.
+    label_runs: Vec<LabelRun>,
     /// InputForm of a write-back function (the second argument of a
     /// `Locator[Dynamic[var, cb], …]` this control was promoted from).
     /// Candidate values pass through it — `(cb)[{x, y}]` — before the
@@ -51118,6 +51328,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -51155,6 +51366,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -51199,6 +51411,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -56421,6 +56634,13 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // A `Dynamic[label]` is shown as its current value, recomputed
       // whenever the choice list is (see `values_code`).
       let label = unwrap_dynamic_choices(label);
+      // So is a `Dynamic[…]` inside the label's layout (`Row[{"scaled by ",
+      // Dynamic[MatrixForm[m]]}]`).
+      let released_label = contains_dynamic(label).then(|| {
+        let released = release_dynamics(label);
+        crate::evaluator::evaluate_expr_to_expr(&released).unwrap_or(released)
+      });
+      let label = released_label.as_ref().unwrap_or(label);
       let resolved_label = resolve_choice_label(label);
       let label = resolved_label.as_ref().unwrap_or(label);
       values.push(crate::syntax::expr_to_source_form(value));
@@ -56431,7 +56651,11 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       let svg = discrete_choice_label_svg(label);
       // A label typeset as a picture only for its lowered subscript is
       // still text, so its text column keeps the label's own runs.
-      let runs = if svg.is_some() && !label_has_unmapped_subscript(label) {
+      // So is a phrase with a matrix in it, read on one line by a consumer
+      // that draws no pictures in its menu.
+      let runs = if label_typesets_matrix(label) {
+        discrete_choice_label_runs(&without_matrix_forms(label))
+      } else if svg.is_some() && !label_has_unmapped_subscript(label) {
         discrete_choice_label_runs(value)
       } else {
         // Keeps a `Style[…, color]`/`Bold` directive on the label (e.g. a
@@ -56831,8 +57055,15 @@ fn patch_default_label(
         *label_runs = pretty_runs;
       }
     }
-    ManipulateControl::Slider2D { label, .. }
-    | ManipulateControl::IntervalSlider { label, .. }
+    ManipulateControl::Slider2D {
+      label, label_runs, ..
+    } => {
+      if label == synth {
+        *label = pretty;
+        *label_runs = pretty_runs;
+      }
+    }
+    ManipulateControl::IntervalSlider { label, .. }
     | ManipulateControl::Locator { label, .. } => {
       if label == synth {
         *label = pretty;
@@ -57344,6 +57575,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial,
     y_initial,
     label: var,
+    label_runs: Vec::new(),
     write_callback: None,
     real: false,
     exact_initial: false,
@@ -57412,6 +57644,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial: f64::midpoint(x_min, x_max),
     y_initial: f64::midpoint(y_min, y_max),
     label: "pos".to_string(),
+    label_runs: Vec::new(),
     write_callback: None,
     real: false,
     exact_initial: false,
@@ -58025,6 +58258,7 @@ fn apply_widget_label_style(
       ManipulateControl::Continuous { label_runs, .. }
       | ManipulateControl::Discrete { label_runs, .. }
       | ManipulateControl::VectorSlider { label_runs, .. }
+      | ManipulateControl::Slider2D { label_runs, .. }
       | ManipulateControl::Trigger { label_runs, .. }
       | ManipulateControl::Heading { label_runs, .. }
       | ManipulateControl::Color { label_runs, .. } => {
@@ -58311,14 +58545,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           ..Default::default()
         }]
       }
-      // `TraditionalForm` around a plain arithmetic expression (no styling
-      // or layout inside) typesets it in conventional notation —
-      // `(1 - x/a) x cot(α)` — not as its OutputForm source `Cot[α]`.
+      // `TraditionalForm` around a plain arithmetic expression or a call
+      // of a mathematical function (no styling or layout inside) typesets
+      // it in conventional notation — `(1 - x/a) x cot(α)`, `Re(s)`,
+      // `g(x, y)`, `sin²(x)` — not as its OutputForm source `Cot[α]`.
       "TraditionalForm"
         if args.len() == 1
           && match &args[0] {
             Expr::FunctionCall { name, .. } => {
-              matches!(name.as_str(), "Times" | "Plus")
+              crate::functions::predicate_ast::is_numeric_function(name)
+                || !crate::evaluator::functions::is_builtin_symbol(name)
             }
             Expr::BinaryOp { op, .. } => matches!(
               op,
@@ -58326,15 +58562,37 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
                 | crate::syntax::BinaryOperator::Plus
                 | crate::syntax::BinaryOperator::Minus
                 | crate::syntax::BinaryOperator::Divide
+                | crate::syntax::BinaryOperator::Power
             ),
             _ => false,
           }
           && !contains_presentation_head(&args[0]) =>
       {
-        let text = box_expr_to_plain(&linearize_fraction_boxes(
-          &crate::evaluator::dispatch::complex_and_special::
-            expr_to_box_form_traditional(&args[0]),
-        ));
+        let boxes = crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(&args[0]);
+        // A function call sets its one-letter symbols in italics and a
+        // numeric script as script characters; boxes one line of text
+        // cannot show (a fraction, a letter subscript) keep the general
+        // path's reading of the call.
+        let is_arithmetic = matches!(
+          &args[0],
+          Expr::FunctionCall { name, .. }
+            if matches!(name.as_str(), "Times" | "Plus")
+        ) || matches!(
+          &args[0],
+          Expr::BinaryOp { op, .. }
+            if !matches!(op, crate::syntax::BinaryOperator::Power)
+        );
+        if !is_arithmetic {
+          let Some(mut runs) = traditional_box_runs(&boxes) else {
+            return manipulate_label_runs(&args[0], italic);
+          };
+          for run in &mut runs {
+            run.italic |= italic;
+          }
+          return runs;
+        }
+        let text = box_expr_to_plain(&linearize_fraction_boxes(&boxes));
         vec![LabelRun {
           text,
           italic,
@@ -60337,6 +60595,7 @@ fn parse_manipulate_control(
           x_initial: x,
           y_initial: y,
           label,
+          label_runs: label_runs.clone(),
           write_callback: pane_callback,
           real: true,
           exact_initial: is_exact_pair(&evaluated),
@@ -60728,6 +60987,7 @@ fn parse_manipulate_control(
         x_initial,
         y_initial,
         label,
+        label_runs: label_runs.clone(),
         write_callback,
         real: false,
         exact_initial: false,
@@ -60954,9 +61214,10 @@ fn parse_manipulate_control(
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
       // An explicit `Dynamic[…]` list is live even when it names no sibling
       // control: it may follow a free variable the body assigns itself
-      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode), and
+      // so is a list with a `Dynamic[…]` inside one of its labels.
       let values_code = (bounds.len() == 1
-        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+        && (contains_dynamic(bounds[0])
           || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
@@ -61890,6 +62151,46 @@ fn is_picture_choice(item: &Expr) -> bool {
   }
 }
 
+/// Whether a text-layout label (`Row`, `Style`, …) holds a matrix shown
+/// two-dimensionally: a `MatrixForm[m]` or `TraditionalForm[m]` of a
+/// rectangular list of lists.
+fn label_typesets_matrix(label: &Expr) -> bool {
+  fn is_matrix(e: &Expr) -> bool {
+    matches!(e, Expr::List(rows)
+      if !rows.is_empty()
+        && rows.iter().all(|row| matches!(row, Expr::List(cells)
+          if !cells.is_empty()
+            && matches!(&rows[0], Expr::List(first)
+              if first.len() == cells.len()))))
+  }
+  match label {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "MatrixForm" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      is_matrix(&args[0]) || label_typesets_matrix(&args[0])
+    }
+    Expr::FunctionCall { name, args } if is_text_layout_head(name) => {
+      args.iter().any(label_typesets_matrix)
+    }
+    Expr::List(items) => items.iter().any(label_typesets_matrix),
+    _ => false,
+  }
+}
+
+/// `expr` with every `MatrixForm[m]` replaced by the list `m` it displays,
+/// for a label written out on one line.
+fn without_matrix_forms(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm" && !args.is_empty() =>
+    {
+      without_matrix_forms(&args[0])
+    }
+    other => crate::syntax::map_children(other, &without_matrix_forms),
+  }
+}
+
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   // An arithmetic label (`-1 -> -Pi/4`) is typeset the way the FrontEnd
   // shows a computed value — a stacked fraction with real `π` — instead of
@@ -61974,8 +62275,15 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // `Row[{icon, "   "}]` whose only text is padding — which the FrontEnd
     // draws as that picture (with its padding); its text alone would leave
     // the choice blank.
+    //
+    // Nor can a layout setting a matrix among its words (`Row[{"mapped by
+    // ", MatrixForm[m]}]`) be written as one line of text: it is typeset
+    // as a picture with the matrix in its parentheses.
     Expr::FunctionCall { name, .. } if is_text_layout_head(name) => {
-      if flatten_label_runs(&manipulate_label_runs(label, false))
+      if label_typesets_matrix(label) {
+        Some(crate::evaluator::expr_to_svg(label))
+          .filter(|svg| svg.starts_with("<svg"))
+      } else if flatten_label_runs(&manipulate_label_runs(label, false))
         .trim()
         .is_empty()
       {
@@ -62973,12 +63281,14 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         x_initial,
         y_initial,
         label,
+        label_runs,
         ..
       } => {
         ctrl_parts.push(format!(
-          r#"{{"kind":"slider2d","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
+          r#"{{"kind":"slider2d","name":"{}","label":"{}","labelRuns":{},"xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
           x_min,
           x_max,
           y_min,
@@ -69084,6 +69394,66 @@ mod manipulate_traditional_form_choice_svg_tests {
     assert!(svgs.iter().all(Option::is_some), "{svgs:?}");
   }
 
+  /// A choice label laying a matrix out among its words (`Row[{"scaled by
+  /// ", MatrixForm[m]}]`) is typeset as a picture, and a `Dynamic[…]`
+  /// inside it shows its current value and keeps the list live, so the
+  /// label follows a matrix the body assigns.
+  #[test]
+  fn matrix_choice_labels_typeset_as_live_icons() {
+    crate::interpret("matrixChoiceLabelM = {{1, 2}, {3, 6}}").unwrap();
+    let code = "Manipulate[k, {{k, 1, \"map\"}, \
+      {1 -> Style[Row[{\"by \", TraditionalForm[{{\"a\", \"b\"}, \
+          {\"c\", \"d\"}}], \" = \", \
+          Dynamic@MatrixForm[N@matrixChoiceLabelM]}], \"TraditionalForm\"], \
+       2 -> Row[{\"to zero by \", Dynamic@MatrixForm[{{0, 0}, {0, 0}}]}], \
+       3 -> Row[{\"plain \", Dynamic[matrixChoiceLabelM[[1, 2]]]}]}, \
+      ControlType -> PopupMenu}]";
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let ManipulateControl::Discrete {
+      values,
+      value_labels,
+      value_label_svgs,
+      ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control");
+    };
+    assert_eq!(values, &["1", "2", "3"]);
+    for svg in &value_label_svgs[..2] {
+      let svg = svg.as_deref().expect("a matrix label must render an icon");
+      assert!(svg.starts_with("<svg"), "{svg}");
+    }
+    let first = value_label_svgs[0].as_deref().unwrap();
+    assert!(first.contains(">6.<"), "the live matrix entries: {first}");
+    assert!(!first.contains("MatrixForm"), "{first}");
+    // Its text column reads the same label on one line.
+    assert_eq!(
+      &value_labels[..2],
+      &[
+        "by {{a, b}, {c, d}} = {{1., 2.}, {3., 6.}}",
+        "to zero by {{0, 0}, {0, 0}}"
+      ]
+    );
+    // A label without a matrix stays text, with its `Dynamic` resolved.
+    assert!(value_label_svgs[2].is_none());
+    assert_eq!(value_labels[2], "plain 2");
+    // The list is re-resolved as the matrix changes.
+    assert_eq!(spec.dynamic_values.len(), 1, "{:?}", spec.dynamic_values);
+    crate::interpret("matrixChoiceLabelM = {{1, 2}, {0, 0}}").unwrap();
+    let (_, labels, svgs, _) =
+      manipulate_eval_values_code(&spec.dynamic_values[0].1)
+        .expect("re-resolved choices");
+    assert!(
+      !svgs[0].as_deref().unwrap().contains(">6.<"),
+      "{:?}",
+      svgs[0]
+    );
+    assert_eq!(labels[0], "by {{a, b}, {c, d}} = {{1., 2.}, {0., 0.}}");
+    assert_eq!(labels[2], "plain 2");
+    crate::interpret("Clear[matrixChoiceLabelM]").unwrap();
+  }
+
   /// An unlabeled choice that is an angle (`15 Degree`) reads the way a
   /// notebook typesets it, with the degree sign, not as its InputForm,
   /// and so do other named constants (`Pi/2` reads `π/2`).
@@ -70047,6 +70417,7 @@ mod review_layout_tests {
       (&TickSpec::Automatic, &ticks),
       None,
       None,
+      true,
       None,
       0,
       TITLE_FONT,

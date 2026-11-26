@@ -12,6 +12,14 @@
     (`(1 + 1/x)^2`). The one-line text of a `Row`/`Column` item does the
     same, parenthesizes a product denominator and writes a held `Product`
     with `∏`.
+- `ContourPlot`, `ListContourPlot` and the density / volume plots read
+    `Contours -> {Automatic, n}` as at most `n` automatically chosen round
+    levels; it was taken for a list of explicit levels, leaving the lone
+    level `n`.
+- A `Graphics3D` `PlotRange` with an interval of no extent on one axis
+    (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
+    keeps the explicit intervals of the others; the whole range was
+    dropped, so the scene filled its frame.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
@@ -242,6 +250,12 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Woxi Studio & Wolfram Demonstrations
 
+- A `Manipulate` choice label that sets a matrix among its words
+    (`Row[{"mapped by ", Dynamic@MatrixForm[m]}]`) is typeset as a picture,
+    and a `Dynamic` inside a choice label follows the values the body assigns.
+- `Show[…, ImageSize -> {w, h}, AspectRatio -> Full]` stretches the drawing
+    over the whole picture, and a flat automatic plot range opens up before an
+    explicit `PlotRangePadding` pads it.
 - `Manipulate` supports color controls with an initial color but no range
     or choice list. Scalar and `Slider2D` bounds can depend on other controls,
     including through `Dynamic` wrappers.

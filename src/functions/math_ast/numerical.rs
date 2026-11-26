@@ -9882,7 +9882,13 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
 
   // Newton steps, keeping the iterate with the smallest |p(z)|: near the root
   // Newton may oscillate between two adjacent f64 values (both equally good).
-  for slot in roots.iter_mut() {
+  // Polishing only refines a root: an iterate that ends nearer another
+  // root's starting point than its own has left for that root (as one copy
+  // of a repeated root, scattered by rounding, can), so it is dropped and
+  // the root keeps its start.
+  let starts = roots.to_vec();
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  for (index, slot) in roots.iter_mut().enumerate() {
     let (mut zr, mut zi) = *slot;
     let (mut best_zr, mut best_zi) = (zr, zi);
     let (pr0, pi0) = eval_p(zr, zi);
@@ -9907,7 +9913,15 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
         break;
       }
     }
-    *slot = (best_zr, best_zi);
+    let polished = (best_zr, best_zi);
+    let own = dist(polished, starts[index]);
+    let strayed = starts
+      .iter()
+      .enumerate()
+      .any(|(other, &start)| other != index && dist(polished, start) < own);
+    if !strayed {
+      *slot = polished;
+    }
   }
 
   merge_multiple_root_clusters(&monic, roots);
@@ -10065,34 +10079,35 @@ fn merge_multiple_root_clusters(monic: &[f64], roots: &mut [(f64, f64)]) {
     annihilates.then_some(c)
   };
 
-  for mut members in groups {
-    while members.len() > 1 {
-      if let Some(c) = fold(roots, &members) {
-        for &k in &members {
-          roots[k] = c;
-        }
-        break;
-      }
-      // Drop the member farthest from the others' centroid and retry.
-      let m = members.len() as f64;
-      let sum = members.iter().fold((0.0, 0.0), |acc, &k| {
-        (acc.0 + roots[k].0, acc.1 + roots[k].1)
+  // The `m` members of `pool` nearest to `z`.
+  let nearest =
+    |roots: &[(f64, f64)], pool: &[usize], z: (f64, f64), m: usize| {
+      let mut sorted = pool.to_vec();
+      sorted.sort_by(|&a, &b| dist(roots[a], z).total_cmp(&dist(roots[b], z)));
+      sorted.truncate(m);
+      sorted
+    };
+  for mut pending in groups {
+    // The highest multiplicity first: a lower one would fold an m-fold root
+    // through a multiple root of p^(k-1), which Newton resolves poorly, and
+    // would leave the rest of its copies behind.
+    'group: while pending.len() > 1 {
+      let m_total = pending.len() as f64;
+      let centroid = pending.iter().fold((0.0, 0.0), |acc, &k| {
+        (acc.0 + roots[k].0 / m_total, acc.1 + roots[k].1 / m_total)
       });
-      let (worst, _) = members
-        .iter()
-        .enumerate()
-        .map(|(pos, &k)| {
-          let rest = (
-            (sum.0 - roots[k].0) / (m - 1.0),
-            (sum.1 - roots[k].1) / (m - 1.0),
-          );
-          (pos, dist(roots[k], rest))
-        })
-        .fold(
-          (0, -1.0_f64),
-          |best, cur| if cur.1 > best.1 { cur } else { best },
-        );
-      members.remove(worst);
+      for m in (2..=pending.len()).rev() {
+        let start = nearest(roots, &pending, centroid, m);
+        if let Some(c) = fold(roots, &start) {
+          let chosen = nearest(roots, &pending, c, m);
+          for &k in &chosen {
+            roots[k] = c;
+          }
+          pending.retain(|k| !chosen.contains(k));
+          continue 'group;
+        }
+      }
+      break;
     }
   }
 }

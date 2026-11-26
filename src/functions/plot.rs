@@ -4263,6 +4263,9 @@ pub(crate) struct PlotOptions {
   pub frame_label_top: Option<String>,
   /// Label on the right frame edge (FrameLabel 4-element form: right of {left,right})
   pub frame_label_right: Option<String>,
+  /// `RotateLabel`: whether the left and right frame labels are turned to
+  /// read upward along their edge (the default) or stay upright.
+  pub rotate_label: bool,
   /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
   pub date_axis: bool,
   /// Whether x-axis is logarithmic (data is in log10 space)
@@ -4667,6 +4670,7 @@ impl Default for PlotOptions {
       frame_label_left: None,
       frame_label_top: None,
       frame_label_right: None,
+      rotate_label: true,
       frame_label_bottom_graphic: None,
       frame_label_top_graphic: None,
       date_axis: false,
@@ -5439,6 +5443,32 @@ pub(crate) fn plot_labels_svg(
       label, cx, cy, rotated, sf,
     )
   };
+  // How far a side label's picture reaches away from its edge: its height
+  // when turned along the edge, its width when upright.
+  let side_picture_across = |label: &str, h: f64| {
+    if opts.rotate_label {
+      h
+    } else {
+      crate::functions::graphics::axes_label_picture_size(label)
+        .map_or(h, |(w, _)| w * sf)
+    }
+  };
+  // An upright (`RotateLabel -> False`) side label: its lines centered on
+  // `cx` and stacked downward, the block centered on the frame's height.
+  let upright_width =
+    |label: &str| plot_padding::label_width(label, pt_of(label)) * sf;
+  let upright_side_label = |label: &str, cx: f64, fill: &str| {
+    let pt = pt_of(label);
+    let top =
+      margin_top + plot_h / 2.0 - block_height(lines_of(label), pt) * sf / 2.0;
+    let base_y = top + ascent(pt) * sf;
+    let (keep, markup) = text_svg(label, cx);
+    format!(
+      "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
+         fill=\"{fill}\"{keep}>{markup}</text>\n",
+    )
+  };
   if let Some(x_label) = &opts.frame_label_bottom
     && let Some(h) = picture_h(x_label)
   {
@@ -5487,12 +5517,19 @@ pub(crate) fn plot_labels_svg(
   if let Some(y_label) = &opts.frame_label_left
     && let Some(h) = picture_h(y_label)
   {
+    let across = side_picture_across(y_label, h);
     labels_svg.push_str(&picture(
       y_label,
-      plot_x0 - room_left - gap - h / 2.0,
+      plot_x0 - room_left - gap - across / 2.0,
       margin_top + plot_h / 2.0,
-      true,
+      opts.rotate_label,
     ));
+  } else if let Some(y_label) = &opts.frame_label_left
+    && !y_label.is_empty()
+    && !opts.rotate_label
+  {
+    let cx = plot_x0 - room_left - gap - upright_width(y_label) / 2.0;
+    labels_svg.push_str(&upright_side_label(y_label, cx, edge_fill(1)));
   } else if let Some(y_label) = &opts.frame_label_left
     && !y_label.is_empty()
   {
@@ -5627,12 +5664,20 @@ pub(crate) fn plot_labels_svg(
   if let Some(right_label) = &opts.frame_label_right
     && let Some(h) = picture_h(right_label)
   {
+    let across = side_picture_across(right_label, h);
     labels_svg.push_str(&picture(
       right_label,
-      plot_x0 + plot_w + room_right + gap + h / 2.0,
+      plot_x0 + plot_w + room_right + gap + across / 2.0,
       margin_top + plot_h / 2.0,
-      true,
+      opts.rotate_label,
     ));
+  } else if let Some(right_label) = &opts.frame_label_right
+    && !right_label.is_empty()
+    && !opts.rotate_label
+  {
+    let cx =
+      plot_x0 + plot_w + room_right + gap + upright_width(right_label) / 2.0;
+    labels_svg.push_str(&upright_side_label(right_label, cx, edge_fill(3)));
   } else if let Some(right_label) = &opts.frame_label_right
     && !right_label.is_empty()
   {
@@ -9160,6 +9205,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        own_y_range: None,
         continues_previous: plot_style
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
@@ -9842,10 +9888,14 @@ pub(crate) fn render_merged_plot_source(
     merged_plot_source_options(source);
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
-  } else if !overrides.aspect_automatic && opts.aspect_ratio.is_none() {
+  } else if !overrides.aspect_automatic
+    && !opts.aspect_full
+    && opts.aspect_ratio.is_none()
+  {
     // The ratio the shown plot was drawn with (a `ContourPlot`'s square
     // frame) stays when `Show` only resizes it: `Show[plot, ImageSize ->
-    // {w, h}]` letterboxes that shape rather than stretching it.
+    // {w, h}]` letterboxes that shape rather than stretching it — unless
+    // `AspectRatio -> Full` asks for the stretch.
     opts.aspect_ratio = source.aspect_ratio;
   }
   opts.aspect_automatic = overrides.aspect_automatic;
@@ -13838,6 +13888,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      own_y_range: None,
       continues_previous: false,
       color_function: None,
       arrowheads: None,
@@ -17440,6 +17491,18 @@ pub(crate) fn parse_frame_option(value: &Expr) -> bool {
   }
 }
 
+/// `RotateLabel -> False` keeps the left and right frame labels upright;
+/// any other setting leaves them turned along their edge.
+pub(crate) fn apply_rotate_label_option(value: &Expr, opts: &mut PlotOptions) {
+  opts.rotate_label = parse_rotate_label(value);
+}
+
+/// Whether a `RotateLabel` setting turns the side labels: everything but
+/// `False` does.
+pub(crate) fn parse_rotate_label(value: &Expr) -> bool {
+  !matches!(value, Expr::Identifier(v) if v == "False")
+}
+
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   let fl = parse_frame_label(value);
   // A stacked-fraction label is kept as its picture markup, which the
@@ -18336,6 +18399,7 @@ pub(crate) fn apply_common_plot_option(
         crate::functions::plot_layout::parse_plot_layout(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
+    "RotateLabel" => apply_rotate_label_option(replacement, plot_opts),
     "FrameTicksStyle" => {
       plot_opts.tick_label_style = LabelStyleSpec::parse(replacement);
       plot_opts.frame_ticks_styles = parse_frame_edge_styles(replacement);

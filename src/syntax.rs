@@ -299,6 +299,13 @@ pub struct PlotSeriesData {
   /// a directive of the curve, so `plot /. Line -> Arrow` draws the heads
   /// it asks for (several evenly spaced ones for a list of sizes).
   pub arrowheads: Option<Expr>,
+  /// The y range of the plot that sampled this series, set once `Show` has
+  /// merged the series into another plot's source (`None` = the range of
+  /// the source it sits in). A curve is cut at the range of its own plot,
+  /// not at that of the plot it was merged behind: the result of
+  /// `Show[narrow, tall]` layered onto a wider graphic still draws all of
+  /// `tall`'s curve, as Wolfram's unclipped `Line` does.
+  pub own_y_range: Option<(f64, f64)>,
 }
 
 /// A plot's `ColorFunction` as one of its curves was drawn with it: the
