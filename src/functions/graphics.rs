@@ -32588,6 +32588,33 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
   name == "Style" || name == "StyleForm"
 }
 
+/// `expr` with every `StyleForm[…]` respelled as the `Style[…]` it is
+/// displayed as, or `None` when it holds none. The display entry points
+/// run this once so that no layout path needs its own `StyleForm` case.
+pub(crate) fn style_forms_as_style(expr: &Expr) -> Option<Expr> {
+  fn respell(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "StyleForm" && !args.is_empty() =>
+      {
+        Some(Expr::FunctionCall {
+          name: "Style".to_string(),
+          args: args
+            .iter()
+            .map(|a| crate::functions::string_ast::map_expr_tree(a, &respell))
+            .collect(),
+        })
+      }
+      _ => None,
+    }
+  }
+  crate::functions::math_ast::numeric_utils::expr_contains_head(
+    expr,
+    "StyleForm",
+  )
+  .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
+}
+
 /// Heads that a `Manipulate` argument may carry while still being a static
 /// annotation row rather than a variable specification: a styled or plain
 /// text label sitting between the controls, which Wolfram tags
@@ -44634,6 +44661,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           }
           if let Some(v) = v_of(&pair[1]) {
             v_align = v;
+          }
+        }
+        // `{h}` names the horizontal alignment alone.
+        Expr::List(only) if only.len() == 1 => {
+          if let Some(h) = h_of(&only[0]) {
+            h_align = h;
           }
         }
         single => {
@@ -58783,6 +58816,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "GraphicsGrid"
           | "Style"
           | "StyleForm"
+          | "Invisible"
           | "Text"
           | "Tooltip"
           | "HoldForm"
