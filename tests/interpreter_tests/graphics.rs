@@ -78498,3 +78498,140 @@ mod graphics3d_review_ticks_heads_framing {
     assert!(svg.matches("<linearGradient").count() > 50, "{svg}");
   }
 }
+
+mod show_filled_points_and_stacked_labels {
+  use super::*;
+
+  /// The `<polygon>` fills of a rendering (a filled area under a curve).
+  fn area_fills(svg: &str) -> usize {
+    svg.matches("<polygon").count()
+  }
+
+  /// `PlotRange -> All` given to `Show` itself spans every plot shown, also
+  /// when the first one is a list plot (which settles an `All` of its own
+  /// into numbers): all three points are drawn.
+  #[test]
+  fn show_own_plot_range_all_spans_every_list_plot() {
+    clear_state();
+    let svg = export_svg(
+      "Show[{ListPlot[{{0, 1}}, PlotStyle -> Red], \
+       ListPlot[{{5, 3}}, PlotStyle -> Blue], \
+       ListPlot[{{9, 7}}, PlotStyle -> Green]}, PlotRange -> All]",
+    );
+    assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    for color in ["#FF0000", "#0000FF", "#00FF00"] {
+      assert!(svg.to_uppercase().contains(color), "{color}: {svg}");
+    }
+  }
+
+  /// The stems of a fill belong to everything `PlotRange -> All` shows, so
+  /// the picture reaches down to the axis the points are filled to.
+  #[test]
+  fn show_plot_range_all_includes_the_fill_level() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Show[{ListPlot[{{0, 4}}, Filling -> Axis], \
+         ListPlot[{{1, 9}}, Filling -> Axis]}, PlotRange -> All]; \
+         PlotRange[g][[2, 1]] <= 0"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// A joined line shown over points filled to the axis is not filled
+  /// itself: the first plot's `Filling` belongs to its own points only.
+  #[test]
+  fn show_does_not_fill_a_line_shown_over_filled_points() {
+    clear_state();
+    let line = "ListPlot[{{0, 0.4}, {1, 0.9}, {2, 1}}, Joined -> True, \
+                PlotStyle -> Black]";
+    for points in [
+      "ListPlot[{{0, 0.4}}, Filling -> Axis, PlotStyle -> Red]",
+      "ListPlot[{{0, 0.4}}, Filling -> Axis, PlotStyle -> Red, \
+       FillingStyle -> Red]",
+      "ListPlot[{{0, 0.4}, {1, 0.9}}, Filling -> Bottom]",
+    ] {
+      let svg = export_svg(&format!("Show[{points}, {line}]"));
+      assert_eq!(area_fills(&svg), 0, "{points}: {svg}");
+    }
+    // A filled curve keeps its own fill when shown first.
+    let svg = export_svg(&format!(
+      "Show[ListPlot[{{{{0, 0.4}}, {{1, 0.9}}}}, Joined -> True, \
+       Filling -> Axis], {line}]"
+    ));
+    assert_eq!(area_fills(&svg), 1, "{svg}");
+  }
+
+  /// A styled `Column` as an axis or frame label is stacked line by line,
+  /// each line in the style, exactly like the same text with a newline —
+  /// not printed as the source text of the `Column`.
+  #[test]
+  fn styled_column_axis_label_is_stacked() {
+    clear_state();
+    for (option, plot_options) in
+      [("AxesLabel", ""), ("FrameLabel", ", Frame -> True")]
+    {
+      for style in ["Larger", "Red", "Bold", "14"] {
+        let plot = |label: &str| {
+          export_svg(&format!(
+            "Plot[x, {{x, 0, 1}}, {option} -> {{{label}}}{plot_options}]"
+          ))
+        };
+        let column = plot(&format!(
+          "Style[Column[{{\"first line\", \"second\"}}, Center], {style}]"
+        ));
+        assert!(!column.contains("Column["), "{option} {style}: {column}");
+        assert_eq!(
+          column,
+          plot(&format!("Style[\"first line\\nsecond\", {style}]")),
+          "{option} {style}"
+        );
+      }
+    }
+    // A nested style and a style on one item only both reach their line.
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, AxesLabel -> {Style[Column[{\"first\", \
+       Style[\"second\", Blue]}], Bold]}]",
+    );
+    assert!(!svg.contains("Column["), "{svg}");
+    assert_eq!(svg.matches("font-weight=\"bold\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("rgb(0,0,255)").count(), 1, "{svg}");
+  }
+
+  /// `Frame -> {columns, rows}` of a graphics grid frames the items of
+  /// each direction separately: the outer rectangle plus the lines between
+  /// rows, between columns, both, or nothing at all.
+  #[test]
+  fn graphics_grid_frame_per_direction() {
+    clear_state();
+    let lines = |frame: &str| {
+      let svg = export_svg(&format!(
+        "GraphicsGrid[Table[Graphics[Disk[]], 3, 2], Frame -> {frame}]"
+      ));
+      let count = |vertical: bool| {
+        svg
+          .lines()
+          .filter(|l| l.starts_with("<line ") && l.contains("square"))
+          .filter(|l| {
+            let attr = |name: &str| {
+              l.split(&format!("{name}=\"")).nth(1).and_then(|r| {
+                r.split('"').next().and_then(|v| v.parse::<f64>().ok())
+              })
+            };
+            (attr("x1") == attr("x2")) == vertical
+          })
+          .count()
+      };
+      (count(true), count(false))
+    };
+    // (vertical, horizontal) lines of a 3 × 2 grid.
+    assert_eq!(lines("{False, All}"), (2, 4));
+    assert_eq!(lines("{All, False}"), (3, 2));
+    assert_eq!(lines("{All, All}"), lines("All"));
+    assert_eq!(lines("All"), (3, 4));
+    assert_eq!(lines("{False, False}"), (0, 0));
+    assert_eq!(lines("{None, None}"), lines("None"));
+  }
+}

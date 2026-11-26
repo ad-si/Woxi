@@ -28305,7 +28305,56 @@ pub(crate) fn traditional_math_axis_label(e: &Expr) -> Option<String> {
   Some(traditional_label(inner))
 }
 
+/// The lines of a styled label stacking its parts — `Style[Column[{a, b}],
+/// Larger]`, or a `Column` with a styled item — each as the markup of one
+/// line carrying the styles wrapped around the column. `None` for any other
+/// label.
+fn styled_column_label_lines(e: &Expr) -> Option<Vec<String>> {
+  let mut directives: Vec<Expr> = Vec::new();
+  let mut inner = e;
+  while let Expr::FunctionCall { name, args } = inner
+    && name == "Style"
+    && !args.is_empty()
+  {
+    // An inner `Style` is nearer the items, so its directives come last.
+    directives.splice(0..0, args[1..].iter().cloned());
+    inner = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = inner else {
+    return None;
+  };
+  let Some(Expr::List(items)) = args.first().filter(|_| name == "Column")
+  else {
+    return None;
+  };
+  Some(
+    items
+      .iter()
+      .map(|item| {
+        let line = if directives.is_empty() {
+          item.clone()
+        } else {
+          call(
+            "Style",
+            std::iter::once(item.clone())
+              .chain(directives.iter().cloned())
+              .collect(),
+          )
+        };
+        expr_to_svg_markup(&traditionalize_styled_label(&line))
+      })
+      .collect(),
+  )
+}
+
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
+  // A styled column is set line by line, like a string holding newlines:
+  // as one run of markup it would read as the source text of the `Column`.
+  if contains_visible_style(e)
+    && let Some(lines) = styled_column_label_lines(e)
+  {
+    return Some(format!("{STYLED_LABEL_MARKER}{}", lines.join("\n")));
+  }
   // The styling stays on the outside while the expressions it wraps are
   // set in traditional notation, like an unstyled label: `Style[θ[ξ], 14]`
   // reads `θ(ξ)`.
@@ -31763,7 +31812,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .find(|ps| !any_curves || !ps.series.is_empty());
     // A list plot already settled its `All` into numbers, which `Show`
     // keeps like any other range of the first plot.
-    let (x_all, y_all) = if first_plot.is_some_and(|ps| ps.settles_all_range) {
+    // An `All` given to `Show` itself is no range of the first plot: it
+    // spans everything shown, whatever kind of plot comes first.
+    let (x_all, y_all) = if !show_sets_plot_range
+      && first_plot.is_some_and(|ps| ps.settles_all_range)
+    {
       (false, false)
     } else {
       (x_all, y_all)
@@ -31794,6 +31847,26 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
               ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
             }))
           });
+        // The stems (or area) of a fill are drawn too, so the level they
+        // reach is part of everything shown.
+        let fill_level = ps
+          .series
+          .iter()
+          .flat_map(super::super::syntax::PlotSeriesData::fills)
+          .filter_map(|fill| match fill.filling {
+            crate::syntax::SeriesFilling::Axis => Some(0.0),
+            crate::syntax::SeriesFilling::Value(v) if v.is_finite() => Some(v),
+            _ => None,
+          })
+          .fold(None, |acc: Option<(f64, f64)>, v| {
+            Some(acc.map_or((v, v), |(lo, hi)| (lo.min(v), hi.max(v))))
+          });
+        let points = points.map(|(x, (y0, y1))| {
+          (
+            x,
+            fill_level.map_or((y0, y1), |(lo, hi)| (y0.min(lo), y1.max(hi))),
+          )
+        });
         let flat =
           points.is_some_and(|((x0, x1), (y0, y1))| x1 <= x0 || y1 <= y0);
         (
@@ -38528,6 +38601,12 @@ enum FrameSetting {
   Outer,
   /// All cell boundaries (Frame -> All)
   All,
+  /// A frame around every row (Frame -> {False, All}): the outer
+  /// rectangle and the lines between rows.
+  Rows,
+  /// A frame around every column (Frame -> {All, False}): the outer
+  /// rectangle and the lines between columns.
+  Columns,
 }
 
 /// Parsed layout options for GraphicsRow/Column/Grid.
@@ -38633,6 +38712,17 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
             Expr::Identifier(s) if s == "True" => FrameSetting::Outer,
             Expr::Identifier(s) if s == "None" || s == "False" => {
               FrameSetting::None
+            }
+            // `{columns, rows}` frames the items of each direction
+            // separately.
+            Expr::List(pair) if pair.len() == 2 => {
+              let on = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All" || s == "True");
+              match (on(&pair[0]), on(&pair[1])) {
+                (true, true) => FrameSetting::All,
+                (false, true) => FrameSetting::Rows,
+                (true, false) => FrameSetting::Columns,
+                (false, false) => FrameSetting::None,
+              }
             }
             _ => opts.frame,
           };
@@ -39186,7 +39276,8 @@ fn combine_svgs_grid(
       &mut svg,
       &layout,
       &row_y_starts,
-      opts.frame == FrameSetting::All,
+      matches!(opts.frame, FrameSetting::All | FrameSetting::Rows),
+      matches!(opts.frame, FrameSetting::All | FrameSetting::Columns),
       opts.frame_color.as_ref(),
     );
   }
@@ -39195,14 +39286,15 @@ fn combine_svgs_grid(
   Some(svg)
 }
 
-/// Draw frame lines for a GraphicsRow/Column/Grid. When `all` is true,
-/// draw lines on every cell boundary (Frame -> All); otherwise only the
-/// outer rectangle (Frame -> True).
+/// Draw frame lines for a GraphicsRow/Column/Grid: the outer rectangle
+/// (Frame -> True), plus the lines between rows (`rows`) and between
+/// columns (`columns`) — both for Frame -> All.
 fn draw_frame_lines(
   out: &mut String,
   layout: &GridLayout,
   row_y_starts: &[f64],
-  all: bool,
+  rows: bool,
+  columns: bool,
   color: Option<&Color>,
 ) {
   let total_w = layout.total_width;
@@ -39224,13 +39316,9 @@ fn draw_frame_lines(
   line(out, 0.0, 0.0, 0.0, total_h);
   line(out, total_w, 0.0, total_w, total_h);
 
-  if !all {
-    return;
-  }
-
   // Inner row dividers: in the middle of the gap above each row after
   // the first.
-  for (i, row) in layout.rows.iter().enumerate() {
+  for (i, row) in layout.rows.iter().enumerate().filter(|_| rows) {
     if i == 0 || row.row_h <= 0.0 {
       continue;
     }
@@ -39240,7 +39328,7 @@ fn draw_frame_lines(
 
   // Inner column dividers: in the middle of the gap before each column
   // after the first.
-  for x in layout.col_x.iter().skip(1) {
+  for x in layout.col_x.iter().skip(1).filter(|_| columns) {
     let x = x - layout.h_gap / 2.0;
     line(out, x, 0.0, x, total_h);
   }
