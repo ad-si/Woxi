@@ -410,7 +410,9 @@ pub(crate) enum LabelSegment {
 /// row holds at least one picture.
 fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
   if crate::functions::graphics::expr_to_svg_markup_lines(expr).len() == 1
-    && let Some(svg) = crate::functions::graphics::structured_label_svg(expr)
+    // Set in the picture's text face, like the titles of plain text.
+    && let Some(svg) =
+      crate::functions::graphics::structured_legend_label_svg(expr)
     && let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
   {
     return Some(vec![LabelSegment::Graphic { svg, w, h }]);
