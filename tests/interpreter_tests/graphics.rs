@@ -35365,6 +35365,66 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(interpret("Pi").unwrap(), "Pi");
     }
 
+    // A number domain is set in its double-struck capital wherever a
+    // picture's text is typeset, alone, as a script base or in a list.
+    #[test]
+    fn a_number_domain_typesets_as_its_glyph_in_a_picture() {
+      let svg = export_svg(
+        "Graphics[{Text[Integers, {0, 0}], Text[Subscript[Reals, n], {0, 1}], \
+         Text[{Complexes, Rationals, Primes}, {0, 2}], \
+         Text[\"Reals and Primes\", {0, 3}]}, PlotRange -> 4]",
+      );
+      for glyph in [
+        ">\u{2124}<",
+        ">\u{211D}<",
+        "{\u{2102}, \u{211A}, \u{2119}}",
+        // A string keeps its words.
+        ">Reals and Primes<",
+      ] {
+        assert!(svg.contains(glyph), "{glyph} must be typeset: {svg}");
+      }
+      assert!(!svg.contains(">Integers<"), "not the name: {svg}");
+      // Script-mode text output is unchanged.
+      assert_eq!(interpret("Integers").unwrap(), "Integers");
+    }
+
+    // `Element` / `NotElement` labels read with their membership signs.
+    #[test]
+    fn element_typesets_infix_in_a_picture() {
+      let svg = export_svg(
+        "Graphics[{Text[Element[x, Reals], {0, 0}], \
+         Text[NotElement[Subscript[a, 1], Integers], {0, 1}]}, PlotRange -> 2]",
+      );
+      assert!(svg.contains(">x \u{2208} \u{211D}<"), "{svg}");
+      assert!(svg.contains(">a\u{2081} \u{2209} \u{2124}<"), "{svg}");
+    }
+
+    // `Text[label, pos, BaseStyle -> dirs]` styles the label: the option
+    // overrides the surrounding directives, and the label's own `Style`
+    // overrides the option.
+    #[test]
+    fn text_base_style_option_styles_the_label() {
+      let svg = export_svg(
+        "Graphics[{FontSize -> 12, Text[\"plain\", {0, 0}], \
+         Text[\"sized\", {0, 1}, BaseStyle -> 14], \
+         Text[\"listed\", {0, 2}, BaseStyle -> {Red, 20}], \
+         Text[Style[\"own\", 18], {0, 3}, BaseStyle -> {Red, 20}]}]",
+      );
+      let text_tag = |label: &str| {
+        let end = svg.find(&format!(">{label}<")).expect(label);
+        let start = svg[..end].rfind("<text").unwrap();
+        svg[start..end].to_string()
+      };
+      assert!(text_tag("plain").contains("font-size=\"12\""), "{svg}");
+      assert!(text_tag("sized").contains("font-size=\"14\""), "{svg}");
+      let listed = text_tag("listed");
+      assert!(listed.contains("font-size=\"20\""), "{svg}");
+      assert!(listed.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      let own = text_tag("own");
+      assert!(own.contains("font-size=\"18\""), "{svg}");
+      assert!(own.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+    }
+
     // A `Column`'s text item keeps the appearance its own `Style[…]` asks
     // for; a heading written `Style[…, Bold, 20]` came out at the default
     // size. A `Style` around a whole `Row` is inherited by its items.

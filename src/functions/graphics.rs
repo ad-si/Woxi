@@ -3277,7 +3277,8 @@ fn is_font_face_directive(d: &Expr) -> bool {
   }
 }
 
-/// The glyph a mathematical constant is typeset with. Wolfram shows these
+/// The glyph a mathematical constant or number domain is typeset with.
+/// Wolfram shows these
 /// wherever text is set rather than printed — `Infinity` inside a picture's
 /// `Text` is `∞`, not the word — while `Print` keeps the name. Arithmetic
 /// leaves a constant as either `Constant("Pi")` or `Identifier("Pi")`
@@ -3292,9 +3293,36 @@ pub(crate) fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
     "Degree" => "\u{00B0}",      // °
     "EulerGamma" => "\u{03B3}",  // γ
     "GoldenRatio" => "\u{03D5}", // ϕ
+    // The number domains are set in double-struck capitals: `Element[x,
+    // Reals]` reads x ∈ ℝ and `Subscript[Integers, n]` reads ℤₙ.
+    "Integers" => "\u{2124}",    // ℤ
+    "Reals" => "\u{211D}",       // ℝ
+    "Complexes" => "\u{2102}",   // ℂ
+    "Rationals" => "\u{211A}",   // ℚ
+    "Primes" => "\u{2119}",      // ℙ
+    "Booleans" => "\u{1D539}",   // 𝔹
+    "Algebraics" => "\u{1D538}", // 𝔸
     _ => return None,
   })
 }
+
+/// Every name [`typeset_constant_glyph`] has a glyph for.
+const TYPESET_GLYPH_NAMES: [&str; 14] = [
+  "Infinity",
+  "Degree",
+  "EulerGamma",
+  "GoldenRatio",
+  "Pi",
+  "E",
+  "I",
+  "Integers",
+  "Reals",
+  "Complexes",
+  "Rationals",
+  "Primes",
+  "Booleans",
+  "Algebraics",
+];
 
 /// Whether an expression is a plain-assignment target: a bare symbol, or a
 /// (possibly nested) list of them — `{{xmin, xmax}, {ymin, ymax}}` is the
@@ -7130,6 +7158,23 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       };
       accent_text(&graphics_text_content(&args[0]), mark, true)
     }
+    // `Element[x, dom]` / `NotElement[x, dom]` are set with their infix
+    // membership signs: x ∈ ℝ, x ∉ ℤ.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Element" | "NotElement")
+        && args.len() == 2 =>
+    {
+      let sign = if name == "Element" {
+        "\u{2208}"
+      } else {
+        "\u{2209}"
+      };
+      format!(
+        "{} {sign} {}",
+        graphics_text_content(&args[0]),
+        graphics_text_content(&args[1])
+      )
+    }
     // `Column[{a, b, …}]` stacks its items, one line each — the label's
     // text carries the line breaks the renderer lays out.
     Expr::FunctionCall { name, args }
@@ -7517,15 +7562,7 @@ fn comparison_op_text(op: crate::syntax::ComparisonOp) -> &'static str {
 /// protected constants of [`typeset_constant_glyph`] — no user symbol can
 /// carry one of those names.
 fn typeset_constants_in_text(text: &str) -> String {
-  const NAMES: [&str; 7] = [
-    "Infinity",
-    "Degree",
-    "EulerGamma",
-    "GoldenRatio",
-    "Pi",
-    "E",
-    "I",
-  ];
+  const NAMES: [&str; 14] = TYPESET_GLYPH_NAMES;
   if !NAMES.iter().any(|n| text.contains(n)) {
     return text.to_string();
   }
@@ -10310,6 +10347,29 @@ fn framed_label_picture(
 }
 
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  // `Text[label, pos, …, BaseStyle -> dirs]` styles the label the way an
+  // enclosing `Style[label, dirs]` does; the label's own `Style`s, applied
+  // after it, still take precedence.
+  if let Some(base) = args
+    .iter()
+    .skip(1)
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "BaseStyle")
+    .map(|(_, v)| v)
+  {
+    let mut styled = vec![args[0].clone()];
+    match base {
+      Expr::List(items) => styled.extend(items.iter().cloned()),
+      single => styled.push(single.clone()),
+    }
+    let mut rewritten: Vec<Expr> = args
+      .iter()
+      .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+      .cloned()
+      .collect();
+    rewritten[0] = call("Style", styled);
+    return parse_text(&rewritten, style, prims);
+  }
   // A `StringForm` label with a matrix among its values is typeset as the
   // `Row` of its parts, so the matrix keeps its rows (see
   // `string_form_grids_as_rows`).
