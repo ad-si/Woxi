@@ -33251,6 +33251,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_zero_width_image_size_draws_nothing() {
+      // Regression: a zero `ImageSize` (`10 Length[row]` for a row that ran
+      // empty) fell back to the default size, so the empty row drew as a
+      // 14x360 strip that made a slider caption 360 points tall.
+      for size in ["0", "10 Length[{}]", "{0}", "{0, 20}", "0."] {
+        for data in ["{{}}", "{{1, 2, 0}}"] {
+          let svg = export_svg(&format!(
+            "ArrayPlot[{data}, ImageSize -> {size}, Frame -> False, \
+             Mesh -> True]"
+          ));
+          assert!(!svg.contains("<rect"), "{data} at {size}: {svg}");
+          assert!(!svg.contains("width="), "{data} at {size}: {svg}");
+        }
+      }
+      // A caption built around it is as tall as its text alone.
+      let row = |plot: &str| {
+        export_svg(&format!("Row[{{{plot}, \"caption\"}}, Spacer[6]]"))
+          .lines()
+          .next()
+          .unwrap_or("")
+          .to_string()
+      };
+      assert_eq!(row("ArrayPlot[{{}}, ImageSize -> 0]"), row("ArrayPlot[{}]"));
+      // A positive size is unaffected.
+      let sized = export_svg("ArrayPlot[{{1, 2, 0}}, ImageSize -> 30]");
+      assert!(sized.starts_with("<svg width=\"30\""), "{sized}");
+    }
+
+    #[test]
+    fn array_plot_first_of_repeated_image_sizes_wins() {
+      // Regression: the last `ImageSize` won, unlike for `Graphics`/`Plot`
+      // (and Wolfram), where the first setting of a repeated option holds.
+      let first =
+        export_svg("ArrayPlot[{{1, 2, 0}}, ImageSize -> 30, ImageSize -> 60]");
+      assert!(first.starts_with("<svg width=\"30\""), "{first}");
+      let zero_later =
+        export_svg("ArrayPlot[{{1, 2, 0}}, ImageSize -> 30, ImageSize -> 0]");
+      assert!(zero_later.starts_with("<svg width=\"30\""), "{zero_later}");
+      let zero_first =
+        export_svg("ArrayPlot[{{1, 2, 0}}, ImageSize -> 0, ImageSize -> 30]");
+      assert!(!zero_first.contains("<rect"), "{zero_first}");
+    }
+
+    #[test]
     fn array_plot_mesh_style_and_frame_style_colors() {
       // The default mesh is GrayLevel[2/3] and, with `Frame -> Automatic`,
       // replaces the frame (its outer lines outline the grid).

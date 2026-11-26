@@ -280,6 +280,8 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
       svg_width = w;
       svg_height = h;
       full_width = fw;
+      // The first setting of a repeated option is the one in effect.
+      break;
     }
   }
   (svg_width, svg_height, full_width)
@@ -8990,7 +8992,9 @@ fn array_plot_ast_inset(
     }
   }
 
-  if matrix.is_empty() {
+  // An `ImageSize` of zero width leaves the picture no extent, so nothing
+  // is drawn: `ImageSize -> 10 Length[row]` for a row that has run empty.
+  if matrix.is_empty() || image_size_is_zero_width(args, 1) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -9687,6 +9691,34 @@ fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
     }
     _ => false,
   })
+}
+
+/// Whether `args[start..]` holds an `ImageSize` whose width is an explicit
+/// zero (`ImageSize -> 0`, `{0}` or `{0, h}`): a picture with no extent.
+/// The first `ImageSize` is the one in effect, as for the size itself.
+fn image_size_is_zero_width(args: &[Expr], start: usize) -> bool {
+  args
+    .iter()
+    .skip(start)
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| (**replacement).clone());
+        let width = match &value {
+          Expr::List(items) => items.first().cloned(),
+          other => Some(other.clone()),
+        };
+        Some(width.is_some_and(|w| {
+          !matches!(w, Expr::Identifier(_) | Expr::List(_))
+            && try_eval_to_f64(&w) == Some(0.0)
+        }))
+      }
+      _ => None,
+    })
+    .unwrap_or(false)
 }
 
 /// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`
