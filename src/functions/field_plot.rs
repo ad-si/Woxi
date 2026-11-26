@@ -350,6 +350,21 @@ pub(crate) enum ContourSpec {
   Levels(Vec<f64>),
   /// Contours -> Automatic: ~10 levels at "nice" round values
   Automatic,
+  /// Contours -> {Automatic, n}: at most n levels at "nice" round values
+  AutomaticUpTo(usize),
+}
+
+impl ContourSpec {
+  /// The spec of a `Contours -> {Automatic, n}` list, which caps the
+  /// number of automatically chosen levels instead of listing levels.
+  pub(crate) fn automatic_up_to(items: &[Expr]) -> Option<Self> {
+    match items {
+      [Expr::Identifier(a), Expr::Integer(n)] if a == "Automatic" && *n > 0 => {
+        Some(ContourSpec::AutomaticUpTo(*n as usize))
+      }
+      _ => None,
+    }
+  }
 }
 
 /// Options shared by the density / contour plot family.
@@ -713,6 +728,11 @@ fn parse_density_contour_options(
         "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
+          }
+          Expr::List(items)
+            if let Some(spec) = ContourSpec::automatic_up_to(items) =>
+          {
+            contours = spec;
           }
           Expr::List(items) => {
             let levels: Vec<f64> = items
@@ -2346,6 +2366,7 @@ pub(crate) fn resolve_contour_levels(
 ) -> Vec<f64> {
   match spec {
     ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    ContourSpec::AutomaticUpTo(n) => nice_contour_levels(v_min, v_max, *n),
     // Wolfram splits the range into `n + 1` parts, truncates that step to
     // two significant digits, and draws the first `n` multiples of it
     // above the bottom of the range (so `Contours -> 6` over `-4..4` gives
@@ -4113,53 +4134,60 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a `Contours` option each function draws only its zero contour, as
   // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
   // gives each function its own `n` levels.
-  let eq_bodies =
-    eq_bodies.or_else(|| match body {
-      Expr::List(items) if !items.is_empty() => {
-        let mut funcs = Vec::new();
-        flatten_function_list(items, &mut funcs);
-        if funcs.is_empty() {
-          return None;
-        }
-        let spec = parse_density_contour_options(args, 3).contours;
-        let zero = vec![0.0];
-        let fixed = match &spec {
-          ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
-          ContourSpec::Levels(_) => return None,
-          ContourSpec::Automatic => Some(&zero),
-          ContourSpec::Count(_) => None,
-        };
-        let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
-          parse_iterator(&args[1], "ContourPlot"),
-          parse_iterator(&args[2], "ContourPlot"),
-        ) else {
-          return None;
-        };
-        let mut bodies = Vec::new();
-        for (index, f) in funcs.into_iter().enumerate() {
-          let levels = if let Some(levels) = fixed {
-            levels.clone()
-          } else {
-            let (v_min, v_max) = sampled_value_range(
-              f,
-              &xvar,
-              &yvar,
-              (x_min, x_max),
-              (y_min, y_max),
-            );
-            if !v_min.is_finite() || !v_max.is_finite() {
-              continue;
-            }
-            resolve_contour_levels(&spec, v_min, v_max)
-          };
-          bodies.extend(levels.iter().map(|&c| {
-            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
-          }));
-        }
-        Some(bodies)
+  let eq_bodies = eq_bodies.or_else(|| match body {
+    Expr::List(items) if !items.is_empty() => {
+      let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
+        parse_iterator(&args[1], "ContourPlot"),
+        parse_iterator(&args[2], "ContourPlot"),
+      ) else {
+        return None;
+      };
+      let mut funcs = Vec::new();
+      flatten_function_list(items, &[xvar.as_str(), yvar.as_str()], &mut funcs);
+      if funcs.is_empty() {
+        return None;
       }
-      _ => None,
-    });
+      let spec = parse_density_contour_options(args, 3).contours;
+      let zero = vec![0.0];
+      let fixed = match &spec {
+        ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
+        ContourSpec::Levels(_) => return None,
+        ContourSpec::Automatic => Some(&zero),
+        ContourSpec::Count(_) | ContourSpec::AutomaticUpTo(_) => None,
+      };
+      let mut bodies = Vec::new();
+      for (index, f) in funcs.iter().enumerate() {
+        // An equation among the functions is its own implicit curve,
+        // whatever `Contours` asks of the functions beside it.
+        if let Some(zero_body) = equation_zero_body(f) {
+          bodies.push((zero_body, index));
+          continue;
+        }
+        let levels = if let Some(levels) = fixed {
+          levels.clone()
+        } else {
+          let (v_min, v_max) = sampled_value_range(
+            f,
+            &xvar,
+            &yvar,
+            (x_min, x_max),
+            (y_min, y_max),
+          );
+          if !v_min.is_finite() || !v_max.is_finite() {
+            continue;
+          }
+          resolve_contour_levels(&spec, v_min, v_max)
+        };
+        bodies.extend(
+          levels.iter().map(|&c| {
+            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
+          }),
+        );
+      }
+      Some(bodies)
+    }
+    _ => None,
+  });
   if let Some(bodies) = eq_bodies {
     return contour_plot_equations(&bodies, args);
   }
@@ -4398,11 +4426,19 @@ fn contour_legend(
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
-fn flatten_function_list<'a>(items: &'a [Expr], out: &mut Vec<&'a Expr>) {
+fn flatten_function_list(items: &[Expr], vars: &[&str], out: &mut Vec<Expr>) {
   for item in items {
     match item {
-      Expr::List(inner) => flatten_function_list(inner, out),
-      other => out.push(other),
+      Expr::List(inner) => flatten_function_list(inner, vars, out),
+      // An entry that only evaluates to a list (`Which[a < b, {f, g}, …]`,
+      // held by the plot) stands for the curves of that list.
+      Expr::FunctionCall { .. } if equation_zero_body(item).is_none() => {
+        match &crate::functions::plot::eval_body_vars_symbolic(item, vars) {
+          Expr::List(inner) => flatten_function_list(inner, vars, out),
+          _ => out.push(item.clone()),
+        }
+      }
+      other => out.push(other.clone()),
     }
   }
 }
@@ -4695,6 +4731,7 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          own_y_range: None,
           continues_previous: false,
           arrowheads: None,
           color_function: None,
@@ -4763,6 +4800,34 @@ fn contour_plot_equations(
   }
   if !has(&source_options, "Frame") {
     source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
+  }
+  // The margin drawn between the curves' domain and the frame is an option
+  // of the result, as it is for the shaded form, so a `Show` that adds to
+  // the plot (an `Epilog`, another graphic) keeps it.
+  if !has(&source_options, "PlotRangePadding") {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(opts.range_padding)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
+  // The sampled domain is the result's `PlotRange`, which that margin
+  // pads; the call's own `PlotRange` bounds the function values instead.
+  source_options.retain(|o| {
+    crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
+      != Some("PlotRange")
+  });
+  {
+    let pair = |lo: f64, hi: f64| {
+      Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+    };
+    source_options.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+    ));
   }
   // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
   // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot). Like the scalar form, it

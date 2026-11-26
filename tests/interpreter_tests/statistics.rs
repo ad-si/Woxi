@@ -5658,14 +5658,149 @@ mod hypothesis_testing_legacy_package {
   #[test]
   fn mean_ci_known_variance_uses_normal_quantile() {
     clear_state();
+    // Loaded in its own input, so the bare `KnownVariance` below is the
+    // package's symbol.
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret("Round[MeanCI[{1, 2, 3, 9/2}, KnownVariance -> 2], 10^-6]")
+        .unwrap(),
+      "{154887/125000, 501363/125000}"
+    );
+  }
+
+  #[test]
+  fn options_of_another_context_are_ignored() {
+    // `KnownVariance` read on the line that loads the package is
+    // `Global`KnownVariance`, not the package's option: the interval stays
+    // the Student t one.
+    clear_state();
     assert_eq!(
       interpret(
         "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          KnownVariance -> 2], 10^-6]"
       )
       .unwrap(),
-      "{154887/125000, 501363/125000}"
+      "{249241/1000000, 5000759/1000000}"
     );
+  }
+
+  #[test]
+  fn unknown_options_are_ignored() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    // The interval and p-value functions ignore them silently, as well as
+    // options they do not declare and string option names.
+    let result = interpret_with_stdout(
+      "Round[{MeanCI[{1, 2, 3, 9/2}, foo -> 2, TwoSided -> True, \
+       \"KnownVariance\" -> 2], VarianceCI[{1, 2, 4}, foo -> 1], \
+       OneSidedPValue /. StudentTPValue[1.2, 4, ConfidenceLevel -> 0.9]}, \
+       10^-6] == Round[{MeanCI[{1, 2, 3, 9/2}], VarianceCI[{1, 2, 4}], \
+       OneSidedPValue /. StudentTPValue[1.2, 4]}, 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    // The tests report each one with `::optx` and carry on.
+    let result = interpret_with_stdout(
+      "Round[OneSidedPValue /. MeanDifferenceTest[{1, 2, 4}, {2, 5, 7}, 0, \
+       foo -> 1, ConfidenceLevel -> 0.9], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "31967/250000");
+    assert_eq!(
+      result.warnings[1..],
+      [
+        "MeanDifferenceTest::optx: Unknown option foo -> 1 in \
+         MeanDifferenceTest.",
+        "MeanDifferenceTest::optx: Unknown option ConfidenceLevel -> 0.9 in \
+         MeanDifferenceTest."
+      ]
+    );
+  }
+
+  #[test]
+  fn the_first_setting_of_an_option_wins() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9, ConfidenceLevel -> 0.5] \
+         == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.9]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn options_are_defined_once_the_package_is_loaded() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "{Options[MeanCI], Options[MeanDifferenceTest], Options[NormalPValue]}"
+      )
+      .unwrap(),
+      "{{ConfidenceLevel -> 0.95, KnownVariance -> None}, \
+       {FullReport -> False, KnownVariance -> None, EqualVariances -> False, \
+       SignificanceLevel -> None, TwoSided -> False}, {TwoSided -> False}}"
+    );
+    // A changed default is what a call without the option uses.
+    assert_eq!(
+      interpret(
+        "SetOptions[MeanCI, ConfidenceLevel -> 0.5]; \
+         MeanCI[{1, 2, 4}] == MeanCI[{1, 2, 4}, ConfidenceLevel -> 0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn significance_level_appends_the_verdict() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "a = {-0.22, -0.35, 0.87, 0.48, -0.36}; \
+         Rest /@ {MeanTest[a, 0, SignificanceLevel -> 1/2], \
+         MeanTest[a, 0, SignificanceLevel -> 0.1, TwoSided -> True], \
+         MeanDifferenceTest[a, a + 1, 0, SignificanceLevel -> 0.1]}"
+      )
+      .unwrap(),
+      "{{Reject null hypothesis at significance level -> 1/2}, \
+       {Fail to reject null hypothesis at significance level -> 0.1}, \
+       {Reject null hypothesis at significance level -> 0.1}}"
+    );
+    // After the FullReport table and the p-value; a symbolic level stays an
+    // `If`.
+    assert_eq!(
+      interpret(
+        "{Length[MeanTest[a, 0, SignificanceLevel -> 0.5, \
+         FullReport -> True]], MeanTest[a, 0, SignificanceLevel -> s][[2, 0]], \
+         MeanTest[a, 0, SignificanceLevel -> None] === MeanTest[a, 0]}"
+      )
+      .unwrap(),
+      "{3, If, True}"
+    );
+  }
+
+  #[test]
+  fn obsolete_warning_is_issued_once_per_session() {
+    clear_state();
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    let first = interpret_with_stdout("MeanTest[{1, 2, 4}, 0];").unwrap();
+    let again =
+      interpret_with_stdout("MeanTest[{1, 2, 4}, 0]; MeanTest[{1, 2, 4}, 0];")
+        .unwrap();
+    assert_eq!(
+      first.warnings,
+      [
+        "General::obsfun: The function MeanTest is now obsolete and has been \
+        superseded by LocationTest."
+      ]
+    );
+    assert!(again.warnings.is_empty(), "{:?}", again.warnings);
   }
 
   #[test]
@@ -11412,7 +11547,7 @@ mod random_function_simulation {
        {Head[ts], ts[\"Times\"], First[ts[\"States\"][[1]]]}",
     )
     .unwrap();
-    assert_eq!(path, "{TimeSeries, {0., 0.25, 0.5, 0.75, 1.}, 0.}");
+    assert_eq!(path, "{TemporalData, {0., 0.25, 0.5, 0.75, 1.}, 0.}");
     // WienerProcess always starts at 0 and has exactly one value per
     // sample time.
     let states = interpret(
@@ -12746,6 +12881,208 @@ mod quasi_random_methods {
       )
       .unwrap(),
       "True"
+    );
+  }
+}
+
+mod arma_correlation_functions {
+  use super::*;
+
+  // The autocorrelation of an ARMA-family process is its autocovariance
+  // over its variance: ρ(h) = a^h for AR(1), and an MA(q) one cuts off
+  // after lag q.
+  #[test]
+  fn correlation_function_of_a_process() {
+    assert_eq!(
+      interpret(
+        "Table[CorrelationFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]"
+      )
+      .unwrap(),
+      "{1, 1/2, 1/4, 1/8}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[CorrelationFunction[MAProcess[{1/2}, 3], h], {h, -1, 3}]"
+      )
+      .unwrap(),
+      "{2/5, 1, 2/5, 0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[CorrelationFunction[ARMAProcess[{1/2}, {1/3}, 2], h], {h, 0, 2}]"
+      )
+      .unwrap(),
+      "{1, 35/52, 35/104}"
+    );
+    // A symbolic lag or symbolic coefficients stay unevaluated.
+    assert_eq!(
+      interpret("CorrelationFunction[ARProcess[{1/2}, 1], h]").unwrap(),
+      "CorrelationFunction[ARProcess[{1/2}, 1], h]"
+    );
+  }
+
+  #[test]
+  fn covariance_function_of_ar_and_ma_processes() {
+    assert_eq!(
+      interpret("CovarianceFunction[ARProcess[{1/2}, 1], 2]").unwrap(),
+      "1/3"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[MAProcess[{1/2}, 3], 1]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[MAProcess[5, {1/2, 1/4}, 1], 0]").unwrap(),
+      "21/16"
+    );
+  }
+
+  // The partial autocorrelation of an AR(p) process cuts off after lag p,
+  // where it equals the last coefficient; an MA(1) one decays as
+  // -(-b)^h (1 - b^2)/(1 - b^(2 h + 2)).
+  #[test]
+  fn partial_correlation_function_of_a_process() {
+    assert_eq!(
+      interpret(
+        "Table[PartialCorrelationFunction[ARProcess[{1/2, 1/4}, 1], h], {h, 1, 4}]"
+      )
+      .unwrap(),
+      "{2/3, 1/4, 0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[PartialCorrelationFunction[MAProcess[{1/2}, 1], h], {h, 1, 4}]"
+      )
+      .unwrap(),
+      "{2/5, -4/21, 8/85, -16/341}"
+    );
+    assert_eq!(
+      interpret(
+        "b = 1/3; Table[PartialCorrelationFunction[MAProcess[{b}, 1], h] == \
+         -(-b)^h (1 - b^2)/(1 - b^(2 h + 2)), {h, 1, 5}]"
+      )
+      .unwrap(),
+      "{True, True, True, True, True}"
+    );
+  }
+
+  // From data, the lag-1 value is the lag-1 autocorrelation and the later
+  // ones follow from the Durbin–Levinson recursion on the sample
+  // autocorrelations.
+  #[test]
+  fn partial_correlation_function_of_data() {
+    assert_eq!(
+      interpret(
+        "d = {1, 3, 2, 5, 4, 6, 2}; \
+         PartialCorrelationFunction[d, 1] == CorrelationFunction[d, 1]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "d = {1, 3, 2, 5, 4, 6, 2}; r = Table[CorrelationFunction[d, h], {h, 1, 2}]; \
+         PartialCorrelationFunction[d, 2] == (r[[2]] - r[[1]]^2)/(1 - r[[1]]^2)"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Table[PartialCorrelationFunction[{1, 3, 2, 5, 4, 6, 2}, h], {h, 1, 3}]"
+      )
+      .unwrap(),
+      "{-37/476, 60035/225207, -100569515/197957948}"
+    );
+    // Machine-precision data gives a machine-precision estimate.
+    assert_eq!(
+      interpret(
+        "Abs[PartialCorrelationFunction[{1., 3, 2, 5, 4, 6, 2}, 2] - 60035/225207] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A simulated AR(1) path has a clear lag-1 value and little beyond.
+    assert_eq!(
+      interpret(
+        "SeedRandom[5]; d = RandomFunction[ARProcess[{0.8}, 1], {1, 4000}]; \
+         {Abs[PartialCorrelationFunction[d, 1] - 0.8] < 0.05, \
+         Abs[PartialCorrelationFunction[d, 2]] < 0.05}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn partial_correlation_function_bad_lags() {
+    let r = interpret_with_stdout("PartialCorrelationFunction[{1, 3, 2}, 5]")
+      .unwrap();
+    assert_eq!(r.result, "PartialCorrelationFunction[{1, 3, 2}, 5]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("PartialCorrelationFunction::bdlag")),
+      "{:?}",
+      r.warnings
+    );
+    assert_eq!(
+      interpret("PartialCorrelationFunction[{1, 3, 2}, h]").unwrap(),
+      "PartialCorrelationFunction[{1, 3, 2}, h]"
+    );
+    assert_eq!(
+      interpret("PartialCorrelationFunction[{1, 1, 1, 1}, 2]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  // A path of `{time, value}` pairs (one element of `Normal` of a simulated
+  // process) is estimated from its values, like the temporal object itself.
+  #[test]
+  fn estimators_read_time_value_pairs() {
+    assert_eq!(
+      interpret(
+        "v = {1, 3, 2, 5, 4, 6, 2}; pairs = Transpose[{Range[7], v}]; \
+         {CorrelationFunction[pairs, 2] == CorrelationFunction[v, 2], \
+         CovarianceFunction[pairs, 1] == CovarianceFunction[v, 1], \
+         PartialCorrelationFunction[pairs, 3] == PartialCorrelationFunction[v, 3]}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "SeedRandom[2]; d = RandomFunction[MAProcess[{0.5}, 1], {1, 50}]; \
+         {CorrelationFunction[d, 3] == CorrelationFunction[d[\"Values\"], 3], \
+         CorrelationFunction[Part[Normal[d], 1], 3] == CorrelationFunction[d[\"Values\"], 3]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  // `RandomFunction` gives a `TemporalData` object whose `Normal` is the
+  // list of its paths, even for a single realization.
+  #[test]
+  fn normal_of_temporal_data_is_its_paths() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; d = RandomFunction[ARMAProcess[{0.5}, {0.3}, 1], {1, 5}]; \
+         {Head[d], Dimensions[Normal[d]], Normal[d][[1]] == d[\"Path\"], \
+         Normal[d][[1, All, 1]], d[\"PathCount\"]}"
+      )
+      .unwrap(),
+      "{TemporalData, {1, 5, 2}, True, {1, 2, 3, 4, 5}, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[TemporalData[{{1, 2, 3}, {4, 5, 6}}, {{1, 2, 3}}]]")
+        .unwrap(),
+      "{{{1, 1}, {2, 2}, {3, 3}}, {{1, 4}, {2, 5}, {3, 6}}}"
+    );
+    // A `TimeSeries` still normalizes to its own single path.
+    assert_eq!(
+      interpret("Normal[TimeSeries[{{1, 5}, {2, 7}}]]").unwrap(),
+      "{{1, 5}, {2, 7}}"
     );
   }
 }

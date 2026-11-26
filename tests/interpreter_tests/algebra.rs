@@ -5847,11 +5847,10 @@ mod solve {
     assert_eq!(
       interpret(
         "Round[10^8 {Re[z], Im[z]} /. \
-         Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]"
+         Solve[Expand[(z - 3.7)^5 (z^2 + 1)] == 0, z]]"
       )
       .unwrap(),
       "{{0, -100000000}, {0, 100000000}, {370000000, 0}, {370000000, 0}, \
-       {370000000, 0}, {370000000, 0}, {370000000, 0}, {370000000, 0}, \
        {370000000, 0}, {370000000, 0}, {370000000, 0}}"
     );
     assert_eq!(
@@ -5879,6 +5878,50 @@ mod solve {
       )
       .unwrap(),
       "{3, 3, 3, 3, 3}"
+    );
+  }
+
+  // From multiplicity 6 on wolframscript leaves the copies scattered by
+  // rounding (up to 0.13 away for the 9-fold root below) in an order that
+  // varies with the multiplicity; Woxi still merges them (see
+  // conformance_gaps.md, so this case is skip-listed in the verifier).
+  #[test]
+  fn machine_polynomial_high_multiplicity_roots_are_merged() {
+    assert_eq!(
+      interpret(
+        "Round[10^8 {Re[z], Im[z]} /. \
+         Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]]"
+      )
+      .unwrap(),
+      "{{0, -100000000}, {0, 100000000}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}, {370000000, 0}, \
+       {370000000, 0}, {370000000, 0}, {370000000, 0}}"
+    );
+    // Every copy of a 4-fold root next to a simple one is merged into it:
+    // polishing a scattered copy used to carry it over to the simple root,
+    // leaving three copies (with an imaginary residue) and the simple root
+    // twice.
+    assert_eq!(
+      interpret(
+        "Round[10^8 x /. Solve[Expand[(x - 1.1)^4 (x - 1.2)] == 0, x]]"
+      )
+      .unwrap(),
+      "{110000000, 110000000, 110000000, 110000000, 120000000}"
+    );
+  }
+
+  // The power sums of the roots are fixed by the coefficients, however a
+  // repeated root's copies are placed, so a copy that is lost to a nearby
+  // root shows up in them.
+  #[test]
+  fn machine_polynomial_repeated_root_power_sums() {
+    assert_eq!(
+      interpret(
+        "Round[100 Table[Total[(x /. \
+         Solve[Expand[(x - 1.1)^4 (x - 1.2)] == 0, x])^k], {k, 3}]]"
+      )
+      .unwrap(),
+      "{560, 628, 705}"
     );
   }
 
@@ -26236,6 +26279,51 @@ mod nroots_bare_polynomial_and_repeated_roots {
     assert_eq!(
       interpret("NRoots[(z - 1)^3 (z^2 + 1) == 0, z]").unwrap(),
       "z == 0. - 1.*I || z == 0. + 1.*I || z == 1. || z == 1. || z == 1."
+    );
+  }
+}
+
+mod solve_high_degree_machine_polynomials {
+  use super::*;
+
+  #[test]
+  fn every_root_is_finite_and_accurate() {
+    // Regression: the simultaneous iteration overflowed for degrees around
+    // 40 and up, so every root came out as `Indeterminate` (and sorting the
+    // NaNs could panic). The backward error of each root is checked against
+    // the size of the terms it cancels.
+    for degree in [40, 60, 100] {
+      for solver in ["Solve", "NSolve"] {
+        assert_eq!(
+          interpret(&format!(
+            "SeedRandom[3]; c = RandomReal[{{-2, 2}}, {degree} + 1]; \
+             e = Range[0, {degree}]; r = x /. {solver}[c . x^e == 0, x]; \
+             {{Length[r], FreeQ[r, Indeterminate], \
+              Max[Map[Abs[c . #^e]/(Abs[c] . Abs[#]^e) &, r]] < 10^-12}}"
+          ))
+          .unwrap(),
+          format!("{{{degree}, True, True}}"),
+          "{solver} at degree {degree}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn roots_of_a_matrix_polynomial_determinant_are_found() {
+    // The characteristic polynomial of a lag-10 system of 4 series has
+    // degree 40; its roots are the reciprocals of the companion matrix's
+    // eigenvalues, so their product is the reciprocal leading coefficient.
+    assert_eq!(
+      interpret(
+        "SeedRandom[7]; a = RandomReal[{-0.3, 0.3}, {10, 4, 4}]; \
+         det = Det[IdentityMatrix[4] - Sum[a[[i]] x^i, {i, 10}]]; \
+         r = x /. Solve[det == 0, x]; lead = Coefficient[det, x, 40]; \
+         {Length[r], FreeQ[r, Indeterminate], \
+          Abs[Times @@ r lead - 1] < 10^-6}"
+      )
+      .unwrap(),
+      "{40, True, True}"
     );
   }
 }

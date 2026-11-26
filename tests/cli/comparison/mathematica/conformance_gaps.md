@@ -1348,6 +1348,20 @@ matches `(Log2[m] + e) Log10[2]` of the binary mantissa and exponent for this
 case, but that formula misses its accuracy of `1.5`20 - 1.5`20` by one unit
 in the last place too, so the rule is not known.
 
+### High-multiplicity roots of a machine-coefficient polynomial
+
+A root of multiplicity `m` of a polynomial with machine coefficients is only
+determined to about `$MachineEpsilon^(1/m)`. wolframscript's `Solve` reports
+such a root `m` times up to `m = 5`. From `m = 6` on it returns the copies
+scattered by rounding: `Solve[Expand[(z - 3.7)^9 (z^2 + 1)] == 0, z]` gives
+nine real roots between 3.5737 and 3.8321, with `I` listed before `-I` for
+odd `m`. For `(x - 1.1)^m (x - 1.2)` the copies are already scattered at
+`m = 4`, and at `m = 7` all eight roots come out near 1.1125. The scatter
+depends on wolframscript's own eigenvalue rounding, so it cannot be
+reproduced. Woxi merges the copies into the `m`-fold root for every `m`.
+Expressions that only depend on the coefficients, such as the power sums of
+the roots, agree.
+
 ### Precision tags of inexact `Solve` roots
 
 `Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]` is `{{x -> -0.5`15.954589770191003},
@@ -7295,6 +7309,16 @@ internal hash order. Woxi keeps input order.
   unit grid of the widest layer (halves to the right), so the drawing is
   balanced like WL's; WL's exact coordinate assignment is not decoded, so
   a symmetric drawing (a diamond) can come out half a unit off center.
+- **Complete graphs with doubled edges** (every pair of vertices adjacent
+  and some pair joined more than once, e.g. a complete digraph listing
+  both directions) are laid out as a regular polygon in
+  `"CircularEmbedding"` order, read off stored notebook pictures for 3 and
+  7 vertices; other vertex counts are assumed to follow, not verified.
+- **`GraphPlot[…, VertexRenderingFunction :> f]`** (delayed rule): the
+  setting is dropped and the default vertices are drawn, as stored
+  notebook pictures show; only `VertexRenderingFunction -> f` is applied.
+  Whether the other legacy rendering options behave the same when delayed
+  is not verified.
 - **`GraphPlot` `PlotStyle`**: Woxi applies `PlotStyle -> s` to the edges
   only (unless `EdgeStyle` is given); how WL combines it with the default
   vertex style is not verified.
@@ -8231,6 +8255,20 @@ equidistant); the rhombic icosahedron's `Inradius` is too. `"NetFaces"` returns
 a `GraphicsComplex` over de-duplicated 2D points (the shape a Demonstration
 indexing `p[[1, #]] & /@ p[[2, 1]]` expects) — inferred from that usage, not
 checked directly.
+
+### `PolyhedronData` nets of the two dodecahedra are reconstructed, not verified
+
+`PolyhedronData["Dodecahedron", "NetFaces"]` and
+`PolyhedronData["RhombicDodecahedron", "NetFaces"]` (and the matching
+`"NetCoordinates"` / `"NetFaceIndices"`) are fixed layouts rebuilt from
+pictures Wolfram drew of them, without access to `wolframscript`: two
+rosettes of six pentagons joined along one edge, and a zigzag strip of twelve
+rhombi. The layout, the face order of the eight dodecahedron faces those
+pictures show and the point numbering of the rhombic strip follow that
+evidence. Still unchecked: the position of the origin, the printed form of
+the exact coordinates, the dodecahedron's point numbering and the order of its
+other four faces (placed by the net's half-turn symmetry), and the rhombic
+strip's face order and starting corners.
 
 ### `PolyhedronData["GyroelongatedSquareDipyramid", …]` ordering is unverified
 
@@ -10130,6 +10168,16 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
   wolframscript); the same sum at a `Grid` cell or `Row` item level is not
   covered.
+- A `Text[…]` item of a `Grid` is set at script level 0 (full-size
+  fraction, stacked `∑`/`∏` limits), as the front end draws it. A `Text[…]`
+  shown on its own is still set one script level down (fraction at 0.75),
+  which is inconsistent with that; which of the two a bare `Text[a/b]`
+  follows in the front end is not verified.
+- A held `Sum`/`Product`/`Integrate` in StandardForm (`ToBoxes[HoldForm[
+  Product[f[n], {n, 1, 4}]]]`, a notebook output, a bare `Column` item) is
+  typeset as the call `Product[…]`; wolframscript makes the `∏` boxes
+  (`UnderoverscriptBox`). Only the TraditionalForm path and the one-line
+  item text write the sign.
 - A TraditionalForm expression drawn in a graphic's text (a polynomial
   `PlotLabel` such as `x^3 - 2 x^2 - 3 x`) has no space around its infix
   operators: Woxi draws `x³-2x²-3x`, Wolfram's front end `x³ − 2x² − 3x`.
@@ -10190,6 +10238,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - An automatically sized `GraphicsRow` of several pictures fits them into
   640 points; a row of variables holding already-rendered plots is not
   re-laid out at the cell width.
+- A negative numeric `Spacings` of a `GraphicsRow`/`GraphicsColumn`/
+  `GraphicsGrid` overlaps the cells by that share of a 360-point cell
+  (`Spacings -> -180`: half a cell apart), decoded from a rendered
+  notebook picture rather than from `wolframscript`; a positive one is
+  still a fixed gap in points. In such a row WL draws a `Graphics3D` with
+  an infinite `ViewPoint` (`{0, -Infinity, 0}`) about as tall as the whole
+  `ImageSize` and lets it spill over its cell; Woxi fits it to the cell.
 
 ## Plot ranges and ticks (graphics comparison sweep, 2026-11)
 

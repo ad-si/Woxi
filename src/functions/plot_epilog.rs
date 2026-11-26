@@ -1531,11 +1531,15 @@ fn render_item(
           // `opos` names the point of the inset object (a plot's data
           // coordinates, a display's `Text`-style offset) that lands on
           // `pos`; the picture is otherwise centered there.
+          // A corner named by its sides (`{Left, Top}`) or an
+          // `ImageScaled` fraction works as in a plain `Graphics`.
+          let mut placed = args.to_vec();
+          placed[0] = object.clone();
+          // Without an `opos` the picture is centered on its position.
           let (fx, fy) = args
             .get(2)
-            .and_then(point2)
-            .and_then(|(ox, oy)| {
-              crate::functions::graphics::inset_object_fraction(&object, ox, oy)
+            .and_then(|_| {
+              crate::functions::graphics::inset_object_anchor(&placed)
             })
             .unwrap_or((0.5, 0.5));
           out.push_str(&crate::functions::graphics::embed_svg_centered(
