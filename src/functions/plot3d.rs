@@ -23640,12 +23640,6 @@ fn contour3d_render(
     })
     .collect();
 
-  if world_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "ContourPlot3D: the surface has no points in the given range".into(),
-    ));
-  }
-
   // `FitToSurfaces` boxes the plot to the extent of what was drawn. The box
   // is that range padded by `Scaled[0.02]` on each side (none around an
   // explicit `PlotRange`), as Wolfram's `ContourPlot3D`, `RegionPlot3D` and
@@ -23653,6 +23647,9 @@ fn contour3d_render(
   let explicit_range = matches!(plot_range, Some(ContourBox::Explicit(_)));
   let plot_range = match plot_range {
     Some(ContourBox::Explicit(r)) => r,
+    // Nothing was drawn (a level no sample reaches, a region that is
+    // empty): the box is the sampled one, drawn empty as Wolfram does.
+    Some(ContourBox::FitToSurfaces) if world_triangles.is_empty() => ranges,
     Some(ContourBox::FitToSurfaces) => {
       let mut r = [(f64::INFINITY, f64::NEG_INFINITY); 3];
       for p in world_triangles.iter().flat_map(|(t, _)| t.iter()) {

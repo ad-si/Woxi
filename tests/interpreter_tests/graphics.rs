@@ -46010,6 +46010,46 @@ mod log_linear_plot {
 mod contour_plot_3d {
   use super::*;
 
+  // An equation no point of the box satisfies still gives a picture: the
+  // empty box with its axes and labels, as Wolfram draws it. It used to be
+  // an error, which left a `Manipulate` blank whenever its controls picked
+  // a surface with no real points.
+  #[test]
+  fn surface_without_points_draws_the_empty_box() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[x^2 + y^2 + z^2 == -1, {x, -1, 1}, {y, -2, 2}, \
+         {z, -3, 3}, AxesLabel -> {\"u\", \"v\", \"w\"}]; \
+         s = ExportString[g, \"SVG\"]; \
+         {Head[g], Head[First[g]], First[g][[1]], StringCount[s, \"<polygon\"], \
+          StringCount[s, \"<line\"] > 12, StringContainsQ[s, \">u<\"]}"
+      )
+      .unwrap(),
+      "{Graphics3D, GraphicsComplex, {}, 0, True, True}"
+    );
+  }
+
+  // The same for the plots sharing the renderer: a region no sample lies
+  // in, and array data that never reaches the requested level (whose box,
+  // otherwise fitted to the surfaces, is then the data's own).
+  #[test]
+  fn empty_region_and_unreached_level_draw_the_empty_box() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "plots = {RegionPlot3D[x^2 + y^2 + z^2 < -1, {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}], ListContourPlot3D[Table[x + y + z, {x, 3}, {y, 3}, \
+         {z, 3}], Contours -> {100}]}; \
+         Table[With[{s = ExportString[g, \"SVG\"]}, {Head[g], \
+          StringCount[s, \"<polygon\"], StringCount[s, \"<line\"] > 12, \
+          StringContainsQ[s, \"NaN\"]}], {g, plots}]"
+      )
+      .unwrap(),
+      "{{Graphics3D, 0, True, False}, {Graphics3D, 0, True, False}}"
+    );
+  }
+
   // The `ColorFunction` colors stay with the primitives, so `Show` draws
   // the surface in them, and the option itself is not passed on.
   #[test]

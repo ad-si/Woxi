@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `ContourPlot3D`, `RegionPlot3D` and `ListContourPlot3D` draw the empty
+    box with its axes and labels when no point of the range is on the
+    surface (or in the region), as wolframscript does, instead of failing;
+    a `Manipulate` over such a plot went blank at those control values.
 - A `Text[…]` item of a `Grid` starts at script level 0 again: a fraction
     in it keeps the text size and a `∑`/`∏` in it stacks its limits under
     and over the sign, instead of being set one level deep like the
