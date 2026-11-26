@@ -69768,6 +69768,86 @@ mod list_plot_wl15_ranges {
     );
   }
 
+  /// `PlotStyle -> Opacity[a]` fades a dataset's dots just as it fades a
+  /// curve; the other datasets stay opaque.
+  #[test]
+  fn plot_style_opacity_fades_the_dots() {
+    let svg = export_svg(
+      "ListPlot[{{1, 2, 3}, {3, 1, 2}}, \
+       PlotStyle -> {Opacity[0.25], Opacity[1]}]",
+    );
+    assert_eq!(
+      svg.matches("opacity=\"0.25\" fill=\"#3D99CC\"").count(),
+      3,
+      "{svg}"
+    );
+    assert_eq!(
+      svg.matches("opacity=\"1\" fill=\"#F2A024\"").count(),
+      3,
+      "{svg}"
+    );
+    let svg =
+      export_svg("ListPlot[{1, 2}, PlotStyle -> Directive[Red, Opacity[0.5]]]");
+    assert_eq!(
+      svg.matches("opacity=\"0.5\" fill=\"#FF0000\"").count(),
+      2,
+      "{svg}"
+    );
+  }
+
+  /// A `ListPlot` shown together with a curve keeps the stems of a
+  /// dataset-to-dataset `Filling -> {i -> {j}}` and the `Opacity` of each
+  /// dataset's dots.
+  #[test]
+  fn show_keeps_series_filling_stems_and_dot_opacity() {
+    let svg = export_svg(
+      "Show[ListPlot[{{{1, 1}, {2, 2}, {3, 3}}, {{1, 2}, {2, 1}, {3, 5}}}, \
+       Filling -> {2 -> {1}}, PlotStyle -> {Opacity[0], Opacity[1]}], \
+       Plot[x, {x, 0, 4}]]",
+    );
+    // One stem per point of the second dataset, in its color.
+    let stems = svg
+      .lines()
+      .filter(|l| {
+        l.contains("<polyline")
+          && l.contains("stroke=\"rgb(242,160,36)\"")
+          && l.contains("opacity=\"0.300\"")
+      })
+      .count();
+    assert_eq!(stems, 3, "{svg}");
+    // The first dataset's dots are fully transparent, the second's opaque.
+    let dots = |fill: &str| -> Vec<&str> {
+      svg
+        .lines()
+        .filter(|l| l.contains("<circle") && l.contains(fill))
+        .collect()
+    };
+    let faded = dots("fill=\"rgb(61,153,204)\"");
+    assert_eq!(faded.len(), 3, "{svg}");
+    assert!(
+      faded.iter().all(|l| l.contains("fill-opacity=\"0.000\"")),
+      "{svg}"
+    );
+    let opaque = dots("fill=\"rgb(242,160,36)\"");
+    assert_eq!(opaque.len(), 3, "{svg}");
+    assert!(opaque.iter().all(|l| !l.contains("opacity")), "{svg}");
+  }
+
+  /// The stems of a dataset-to-dataset filling are part of the plot's
+  /// primitives, so they survive being layered over other graphics.
+  #[test]
+  fn series_filling_stems_are_plot_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Count[Show[Graphics[{}], ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, \
+         {2, 1}}}, Filling -> {2 -> {1}}]], _Line, Infinity]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn dots_scale_with_the_image_width() {
     let svg = export_svg("ListPlot[Range[10], ImageSize -> 720]");

@@ -3167,6 +3167,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  crate::functions::plot::apply_filling_rules_to_source(&mut source, opts);
   source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
   source.settles_all_range = true;
