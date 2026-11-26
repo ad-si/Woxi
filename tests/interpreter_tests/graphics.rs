@@ -16219,22 +16219,109 @@ mod plot3d {
   mod plot_misc {
     use super::*;
 
+    /// Long polylines of an exported plot, as their `stroke` colors.
+    fn curve_strokes(svg: &str) -> Vec<String> {
+      svg
+        .split("<polyline ")
+        .skip(1)
+        .filter(|s| {
+          s.split("points=\"")
+            .nth(1)
+            .and_then(|p| p.split('"').next())
+            .is_some_and(|p| p.split(' ').count() > 20)
+        })
+        .filter_map(|s| {
+          s.split("stroke=\"")
+            .nth(1)
+            .and_then(|c| c.split('"').next())
+            .map(str::to_string)
+        })
+        .collect()
+    }
+
+    /// Whether an SVG stroke is pure red, in either spelling the plot
+    /// writer uses.
+    fn is_red(stroke: &str) -> bool {
+      matches!(stroke, "#FF0000" | "rgb(255,0,0)")
+    }
+
     /// The plotted function is held, so a `Table` generating the curves
     /// only becomes a list once evaluated. Wolfram draws one curve per
-    /// entry either way, so writing `Evaluate` must not change the result.
+    /// entry, but as the curves of a single function: all in one color.
+    /// Writing `Evaluate` is what gives each curve its own.
     #[test]
     fn plot_table_generated_curves() {
-      let generated = export_svg("Plot[Table[Sin[i x], {i, 1, 3}], {x, 0, 3}]");
-      let curves = generated
-        .split("points=\"")
-        .skip(1)
-        .filter(|s| s.split('"').next().unwrap_or("").split(' ').count() > 20)
-        .count();
-      assert_eq!(curves, 3, "expected one curve per Table entry");
-      assert_eq!(
-        generated,
-        export_svg("Plot[Evaluate[Table[Sin[i x], {i, 1, 3}]], {x, 0, 3}]")
+      let held = curve_strokes(&export_svg(
+        "Plot[Table[Sin[i x], {i, 1, 3}], {x, 0, 3}]",
+      ));
+      assert_eq!(held.len(), 3, "expected one curve per Table entry");
+      assert!(held.iter().all(|c| *c == held[0]), "{held:?}");
+
+      let evaluated = curve_strokes(&export_svg(
+        "Plot[Evaluate[Table[Sin[i x], {i, 1, 3}]], {x, 0, 3}]",
+      ));
+      assert_eq!(evaluated.len(), 3);
+      assert_eq!(evaluated[0], held[0]);
+      assert_ne!(evaluated[1], evaluated[0]);
+      assert_ne!(evaluated[2], evaluated[1]);
+    }
+
+    /// A `PlotStyle` list is one combined style for a held body that is
+    /// not written as a list, however many curves it yields, instead of
+    /// being dealt out one directive per curve.
+    #[test]
+    fn plot_held_generator_combines_plot_style() {
+      for code in [
+        "Plot[Table[x^n, {n, 1, 4}], {x, 0, 1}, PlotStyle -> {Thick, Red}]",
+        "Plot[Table[x^n, {n, 1, 4}], {x, 0, 1}, PlotStyle -> {Dashed, Red}]",
+        "Plot[Table[x^n, {n, 1, 4}], {x, 0, 1}, PlotStyle -> Red]",
+      ] {
+        let strokes = curve_strokes(&export_svg(code));
+        assert_eq!(strokes.len(), 4, "{code}");
+        assert!(strokes.iter().all(|c| is_red(c)), "{code}: {strokes:?}");
+      }
+      // Written as a list, the same directives go one to a curve.
+      let listed = curve_strokes(&export_svg(
+        "Plot[{x, x^2, x^3, x^4}, {x, 0, 1}, PlotStyle -> {Thick, Red}]",
+      ));
+      assert_eq!(listed.len(), 4);
+      assert!(is_red(&listed[1]), "{listed:?}");
+      assert!(!is_red(&listed[0]), "{listed:?}");
+    }
+
+    /// A symbol assigned a list is a single held function as well.
+    #[test]
+    fn plot_list_valued_symbol_uses_one_color() {
+      let strokes =
+        curve_strokes(&export_svg("fs = {x, x^2, x^3}; Plot[fs, {x, 0, 1}]"));
+      assert_eq!(strokes.len(), 3);
+      assert!(strokes.iter().all(|c| *c == strokes[0]), "{strokes:?}");
+    }
+
+    /// A graphic's text is set in `TraditionalForm`, so the one-letter
+    /// symbols of the box code a `Text` string embeds are italic, while
+    /// the string's plain text stays upright.
+    #[test]
+    fn text_string_box_code_sets_single_letters_italic() {
+      let svg = export_svg(
+        r#"Graphics[Text[Style["\!\(\*SubscriptBox[\(E\), \(1\)]\) = 0.08", Red, 14], {0, 0}]]"#,
       );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">E</tspan>\u{2081} = 0.08"),
+        "{svg}"
+      );
+      let svg = export_svg(
+        r#"Graphics[Text["n \!\(\*SuperscriptBox[\(d\), \(2\)]\) n", {0, 0}]]"#,
+      );
+      assert!(
+        svg.contains("n <tspan font-style=\"italic\">d</tspan>\u{b2} n"),
+        "{svg}"
+      );
+      // A multi-letter name in box code is not a math variable.
+      let svg = export_svg(
+        r#"Graphics[Text["\!\(\*SubscriptBox[\(max\), \(2\)]\)", {0, 0}]]"#,
+      );
+      assert!(svg.contains(">max\u{2082}</text>"), "{svg}");
     }
 
     #[test]

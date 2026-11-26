@@ -4289,7 +4289,12 @@ mod interpreter_tests {
       "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(X\\), \\(3\\)]\\)\", {0, 0}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">X₃<"), "expected X₃ in SVG, got: {svg}");
+    // The one-letter symbol of the box code is a math variable, set in
+    // italics like the rest of a graphic's `TraditionalForm` text.
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">X</tspan>₃<"),
+      "expected X₃ in SVG, got: {svg}"
+    );
     assert!(
       !svg.contains("SubscriptBox"),
       "raw box source leaked into SVG: {svg}"
@@ -4301,7 +4306,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_super.contains(">x²<"),
+      svg_super.contains("<tspan font-style=\"italic\">x</tspan>²<"),
       "expected x² in SVG, got: {svg_super}"
     );
 
@@ -4313,7 +4318,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_row.contains(">dX₆<"),
+      svg_row.contains(">d<tspan font-style=\"italic\">X</tspan>₆<"),
       "expected dX₆ in SVG, got: {svg_row}"
     );
   }
