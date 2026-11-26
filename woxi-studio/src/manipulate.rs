@@ -2522,6 +2522,8 @@ impl ManipulateState {
   /// follows along.
   pub fn advance_animation(&mut self) {
     let target = self.animation_var.clone();
+    let shown =
+      |i: usize| self.control_is_visible.get(i).copied().unwrap_or(true);
     let idx = match &target {
       Some(name) => self
         .controls
@@ -2529,6 +2531,22 @@ impl ManipulateState {
         .position(
           |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
         )
+        // Triggers in the panes of a `PaneSelector` each sweep their own
+        // variable; the play button pressed is the one on screen, so a
+        // hidden Trigger hands the sweep to the visible one.
+        .and_then(|i| {
+          if shown(i) {
+            return Some(i);
+          }
+          self
+            .controls
+            .iter()
+            .enumerate()
+            .position(|(j, c)| {
+              matches!(c, ControlState::Trigger { .. }) && shown(j)
+            })
+            .or(Some(i))
+        })
         .or_else(|| {
           self.controls.iter().position(|c| {
             matches!(c, ControlState::Continuous { name: n, .. } if n == name)
@@ -7116,6 +7134,58 @@ mod tests {
       assert_eq!(
         state.control_is_visible[i], shown,
         "`h` visibility in mode {mode}"
+      );
+    }
+  }
+
+  /// Two `Trigger` controls, one per `PaneSelector` pane, each sweeping its
+  /// own variable: pressing play sweeps the Trigger of the pane on screen.
+  /// Regression: the sweep always went to the last Trigger of the spec, so
+  /// playing in the first pane moved the hidden variable and the picture
+  /// stood still.
+  #[test]
+  fn play_sweeps_the_trigger_of_the_visible_pane() {
+    for (mode, moving, resting) in [(1, "ta", "tb"), (2, "tb", "ta")] {
+      let code = format!(
+        r#"Manipulate[
+          Text[If[mode == 1, ta, tb]],
+          Grid[{{{{
+            Control[{{{{mode, {mode}, ""}}, {{1 -> "first", 2 -> "second"}}}}],
+            PaneSelector[{{
+              1 -> Control[{{{{ta, 0, "run"}}, 0, 1, Trigger}}],
+              2 -> Control[{{{{tb, 0, "run"}}, 0, 1, Trigger}}]
+            }}, Dynamic[mode]]
+          }}}}]
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let mut state = ManipulateState::from_expr(&expr)
+        .expect("the Trigger panes should build a ManipulateState");
+      assert_eq!(state.error, None, "body must evaluate cleanly");
+      let value = |state: &ManipulateState, n: &str| {
+        state
+          .controls
+          .iter()
+          .find(|c| c.name() == n)
+          .unwrap_or_else(|| panic!("`{n}` must be a control"))
+          .current_code()
+          .trim()
+          .parse::<f64>()
+          .unwrap()
+      };
+      state.toggle_play();
+      for _ in 0..3 {
+        state.advance_animation();
+      }
+      assert!(
+        value(&state, moving) > 0.0,
+        "`{moving}` sweeps in mode {mode}"
+      );
+      assert_eq!(
+        value(&state, resting),
+        0.0,
+        "`{resting}` rests in mode {mode}"
       );
     }
   }
