@@ -60528,9 +60528,14 @@ mod tube_and_cap_form {
         "CapForm -> None must open {tube}"
       );
       assert_eq!(
-        export_svg(&format!("Graphics3D[{{CapForm -> \"Butt\", {tube}}}]")),
+        export_svg(&format!("Graphics3D[{{CapForm -> \"Round\", {tube}}}]")),
         export_svg(&format!("Graphics3D[{{{tube}}}]")),
-        "CapForm -> \"Butt\" must keep {tube} capped"
+        "CapForm -> \"Round\" must keep {tube} capped"
+      );
+      assert_eq!(
+        export_svg(&format!("Graphics3D[{{CapForm -> \"Butt\", {tube}}}]")),
+        export_svg(&format!("Graphics3D[{{CapForm[\"Butt\"], {tube}}}]")),
+        "CapForm -> \"Butt\" must cut {tube} off flat"
       );
     }
   }
@@ -60546,13 +60551,19 @@ mod tube_and_cap_form {
     );
     assert!(open.contains("<polygon"), "the open tube must still draw");
     assert_ne!(capped, open, "CapForm[None] must drop the end disks");
-    // Naming a cap form puts them back.
+    // Naming a cap form puts them back: the default hemispheres for
+    // "Round", flat disks for "Butt".
     assert_eq!(
       export_svg(
-        "Graphics3D[{CapForm[\"Butt\"], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]"
+        "Graphics3D[{CapForm[\"Round\"], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]"
       ),
       capped
     );
+    let butt = export_svg(
+      "Graphics3D[{CapForm[\"Butt\"], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
+    );
+    assert_ne!(butt, capped, "a butt cap is flat, not round");
+    assert_ne!(butt, open, "a butt cap still closes the tube");
   }
 
   /// A degree-1 `BSplineCurve` is its control polygon, corners included:
