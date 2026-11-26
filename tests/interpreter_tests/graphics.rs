@@ -79014,8 +79014,8 @@ mod fitted_3d_scene_keeps_made_up_range_of_flat_contents {
     let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
     assert!((dx - 257.0).abs() < 5.0, "dx = {dx}");
     assert!((dy - 280.0).abs() < 5.0, "dy = {dy}");
-    assert!(((x0 + x1) / 2.0 - 177.0).abs() < 3.0, "{x0} {x1}");
-    assert!(((y0 + y1) / 2.0 - 171.5).abs() < 3.0, "{y0} {y1}");
+    assert!((f64::midpoint(x0, x1) - 177.0).abs() < 3.0, "{x0} {x1}");
+    assert!((f64::midpoint(y0, y1) - 171.5).abs() < 3.0, "{y0} {y1}");
   }
 
   // The same holds for a line of any length and along any axis: it stays
