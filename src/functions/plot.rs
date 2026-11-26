@@ -9274,7 +9274,7 @@ pub(crate) fn build_plot_source(
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
     legends: Vec::new(),
     legend_positions: Vec::new(),
-    chart_axes: false,
+    axes_layout: crate::syntax::AxesLayout::Plot,
   }
 }
 
@@ -10003,7 +10003,9 @@ pub(crate) fn render_merged_plot_source(
 
   // A chart's vertical axis stands at the left end of the range and keeps
   // the `0` beside it, unless `AxesOrigin` places it.
-  if source.chart_axes && opts.axes_origin.0.is_none() {
+  if source.axes_layout == crate::syntax::AxesLayout::Chart
+    && opts.axes_origin.0.is_none()
+  {
     opts.axes_origin.0 = Some(x_range.0);
     opts.keep_y_label_on_x_axis = true;
   }
@@ -14117,7 +14119,7 @@ pub(crate) fn histogram_plot_source(
     aspect_ratio: None,
     legends: Vec::new(),
     legend_positions: Vec::new(),
-    chart_axes: true,
+    axes_layout: crate::syntax::AxesLayout::Chart,
   })
 }
 

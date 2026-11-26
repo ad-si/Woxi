@@ -32570,7 +32570,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       log_y: plot_sources[0].log_y,
       aspect_ratio: plot_sources[0].aspect_ratio,
       settles_all_range: plot_sources[0].settles_all_range,
-      chart_axes: plot_sources[0].chart_axes,
+      axes_layout: plot_sources[0].axes_layout,
       data_x_range,
       // A legend of the first plot alone stays in its options (with its
       // styling); entries from several plots, or a later one, are listed.

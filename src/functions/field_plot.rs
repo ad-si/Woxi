@@ -4967,7 +4967,7 @@ fn contour_plot_equations(
     legends: Vec::new(),
     legend_positions: Vec::new(),
     settles_all_range: false,
-    chart_axes: false,
+    axes_layout: crate::syntax::AxesLayout::Plot,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
