@@ -981,6 +981,18 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
         "HypothesisTesting`{name}"
       ));
     }
+    // The package defines `Options[f]` for each function it implements
+    // (kept if the session already changed them with `SetOptions`).
+    for (name, _) in crate::functions::math_ast::LEGACY_OPTIONS {
+      let full = format!("HypothesisTesting`{name}");
+      if let Some(defaults) =
+        crate::functions::math_ast::legacy_default_options(name)
+      {
+        crate::FUNC_OPTIONS.with(|m| {
+          m.borrow_mut().entry(full).or_insert(defaults);
+        });
+      }
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "HierarchicalClustering`" {

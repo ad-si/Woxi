@@ -48145,6 +48145,9 @@ pub enum ManipulateControl {
     x_initial: f64,
     y_initial: f64,
     label: String,
+    /// Styled runs of the label (`Subscript["A", Style["xy", Italic]]`
+    /// keeps its italic subscript); empty for a plain default label.
+    label_runs: Vec<LabelRun>,
     /// InputForm of a write-back function (the second argument of a
     /// `Locator[Dynamic[var, cb], …]` this control was promoted from).
     /// Candidate values pass through it — `(cb)[{x, y}]` — before the
@@ -50998,6 +51001,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -51035,6 +51039,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -51079,6 +51084,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       x_initial,
       y_initial,
       label: var,
+      label_runs: Vec::new(),
       write_callback: None,
       real: false,
       exact_initial: false,
@@ -56722,8 +56728,15 @@ fn patch_default_label(
         *label_runs = pretty_runs;
       }
     }
-    ManipulateControl::Slider2D { label, .. }
-    | ManipulateControl::IntervalSlider { label, .. }
+    ManipulateControl::Slider2D {
+      label, label_runs, ..
+    } => {
+      if label == synth {
+        *label = pretty;
+        *label_runs = pretty_runs;
+      }
+    }
+    ManipulateControl::IntervalSlider { label, .. }
     | ManipulateControl::Locator { label, .. } => {
       if label == synth {
         *label = pretty;
@@ -57235,6 +57248,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial,
     y_initial,
     label: var,
+    label_runs: Vec::new(),
     write_callback: None,
     real: false,
     exact_initial: false,
@@ -57303,6 +57317,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     x_initial: f64::midpoint(x_min, x_max),
     y_initial: f64::midpoint(y_min, y_max),
     label: "pos".to_string(),
+    label_runs: Vec::new(),
     write_callback: None,
     real: false,
     exact_initial: false,
@@ -57916,6 +57931,7 @@ fn apply_widget_label_style(
       ManipulateControl::Continuous { label_runs, .. }
       | ManipulateControl::Discrete { label_runs, .. }
       | ManipulateControl::VectorSlider { label_runs, .. }
+      | ManipulateControl::Slider2D { label_runs, .. }
       | ManipulateControl::Trigger { label_runs, .. }
       | ManipulateControl::Heading { label_runs, .. }
       | ManipulateControl::Color { label_runs, .. } => {
@@ -60228,6 +60244,7 @@ fn parse_manipulate_control(
           x_initial: x,
           y_initial: y,
           label,
+          label_runs: label_runs.clone(),
           write_callback: pane_callback,
           real: true,
           exact_initial: is_exact_pair(&evaluated),
@@ -60619,6 +60636,7 @@ fn parse_manipulate_control(
         x_initial,
         y_initial,
         label,
+        label_runs: label_runs.clone(),
         write_callback,
         real: false,
         exact_initial: false,
@@ -62912,12 +62930,14 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         x_initial,
         y_initial,
         label,
+        label_runs,
         ..
       } => {
         ctrl_parts.push(format!(
-          r#"{{"kind":"slider2d","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
+          r#"{{"kind":"slider2d","name":"{}","label":"{}","labelRuns":{},"xMin":{},"xMax":{},"yMin":{},"yMax":{},"xInit":{},"yInit":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
           x_min,
           x_max,
           y_min,

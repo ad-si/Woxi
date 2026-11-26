@@ -60,6 +60,9 @@ thread_local! {
     // Track whether Options[f] was set with `:=` (SetDelayed) so Definition can
     // re-emit the matching operator. Symbols set with plain `=` are absent.
     pub static FUNC_OPTIONS_DELAYED: crate::epoch::EpochCell<std::collections::HashSet<String>> = crate::epoch::EpochCell::new(std::collections::HashSet::new());
+    // Obsolete package functions that already issued their one-per-session
+    // `General::obsfun` warning.
+    pub static OBSOLETE_WARNED: crate::epoch::EpochCell<std::collections::HashSet<String>> = crate::epoch::EpochCell::new(std::collections::HashSet::new());
     // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)
     // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
     pub static UPVALUES: crate::epoch::EpochCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = crate::epoch::EpochCell::new(HashMap::new());
@@ -2803,6 +2806,7 @@ pub fn clear_state() {
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS_DELAYED.with(|m| m.borrow_mut().clear());
+  OBSOLETE_WARNED.with(|m| m.borrow_mut().clear());
   FUNC_OPTS_INLINE.with(|m| m.borrow_mut().clear());
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
