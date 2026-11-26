@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A horizontal `BarChart` (`BarOrigin -> Left`) honors `AspectRatio` (the
+    picture's height follows the plotting area instead of staying at the
+    default), sets its `ChartLegends` column beside the image like a
+    vertical chart, listing the bars from the top one down, and applies
+    `LabelStyle` to its tick labels, chart labels, title and legend. A
+    vertical chart's legend follows a bold `LabelStyle` as well.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

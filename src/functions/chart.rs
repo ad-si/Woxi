@@ -4328,6 +4328,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.chart_legends,
       opts.plot_range_x,
       &bar_labels,
+      opts.aspect_ratio.filter(|_| !opts.fixed_height),
+      bar_chart_look(args).label_style,
     );
     return Ok(crate::graphics_result(svg));
   }
@@ -6203,6 +6205,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     w,
     cy,
     1.0,
+    false,
   ));
 
   // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
@@ -7382,6 +7385,17 @@ pub(crate) fn with_chart_legend(
   legends: &[String],
   color: impl Fn(usize) -> (u8, u8, u8),
 ) -> String {
+  with_chart_legend_styled(svg, legends, color, false)
+}
+
+/// [`with_chart_legend`] with the labels in bold when `bold` is set (a
+/// `LabelStyle -> Bold` chart).
+pub(crate) fn with_chart_legend_styled(
+  svg: String,
+  legends: &[String],
+  color: impl Fn(usize) -> (u8, u8, u8),
+  bold: bool,
+) -> String {
   if legends.is_empty() {
     return svg;
   }
@@ -7415,8 +7429,20 @@ pub(crate) fn with_chart_legend(
     .filter(|v| *v > 0.0);
   let scale = shown_w.map_or(1.0, |sw| w / sw);
   // WL sets the legend beside the chart's image, which keeps its size.
+  // Bold glyphs run about a tenth wider than regular ones.
+  let bold_room = if bold {
+    legends
+      .iter()
+      .map(|l| crate::functions::plot::chart_legend_entry_width(l))
+      .fold(0.0, f64::max)
+      * 0.1
+  } else {
+    0.0
+  };
   let legend_width =
-    (crate::functions::plot::chart_legend_column_width(legends, 1.0)).round();
+    (crate::functions::plot::chart_legend_column_width(legends, 1.0)
+      + bold_room)
+      .round();
   let new_w = w + legend_width * scale;
   let mut new_tag = format!(
     "{}viewBox=\"0 0 {new_w} {h}{}",
@@ -7445,6 +7471,7 @@ pub(crate) fn with_chart_legend(
     w,
     h / 2.0,
     scale,
+    bold,
   ));
   let body = &svg[tag_end..];
   let close = body.rfind("</svg>").unwrap_or(body.len());

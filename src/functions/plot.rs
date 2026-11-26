@@ -12147,6 +12147,7 @@ pub(crate) fn generate_bar_svg(
           (row_x, row_y),
           sf,
           text_fill,
+          label_bold,
         ));
         row_x += chart_legend_entry_width(label) * sf + entry_gap;
       }
@@ -12156,10 +12157,11 @@ pub(crate) fn generate_bar_svg(
   }
 
   if column_legend {
-    buf = crate::functions::chart::with_chart_legend(
+    buf = crate::functions::chart::with_chart_legend_styled(
       buf,
       chart_legends,
       legend_color,
+      label_bold,
     );
   }
   Ok(buf)
@@ -12203,6 +12205,7 @@ pub(crate) fn chart_legend_column_svg(
   x: f64,
   center_y: f64,
   sf: f64,
+  bold: bool,
 ) -> String {
   let block = (labels.len().saturating_sub(1) as f64 * CHART_LEGEND_ROW)
     + CHART_LEGEND_SWATCH;
@@ -12221,6 +12224,7 @@ pub(crate) fn chart_legend_column_svg(
         ),
         sf,
         text_fill,
+        bold,
       )
     })
     .collect()
@@ -12235,15 +12239,17 @@ pub(crate) fn chart_legend_entry_svg(
   (x, y): (f64, f64),
   sf: f64,
   label_fill: &str,
+  bold: bool,
 ) -> String {
   let legend_font = sf * CHART_LEGEND_FONT;
   let swatch_size = sf * CHART_LEGEND_SWATCH;
+  let weight = if bold { " font-weight=\"bold\"" } else { "" };
   format!(
     "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{swatch_size:.1}\" height=\"{swatch_size:.1}\" \
      fill=\"rgb({cr},{cg},{cb})\" stroke=\"black\" stroke-opacity=\"0.637\" \
      stroke-width=\"{:.2}\"/>\n\
      <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
-     fill=\"{label_fill}\">{}</text>\n",
+     fill=\"{label_fill}\"{weight}>{}</text>\n",
     0.5 * sf,
     x + swatch_size + CHART_LEGEND_TEXT_GAP * sf,
     y + swatch_size + 0.25 * sf,
@@ -12271,12 +12277,12 @@ pub(crate) fn generate_horizontal_bar_svg(
   chart_legends: &[String],
   plot_range_x: Option<(f64, f64)>,
   bar_labels: &[String],
+  aspect_ratio: Option<f64>,
+  label_style: Option<LabelStyleSpec>,
 ) -> std::string::String {
   let sf = RESOLUTION_SCALE as f64;
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
   let rw = render_width as f64;
-  let rh = render_height as f64;
 
   let n = groups.len();
   let k = groups
@@ -12307,8 +12313,24 @@ pub(crate) fn generate_horizontal_bar_svg(
   let axis_stroke =
     format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
 
-  let font_size = sf * CHART_LABEL_FONT;
-  let title_font_size = sf * CHART_TITLE_FONT;
+  // `LabelStyle` sets the size, color and weight of every label.
+  let label_style_font = label_style.and_then(|st| st.font_size);
+  let label_style_fill = label_style
+    .and_then(|st| st.color)
+    .map(super::graphics::Color::to_svg_rgb);
+  let label_fill: &str = label_style_fill.as_deref().unwrap_or(label_fill);
+  let label_bold = label_style.is_some_and(|st| st.bold);
+  let label_weight = if label_bold {
+    " font-weight=\"bold\""
+  } else {
+    ""
+  };
+  let font_size = sf * label_style_font.unwrap_or(CHART_LABEL_FONT);
+  let title_font_size = sf
+    * plot_label
+      .and_then(|sl| sl.font_size)
+      .or(label_style_font)
+      .unwrap_or(CHART_TITLE_FONT);
   let char_w = font_size * 0.55;
 
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
@@ -12321,14 +12343,30 @@ pub(crate) fn generate_horizontal_bar_svg(
 
   // Margins. An `AxesLabel` sits at the far end of its axis, so it takes
   // room above (the category axis) and to the right (the value axis).
-  let top_margin = if has_plot_label { 38.0 * sf } else { 16.0 * sf }
-    + plot_label_extra_lines(plot_label) as f64 * 20.0 * sf
+  // With an explicit `AspectRatio` the picture's height follows its
+  // content, so the title and the tick labels take just the room they need.
+  let title_pitch = title_font_size * 1.2;
+  let title_room = if aspect_ratio.is_some() {
+    if has_plot_label {
+      title_pitch * (1.0 + plot_label_extra_lines(plot_label) as f64) + 8.0 * sf
+    } else {
+      font_size * 0.5
+    }
+  } else {
+    let base = if has_plot_label { 38.0 * sf } else { 16.0 * sf };
+    base + plot_label_extra_lines(plot_label) as f64 * 20.0 * sf
+  };
+  let top_margin = title_room
     + if x_axis_label.is_empty() {
       0.0
     } else {
       20.0 * sf
     };
-  let bottom_area = 44.0 * sf;
+  let bottom_area = if aspect_ratio.is_some() {
+    MAJOR_TICK_LEN as f64 * sf + font_size * 1.4
+  } else {
+    44.0 * sf
+  };
 
   // Left area: widest category label (capped) plus a rotated y-axis label.
   let max_cat_len = chart_labels
@@ -12354,16 +12392,6 @@ pub(crate) fn generate_horizontal_bar_svg(
   } else {
     0.0
   };
-  let legend_area = if chart_legends.is_empty() {
-    0.0
-  } else {
-    let maxlen = chart_legends
-      .iter()
-      .map(|l| crate::functions::graphics::box_string_visible_len(l))
-      .max()
-      .unwrap_or(0);
-    sf * 12.0 + sf * 6.0 + maxlen as f64 * sf * 10.0 + sf * 16.0
-  };
   let axes_label_area = if y_axis_label.is_empty() {
     0.0
   } else {
@@ -12372,13 +12400,25 @@ pub(crate) fn generate_horizontal_bar_svg(
         * 0.62
         * font_size
   };
-  let right_margin =
-    14.0 * sf + value_label_area + legend_area + axes_label_area;
+  let right_margin = 14.0 * sf + value_label_area + axes_label_area;
 
   let plot_x0 = left_area;
   let plot_y0 = top_margin;
   let plot_w = (rw - plot_x0 - right_margin).max(1.0);
-  let plot_h = (rh - top_margin - bottom_area).max(1.0);
+  // `AspectRatio -> r` shapes the plotting area and the picture's height
+  // follows, as in a vertical chart; otherwise the area fills the image.
+  let svg_height = match aspect_ratio {
+    Some(r) => {
+      (((top_margin + bottom_area + r * plot_w) / sf).ceil() as u32).max(1)
+    }
+    None => svg_height,
+  };
+  let render_height = svg_height * RESOLUTION_SCALE;
+  let rh = render_height as f64;
+  let plot_h = match aspect_ratio {
+    Some(r) => r * plot_w,
+    None => (rh - top_margin - bottom_area).max(1.0),
+  };
   let axis_bottom = plot_y0 + plot_h;
 
   let map_x =
@@ -12483,7 +12523,7 @@ pub(crate) fn generate_horizontal_bar_svg(
       ));
       svg.push_str(&format!(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\"{label_weight}>{}</text>\n",
         axis_bottom + tick_len + font_size,
         html_escape(&format_axis_tick(v, x_major, x_min, x_max))
       ));
@@ -12501,7 +12541,7 @@ pub(crate) fn generate_horizontal_bar_svg(
       let lx = plot_x0 - 8.0 * sf;
       svg.push_str(&format!(
         "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"end\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\"{label_weight}>{}</text>\n",
         band_center + font_size * 0.35,
         crate::functions::graphics::box_string_to_svg(&label.text)
       ));
@@ -12527,7 +12567,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         let lx = map_x(val).max(bar_base) + 6.0 * sf;
         svg.push_str(&format!(
           "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"start\" \
-           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\"{label_weight}>{}</text>\n",
           y0 + sub_h / 2.0 + font_size * 0.35,
           crate::functions::graphics::box_string_to_svg(&text)
         ));
@@ -12553,8 +12593,8 @@ pub(crate) fn generate_horizontal_bar_svg(
   {
     let cx = plot_x0 + plot_w / 2.0;
     // Place the title near the top so a clear gap remains above the bars.
-    let ty = title_font_size * 1.2;
-    let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
+    let ty = title_pitch;
+    let fs = title_font_size;
     // A stacked title keeps its first line at the top and grows downwards
     // into the extra top margin reserved for it.
     let fill = sl.color.as_ref().map_or_else(
@@ -12562,7 +12602,7 @@ pub(crate) fn generate_horizontal_bar_svg(
       |c| c.to_svg_rgb(),
     );
     let mut style_attrs = String::new();
-    if sl.bold {
+    if sl.bold || label_bold {
       style_attrs.push_str(" font-weight=\"bold\"");
     }
     if sl.italic {
@@ -12571,43 +12611,37 @@ pub(crate) fn generate_horizontal_bar_svg(
     svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
-  // Legends to the right of the plot.
-  if !chart_legends.is_empty() {
-    let legend_font = sf * 16.0;
-    let swatch = sf * 12.0;
-    let swatch_gap = sf * 6.0;
-    let legend_x = plot_x0 + plot_w + value_label_area + 14.0 * sf;
-    let legend_y_start = plot_y0 + sf * 8.0;
-    let line_height = sf * 22.0;
-    for (i, label) in chart_legends.iter().enumerate() {
-      let (cr, cg, cb) = if chart_style.is_empty() {
-        crate::functions::chart::CHART_COLORS
-          [i % crate::functions::chart::CHART_COLORS.len()]
-      } else {
-        let c = &chart_style[i % chart_style.len()];
-        (
-          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
-      };
-      let ly = legend_y_start + i as f64 * line_height;
-      svg.push_str(&format!(
-        "<rect x=\"{legend_x:.2}\" y=\"{ly:.2}\" width=\"{swatch:.0}\" height=\"{swatch:.0}\" \
-         fill=\"rgb({cr},{cg},{cb})\"/>\n"
-      ));
-      svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{:.2}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
-         fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-        legend_x + swatch + swatch_gap,
-        ly + swatch / 2.0,
-        crate::functions::graphics::box_string_to_svg(label)
-      ));
-    }
-  }
-
   svg.push_str("</svg>");
-  svg
+
+  // The legend column is set beside the finished image, as for a vertical
+  // chart. The bars of a flat list stack upwards, so its entries are
+  // listed top to bottom in the reverse of their data order.
+  let legend_color = |i: usize| {
+    if chart_style.is_empty() {
+      crate::functions::chart::CHART_COLORS
+        [i % crate::functions::chart::CHART_COLORS.len()]
+    } else {
+      let c = &chart_style[i % chart_style.len()];
+      let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+      (ch(c.r), ch(c.g), ch(c.b))
+    }
+  };
+  if k > 1 {
+    return crate::functions::chart::with_chart_legend_styled(
+      svg,
+      chart_legends,
+      legend_color,
+      label_bold,
+    );
+  }
+  let count = chart_legends.len();
+  let reversed: Vec<String> = chart_legends.iter().rev().cloned().collect();
+  crate::functions::chart::with_chart_legend_styled(
+    svg,
+    &reversed,
+    |i| legend_color(count - 1 - i),
+    label_bold,
+  )
 }
 
 /// Wolfram's `"WL12DefaultVectorGradient"` color scheme — the gradient
