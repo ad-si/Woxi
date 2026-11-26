@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `PolyhedronData["Dodecahedron", "NetFaces"]` is the familiar net of two
+    six-pentagon rosettes joined along one edge and
+    `PolyhedronData["RhombicDodecahedron", "NetFaces"]` a zigzag strip of
+    twelve rhombi, both with exact coordinates, instead of a breadth-first
+    unfolding; `"NetFaces"` of a solid with a predefined net now agrees
+    with its `"NetCoordinates"` and `"NetFaceIndices"`.
 - `ContourPlot3D`, `RegionPlot3D` and `ListContourPlot3D` draw the empty
     box with its axes and labels when no point of the range is on the
     surface (or in the region), as wolframscript does, instead of failing;
