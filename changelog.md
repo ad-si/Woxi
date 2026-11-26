@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- Graph drawing: a `"LinearEmbedding"` arc rises a quarter of its
+    endpoints' distance (its control point half of it, which the picture
+    makes room for) instead of half; `EdgeStyle -> {edge -> {d1, d2}}`
+    applies a list of directives to its edge instead of ignoring it; a
+    `VertexShape` picture is as large as `VertexSize` says; and two edges
+    leading away from one vertex are drawn as a tree with that root on top
+    instead of a horizontal path.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
