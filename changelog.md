@@ -48,9 +48,25 @@
     `Sum` or `Block` over a symbol without definitions no longer makes every
     large stored value evaluate anew.
 - `ListContourPlot` keeps a lone spike in the data from stretching its
-    automatic contour levels (the outlier fence `ContourPlot` already
-    applied), and interpolates an array linearly over a triangulation of
-    its nodes instead of bilinearly over each cell.
+    automatic contour levels, clipping the value range where a `ListPlot`
+    of the same values clips its y range, and interpolates an array
+    linearly over a triangulation of its nodes instead of bilinearly over
+    each cell.
+- `ContourPlot`, `DensityPlot` and the vector and stream plots report the
+    x/y `PlotRange` axis by axis as Wolfram does: the domain as written by
+    default (`{{0, 3}, {0, 3}}`, not `{{0., 3.}, {0., 3.}}`), `All` kept,
+    and an explicit range numericized.
+- `ToBoxes[HoldForm[expr]]` wraps the boxes in `TagBox[…, HoldForm]`, and
+    the boxes of a power put brackets around a base like `a!`, `a^b` or
+    `f'`; the 2D OutputForm keeps a factorial base bare (`a!` under the
+    exponent).
+- `CovarianceFunction` and `CorrelationFunction` of an `ARProcess`,
+    `MAProcess` or `ARMAProcess` take their closed forms at a symbolic lag
+    (`CorrelationFunction[ARProcess[{a}, v], h]` is `a^Abs[h]`), and
+    `CorrelationFunction[proc, s, t]` of these processes evaluates.
+- A `ListPlot` with `Filling` keeps its stems in its own primitives
+    (`Cases[plot, _Line, Infinity]`), not only when layered with `Show`,
+    drawn at `Opacity[0.3]` as in its picture.
 - Contour plots split a saddle cell along the same diagonal for the
     shaded bands and the contour lines, which could previously join
     opposite pairs of corners and run lines through a band.

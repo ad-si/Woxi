@@ -8533,15 +8533,15 @@ mod cases {
     );
     assert_case(
       r#"ToBoxes[HoldForm[a + b]^2]"#,
-      r#"SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], 2]"#,
+      r#"SuperscriptBox[RowBox[{(, TagBox[RowBox[{a, +, b}], HoldForm], )}], 2]"#,
     );
     assert_case(
       r#"ToBoxes[HoldForm[a b]^2]"#,
-      r#"SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], 2]"#,
+      r#"SuperscriptBox[RowBox[{(, TagBox[RowBox[{a,  , b}], HoldForm], )}], 2]"#,
     );
     assert_case(
       r#"ToBoxes[c HoldForm[a + b]]"#,
-      r#"RowBox[{c,  , RowBox[{(, RowBox[{a, +, b}], )}]}]"#,
+      r#"RowBox[{c,  , RowBox[{(, TagBox[RowBox[{a, +, b}], HoldForm], )}]}]"#,
     );
   }
 

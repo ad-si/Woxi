@@ -5374,11 +5374,17 @@ mod graphics {
     fn held_assignment_boxes_are_infix() {
       assert_eq!(
         interpret("ToBoxes[HoldForm[x = 1]] // FullForm").unwrap(),
-        interpret("RowBox[{\"x\", \"=\", \"1\"}] // FullForm").unwrap()
+        interpret(
+          "TagBox[RowBox[{\"x\", \"=\", \"1\"}], HoldForm] // FullForm"
+        )
+        .unwrap()
       );
       assert_eq!(
         interpret("ToBoxes[HoldForm[x := 1]] // FullForm").unwrap(),
-        interpret("RowBox[{\"x\", \":=\", \"1\"}] // FullForm").unwrap()
+        interpret(
+          "TagBox[RowBox[{\"x\", \":=\", \"1\"}], HoldForm] // FullForm"
+        )
+        .unwrap()
       );
     }
 
@@ -31543,6 +31549,68 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A field plot reports its x/y `PlotRange` axis by axis: the default
+    /// `Full` keeps the iterator bounds as written, `Automatic` (or a
+    /// value-only range) gives the domain in machine reals, `All` stays,
+    /// and an explicit `{min, max}` is numericized.
+    #[test]
+    fn field_plot_reports_its_domain_plot_range_per_axis() {
+      let range =
+        |code: &str| interpret(&format!("Options[{code}, PlotRange]")).unwrap();
+      assert_eq!(
+        range("ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}]"),
+        "{PlotRange -> {{0, 3}, {0, 3}}}"
+      );
+      assert_eq!(
+        range("ContourPlot[x + y == 3, {x, 0, 3.}, {y, 1/2, Pi}]"),
+        "{PlotRange -> {{0, 3.}, {1/2, Pi}}}"
+      );
+      assert_eq!(
+        range("ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}, PlotRange -> {0, 1}]"),
+        "{PlotRange -> {{0., 3.}, {0., 3.}}}"
+      );
+      assert_eq!(
+        range("ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}, PlotRange -> All]"),
+        "{PlotRange -> {All, All}}"
+      );
+      assert_eq!(
+        range(
+          "ContourPlot[x + y == 3, {x, 0, 3}, {y, 0, 3}, \
+           PlotRange -> Automatic]"
+        ),
+        "{PlotRange -> {{0., 3.}, {0., 3.}}}"
+      );
+      assert_eq!(
+        range(
+          "ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}, \
+           PlotRange -> {{0, 1}, Automatic, {0, 2}}]"
+        ),
+        "{PlotRange -> {{0., 1.}, {0., 3.}}}"
+      );
+      assert_eq!(
+        range(
+          "ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}, PlotRange -> {All, Full}]"
+        ),
+        "{PlotRange -> {All, {0, 3}}}"
+      );
+      assert_eq!(
+        range("ContourPlot[x + y, {x, 0, 3}, {y, 0, 3}, PlotRange -> 2]"),
+        "{PlotRange -> {{-2., 2.}, {-2., 2.}}}"
+      );
+      assert_eq!(
+        range("DensityPlot[x + y, {x, 0, 3}, {y, 0, 3}]"),
+        "{PlotRange -> {{0, 3}, {0, 3}}}"
+      );
+      assert_eq!(
+        range("VectorPlot[{x, y}, {x, 0, 3}, {y, 0, 3}]"),
+        "{PlotRange -> {{0, 3}, {0, 3}}}"
+      );
+      assert_eq!(
+        range("StreamPlot[{x, y}, {x, 0, 3}, {y, 0, 3}]"),
+        "{PlotRange -> {{0, 3}, {0, 3}}}"
+      );
+    }
+
     /// An equation plot keeps the margin between its domain and its frame
     /// when `Show` adds to it: the margin is an option of the result, next
     /// to the domain as its `PlotRange`. It used to be dropped, putting a
@@ -31556,7 +31624,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         )
         .unwrap(),
         "{PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
-         {Scaled[0.02], Scaled[0.02]}}, PlotRange -> {{0., 3.}, {0., 3.}}}"
+         {Scaled[0.02], Scaled[0.02]}}, PlotRange -> {{0, 3}, {0, 3}}}"
       );
       // A curve next to the left edge of the domain starts at the same
       // place in the picture either way, clear of the frame.
@@ -36031,7 +36099,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            far[ListContourPlot[m, PlotRange -> All]]}"
         )
         .unwrap(),
-        "{5, 1}"
+        "{2, 1}"
+      );
+    }
+
+    // The automatic value range is the one a `ListPlot` of the values
+    // gets: an outlier clips it 1.5 quantile spans beyond the 82.5%
+    // quantile (here at 4.2746…), and a level above that draws nothing
+    // even though the spike crosses it.
+    #[test]
+    fn list_contour_plot_value_range_is_the_list_plot_extent() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "m = Table[If[i == 1 && j == 1, 1000., Sin[i/2.] + Cos[j/2.]], \
+           {i, 12}, {j, 12}]; \
+           Table[Length[Cases[Normal[ListContourPlot[m, Contours -> {c}]], \
+           _Line, Infinity]], {c, {4, 4.27, 4.28, 5}}]"
+        )
+        .unwrap(),
+        "{1, 1, 0, 0}"
       );
     }
 
@@ -64753,7 +64840,7 @@ mod grid_text_in_graphics {
     .unwrap();
     assert!(svg.contains(">-3.6 m</text>"), "{svg}");
     assert!(
-      svg.contains("<polyline points=\"") && svg.contains("opacity=\"0.2\""),
+      svg.contains("<polyline points=\"") && svg.contains("opacity=\"0.3\""),
       "{svg}"
     );
   }
@@ -71530,11 +71617,29 @@ mod list_plot_wl15_ranges {
     clear_state();
     assert_eq!(
       interpret(
-        "Count[Show[Graphics[{}], ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, \
-         {2, 1}}}, Filling -> {2 -> {1}}]], _Line, Infinity]"
+        "Union[Cases[Show[Graphics[{}], ListPlot[{{{1, 1}, {2, 2}}, \
+         {{1, 2}, {2, 1}}}, Filling -> {2 -> {1}}]], \
+         Line[{{x_, a_}, {x_, b_}}] :> {x, Sort[{a, b}]}, Infinity]]"
       )
       .unwrap(),
-      "2"
+      "{{1., {1., 2.}}, {2., {1., 2.}}}"
+    );
+    // Regression: the plot on its own (`Part`, `Cases`) had no stems.
+    assert_eq!(
+      interpret(
+        "Union[Cases[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 1}}}, \
+         Filling -> {2 -> {1}}], Line[{{x_, a_}, {x_, b_}}] :> \
+         {x, Sort[{a, b}]}, Infinity]]"
+      )
+      .unwrap(),
+      "{{1., {1., 2.}}, {2., {1., 2.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "Union[Cases[ListPlot[{1, 2}, Filling -> Axis], _Opacity, Infinity]]"
+      )
+      .unwrap(),
+      "{Opacity[0.3]}"
     );
   }
 

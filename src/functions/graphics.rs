@@ -31030,7 +31030,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // Scattered points with a `Filling` carry a stem from each point to the
     // fill reference, drawn under the points at the filling opacity.
     fill_layer.extend(crate::functions::plot::scatter_stem_primitives(
-      &ps.series, si, ps.y_range, 0.2,
+      &ps.series, si, ps.y_range, 0.3,
     ));
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));

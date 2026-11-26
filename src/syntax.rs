@@ -20199,8 +20199,10 @@ fn infix_operator_textbox(expr: &Expr) -> Option<TextBox> {
 }
 
 /// Render a base expression for Power, adding parens if needed for precedence.
+/// Unlike its StandardForm boxes, the 2D OutputForm of a factorial base is
+/// bare: `ToString[(a!)^2]` sets `a!` under the exponent.
 fn expr_to_textbox_base(expr: &Expr) -> TextBox {
-  if power_base_needs_parens(expr) {
+  if power_base_needs_parens(expr) && !is_factorial_call(expr) {
     let inner = expr_to_textbox(expr);
     TextBox::hconcat(&[TextBox::atom("("), inner, TextBox::atom(")")])
   } else {

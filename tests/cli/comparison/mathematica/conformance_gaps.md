@@ -1878,6 +1878,21 @@ about 8 digits only: WL's 1.2819544533776392*^8 against Woxi's
 1.2819544632769972*^8 for `ARMAProcess[{1.997…, -0.997…}, {0.268…}, 1]`,
 whose exact value is 1.28195445098…*^8.
 
+The same goes for an `ARProcess`/`MAProcess` at an integer lag, where WL's
+values contradict its own symbolic form at that lag:
+
+```sh
+wolframscript -code 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 7/6, 7/12, 5/12}
+wolframscript -code 'CovarianceFunction[ARProcess[{1/2}, 1], h]'   # 2^(2 - Abs[h])/3
+woxi eval 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 2/3, 1/3, 1/6}
+```
+
+Woxi gives `γ(h) = a^|h| v/(1 - a^2)` at every lag. `CorrelationFunction`
+(WL `{1, 7/8, 7/16, 5/16}` against Woxi's `{1, 1/2, 1/4, 1/8}`, also with
+the times given as `CorrelationFunction[proc, s, t]`) follows from it.
+
 ### Guard digits of small arbitrary-precision numbers
 
 WL shows the decimal digits of its binary value, which is rounded to whole
