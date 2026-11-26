@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
+    tube instead of drawing it in the plain color, each color given as a
+    color or a list of directives, and an option right after the curve
+    (`Tube[pts, VertexColors -> …]`) is no longer read as a radius of zero.
 - `\[RightArrow]` (`→`, U+2192) is the inert infix operator `RightArrow`
     like in Wolfram, no longer a spelling of the rule arrow: `a → b` is
     `RightArrow[a, b]`. `\[Rule]` and `\[RuleDelayed]` are accepted

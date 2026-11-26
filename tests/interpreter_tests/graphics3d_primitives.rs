@@ -344,6 +344,89 @@ mod solids {
     );
   }
 
+  /// `Tube[pts, r, VertexColors -> {c1, c2}]` blends the colors along the
+  /// tube in twelve steps per segment, each the mean of the colors at its
+  /// two ends. Regression: the option was ignored, so the gradient bonds of
+  /// a crystal-structure Demonstration came out in the plain (black) color.
+  #[test]
+  fn tube_vertex_colors_blend_along_the_tube() {
+    let s = svg(
+      "Graphics3D[{Black, Tube[{{0, 0, 0}, {1, 0, 0}}, 0.1, \
+       VertexColors -> {Red, Blue}]}, Lighting -> {{\"Ambient\", White}}]",
+    );
+    let mut expected: std::collections::BTreeSet<String> = (0..12)
+      .map(|k| {
+        let f = f64::from(2 * k + 1) / 24.0;
+        let (r, b) = ((255.0 * (1.0 - f)).round(), (255.0 * f).round());
+        format!("{r},0,{b}")
+      })
+      .collect();
+    expected.insert("255,255,255".to_string());
+    assert_eq!(fills(&s), expected);
+  }
+
+  /// Every segment of a longer tube blends between the colors of its own
+  /// two points.
+  #[test]
+  fn tube_vertex_colors_blend_per_segment() {
+    let s = svg(
+      "Graphics3D[{Tube[{{0, 0, 0}, {1, 0, 0}, {2, 0, 0}}, 0.1, \
+       VertexColors -> {Red, Green, Blue}]}, \
+       Lighting -> {{\"Ambient\", White}}]",
+    );
+    let colors = fills(&s);
+    assert_eq!(colors.len(), 25, "got: {colors:?}");
+    for color in ["244,11,0", "11,244,0", "0,244,11", "0,11,244"] {
+      assert!(colors.contains(color), "missing {color} in {colors:?}");
+    }
+  }
+
+  /// A vertex color may be a list of directives (`{Specularity[…], color}`);
+  /// its color is the one used.
+  #[test]
+  fn tube_vertex_colors_accept_directive_lists() {
+    let tube = |colors: &str| {
+      svg(&format!(
+        "Graphics3D[{{Specularity[White, 100], Tube[{{{{0, 0, 0}}, \
+         {{1, 1, 1}}}}, 0.1, VertexColors -> {colors}]}}]"
+      ))
+    };
+    assert_eq!(
+      tube("{{Specularity[White, 100], Red}, {Specularity[White, 100], Blue}}"),
+      tube("{Red, Blue}")
+    );
+  }
+
+  /// Options after the curve are not mistaken for the radius: a
+  /// `VertexColors` tube without one keeps the default thickness.
+  /// Regression: the rule was read as a radius of zero, so nothing was
+  /// drawn.
+  #[test]
+  fn tube_option_is_not_read_as_the_radius() {
+    let r = 0.0035 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    let tube = |radius: &str| {
+      svg(&format!(
+        "Graphics3D[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}{radius}, \
+         VertexColors -> {{Red, Blue}}], {range}]"
+      ))
+    };
+    assert!(polygon_count(&tube("")) > 100);
+    assert_eq!(tube(""), tube(&format!(", {r}")));
+  }
+
+  /// A `VertexColors` list that does not match the points is ignored, as
+  /// for a line: the tube keeps its plain color.
+  #[test]
+  fn tube_vertex_colors_of_the_wrong_length_are_ignored() {
+    let tube = |opts: &str| {
+      svg(&format!(
+        "Graphics3D[{{Orange, Tube[{{{{0, 0, 0}}, {{1, 1, 1}}}}, 0.1{opts}]}}]"
+      ))
+    };
+    assert_eq!(tube(", VertexColors -> {Red, Green, Blue}"), tube(""));
+  }
+
   /// Every edge of a wireframe drawn as separate radius-less tubes (here
   /// through a `GraphicsComplex`) is equally thick, however long it is.
   /// Regression: each two-point tube took a hundredth of its own length,
