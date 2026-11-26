@@ -45440,6 +45440,80 @@ mod show_function {
     );
   }
 
+  /// The tick labels of a plot's SVG as `(x, anchor, text)`: the x axis
+  /// labels are anchored in the middle, the y axis labels at their end.
+  fn anchored_tick_labels(svg: &str) -> Vec<(f64, String, String)> {
+    let re = regex::Regex::new(
+      r#"<text x="([0-9.]+)" y="[0-9.]+" text-anchor="(\w+)"[^>]*>([^<]*)</text>"#,
+    )
+    .unwrap();
+    re.captures_iter(svg)
+      .map(|c| (c[1].parse().unwrap(), c[2].to_string(), c[3].to_string()))
+      .collect()
+  }
+
+  #[test]
+  fn show_histogram_keeps_its_range_padding_and_axes() {
+    // Regression: redrawn by `Show`, a histogram lost its
+    // `PlotRangePadding`, so the bars started on the vertical axis instead
+    // of a little inside it, as the histogram alone draws them.
+    let labels = |code: &str| anchored_tick_labels(&export_svg(code));
+    let texts = |l: &[(f64, String, String)]| {
+      l.iter().map(|(_, _, t)| t.clone()).collect::<Vec<_>>()
+    };
+    let alone = labels("Histogram[{1, 2, 2, 3, 3, 3, 5, 8, 9, 12}, 5]");
+    let shown = labels(
+      "Show[Histogram[{1, 2, 2, 3, 3, 3, 5, 8, 9, 12}, 5], \
+       ListPlot[{{4, 0}}, PlotStyle -> Red]]",
+    );
+    // The same ticks, the `0` of both axes included.
+    assert_eq!(texts(&shown), texts(&alone));
+    let x_of = |text: &str, anchor: &str| {
+      shown
+        .iter()
+        .find(|(_, a, t)| a == anchor && t == text)
+        .map(|(x, _, _)| *x)
+        .unwrap()
+    };
+    let (x0, x2) = (x_of("0", "middle"), x_of("2", "middle"));
+    // The y labels end just left of the vertical axis, which stands at the
+    // padded left end: 2 % of the padded span lies between it and the
+    // first bin edge at 0.
+    let axis_to_zero = x0 - x_of("0", "end");
+    assert!(
+      axis_to_zero > 0.15 * (x2 - x0),
+      "the bars must start inside the padded range: {axis_to_zero} of a \
+       {} tick step",
+      x2 - x0
+    );
+  }
+
+  #[test]
+  fn show_histogram_with_axes_origin_drops_the_labels_at_the_crossing() {
+    // Regression: `Show[Histogram[…, AxesOrigin -> {0, 0}], …]` labeled the
+    // crossing with a `0` on both axes; the axes cross inside the padded
+    // range there, where neither label is drawn (as on the histogram alone).
+    for code in [
+      "Histogram[{1, 2, 2, 3, 3, 3, 5, 8, 9, 12}, 5, AxesOrigin -> {0, 0}]",
+      "Show[Histogram[{1, 2, 2, 3, 3, 3, 5, 8, 9, 12}, 5, \
+       AxesOrigin -> {0, 0}, PlotRange -> All], \
+       ListPlot[{{4, 0}}, PlotStyle -> {PointSize[0.03], Red}]]",
+    ] {
+      let svg = export_svg(code);
+      let texts: Vec<String> = anchored_tick_labels(&svg)
+        .into_iter()
+        .map(|(_, _, t)| t)
+        .collect();
+      assert_eq!(
+        texts,
+        [
+          "2", "4", "6", "8", "10", "12", "14", "1", "2", "3", "4", "5"
+        ],
+        "{code}"
+      );
+    }
+  }
+
   #[test]
   fn show_plot_filling_preserved_with_list_plot() {
     // Regression: Filling -> Axis from Plot[] must survive merging with

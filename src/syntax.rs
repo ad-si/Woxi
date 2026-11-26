@@ -196,6 +196,11 @@ pub struct PlotSource {
   /// then keeps that range like an automatic one, clipping other graphics
   /// reaching past it, where a function plot's `All` spans everything shown.
   pub settles_all_range: bool,
+  /// Whether the axes are a chart's (`Histogram`): the vertical axis stands
+  /// at the left end of the drawn range unless `AxesOrigin` moves it, and
+  /// the `0` of the count axis stays beside it, where a plot's axes cross
+  /// at the origin and drop the label there.
+  pub chart_axes: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
