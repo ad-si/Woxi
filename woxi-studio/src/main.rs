@@ -11572,6 +11572,63 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 0.1}, \"\\[Ellipsis]\"]"], "O
     let _ = render_manipulate_widget(0, widget, false);
   }
 
+  /// A widget-level `ControlPlacement -> {Left, Right}` shorter than the
+  /// panel is dealt out over and over: the items go alternately into a
+  /// column on the left of the output and one on its right, so two sets of
+  /// controls written pairwise end up side by side. A plain caption takes a
+  /// turn like a slider does, while a `Delimiter` stays under the item it
+  /// follows. The body draws two sine waves, one per set (independently
+  /// written, not copied from any notebook).
+  /// Regression: only the first two named controls were placed and every
+  /// other row, captions included, landed above the output.
+  #[test]
+  fn manipulate_cyclic_control_placements_list() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nPlot[{a1 Sin[f1 x], a2 Sin[f2 x]}, {x, 0, 10}, PlotRange -> {-3, 3}],\n\"first wave\", Delimiter,\n\"second wave\", Delimiter,\n{{a1, 1, \"amplitude\"}, 0, 3},\n{{a2, 2, \"amplitude\"}, 0, 3},\n{{f1, 1, \"frequency\"}, 1, 5},\nDelimiter,\n{{f2, 3, \"frequency\"}, 1, 5},\nDelimiter,\n\"shared\",\n{{dashed, False, \"dashed\"}, {True, False}},\nControlPlacement -> {Left, Right}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a1$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    use manipulate::ControlPlacement::{Left, Right};
+    let sides: Vec<(String, manipulate::ControlPlacement)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let what = match c {
+          manipulate::ControlState::Heading { label, .. } => label.clone(),
+          manipulate::ControlState::Divider => "-".to_string(),
+          other => other.name().to_string(),
+        };
+        (what, widget.placement_of(i))
+      })
+      .collect();
+    let expected = [
+      ("first wave", Left),
+      ("-", Left),
+      ("second wave", Right),
+      ("-", Right),
+      ("a1", Left),
+      ("a2", Right),
+      ("f1", Left),
+      ("-", Left),
+      ("f2", Right),
+      ("-", Right),
+      ("shared", Left),
+      ("dashed", Right),
+    ]
+    .map(|(what, side)| (what.to_string(), side));
+    assert_eq!(sides, expected);
+    let _ = render_manipulate_widget(0, widget, false);
+  }
+
   /// A widget-level `ControlPlacement -> {Top, Top, Left, Right}` lists the
   /// sides of successive controls: two labeled sliders above the output,
   /// one vertical slider on its left and another on its right. The body
