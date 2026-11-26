@@ -1122,9 +1122,11 @@ fn sparse_array_part(
       return Some(Ok(value));
     }
     if ordered {
-      kept.extend(outs.into_iter().map(|o| {
-        (o.into_iter().map(|i| i + 1).collect(), value.clone())
-      }));
+      kept.extend(
+        outs
+          .into_iter()
+          .map(|o| (o.into_iter().map(|i| i + 1).collect(), value.clone())),
+      );
       continue;
     }
     for o in outs {
@@ -1151,9 +1153,7 @@ fn sparse_array_part(
     });
     return Some(Ok(
       crate::evaluator::dispatch::list_operations::build_sparse_array_csr(
-        &new_dims,
-        background,
-        &kept,
+        &new_dims, background, &kept,
       ),
     ));
   }

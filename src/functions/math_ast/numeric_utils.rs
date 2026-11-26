@@ -2394,11 +2394,7 @@ pub fn machine_complex_shape_any_real(expr: &Expr) -> Option<(f64, f64)> {
   let (Expr::Real(im), Expr::Identifier(i)) = (coeff, unit) else {
     return None;
   };
-  if i != "I"
-    || (infix && *im < 0.0)
-    || !re.is_finite()
-    || !im.is_finite()
-  {
+  if i != "I" || (infix && *im < 0.0) || !re.is_finite() || !im.is_finite() {
     return None;
   }
   Some((*re, sign * *im))

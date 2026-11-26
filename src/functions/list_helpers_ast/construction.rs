@@ -2760,8 +2760,7 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
             .zip(indices.iter())
             .collect();
           if let Some(condition) = condition {
-            let at =
-              crate::syntax::substitute_variables(condition, &bindings);
+            let at = crate::syntax::substitute_variables(condition, &bindings);
             if !matches!(
               crate::evaluator::evaluate_expr_to_expr(&at),
               Ok(Expr::Identifier(ref s)) if s == "True"
@@ -3856,7 +3855,12 @@ fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
     }
   }
   let mut out = Vec::new();
-  walk(dense, &SparseBackground::new(background), &mut Vec::new(), &mut out);
+  walk(
+    dense,
+    &SparseBackground::new(background),
+    &mut Vec::new(),
+    &mut out,
+  );
   out
 }
 
@@ -3935,10 +3939,9 @@ fn map_single_sparse_array(head: &str, args: &[Expr]) -> Option<Expr> {
   }
   // A stored value at the old background is not a stored position at all.
   let old_background = SparseBackground::new(&parts[2]);
-  if values
-    .iter()
-    .any(|v| matches!(v, Expr::List(_)) || is_sparse_background(v, &old_background))
-  {
+  if values.iter().any(|v| {
+    matches!(v, Expr::List(_)) || is_sparse_background(v, &old_background)
+  }) {
     return None;
   }
   let apply = |operand: Expr| -> Option<Expr> {
@@ -3965,9 +3968,7 @@ fn map_single_sparse_array(head: &str, args: &[Expr]) -> Option<Expr> {
       parts[0].clone(),
       parts[1].clone(),
       background,
-      Expr::List(
-        vec![version.clone(), layout.clone(), mapped].into(),
-      ),
+      Expr::List(vec![version.clone(), layout.clone(), mapped].into()),
     ]
     .into(),
   })
