@@ -60768,6 +60768,71 @@ mod color_data_indexed {
     );
   }
 
+  // A `Locator` control laid out inside a pane of a `PaneSelector` or
+  // `TabView` (or under `Item`/`Pane`/`OpenerView`) still marks the graphic.
+  #[test]
+  fn manipulate_locator_control_is_found_inside_selector_panes() {
+    clear_state();
+    let parse = |code: &str| {
+      let expr = woxi::syntax::string_to_expr(code).unwrap();
+      woxi::functions::graphics::manipulate_locator_markers(&expr)
+    };
+    assert_eq!(
+      parse(
+        r#"Manipulate[Graphics[Point[p], PlotRange -> 1],
+         Grid[{{Control[{{m, 1}, {1, 2}}],
+         PaneSelector[{1 -> Grid[{{Control[{{q, True}, {True, False}}],
+         Control[{{p, {0, 0}}, Locator}]}}], 2 -> "none"}, Dynamic[m]]}}]]"#
+      ),
+      vec![("p".to_string(), None)]
+    );
+    assert_eq!(
+      parse(
+        r#"Manipulate[Graphics[Point[p], PlotRange -> 1],
+         TabView[{"a" -> Column[{Item[Control[{{p, {0, 0}}, Locator,
+         Appearance -> Graphics[Disk[], ImageSize -> 8]}]]}],
+         "b" :> OpenerView[{"more", Pane[Control[{{r, {1, 1}}, Locator}]]}]}]]"#
+      ),
+      vec![
+        (
+          "p".to_string(),
+          Some("Graphics[Disk[], ImageSize -> 8]".to_string())
+        ),
+        ("r".to_string(), None)
+      ]
+    );
+  }
+
+  // A Locator whose appearance graphic has zero width marks nothing — no
+  // default-size picture and no default crosshair — whether the size is a
+  // literal or computed (`ImageSize -> If[shown, 12, 0]`).
+  #[test]
+  fn locator_with_a_zero_size_appearance_graphic_draws_nothing() {
+    clear_state();
+    let plain =
+      export_svg("Graphics[{Line[{{0, 0}, {1, 1}}]}, ImageSize -> 200]");
+    for size in ["0", "{0, 0}", "If[shown, 12, 0]", "2 n"] {
+      clear_state();
+      interpret("shown = False; n = 0").unwrap();
+      let svg = export_svg(&format!(
+        "Graphics[{{Line[{{{{0, 0}}, {{1, 1}}}}], Locator[{{0.5, 0.5}}, \
+         Graphics[{{Disk[]}}, ImageSize -> {size}]]}}, ImageSize -> 200]"
+      ));
+      assert_eq!(svg, plain, "ImageSize -> {size}");
+    }
+    clear_state();
+    interpret("shown = True").unwrap();
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {1, 1}}], Locator[{0.5, 0.5}, \
+       Graphics[{Disk[]}, ImageSize -> If[shown, 12, 0]]]}, ImageSize -> 200]",
+    );
+    assert!(
+      svg.contains(r#"width="12.00" height="12.00""#),
+      "a 12 point marker: {svg}"
+    );
+    assert!(svg.contains("<ellipse"), "the disk is drawn: {svg}");
+  }
+
   // A Manipulate's Locator markers join the outermost graphic its body
   // returns, never a picture nested inside it (an `Inset` graphic), which
   // a post-order `FirstPosition` search would find first.

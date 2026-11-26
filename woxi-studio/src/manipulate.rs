@@ -5886,6 +5886,59 @@ mod tests {
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate lays
+  /// its `Locator` control out inside a `PaneSelector` pane and hides the
+  /// marker in the other view with `ImageSize -> If[…, 12, 0]` on its
+  /// appearance graphic. Regression check: the marker is drawn on the
+  /// picture in one view and nothing is drawn in the other. This is a
+  /// self-authored, construct-equivalent example.
+  #[test]
+  fn locator_in_a_selector_pane_marks_the_plot_until_sized_to_zero() {
+    let code = r#"Manipulate[
+      Graphics[{If[mode == 1, Blue, Red], Line[{{0, 0}, {1, 0}, q}]},
+        PlotRange -> {{0, 1}, {0, 1}}],
+      Grid[{{Control[{{mode, 1, ""}, {1 -> "edit", 2 -> "view"}, Setter}],
+        PaneSelector[{1 -> Grid[{{Control[{{flag, True, "flag"}, {True, False}}],
+          Control[{{q, {0.4, 0.6}}, Locator,
+            Appearance -> Graphics[{Disk[]}, ImageSize -> If[mode == 1, 14, 0]]}]}}]},
+          Dynamic@mode]}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state
+      .current_svg()
+      .expect("the picture is drawn")
+      .to_string();
+    assert!(
+      svg.contains(r#"width="14.00" height="14.00""#)
+        && svg.contains("<ellipse"),
+      "the disk marks the point: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
+    let mode = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("the mode control");
+    assert!(state.select_discrete_index(mode, 1));
+    state.reevaluate();
+    let svg = state.current_svg().expect("the picture is drawn");
+    assert!(
+      !svg.contains("<ellipse"),
+      "no marker in the view mode: {svg}"
+    );
+    assert!(
+      !svg.contains("rgba(180,180,180,0.35)"),
+      "no default crosshair marker: {svg}"
+    );
+  }
+
   /// A saved locator position outside the range derived from its initial
   /// value stays reachable: the 2D slider's range grows to include it.
   #[test]
