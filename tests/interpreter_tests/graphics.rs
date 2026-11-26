@@ -49402,11 +49402,43 @@ mod manipulate {
   #[test]
   fn vector_binding_code_is_exact_until_moved() {
     use woxi::functions::graphics::vector_binding_code;
-    assert_eq!(vector_binding_code(&[0.0, 0.0, 1.0], true), "{0, 0, 1}");
+    assert_eq!(vector_binding_code(&[0.0, 0.0, 1.0], &[true; 3]), "{0, 0, 1}");
     assert_eq!(
-      vector_binding_code(&[0.0, 0.5, 1.0], false),
+      vector_binding_code(&[0.0, 0.5, 1.0], &[false; 3]),
       "{0., 0.5, 1.}"
     );
+    // A list mixing integers and reals keeps each component as written.
+    assert_eq!(
+      vector_binding_code(&[0.0, 2.0, 1.0], &[true, false, true]),
+      "{0, 2., 1}"
+    );
+  }
+
+  /// A control's initial list is bound as written, component by component:
+  /// the integer of `{0.5, 80}` stays `80` (so `NumberForm[80, {3, 1}]`
+  /// prints `80`, not `80.0`) instead of the whole point turning into
+  /// machine reals because one coordinate is one.
+  #[test]
+  fn mixed_exact_initial_list_binds_as_written() {
+    let expr = interpret_to_expr(
+      "Manipulate[{p, v}, \
+        {{p, {0.5, 80}}, {0, 35}, {1, 85}, Locator}, \
+        {{v, {1, 0.5, 2.}}, {0, 0, 0}, {3, 3, 3}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let bindings =
+      woxi::functions::graphics::manipulate_initial_bindings(&spec);
+    assert!(
+      bindings.contains(&("p".to_string(), "{0.5, 80}".to_string())),
+      "got {bindings:?}"
+    );
+    assert!(
+      bindings.contains(&("v".to_string(), "{1, 0.5, 2.}".to_string())),
+      "got {bindings:?}"
+    );
+    let json = woxi::functions::graphics::manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""exactInit":[true,false,false]"#), "got {json}");
   }
 
   // An invisible bare Locator (`{{p, init}, Locator, Appearance -> None}`,

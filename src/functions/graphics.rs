@@ -48136,10 +48136,11 @@ pub enum ManipulateControl {
     /// coordinates keep their trailing dot and arithmetic on them stays
     /// numeric instead of piling up exact radicals).
     real: bool,
-    /// The initial point was given with exact coordinates (`{-4, 3}`).
-    /// Wolfram binds the variable to that exact value until the point is
-    /// first dragged, so a `real` control starts out exact.
-    exact_initial: bool,
+    /// Which coordinates of the initial point were given as exact integers
+    /// (`{-4, 3}`, or only the second of `{0.5, 80}`). Wolfram binds the
+    /// variable to the value as written until the point is first dragged,
+    /// so those coordinates of a `real` control start out exact.
+    exact_initial: [bool; 2],
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -48166,10 +48167,11 @@ pub enum ManipulateControl {
     initial: Vec<f64>,
     label: String,
     label_runs: Vec<LabelRun>,
-    /// The initial vector was written with exact components (`{0, 0, 1}`).
-    /// Wolfram binds that exact list until a slider is first dragged, after
-    /// which the components are machine reals.
-    exact_initial: bool,
+    /// Which components of the initial vector were written as exact
+    /// integers (`{0, 0, 1}`, or all but the second of `{0, 0.5, 1}`).
+    /// Wolfram binds the list as written until a slider is first dragged,
+    /// after which the components are machine reals.
+    exact_initial: Vec<bool>,
   },
   /// A `Locator` control bound to a *list* of draggable 2D points (e.g.
   /// the vertices of a polygon). Rendered as one X/Y slider pair per
@@ -50980,7 +50982,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
-      exact_initial: false,
+      exact_initial: [false; 2],
     });
   }
 
@@ -51017,7 +51019,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
-      exact_initial: false,
+      exact_initial: [false; 2],
     });
   }
 
@@ -51061,7 +51063,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
-      exact_initial: false,
+      exact_initial: [false; 2],
     });
   }
 
@@ -57206,7 +57208,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: var,
     write_callback: None,
     real: false,
-    exact_initial: false,
+    exact_initial: [false; 2],
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -57274,7 +57276,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: "pos".to_string(),
     write_callback: None,
     real: false,
-    exact_initial: false,
+    exact_initial: [false; 2],
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -57427,12 +57429,25 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// unwrapped the same way a scalar bound already is, or it fails to match
 /// `Expr::List` below and the caller's `?` on the resulting `None` drops
 /// the entire control from the panel instead of just widening it.
-/// Whether `e` is a pair of integers, the exact value a Locator keeps
-/// until it is first dragged.
-fn is_exact_pair(e: &Expr) -> bool {
+/// Which components of the list `e` are exact integers: the ones a control
+/// binds as written (`80`, not `80.`) until it is first dragged. `None` when
+/// `e` is not a list.
+pub fn exact_components(e: &Expr) -> Option<Vec<bool>> {
   let (e, _) = manipulate_bound_expr(e);
-  matches!(e, Expr::List(l) if l.len() == 2
-    && l.iter().all(|c| matches!(c, Expr::Integer(_))))
+  match e {
+    Expr::List(l) => {
+      Some(l.iter().map(|c| matches!(c, Expr::Integer(_))).collect())
+    }
+    _ => None,
+  }
+}
+
+/// [`exact_components`] of a point, all inexact when `e` is not a pair.
+pub fn exact_pair_components(e: &Expr) -> [bool; 2] {
+  match exact_components(e).as_deref() {
+    Some(&[x, y]) => [x, y],
+    _ => [false; 2],
+  }
 }
 
 /// Interpret an expression (evaluating it when it isn't a literal list) as a
@@ -60199,7 +60214,7 @@ fn parse_manipulate_control(
           label,
           write_callback: pane_callback,
           real: true,
-          exact_initial: is_exact_pair(&evaluated),
+          exact_initial: exact_pair_components(&evaluated),
         },
         enabled,
         min_code: None,
@@ -60513,18 +60528,12 @@ fn parse_manipulate_control(
       .as_ref()
       .and_then(|e| numeric_vector(e).map(|v| (v, e)))
     {
-      Some((v, e)) if v.len() == len => (
-        v,
-        matches!(e, Expr::List(l) if l.iter().all(|c| matches!(c, Expr::Integer(_)))),
-      ),
-      _ => (
-        mins.clone(),
-        matches!(
-          manipulate_bound_expr(bounds[0]).0,
-          Expr::List(l) if l.iter().all(|c| matches!(c, Expr::Integer(_)))
-        ),
-      ),
+      Some((v, e)) if v.len() == len => (v, exact_components(e)),
+      _ => (mins.clone(), exact_components(bounds[0])),
     };
+    let exact_initial = exact_initial
+      .filter(|flags| flags.len() == len)
+      .unwrap_or_else(|| vec![false; len]);
     return Some(ParsedControl::Visible {
       control: ManipulateControl::VectorSlider {
         name,
@@ -60590,7 +60599,7 @@ fn parse_manipulate_control(
         label,
         write_callback,
         real: false,
-        exact_initial: false,
+        exact_initial: [false; 2],
       },
       enabled,
       min_code: None,
@@ -61915,18 +61924,10 @@ pub fn manipulate_initial_bindings(
         ..
       } => Some((
         name.clone(),
-        if *real && !*exact_initial {
-          format!(
-            "{{{}, {}}}",
-            format_f64_real(*x_initial),
-            format_f64_real(*y_initial)
-          )
+        if *real {
+          point_binding_code(*x_initial, *y_initial, *exact_initial)
         } else {
-          format!(
-            "{{{}, {}}}",
-            format_f64_input(*x_initial),
-            format_f64_input(*y_initial)
-          )
+          point_binding_code(*x_initial, *y_initial, [true; 2])
         },
       )),
       ManipulateControl::VectorSlider {
@@ -61934,7 +61935,7 @@ pub fn manipulate_initial_bindings(
         initial,
         exact_initial,
         ..
-      } => Some((name.clone(), vector_binding_code(initial, *exact_initial))),
+      } => Some((name.clone(), vector_binding_code(initial, exact_initial))),
       ManipulateControl::IntervalSlider {
         name,
         low_initial,
@@ -62123,14 +62124,16 @@ pub fn format_point_list_input(points: &[(f64, f64)]) -> String {
 
 /// A machine-real `{x, y}` binding (`{-12., 11.}`) for a single draggable
 /// point.
-/// InputForm of a vector control's value: the exact initial list while it is
-/// untouched (`{0, 0, 1}`), machine reals once a slider has moved it
-/// (`{0.5, 0., 1.}`).
-pub fn vector_binding_code(values: &[f64], exact: bool) -> String {
+/// InputForm of a vector control's value: the initial list as written while
+/// it is untouched (`{0, 0, 1}`, `{0.5, 80}`), machine reals once a slider
+/// has moved it (`{0.5, 0., 1.}`). `exact` flags the components that are
+/// exact integers; a missing flag reads as inexact.
+pub fn vector_binding_code(values: &[f64], exact: &[bool]) -> String {
   let parts: Vec<String> = values
     .iter()
-    .map(|&v| {
-      if exact {
+    .enumerate()
+    .map(|(i, &v)| {
+      if exact.get(i).copied().unwrap_or(false) {
         format_f64_input(v)
       } else {
         format_f64_real(v)
@@ -62140,8 +62143,13 @@ pub fn vector_binding_code(values: &[f64], exact: bool) -> String {
   format!("{{{}}}", parts.join(", "))
 }
 
+/// [`vector_binding_code`] of a single draggable point.
+pub fn point_binding_code(x: f64, y: f64, exact: [bool; 2]) -> String {
+  vector_binding_code(&[x, y], &exact)
+}
+
 pub fn point_list_binding_real(x: f64, y: f64) -> String {
-  format!("{{{}, {}}}", format_f64_real(x), format_f64_real(y))
+  point_binding_code(x, y, [false; 2])
 }
 
 /// Format an f64 as a Wolfram machine-real literal: integral values keep a
@@ -62868,13 +62876,17 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           None => String::new(),
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"vector","name":"{}","label":"{}","mins":[{}],"maxs":[{}],"initial":[{}],"exactInit":{}{}}}"#,
+          r#"{{"kind":"vector","name":"{}","label":"{}","mins":[{}],"maxs":[{}],"initial":[{}],"exactInit":[{}]{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           nums(mins),
           nums(maxs),
           nums(initial),
-          exact_initial,
+          exact_initial
+            .iter()
+            .map(bool::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
           steps_json,
         ));
       }

@@ -180,9 +180,10 @@ pub enum ControlState {
     write_callback: Option<String>,
     /// Machine-real pair (see `ManipulateControl::Slider2D::real`).
     real: bool,
-    /// Still the exact initial point of a `real` control: Wolfram binds
-    /// `{-4, 3}` as given until the point is first dragged.
-    exact: bool,
+    /// Which coordinates of a `real` control are still exact integers:
+    /// Wolfram binds `{-4, 3}` or `{0.5, 80}` as given until the point is
+    /// first dragged.
+    exact: [bool; 2],
   },
   /// An interval slider binding its variable to a `{low, high}` pair.
   IntervalSlider {
@@ -204,9 +205,9 @@ pub enum ControlState {
     maxs: Vec<f64>,
     steps: Vec<f64>,
     values: Vec<f64>,
-    /// Still the exact initial vector: Wolfram binds `{0, 0, 1}` as given
-    /// until a slider is first dragged.
-    exact: bool,
+    /// Which components are still exact integers: Wolfram binds
+    /// `{0, 0, 1}` or `{0, 0.5, 1}` as given until a slider is first dragged.
+    exact: Vec<bool>,
   },
   /// A `Locator` control binding its variable to a list of 2D points
   /// (e.g. draggable polygon vertices). Rendered as one X/Y slider pair
@@ -430,8 +431,8 @@ impl ControlState {
       ControlState::Slider2D {
         x, y, real, exact, ..
       } => {
-        if *real && !*exact {
-          woxi::functions::graphics::point_list_binding_real(*x, *y)
+        if *real {
+          woxi::functions::graphics::point_binding_code(*x, *y, *exact)
         } else {
           format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
         }
@@ -440,7 +441,7 @@ impl ControlState {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
       }
       ControlState::VectorSlider { values, exact, .. } => {
-        woxi::functions::graphics::vector_binding_code(values, *exact)
+        woxi::functions::graphics::vector_binding_code(values, exact)
       }
       // Locator positions are machine reals (dragging produces fractional
       // coordinates); delegate so integral values keep their trailing dot.
@@ -566,11 +567,14 @@ impl ControlState {
         x_max,
         y_min,
         y_max,
+        exact,
         ..
       } => {
         if let Some((a, b)) = as_pair(&expr) {
           *x = a;
           *y = b;
+          // An assigned point is kept as written (`loc = {0.5, 80}`).
+          *exact = woxi::functions::graphics::exact_pair_components(&expr);
           // A locator can be dragged anywhere in the picture, so a restored
           // position outside the range derived from the initial value must
           // stay reachable instead of being clamped away.
@@ -592,7 +596,7 @@ impl ControlState {
           && let Some(vals) =
             items.iter().map(as_f64).collect::<Option<Vec<_>>>()
         {
-          *exact = items.iter().all(|c| matches!(c, Expr::Integer(_)));
+          *exact = items.iter().map(|c| matches!(c, Expr::Integer(_))).collect();
           *values = vals;
         }
       }
@@ -2211,14 +2215,15 @@ impl ManipulateState {
           &name,
         )
         .and_then(|v| {
-          let exact =
-            v.chars().all(|c| c.is_ascii_digit() || "{}, -".contains(c));
+          let exact = woxi::interpret_to_expr(&v).map_or([false; 2], |e| {
+            woxi::functions::graphics::exact_pair_components(&e)
+          });
           woxi::functions::graphics::parse_manipulate_point(&v)
             .map(|p| (p, exact))
         })
-        .unwrap_or((candidate, false))
+        .unwrap_or((candidate, [false; 2]))
       }
-      None => (candidate, false),
+      None => (candidate, [false; 2]),
     };
     if let Some(ControlState::Slider2D { x, y, exact: e, .. }) =
       self.controls.get_mut(ctrl_idx)
@@ -2293,7 +2298,7 @@ impl ManipulateState {
       return false;
     };
     *slot = value;
-    *exact = false;
+    exact.fill(false);
     true
   }
 
@@ -3517,7 +3522,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           })
           .collect(),
         values: initial.clone(),
-        exact: *exact_initial,
+        exact: exact_initial.clone(),
       },
       ManipulateControl::Locator {
         name,
@@ -6063,6 +6068,26 @@ mod tests {
     assert_eq!(state.controls[idx].current_code(), "{1., 1.5, 2.}");
     state.reevaluate();
     assert_eq!(state.text_output.as_deref(), Some("4.5"));
+  }
+
+  /// A vector control's initial list mixing integers and reals binds each
+  /// component as written until a slider moves.
+  #[test]
+  fn vector_control_with_mixed_initial_list_binds_as_written() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[v, {{v, {1, 0.5, 2.}}, {0, 0, 0}, {3, 3, 3}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "v")
+      .expect("vector control");
+    assert_eq!(state.controls[idx].current_code(), "{1, 0.5, 2.}");
+    assert!(state.slide_vector(idx, 0, 3.0));
+    assert_eq!(state.controls[idx].current_code(), "{3., 0.5, 2.}");
   }
 
   /// A Demonstration declares a variable's visible control inside a
@@ -10243,6 +10268,36 @@ mod mapped_layout_tests {
     state.slider2d_change(idx, 0, -1.0);
     state.slider2d_change(idx, 1, 2.0);
     assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
+  }
+
+  /// A Locator's point is bound as written, coordinate by coordinate: the
+  /// integer of `{0.5, 80}` stays exact, so a label formatting it with
+  /// `NumberForm[…, {3, 1}]` reads `80` as in Wolfram rather than `80.0`.
+  /// A point a button assigns is kept as written too, and a drag turns
+  /// both coordinates into machine reals.
+  #[test]
+  fn locator_with_mixed_initial_point_keeps_its_integer_coordinate() {
+    let code = r#"Manipulate[
+      ToString[NumberForm[p[[2]], {3, 1}]],
+      {{p, {0.5, 80}}, {0, 35}, {1, 85}, Locator, Appearance -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "p")
+      .expect("p control");
+    assert_eq!(state.controls[idx].current_code(), "{0.5, 80}");
+    assert_eq!(state.text_output.as_deref(), Some("80"));
+
+    state.controls[idx].set_current_from_code("{3, 0.25}");
+    assert_eq!(state.controls[idx].current_code(), "{3, 0.25}");
+
+    state.slider2d_change(idx, 1, 60.0);
+    assert_eq!(state.controls[idx].current_code(), "{3., 60.}");
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("60.0"));
   }
 }
 
