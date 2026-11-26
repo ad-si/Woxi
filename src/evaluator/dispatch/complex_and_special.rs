@@ -4570,6 +4570,57 @@ pub fn display_form_boxes_in(expr: &Expr, traditional: bool) -> Expr {
   restore(&typeset(&replaced), &boxes, traditional)
 }
 
+/// The entity icon boxes of an `Entity["type", "name"]` whose display name
+/// is known (see [`crate::functions::entity_ast::entity_label`]).
+fn entity_icon_boxes(expr: &Expr) -> Option<Expr> {
+  let (label, description) = crate::functions::entity_ast::entity_label(expr)?;
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let source = call(
+    "RowBox",
+    vec![Expr::List(
+      vec![
+        str_expr("Entity"),
+        str_expr("["),
+        call(
+          "RowBox",
+          vec![Expr::List(
+            vec![
+              expr_to_box_form(&args[0]),
+              str_expr(","),
+              expr_to_box_form(&args[1]),
+            ]
+            .into(),
+          )],
+        ),
+        str_expr("]"),
+      ]
+      .into(),
+    )],
+  );
+  // The input text is a string holding quotes of its own, which the box
+  // string escapes.
+  let input = crate::syntax::expr_to_source_form(expr)
+    .replace('\\', "\\\\")
+    .replace('"', "\\\"");
+  Some(call(
+    "TemplateBox",
+    vec![
+      Expr::List(
+        vec![
+          expr_to_box_form(&Expr::String(label)),
+          source,
+          Expr::String(format!("\"{input}\"")),
+          expr_to_box_form(&Expr::String(description)),
+        ]
+        .into(),
+      ),
+      str_expr("Entity"),
+    ],
+  ))
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4616,6 +4667,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // below and every argument box (including the literal template string)
   // printed as its own separate token.
   if let Some(boxed) = string_form_boxes(expr) {
+    return boxed;
+  }
+  // An entity whose display name is known typesets as the FrontEnd's entity
+  // icon — `TemplateBox[{label, RowBox[…], input, description}, "Entity"]`
+  // — which shows that name instead of the `Entity[…]` source.
+  if let Some(boxed) = entity_icon_boxes(expr) {
     return boxed;
   }
   // `MatrixForm[data]` typesets `data` as a matrix only when `data` is

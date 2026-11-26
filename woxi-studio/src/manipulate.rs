@@ -2975,7 +2975,9 @@ impl ManipulateState {
       // The content area is `ContentSize` wide: a list or other text wider
       // than that breaks into lines there, as the FrontEnd lays it out,
       // rather than running off in one long line.
-      if let Some(width) = content_width
+      // So does the text of a `Pane` at the pane's own width.
+      let pane_width = render.as_ref().ok().and_then(text_pane_width);
+      if let Some(width) = pane_width.or(content_width)
         && let Ok(r) = &render
         && let Some(flowed) = flow_to_content_width(r, width)
       {
@@ -11006,19 +11008,49 @@ pub fn flow_to_content_width(
   render: &woxi::InterpretResult,
   width: f64,
 ) -> Option<woxi::InterpretResult> {
-  let svg = render.graphics.as_ref()?;
+  // A bare list has no picture of its own, only its typeset text.
+  let svg = render.graphics.as_ref().or(render.output_svg.as_ref())?;
   if woxi::functions::graphics::parse_svg_wh(svg).0 <= width + 0.5 {
     return None;
   }
-  let flowed = woxi::functions::graphics::wrap_wide_text_to_width(
-    render.expr.as_ref()?,
-    width,
-  )?;
+  // A text pane shows the text it wraps, and a list on its own breaks like
+  // the single item of a column.
+  let shown = match render.expr.as_ref()? {
+    Expr::FunctionCall { name, args }
+      if name == "Pane" && !args.is_empty() && render.graphics.is_none() =>
+    {
+      &args[0]
+    }
+    shown => shown,
+  };
+  let layout = match shown {
+    list @ Expr::List(_) => &Expr::FunctionCall {
+      name: "Column".to_string(),
+      args: vec![Expr::List(vec![list.clone()].into())].into(),
+    },
+    layout => layout,
+  };
+  let flowed =
+    woxi::functions::graphics::wrap_wide_text_to_width(layout, width)?;
   // Read back as source, so a `TraditionalForm` layout stays one rather
   // than turning into the box text InputForm shows it as.
   woxi::interpret_with_stdout(&woxi::syntax::expr_to_source_form(&flowed))
     .ok()
     .filter(|r| r.graphics.is_some())
+}
+
+/// The width of the `Pane[text, size]` that `render` shows as plain text
+/// (it drew no picture): the width its text breaks into lines at. `None`
+/// for any other output, or a pane without a fixed width.
+pub fn text_pane_width(render: &woxi::InterpretResult) -> Option<f64> {
+  match render.expr.as_ref()? {
+    Expr::FunctionCall { name, args }
+      if name == "Pane" && render.graphics.is_none() =>
+    {
+      woxi::functions::graphics::pane_width_points(args)
+    }
+    _ => None,
+  }
 }
 
 /// The room a Manipulate's content area keeps free on each side of a
@@ -11098,6 +11130,100 @@ mod repeated_option_tests {
     assert_eq!(state.error, None);
     assert_eq!(state.control_placement, ControlPlacement::Left);
     assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// A popup menu over entities lists each one under the name its notebook
+  /// icon showed, while the variable still holds the `Entity[…]` itself.
+  #[test]
+  fn entity_choices_are_listed_by_their_display_names() {
+    use woxi::functions::entity_ast::register_entity_label;
+    register_entity_label("KiteShape", "DeltaKite", "delta kite", "kite shape");
+    register_entity_label("KiteShape", "BoxKite", "box kite", "kite shape");
+    let code = r#"Manipulate[kite,
+      {{kite, Entity["KiteShape", "BoxKite"]},
+        {Entity["KiteShape", "DeltaKite"], Entity["KiteShape", "BoxKite"],
+         Entity["KiteShape", "UnnamedKite"]}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    match &state.controls[0] {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &["delta kite", "box kite", "Entity[KiteShape, UnnamedKite]"]
+        );
+        assert_eq!(values[0], r#"Entity["KiteShape", "DeltaKite"]"#);
+        assert_eq!(*current_index, 1);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Pane[list, ImageSize -> {w, h}]` body is text laid out in a box `w`
+  /// wide: a list too long for one line breaks into lines there, and the
+  /// entities in it are drawn as their framed icons, not as `[name]` text.
+  #[test]
+  fn text_pane_breaks_a_long_entity_list_at_its_width() {
+    use woxi::functions::entity_ast::register_entity_label;
+    for k in 1..=12 {
+      register_entity_label(
+        "LongNamedThing",
+        &format!("Thing{k}"),
+        &format!("a rather long name {k}"),
+        "long named thing",
+      );
+    }
+    let code = r#"Manipulate[
+      Pane[Table[Entity["LongNamedThing", "Thing" <> ToString[k]], {k, n}],
+        ImageSize -> {300, 300}],
+      {{n, 12}, 1, 12, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.content_width, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the widget shows the flowed list as a picture"
+    );
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    assert_eq!(text_pane_width(&body), Some(300.0));
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = &flowed.graphics.expect("the re-flowed list is a picture");
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(svg);
+    assert!(w <= 300.5, "the list is {w} wide: {svg}");
+    assert!(h > 100.0, "the list takes several lines, got {h} high");
+    assert!(svg.contains(">a rather long name 12<"), "{svg}");
+    assert!(
+      svg.contains(r#"rx="4.0""#),
+      "the icons keep their frame: {svg}"
+    );
+    assert!(!svg.contains("[a rather"), "{svg}");
+  }
+
+  /// The width a text pane breaks its text at is read from either spelling
+  /// of its size; a pane holding a picture, or one without a width, has none.
+  #[test]
+  fn text_pane_width_reads_both_size_spellings() {
+    let width = |code: &str| {
+      text_pane_width(&woxi::interpret_with_stdout(code).expect("evaluate"))
+    };
+    assert_eq!(width("Pane[{1, 2}, ImageSize -> {250, 100}]"), Some(250.0));
+    assert_eq!(width("Pane[{1, 2}, ImageSize -> 180]"), Some(180.0));
+    assert_eq!(width("Pane[{1, 2}, {220, 100}]"), Some(220.0));
+    assert_eq!(width("Pane[{1, 2}]"), None);
+    assert_eq!(width("{1, 2}"), None);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a

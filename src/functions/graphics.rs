@@ -6645,8 +6645,9 @@ fn wrap_text_to_measure(
 }
 
 /// The width in printer's points `Pane[content, width]` (or `Pane[content,
-/// {width, height}]`) gives its box; `None` without a positive number.
-fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
+/// {width, height}]`, or either size given as its `ImageSize` option) gives
+/// its box; `None` without a positive number.
+pub fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
   let width = match pane_args.get(1) {
     Some(Expr::List(dims)) => dims.first(),
     other => other,
@@ -6654,6 +6655,7 @@ fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
   width
     .and_then(crate::evaluator::dispatch::io_functions::pane_size_component)
     .filter(|w| *w > 0.0)
+    .or_else(|| row_image_width_points(pane_args))
 }
 
 /// The width in printer's points of a `Row[items, …, ImageSize -> w]`
@@ -22243,6 +22245,36 @@ pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
   if name != "TemplateBox" || args.len() < 2 {
     return None;
   }
+  // `TemplateBox[{label, source, input, description}, "Entity"]`, the
+  // entity icon: the entity's name in a rounded, tinted frame.
+  if matches!(&args[1], Expr::String(t) if t == "Entity") {
+    let label = template_box_items(&args[0])?.first()?;
+    let rgb = |r: f64, g: f64, b: f64| {
+      call(
+        "RGBColor",
+        vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+      )
+    };
+    return Some(call(
+      "FrameBox",
+      vec![
+        // The tint is light in every theme, so the name is always dark.
+        call(
+          "StyleBox",
+          vec![
+            label.clone(),
+            rule_expr(
+              id_expr("FontColor"),
+              call1("GrayLevel", Expr::Real(0.25)),
+            ),
+          ],
+        ),
+        rule_expr(id_expr("FrameStyle"), rgb(1.0, 0.504768, 0.0)),
+        rule_expr(id_expr("Background"), rgb(1.0, 0.980392, 0.921569)),
+        rule_expr(id_expr("RoundingRadius"), Expr::Integer(4)),
+      ],
+    ));
+  }
   let (head, arity) = match &args[1] {
     Expr::String(t) if t == "Superscript" => ("SuperscriptBox", 2),
     Expr::String(t) if t == "Subscript" => ("SubscriptBox", 2),
@@ -30023,6 +30055,21 @@ fn box_is_two_dimensional(expr: &Expr) -> bool {
       ) || args.iter().any(box_is_two_dimensional)
     }
     Expr::List(items) => items.iter().any(box_is_two_dimensional),
+    _ => false,
+  }
+}
+
+/// Whether a box expression holds a frame drawn around its content — a
+/// `FrameBox`, or the entity icon that is one — which a line of plain text
+/// cannot show.
+fn box_has_frame(expr: &Expr) -> bool {
+  if let Some(plain_box) = script_template_box(expr) {
+    return box_has_frame(&plain_box);
+  }
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "FrameBox" => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(box_has_frame),
+    Expr::List(items) => items.iter().any(box_has_frame),
     _ => false,
   }
 }
@@ -43495,7 +43542,9 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 
 /// A (possibly `Style`d) string whose inline box notation holds a fraction,
 /// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
-/// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
+/// box layout so the numerator stacks over the denominator; so is a box
+/// tree holding a frame. `None` for any other item, which keeps its text
+/// rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   inline_fraction_string_svg_at(expr, 14.0)
 }
@@ -43527,7 +43576,8 @@ fn inline_fraction_string_svg_at(
     }
     _ => return None,
   };
-  if !box_has_fraction(&boxes) {
+  // A framed box needs the box layout too, to have its frame drawn.
+  if !box_has_fraction(&boxes) && !box_has_frame(&boxes) {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -57624,7 +57674,11 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       label_runs.push(runs);
       svgs.push(Some(color_swatch_svg(&color)));
     } else {
-      let runs = discrete_choice_label_runs(item);
+      // An entity is listed under its display name, as its icon shows it.
+      let entity_name = crate::functions::entity_ast::entity_label(item)
+        .map(|(label, _)| Expr::String(label));
+      let runs =
+        discrete_choice_label_runs(entity_name.as_ref().unwrap_or(item));
       values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);

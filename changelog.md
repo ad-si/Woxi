@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- An entity a notebook stores as its icon keeps the name the icon shows:
+    `ToBoxes` gives the `TemplateBox[{…}, "Entity"]` icon for it, typeset
+    output draws that name in a rounded frame instead of the `Entity[…]`
+    source, and a Manipulate popup menu lists entity choices by name.
+- A `FrameBox` on a `DisplayForm` line of a `Column` is drawn as a frame
+    instead of as `[content]` text.
+- Woxi Studio breaks the text of a `Pane[list, ImageSize -> {w, h}]`
+    Manipulate body into lines at the pane's width, and breaks a bare list
+    at a `ContentSize` width too.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
