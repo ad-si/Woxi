@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `RotationTransform` and `RotationMatrix` by a machine-real angle about
+    a 3D axis, and a `TransformationFunction` of machine reals applied to
+    points, are computed in machine arithmetic instead of through the
+    symbolic formula: a loop of a few thousand rotations (a turtle drawing
+    a branching structure) took over a minute and now takes seconds.
+- An unboxed `Graphics3D` of fixed width and height whose contents run
+    along one axis only (a straight line parallel to it) is fitted with
+    the ranges made up for the other two axes, so the line is drawn
+    centered and clear of the frame as in Wolfram's pictures, instead of
+    from corner to corner.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,

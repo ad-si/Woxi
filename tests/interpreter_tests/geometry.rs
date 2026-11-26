@@ -4728,6 +4728,152 @@ mod transformation_function_apply_to_point_list {
   }
 }
 
+// A 3D rotation by a machine-real angle about a plain numeric axis is
+// built directly in machine arithmetic (the symbolic Rodrigues formula took
+// milliseconds per call, minutes for a loop drawing a branching structure).
+// It must agree with the exact construction.
+mod rotation_transform_3d_machine_angle {
+  use super::*;
+
+  fn agrees(machine: &str, exact: &str) {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "Max[Abs[Flatten[First[{machine}] - N[First[{exact}]]]]] < 10^-12"
+      ))
+      .unwrap(),
+      "True",
+      "{machine}"
+    );
+  }
+
+  #[test]
+  fn about_an_axis_through_the_origin() {
+    agrees(
+      "RotationTransform[1.2, {1, 2, 3}]",
+      "RotationTransform[6/5, {1, 2, 3}]",
+    );
+    agrees(
+      "RotationTransform[-0.75, {1., 2.5, -3}]",
+      "RotationTransform[-3/4, {1, 5/2, -3}]",
+    );
+  }
+
+  #[test]
+  fn about_an_axis_through_a_point() {
+    agrees(
+      "RotationTransform[1.2, {1, 2, 3}, {1, 1/2, 4}]",
+      "RotationTransform[6/5, {1, 2, 3}, {1, 1/2, 4}]",
+    );
+    agrees(
+      "RotationTransform[25.7 Degree, {0, 0, 1}, {0.3, 1.2, 0.7}]",
+      "RotationTransform[257/10 Degree, {0, 0, 1}, {3/10, 6/5, 7/10}]",
+    );
+  }
+
+  #[test]
+  fn rotation_matrix_shares_the_construction() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Max[Abs[Flatten[RotationMatrix[0.7, {1, 1, 1}] - \
+         N[RotationMatrix[7/10, {1, 1, 1}]]]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn every_entry_is_a_machine_real() {
+    clear_state();
+    assert_eq!(
+      interpret("RotationTransform[0., {0, 0, 1}, {0, 0, 0}]").unwrap(),
+      "TransformationFunction[{{1., 0., 0., 0.}, {0., 1., 0., 0.}, \
+       {0., 0., 1., 0.}, {0., 0., 0., 1.}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[0.5, {1, 0, 0}]").unwrap(),
+      "TransformationFunction[{{1., 0., 0., 0.}, \
+       {0., 0.8775825618903728, -0.479425538604203, 0.}, \
+       {0., 0.479425538604203, 0.8775825618903728, 0.}, {0., 0., 0., 1.}}]"
+    );
+  }
+
+  #[test]
+  fn applies_to_points() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Chop[RotationTransform[N[Pi/2], {0, 0, 1}, {1, 0, 0}][\
+         {{1, 0, 0}, {2, 0, 0}}], 10^-12]"
+      )
+      .unwrap(),
+      "{{1., 0, 0}, {1., 1., 0}}"
+    );
+  }
+
+  // A matrix of machine reals applied to plain points, in any dimension
+  // and with a projective last row.
+  #[test]
+  fn machine_matrices_apply_to_points() {
+    clear_state();
+    assert_eq!(
+      interpret("TranslationTransform[{1., 2.}][{3, 4}]").unwrap(),
+      "{4., 6.}"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{2., 3.}][{{1, 2}, {3., 4}}]").unwrap(),
+      "{{2., 6.}, {6., 12.}}"
+    );
+    assert_eq!(
+      interpret(
+        "TransformationFunction[{{1., 0., 1.}, {0., 1., 0.}, \
+         {1., 0., 1.}}][{1, 2}]"
+      )
+      .unwrap(),
+      "{1., 1.}"
+    );
+    // A symbolic coordinate keeps the symbolic product.
+    assert_eq!(
+      interpret(
+        "With[{r = TranslationTransform[{1., 2.}][{x, 4}]}, \
+         {FreeQ[r, x], r /. x -> 3}]"
+      )
+      .unwrap(),
+      "{False, {4., 6.}}"
+    );
+  }
+
+  // An exact angle keeps the exact matrix.
+  #[test]
+  fn exact_angle_stays_exact() {
+    clear_state();
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {0, 0, 1}][{1, 0, 0}]").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  // A loop of thousands of rotations, as a turtle drawing a branching
+  // structure runs, completes (it used to take several milliseconds per
+  // rotation).
+  #[test]
+  fn many_rotations_in_a_loop() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{p = {0, 0, 0}, m, n = 0}, \
+         Do[m = RotationTransform[(25.7 i) Degree, {0, 0, 1}, p]; \
+         p = m[{p[[1]], p[[2]] + 1, p[[3]]}]; n++, {i, 2000}]; \
+         {n, Length[p], p[[3]]}]"
+      )
+      .unwrap(),
+      "{2000, 3, 0.}"
+    );
+  }
+}
+
 // ShearingTransform[phi, e, n, p] shears about the point p instead of the
 // origin, giving the translation column p - M.p.
 mod shearing_transform_about_a_point {

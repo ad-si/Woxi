@@ -17214,6 +17214,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !spherical_region
     && view_angle.is_none()
     && px_min.is_finite();
+  // Contents extending along one axis only (a straight line parallel to
+  // it, or a single point) keep the box around the ranges Wolfram makes up
+  // for the other two axes: a Demonstration's unboxed line of length 22
+  // along the y axis at `ImageSize -> {350, 350}` spans 257 × 280 of the
+  // frame, centered, as its padded 2 × 22 × 2 box does, rather than running
+  // from corner to corner. Contents lying in a plane keep the fit to
+  // themselves (a planar net of dots reaches the picture's edges).
+  let fit_contents = fit_contents
+    && primitives_extent(&prims)
+      .into_iter()
+      .filter(|&r| range_is_flat(r))
+      .count()
+      < 2;
   if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
