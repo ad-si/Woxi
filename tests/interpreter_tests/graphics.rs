@@ -78754,3 +78754,87 @@ mod contours_automatic_with_maximum {
     assert_eq!(plot("{Automatic, 3}"), plot("{2, 4, 6}"));
   }
 }
+
+mod rotate_label {
+  use super::*;
+
+  /// The `<text …>` tag that draws `label`.
+  fn label_tag(svg: &str, label: &str) -> String {
+    let end = svg
+      .find(&format!(">{label}</text>"))
+      .unwrap_or_else(|| panic!("no label {label}: {svg}"));
+    let start = svg[..end].rfind("<text").unwrap();
+    svg[start..end].to_string()
+  }
+
+  fn attr(tag: &str, name: &str) -> f64 {
+    let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    let end = start + tag[start..].find('"').unwrap();
+    tag[start..end].parse().unwrap()
+  }
+
+  /// By default the left and right frame labels are turned to read along
+  /// their edge; `RotateLabel -> False` keeps them upright, for a plot, a
+  /// list plot and plain `Graphics` alike. The bottom label is never turned.
+  #[test]
+  fn rotate_label_false_keeps_side_frame_labels_upright() {
+    for head in [
+      "Plot[x, {x, 0, 1}",
+      "ListPlot[{1, 2, 3}",
+      "Graphics[{Disk[]}",
+    ] {
+      let code = |rotate: &str| {
+        format!(
+          "{head}, Frame -> True, \
+           FrameLabel -> {{{{\"lft\", \"rgt\"}}, {{\"btm\", None}}}}{rotate}]"
+        )
+      };
+      for turned in ["", ", RotateLabel -> True"] {
+        let svg = export_svg(&code(turned));
+        assert!(label_tag(&svg, "lft").contains("rotate(-90"), "{svg}");
+        assert!(label_tag(&svg, "rgt").contains("rotate(-90"), "{svg}");
+        assert!(!label_tag(&svg, "btm").contains("rotate("), "{svg}");
+      }
+      let svg = export_svg(&code(", RotateLabel -> False"));
+      for label in ["lft", "rgt", "btm"] {
+        assert!(!label_tag(&svg, label).contains("rotate("), "{head}: {svg}");
+      }
+      // The upright labels stay on their own sides of the picture.
+      assert!(
+        attr(&label_tag(&svg, "lft"), "x") < attr(&label_tag(&svg, "btm"), "x")
+          && attr(&label_tag(&svg, "btm"), "x")
+            < attr(&label_tag(&svg, "rgt"), "x"),
+        "{head}: {svg}"
+      );
+    }
+  }
+
+  /// An upright side label needs room for its whole width beside the frame,
+  /// so a longer label widens the picture's left margin; a turned one only
+  /// takes a line's height whatever its length.
+  #[test]
+  fn upright_side_label_takes_its_width_beside_the_frame() {
+    let left_label_x = |label: &str, rotate: &str| {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, \
+         FrameLabel -> {{\"btm\", \"{label}\"}}, RotateLabel -> {rotate}]"
+      ));
+      (
+        attr(&label_tag(&svg, label), "x"),
+        attr(&label_tag(&svg, "btm"), "x"),
+      )
+    };
+    let (short_x, short_mid) = left_label_x("ab", "False");
+    let (long_x, long_mid) = left_label_x("abababababab", "False");
+    // The longer label's center sits further from the picture's left edge,
+    // and pushes the frame (whose middle the bottom label marks) right.
+    assert!(long_x > short_x + 1.0, "{short_x} {long_x}");
+    assert!(long_mid > short_mid + 1.0, "{short_mid} {long_mid}");
+    let (_, turned_short_mid) = left_label_x("ab", "True");
+    let (_, turned_long_mid) = left_label_x("abababababab", "True");
+    assert!(
+      (turned_short_mid - turned_long_mid).abs() < 0.5,
+      "{turned_short_mid} {turned_long_mid}"
+    );
+  }
+}

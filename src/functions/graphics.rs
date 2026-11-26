@@ -15041,6 +15041,7 @@ fn graphics_decorations(
   ticks: (&TickSpec, &TickSpec),
   frame: Option<(&[EdgeTicks; 4], &[Option<Vec<(f64, String)>>; 4])>,
   frame_label: Option<&(String, String, String, String)>,
+  rotate_label: bool,
   axes_label: Option<&(String, String)>,
   title_lines: usize,
   title_font: f64,
@@ -15177,6 +15178,16 @@ fn graphics_decorations(
         )
       };
       d.frame_label_lengths = [length(b), length(l), length(t), length(r)];
+      // An upright side label reaches its width away from the edge and
+      // its height along it.
+      if !rotate_label {
+        for edge in [1, 3] {
+          if let Some(height) = d.frame_labels[edge] {
+            d.frame_labels[edge] = Some(d.frame_label_lengths[edge]);
+            d.frame_label_lengths[edge] = height;
+          }
+        }
+      }
     }
   } else if axes.0 || axes.1 {
     d.axes = axes;
@@ -18821,6 +18832,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // markup: the captions that sit outside the frame, in the order
   // bottom, left, top, right.
   let mut frame_label: Option<(String, String, String, String)> = None;
+  // `RotateLabel -> False` keeps the left and right frame labels upright.
+  let mut rotate_label = true;
   // `Ticks -> {xspec, yspec}`: which tick marks each axis carries.
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
@@ -19027,6 +19040,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         // `FrameLabel -> {bottom, left}` / `{{left, right}, {bottom, top}}`
         // captions the frame edges.
+        "RotateLabel" => {
+          rotate_label =
+            crate::functions::plot::parse_rotate_label(replacement);
+        }
         "FrameLabel" => {
           let fl = crate::functions::plot::parse_frame_label(replacement);
           if !fl.bottom.is_empty()
@@ -19839,6 +19856,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (&ticks_x, &ticks_y),
     frame.then_some((&frame_tick_modes, &frame_tick_lists)),
     frame_label.as_ref(),
+    rotate_label,
     axes_label.as_ref(),
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
@@ -20445,13 +20463,43 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::functions::plot::join_label_lines(&text_label_lines(bottom), x, pitch),
       ));
     }
+    // An upright (`RotateLabel -> False`) side caption: its lines centered
+    // on `x` and stacked downward, the block centered on the frame's height.
+    let upright_width = |label: &str| {
+      text_label_lines(label)
+        .iter()
+        .map(|line| crate::functions::plot_padding::text_width(line, flf))
+        .fold(0.0, f64::max)
+    };
+    let upright = |label: &str, x: f64, fill: &str| {
+      let lines = text_label_lines(label);
+      let y = svg_h / 2.0 - block_height(lines.len(), flf) / 2.0 + ascent(flf);
+      format!(
+        "<text x=\"{x:.1}\" y=\"{y:.1}\" fill=\"{fill}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
+        crate::functions::plot::join_label_lines(&lines, x, pitch),
+      )
+    };
+    // How far a side caption's picture reaches away from its edge.
+    let across = |label: &str, h: f64| {
+      if rotate_label {
+        h
+      } else {
+        axes_label_picture_size(label).map_or(h, |(w, _)| w)
+      }
+    };
     if let Some(h) = picture_h(left) {
       svg.push_str(&frame_label_picture_svg(
         left,
-        -(room(1) + h / 2.0),
+        -(room(1) + across(left, h) / 2.0),
         svg_h / 2.0,
-        true,
+        rotate_label,
         1.0,
+      ));
+    } else if !left.is_empty() && !rotate_label {
+      svg.push_str(&upright(
+        left,
+        -(room(1) + upright_width(left) / 2.0),
+        &frame_label_fills[1],
       ));
     } else if !left.is_empty() {
       // Rotated counterclockwise the glyphs rise to the left of the
@@ -20486,10 +20534,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(h) = picture_h(right) {
       svg.push_str(&frame_label_picture_svg(
         right,
-        svg_w + room(3) + h / 2.0,
+        svg_w + room(3) + across(right, h) / 2.0,
         svg_h / 2.0,
-        true,
+        rotate_label,
         1.0,
+      ));
+    } else if !right.is_empty() && !rotate_label {
+      svg.push_str(&upright(
+        right,
+        svg_w + room(3) + upright_width(right) / 2.0,
+        &frame_label_fills[3],
       ));
     } else if !right.is_empty() {
       // Reading upwards like the left one.
@@ -58351,14 +58405,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           ..Default::default()
         }]
       }
-      // `TraditionalForm` around a plain arithmetic expression (no styling
-      // or layout inside) typesets it in conventional notation —
-      // `(1 - x/a) x cot(α)` — not as its OutputForm source `Cot[α]`.
+      // `TraditionalForm` around a plain arithmetic expression or a call
+      // of a mathematical function (no styling or layout inside) typesets
+      // it in conventional notation — `(1 - x/a) x cot(α)`, `Re(s)`,
+      // `g(x, y)`, `sin²(x)` — not as its OutputForm source `Cot[α]`.
       "TraditionalForm"
         if args.len() == 1
           && match &args[0] {
             Expr::FunctionCall { name, .. } => {
-              matches!(name.as_str(), "Times" | "Plus")
+              crate::functions::predicate_ast::is_numeric_function(name)
+                || !crate::evaluator::functions::is_builtin_symbol(name)
             }
             Expr::BinaryOp { op, .. } => matches!(
               op,
@@ -58366,15 +58422,37 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
                 | crate::syntax::BinaryOperator::Plus
                 | crate::syntax::BinaryOperator::Minus
                 | crate::syntax::BinaryOperator::Divide
+                | crate::syntax::BinaryOperator::Power
             ),
             _ => false,
           }
           && !contains_presentation_head(&args[0]) =>
       {
-        let text = box_expr_to_plain(&linearize_fraction_boxes(
-          &crate::evaluator::dispatch::complex_and_special::
-            expr_to_box_form_traditional(&args[0]),
-        ));
+        let boxes = crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(&args[0]);
+        // A function call sets its one-letter symbols in italics and a
+        // numeric script as script characters; boxes one line of text
+        // cannot show (a fraction, a letter subscript) keep the general
+        // path's reading of the call.
+        let is_arithmetic = matches!(
+          &args[0],
+          Expr::FunctionCall { name, .. }
+            if matches!(name.as_str(), "Times" | "Plus")
+        ) || matches!(
+          &args[0],
+          Expr::BinaryOp { op, .. }
+            if !matches!(op, crate::syntax::BinaryOperator::Power)
+        );
+        if !is_arithmetic {
+          let Some(mut runs) = traditional_box_runs(&boxes) else {
+            return manipulate_label_runs(&args[0], italic);
+          };
+          for run in &mut runs {
+            run.italic |= italic;
+          }
+          return runs;
+        }
+        let text = box_expr_to_plain(&linearize_fraction_boxes(&boxes));
         vec![LabelRun {
           text,
           italic,
@@ -70199,6 +70277,7 @@ mod review_layout_tests {
       (&TickSpec::Automatic, &ticks),
       None,
       None,
+      true,
       None,
       0,
       TITLE_FONT,
