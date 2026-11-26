@@ -993,6 +993,30 @@ impl BBox {
     self.x_min > self.x_max || self.y_min > self.y_max
   }
 
+  /// One flat side (e.g. a horizontal line) spans from 0 to twice its
+  /// value, or {-1, 1} at 0, as in Wolfram. A single point (both sides
+  /// flat) is left alone.
+  fn with_flat_side_widened(self) -> Self {
+    let flat_x = self.x_max - self.x_min < 1e-10;
+    let flat_y = self.y_max - self.y_min < 1e-10;
+    let mut bb = self;
+    if flat_x != flat_y {
+      let widen = |v: f64| {
+        if v.abs() < 1e-10 {
+          (-1.0, 1.0)
+        } else {
+          (v.min(2.0 * v).min(0.0), v.max(2.0 * v).max(0.0))
+        }
+      };
+      if flat_x {
+        (bb.x_min, bb.x_max) = widen(bb.x_min);
+      } else {
+        (bb.y_min, bb.y_max) = widen(bb.y_min);
+      }
+    }
+    bb
+  }
+
   /// Pad each axis by `frac` of its span; with `uniform` both axes get
   /// `frac` of the horizontal span, i.e. the same margin in pixels all
   /// round. An explicit `aspect` (height / width of the drawing area)
@@ -1008,26 +1032,7 @@ impl BBox {
     if self.is_empty() {
       return self;
     }
-    let flat_x = self.x_max - self.x_min < 1e-10;
-    let flat_y = self.y_max - self.y_min < 1e-10;
-    let mut bb = self;
-    // One flat side (e.g. a horizontal line) spans from 0 to twice its
-    // value, or {-1, 1} at 0, as in Wolfram. A single point keeps a fixed
-    // margin all round.
-    if flat_x != flat_y {
-      let widen = |v: f64| {
-        if v.abs() < 1e-10 {
-          (-1.0, 1.0)
-        } else {
-          (v.min(2.0 * v).min(0.0), v.max(2.0 * v).max(0.0))
-        }
-      };
-      if flat_x {
-        (bb.x_min, bb.x_max) = widen(bb.x_min);
-      } else {
-        (bb.y_min, bb.y_max) = widen(bb.y_min);
-      }
-    }
+    let bb = self.with_flat_side_widened();
     let (mut dx, mut dy) =
       ((bb.x_max - bb.x_min) * frac, (bb.y_max - bb.y_min) * frac);
     if uniform {
@@ -19256,8 +19261,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `PlotRangePadding` pads whatever the effective range ends up being,
     // whether that came from the primitives' automatic bounding box or an
     // explicit `PlotRange`.
-    let (x_min, x_max) = plot_range_x.unwrap_or((bb.x_min, bb.x_max));
-    let (y_min, y_max) = plot_range_y.unwrap_or((bb.y_min, bb.y_max));
+    // A flat automatic range (a horizontal line and nothing else) is
+    // opened up first, exactly as the default padding below opens it.
+    let open = bb.with_flat_side_widened();
+    let (x_min, x_max) = plot_range_x.unwrap_or((open.x_min, open.x_max));
+    let (y_min, y_max) = plot_range_y.unwrap_or((open.y_min, open.y_max));
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
@@ -32157,7 +32165,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if option_name(pattern) == Some("AspectRatio")
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Full"))
       });
-      if let Some(i) = full_aspect {
+      // An `ImageSize -> {w, h}` is such a frame: the drawing then
+      // stretches over the whole of it, as it does for a lone plot.
+      let size_names_frame = merged_options.iter().any(|o| {
+        option_name_value(o).is_some_and(|(name, value)| {
+          name == "ImageSize"
+            && matches!(&*value, Expr::List(items)
+              if items.len() == 2
+                && items.iter().all(|i| expr_to_f64(i).is_some()))
+        })
+      });
+      if let Some(i) = full_aspect
+        && !size_names_frame
+      {
         merged_options.remove(i);
       }
       if plot_options_need_aspect_ratio(&merged_options) {
@@ -56287,6 +56307,13 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // A `Dynamic[label]` is shown as its current value, recomputed
       // whenever the choice list is (see `values_code`).
       let label = unwrap_dynamic_choices(label);
+      // So is a `Dynamic[…]` inside the label's layout (`Row[{"scaled by ",
+      // Dynamic[MatrixForm[m]]}]`).
+      let released_label = contains_dynamic(label).then(|| {
+        let released = release_dynamics(label);
+        crate::evaluator::evaluate_expr_to_expr(&released).unwrap_or(released)
+      });
+      let label = released_label.as_ref().unwrap_or(label);
       let resolved_label = resolve_choice_label(label);
       let label = resolved_label.as_ref().unwrap_or(label);
       values.push(crate::syntax::expr_to_source_form(value));
@@ -56297,7 +56324,11 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       let svg = discrete_choice_label_svg(label);
       // A label typeset as a picture only for its lowered subscript is
       // still text, so its text column keeps the label's own runs.
-      let runs = if svg.is_some() && !label_has_unmapped_subscript(label) {
+      // So is a phrase with a matrix in it, read on one line by a consumer
+      // that draws no pictures in its menu.
+      let runs = if label_typesets_matrix(label) {
+        discrete_choice_label_runs(&without_matrix_forms(label))
+      } else if svg.is_some() && !label_has_unmapped_subscript(label) {
         discrete_choice_label_runs(value)
       } else {
         // Keeps a `Style[…, color]`/`Bold` directive on the label (e.g. a
@@ -60832,9 +60863,10 @@ fn parse_manipulate_control(
       // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
       // An explicit `Dynamic[…]` list is live even when it names no sibling
       // control: it may follow a free variable the body assigns itself
-      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode).
+      // (`Dynamic[Range[depthMax]]` with `depthMax = 4` set per mode), and
+      // so is a list with a `Dynamic[…]` inside one of its labels.
       let values_code = (bounds.len() == 1
-        && (matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Dynamic")
+        && (contains_dynamic(bounds[0])
           || expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings)))
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
@@ -61768,6 +61800,46 @@ fn is_picture_choice(item: &Expr) -> bool {
   }
 }
 
+/// Whether a text-layout label (`Row`, `Style`, …) holds a matrix shown
+/// two-dimensionally: a `MatrixForm[m]` or `TraditionalForm[m]` of a
+/// rectangular list of lists.
+fn label_typesets_matrix(label: &Expr) -> bool {
+  fn is_matrix(e: &Expr) -> bool {
+    matches!(e, Expr::List(rows)
+      if !rows.is_empty()
+        && rows.iter().all(|row| matches!(row, Expr::List(cells)
+          if !cells.is_empty()
+            && matches!(&rows[0], Expr::List(first)
+              if first.len() == cells.len()))))
+  }
+  match label {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "MatrixForm" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      is_matrix(&args[0]) || label_typesets_matrix(&args[0])
+    }
+    Expr::FunctionCall { name, args } if is_text_layout_head(name) => {
+      args.iter().any(label_typesets_matrix)
+    }
+    Expr::List(items) => items.iter().any(label_typesets_matrix),
+    _ => false,
+  }
+}
+
+/// `expr` with every `MatrixForm[m]` replaced by the list `m` it displays,
+/// for a label written out on one line.
+fn without_matrix_forms(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "MatrixForm" && !args.is_empty() =>
+    {
+      without_matrix_forms(&args[0])
+    }
+    other => crate::syntax::map_children(other, &without_matrix_forms),
+  }
+}
+
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   // An arithmetic label (`-1 -> -Pi/4`) is typeset the way the FrontEnd
   // shows a computed value — a stacked fraction with real `π` — instead of
@@ -61852,8 +61924,15 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // `Row[{icon, "   "}]` whose only text is padding — which the FrontEnd
     // draws as that picture (with its padding); its text alone would leave
     // the choice blank.
+    //
+    // Nor can a layout setting a matrix among its words (`Row[{"mapped by
+    // ", MatrixForm[m]}]`) be written as one line of text: it is typeset
+    // as a picture with the matrix in its parentheses.
     Expr::FunctionCall { name, .. } if is_text_layout_head(name) => {
-      if flatten_label_runs(&manipulate_label_runs(label, false))
+      if label_typesets_matrix(label) {
+        Some(crate::evaluator::expr_to_svg(label))
+          .filter(|svg| svg.starts_with("<svg"))
+      } else if flatten_label_runs(&manipulate_label_runs(label, false))
         .trim()
         .is_empty()
       {
@@ -68962,6 +69041,66 @@ mod manipulate_traditional_form_choice_svg_tests {
     assert!(svgs.iter().all(Option::is_none), "{svgs:?}");
     let (_, svgs) = labels("Graphics");
     assert!(svgs.iter().all(Option::is_some), "{svgs:?}");
+  }
+
+  /// A choice label laying a matrix out among its words (`Row[{"scaled by
+  /// ", MatrixForm[m]}]`) is typeset as a picture, and a `Dynamic[…]`
+  /// inside it shows its current value and keeps the list live, so the
+  /// label follows a matrix the body assigns.
+  #[test]
+  fn matrix_choice_labels_typeset_as_live_icons() {
+    crate::interpret("matrixChoiceLabelM = {{1, 2}, {3, 6}}").unwrap();
+    let code = "Manipulate[k, {{k, 1, \"map\"}, \
+      {1 -> Style[Row[{\"by \", TraditionalForm[{{\"a\", \"b\"}, \
+          {\"c\", \"d\"}}], \" = \", \
+          Dynamic@MatrixForm[N@matrixChoiceLabelM]}], \"TraditionalForm\"], \
+       2 -> Row[{\"to zero by \", Dynamic@MatrixForm[{{0, 0}, {0, 0}}]}], \
+       3 -> Row[{\"plain \", Dynamic[matrixChoiceLabelM[[1, 2]]]}]}, \
+      ControlType -> PopupMenu}]";
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let ManipulateControl::Discrete {
+      values,
+      value_labels,
+      value_label_svgs,
+      ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control");
+    };
+    assert_eq!(values, &["1", "2", "3"]);
+    for svg in &value_label_svgs[..2] {
+      let svg = svg.as_deref().expect("a matrix label must render an icon");
+      assert!(svg.starts_with("<svg"), "{svg}");
+    }
+    let first = value_label_svgs[0].as_deref().unwrap();
+    assert!(first.contains(">6.<"), "the live matrix entries: {first}");
+    assert!(!first.contains("MatrixForm"), "{first}");
+    // Its text column reads the same label on one line.
+    assert_eq!(
+      &value_labels[..2],
+      &[
+        "by {{a, b}, {c, d}} = {{1., 2.}, {3., 6.}}",
+        "to zero by {{0, 0}, {0, 0}}"
+      ]
+    );
+    // A label without a matrix stays text, with its `Dynamic` resolved.
+    assert!(value_label_svgs[2].is_none());
+    assert_eq!(value_labels[2], "plain 2");
+    // The list is re-resolved as the matrix changes.
+    assert_eq!(spec.dynamic_values.len(), 1, "{:?}", spec.dynamic_values);
+    crate::interpret("matrixChoiceLabelM = {{1, 2}, {0, 0}}").unwrap();
+    let (_, labels, svgs, _) =
+      manipulate_eval_values_code(&spec.dynamic_values[0].1)
+        .expect("re-resolved choices");
+    assert!(
+      !svgs[0].as_deref().unwrap().contains(">6.<"),
+      "{:?}",
+      svgs[0]
+    );
+    assert_eq!(labels[0], "by {{a, b}, {c, d}} = {{1., 2.}, {0., 0.}}");
+    assert_eq!(labels[2], "plain 2");
+    crate::interpret("Clear[matrixChoiceLabelM]").unwrap();
   }
 
   /// An unlabeled choice that is an angle (`15 Degree`) reads the way a
