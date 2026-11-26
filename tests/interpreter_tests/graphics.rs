@@ -62129,6 +62129,56 @@ mod graphics3d_painters_algorithm_face_subdivision {
        budget, not the throttled one"
     );
   }
+
+  /// Regression, found by a Demonstration that draws a lattice of 80 thin
+  /// rods between two rings: each rod, a few pixels wide in the picture,
+  /// was cut into 48 facets around its axis, so every frame of its
+  /// `Manipulate` was a 32 MB SVG. A crowd of thin `Cylinder`s needs only
+  /// as many facets as keep rods of their width round.
+  #[test]
+  fn many_thin_cylinders_get_fewer_facets() {
+    clear_state();
+    // Packed side by side so the scene's span, and with it the ring
+    // count of each rod, stays that of a single one.
+    let svg = export_svg(
+      "Graphics3D[Table[Cylinder[{{0, i/20, 0}, {1, i/20, 0}}, 0.01], \
+       {i, 0, 19}]]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    // At most 16 rings of 12 quads plus two 12-triangle caps per rod.
+    assert!(
+      polygons <= 20 * (16 * 12 * 2 + 2 * 12),
+      "20 thin rods drew {polygons} polygons"
+    );
+  }
+
+  /// The facet count follows the radius: in a crowd, the end circles of
+  /// wide cylinders stay the 48-gons a lone one gets, while thin ones are
+  /// outlined with fewer, longer chords.
+  #[test]
+  fn crowded_cylinder_facets_follow_the_radius() {
+    clear_state();
+    let rim_lines = |cylinders: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{Opacity[0], EdgeForm[Black], {cylinders}}}, \
+         Boxed -> False]"
+      ))
+      .matches("<line ")
+      .count()
+    };
+    let lone = rim_lines("Cylinder[{{0, 0, 0}, {0, 0, 0.01}}, 1]");
+    let wide = rim_lines(
+      "Table[Cylinder[{{0, 0, k/10}, {0, 0, k/10 + 0.01}}, 1], {k, 10}]",
+    );
+    assert_eq!(wide, 10 * lone, "wide cylinders keep every facet");
+    let thin = rim_lines(
+      "Table[Cylinder[{{k/10, 0, 0}, {k/10, 0, 0.01}}, 0.02], {k, 10}]",
+    );
+    assert!(
+      thin * 2 < wide && thin * 4 >= wide,
+      "thin cylinders get fewer facets, but at least 12: {thin} vs {wide}"
+    );
+  }
 }
 
 mod graphics3d_cylinder_scene_ring_cap {

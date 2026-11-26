@@ -10838,9 +10838,13 @@ fn tessellate_for_transform(
     Primitive3D::Sphere { center, radius, .. } => {
       Some(tessellate_sphere(center, *radius, (18, 36)))
     }
-    Primitive3D::Cylinder { p1, p2, radius, .. } => {
-      Some(tessellate_cylinder(p1, p2, *radius, MAX_SIDE_SUBDIVISIONS))
-    }
+    Primitive3D::Cylinder { p1, p2, radius, .. } => Some(tessellate_cylinder(
+      p1,
+      p2,
+      *radius,
+      MAX_SIDE_SUBDIVISIONS,
+      CYLINDER_SIDES,
+    )),
     Primitive3D::Cone { p1, p2, radius, .. } => {
       Some(tessellate_cone(p1, p2, *radius))
     }
@@ -14289,6 +14293,40 @@ fn cylinder_max_subdivisions(
   by_size.min(by_count)
 }
 
+/// The fewest facets a `Cylinder` is ever drawn with around its axis.
+const MIN_CYLINDER_SIDES: usize = 12;
+
+/// The radius, as a fraction of the span of the scene's cylinders, from
+/// which a `Cylinder` of a crowded scene gets all `CYLINDER_SIDES` facets.
+const FULL_DETAIL_CYLINDER_RADIUS: f64 = 0.25;
+
+/// How many facets a `Cylinder` gets around its axis. The facets only have
+/// to keep its end circles and silhouette round at picture size, and an
+/// n-gon strays from its circle by `radius * (1 - cos(pi / n))`, so the
+/// count that keeps that error constant grows with the square root of the
+/// radius. As with `cylinder_max_subdivisions`, a lone or modestly sized
+/// Cylinder keeps the full count; only a crowd of relatively thin ones is
+/// throttled. Regression: a lattice of 80 rods, each a few pixels wide, was
+/// cut into 48 facets per rod — 0.5 pixel slivers that made every frame of
+/// its Manipulate a 32 MB SVG.
+fn cylinder_sides(
+  radius: f64,
+  scene_extent: f64,
+  cylinder_count: usize,
+) -> usize {
+  if cylinder_count <= 8 || scene_extent.is_nan() || scene_extent <= 0.0 {
+    return CYLINDER_SIDES;
+  }
+  let rel = radius.abs() / scene_extent;
+  if rel.is_nan() || rel >= FULL_DETAIL_CYLINDER_RADIUS {
+    return CYLINDER_SIDES;
+  }
+  let sides =
+    CYLINDER_SIDES as f64 * (rel / FULL_DETAIL_CYLINDER_RADIUS).sqrt();
+  // A multiple of four keeps facets at the quarter points of the circle.
+  ((sides / 4.0).ceil() as usize * 4).clamp(MIN_CYLINDER_SIDES, CYLINDER_SIDES)
+}
+
 /// Total longitudinal rings shared by all `Cylinder`s of a crowded scene.
 const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
@@ -14616,8 +14654,9 @@ fn tessellate_cylinder(
   p2: &Point3D,
   radius: f64,
   max_subdivisions: usize,
+  sides: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let n = CYLINDER_SIDES;
+  let n = sides;
   let pi = std::f64::consts::PI;
   // Axis vector
   let dx = p2.x - p1.x;
@@ -16665,10 +16704,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let max_subdiv =
             cylinder_max_subdivisions(*radius, cyl_extent, cyl_count)
               .min(cylinder_scene_ring_cap(len, cyl_extent));
-          let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv);
+          let sides = cylinder_sides(*radius, cyl_extent, cyl_count);
+          let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv, sides);
           if style.edges {
             let steps = cylinder_side_steps(len, *radius, max_subdiv);
-            holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
+            holed_boundaries = cylinder_edge_flags(steps, sides);
           }
           (tris, style)
         }
@@ -30203,5 +30243,32 @@ mod triangle_intersection_tests {
     let (dn, df) = depths_at_shared_point(&near, &pn, &far, &pf, &camera)
       .expect("the facets cross on screen");
     assert!(dn < df, "{dn} vs {df}");
+  }
+}
+
+#[cfg(test)]
+mod cylinder_sides_tests {
+  use super::*;
+
+  /// A crowd of cylinders gets facets around the axis in proportion to
+  /// the square root of each one's share of the scene; a few cylinders,
+  /// or wide ones, keep the full count.
+  #[test]
+  fn cylinder_sides_follow_the_relative_radius() {
+    assert_eq!(cylinder_sides(0.01, 1.0, 8), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.01, 0.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.25, 1.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(3.0, 1.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.001, 1.0, 100), MIN_CYLINDER_SIDES);
+    // A quarter of the full-detail radius: half the facets.
+    assert_eq!(cylinder_sides(0.0625, 1.0, 100), CYLINDER_SIDES / 2);
+    assert_eq!(cylinder_sides(-0.0625, 1.0, 100), CYLINDER_SIDES / 2);
+    let mut last = 0;
+    for k in 1..=100 {
+      let sides = cylinder_sides(k as f64 / 400.0, 1.0, 9);
+      assert!(sides >= last && sides.is_multiple_of(4), "{k}: {sides}");
+      assert!((MIN_CYLINDER_SIDES..=CYLINDER_SIDES).contains(&sides));
+      last = sides;
+    }
   }
 }
