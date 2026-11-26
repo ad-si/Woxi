@@ -1483,11 +1483,14 @@ fn has_step_function(body: &Expr) -> bool {
     .any(has_step_function)
 }
 
-/// Whether `body` holds a conditional (`Piecewise`, `Which`, `If`) whose
-/// branches the curve may jump between. Wolfram works out the plot body
-/// with the variable left symbolic to find such conditionals, so one hidden
-/// behind a user function (`f[x_] := Which[x < 1, a, True, b]`) counts too.
-fn has_conditional_jump(body: &Expr, var: &str) -> bool {
+/// Whether `Exclusions -> Automatic` looks for jumps in the curve of
+/// `body`: it holds a step function, a branch cut taken of something
+/// complex, or a conditional (`Piecewise`, `Which`, `If`) whose branches
+/// the curve may jump between. Wolfram works out the plot body with the
+/// variable left symbolic to find these, so one hidden behind a user
+/// function (`f[x_] := Which[x < 1, a, True, b]`, or `Arg[g[x]]` with a
+/// complex-valued `g`) counts too.
+fn has_automatic_exclusions(body: &Expr, var: &str) -> bool {
   fn conditional(e: &Expr) -> bool {
     if matches!(e, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Piecewise" | "Which" | "If"))
@@ -1519,14 +1522,18 @@ fn has_conditional_jump(body: &Expr, var: &str) -> bool {
         .any(interpolates),
     }
   }
-  if conditional(body) {
-    return !interpolates(body);
+  let jumps = |e: &Expr| {
+    has_step_function(e)
+      || has_branch_cut(e)
+      || (conditional(e) && !interpolates(e))
+  };
+  if jumps(body) {
+    return true;
   }
-  if !calls_user_function(body) {
+  if conditional(body) || !calls_user_function(body) {
     return false;
   }
-  let expanded = eval_body_var_symbolic(body, var);
-  conditional(&expanded) && !interpolates(&expanded)
+  jumps(&eval_body_var_symbolic(body, var))
 }
 
 /// The x positions where the sampled curve `points` of `body` jumps: each
@@ -19453,11 +19460,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
     // So does a branch cut a complex-valued part of it is taken across.
     let mut excluded_here = excluded.clone();
-    if auto_exclusions
-      && (has_step_function(func_body)
-        || has_branch_cut(func_body)
-        || has_conditional_jump(func_body, &var_name))
-    {
+    if auto_exclusions && has_automatic_exclusions(func_body, &var_name) {
       excluded_here.extend(jump_points(&points, func_body, &var_name));
     }
     if plot_opts.exclusions_style.iter().any(Option::is_some) {
