@@ -8600,6 +8600,18 @@ fn named_line_thickness(name: &str) -> Option<f64> {
   crate::functions::graphics::symbolic_thickness(name).map(|t| -t)
 }
 
+/// How the ends of a `Tube` are closed, as `CapForm` sets it. (`Cylinder`
+/// and `Cone` are solid regions and always closed.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TubeCaps {
+  /// `CapForm[None]`: the tube is left hollow.
+  Open,
+  /// The default and `CapForm["Round"]`: a hemisphere closes each end.
+  Round,
+  /// `CapForm["Butt"]` and `CapForm["Square"]`: a flat disk closes each.
+  Flat,
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone, Debug)]
 struct StyleState3D {
@@ -8611,13 +8623,8 @@ struct StyleState3D {
   /// Stroke width in pixels for Line3D primitives. None means
   /// [`DEFAULT_LINE_3D_WIDTH`].
   thickness: Option<f64>,
-  /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
-  /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
-  /// (`Cylinder` and `Cone` are solid regions and always closed.)
-  capped: bool,
-  /// Whether a capped `Tube` ends in a flat disk (`CapForm["Butt"]`,
-  /// `CapForm["Square"]`) rather than in the default hemisphere.
-  flat_caps: bool,
+  /// How a `Tube`'s ends are closed.
+  caps: TubeCaps,
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat color.
   edges: bool,
@@ -8760,8 +8767,7 @@ impl Default for StyleState3D {
       back_color: None,
       opacity: 1.0,
       thickness: None,
-      capped: true,
-      flat_caps: false,
+      caps: TubeCaps::Round,
       edges: true,
       faces: true,
       edge_color: None,
@@ -9160,9 +9166,11 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       // them, as does the default: "Round" (the default) with a
       // hemisphere, "Butt" and "Square" with a flat disk.
       "CapForm" if args.len() == 1 => {
-        style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
-        style.flat_caps =
-          matches!(&args[0], Expr::String(s) if s == "Butt" || s == "Square");
+        style.caps = match &args[0] {
+          Expr::Identifier(s) if s == "None" => TubeCaps::Open,
+          Expr::String(s) if s == "Butt" || s == "Square" => TubeCaps::Flat,
+          _ => TubeCaps::Round,
+        };
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
@@ -12096,7 +12104,7 @@ fn collect_3d_primitives_styled(
             // gently bending (sampled) curve stays one mitred tube. A spline
             // is always swept as one tube, so even the sharp corners of a
             // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
-            let runs = if style.capped && !style.flat_caps && !from_spline {
+            let runs = if style.caps == TubeCaps::Round && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -12105,8 +12113,7 @@ fn collect_3d_primitives_styled(
               let tris = tessellate_tube(
                 &pts[from..=to],
                 &radii[from..=to],
-                style.capped,
-                style.flat_caps,
+                style.caps,
                 budget,
               );
               if !tris.is_empty() {
@@ -13703,7 +13710,10 @@ fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
           p2,
           radius,
           style,
-        } if style.opacity >= 1.0 && style.faces && style.capped => {
+        } if style.opacity >= 1.0
+          && style.faces
+          && style.caps != TubeCaps::Open =>
+        {
           OccluderShape::Cylinder {
             p1: *p1,
             p2: *p2,
@@ -14535,7 +14545,7 @@ fn tessellate_cylinder(
 /// interior vertex), so consecutive segments share a ring and the surface
 /// stays closed through a bend.  The rings are kept aligned by transporting
 /// one reference normal along the curve rather than recomputing it per
-/// segment, which would twist the tube.  With `capped`, flat disks close
+/// segment, which would twist the tube.  With caps other than `TubeCaps::Open`, hemispheres or disks close
 /// both ends — Wolfram's default; `CapForm[None]` drops them.
 /// Cosine of the turn above which a tube's polyline is split into
 /// separately capped runs.
@@ -14576,8 +14586,7 @@ fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
 fn tessellate_tube(
   points: &[Point3D],
   radii: &[f64],
-  capped: bool,
-  flat_caps: bool,
+  caps: TubeCaps,
   max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   const TUBE_SIDES: usize = 24;
@@ -14810,7 +14819,8 @@ fn tessellate_tube(
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
   // `CapForm["Butt"]` cuts them off flat instead, with a disk (a
   // hemisphere of no height).
-  if capped && !closed {
+  if caps != TubeCaps::Open && !closed {
+    let flat_caps = caps == TubeCaps::Flat;
     let cap_rings: usize = if flat_caps { 1 } else { 6 };
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
       (1..=cap_rings)
@@ -16566,8 +16576,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             back_color: None,
             opacity: 1.0,
             thickness: None,
-            capped: true,
-            flat_caps: false,
+            caps: TubeCaps::Round,
             edges: true,
             faces: true,
             edge_color: None,
