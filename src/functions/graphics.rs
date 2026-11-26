@@ -13433,6 +13433,102 @@ fn unbounded_draw_box(bb: &BBox) -> BBox {
   }
 }
 
+/// Cut a polyline given in screen coordinates to a box reaching
+/// `SCREEN_CLIP_MARGIN` picture sizes past the picture on every side,
+/// returning the pieces that remain (the polyline itself when it already
+/// lies inside). A curve with a pole — a hyperbola sampled next to its
+/// asymptote, say — shown under an explicit `PlotRange` otherwise carries
+/// coordinates billions of pixels out, and SVG renderers size the clipped
+/// group's layer from those far ends: resvg (Woxi Studio's renderer) then
+/// fails to draw the whole group. Points that are not finite break the
+/// line as well.
+fn clip_screen_polyline(
+  pts: Vec<(f64, f64)>,
+  svg_w: f64,
+  svg_h: f64,
+) -> Vec<Vec<(f64, f64)>> {
+  const SCREEN_CLIP_MARGIN: f64 = 8.0;
+  let (x_lo, x_hi) = (
+    -SCREEN_CLIP_MARGIN * svg_w,
+    (1.0 + SCREEN_CLIP_MARGIN) * svg_w,
+  );
+  let (y_lo, y_hi) = (
+    -SCREEN_CLIP_MARGIN * svg_h,
+    (1.0 + SCREEN_CLIP_MARGIN) * svg_h,
+  );
+  let inside = |&(x, y): &(f64, f64)| {
+    (x_lo..=x_hi).contains(&x) && (y_lo..=y_hi).contains(&y)
+  };
+  if !(x_lo < x_hi && y_lo < y_hi) || pts.iter().all(inside) {
+    return vec![pts];
+  }
+  // Liang–Barsky: the part of the segment a→b inside the box, as the
+  // parameter interval [t0, t1] along it.
+  let clip_segment = |a: (f64, f64), b: (f64, f64)| -> Option<(f64, f64)> {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    for (p, q) in [
+      (-dx, a.0 - x_lo),
+      (dx, x_hi - a.0),
+      (-dy, a.1 - y_lo),
+      (dy, y_hi - a.1),
+    ] {
+      if p == 0.0 {
+        if q < 0.0 {
+          return None;
+        }
+      } else {
+        let r = q / p;
+        if p < 0.0 {
+          t0 = t0.max(r);
+        } else {
+          t1 = t1.min(r);
+        }
+      }
+    }
+    (t0 <= t1).then_some((t0, t1))
+  };
+  let mut pieces: Vec<Vec<(f64, f64)>> = Vec::new();
+  let mut current: Vec<(f64, f64)> = Vec::new();
+  let mut flush = |current: &mut Vec<(f64, f64)>| {
+    if current.len() >= 2 {
+      pieces.push(std::mem::take(current));
+    } else {
+      current.clear();
+    }
+  };
+  if pts.len() == 1 && inside(&pts[0]) {
+    return vec![pts];
+  }
+  for w in pts.windows(2) {
+    let (a, b) = (w[0], w[1]);
+    let finite = |p: (f64, f64)| p.0.is_finite() && p.1.is_finite();
+    let span = if finite(a) && finite(b) {
+      clip_segment(a, b)
+    } else {
+      None
+    };
+    let Some((t0, t1)) = span else {
+      flush(&mut current);
+      continue;
+    };
+    let at = |t: f64| (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1));
+    if t0 > 0.0 {
+      // The segment enters the box: a new piece starts at the box's edge.
+      flush(&mut current);
+    }
+    if current.is_empty() {
+      current.push(if t0 > 0.0 { at(t0) } else { a });
+    }
+    current.push(if t1 < 1.0 { at(t1) } else { b });
+    if t1 < 1.0 {
+      flush(&mut current);
+    }
+  }
+  flush(&mut current);
+  pieces
+}
+
 /// Cut a convex polygon to the box `bx` (Sutherland–Hodgman).
 fn clip_polygon_to_box(poly: &[(f64, f64)], bx: &BBox) -> Vec<(f64, f64)> {
   // Each edge as (axis, bound, keep-greater-side).
@@ -16969,77 +17065,87 @@ fn render_primitive(
         vertex_colors.as_ref().filter(|c| c.len() == total_points);
       let mut point_idx = 0usize;
       for (seg_idx, seg) in segments.iter().enumerate() {
-        let screen_pts: Vec<(f64, f64)> = seg
+        let seg_screen_pts: Vec<(f64, f64)> = seg
           .iter()
           .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
           .collect();
-        let pts: Vec<String> = screen_pts
-          .iter()
-          .map(|&(x, y)| format!("{x:.2},{y:.2}"))
-          .collect();
-        // Draw the halo (contrasting outline) behind the line first.
-        if let Some(ref halo) = style.halo {
-          let hw = sw + 2.0 * halo.radius;
-          out.push_str(&format!(
+        // A line running far outside the picture is cut to a generous box
+        // around it first (see `clip_screen_polyline`). A vertex-colored
+        // line keeps its points, which its colors are counted against.
+        let pieces = if vertex_colors.is_some() {
+          vec![seg_screen_pts]
+        } else {
+          clip_screen_polyline(seg_screen_pts, svg_w, svg_h)
+        };
+        for screen_pts in pieces {
+          let pts: Vec<String> = screen_pts
+            .iter()
+            .map(|&(x, y)| format!("{x:.2},{y:.2}"))
+            .collect();
+          // Draw the halo (contrasting outline) behind the line first.
+          if let Some(ref halo) = style.halo {
+            let hw = sw + 2.0 * halo.radius;
+            out.push_str(&format!(
             "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{hw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}/>\n",
             pts.join(" "),
             halo.color.to_svg_rgb(),
             halo.color.opacity_attr(),
           ));
-        }
-        if let Some(colors) = vertex_colors {
-          // Draw each edge as its own 2-point line, shaded with a linear
-          // gradient between its two endpoint colors so the stroke blends
-          // smoothly along the path, the way Wolfram Language interpolates
-          // `VertexColors`.
-          // The edges are drawn one by one, but they are one line: each
-          // picks up the dash pattern where the edge before it ended.
-          let mut dash_phase = 0.0_f64;
-          for i in 0..screen_pts.len().saturating_sub(1) {
-            let c1 = colors[point_idx + i];
-            let c2 = colors[point_idx + i + 1];
-            let (x1, y1) = screen_pts[i];
-            let (x2, y2) = screen_pts[i + 1];
-            let stroke = if c1 == c2 {
-              c1.to_svg_rgb()
-            } else {
-              let gid = format!("woxi-vgrad-{prim_index}-{seg_idx}-{i}");
-              out.push_str(&format!(
+          }
+          if let Some(colors) = vertex_colors {
+            // Draw each edge as its own 2-point line, shaded with a linear
+            // gradient between its two endpoint colors so the stroke blends
+            // smoothly along the path, the way Wolfram Language interpolates
+            // `VertexColors`.
+            // The edges are drawn one by one, but they are one line: each
+            // picks up the dash pattern where the edge before it ended.
+            let mut dash_phase = 0.0_f64;
+            for i in 0..screen_pts.len().saturating_sub(1) {
+              let c1 = colors[point_idx + i];
+              let c2 = colors[point_idx + i + 1];
+              let (x1, y1) = screen_pts[i];
+              let (x2, y2) = screen_pts[i + 1];
+              let stroke = if c1 == c2 {
+                c1.to_svg_rgb()
+              } else {
+                let gid = format!("woxi-vgrad-{prim_index}-{seg_idx}-{i}");
+                out.push_str(&format!(
                 "<linearGradient id=\"{gid}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\"><stop offset=\"0\" stop-color=\"{}\"{}/><stop offset=\"1\" stop-color=\"{}\"{}/></linearGradient>\n",
                 c1.to_svg_rgb(),
                 c1.stop_opacity_attr(),
                 c2.to_svg_rgb(),
                 c2.stop_opacity_attr(),
               ));
-              format!("url(#{gid})")
-            };
-            let dash_offset = if !dash.is_empty() && dash_phase > 0.0 {
-              format!(" stroke-dashoffset=\"{dash_phase:.2}\"")
-            } else {
-              String::new()
-            };
-            dash_phase += (x2 - x1).hypot(y2 - y1);
-            out.push_str(&format!(
+                format!("url(#{gid})")
+              };
+              let dash_offset = if !dash.is_empty() && dash_phase > 0.0 {
+                format!(" stroke-dashoffset=\"{dash_phase:.2}\"")
+              } else {
+                String::new()
+              };
+              dash_phase += (x2 - x1).hypot(y2 - y1);
+              out.push_str(&format!(
               "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}{dash_offset}/>\n",
             ));
-          }
-          point_idx += screen_pts.len();
-        } else if let Some(dot) =
-          degenerate_line_dot(&screen_pts, sw, style.cap_form)
-        {
-          out.push_str(&format!(
-            "{dot} fill=\"{}\"{}/>\n",
-            color.to_svg_rgb(),
-            color.opacity_attr(),
-          ));
-        } else {
-          out.push_str(&format!(
+            }
+            point_idx += screen_pts.len();
+          } else if let Some(dot) =
+            degenerate_line_dot(&screen_pts, sw, style.cap_form)
+          {
+            out.push_str(&format!(
+              "{dot} fill=\"{}\"{}/>\n",
+              color.to_svg_rgb(),
+              color.opacity_attr(),
+            ));
+          } else {
+            out.push_str(&format!(
             "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
             pts.join(" "),
             color.to_svg_rgb(),
             color.opacity_attr(),
             dash,
           ));
+          }
         }
       }
     }
@@ -59820,6 +59926,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Overscript"
           | "Underscript"
           | "DifferentialD"
+          | "Spacer"
       ) || args.iter().any(contains_presentation_head)
     }
     Expr::BinaryOp { left, right, .. } => {

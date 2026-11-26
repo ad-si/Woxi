@@ -7673,6 +7673,63 @@ mod graphics {
         assert!(svg_line_coords(&svg).is_empty(), "{svg}");
       }
 
+      // A `Line` running far outside an explicit plot range (a curve
+      // sampled next to a pole) is cut near the picture instead of being
+      // written out with coordinates billions of pixels away, which
+      // resvg cannot rasterize. The part crossing the picture stays, and
+      // the line breaks where it leaves the surrounding area.
+      #[test]
+      fn line_far_outside_the_plot_range_is_cut_near_the_picture() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {10.^16, 3}, {1, 1}, {0, 1}}], \
+           Line[{{-1, -1}, {1, -1}}]}, \
+           PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> 200]",
+        );
+        let polylines: Vec<Vec<f64>> = svg
+          .split("<polyline points=\"")
+          .skip(1)
+          .map(|rest| {
+            rest
+              .split('"')
+              .next()
+              .unwrap()
+              .split([' ', ','])
+              .map(|c| c.parse::<f64>().unwrap())
+              .collect()
+          })
+          .collect();
+        // The far excursion splits the first line in two; the second
+        // line, inside the picture, is left alone.
+        assert_eq!(polylines.len(), 3, "{svg}");
+        for coords in &polylines {
+          assert!(coords.iter().all(|c| c.abs() < 5000.0), "{coords:?}");
+        }
+        // Out from the center along y = 0 …
+        assert!((polylines[0][0] - 100.0).abs() < 1.0, "{svg}");
+        assert!((polylines[0][1] - 100.0).abs() < 1.0, "{svg}");
+        assert!(polylines[0][2] > 1000.0, "{svg}");
+        // … and back in along y = 1 to the line's last point.
+        let back = &polylines[1];
+        assert!(back[0] > 1000.0, "{svg}");
+        assert!((back[back.len() - 2] - 100.0).abs() < 1.0, "{svg}");
+        assert!((back[back.len() - 1] - 50.0).abs() < 1.0, "{svg}");
+        assert_eq!(polylines[2].len(), 4, "{svg}");
+      }
+
+      // A `Line` wholly inside the area around the picture keeps every
+      // point, including those past the plot range.
+      #[test]
+      fn line_slightly_outside_the_plot_range_is_kept_whole() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {5, 0}, {5, 5}}]}, \
+           PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> 200]",
+        );
+        assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
+        let points = svg.split("points=\"").nth(1).unwrap();
+        let points = points.split('"').next().unwrap();
+        assert_eq!(points.split(' ').count(), 3, "{svg}");
+      }
+
       // A NumberForm in scientific notation inside a Grid cell sets on
       // one line with a raised exponent, not as its stacked 2-D text run
       // together (`9 1.320 × 10`).
