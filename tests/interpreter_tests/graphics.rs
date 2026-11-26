@@ -3038,6 +3038,53 @@ mod graphics {
       );
     }
 
+    /// A raw `Graphics` already in `Log` space (how a notebook stores a log
+    /// plot) leading a `Show` keeps its `PlotRange` as given: a log plot
+    /// layered over it used to push that range through `Log` a second time.
+    #[test]
+    fn show_log_plot_over_log_space_graphics_keeps_its_plot_range() {
+      for plot in [
+        "LogLogPlot[2000/x, {x, 10, 10^5}]",
+        "LogPlot[Exp[x], {x, 2, 11}]",
+        "ListLogLogPlot[{{10, 1}, {1000, 100}}, Joined -> True]",
+      ] {
+        assert_eq!(
+          interpret(&format!(
+            "PlotRange[Show[Graphics[{{Line[{{{{3., -1.}}, {{4., 3.}}}}]}}, \
+             PlotRange -> {{{{Log[7], Log[100000]}}, {{-1.77, Log[200]}}}}, \
+             Frame -> True], {plot}]]"
+          ))
+          .unwrap(),
+          "{{1.9459101490553132, 11.512925464970229}, \
+           {-1.77, 5.298317366548036}}",
+          "{plot}"
+        );
+      }
+    }
+
+    /// A curve merged behind another plot by `Show` is cut at the range of
+    /// the plot that sampled it, not at the leading plot's: layered onto a
+    /// taller graphic, all of it is drawn (it used to stop at the leading
+    /// plot's top). A pole is still trimmed by its own plot.
+    #[test]
+    fn nested_show_keeps_a_later_plots_curve_beyond_the_first_range() {
+      let top = |plots: &str| {
+        interpret(&format!(
+          "Max[Cases[Show[Graphics[{{}}, PlotRange -> {{{{0, 5}}, {{0, 100}}}}], \
+           Show[{plots}]], Line[q_] :> q[[All, 2]], Infinity]]"
+        ))
+        .unwrap()
+        .parse::<f64>()
+        .unwrap()
+      };
+      let linear = top("Plot[x, {x, 0, 1}], Plot[10 x, {x, 0, 5}]");
+      assert!((linear - 50.0).abs() < 1e-3, "{linear}");
+      let log = top("LogPlot[x, {x, 1, 2}], LogPlot[10 x, {x, 1, 5}]");
+      assert!((log.exp() - 50.0).abs() < 1e-3, "{log}");
+      let pole = top("Plot[x, {x, 0, 1}], Plot[1/(x - 2), {x, 0, 5}]");
+      assert!(pole < 100.0, "{pole}");
+    }
+
     /// `GridLines -> Automatic` on a log plot shown with other graphics
     /// draws its horizontal lines at the log ticks.
     #[test]

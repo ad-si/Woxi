@@ -9160,6 +9160,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        own_y_range: None,
         continues_previous: plot_style
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
@@ -13842,6 +13843,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      own_y_range: None,
       continues_previous: false,
       color_function: None,
       arrowheads: None,
