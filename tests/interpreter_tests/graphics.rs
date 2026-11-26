@@ -22945,6 +22945,78 @@ mod plot3d {
       assert!(count(&dashed) > 3, "dashes are separate segments: {dashed}");
     }
 
+    /// A thickness in the `FillingStyle` widens a list plot's filling
+    /// stems; alone it keeps their default translucent series color.
+    #[test]
+    fn list_plot_filling_stems_take_filling_style_thickness() {
+      let stems = |style: &str| -> Vec<String> {
+        export_svg(&format!(
+          "ListPlot[{{1, 2, 3}}, Filling -> Axis, FillingStyle -> {style}]"
+        ))
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("opacity"))
+        .filter(|l| l.matches(',').count() == 2)
+        .map(str::to_string)
+        .collect()
+      };
+      for (style, width, paint) in [
+        ("Magenta", "10", "opacity=\"1\" stroke=\"#FF00FF\""),
+        (
+          "Directive[Magenta, AbsoluteThickness[2]]",
+          "20",
+          "opacity=\"1\" stroke=\"#FF00FF\"",
+        ),
+        (
+          "AbsoluteThickness[3]",
+          "30",
+          "opacity=\"0.3\" stroke=\"#3D99CC\"",
+        ),
+        ("Thick", "20", "opacity=\"0.3\" stroke=\"#3D99CC\""),
+      ] {
+        let lines = stems(style);
+        assert_eq!(lines.len(), 3, "{style}: {lines:?}");
+        for l in &lines {
+          assert!(
+            l.contains(&format!("stroke-width=\"{width}\"")),
+            "{style}: {l}"
+          );
+          assert!(l.contains(paint), "{style}: {l}");
+        }
+      }
+    }
+
+    /// `Plot` breaks the curve at the two jumps of `UnitBox` and
+    /// `HeavisidePi` instead of joining the pieces with vertical lines,
+    /// also when the box is scaled and its argument rescaled.
+    #[test]
+    fn plot_breaks_curve_at_unit_box_jumps() {
+      for body in [
+        "UnitBox[x]",
+        "HeavisidePi[x]",
+        "Sqrt[3] UnitBox[3 x/(2 Pi)]",
+      ] {
+        let svg =
+          export_svg(&format!("Plot[{body}, {{x, -2, 2}}, Axes -> False]"));
+        let curves: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+          .collect();
+        assert_eq!(curves.len(), 3, "{body}: {svg}");
+        // Every piece is flat: all of its points share one height.
+        for c in curves {
+          let pts = c.split("points=\"").nth(1).unwrap();
+          let ys: std::collections::BTreeSet<&str> = pts
+            .split('"')
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .map(|p| p.split(',').nth(1).unwrap())
+            .collect();
+          assert_eq!(ys.len(), 1, "{body}: {c}");
+        }
+      }
+    }
+
     /// `PlotMarkers -> Automatic` cycles WL 15's shapes over the series:
     /// a disk, then filled square, diamond and triangles (polygons), then
     /// the outlined ones; `{Automatic, Small}` shrinks them.

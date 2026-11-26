@@ -1458,7 +1458,7 @@ fn has_branch_cut(body: &Expr) -> bool {
 /// Automatic` breaks the curve at. `ArcCot` counts too: on the reals it
 /// jumps from `-Pi/2` to `Pi/2` where its argument crosses zero.
 fn has_step_function(body: &Expr) -> bool {
-  const STEP_HEADS: [&str; 14] = [
+  const STEP_HEADS: [&str; 16] = [
     "Floor",
     "Ceiling",
     "Round",
@@ -1468,6 +1468,8 @@ fn has_step_function(body: &Expr) -> bool {
     "Quotient",
     "Sign",
     "UnitStep",
+    "UnitBox",
+    "HeavisidePi",
     "HeavisideTheta",
     "Boole",
     "SquareWave",
@@ -3451,6 +3453,9 @@ pub(crate) struct FillStyle {
   /// `Dashed`/`Dashing[…]`: the dash and gap length, in points, of a
   /// list plot's filling stems.
   pub dashing: Option<(f64, f64)>,
+  /// `AbsoluteThickness[…]`/`Thickness[…]`/`Thick`/`Thin`: the width, in
+  /// points, of a list plot's filling stems.
+  pub thickness: Option<f64>,
 }
 
 impl FillStyle {
@@ -3520,6 +3525,14 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
       {
         fs.dashing = dash_pair(e);
       }
+      Expr::Identifier(s) if matches!(s.as_str(), "Thick" | "Thin") => {
+        fs.thickness = parse_style_directives(e).and_then(|st| st.thickness);
+      }
+      Expr::FunctionCall { name, .. }
+        if name == "AbsoluteThickness" || name == "Thickness" =>
+      {
+        fs.thickness = parse_style_directives(e).and_then(|st| st.thickness);
+      }
       other => {
         if let Some(c) = parse_color(other) {
           fs.color = Some(color_to_rgb8(c));
@@ -3538,9 +3551,14 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
     opacity: None,
     below_color: None,
     dashing: None,
+    thickness: None,
   };
   walk(&val, &mut fs);
-  if fs.color.is_none() && fs.opacity.is_none() && fs.dashing.is_none() {
+  if fs.color.is_none()
+    && fs.opacity.is_none()
+    && fs.dashing.is_none()
+    && fs.thickness.is_none()
+  {
     None
   } else {
     Some(fs)
@@ -3568,6 +3586,7 @@ fn fill_paint(
     opacity: None,
     below_color: None,
     dashing: None,
+    thickness: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
   RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
@@ -9963,6 +9982,7 @@ pub(crate) fn render_merged_plot_source(
             opacity: fill.opacity,
             below_color: None,
             dashing: None,
+            thickness: None,
           },
         );
         Some((i, target, style))
@@ -15900,11 +15920,20 @@ where
   // WL 15 draws the stems of a filled scatter at Opacity[0.3], a little
   // stronger than the 0.2 of a filled curve's area.
   for (fill_target, fill_style) in series_fills(opts, series_idx) {
+    // A thickness in the `FillingStyle` widens the stems (1 pt otherwise).
+    let stem_width = fill_style
+      .and_then(|fs| fs.thickness)
+      .map_or(RESOLUTION_SCALE, |t| {
+        (t * RESOLUTION_SCALE as f64).round().max(1.0) as u32
+      });
     let stem_style = match fill_style {
-      None => RGBColor(r, g, b).mix(0.3),
-      fs => fill_paint(fs, (r, g, b)),
+      // A style of only a thickness or dashing keeps the default paint.
+      Some(fs) if fs.color.is_some() || fs.opacity.is_some() => {
+        fill_paint(Some(fs), (r, g, b))
+      }
+      _ => RGBColor(r, g, b).mix(0.3),
     }
-    .stroke_width(RESOLUTION_SCALE);
+    .stroke_width(stem_width);
     // A two-color `{below, above}` style paints the stems of points under
     // their reference in the first color.
     let below_style =
@@ -15917,7 +15946,7 @@ where
                 .and_then(|fs| fs.effective_opacity())
                 .unwrap_or(1.0),
             )
-            .stroke_width(RESOLUTION_SCALE)
+            .stroke_width(stem_width)
         });
     let stem_dashes = fill_style.and_then(|fs| fs.dashing);
     let stem_targets: Vec<((f64, f64), f64)> = match fill_target {
