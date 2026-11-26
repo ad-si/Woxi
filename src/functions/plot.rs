@@ -9960,6 +9960,18 @@ pub(crate) fn render_merged_plot_source(
   if padding.is_some() && pinned_y.is_some() {
     opts.curve_clip_y = pinned_y;
   }
+  // The merged plot keeps the unpadded range of the plots shown (an axis
+  // `Show` pins with a `PlotRange` is unpadded as given), so its frame
+  // leaves out an axis lying on the end of that range, as each plot does
+  // on its own.
+  if opts.unpadded_range.is_none()
+    && let Some((ux, uy)) = source.plot_range
+  {
+    opts.unpadded_range = Some((
+      fill_range(overrides.x, source.x_range).unwrap_or(ux),
+      pinned_y.unwrap_or(uy),
+    ));
+  }
 
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();

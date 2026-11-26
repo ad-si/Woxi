@@ -15754,6 +15754,19 @@ fn grid_positions(
   }
 }
 
+/// The hidden option by which `Show` hands the unpadded `{{xmin, xmax},
+/// {ymin, ymax}}` range of its leading plot to the renderer. A framed plot
+/// draws an axis, and an automatic grid line, only strictly inside that
+/// range: one sitting on its end (the y axis of a plot over `{x, 0, 10}`)
+/// is left out, the padding between it and the frame staying empty.
+const PLOT_INTERIOR_OPTION: &str = "Woxi`PlotInterior";
+
+/// Whether `v` lies inside `range`, off both of its ends.
+fn strictly_inside(v: f64, (a, b): (f64, f64)) -> bool {
+  let eps = (b - a).abs() * 1e-9;
+  v > a.min(b) + eps && v < a.max(b) - eps
+}
+
 /// Draw grid lines spanning the plot. Vertical lines sit at the `grid_x`
 /// positions, horizontal lines at the `grid_y` positions; `Automatic` uses the
 /// tick positions. `default_style` (from `GridLinesStyle`) applies to lines
@@ -15772,9 +15785,20 @@ fn render_grid_lines(
   svg_h: f64,
   (grid_x, grid_y): (&GridSpec, &GridSpec),
   (default_x, default_y): (&StyleState, &StyleState),
+  interior: Option<((f64, f64), (f64, f64))>,
 ) {
-  let x_ticks = generate_ticks(bb.x_min, bb.x_max);
-  let y_ticks = generate_ticks(bb.y_min, bb.y_max);
+  // The automatic lines of a framed plot keep off the ends of its unpadded
+  // range, as the plot's own do.
+  let automatic_ticks = |spec: &GridSpec, lo: f64, hi: f64, axis: usize| {
+    let mut ticks = generate_ticks(lo, hi);
+    if let (GridSpec::Automatic, Some(interior)) = (spec, interior) {
+      let range = [interior.0, interior.1][axis];
+      ticks.retain(|&t| strictly_inside(t, range));
+    }
+    ticks
+  };
+  let x_ticks = automatic_ticks(grid_x, bb.x_min, bb.x_max, 0);
+  let y_ticks = automatic_ticks(grid_y, bb.y_min, bb.y_max, 1);
   // The drawing area's pixel extent, never past the canvas.
   let left = coord_x(area.x_min, bb, svg_w).clamp(0.0, svg_w);
   let right = coord_x(area.x_max, bb, svg_w).clamp(0.0, svg_w);
@@ -18958,6 +18982,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut image_size_raw: Option<Expr> = None;
   // `AxesOrigin -> {x, y}`: where the axes cross.
   let mut axes_origin: (Option<f64>, Option<f64>) = (None, None);
+  // The unpadded (x, y) range of the plot a `Show` layers things over
+  // (see [`PLOT_INTERIOR_OPTION`]).
+  let mut plot_interior: Option<((f64, f64), (f64, f64))> = None;
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
@@ -19033,6 +19060,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "PlotRangePadding" => {
           plot_range_padding = Some(replacement.clone());
+        }
+        PLOT_INTERIOR_OPTION => {
+          if let (Some(x), Some(y)) = parse_plot_range(replacement) {
+            plot_interior = Some((x, y));
+          }
         }
         "PlotRangeClipping" => {
           clip_primitives =
@@ -20401,6 +20433,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg_h,
       (&grid_x, &grid_y),
       (&default_x, &default_y),
+      plot_interior.filter(|_| frame),
     );
   }
 
@@ -20482,9 +20515,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   // Wolfram paints axes after the primitives with a thin default stroke.
+  // Under the frame of a plot an axis is drawn only where it runs strictly
+  // inside the plot's unpadded range.
+  let drawn_axes = match plot_interior.filter(|_| frame) {
+    Some((ix, iy)) => {
+      let crossing = |origin: Option<f64>, lo: f64, hi: f64| {
+        origin.unwrap_or(if lo <= 0.0 && 0.0 <= hi { 0.0 } else { lo })
+      };
+      (
+        axes.0
+          && strictly_inside(crossing(axes_origin.1, bb.y_min, bb.y_max), iy),
+        axes.1
+          && strictly_inside(crossing(axes_origin.0, bb.x_min, bb.x_max), ix),
+      )
+    }
+    None => axes,
+  };
   render_axes(
     &mut svg,
-    axes,
+    drawn_axes,
     &bb,
     svg_w,
     svg_h,
@@ -32644,6 +32693,41 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let content = Expr::List(merged_primitives.into());
   let mut graphics_args = vec![content];
+  // Tell the renderer the leading plot's unpadded range (see
+  // [`PLOT_INTERIOR_OPTION`]). An axis whose final range is no longer the
+  // padded one the plot drew — a `PlotRange` given to `Show` — is unpadded
+  // as it stands.
+  if !is_3d
+    && first_graphic_is_plot == Some(true)
+    && !merged_options
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some((PLOT_INTERIOR_OPTION, _))))
+    && let Some(ps) = plot_sources.first()
+    && let Some((ix, iy)) = ps.plot_range
+    && let Some((fx, fy)) = merged_options.iter().find_map(|o| {
+      option_name_value(o)
+        .filter(|(name, _)| *name == "PlotRange")
+        .map(|(_, v)| parse_plot_range(&v))
+    })
+  {
+    let axis =
+      |padded: (f64, f64), interior, shown: Option<(f64, f64)>| match shown {
+        Some(r) if r != padded => r,
+        _ => interior,
+      };
+    let span =
+      |r: (f64, f64)| Expr::List(vec![Expr::Real(r.0), Expr::Real(r.1)].into());
+    merged_options.push(rule_expr(
+      id_expr(PLOT_INTERIOR_OPTION),
+      Expr::List(
+        vec![
+          span(axis(ps.x_range, ix, fx)),
+          span(axis(ps.y_range, iy, fy)),
+        ]
+        .into(),
+      ),
+    ));
+  }
   graphics_args.extend(merged_options);
 
   let mut primitives_result = if is_3d {
