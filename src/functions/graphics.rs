@@ -38450,7 +38450,7 @@ pub fn combine_layout_svgs(
       opts.h_spacing = SpacingSpec::Points(1.5 * gap);
       opts.v_spacing = SpacingSpec::Points(1.5 * gap);
       opts.outer_margin = true;
-      opts.exact_image_size = true;
+      opts.image_size_fit = ImageSizeFit::Exact;
       opts.spacings_explicit = true;
     }
   }
@@ -38587,10 +38587,18 @@ struct LayoutOptions {
   /// `FrameStyle -> style`: the color of the frame lines and dividers
   /// (black by default).
   frame_color: Option<Color>,
+  /// What an `ImageSize -> {w, h}` means for the size of the layout.
+  image_size_fit: ImageSizeFit,
+}
+
+/// How a layout treats an explicit `ImageSize -> {w, h}`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImageSizeFit {
+  /// The cells fit within it and the layout is only as large as they are.
+  Within,
   /// The layout is one picture (`GraphicsRow`, `GraphicsColumn`,
-  /// `GraphicsGrid`): an `ImageSize -> {w, h}` is exactly its size, with
-  /// the cells centered in it.
-  exact_image_size: bool,
+  /// `GraphicsGrid`) of exactly that size, the cells centered in it.
+  Exact,
 }
 
 /// The layout options of a `GraphicsRow`, `GraphicsColumn` or
@@ -38599,7 +38607,7 @@ fn parse_graphics_layout_options(args: &[Expr]) -> LayoutOptions {
   let mut opts = parse_layout_options(args);
   opts.h_spacing = opts.h_spacing.for_graphics_layout();
   opts.v_spacing = opts.v_spacing.for_graphics_layout();
-  opts.exact_image_size = true;
+  opts.image_size_fit = ImageSizeFit::Exact;
   opts
 }
 
@@ -38785,7 +38793,7 @@ fn compute_grid_layout(
         outer_margin: opts.outer_margin,
         row_align: opts.row_align.clone(),
         frame_color: opts.frame_color,
-        exact_image_size: opts.exact_image_size,
+        image_size_fit: opts.image_size_fit,
       };
       &opts_owned
     } else {
@@ -39169,7 +39177,7 @@ fn compute_grid_layout(
   let mut total_width = total_width;
   // `GraphicsGrid[…, ImageSize -> {w, h}]` is exactly that big, the cells
   // centered in it.
-  if opts.exact_image_size
+  if opts.image_size_fit == ImageSizeFit::Exact
     && let (Some(tw), Some(th)) = (opts.target_width, opts.target_height)
   {
     let dx = ((tw - total_width) / 2.0).max(0.0);
@@ -39334,7 +39342,7 @@ fn default_layout_options() -> LayoutOptions {
     outer_margin: false,
     row_align: Vec::new(),
     frame_color: None,
-    exact_image_size: false,
+    image_size_fit: ImageSizeFit::Within,
   }
 }
 
