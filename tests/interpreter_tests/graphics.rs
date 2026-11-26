@@ -47866,6 +47866,71 @@ mod parametric_plot3d {
     assert!(svg.contains(">-10</text>"), "{svg}");
   }
 
+  /// The tick labels of an exported 3D plot, in document order.
+  fn tick_labels(svg: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| {
+        let body = t.split_once('>')?.1;
+        Some(body.split_once('<')?.0.to_string())
+      })
+      .collect()
+  }
+
+  /// `PlotRange -> s` (a single number) pins the cube `[-s, s]³`, as it
+  /// does for `Graphics3D`. It used to be ignored, so a half surface whose
+  /// heights only span `0..1` was framed by a flat `0..1` box instead of
+  /// the cube the plot asked for.
+  #[test]
+  fn scalar_plot_range_pins_a_cube_around_a_surface() {
+    for (range, lowest, highest) in [
+      ("1", "-1.0", "1.0"),
+      ("2", "-2", "2"),
+      ("1/2", "-0.5", "0.5"),
+    ] {
+      let labels = tick_labels(&export_svg(&format!(
+        "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
+         {{u, 0, 2 Pi}}, {{v, 0, Pi/2}}, PlotRange -> {range}]"
+      )));
+      // Every one of the three axes runs from -s to s.
+      for bound in [lowest, highest] {
+        assert_eq!(
+          labels.iter().filter(|l| l.as_str() == bound).count(),
+          3,
+          "PlotRange -> {range}: {labels:?}"
+        );
+      }
+    }
+  }
+
+  /// The scalar form is the same cube as the explicit per-axis form.
+  #[test]
+  fn scalar_plot_range_matches_the_explicit_cube() {
+    let plot = |range: &str| {
+      export_svg(&format!(
+        "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
+         {{u, 0, 2 Pi}}, {{v, 0, Pi/2}}, PlotRange -> {range}]"
+      ))
+    };
+    assert_eq!(plot("2"), plot("{{-2, 2}, {-2, 2}, {-2, 2}}"));
+  }
+
+  /// The curve form of `ParametricPlot3D` reads the scalar form too.
+  #[test]
+  fn scalar_plot_range_pins_a_cube_around_a_curve() {
+    let labels = tick_labels(&export_svg(
+      "ParametricPlot3D[{Cos[t], Sin[t], t/10}, {t, 0, 6}, PlotRange -> 2]",
+    ));
+    for bound in ["-2", "2"] {
+      assert_eq!(
+        labels.iter().filter(|l| l.as_str() == bound).count(),
+        3,
+        "{labels:?}"
+      );
+    }
+  }
+
   /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
   /// `ParametricPlot3D`'s facet shading only ever painted `PlotStyle ->
   /// FaceForm[front, back]`'s `front` color — it built a `StyleState3D`

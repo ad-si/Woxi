@@ -15805,10 +15805,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "PlotRange" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if let Some(r) = try_eval_to_f64(&value) {
-            if r > 0.0 {
-              plot_range = Some([(-r, r); 3]);
-            }
+          if try_eval_to_f64(&value).is_some() {
+            plot_range = parse_cube_or_axis_ranges(&value).or(plot_range);
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
@@ -18612,6 +18610,15 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
     ranges[i] = (lo, hi);
   }
   Some(ranges)
+}
+
+/// The region a parametric 3D plot's `PlotRange` pins: the cube `[-s, s]³`
+/// for a single positive number `s`, else one explicit interval per axis.
+fn parse_cube_or_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
+  match try_eval_to_f64(expr) {
+    Some(s) => (s > 0.0 && s.is_finite()).then_some([(-s, s); 3]),
+    None => parse_axis_ranges(expr),
+  }
 }
 
 /// The three axis labels an `AxesLabel` value names. A lone label (or a
@@ -26598,7 +26605,9 @@ fn parametric_plot3d_curve_ast(
       } = opt
         && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
       {
-        plot_range = parse_axis_ranges(replacement);
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone());
+        plot_range = parse_cube_or_axis_ranges(&value);
       }
       forwarded_opts.push(opt.clone());
     }
@@ -27699,7 +27708,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "PlotRange" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
-          if let Some(ranges) = parse_axis_ranges(&value) {
+          if let Some(ranges) = parse_cube_or_axis_ranges(&value) {
             plot_range = Some(ranges);
           }
         }

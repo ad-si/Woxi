@@ -5987,6 +5987,14 @@ explicit `SphericalRegion -> True` with an automatic range should use the
 contents sphere too is open: the morphing-surface snapshots above fit the
 box sphere, but it is not recorded whether their `PlotRange` was pinned.
 
+### A `ParametricPlot3D` surface is not clipped to a smaller `PlotRange`
+
+`ParametricPlot3D[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, {u, 0, 2 Pi},
+{v, 0, Pi}, PlotRange -> 0.5]` (or the equivalent per-axis form) pins the
+box to the requested range, but the surface's facets are drawn whole and
+stick out of it. Wolfram cuts the surface at the box faces. The curve form
+does clip its lines.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box
