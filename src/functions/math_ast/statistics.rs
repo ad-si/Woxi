@@ -5420,9 +5420,79 @@ fn format_location_test_result(
 // their t statistic and degrees of freedom with `LocationTest`, so the two
 // never drift apart.
 
-/// The option settings the legacy tests share. Every option may be written
-/// with or without the `HypothesisTesting`` context prefix, the way
-/// notebooks that put the context on `$ContextPath` spell them.
+/// The options each legacy function declares, in the order `Options[f]`
+/// lists them once the package is loaded. `ConfidenceLevel` and
+/// `SignificanceLevel` are `System`` symbols; the rest live in the package.
+pub const LEGACY_OPTIONS: &[(&str, &[&str])] = &[
+  ("ChiSquareCI", &["ConfidenceLevel"]),
+  ("ChiSquarePValue", &["HypothesisTesting`TwoSided"]),
+  ("FRatioCI", &["ConfidenceLevel"]),
+  ("FRatioPValue", &["HypothesisTesting`TwoSided"]),
+  (
+    "MeanCI",
+    &["ConfidenceLevel", "HypothesisTesting`KnownVariance"],
+  ),
+  (
+    "MeanDifferenceCI",
+    &[
+      "ConfidenceLevel",
+      "HypothesisTesting`KnownVariance",
+      "HypothesisTesting`EqualVariances",
+    ],
+  ),
+  (
+    "MeanDifferenceTest",
+    &[
+      "HypothesisTesting`FullReport",
+      "HypothesisTesting`KnownVariance",
+      "HypothesisTesting`EqualVariances",
+      "SignificanceLevel",
+      "HypothesisTesting`TwoSided",
+    ],
+  ),
+  (
+    "MeanTest",
+    &[
+      "HypothesisTesting`FullReport",
+      "HypothesisTesting`KnownVariance",
+      "SignificanceLevel",
+      "HypothesisTesting`TwoSided",
+    ],
+  ),
+  ("NormalCI", &["ConfidenceLevel"]),
+  ("NormalPValue", &["HypothesisTesting`TwoSided"]),
+  ("StudentTCI", &["ConfidenceLevel"]),
+  ("StudentTPValue", &["HypothesisTesting`TwoSided"]),
+  ("VarianceCI", &["ConfidenceLevel"]),
+  ("VarianceRatioCI", &["ConfidenceLevel"]),
+];
+
+/// The package's default setting of a legacy option.
+fn legacy_option_default(option: &str) -> Expr {
+  match option {
+    "ConfidenceLevel" => Expr::Real(0.95),
+    "HypothesisTesting`KnownVariance" | "SignificanceLevel" => id_expr("None"),
+    _ => id_expr("False"),
+  }
+}
+
+/// `Options[f]` of a legacy function as the package defines it, e.g.
+/// `{ConfidenceLevel -> 0.95, KnownVariance -> None}` for `MeanCI`.
+pub fn legacy_default_options(short_name: &str) -> Option<Vec<Expr>> {
+  let (_, options) = LEGACY_OPTIONS
+    .iter()
+    .find(|(name, _)| *name == short_name)?;
+  Some(
+    options
+      .iter()
+      .map(|option| rule_expr(id_expr(option), legacy_option_default(option)))
+      .collect(),
+  )
+}
+
+/// The option settings the legacy functions share. An option is recognized
+/// by its symbol, context included: a `KnownVariance` read before the package
+/// was loaded is `Global`KnownVariance`, which the package ignores.
 #[derive(Default)]
 struct LegacyTestOptions {
   two_sided: bool,
@@ -5432,66 +5502,139 @@ struct LegacyTestOptions {
   /// standard normal instead of Student t and no variance is estimated from
   /// the sample.
   known_variance: Option<Vec<f64>>,
-  /// `ConfidenceLevel -> c`, only meaningful for `MeanCI`.
+  /// `ConfidenceLevel -> c` of the interval functions.
   confidence_level: Option<f64>,
-}
-
-/// A symbol's name with the optional `HypothesisTesting`` prefix removed.
-fn legacy_symbol_name(expr: &Expr) -> Option<&str> {
-  match expr {
-    Expr::Identifier(s) => {
-      Some(s.strip_prefix("HypothesisTesting`").unwrap_or(s))
-    }
-    _ => None,
-  }
+  /// `SignificanceLevel -> a` of the tests; the setting as given.
+  significance_level: Option<Expr>,
 }
 
 fn legacy_option_flag(value: &Expr) -> Option<bool> {
-  match legacy_symbol_name(value)? {
-    "True" => Some(true),
-    "False" => Some(false),
+  match value {
+    Expr::Identifier(s) if s == "True" => Some(true),
+    Expr::Identifier(s) if s == "False" => Some(false),
     _ => None,
   }
 }
 
-/// Read the trailing option rules of a legacy test. `None` when one of them
-/// is not an option the package knows, which makes the caller report
-/// `::badargs` and stay unevaluated, exactly as the package does.
-fn parse_legacy_test_options(opts: &[Expr]) -> Option<LegacyTestOptions> {
-  parse_legacy_options(opts, false)
-}
-
-/// Like [`parse_legacy_test_options`]; `allow_confidence` additionally
-/// admits `ConfidenceLevel`, which only the interval functions take.
+/// Read the trailing option rules of the legacy function `short_name`. The
+/// first setting of an option wins, then the function's current `Options`.
+/// Rules for options the function does not declare are ignored, as the
+/// package does; the tests (`report_unknown`) report each with `::optx`.
+/// `None` when an argument is not a rule or a setting is invalid, which makes
+/// the caller report `::badargs` and stay unevaluated.
 fn parse_legacy_options(
+  short_name: &str,
   opts: &[Expr],
-  allow_confidence: bool,
+  report_unknown: bool,
 ) -> Option<LegacyTestOptions> {
+  let declared = LEGACY_OPTIONS
+    .iter()
+    .find(|(name, _)| *name == short_name)
+    .map_or(&[][..], |(_, options)| *options);
+  let current = crate::FUNC_OPTIONS
+    .with(|m| {
+      m.borrow()
+        .get(&format!("HypothesisTesting`{short_name}"))
+        .cloned()
+    })
+    .or_else(|| legacy_default_options(short_name))
+    .unwrap_or_default();
+
   let mut parsed = LegacyTestOptions::default();
-  for opt in opts {
+  let mut seen: Vec<&str> = Vec::new();
+  for (index, opt) in opts.iter().chain(current.iter()).enumerate() {
+    let explicit = index < opts.len();
     let (lhs, rhs, _) = crate::functions::expr_form::rule_parts(opt)?;
-    match legacy_symbol_name(lhs)? {
-      "TwoSided" => parsed.two_sided = legacy_option_flag(rhs)?,
-      "FullReport" => parsed.full_report = legacy_option_flag(rhs)?,
-      "EqualVariances" => parsed.equal_variances = legacy_option_flag(rhs)?,
-      "KnownVariance" => {
+    let option = match lhs {
+      Expr::Identifier(s) => declared.iter().find(|d| **d == s.as_str()),
+      _ => None,
+    };
+    let Some(option) = option else {
+      if explicit && report_unknown {
+        crate::emit_message(&format!(
+          "{short_name}::optx: Unknown option {} in {short_name}.",
+          format_expr(opt, ExprForm::Output)
+        ));
+      }
+      continue;
+    };
+    if seen.contains(option) {
+      continue;
+    }
+    seen.push(option);
+    match *option {
+      "HypothesisTesting`TwoSided" => {
+        parsed.two_sided = legacy_option_flag(rhs)?;
+      }
+      "HypothesisTesting`FullReport" => {
+        parsed.full_report = legacy_option_flag(rhs)?;
+      }
+      "HypothesisTesting`EqualVariances" => {
+        parsed.equal_variances = legacy_option_flag(rhs)?;
+      }
+      "HypothesisTesting`KnownVariance" => {
         parsed.known_variance = match rhs {
           Expr::Identifier(s) if s == "None" => None,
           Expr::List(items) => Some(extract_numeric_list_flat(items).ok()?),
           other => Some(vec![try_eval_to_f64(other)?]),
         }
       }
-      "ConfidenceLevel" if allow_confidence => {
+      "ConfidenceLevel" => {
         let level = try_eval_to_f64(rhs)?;
         if !(0.0..1.0).contains(&level) {
           return None;
         }
         parsed.confidence_level = Some(level);
       }
-      _ => return None,
+      "SignificanceLevel" => {
+        parsed.significance_level =
+          (!matches!(rhs, Expr::Identifier(s) if s == "None"))
+            .then(|| rhs.clone());
+      }
+      _ => {}
     }
   }
   Some(parsed)
+}
+
+/// The verdict a legacy test appends under `SignificanceLevel -> a`:
+/// `"Reject null hypothesis at significance level" -> a` unless the p-value
+/// exceeds `a`, evaluated through `If` like the package's own expression (so
+/// a symbolic level or a list of p-values stays an `If`).
+fn legacy_significance_rule(
+  p_value: &Expr,
+  level: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let verdict =
+    |text: &str| rule_expr(Expr::String(text.into()), level.clone());
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "If",
+    vec![
+      call("Greater", vec![p_value.clone(), level.clone()]),
+      verdict("Fail to reject null hypothesis at significance level"),
+      verdict("Reject null hypothesis at significance level"),
+    ],
+  ))
+}
+
+/// A legacy test's answer: the p-value rule alone, or a list with the
+/// `FullReport` table before it and the `SignificanceLevel` verdict after it.
+fn legacy_test_answer(
+  report: Option<Expr>,
+  p_name: &str,
+  p_value: Expr,
+  significance_level: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  let verdict = significance_level
+    .map(|level| legacy_significance_rule(&p_value, level))
+    .transpose()?;
+  let p_rule = legacy_rule(p_name, p_value);
+  if report.is_none() && verdict.is_none() {
+    return Ok(p_rule);
+  }
+  let parts: Vec<Expr> =
+    report.into_iter().chain([p_rule]).chain(verdict).collect();
+  Ok(Expr::List(parts.into()))
 }
 
 /// The samples a legacy test's data argument describes: a flat list of
@@ -5560,6 +5703,28 @@ fn legacy_rule(head: &str, value: Expr) -> Expr {
   rule_expr(id_expr(head), value)
 }
 
+/// `General::obsfun`, which the package issues the first time each of its
+/// obsolete tests is used in a session and never again.
+fn legacy_obsolete_warning(function: &str, successor: &str) {
+  let first = crate::OBSOLETE_WARNED
+    .with(|m| m.borrow_mut().insert(function.to_string()));
+  if first {
+    crate::emit_message(&format!(
+      "General::obsfun: The function {function} is now obsolete and has been \
+       superseded by {successor}."
+    ));
+  }
+}
+
+/// The head of a legacy test's p-value rule.
+fn legacy_p_value_name(two_sided: bool) -> &'static str {
+  if two_sided {
+    "HypothesisTesting`TwoSidedPValue"
+  } else {
+    "HypothesisTesting`OneSidedPValue"
+  }
+}
+
 fn legacy_p_value_expr(p: Option<f64>, two_sided: bool) -> Expr {
   match p {
     Some(p) => Expr::Real(if two_sided { 2.0 * p } else { p }),
@@ -5616,10 +5781,7 @@ fn legacy_full_report_rule(
 pub fn hypothesis_testing_mean_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  crate::emit_message(
-    "General::obsfun: The function MeanTest is now obsolete and has been \
-     superseded by LocationTest.",
-  );
+  legacy_obsolete_warning("MeanTest", "LocationTest");
   let unevaluated_call = || unevaluated("HypothesisTesting`MeanTest", args);
   let badargs = || {
     crate::emit_message(
@@ -5631,7 +5793,7 @@ pub fn hypothesis_testing_mean_test_ast(
   if args.len() < 2 {
     return Ok(badargs());
   }
-  let Some(options) = parse_legacy_test_options(&args[2..]) else {
+  let Some(options) = parse_legacy_options("MeanTest", &args[2..], true) else {
     return Ok(badargs());
   };
   let Some((samples, vectorized)) = legacy_test_samples(&args[0]) else {
@@ -5699,20 +5861,15 @@ pub fn hypothesis_testing_mean_test_ast(
       values.into_iter().next().unwrap_or(Expr::Integer(0))
     }
   };
-  let p_rule = legacy_rule(
-    if options.two_sided {
-      "HypothesisTesting`TwoSidedPValue"
-    } else {
-      "HypothesisTesting`OneSidedPValue"
-    },
+  let report = options.full_report.then(|| {
+    legacy_full_report_rule(collect(means), collect(statistics), df, "Mean")
+  });
+  legacy_test_answer(
+    report,
+    legacy_p_value_name(options.two_sided),
     collect(p_values),
-  );
-  if !options.full_report {
-    return Ok(p_rule);
-  }
-  let report =
-    legacy_full_report_rule(collect(means), collect(statistics), df, "Mean");
-  Ok(Expr::List(vec![report, p_rule].into()))
+    options.significance_level.as_ref(),
+  )
 }
 
 /// `HypothesisTesting`MeanCI[data, opts]` — the legacy confidence interval
@@ -5731,7 +5888,7 @@ pub fn hypothesis_testing_mean_ci_ast(
   if args.is_empty() {
     return Ok(badargs());
   }
-  let Some(options) = parse_legacy_options(&args[1..], true) else {
+  let Some(options) = parse_legacy_options("MeanCI", &args[1..], false) else {
     return Ok(badargs());
   };
   let Some((samples, vectorized)) = legacy_test_samples(&args[0]) else {
@@ -5798,10 +5955,7 @@ pub fn hypothesis_testing_mean_ci_ast(
 pub fn hypothesis_testing_mean_difference_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  crate::emit_message(
-    "General::obsfun: The function MeanDifferenceTest is now obsolete and \
-     has been superseded by LocationTest.",
-  );
+  legacy_obsolete_warning("MeanDifferenceTest", "LocationTest");
   let unevaluated_call =
     || unevaluated("HypothesisTesting`MeanDifferenceTest", args);
   let badargs = || {
@@ -5814,7 +5968,9 @@ pub fn hypothesis_testing_mean_difference_test_ast(
   if args.len() < 3 {
     return Ok(badargs());
   }
-  let Some(options) = parse_legacy_test_options(&args[3..]) else {
+  let Some(options) =
+    parse_legacy_options("MeanDifferenceTest", &args[3..], true)
+  else {
     return Ok(badargs());
   };
   // Only plain samples: the package's own matrix handling is broken (it
@@ -5866,28 +6022,24 @@ pub fn hypothesis_testing_mean_difference_test_ast(
     }
   };
 
-  let p_rule = legacy_rule(
-    if options.two_sided {
-      "HypothesisTesting`TwoSidedPValue"
-    } else {
-      "HypothesisTesting`OneSidedPValue"
-    },
+  let report = options.full_report.then(|| {
+    legacy_full_report_rule(
+      Expr::Real(sample_mean(data1) - sample_mean(data2)),
+      if statistic.is_nan() {
+        id_expr("Indeterminate")
+      } else {
+        Expr::Real(statistic)
+      },
+      df,
+      "MeanDiff",
+    )
+  });
+  legacy_test_answer(
+    report,
+    legacy_p_value_name(options.two_sided),
     legacy_p_value_expr(legacy_one_sided_p(statistic, df), options.two_sided),
-  );
-  if !options.full_report {
-    return Ok(p_rule);
-  }
-  let report = legacy_full_report_rule(
-    Expr::Real(sample_mean(data1) - sample_mean(data2)),
-    if statistic.is_nan() {
-      id_expr("Indeterminate")
-    } else {
-      Expr::Real(statistic)
-    },
-    df,
-    "MeanDiff",
-  );
-  Ok(Expr::List(vec![report, p_rule].into()))
+    options.significance_level.as_ref(),
+  )
 }
 
 fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
@@ -7013,16 +7165,19 @@ pub fn covariance_function_data(
   data: &Expr,
   lag: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let Expr::List(items) = data else {
-    return None;
-  };
   let Expr::Integer(h) = lag else {
     return None;
   };
   let h = *h;
-  if items.is_empty() || !all_numeric_scalars(items) {
-    return None;
-  }
+  // A list of `{time, value}` pairs (or a temporal object) is estimated
+  // from its values; any other numeric list is used as it is.
+  let items: Vec<Expr> = match data {
+    Expr::List(items) if !items.is_empty() && all_numeric_scalars(items) => {
+      items.to_vec()
+    }
+    _ => series_values(data)?,
+  };
+  let items = &items[..];
   let n = items.len();
   // The lag magnitude must be strictly less than the series length.
   if h.unsigned_abs() >= n as u128 {
@@ -7535,6 +7690,27 @@ fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
     Expr::FunctionCall { name, args } => (name.as_str(), args),
     _ => return None,
   };
+  // `ARProcess[{a…}, v]` and `MAProcess[{b…}, v]` (each with an optional
+  // leading constant) are the ARMA process with no terms of the other kind.
+  if matches!(name, "ARProcess" | "MAProcess") {
+    let (coefficients, v) = match args.as_slice() {
+      [Expr::List(coefficients), v] => (coefficients, v),
+      [c, Expr::List(coefficients), v] if !matches!(c, Expr::List(_)) => {
+        (coefficients, v)
+      }
+      _ => return None,
+    };
+    // A vector process (matrix coefficients) is not a scalar ARMA one.
+    if coefficients.iter().any(|c| matches!(c, Expr::List(_))) {
+      return None;
+    }
+    let coefficients: Vec<Expr> = coefficients.to_vec();
+    return Some(if name == "ARProcess" {
+      (coefficients, Vec::new(), v.clone())
+    } else {
+      (Vec::new(), coefficients, v.clone())
+    });
+  }
   if name != "ARMAProcess" {
     return None;
   }
@@ -7563,6 +7739,10 @@ fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
 
 fn arma_covariance(proc: &Expr, s: &Expr, t: &Expr) -> Option<Expr> {
   let (ar, ma, sigma2) = extract_arma_params(proc)?;
+  // The symbolic closed forms below are in `ARMAProcess`'s own shapes.
+  if !matches!(proc, Expr::FunctionCall { name, .. } if name == "ARMAProcess") {
+    return arma_covariance_at_lag(&ar, &ma, &sigma2, s, t);
+  }
   match (ar.len(), ma.len()) {
     (1, 0) => Some(cov_ar1(&ar[0], &sigma2, s, t)),
     (0, 1) => Some(cov_ma1(&ma[0], &sigma2, s, t)),
@@ -8690,6 +8870,163 @@ pub fn central_moment_generating_function_ast(
 
 // ─── CorrelationFunction ─────────────────────────────────────────────
 
+/// The values of a scalar time series handed to the estimators
+/// (`CorrelationFunction`, `CovarianceFunction`,
+/// `PartialCorrelationFunction`): a list of real numbers, a list of
+/// `{time, value}` pairs (one path of `Normal[TemporalData[…]]`), or the
+/// first path of a `TimeSeries`/`TemporalData` object. `None` for anything
+/// else, including an empty series.
+pub fn series_values(data: &Expr) -> Option<Vec<Expr>> {
+  let is_numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let values: Vec<Expr> = match data {
+    Expr::List(items) if items.iter().all(is_numeric) => items.to_vec(),
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::List(pair) if pair.len() == 2 && is_numeric(&pair[0]) => {
+          Some(pair[1].clone())
+        }
+        _ => None,
+      })
+      .collect::<Option<Vec<Expr>>>()?,
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "TemporalData" | "TimeSeries") =>
+    {
+      crate::functions::timeseries_ast::temporal_paths(data)?
+        .into_iter()
+        .next()?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect()
+    }
+    _ => return None,
+  };
+  (!values.is_empty() && values.iter().all(is_numeric)).then_some(values)
+}
+
+/// `CorrelationFunction[proc, h]` for an ARMA-family process with numeric
+/// coefficients: the autocovariance at lag `h` over the variance. `None`
+/// when `proc` is no such process.
+fn arma_family_correlation(
+  proc: &Expr,
+  lag: i128,
+) -> Option<Result<Expr, InterpreterError>> {
+  extract_arma_params(proc)?;
+  let gamma = |h: i128| {
+    arma_covariance(proc, &Expr::Integer(0), &Expr::Integer(h))
+      .and_then(|g| crate::evaluator::evaluate_expr_to_expr(&g).ok())
+      .filter(crate::functions::predicate_ast::is_numeric_q)
+  };
+  let (g0, gh) = (gamma(0)?, gamma(lag.abs())?);
+  Some(crate::evaluator::evaluate_expr_to_expr(&div2(gh, g0)))
+}
+
+/// PartialCorrelationFunction[data, h] / PartialCorrelationFunction[proc, h]
+/// — the partial autocorrelation at lag h ≥ 1: the last coefficient φ(h, h)
+/// of the best linear predictor of order h, found from the autocorrelations
+/// ρ(1…h) by the Durbin–Levinson recursion
+///   φ(k, k) = (ρ(k) − Σ_j φ(k−1, j) ρ(k−j)) / (1 − Σ_j φ(k−1, j) ρ(j)),
+///   φ(k, j) = φ(k−1, j) − φ(k, k) φ(k−1, k−j)        (j = 1…k−1).
+/// `data` is any series `CorrelationFunction` estimates from, `proc` an
+/// ARMA-family process with numeric coefficients.
+pub fn partial_correlation_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let uneval = || unevaluated("PartialCorrelationFunction", args);
+  let [series, Expr::Integer(h)] = args else {
+    return Ok(uneval());
+  };
+  if *h < 1 {
+    return Ok(uneval());
+  }
+  let is_process = extract_arma_params(series).is_some();
+  let values = if is_process {
+    None
+  } else {
+    match series_values(series) {
+      Some(values) => Some(Expr::List(values.into())),
+      None => return Ok(uneval()),
+    }
+  };
+  if let Some(Expr::List(values)) = &values
+    && *h >= values.len() as i128
+  {
+    crate::emit_message(&format!(
+      "PartialCorrelationFunction::bdlag: The lag specification {h} should \
+       be a symbol, an integer with magnitude less than the length of the \
+       data or a range specification indicating such integers.",
+    ));
+    return Ok(uneval());
+  }
+  let mut rho: Vec<Expr> = Vec::with_capacity(*h as usize);
+  for k in 1..=*h {
+    let r = match &values {
+      Some(values) => {
+        correlation_function_ast(&[values.clone(), Expr::Integer(k)])?
+      }
+      None => match arma_family_correlation(series, k) {
+        Some(r) => r?,
+        None => return Ok(uneval()),
+      },
+    };
+    if matches!(&r, Expr::Identifier(name) if name == "Indeterminate") {
+      return Ok(r);
+    }
+    if !crate::functions::predicate_ast::is_numeric_q(&r) {
+      return Ok(uneval());
+    }
+    rho.push(r);
+  }
+
+  // Machine-precision autocorrelations recurse in plain floating point.
+  if rho.iter().all(|r| matches!(r, Expr::Real(_)))
+    && let Some(r) = rho.iter().map(expr_to_num).collect::<Option<Vec<f64>>>()
+  {
+    let mut phi: Vec<f64> = Vec::new();
+    for k in 0..r.len() {
+      let num = r[k] - (0..k).map(|j| phi[j] * r[k - 1 - j]).sum::<f64>();
+      let den = 1.0 - (0..k).map(|j| phi[j] * r[j]).sum::<f64>();
+      let last = num / den;
+      let mut next: Vec<f64> =
+        (0..k).map(|j| phi[j] - last * phi[k - 1 - j]).collect();
+      next.push(last);
+      phi = next;
+    }
+    return Ok(Expr::Real(*phi.last().unwrap()));
+  }
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let mut phi: Vec<Expr> = Vec::new();
+  for k in 0..rho.len() {
+    let mut num = vec![rho[k].clone()];
+    let mut den = vec![Expr::Integer(1)];
+    for j in 0..k {
+      num.push(neg(times(vec![phi[j].clone(), rho[k - 1 - j].clone()])));
+      den.push(neg(times(vec![phi[j].clone(), rho[j].clone()])));
+    }
+    let den = eval(plus(den))?;
+    let is_zero = matches!(&den, Expr::Integer(0))
+      || matches!(&den, Expr::Real(v) if *v == 0.0);
+    if is_zero {
+      return Ok(id_expr("Indeterminate"));
+    }
+    let last = eval(div2(plus(num), den))?;
+    let mut next = Vec::with_capacity(k + 1);
+    for j in 0..k {
+      next.push(eval(plus(vec![
+        phi[j].clone(),
+        neg(times(vec![last.clone(), phi[k - 1 - j].clone()])),
+      ]))?);
+    }
+    next.push(last);
+    phi = next;
+  }
+  Ok(phi.pop().unwrap())
+}
+
 /// CorrelationFunction[data, k] — the sample autocorrelation at lag k:
 /// Sum[(x_i - mean)(x_{i+|k|} - mean)] / Sum[(x_i - mean)^2].
 /// Symmetric in the lag sign; |k| must be smaller than the data length
@@ -8701,21 +9038,18 @@ pub fn correlation_function_ast(
   if args.len() != 2 {
     return Ok(uneval());
   }
-  let data = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => return Ok(uneval()),
-  };
-  let is_numeric = |e: &Expr| {
-    matches!(e, Expr::Integer(_) | Expr::Real(_))
-      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
-  };
-  if !data.iter().all(is_numeric) {
-    return Ok(uneval());
-  }
   let k = match &args[1] {
     Expr::Integer(k) => *k,
     _ => return Ok(uneval()),
   };
+  // CorrelationFunction[proc, h] of an ARMA-family process: γ(h)/γ(0).
+  if let Some(rho) = arma_family_correlation(&args[0], k) {
+    return rho;
+  }
+  let Some(values) = series_values(&args[0]) else {
+    return Ok(uneval());
+  };
+  let data = &values;
   let n = data.len() as i128;
   if k.abs() >= n {
     crate::emit_message(&format!(
@@ -8727,7 +9061,23 @@ pub fn correlation_function_ast(
   }
   let lag = k.unsigned_abs() as usize;
 
-  let mean = mean_ast(&[args[0].clone()])?;
+  // Machine-precision data: the same sums in plain floating point, which
+  // keeps a long series (and the many lags of a partial correlation) fast.
+  if data.iter().any(|x| matches!(x, Expr::Real(_)))
+    && let Some(xs) = data.iter().map(expr_to_num).collect::<Option<Vec<f64>>>()
+  {
+    let mean = xs.iter().sum::<f64>() / xs.len() as f64;
+    let numerator: f64 = (0..xs.len() - lag)
+      .map(|i| (xs[i] - mean) * (xs[i + lag] - mean))
+      .sum();
+    let denominator: f64 = xs.iter().map(|x| (x - mean) * (x - mean)).sum();
+    if denominator == 0.0 {
+      return Ok(id_expr("Indeterminate"));
+    }
+    return Ok(Expr::Real(numerator / denominator));
+  }
+
+  let mean = mean_ast(&[Expr::List(values.clone().into())])?;
   let dev = |x: &Expr| plus(vec![x.clone(), neg(mean.clone())]);
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&plus(terms))
@@ -10050,7 +10400,8 @@ pub fn hypothesis_testing_ci_ast(
     .iter()
     .take_while(|a| crate::functions::expr_form::rule_parts(a).is_none())
     .count();
-  let Some(options) = parse_legacy_options(&args[positional..], true) else {
+  let Some(options) = parse_legacy_options(short, &args[positional..], false)
+  else {
     return unevaluated_call();
   };
   let level = options.confidence_level.unwrap_or(0.95);
@@ -10175,7 +10526,8 @@ pub fn hypothesis_testing_p_value_ast(
     .iter()
     .take_while(|a| crate::functions::expr_form::rule_parts(a).is_none())
     .count();
-  let Some(options) = parse_legacy_options(&args[positional..], false) else {
+  let Some(options) = parse_legacy_options(short, &args[positional..], false)
+  else {
     return unevaluated_call();
   };
   let nums: Option<Vec<f64>> =
@@ -10208,11 +10560,7 @@ pub fn hypothesis_testing_p_value_ast(
   };
   let p = cdf.min(1.0 - cdf);
   Ok(legacy_rule(
-    if options.two_sided {
-      "HypothesisTesting`TwoSidedPValue"
-    } else {
-      "HypothesisTesting`OneSidedPValue"
-    },
+    legacy_p_value_name(options.two_sided),
     legacy_p_value_expr(Some(p), options.two_sided),
   ))
 }
