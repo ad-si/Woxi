@@ -13407,13 +13407,34 @@ fn apply_setback(
 
 // ── SVG generation ───────────────────────────────────────────────────────
 
-fn coord_x(x: f64, bb: &BBox, svg_w: f64) -> f64 {
+/// How far past the picture, in pixels, a coordinate may be written out.
+/// Data far outside the plot range (a diverging iteration, say) would
+/// otherwise put coordinates of 1e15 px and more into the SVG; renderers
+/// keep them in single precision at best, and resvg (Woxi Studio's
+/// renderer) overflows sizing the clipped group's layer from them.
+const FAR_PX: f64 = 100_000.0;
+
+fn coord_x_unclamped(x: f64, bb: &BBox, svg_w: f64) -> f64 {
   (x - bb.x_min) / bb.width() * svg_w
 }
 
-fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
+fn coord_y_unclamped(y: f64, bb: &BBox, svg_h: f64) -> f64 {
   // Flip y: Wolfram is y-up, SVG is y-down
   (bb.y_max - y) / bb.height() * svg_h
+}
+
+/// Hold a pixel coordinate within [`FAR_PX`] of the picture's `extent`.
+/// `NaN` passes through unchanged.
+fn clamp_far(px: f64, extent: f64) -> f64 {
+  px.clamp(-FAR_PX, extent.max(0.0) + FAR_PX)
+}
+
+fn coord_x(x: f64, bb: &BBox, svg_w: f64) -> f64 {
+  clamp_far(coord_x_unclamped(x, bb, svg_w), svg_w)
+}
+
+fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
+  clamp_far(coord_y_unclamped(y, bb, svg_h), svg_h)
 }
 
 /// The region an unbounded primitive (`InfiniteLine`, `HalfPlane`, …) is
@@ -17065,17 +17086,29 @@ fn render_primitive(
         vertex_colors.as_ref().filter(|c| c.len() == total_points);
       let mut point_idx = 0usize;
       for (seg_idx, seg) in segments.iter().enumerate() {
-        let seg_screen_pts: Vec<(f64, f64)> = seg
-          .iter()
-          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
-          .collect();
         // A line running far outside the picture is cut to a generous box
-        // around it first (see `clip_screen_polyline`). A vertex-colored
-        // line keeps its points, which its colors are counted against.
+        // around it first (see `clip_screen_polyline`), from its points as
+        // they are: holding a far vertex near the picture instead would
+        // tilt the edges that cross it. A vertex-colored line keeps its
+        // points, which its colors are counted against.
         let pieces = if vertex_colors.is_some() {
-          vec![seg_screen_pts]
+          vec![
+            seg
+              .iter()
+              .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+              .collect(),
+          ]
         } else {
-          clip_screen_polyline(seg_screen_pts, svg_w, svg_h)
+          let raw: Vec<(f64, f64)> = seg
+            .iter()
+            .map(|&(x, y)| {
+              (
+                coord_x_unclamped(x, bb, svg_w),
+                coord_y_unclamped(y, bb, svg_h),
+              )
+            })
+            .collect();
+          clip_screen_polyline(raw, svg_w, svg_h)
         };
         for screen_pts in pieces {
           let pts: Vec<String> = screen_pts
