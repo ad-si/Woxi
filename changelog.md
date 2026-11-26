@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `PolyhedronData["Dodecahedron", "NetFaces"]` is the familiar net of two
+    six-pentagon rosettes joined along one edge and
+    `PolyhedronData["RhombicDodecahedron", "NetFaces"]` a zigzag strip of
+    twelve rhombi, both with exact coordinates, instead of a breadth-first
+    unfolding; `"NetFaces"` of a solid with a predefined net now agrees
+    with its `"NetCoordinates"` and `"NetFaceIndices"`.
 - A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
     stays unevaluated is typeset in StandardForm as a postfix superscript
     mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
