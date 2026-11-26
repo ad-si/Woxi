@@ -2185,6 +2185,20 @@ of a Demonstration shows `Last` picking the point between the masses); the
 complete wolframscript order of that list, and of other radical systems,
 has **not been verified**.
 
+### `NSolve` of a system in the cosines and sines of several unknowns
+
+```sh
+woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
+# {{x -> 1.696…, y -> 2.418…}, {x -> -1.696…, y -> -2.418…}}
+```
+
+Woxi lists the principal angles of every solution, descending by the first
+unknown. The published snapshots of a Demonstration show that Wolfram also
+returns a finite list of numbers here, but with some angles shifted by a
+multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
+period it picks and the complete order of the list have **not been
+verified**.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh
