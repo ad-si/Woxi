@@ -1702,6 +1702,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "FrameLabel" => {
           crate::functions::plot::apply_frame_label_option(replacement, opts);
         }
+        "RotateLabel" => {
+          crate::functions::plot::apply_rotate_label_option(replacement, opts);
+        }
         "Frame" => {
           crate::functions::plot::apply_frame_option(replacement, opts);
         }

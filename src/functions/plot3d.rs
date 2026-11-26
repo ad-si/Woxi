@@ -8315,6 +8315,118 @@ pub(crate) const AUTOMATIC_RANGE_PADDING: f64 = 0.02;
 /// give their automatic ranges.
 const PARAMETRIC_RANGE_PADDING: f64 = 0.05;
 
+/// The `PlotRange` and `PlotRangePadding` a `ParametricPlot3D` result
+/// records, in wolframscript's normal form: three axis ranges and three
+/// `{low, high}` padding pairs. `extents` is the sampled surface's extent,
+/// which an automatic axis resolves to. A `PlotRange -> {a, b}` names the
+/// vertical range and, like wolframscript, is recorded for the other two
+/// axes as well, though they stay padded. `None` for a specification it
+/// does not know, which is then kept as given.
+fn parametric_plot3d_recorded_range(
+  range: Option<&Expr>,
+  padding: Option<&Expr>,
+  extents: [(f64, f64); 3],
+) -> Option<(Expr, Expr)> {
+  let is_symbol =
+    |e: &Expr, name: &str| matches!(e, Expr::Identifier(n) if n == name);
+  let is_number =
+    |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e).is_some();
+  let is_pair = |e: &Expr| matches!(e, Expr::List(items) if items.len() == 2 && items.iter().all(is_number));
+  let automatic = || id_expr("Automatic");
+  // Each axis as (recorded range, whether it is explicit).
+  let axes: [(Expr, bool); 3] = match range {
+    None => std::array::from_fn(|_| (automatic(), false)),
+    Some(spec) if is_symbol(spec, "Automatic") => {
+      std::array::from_fn(|_| (automatic(), false))
+    }
+    Some(spec) if is_symbol(spec, "All") => {
+      std::array::from_fn(|_| (id_expr("All"), false))
+    }
+    Some(spec) if is_number(spec) => {
+      let negated = evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), spec.clone()],
+      ))
+      .ok()?;
+      let pair = Expr::List(vec![negated, spec.clone()].into());
+      std::array::from_fn(|_| (pair.clone(), true))
+    }
+    Some(spec) if is_pair(spec) => [
+      (spec.clone(), false),
+      (spec.clone(), false),
+      (spec.clone(), true),
+    ],
+    Some(Expr::List(items))
+      if items.len() == 2 && items.iter().all(is_pair) =>
+    {
+      [
+        (items[0].clone(), true),
+        (items[1].clone(), true),
+        (automatic(), false),
+      ]
+    }
+    Some(Expr::List(items)) if items.len() == 3 => {
+      let axis = |e: &Expr| {
+        if is_symbol(e, "Automatic") || is_symbol(e, "Full") {
+          Some((automatic(), false))
+        } else if is_symbol(e, "All") {
+          Some((id_expr("All"), false))
+        } else if is_pair(e) {
+          Some((e.clone(), true))
+        } else {
+          None
+        }
+      };
+      [axis(&items[0])?, axis(&items[1])?, axis(&items[2])?]
+    }
+    Some(_) => return None,
+  };
+
+  let side_pair = |e: &Expr| Expr::List(vec![e.clone(), e.clone()].into());
+  let default_pad = |explicit: bool| {
+    if explicit {
+      side_pair(&Expr::Integer(0))
+    } else {
+      side_pair(&call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)))
+    }
+  };
+  let axis_pad = |spec: &Expr, explicit: bool| match spec {
+    e if is_symbol(e, "Automatic") => Some(default_pad(explicit)),
+    Expr::List(items) if items.len() == 2 => Some(spec.clone()),
+    Expr::List(_) => None,
+    other => Some(side_pair(other)),
+  };
+  let pads: Vec<Expr> = match padding {
+    None => axes
+      .iter()
+      .map(|(_, explicit)| default_pad(*explicit))
+      .collect(),
+    Some(Expr::List(items)) if items.len() == 3 => items
+      .iter()
+      .zip(&axes)
+      .map(|(spec, (_, explicit))| axis_pad(spec, *explicit))
+      .collect::<Option<_>>()?,
+    Some(Expr::List(_)) => return None,
+    Some(spec) => axes
+      .iter()
+      .map(|(_, explicit)| axis_pad(spec, *explicit))
+      .collect::<Option<_>>()?,
+  };
+
+  let ranges: Vec<Expr> = axes
+    .into_iter()
+    .zip(extents)
+    .map(|((axis, _), (lo, hi))| {
+      if is_symbol(&axis, "Automatic") {
+        Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+      } else {
+        axis
+      }
+    })
+    .collect();
+  Some((Expr::List(ranges.into()), Expr::List(pads.into())))
+}
+
 /// One side's `PlotRangePadding`: an absolute length in plot coordinates,
 /// or `Scaled[s]`, a fraction of the axis' range.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18575,10 +18687,13 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
       Expr::List(pair) if pair.len() == 2 => {
         let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
         let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-        if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
-          return None;
+        match hi.partial_cmp(&lo) {
+          Some(std::cmp::Ordering::Greater) => Some((lo, hi)),
+          // An interval of no extent cannot frame anything, so that axis
+          // falls back to the automatic range while the others stay fixed.
+          Some(std::cmp::Ordering::Equal) => None,
+          _ => return None,
         }
-        Some((lo, hi))
       }
       _ => return None,
     };
@@ -26836,12 +26951,97 @@ fn parametric_plot3d_curve_ast(
     matches!(o, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes"))
   });
+  // The range and padding are recorded axis by axis, as for a surface.
+  let extents = curve_points_extent(&g3d_args[0]);
+  let recorded = extents
+    .filter(|e| e.iter().all(|(lo, hi)| hi > lo))
+    .and_then(|extents| {
+      let option = |name: &str| {
+        forwarded_opts.iter().rev().find_map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+            Some(
+              evaluate_expr_to_expr(replacement)
+                .unwrap_or_else(|_| (**replacement).clone()),
+            )
+          }
+          _ => None,
+        })
+      };
+      parametric_plot3d_recorded_range(
+        option("PlotRange").as_ref(),
+        option("PlotRangePadding").as_ref(),
+        extents,
+      )
+    });
+  if recorded.is_some() {
+    forwarded_opts.retain(|o| {
+      !matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n)
+          if n == "PlotRange" || n == "PlotRangePadding"))
+    });
+  }
   g3d_args.extend(forwarded_opts);
   if !has_axes {
     g3d_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   }
+  if let Some((range, padding)) = recorded {
+    g3d_args.push(rule_expr(id_expr("PlotRange"), range));
+    g3d_args.push(rule_expr(id_expr("PlotRangePadding"), padding));
+  }
 
   Ok(call("Graphics3D", g3d_args))
+}
+
+/// The extent of the points of the `Line`s and `Tube`s in `content`, or
+/// `None` when it has none.
+fn curve_points_extent(content: &Expr) -> Option<[(f64, f64); 3]> {
+  fn walk(e: &Expr, in_curve: bool, b: &mut [(f64, f64); 3], any: &mut bool) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        let curve = name == "Line" || name == "Tube";
+        if let Some(points) = args.first().filter(|_| curve) {
+          walk(points, true, b, any);
+        } else if !curve {
+          for arg in args {
+            walk(arg, in_curve, b, any);
+          }
+        }
+      }
+      Expr::List(items) if in_curve && items.len() == 3 => {
+        let coords: Option<Vec<f64>> = items
+          .iter()
+          .map(|c| match c {
+            Expr::Real(v) => Some(*v),
+            Expr::Integer(v) => Some(*v as f64),
+            _ => None,
+          })
+          .collect();
+        match coords {
+          Some(coords) => {
+            for (k, v) in coords.into_iter().enumerate() {
+              b[k].0 = b[k].0.min(v);
+              b[k].1 = b[k].1.max(v);
+            }
+            *any = true;
+          }
+          None => items.iter().for_each(|i| walk(i, in_curve, b, any)),
+        }
+      }
+      Expr::List(items) => items.iter().for_each(|i| walk(i, in_curve, b, any)),
+      _ => {}
+    }
+  }
+  let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+  let mut any = false;
+  walk(content, false, &mut b, &mut any);
+  any.then_some(b)
 }
 
 /// Sample a parametric space curve on `initial_n + 1` uniform parameter
@@ -28536,41 +28736,43 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !names_axes {
       structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
-    // Like wolframscript, the result pins its range to the extent of the
-    // sampled surface (`PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`), so
-    // a `Show` of it frames the scene by that box — under sphere framing,
-    // by the sphere around the box rather than around the contents.
-    // `PlotRange -> All` (or `Automatic`) is an automatic range too: it
-    // resolves to the surface's extent and is padded like an unnamed one,
-    // so a `Show` led by such a plot frames the padded box.
-    let is_plot_range = |o: &Expr| {
-      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange"))
-    };
+    // Like wolframscript, the result records its range axis by axis: an
+    // automatic one pinned to the extent of the sampled surface, an `All`
+    // kept as `All`, an explicit one as given. Its padding is spelled out
+    // per side too — `Scaled[0.05]` around an automatic axis, none around
+    // an explicit one — so a `Show` of it frames the scene by that box.
     let extents = [(cx_min, cx_max), (cy_min, cy_max), (cz_min, cz_max)];
     if extents.iter().all(|(lo, hi)| hi > lo) {
-      structure_args.retain(|o| {
-        !(is_plot_range(o)
-          && matches!(o, Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. }
-            if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "All" || v == "Automatic")))
-      });
-    }
-    let names_plot_range = structure_args.iter().any(is_plot_range);
-    if !names_plot_range && extents.iter().all(|(lo, hi)| hi > lo) {
-      let range = extents
-        .iter()
-        .map(|&(lo, hi)| {
-          Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+      let option = |name: &str| {
+        structure_args.iter().rev().find_map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+            Some(
+              evaluate_expr_to_expr(replacement)
+                .unwrap_or_else(|_| (**replacement).clone()),
+            )
+          }
+          _ => None,
         })
-        .collect::<Vec<_>>();
-      structure_args
-        .push(rule_expr(id_expr("PlotRange"), Expr::List(range.into())));
-      // The padding the picture was drawn with.
-      if range_padding_option(&structure_args).is_none() {
-        structure_args.push(rule_expr(
-          id_expr("PlotRangePadding"),
-          call1("Scaled", Expr::Real(PARAMETRIC_RANGE_PADDING)),
-        ));
+      };
+      if let Some((range, padding)) = parametric_plot3d_recorded_range(
+        option("PlotRange").as_ref(),
+        option("PlotRangePadding").as_ref(),
+        extents,
+      ) {
+        structure_args.retain(|o| {
+          !matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n)
+              if n == "PlotRange" || n == "PlotRangePadding"))
+        });
+        structure_args.push(rule_expr(id_expr("PlotRange"), range));
+        structure_args.push(rule_expr(id_expr("PlotRangePadding"), padding));
       }
     }
     call("Graphics3D", structure_args)
