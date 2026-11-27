@@ -8068,6 +8068,66 @@ fn clip_polygon_to_halfspace(
   out
 }
 
+/// The faces of the cuboid spanning `p_min`..`p_max` that are left inside
+/// the axis-aligned box `bounds`, each cut down to the box. A face whose
+/// plane lies outside the box is dropped without a cap closing the cut, so
+/// a cuboid sticking out of the box is open there; one wholly outside it
+/// leaves nothing.
+fn clip_cuboid_to_box(
+  p_min: &Point3D,
+  p_max: &Point3D,
+  bounds: &[(f64, f64); 3],
+) -> Vec<Vec<Point3D>> {
+  let lo = [p_min.x, p_min.y, p_min.z];
+  let hi = [p_max.x, p_max.y, p_max.z];
+  // The part of the cuboid inside the box, per axis.
+  let mut cut = [(0.0, 0.0); 3];
+  for axis in 0..3 {
+    let (a, b) = (lo[axis].min(hi[axis]), lo[axis].max(hi[axis]));
+    let (c_lo, c_hi) = (a.max(bounds[axis].0), b.min(bounds[axis].1));
+    if c_lo > c_hi {
+      return Vec::new();
+    }
+    cut[axis] = (c_lo, c_hi);
+  }
+  let mut faces = Vec::new();
+  for axis in 0..3 {
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    // A face cut down to a line (or a point) is not drawn.
+    if cut[u].0 >= cut[u].1 || cut[v].0 >= cut[v].1 {
+      continue;
+    }
+    let sides = [lo[axis].min(hi[axis]), lo[axis].max(hi[axis])];
+    for (k, &w) in sides.iter().enumerate() {
+      // The far side of a box of zero thickness is its near side again.
+      if (k == 1 && sides[0] == sides[1])
+        || w < bounds[axis].0
+        || w > bounds[axis].1
+      {
+        continue;
+      }
+      let corner = |cu: f64, cv: f64| {
+        let mut c = [0.0; 3];
+        c[axis] = w;
+        c[u] = cu;
+        c[v] = cv;
+        Point3D {
+          x: c[0],
+          y: c[1],
+          z: c[2],
+        }
+      };
+      faces.push(vec![
+        corner(cut[u].0, cut[v].0),
+        corner(cut[u].1, cut[v].0),
+        corner(cut[u].1, cut[v].1),
+        corner(cut[u].0, cut[v].1),
+      ]);
+    }
+  }
+  faces
+}
+
 /// The parts of `tris` inside the axis-aligned box `bounds`, each clipped
 /// triangle fanned back into triangles.
 fn clip_triangles_to_box(
@@ -16601,6 +16661,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       };
       prims.splice(i..i, clip_arrow3d_to_box(&points, &style, &bounds));
+    }
+
+    // A `Cuboid` reaching past the box is cut open along it too: each of
+    // its faces that lies inside the range is kept as far as the box
+    // goes, and the cut itself stays open, as it does on a curved solid.
+    let cut_cuboids: Vec<usize> = (0..prims.len())
+      .filter(|&i| {
+        matches!(&prims[i], Primitive3D::Cuboid { p_min, p_max, .. }
+          if !point_in_box(p_min, &bounds) || !point_in_box(p_max, &bounds))
+      })
+      .collect();
+    for i in cut_cuboids.into_iter().rev() {
+      let Primitive3D::Cuboid {
+        p_min,
+        p_max,
+        style,
+      } = prims.remove(i)
+      else {
+        continue;
+      };
+      prims.splice(
+        i..i,
+        clip_cuboid_to_box(&p_min, &p_max, &bounds)
+          .into_iter()
+          .map(|points| Primitive3D::Polygon3D {
+            points,
+            holes: Vec::new(),
+            style: style.clone(),
+          }),
+      );
     }
 
     // Likewise a polygon is cut down to the part inside the box, and
@@ -29928,6 +30018,72 @@ mod cuboid_rotation_tests {
       }
       _ => panic!("an axis-aligned transform must not tessellate a Cuboid"),
     }
+  }
+}
+
+#[cfg(test)]
+mod cuboid_clipping_tests {
+  use super::*;
+
+  fn pt(x: f64, y: f64, z: f64) -> Point3D {
+    Point3D { x, y, z }
+  }
+
+  const BOX: [(f64, f64); 3] = [(0.0, 2.0), (0.0, 1.0), (0.0, 1.0)];
+
+  /// The faces left of a cuboid, as (axis the face is normal to, its
+  /// coordinate on that axis), with every corner checked to lie in `BOX`.
+  fn faces(p_min: Point3D, p_max: Point3D) -> Vec<(usize, f64)> {
+    clip_cuboid_to_box(&p_min, &p_max, &BOX)
+      .iter()
+      .map(|face| {
+        assert_eq!(face.len(), 4);
+        assert!(
+          face.iter().all(|p| point_in_box(p, &BOX)),
+          "outside the box"
+        );
+        let coords: Vec<[f64; 3]> =
+          face.iter().map(|p| [p.x, p.y, p.z]).collect();
+        let axis = (0..3)
+          .find(|&a| coords.iter().all(|c| c[a] == coords[0][a]))
+          .expect("an axis-aligned face");
+        (axis, coords[0][axis])
+      })
+      .collect()
+  }
+
+  #[test]
+  fn a_cuboid_inside_the_box_keeps_its_six_faces() {
+    let all = faces(pt(0.5, 0.25, 0.25), pt(1.5, 0.75, 0.75));
+    assert_eq!(all.len(), 6);
+  }
+
+  #[test]
+  fn a_face_beyond_the_box_is_dropped_without_a_cap() {
+    // Sticking out past x = 2: the far x face is gone and nothing closes
+    // the cut, the other five faces end at the box.
+    let cut = faces(pt(1.0, 0.0, 0.0), pt(5.0, 1.0, 1.0));
+    assert_eq!(cut.len(), 5);
+    assert_eq!(cut.iter().filter(|(axis, _)| *axis == 0).count(), 1);
+    assert!(cut.contains(&(0, 1.0)));
+    // Sticking out on both sides leaves an open tube.
+    let tube = faces(pt(-3.0, 0.25, 0.25), pt(5.0, 0.75, 0.75));
+    assert_eq!(tube.len(), 4);
+    assert!(tube.iter().all(|(axis, _)| *axis != 0));
+    // The corners may be given in either order.
+    assert_eq!(faces(pt(5.0, 1.0, 1.0), pt(1.0, 0.0, 0.0)), cut);
+  }
+
+  #[test]
+  fn a_cuboid_outside_the_box_leaves_nothing() {
+    assert!(faces(pt(3.0, 0.0, 0.0), pt(5.0, 1.0, 1.0)).is_empty());
+    assert!(faces(pt(0.0, 2.0, 0.0), pt(1.0, 3.0, 1.0)).is_empty());
+  }
+
+  #[test]
+  fn a_flat_cuboid_keeps_a_single_face() {
+    let flat = faces(pt(-1.0, 0.0, 0.5), pt(5.0, 1.0, 0.5));
+    assert_eq!(flat, vec![(2, 0.5)]);
   }
 }
 
