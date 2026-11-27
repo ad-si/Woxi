@@ -565,8 +565,38 @@ mod machine_complex_arrays {
     assert_eq!(
       interpret("Log[2, {3. + 0. I, 1. + 2. I, -3. + 0. I}]").unwrap(),
       "{1.5849625007211563 + 0.*I, \
-       1.1609640474436813 + 1.5972779646881086*I, \
-       1.5849625007211563 + 4.532360141827193*I}"
+       1.1609640474436813 + 1.5972779646881088*I, \
+       1.5849625007211563 + 4.532360141827194*I}"
+    );
+    // The two logarithms are divided as complex numbers, by the textbook
+    // formula: the last digit is not the one of `Log[z]/Log[b]`, which
+    // multiplies by a reciprocal.
+    assert_eq!(
+      interpret("Log[2, {0.3 - 7. I, -2.5 + 1.25 I, 1.*^10 + 3. I}]").unwrap(),
+      "{2.808678630795662 - 2.204388096755775*I, \
+       1.4828921423310437 + 3.8634580356017056*I, \
+       33.219280948873624 + 4.328085122666891*^-10*I}"
+    );
+    assert_eq!(
+      interpret("Log[3, {1. + 2. I, -3. + 0. I, 0.3 - 7. I}]").unwrap(),
+      "{0.7324867603589637 + 1.0077701926457876*I, \
+       1. + 2.859600867380127*I, 1.7720789163893254 - 1.3908140386619752*I}"
+    );
+    assert_eq!(
+      interpret("Log[10, {1. + 2. I, -3. + 0. I}]").unwrap(),
+      "{0.3494850021680094 + 0.480828578784234*I, \
+       0.4771212547196624 + 1.3643763538418412*I}"
+    );
+    // A machine base, real or complex.
+    assert_eq!(
+      interpret("{Log[2.5, 1. + 2. I], Log[1. + 2. I, 3. - 1. I]}").unwrap(),
+      "{0.878235398683015 + 1.208294135562803*I, \
+       0.3043963776916033 - 0.8186244508963498*I}"
+    );
+    // An exact fraction as base goes through the quotient.
+    assert_eq!(
+      interpret("Log[1/2, 1. + 2. I]").unwrap(),
+      "-1.1609640474436813 - 1.5972779646881086*I"
     );
     assert_eq!(
       interpret("Log[2.5, 1. + 2. I] == Log[1. + 2. I]/Log[2.5]").unwrap(),
@@ -617,7 +647,7 @@ mod machine_complex_arrays {
             < 10.^-6}"
       )
       .unwrap(),
-      "{SparseArray, {32, 32}, {64, 64}, 256, 0., True}"
+      "{SparseArray, {32, 32}, {64, 64}, 256, 0, True}"
     );
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
@@ -736,8 +766,45 @@ mod sparse_array_direct_paths {
          s = SparseArray[{{1, 1} -> 1}, {2, 2}]; Normal[2^(z s)]"
       )
       .unwrap(),
-      "{{1.5384778027279442 + 1.2779225526272695*I, 1. + 0.*I}, \
-       {1. + 0.*I, 1. + 0.*I}}"
+      "{{1.5384778027279442 + 1.2779225526272695*I, 1}, {1, 1}}"
+    );
+  }
+
+  /// A list times a SparseArray stores a product only where the
+  /// SparseArray stores a value: everywhere else the result is the exact
+  /// background, whatever the list holds there.
+  #[test]
+  fn list_times_sparse_array_keeps_the_exact_background() {
+    clear_state();
+    let setup = "z = {{1. + 1. I, 2. - 1. I}, {0.5 + 0. I, 3. + 2. I}}; \
+                 s = SparseArray[{{1, 1} -> 1}, {2, 2}];";
+    assert_eq!(
+      interpret(&format!("{setup} z s")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, \
+       {1. + 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(&format!("{setup} {{{{1.5, 2.}}, {{3., 4.}}}} s")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1.5}}]"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{setup} {{Normal[z s], Normal[{{{{a, b}}, {{c, d}}}} s], \
+         Normal[(z s)^2]}}"
+      ))
+      .unwrap(),
+      "{{{1. + 1.*I, 0}, {0, 0}}, {{a, 0}, {0, 0}}, {{0. + 2.*I, 0}, {0, 0}}}"
+    );
+    // A function of the product takes the background along.
+    assert_eq!(
+      interpret(&format!("{setup} Cos[z s]")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 1, {1, {{0, 1, 1}, {{1}}}, \
+       {0.8337300251311491 - 0.9888977057628651*I}}]"
+    );
+    // A scalar factor, though, multiplies the background too.
+    assert_eq!(
+      interpret(&format!("{setup} s 1.5")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 1, 1}, {{1}}}, {1.5}}]"
     );
   }
 }

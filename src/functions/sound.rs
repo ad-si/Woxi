@@ -958,11 +958,35 @@ pub fn audio_waveform(args: &[Expr]) -> Option<Expr> {
   ))
 }
 
+/// The amplitude range `ListPlay` scales onto [-1, 1], from its `PlayRange`
+/// option: `All` is the whole extent of the data, `{amin, amax}` an explicit
+/// range, and `Automatic` (the default) the extent with outliers left out —
+/// the same procedure a plot's automatic `PlotRange` uses — so that a single
+/// spike does not flatten the rest of the signal into silence.
+fn play_range(opts: &[Expr], data: &[f64]) -> Option<(f64, f64)> {
+  let setting = opts.iter().find_map(|opt| {
+    let (key, value) = rule_parts(opt)?;
+    matches!(key, Expr::Identifier(n) if n == "PlayRange").then(|| {
+      crate::evaluator::evaluate_expr_to_expr(value).unwrap_or(value.clone())
+    })
+  });
+  match &setting {
+    Some(Expr::List(bounds)) if bounds.len() == 2 => {
+      Some((try_eval_to_f64(&bounds[0])?, try_eval_to_f64(&bounds[1])?))
+    }
+    Some(Expr::Identifier(all)) if all == "All" => {
+      crate::functions::plot::list_value_extent(data.iter().copied(), true)
+    }
+    _ => crate::functions::plot::list_value_extent(data.iter().copied(), false),
+  }
+}
+
 /// Build the `Sound[SampledSoundList[{samples…}, rate]]` object that
 /// `ListPlay[data, opts…]` produces. `data` is a list of amplitude levels;
-/// wolframscript normalizes them linearly so the minimum maps to -1 and the
-/// maximum to +1 — capped at 0.99999 to stay inside the asymmetric 16-bit
-/// positive range — then samples at `SampleRate` (default 8000 Hz). A constant
+/// wolframscript normalizes them linearly so the bottom of the play range
+/// (see [`play_range`]) maps to -1 and its top to +1 — capped at 0.99999 to
+/// stay inside the asymmetric 16-bit positive range — clipping amplitudes
+/// outside it, then samples at `SampleRate` (default 8000 Hz). A constant
 /// (or single-element) signal is silent, yielding all-zero samples. Building
 /// this object makes `ListPlay` render as `-Sound-`, report `Head -> Sound`,
 /// and play the normalized waveform in the visual hosts. Returns `None` when
@@ -979,15 +1003,14 @@ pub fn list_play(args: &[Expr]) -> Option<Expr> {
   for it in items {
     data.push(try_eval_to_f64(it)?);
   }
-  let min = data.iter().copied().fold(f64::INFINITY, f64::min);
-  let max = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-  let normalized: Vec<Expr> = if max > min {
-    data
+  let normalized: Vec<Expr> = match play_range(&args[1..], &data) {
+    Some((min, max)) if max > min => data
       .iter()
-      .map(|&x| Expr::Real((2.0 * (x - min) / (max - min) - 1.0).min(0.99999)))
-      .collect()
-  } else {
-    vec![Expr::Real(0.0); data.len()]
+      .map(|&x| {
+        Expr::Real((2.0 * (x - min) / (max - min) - 1.0).clamp(-1.0, 0.99999))
+      })
+      .collect(),
+    _ => vec![Expr::Real(0.0); data.len()],
   };
   let rate =
     option_sample_rate(&args[1..], LIST_PLAY_SAMPLE_RATE).round() as i128;

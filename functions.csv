@@ -3091,7 +3091,7 @@ GeoVariant,"",🚫,,10.0,3108
 KCoreComponents,"Connected components of the k-core as vertex lists",✅,pure,8.0,3108
 MaxStableDistribution,"Max-stable (GEV) distribution with shape-cased forms",✅,pure,8.0,3108
 PacletFind,"",🚫,,12.1,3108
-PlayRange,"",🚫,,2.0,3108
+PlayRange,"Option specifying the range of amplitudes a sound is scaled to",✅,none,2.0,3108
 PreviousCell,"",🚫,,10.0,3108
 RadialAxisPlot,"",🚫,,12.2,3108
 SatisfiabilityInstances,"Satisfying assignments of a Boolean expression in BDD path order (a single instance may differ from WL)",✅,pure,7.0,3108

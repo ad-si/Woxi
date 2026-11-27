@@ -1587,7 +1587,74 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
       }
     }
   }
+  // The bisection follows the larger change, which a steep stretch beside a
+  // small jump leads astray. The boundaries the conditions of the body name
+  // outright are therefore tested one by one as well.
+  let (Some(&(x_lo, _)), Some(&(x_hi, _))) = (points.first(), points.last())
+  else {
+    return jumps;
+  };
+  let mut boundaries = Vec::new();
+  condition_boundaries(
+    &eval_body_var_symbolic(body, var),
+    var,
+    &mut boundaries,
+  );
+  let near = |x: f64, c: f64| (x - c).abs() <= 1e-9 * c.abs().max(1.0);
+  for c in boundaries {
+    if !(c > x_lo && c < x_hi) || jumps.iter().any(|&x| near(x, c)) {
+      continue;
+    }
+    let delta = 1e-9 * c.abs().max(1.0);
+    let side =
+      |x: f64| evaluate_at_point(body, var, x).filter(|v| v.is_finite());
+    if let (Some(left), Some(right)) = (side(c - delta), side(c + delta))
+      && (right - left).abs() > tolerance
+    {
+      jumps.push(c);
+    }
+  }
+  jumps.sort_by(f64::total_cmp);
   jumps
+}
+
+/// Collect the numbers the plot variable `var` is compared with anywhere in
+/// `e` (`x <= 2`, `0 < x <= 3`, `Less[x, 1]`, …): the places where a
+/// conditional switches from one branch to another.
+fn condition_boundaries(e: &Expr, var: &str, out: &mut Vec<f64>) {
+  let operands: Option<&[Expr]> = match e {
+    Expr::Comparison { operands, .. } => Some(operands),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Less"
+          | "LessEqual"
+          | "Greater"
+          | "GreaterEqual"
+          | "Equal"
+          | "Unequal"
+          | "Inequality"
+      ) =>
+    {
+      Some(args)
+    }
+    _ => None,
+  };
+  if let Some(operands) = operands
+    && operands
+      .iter()
+      .any(|o| matches!(o, Expr::Identifier(n) if n == var))
+  {
+    out.extend(
+      operands
+        .iter()
+        .filter_map(try_eval_to_f64)
+        .filter(|c| c.is_finite()),
+    );
+  }
+  for child in crate::syntax::expr_children(e) {
+    condition_boundaries(child, var, out);
+  }
 }
 
 /// A `PlotRange -> {ymin, ymax}` pair limiting the y axis only: two numbers,
@@ -3374,17 +3441,20 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
         continue;
       }
       let lines = label.split('\n').count();
-      let pitch = line_pitch(l.font) * sf;
+      // A label carrying its own size (`Style[8, 14]`) is set at it.
+      let own_pt = plot_padding::markup_font_size(label).unwrap_or(l.font);
+      let label = &sized_tick_label(label, sf);
+      let pitch = line_pitch(own_pt) * sf;
       let text = match edge {
         0 => format!(
           "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
-          py + gap + ascent(l.font) * sf,
+          py + gap + ascent(own_pt) * sf,
           stacked_lines_svg(label, px, pitch),
         ),
         2 => format!(
           "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
           py - gap
-            - (line_height(l.font) - ascent(l.font)) * sf
+            - (line_height(own_pt) - ascent(own_pt)) * sf
             - (lines - 1) as f64 * pitch,
           stacked_lines_svg(label, px, pitch),
         ),
@@ -4206,6 +4276,10 @@ pub(crate) struct PlotOptions {
   /// position and the text drawn at it. `None` = the automatic ticks.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
+  /// Per axis (x, y): the explicit `Ticks` entries that state their own
+  /// mark length (`{pos, label, len}`), see
+  /// [`crate::functions::plot_axes::OriginAxes::mark_lens`].
+  pub tick_mark_lens: [Vec<crate::functions::plot_axes::TickMarkLen>; 2],
   /// Per axis (x, y): `ticks_x` / `ticks_y` holds the explicit list of the
   /// `Ticks` option. Those belong to the axes only, so a framed plot keeps
   /// its automatic frame ticks (see [`without_axis_only_ticks`]).
@@ -4702,6 +4776,7 @@ impl Default for PlotOptions {
       frame_ticks: true,
       evaluated: false,
       ticks_x: None,
+      tick_mark_lens: [Vec::new(), Vec::new()],
       ticks_y: None,
       ticks_from_axes_option: (false, false),
       frame_tick_edges: FrameEdgeTicks::defaults(),
@@ -5283,7 +5358,11 @@ pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
 /// A label that spans several lines (a `Column[…]` tick label) as one
 /// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
 /// previous one. A single-line label is returned unchanged.
-fn stacked_lines_svg(label: &str, x: f64, line_height: f64) -> String {
+pub(crate) fn stacked_lines_svg(
+  label: &str,
+  x: f64,
+  line_height: f64,
+) -> String {
   if !label.contains('\n') {
     return label.to_string();
   }
@@ -5352,10 +5431,14 @@ pub(crate) fn explicit_ticks_svg(
         out.push_str(&picture);
         continue;
       }
+      // A label carrying its own size (`Style[8, 14]`) is set at it.
+      let own_font =
+        plot_padding::markup_font_size(label).map_or(tick_font, |pt| sf * pt);
+      let label = sized_tick_label(label, sf);
       out.push_str(&format!(
         "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
-        axis_y + tick_font,
-        stacked_lines_svg(label, px, tick_font * 1.2),
+        axis_y + own_font,
+        stacked_lines_svg(&label, px, own_font * 1.2),
       ));
     }
   }
@@ -5381,6 +5464,7 @@ pub(crate) fn explicit_ticks_svg(
         out.push_str(&picture);
         continue;
       }
+      let label = sized_tick_label(label, sf);
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
         plot_x0 - tick_len,
@@ -5388,6 +5472,13 @@ pub(crate) fn explicit_ticks_svg(
     }
   }
   out
+}
+
+/// A tick label's markup for a rendering drawn at `sf` units per point: the
+/// absolute sizes it sets itself (`Style[8, 14]` is `font-size="14"`) are in
+/// points like the tick font, so they scale with the rendering too.
+pub(crate) fn sized_tick_label(label: &str, sf: f64) -> String {
+  crate::functions::chart::scale_markup_lengths(label, sf)
 }
 
 /// Core SVG generation for 2D line plots with full option support.
@@ -8317,6 +8408,7 @@ fn generate_svg_with_options(
       keep_y_label_on_x_axis: opts.keep_y_label_on_x_axis,
       label_color: label_style_fill.as_deref(),
       tick_font: plot_padding::plot_tick_font(opts),
+      mark_lens: [&opts.tick_mark_lens[0], &opts.tick_mark_lens[1]],
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -11745,6 +11837,7 @@ pub(crate) fn generate_bar_svg(
         keep_y_label_on_x_axis: true,
         label_color: tick_style_fill.as_deref(),
         tick_font: tick_font_pt,
+        mark_lens: [&[], &[]],
       },
     );
     let axis_y = plot_y0 + plot_h - y_scale.frac(origin.1) * plot_h;
@@ -14651,6 +14744,7 @@ pub(crate) fn generate_histogram_svg(
         keep_y_label_on_x_axis: opts.axes_origin.0.is_none(),
         label_color: None,
         tick_font: crate::functions::plot_axes::AXIS_TICK_FONT,
+        mark_lens: [&[], &[]],
       },
     );
     if let Some(pos) = buf.rfind("</svg>") {
@@ -17313,11 +17407,28 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
 /// One side of `Ticks -> {xspec, yspec}`: `None` or `False` leaves that
 /// axis without ticks (an empty explicit list), a list gives the explicit
 /// ticks, and anything else (`Automatic`, `All`) keeps the automatic ones.
-pub(crate) fn parse_axis_tick_side(value: &Expr) -> Option<Vec<(f64, String)>> {
-  match value {
-    Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
-    other => parse_explicit_ticks(other),
+/// The second part holds the mark lengths the entries state (`{pos, label,
+/// len}` or `{pos, label, {plen, mlen}}`).
+fn parse_axis_tick_side_with_lens(
+  value: &Expr,
+) -> (
+  Option<Vec<(f64, String)>>,
+  Vec<crate::functions::plot_axes::TickMarkLen>,
+) {
+  if matches!(value, Expr::Identifier(s) if s == "None" || s == "False") {
+    return (Some(Vec::new()), Vec::new());
   }
+  let Some(entries) = parse_explicit_tick_entries(value) else {
+    return (None, Vec::new());
+  };
+  let lens = entries
+    .iter()
+    .filter_map(|t| Some((t.pos, t.len?)))
+    .collect();
+  (
+    Some(entries.into_iter().map(|t| (t.pos, t.label)).collect()),
+    lens,
+  )
 }
 
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
@@ -18474,6 +18585,11 @@ pub(crate) fn apply_common_plot_option(
   // `StyleForm` in a label is displayed exactly as `Style`.
   let evaluated = crate::functions::graphics::style_forms_as_style(&evaluated)
     .unwrap_or(evaluated);
+  // `Defer` in a label is displayed exactly as `HoldForm`.
+  let evaluated = crate::functions::graphics::is_label_option(name)
+    .then(|| crate::functions::graphics::defers_as_held(&evaluated))
+    .flatten()
+    .unwrap_or(evaluated);
   let replacement = &evaluated;
   match name {
     "ImageSize" => {
@@ -18755,10 +18871,14 @@ pub(crate) fn apply_common_plot_option(
       // A side set to `None` / `False` (`Ticks -> {Automatic, False}`)
       // carries no ticks, the same as an empty explicit list.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_axis_tick_side(&items[0]);
+        let (ticks, lens) = parse_axis_tick_side_with_lens(&items[0]);
+        plot_opts.ticks_x = ticks;
+        plot_opts.tick_mark_lens[0] = lens;
         plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_axis_tick_side(y);
+          let (ticks, lens) = parse_axis_tick_side_with_lens(y);
+          plot_opts.ticks_y = ticks;
+          plot_opts.tick_mark_lens[1] = lens;
           plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }
@@ -19213,6 +19333,10 @@ fn map_axis_options(
       });
     }
   };
+  opts.tick_mark_lens[axis] = opts.tick_mark_lens[axis]
+    .drain(..)
+    .filter_map(|(p, l)| Some((f(p)?, l)))
+    .collect();
   if axis == 0 {
     opts.axes_origin.0 = opts.axes_origin.0.and_then(f);
     map_ticks(&mut opts.ticks_x);

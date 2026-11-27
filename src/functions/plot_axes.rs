@@ -263,6 +263,30 @@ pub(crate) struct OriginAxes<'a> {
   pub label_color: Option<&'a str>,
   /// The tick-label font size, in points (`TicksStyle -> 14`).
   pub tick_font: f64,
+  /// Per axis (x, y): the major ticks given their own mark length
+  /// (`{pos, label, len}`), as the position (in the axis's drawn
+  /// coordinates) with how far the mark reaches into and out of the plot,
+  /// in fractions of the plot width. `{0, 0}` leaves the tick unmarked.
+  pub mark_lens: [&'a [TickMarkLen]; 2],
+}
+
+/// A tick position with the length its mark reaches into and out of the
+/// plot, as fractions of the plot width.
+pub(crate) type TickMarkLen = (f64, (f64, f64));
+
+/// The reach `(inward, outward)` of the mark of the major tick at `v`, in
+/// render units: its own length when the tick spec states one, otherwise
+/// `major_len` inward.
+fn major_mark_reach(
+  lens: &[TickMarkLen],
+  v: f64,
+  major_len: f64,
+  w: f64,
+) -> (f64, f64) {
+  lens
+    .iter()
+    .find(|(p, _)| (p - v).abs() <= 1e-9 * v.abs().max(1.0))
+    .map_or((major_len, 0.0), |(_, (i, o))| (i * w, o * w))
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -363,7 +387,11 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         if !x.is_finite() {
           continue;
         }
-        line(&mut svg, &mark, (x, axis_y, x, axis_y - major_len));
+        let (inward, outward) =
+          major_mark_reach(a.mark_lens[0], *v, major_len, w);
+        if inward + outward > 0.0 {
+          line(&mut svg, &mark, (x, axis_y + outward, x, axis_y - inward));
+        }
         // The label would straddle the vertical axis below the crossing.
         if a.show.1
           && crossing_label_blocked((y0 + h - axis_y) / sf)
@@ -382,11 +410,23 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           svg.push_str(&picture);
           continue;
         }
+        // A label carrying its own size (`Style[8, 14]`) is set at it.
+        let own_pt = crate::functions::plot_padding::markup_font_size(label)
+          .unwrap_or(tick_font);
+        let label = crate::functions::plot::sized_tick_label(label, sf);
+        // A label of several lines (`Row[{"\n", x}]`) runs downward from
+        // the first, and blanks padding a label keep their width.
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
-           fill=\"{fill}\">{label}</text>\n",
-          axis_y + (TICK_LABEL_GAP + ascent(tick_font)) * sf
+           fill=\"{fill}\"{}>{}</text>\n",
+          axis_y + (TICK_LABEL_GAP + ascent(own_pt)) * sf,
+          crate::functions::plot::preserve_blanks_attr(&label),
+          crate::functions::plot::stacked_lines_svg(
+            &label,
+            x,
+            line_height(own_pt) * sf
+          ),
         ));
       }
     }
@@ -408,7 +448,11 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         if !y.is_finite() {
           continue;
         }
-        line(&mut svg, &mark, (axis_x, y, axis_x + major_len, y));
+        let (inward, outward) =
+          major_mark_reach(a.mark_lens[1], *v, major_len, w);
+        if inward + outward > 0.0 {
+          line(&mut svg, &mark, (axis_x - outward, y, axis_x + inward, y));
+        }
         // The label would sit on the horizontal axis left of the crossing.
         if a.show.0
           && !a.keep_y_label_on_x_axis
@@ -427,12 +471,21 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           svg.push_str(&picture);
           continue;
         }
+        let own_pt = crate::functions::plot_padding::markup_font_size(label)
+          .unwrap_or(tick_font);
+        let label = crate::functions::plot::sized_tick_label(label, sf);
+        let label_x = axis_x - TICK_LABEL_GAP * sf;
         svg.push_str(&format!(
-          "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" \
+          "<text x=\"{label_x:.1}\" y=\"{:.1}\" text-anchor=\"end\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
-           fill=\"{fill}\">{label}</text>\n",
-          axis_x - TICK_LABEL_GAP * sf,
-          y + (ascent(tick_font) - line_height(tick_font) / 2.0) * sf
+           fill=\"{fill}\"{}>{}</text>\n",
+          y + (ascent(own_pt) - line_height(own_pt) / 2.0) * sf,
+          crate::functions::plot::preserve_blanks_attr(&label),
+          crate::functions::plot::stacked_lines_svg(
+            &label,
+            label_x,
+            line_height(own_pt) * sf
+          ),
         ));
       }
     }
