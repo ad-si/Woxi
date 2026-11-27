@@ -4690,6 +4690,100 @@ mod image_advanced {
     );
   }
 
+  // Method -> "ShenCastan": the gradient of a two-sided exponential
+  // `Exp[-Abs[k]/(r/2)]`, scaled so a unit ramp has slope 1.
+  #[test]
+  fn gradient_filter_shen_castan_kernels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[ImageData[GradientFilter[Image[{{0., 0., 0., 1., 1., 1., 1.}}], 2, \
+         Method -> \"ShenCastan\"]], 0.0001]"
+      )
+      .unwrap(),
+      "{{0., 0.106, 0.394, 0.394, 0.106, 0., 0.}}"
+    );
+    // The middle of a ramp of slope 1/10, away from the padded border.
+    assert_eq!(
+      interpret(
+        "Round[ImageData[GradientFilter[Image[Table[x/10., {y, 7}, {x, 7}]], 2, \
+         Method -> \"ShenCastan\"]][[4, 3 ;; 5]], 0.0001]"
+      )
+      .unwrap(),
+      "{0.1, 0.1, 0.1}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[GradientFilter[Image[{{0., 1.}}], 1, Method -> \"Nope\"]]"
+      )
+      .unwrap(),
+      "GradientFilter"
+    );
+  }
+
+  #[test]
+  fn edge_detect_shen_castan() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], \
+         2, .1, Method -> \"ShenCastan\"]][[3]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret("Head[EdgeDetect[Image[{{0., 1.}}], Method -> \"Nope\"]]")
+        .unwrap(),
+      "EdgeDetect"
+    );
+  }
+
+  // "StraightEdges" -> s keeps the edges on straight lines: the disk's
+  // outline goes, the half-plane's border stays, upright or tilted.
+  #[test]
+  fn edge_detect_straight_edges() {
+    clear_state();
+    for border in ["20", "20 + y/7"] {
+      let setup = format!(
+        "img = Image[Table[If[x > {border} || (x - 10)^2 + (y - 20)^2 < 30, \
+         1., 0.], {{y, 40}}, {{x, 40}}]]; \
+         count[e_] := Total[Flatten[ImageData[e]]]; \
+         all = EdgeDetect[img, 1, .1]; \
+         line = EdgeDetect[Image[Table[If[x > {border}, 1., 0.], {{y, 40}}, \
+         {{x, 40}}]], 1, .1];"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{setup} straight = EdgeDetect[img, 1, .1, \"StraightEdges\" -> 0.5]; \
+           {{straight === line, count[all] > count[line], \
+           Min[Total /@ ImageData[straight]] > 0}}"
+        ))
+        .unwrap(),
+        "{True, True, True}"
+      );
+      // Nothing is dropped at 0, and every setting keeps the strongest line.
+      assert_eq!(
+        interpret(&format!(
+          "{setup} {{EdgeDetect[img, 1, .1, \"StraightEdges\" -> 0] === all, \
+           EdgeDetect[img, 1, .1, Method -> \"Sobel\", \"StraightEdges\" -> \
+           Automatic] === EdgeDetect[img, 1, .1, Method -> \"Sobel\"], \
+           count[EdgeDetect[img, 1, .1, \"StraightEdges\" -> 1]] > 0}}"
+        ))
+        .unwrap(),
+        "{True, True, True}"
+      );
+    }
+    // The setting is a fraction.
+    assert_eq!(
+      interpret(
+        "Head[EdgeDetect[Image[{{0., 1.}}], 1, .1, \"StraightEdges\" -> 2]]"
+      )
+      .unwrap(),
+      "EdgeDetect"
+    );
+  }
+
   // Method -> "Sobel": binomial smoothing and difference kernels of
   // half-width r over an edge-replicated image.
   #[test]

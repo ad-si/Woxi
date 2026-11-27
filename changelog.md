@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `EdgeDetect` and `GradientFilter` take `Method -> "ShenCastan"` (the
+    gradient of a two-sided exponential), and
+    `EdgeDetect[…, "StraightEdges" -> s]` keeps only the edges on straight
+    lines, picked with a Hough transform. Both left the call unevaluated.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
