@@ -493,6 +493,26 @@ not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
 &&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
 operands themselves are parenthesized by precedence).
 
+### StandardForm boxes: `==` and derivatives
+
+```sh
+wolframscript -code 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "\[Equal]", "b"}]
+woxi eval 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "==", "b"}]
+wolframscript -code 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", TagBox[RowBox[{"(", "3", ")"}], Derivative], MultilineFunction -> None]
+woxi eval 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", "′′′"]
+```
+
+WL boxes `Equal` with the private-use `\[Equal]` (U+F431) and a derivative
+with `MultilineFunction -> None`, its order of three or more as a
+`TagBox[…, Derivative]` around `(n)`. Woxi writes `==` and leaves out the
+option, because its box renderers read a two-argument `SuperscriptBox` and
+have no glyph for `\[Equal]` yet. The same difference shows up in an
+operand of `Infix` or `Prefix` boxes.
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -2199,6 +2219,20 @@ equilibria of the restricted three-body problem (where the published output
 of a Demonstration shows `Last` picking the point between the masses); the
 complete wolframscript order of that list, and of other radical systems,
 has **not been verified**.
+
+### `NSolve` of a system in the cosines and sines of several unknowns
+
+```sh
+woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
+# {{x -> 1.696…, y -> 2.418…}, {x -> -1.696…, y -> -2.418…}}
+```
+
+Woxi lists the principal angles of every solution, descending by the first
+unknown. The published snapshots of a Demonstration show that Wolfram also
+returns a finite list of numbers here, but with some angles shifted by a
+multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
+period it picks and the complete order of the list have **not been
+verified**.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -8252,6 +8286,19 @@ proportions differ from wolframscript. Named edge shapes other than
 `"DiamondLine"`, `"FilledArcArrow"`) still fall back to the plain edge.
 `GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
 `"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
+
+### Large graphs keep the small-graph vertex style
+
+```sh
+woxi eval 'ExportString[Graph[Range[1000], Table[i <-> i + 1, {i, 999}], GraphLayout -> "LinearEmbedding"], "SVG"]'
+```
+
+Wolfram draws the vertices of a graph with very many vertices (around a
+thousand; the exact threshold is not established) as points of a fixed
+size in a darker blue, so they stay visible however small the layout's
+units come out. Woxi sizes them from the layout's extent like any other
+graph's, where they all but vanish. Not verified against wolframscript
+beyond published pictures.
 
 ## Colorize
 
