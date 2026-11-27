@@ -512,3 +512,232 @@ mod factor_integer_cyclotomic {
     );
   }
 }
+
+// Arithmetic on machine-complex arrays and on the SparseArray masks applied
+// to them (filtering an image's Fourier spectrum) takes direct paths; these
+// pin the values those paths have to reproduce.
+mod machine_complex_arrays {
+  use super::*;
+
+  #[test]
+  fn products_keep_zero_parts() {
+    clear_state();
+    assert_eq!(interpret("(1. + 2. I) (1. - 2. I)").unwrap(), "5. + 0.*I");
+    assert_eq!(
+      interpret("{1. + 2. I, 2. + 1. I, 3. + 0. I} {1. - 2. I, 1. + 2. I, 0}")
+        .unwrap(),
+      "{5. + 0.*I, 0. + 5.*I, 0. + 0.*I}"
+    );
+    assert_eq!(
+      interpret("1 {3. + 0. I, 1. - 2. I}").unwrap(),
+      "{3. + 0.*I, 1. - 2.*I}"
+    );
+  }
+
+  #[test]
+  fn threaded_arithmetic_matches_scalar_arithmetic() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "z = {1. + 2. I, 3. + 0. I, -0.7 + 0.2 I, 0. + 0. I}; \
+         w = {2. - 4. I, 1. + 2. I, 0.6 + 0.8 I, 2. + 1. I}; \
+         {z w === MapThread[Times, {z, w}], z/w === MapThread[Divide, {z, w}], \
+          2^z === (2^# & /@ z), z + w === MapThread[Plus, {z, w}]}"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+  }
+
+  #[test]
+  fn quotients() {
+    clear_state();
+    assert_eq!(
+      interpret("{1. + 2. I, 3. + 0. I}/{2. - 4. I, 1. + 2. I}").unwrap(),
+      "{-0.30000000000000004 + 0.4*I, \
+       0.6000000000000001 - 1.2000000000000002*I}"
+    );
+  }
+
+  #[test]
+  fn logarithm_to_a_base() {
+    clear_state();
+    assert_eq!(
+      interpret("Log[2, {3. + 0. I, 1. + 2. I, -3. + 0. I}]").unwrap(),
+      "{1.5849625007211563 + 0.*I, \
+       1.1609640474436813 + 1.5972779646881086*I, \
+       1.5849625007211563 + 4.532360141827193*I}"
+    );
+    assert_eq!(
+      interpret("Log[2.5, 1. + 2. I] == Log[1. + 2. I]/Log[2.5]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Log[2, 0. + 0. I]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn real_base_to_a_complex_power() {
+    clear_state();
+    assert_eq!(
+      interpret("2^{3. + 0. I, 1. + 2. I, 0. + 0. I}").unwrap(),
+      "{7.999999999999998 + 0.*I, \
+       0.36691394948660344 + 1.9660554808224875*I, 1. + 0.*I}"
+    );
+  }
+
+  #[test]
+  fn reevaluating_keeps_the_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "v = {(1. + 2. I) (2. + 1. I), 0 (1. + 2. I), (1. + 2. I) (1. - 2. I)}; \
+         f[a_] := a; {f[v] === v, f[v]}"
+      )
+      .unwrap(),
+      "{True, {0. + 5.*I, 0. + 0.*I, 5. + 0.*I}}"
+    );
+  }
+
+  #[test]
+  fn spectrum_filtering_round_trip_is_fast() {
+    clear_state();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "n = 64; \
+         data = Table[N[Mod[7 i^2 + 3 j^3 + i j, 11]] + 1, {i, n}, {j, n}]; \
+         f = Fourier[data]; p = f Conjugate[f]; l = Log[2, p]; \
+         mask = SparseArray[{i_, j_} /; i >= (n - 16)/2 + 1 && i <= (n + 16)/2 \
+           && j >= (n - 16)/2 + 1 && j <= (n + 16)/2 :> 1, {n, n}]; \
+         kept = 2^(l mask); q = kept[[1 ;; n/2, n/2 + 1 ;; n]]; \
+         back = InverseFourier[Normal[kept]/Conjugate[f]]; \
+         {Head[kept], Dimensions[q], Dimensions[back], \
+          Total[mask, 2], Max[Abs[Normal[kept][[1]] - 1]], \
+          Max[Abs[Normal[kept][[n/2, 25 ;; 40]] - p[[n/2, 25 ;; 40]]]] \
+            < 10.^-6}"
+      )
+      .unwrap(),
+      "{SparseArray, {32, 32}, {64, 64}, 256, 0., True}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}
+
+mod sparse_array_direct_paths {
+  use super::*;
+
+  #[test]
+  fn condition_bounds_from_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "x = 12; m = 4; Normal[SparseArray[{i_, j_} /; i >= (x - m)/2 + 1 \
+         && i <= (x + m)/2 && j <= m/2 :> 1, {x, 3}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {1, 1, 0}, {1, 1, 0}, \
+       {1, 1, 0}, {1, 1, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Module[{y = 6, k = 3}, Normal[SparseArray[{{i_, j_} /; i > y/k \
+         && j < 2 y - 9 -> i + y}, {4, 4}]]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0}, {0, 0, 0, 0}, {9, 9, 0, 0}, {10, 10, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn single_rule_and_rule_list_agree() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SparseArray[{i_, j_} /; i < j -> i + j, {3, 4}] === \
+         SparseArray[{{i_, j_} /; i < j -> i + j}, {3, 4}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn delayed_value_is_evaluated_at_each_position() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "n = 0; s = SparseArray[{i_, j_} /; i < j :> ++n, {3, 3}]; \
+         {n, Normal[s]}"
+      )
+      .unwrap(),
+      "{3, {{0, 1, 2}, {0, 0, 3}, {0, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn condition_that_is_not_constant_stays_per_position() {
+    clear_state();
+    // `k` changes while the array is filled, so `k/2` is no constant bound.
+    assert_eq!(
+      interpret(
+        "k := (c++; 0); c = 0; \
+         s = SparseArray[{i_, j_} /; i > k/2 -> 1, {2, 2}]; {c > 1, Normal[s]}"
+      )
+      .unwrap(),
+      "{True, {{1, 1}, {1, 1}}}"
+    );
+  }
+
+  #[test]
+  fn scalar_arithmetic_keeps_the_stored_positions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[2^SparseArray[{{1, 2} -> 3, {2, 1} -> 1.5}, {2, 3}], \
+         InputForm]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 3}, 1, {1, {{0, 1, 2}, {{2}, {1}}}, \
+       {8, 2.8284271247461903}}]"
+    );
+    // A value that lands on the new background is no longer stored.
+    assert_eq!(
+      interpret(
+        "ToString[0 SparseArray[{{1, 2} -> 3, {2, 1} -> 1}, {2, 3}], \
+         InputForm]"
+      )
+      .unwrap(),
+      interpret("ToString[SparseArray[{}, {2, 3}], InputForm]").unwrap()
+    );
+  }
+
+  #[test]
+  fn span_part_is_the_part_of_the_dense_array() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 3, {2, 3} -> 1, {3, 1} -> 5, {4, 4} -> 2}, \
+         {4, 4}]; p = s[[2 ;; 4, 1 ;; 3]]; \
+         {ToString[p, InputForm], Normal[p] === Normal[s][[2 ;; 4, 1 ;; 3]], \
+          p === SparseArray[Normal[p]], Normal[s[[{3, 1}, All]]]}"
+      )
+      .unwrap(),
+      "{SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 2, 2}, {{3}, {1}}}, \
+       {1, 5}}], True, True, {{5, 0, 0, 0}, {0, 3, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn power_of_a_masked_complex_array() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "z = {{1. + 1. I, 2. - 1. I}, {0.5 + 0. I, 3. + 2. I}}; \
+         s = SparseArray[{{1, 1} -> 1}, {2, 2}]; Normal[2^(z s)]"
+      )
+      .unwrap(),
+      "{{1.5384778027279442 + 1.2779225526272695*I, 1. + 0.*I}, \
+       {1. + 0.*I, 1. + 0.*I}}"
+    );
+  }
+}

@@ -782,6 +782,41 @@ fn template_box_interpretation(args: &[String]) -> Option<String> {
   Some(extract_cell_content(value))
 }
 
+/// Keep the name an entity icon is displayed under. The icon is
+/// `TemplateBox[{"\"Mars\"", RowBox[…], "\"Entity[…]\"", "\"planet\""},
+/// "Entity"]`: its first slot is the entity's label and its fourth the
+/// description of the entity's type. `source` is the `Entity["type",
+/// "name"]` the icon stands for.
+fn remember_entity_icon_label(source: &str, parts: &[&str]) {
+  use crate::syntax::{Expr, string_to_expr};
+  let string_slot = |i: usize| -> Option<String> {
+    let text = extract_cell_content(parts.get(i)?.trim());
+    match string_to_expr(text.trim()).ok()? {
+      Expr::String(ref s) => Some(s.clone()),
+      _ => None,
+    }
+  };
+  let Some(label) = string_slot(0) else {
+    return;
+  };
+  let Ok(entity) = string_to_expr(source) else {
+    return;
+  };
+  if let Expr::FunctionCall { name, args } = &entity
+    && name == "Entity"
+    && args.len() == 2
+    && let (Expr::String(type_name), Expr::String(entity_name)) =
+      (&args[0], &args[1])
+  {
+    crate::functions::entity_ast::register_entity_label(
+      type_name,
+      entity_name,
+      &label,
+      &string_slot(3).unwrap_or_default(),
+    );
+  }
+}
+
 /// The value stored under `key` in a `TemplateBox`'s association argument
 /// (`<|"key" -> value, …|>`).
 fn template_box_assoc_entry<'a>(assoc: &'a str, key: &str) -> Option<&'a str> {
@@ -1097,8 +1132,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // The script and `Mod` templates stand for the call they typeset:
     // `TemplateBox[{"x", "3"}, "Superscript"]` is `Superscript[x, 3]`.
     // Its options (`SyntaxForm -> SuperscriptBox`) follow the name.
+    // So do the postfix templates: `TemplateBox[{"m"}, "Transpose"]` is
+    // `Transpose[m]`, `"Transpose2"` the transpose with a permutation.
     let name = args[1].trim().trim_matches('"');
-    if matches!(name, "Superscript" | "Subscript" | "Subsuperscript" | "Mod") {
+    let name = match name {
+      "Transpose2" => "Transpose",
+      "ConjugateTranspose2" => "ConjugateTranspose",
+      other => other,
+    };
+    if matches!(
+      name,
+      "Superscript"
+        | "Subscript"
+        | "Subsuperscript"
+        | "Mod"
+        | "Transpose"
+        | "ConjugateTranspose"
+        | "Conjugate"
+    ) {
       let items = args[0].trim();
       let items = match items.strip_prefix("List[") {
         Some(rest) => format!("{{{}}}", rest.strip_suffix(']').unwrap_or(rest)),
@@ -1128,6 +1179,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     {
       let source = extract_cell_content(entity);
       if source.starts_with("Entity[") {
+        remember_entity_icon_label(&source, &parts);
         return Some(source);
       }
     }
@@ -4229,6 +4281,7 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
         let cleaned = strip_uniquification_suffix(&strip_saved_contexts(
           &inner.replace("\\\n", ""),
         ));
+        let cleaned = rebuild_saved_images(&cleaned);
         let cleaned = cleaned.trim();
         if !cleaned.is_empty() && cleaned != "None" {
           return Some(cleaned.to_string());
@@ -4238,6 +4291,44 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
     search_from = after_kw;
   }
   None
+}
+
+/// Saved code with each image it holds rebuilt into an evaluable
+/// `Image[…]`. The FrontEnd writes an image inside a saved definition (a
+/// `Texture[image]` of a saved surface, say) in its typeset shape, only
+/// with the `Graphics` head in place of `GraphicsBox`:
+/// `Graphics[TagBox[RasterBox[…], BoxForm`ImageTag[…]], …]`. Evaluated as
+/// written that is a graphic of unknown boxes, not the picture.
+fn rebuild_saved_images(code: &str) -> String {
+  const OPENING: &str = "Graphics[";
+  let mut out = String::with_capacity(code.len());
+  let mut rest = code;
+  while let Some(at) = rest.find(OPENING) {
+    let after = &rest[at + OPENING.len()..];
+    let preceded_by_name_char = rest[..at]
+      .chars()
+      .next_back()
+      .is_some_and(|c| c.is_alphanumeric() || c == '$' || c == '`');
+    let image = (!preceded_by_name_char
+      && after.trim_start().starts_with("TagBox["))
+    .then(|| find_matching_bracket(after).ok())
+    .flatten()
+    .and_then(|(args, tail)| {
+      let image =
+        extract_image_from_boxes(split_top_level_commas(args).first()?)?;
+      Some((image, tail))
+    });
+    if let Some((image, tail)) = image {
+      out.push_str(&rest[..at]);
+      out.push_str(&image);
+      rest = tail;
+    } else {
+      out.push_str(&rest[..at + OPENING.len()]);
+      rest = after;
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// The distinct symbol names Wolfram qualified with `` $CellContext` `` in a
@@ -7897,6 +7988,33 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_entity_template_box_keeps_its_display_name() {
+    // The icon's first slot is the name the entity is shown under and its
+    // fourth the description of its type; both outlive the reduction of the
+    // cell to the plain `Entity[…]` source.
+    let s = r#"TemplateBox[{"\"Maple\[Hyphen]Syrup Jar\"", RowBox[{"Entity", "[", RowBox[{"\"PantryItem\"", ",", "\"MapleSyrupJar\""}], "]"}], "\"Entity[\\\"PantryItem\\\", \\\"MapleSyrupJar\\\"]\"", "\"pantry item\""}, "Entity"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      r#"Entity["PantryItem","MapleSyrupJar"]"#
+    );
+    let entity =
+      crate::syntax::string_to_expr(r#"Entity["PantryItem", "MapleSyrupJar"]"#)
+        .unwrap();
+    assert_eq!(
+      crate::functions::entity_ast::entity_label(&entity),
+      Some((
+        "Maple\u{2010}Syrup Jar".to_string(),
+        "pantry item".to_string()
+      ))
+    );
+    // An entity no notebook showed has no display name.
+    let unseen =
+      crate::syntax::string_to_expr(r#"Entity["PantryItem", "NeverShownJar"]"#)
+        .unwrap();
+    assert_eq!(crate::functions::entity_ast::entity_label(&unseen), None);
+  }
+
+  #[test]
   fn test_extract_plain_graphicsbox_not_treated_as_image() {
     // A GraphicsBox without the RasterBox/ImageTag pair is not an image
     // literal — it typesets a vector graphic instead, and is rewritten to
@@ -9584,6 +9702,30 @@ yf4GL4DwC5VA4w
       SynchronousInitialization->True]";
     let init = extract_saved_initialization(dump).unwrap();
     assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_rebuilds_images() {
+    let dump = "DynamicModuleBox[{}, x, Initialization :> ({$CellContext`skin = \
+      Texture[Graphics[TagBox[RasterBox[{{{255, 0, 0}, {0, 255, 0}}}, \
+      {{0, 1}, {2, 0}}, {0, 255}, ColorFunction -> RGBColor], \
+      BoxForm`ImageTag[\"Byte\", ColorSpace -> \"RGB\", Interleaving -> True], \
+      Selectable -> False], DefaultBaseStyle -> \"ImageGraphics\", \
+      ImageSizeRaw -> {2, 1}, PlotRange -> {{0, 2}, {0, 1}}]], \
+      $CellContext`plain = Graphics[Disk[]], \
+      $CellContext`MyGraphics[TagBox[1, 2]]}; Null)]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert!(
+      init.contains(
+        "skin = Texture[Image[{{{255, 0, 0}, {0, 255, 0}}}, \"Byte\", \
+         ColorSpace -> \"RGB\", Interleaving -> True]]"
+      ),
+      "{init}"
+    );
+    assert!(!init.contains("RasterBox"), "{init}");
+    // Ordinary graphics and other heads ending in `Graphics` stay.
+    assert!(init.contains("plain = Graphics[Disk[]]"), "{init}");
+    assert!(init.contains("MyGraphics[TagBox[1, 2]]"), "{init}");
   }
 
   #[test]

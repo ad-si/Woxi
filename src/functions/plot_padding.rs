@@ -984,6 +984,20 @@ pub(crate) fn plot_title_font(
     .unwrap_or(TITLE_FONT)
 }
 
+/// The size of the tallest glyphs of a plot's `PlotLabel`, in points: a
+/// part that sets its own size (`Row[{Style["a", 16], …}]`) stands taller
+/// than the font the label as a whole is set in.
+pub(crate) fn plot_title_glyph_font(
+  opts: &crate::functions::plot::PlotOptions,
+) -> f64 {
+  let base = plot_title_font(opts);
+  opts.plot_label.as_ref().map_or(base, |sl| {
+    sl.line_font_sizes(base, 1.0)
+      .into_iter()
+      .fold(base, f64::max)
+  })
+}
+
 /// Height of a plot's `PlotLabel` band, 0 without one.
 pub(crate) fn plot_title_band(
   opts: &crate::functions::plot::PlotOptions,
@@ -998,7 +1012,7 @@ pub(crate) fn plot_title_band(
       } else {
         0.0
       };
-      let size = plot_title_font(opts);
+      let size = plot_title_glyph_font(opts);
       block_height(lines, size) + frame + stacked_script_room(&sl.text, size)
     }
     _ => 0.0,
