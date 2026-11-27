@@ -28304,6 +28304,130 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(bars, 2, "{svg}");
     }
 
+    /// The `width` and `height` attributes of an SVG's root element.
+    fn svg_size(svg: &str) -> (f64, f64) {
+      let attr = |name: &str| -> f64 {
+        svg
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|t| t.split('"').next())
+          .and_then(|t| t.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} in {svg}"))
+      };
+      (attr("width"), attr("height"))
+    }
+
+    /// `AspectRatio` shapes a horizontal chart's plotting area, and the
+    /// picture's height follows it, as for a vertical chart.
+    #[test]
+    fn horizontal_bar_chart_honors_aspect_ratio() {
+      let (w, default_h) = svg_size(&export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400]",
+      ));
+      assert_eq!(w, 400.0);
+      let (w, thin) = svg_size(&export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400, \
+         AspectRatio -> 1/10]",
+      ));
+      assert_eq!(w, 400.0);
+      assert!(thin < default_h / 2.0, "{thin} vs {default_h}");
+      let (_, wide) = svg_size(&export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400, \
+         AspectRatio -> 1/5]",
+      ));
+      // Doubling the ratio adds one more plotting-area height.
+      assert!(wide > thin + 30.0 && wide < 2.0 * thin, "{thin} {wide}");
+      let (_, square) = svg_size(&export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400, \
+         AspectRatio -> 1]",
+      ));
+      assert!(square > 350.0, "{square}");
+      // An explicit image height wins over the ratio.
+      let (_, fixed) = svg_size(&export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> {400, 300}, \
+         AspectRatio -> 1/10]",
+      ));
+      assert_eq!(fixed, 300.0);
+    }
+
+    /// The legend column of a horizontal chart is set beside the image,
+    /// which keeps its size, and lists the bars from the top one down.
+    #[test]
+    fn horizontal_bar_chart_legend_sits_beside_the_image() {
+      let plain = export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400, \
+         ChartStyle -> {Green, Red}]",
+      );
+      let legended = export_svg(
+        "BarChart[{5, 3}, BarOrigin -> Left, ImageSize -> 400, \
+         ChartStyle -> {Green, Red}, ChartLegends -> {\"first\", \"second\"}]",
+      );
+      let (w, h) = svg_size(&legended);
+      assert!(w > 400.0, "{w}");
+      assert_eq!(h, svg_size(&plain).1);
+      // The bars are as long as without the legend.
+      let bar_widths = |svg: &str| -> Vec<String> {
+        svg
+          .split("<rect")
+          .filter(|r| r.contains("stroke-opacity=\"0.66\""))
+          .filter_map(|r| r.split(" width=\"").nth(1))
+          .filter_map(|t| t.split('"').next())
+          .map(str::to_string)
+          .collect()
+      };
+      assert_eq!(bar_widths(&plain), bar_widths(&legended));
+      assert_eq!(bar_widths(&plain).len(), 2);
+      // The second (upper) bar is listed first, each in its bar's color.
+      let first = legended.find(">first<").expect("first legend entry");
+      let second = legended.find(">second<").expect("second legend entry");
+      assert!(second < first, "{legended}");
+      let swatch_before = |pos: usize| -> &str {
+        let start = legended[..pos].rfind("<rect").expect("swatch");
+        &legended[start..pos]
+      };
+      assert!(swatch_before(second).contains("fill=\"rgb(255,0,0)\""));
+      assert!(swatch_before(first).contains("fill=\"rgb(0,255,0)\""));
+    }
+
+    /// `LabelStyle` reaches every label of a horizontal chart: the tick and
+    /// category labels, the title and the legend.
+    #[test]
+    fn horizontal_bar_chart_applies_label_style() {
+      let chart = |style: &str| {
+        export_svg(&format!(
+          "BarChart[{{5, 3}}, BarOrigin -> Left, PlotLabel -> \"title\", \
+           ChartLabels -> {{\"aa\", \"bb\"}}, \
+           ChartLegends -> {{\"first\", \"second\"}}{style}]"
+        ))
+      };
+      let plain = chart("");
+      assert!(!plain.contains("font-weight=\"bold\""), "{plain}");
+      let bold = chart(", LabelStyle -> Bold");
+      for label in ["title", "aa", "bb", "first", "second", "2"] {
+        let pos = bold
+          .find(&format!(">{label}<"))
+          .unwrap_or_else(|| panic!("no label {label} in {bold}"));
+        let tag = &bold[bold[..pos].rfind("<text").expect("text tag")..pos];
+        assert!(tag.contains("font-weight=\"bold\""), "{label}: {tag}");
+      }
+      let red = chart(", LabelStyle -> Red");
+      let pos = red.find(">aa<").expect("category label");
+      let tag = &red[red[..pos].rfind("<text").expect("text tag")..pos];
+      assert!(tag.contains("fill=\"rgb(255,0,0)\""), "{tag}");
+    }
+
+    /// A vertical chart's legend follows a bold `LabelStyle` too.
+    #[test]
+    fn bar_chart_legend_follows_bold_label_style() {
+      let bold = export_svg(
+        "BarChart[{5, 3}, ChartLegends -> {\"first\", \"second\"}, \
+         LabelStyle -> Bold]",
+      );
+      let pos = bold.find(">first<").expect("legend entry");
+      let tag = &bold[bold[..pos].rfind("<text").expect("text tag")..pos];
+      assert!(tag.contains("font-weight=\"bold\""), "{tag}");
+    }
+
     #[test]
     fn bar_chart_ticks_none_hides_axis_tick_labels() {
       assert!(export_svg("BarChart[{1, 2, 3}]").contains("<text"));

@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A horizontal `BarChart` (`BarOrigin -> Left`) honors `AspectRatio` (the
+    picture's height follows the plotting area instead of staying at the
+    default), sets its `ChartLegends` column beside the image like a
+    vertical chart, listing the bars from the top one down, and applies
+    `LabelStyle` to its tick labels, chart labels, title and legend. A
+    vertical chart's legend follows a bold `LabelStyle` as well.
 - `InverseZTransform` inverts a rational function with machine-number
     coefficients through its numeric poles
     (`InverseZTransform[(0.7 z)/(z - 1.5), z, n]`), with poles at the
