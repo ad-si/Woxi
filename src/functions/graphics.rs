@@ -46678,6 +46678,73 @@ pub(crate) fn base_style_pushed_args(
   }
 }
 
+/// The arguments of a `Panel`/`Framed` with its `BaseStyle -> directives`
+/// option taken out and the content set in those directives, the way an
+/// enclosing `Style[content, directives]` sets it. `None` when the box has
+/// no `BaseStyle`.
+pub(crate) fn frame_base_styled_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let (content, opts) = args.split_first()?;
+  let base = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "BaseStyle")
+    .map(|(_, v)| v.clone())?;
+  let directives: Vec<Expr> = match &base {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  let content = if directives.is_empty() {
+    content.clone()
+  } else {
+    let mut styled = vec![content.clone()];
+    styled.extend(directives);
+    call("Style", styled)
+  };
+  Some(
+    std::iter::once(content)
+      .chain(
+        opts
+          .iter()
+          .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+          .cloned(),
+      )
+      .collect(),
+  )
+}
+
+/// Where an explicit `Alignment -> h | {h, v}` option among `opts` places
+/// a box's content, as fractions from the left and from the top (0.5
+/// centers). An axis the option leaves out (or sets to `Automatic`) is
+/// `None`.
+fn frame_content_alignment(opts: &[Expr]) -> (Option<f64>, Option<f64>) {
+  let h_of = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Left" => Some(0.0),
+    Expr::Identifier(s) if s == "Center" => Some(0.5),
+    Expr::Identifier(s) if s == "Right" => Some(1.0),
+    // A number runs from -1 (left) to 1 (right).
+    other => expr_to_f64(other).map(|v| f64::midpoint(v, 1.0).clamp(0.0, 1.0)),
+  };
+  let v_of = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Top" => Some(0.0),
+    Expr::Identifier(s) if s == "Center" => Some(0.5),
+    Expr::Identifier(s) if s == "Bottom" => Some(1.0),
+    // A number runs from -1 (bottom) to 1 (top).
+    other => expr_to_f64(other).map(|v| ((1.0 - v) / 2.0).clamp(0.0, 1.0)),
+  };
+  match opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "Alignment")
+    .map(|(_, v)| v)
+  {
+    Some(Expr::List(pair)) if pair.len() == 2 => {
+      (h_of(&pair[0]), v_of(&pair[1]))
+    }
+    Some(single) => (h_of(single), None),
+    None => (None, None),
+  }
+}
+
 /// A `Row` separator as the front end sets it: a string separator is
 /// inserted as a raw token, so a relation such as `"="` gets the operator
 /// spacing on both sides (`Row[{a, 2}, "="]` reads `a = 2`). A `Style` around
@@ -47761,6 +47828,10 @@ fn framed_box_to_svg(
   // `Framed[expr, {Background -> c, FrameStyle -> s}]` takes its options
   // as one list just as well as spelled out flat.
   let args = &splice_option_lists(args)[..];
+  // `BaseStyle -> directives` sets the content the way a `Style` does.
+  if let Some(styled) = frame_base_styled_args(args) {
+    return framed_box_to_svg(&styled, default_background);
+  }
 
   let content = &args[0];
 
@@ -48052,7 +48123,15 @@ fn framed_box_to_svg(
   } else {
     (child_svg, content_w, content_h)
   };
-  let (x, y) = (left, top);
+  // An explicit `Alignment` places the content in the room an `ImageSize`
+  // larger than it leaves inside the margins.
+  let (frame_align_x, frame_align_y) = frame_content_alignment(&args[1..]);
+  let x = left
+    + (total_w - left - right - content_w).max(0.0)
+      * frame_align_x.unwrap_or(0.0);
+  let y = top
+    + (total_h - top - bottom - content_h).max(0.0)
+      * frame_align_y.unwrap_or(0.0);
   Some(format!(
     "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border}/>\n<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>\n</svg>",
     half = stroke_width / 2.0,
