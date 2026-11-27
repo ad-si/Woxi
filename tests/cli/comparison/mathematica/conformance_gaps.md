@@ -2228,11 +2228,53 @@ woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
 ```
 
 Woxi lists the principal angles of every solution, descending by the first
-unknown. The published snapshots of a Demonstration show that Wolfram also
-returns a finite list of numbers here, but with some angles shifted by a
-multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
-period it picks and the complete order of the list have **not been
-verified**.
+unknown. wolframscript 15.0 lists a sample of period-shifted instances of
+its own choosing instead, 16 for the system above:
+
+```sh
+wolframscript -code 'Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]'
+# {{-45871, -38643}, {-79793, -24189}, {16961, -38643}, {-79793, 38643}, {79793, -38643}, {-79793, 101475}, … 16 in all}
+```
+
+With `S1 = (1.696, 2.419)` and `S2 = -S1` the principal solutions, the list
+alternates `S1 + 2 Pi (c, -1)` for `c = -1, …, 6` with `S2 + 2 Pi (-1, c)`
+for `c = 0, …, 7`. No rule that covers other systems was found:
+
+- `{Cos[x] + Cos[y] == z, Sin[x] == Sin[y], z == 1}` alternates
+  `T1 + 2 Pi (-k, k)` with `T2 + 2 Pi (-k - 1, k)` for `k = 0, …, 7`.
+- `{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}` (complex angles)
+  alternates `U1 + 2 Pi (k, k)` with `U2 + 2 Pi (k, k)`.
+- Independent equations multiply: `{Cos[x] == 1/2, Sin[y] == 1/2}` gives
+  16 x 16 = 256 solutions.
+- A double solution is listed once, without shifted copies
+  (`{Cos[x] == 5/2 + 3/2 Cos[y], Sin[x] == 3/2 Sin[y]}` gives the single
+  `{x -> 0., y -> -Pi}`; Woxi gives `y -> Pi`).
+- With the domain `Reals` the first system gives 80 solutions.
+- A system that is not polynomial in the cosines and sines
+  (`{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}`) stays unevaluated in Woxi;
+  wolframscript returns 16 of its infinitely many complex solutions (and
+  misses the real one at `x = -1.0299`).
+
+The unit tests compare the cosines and sines of the angles found, which
+both systems agree on.
+
+### `NSolve` of one periodic equation: 16 instances instead of a parametrization
+
+```sh
+wolframscript -code 'NSolve[Sin[x] == 0.3, x]'
+# {{x -> 0.304693}, {x -> 2.8369}, {x -> -3.44629}, {x -> 6.58788}, {x -> -5.97849}, … 16 in all}
+woxi eval 'NSolve[Sin[x] == 0.3, x]'
+# {{x -> ConditionalExpression[0.304… + 6.283… C[1], Element[C[1], Integers]]}, {x -> ConditionalExpression[2.836… + 6.283… C[1], …]}}
+```
+
+wolframscript 15.0 no longer answers with `N[Solve[…]]` here. For a real
+sine it lists `(-1)^n t + n Pi` (`t` the principal solution) for
+`n = 0, 1, -1, 2, -2, …, 8`; a cosine equation lists `Pi/2` minus those of
+the matching sine; `Sin[x] == 2` lists `Pi/2 - 2 Pi k + 1.317 I` for
+`k = 0, …, 15` (one of the two branches only); `Exp[x] == 2` lists
+`Log[2] + 2 Pi I k` for `k = 0, …, 15`; a double root (`Sin[x] == 1`) is
+listed once; and `Tan[x] == 2` still gives the `ConditionalExpression`.
+Woxi keeps the parametrized form for all of them.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -11508,3 +11550,33 @@ wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
   GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
   sampling counts, and where directives sit (see the existing plot-internals
   notes above).
+
+
+## Unit-test conformance batch (2026-11-27)
+
+Divergences that surfaced in a `make test-unit-wolframscript` run against
+wolframscript 15.0 and were left open. The unit tests assert what both
+systems agree on. (The `NSolve`, `EdgeDetect`, `FiniteGroupData` and
+radial-embedding items of that run are recorded in their own sections
+above.)
+
+- **`InverseZTransform` with machine coefficients**: wolframscript writes
+  the result as the exact one with its numbers made inexact,
+  `15.*(-1.)^m*4.^(-1. - 1.*m)*(1. - 1.*UnitStep[-1.*m]) - 0.25*UnitStep[-1.*m]`
+  for `InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]`, where Woxi
+  gives `3.75*(-0.25)^m - 4.*DiscreteDelta[m]`. The values agree for
+  `m >= 0`; for negative `m` wolframscript's form gives `-0.25`, Woxi's 0.
+- **`ParametricNDSolve` evaluates a parameter-dependent coefficient once
+  per solve**; wolframscript evaluates it at every step (74 calls where
+  Woxi makes 1), which only a coefficient with side effects can tell.
+- **Order of the pieces of a colored fill**: `Filling` under a
+  `ColorFunction` curve is cut into one polygon per step (two triangles
+  where a step crosses the level), with the corners in wolframscript's
+  order and its triangles listed before its quadrilaterals. Within each
+  kind Woxi follows the curve; wolframscript's order is its own
+  (`ListLinePlot[{3, 1, -2, 4}, …, Filling -> Axis]` lists the triangle
+  right of each crossing before the one left of it, and
+  `{{0, 4}, {1, -1}, {3, 2}, {4, -6}, {6, -1}, {7, 5}}` with
+  `Filling -> Top` lists the first quadrilateral last). wolframscript also
+  keeps the fill in a `GraphicsComplex` with the colors as the color
+  function returns them (`Hue[1.]`), where Woxi stores `RGBColor`s.
