@@ -565,8 +565,38 @@ mod machine_complex_arrays {
     assert_eq!(
       interpret("Log[2, {3. + 0. I, 1. + 2. I, -3. + 0. I}]").unwrap(),
       "{1.5849625007211563 + 0.*I, \
-       1.1609640474436813 + 1.5972779646881086*I, \
-       1.5849625007211563 + 4.532360141827193*I}"
+       1.1609640474436813 + 1.5972779646881088*I, \
+       1.5849625007211563 + 4.532360141827194*I}"
+    );
+    // The two logarithms are divided as complex numbers, by the textbook
+    // formula: the last digit is not the one of `Log[z]/Log[b]`, which
+    // multiplies by a reciprocal.
+    assert_eq!(
+      interpret("Log[2, {0.3 - 7. I, -2.5 + 1.25 I, 1.*^10 + 3. I}]").unwrap(),
+      "{2.808678630795662 - 2.204388096755775*I, \
+       1.4828921423310437 + 3.8634580356017056*I, \
+       33.219280948873624 + 4.328085122666891*^-10*I}"
+    );
+    assert_eq!(
+      interpret("Log[3, {1. + 2. I, -3. + 0. I, 0.3 - 7. I}]").unwrap(),
+      "{0.7324867603589637 + 1.0077701926457876*I, \
+       1. + 2.859600867380127*I, 1.7720789163893254 - 1.3908140386619752*I}"
+    );
+    assert_eq!(
+      interpret("Log[10, {1. + 2. I, -3. + 0. I}]").unwrap(),
+      "{0.3494850021680094 + 0.480828578784234*I, \
+       0.4771212547196624 + 1.3643763538418412*I}"
+    );
+    // A machine base, real or complex.
+    assert_eq!(
+      interpret("{Log[2.5, 1. + 2. I], Log[1. + 2. I, 3. - 1. I]}").unwrap(),
+      "{0.878235398683015 + 1.208294135562803*I, \
+       0.3043963776916033 - 0.8186244508963498*I}"
+    );
+    // An exact fraction as base goes through the quotient.
+    assert_eq!(
+      interpret("Log[1/2, 1. + 2. I]").unwrap(),
+      "-1.1609640474436813 - 1.5972779646881086*I"
     );
     assert_eq!(
       interpret("Log[2.5, 1. + 2. I] == Log[1. + 2. I]/Log[2.5]").unwrap(),
