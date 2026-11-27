@@ -10533,6 +10533,76 @@ mod wolfram_graph_layouts {
   }
 
   #[test]
+  fn radial_embedding_draws_each_component_on_its_own() {
+    // Every piece is embedded separately (a path along a line, drawn from
+    // the right) and the pieces are packed below each other, the largest
+    // first, padded by 3/16.
+    assert_eq!(
+      interpret(
+        "Round[1000 GraphEmbedding[Graph[{1 <-> 2, 3 <-> 4, 4 <-> 5}, \
+         GraphLayout -> \"RadialEmbedding\"]]]"
+      )
+      .unwrap(),
+      "{{1188, -563}, {188, -563}, {2188, -188}, {1188, -188}, {188, -188}}"
+    );
+    // A star keeps its radial shape next to the other pieces: the hub is
+    // one unit from every leaf.
+    assert_eq!(
+      interpret(
+        "With[{p = GraphEmbedding[Graph[{1 <-> 2, 1 <-> 3, 1 <-> 4, \
+         5 <-> 6, 7 <-> 8}, GraphLayout -> \"RadialEmbedding\"]]}, \
+         {Round[EuclideanDistance[p[[1]], #] & /@ p[[2 ;; 4]], 0.001], \
+          p[[5, 2]] == p[[6, 2]], p[[7, 2]] == p[[8, 2]], \
+          p[[5, 2]] > p[[7, 2]]}]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, True, True, True}"
+    );
+  }
+
+  #[test]
+  fn spring_embedding_draws_each_component_on_its_own() {
+    // The paths lie on horizontal lines with unit steps, below the
+    // larger piece; nothing overlaps.
+    assert_eq!(
+      interpret(
+        "With[{p = GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1, \
+         3 <-> 4, 5 <-> 6, 6 <-> 7, 8 <-> 9}, \
+         GraphLayout -> \"SpringEmbedding\"]]}, \
+         {Round[p[[5 ;; 7]] - Table[p[[7]], 3], 0.001], \
+          Round[p[[8]] - p[[9]], 0.001], \
+          Min[p[[1 ;; 4, 2]]] > p[[5, 2]] > p[[8, 2]], \
+          DuplicateFreeQ[Round[p, 0.001]]}]"
+      )
+      .unwrap(),
+      "{{{2., 0.}, {1., 0.}, {0., 0.}}, {1., 0.}, True, True}"
+    );
+  }
+
+  #[test]
+  fn graph_plot_radial_drawing_is_the_radial_embedding() {
+    // `"RadialDrawing"` is the legacy name of the method.
+    assert_eq!(
+      interpret(
+        "GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5, 4 -> 6}, \
+         Method -> \"RadialDrawing\"][[1, 1]] == \
+         GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5, 4 -> 6}, \
+         Method -> \"RadialEmbedding\"][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Round[1000 GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5}, \
+         Method -> \"RadialDrawing\"][[1, 1]]]"
+      )
+      .unwrap(),
+      "{{1000, 0}, {0, 0}, {2000, 375}, {1000, 375}, {0, 375}}"
+    );
+  }
+
+  #[test]
   fn radial_embedding_layer_size_function_spaces_the_rings() {
     // Ring k lies f[k] beyond ring k - 1: 1/3 and then 1/9 out.
     assert_eq!(
