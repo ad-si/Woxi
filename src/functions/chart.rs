@@ -1035,7 +1035,17 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
   // bold in Wolfram, while the color and size still reach through. A
   // `Style` inside the `Text` applies as written.
   if let Some(inner) = text_wrapper_content(expr) {
-    return parse_styled_label(inner);
+    let mut label = parse_styled_label(inner)?;
+    // The text itself is not set in `TraditionalForm`: a one-letter
+    // symbol in the string's box code stays upright.
+    if let Expr::String(text) = inner
+      && !text.contains('\n')
+    {
+      label.markup = Some(
+        crate::functions::graphics::text_style_box_string_to_svg(text),
+      );
+    }
+    return Some(label);
   }
   // A stacked title whose lines hold pictures cannot be set as lines of
   // text; it is typeset whole, with any `Framed` box around it.
@@ -1127,10 +1137,14 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
     let mut restyled: Vec<Expr> = vec![inner.clone()];
     restyled.extend(args[1..].iter().cloned());
     let outer = call("Style", restyled);
-    let inner_label = parse_styled_label(inner)?;
+    let inner_label = parse_styled_label(&args[0])?;
     let mut label = parse_styled_label(&outer)?;
     label.bold = inner_label.bold;
     label.italic = inner_label.italic;
+    // A string's own text markup is upright (see the `Text` case above).
+    if matches!(inner, Expr::String(_)) && inner_label.markup.is_some() {
+      label.markup = inner_label.markup;
+    }
     return Some(label);
   }
   // `Style[Grid[…]/Column[…], …]` — the stacking still applies with the

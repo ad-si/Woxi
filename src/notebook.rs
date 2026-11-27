@@ -1793,7 +1793,7 @@ fn normalize_whitespace(s: &str) -> String {
 
 /// Positional arguments of `head[...]`, with trailing display options
 /// (`MultilineFunction -> None`, …) dropped.
-fn positional_box_args(head: &str, s: &str) -> Option<Vec<String>> {
+pub(crate) fn positional_box_args(head: &str, s: &str) -> Option<Vec<String>> {
   let rest = s.trim().strip_prefix(head)?.strip_prefix('[')?;
   let (inner, _) = find_matching_bracket(rest).ok()?;
   let mut args: Vec<String> = split_top_level_commas(inner)
