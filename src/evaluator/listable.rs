@@ -361,6 +361,18 @@ pub fn thread_listable(
     args
   };
   let has_sparse = args.iter().any(is_sparse);
+  // Which operands are SparseArrays over an exact zero: where one of them
+  // sits at its background, so does their product.
+  let zero_background: Vec<bool> = args
+    .iter()
+    .map(|a| {
+      is_sparse(a)
+        && matches!(
+          crate::functions::list_helpers_ast::sparse_array_background(a),
+          Some(Expr::Integer(0))
+        )
+    })
+    .collect();
   let densified: Vec<Expr>;
   let args: &[Expr] = if has_sparse {
     densified = args
@@ -448,6 +460,16 @@ pub fn thread_listable(
   // product with a dense list is another SparseArray, matching wolframscript
   // (`SparseArray[{1->5,2->3},3] * {2,2,2}` -> SparseArray[…, {10, 6}]).
   if has_sparse && name == "Times" {
+    // The factors of a position a SparseArray does not store are never
+    // multiplied: the product is the exact background there, whatever the
+    // dense factor holds (`{1.5, 2.} SparseArray[{1 -> 1}, 2]` stores the
+    // single value `1.5`, not a second `0.`).
+    let mut product = product;
+    for (mask, _) in
+      args.iter().zip(&zero_background).filter(|(_, zero)| **zero)
+    {
+      clear_sparse_background(&mut product, mask);
+    }
     return Ok(Some(
       crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
         &product,
@@ -457,6 +479,25 @@ pub fn thread_listable(
     ));
   }
   Ok(Some(product))
+}
+
+/// Put an exact `0` into `product` wherever the dense form `mask` of a
+/// SparseArray over 0 holds its background.
+fn clear_sparse_background(product: &mut Expr, mask: &Expr) {
+  match (product, mask) {
+    (Expr::List(items), Expr::List(mask_items))
+      if items.len() == mask_items.len() =>
+    {
+      let mut cleared = items.to_vec();
+      for (item, mask_item) in cleared.iter_mut().zip(mask_items.iter()) {
+        clear_sparse_background(item, mask_item);
+      }
+      *items = cleared.into();
+    }
+    (Expr::List(_), _) => {}
+    (leaf, Expr::Integer(0)) => *leaf = Expr::Integer(0),
+    _ => {}
+  }
 }
 
 /// A Listable function applied to associations (and scalars): the function

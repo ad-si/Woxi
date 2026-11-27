@@ -647,7 +647,7 @@ mod machine_complex_arrays {
             < 10.^-6}"
       )
       .unwrap(),
-      "{SparseArray, {32, 32}, {64, 64}, 256, 0., True}"
+      "{SparseArray, {32, 32}, {64, 64}, 256, 0, True}"
     );
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
@@ -766,8 +766,45 @@ mod sparse_array_direct_paths {
          s = SparseArray[{{1, 1} -> 1}, {2, 2}]; Normal[2^(z s)]"
       )
       .unwrap(),
-      "{{1.5384778027279442 + 1.2779225526272695*I, 1. + 0.*I}, \
-       {1. + 0.*I, 1. + 0.*I}}"
+      "{{1.5384778027279442 + 1.2779225526272695*I, 1}, {1, 1}}"
+    );
+  }
+
+  /// A list times a SparseArray stores a product only where the
+  /// SparseArray stores a value: everywhere else the result is the exact
+  /// background, whatever the list holds there.
+  #[test]
+  fn list_times_sparse_array_keeps_the_exact_background() {
+    clear_state();
+    let setup = "z = {{1. + 1. I, 2. - 1. I}, {0.5 + 0. I, 3. + 2. I}}; \
+                 s = SparseArray[{{1, 1} -> 1}, {2, 2}];";
+    assert_eq!(
+      interpret(&format!("{setup} z s")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, \
+       {1. + 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(&format!("{setup} {{{{1.5, 2.}}, {{3., 4.}}}} s")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1.5}}]"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{setup} {{Normal[z s], Normal[{{{{a, b}}, {{c, d}}}} s], \
+         Normal[(z s)^2]}}"
+      ))
+      .unwrap(),
+      "{{{1. + 1.*I, 0}, {0, 0}}, {{a, 0}, {0, 0}}, {{0. + 2.*I, 0}, {0, 0}}}"
+    );
+    // A function of the product takes the background along.
+    assert_eq!(
+      interpret(&format!("{setup} Cos[z s]")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 1, {1, {{0, 1, 1}, {{1}}}, \
+       {0.8337300251311491 - 0.9888977057628651*I}}]"
+    );
+    // A scalar factor, though, multiplies the background too.
+    assert_eq!(
+      interpret(&format!("{setup} s 1.5")).unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 1, 1}, {{1}}}, {1.5}}]"
     );
   }
 }
