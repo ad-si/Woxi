@@ -1004,6 +1004,90 @@ mod dynamic_release_in_frames {
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);
     assert!(result.graphics.unwrap().contains(">7</text>"));
   }
+
+  // A `Text` between the frame and its `Dynamic` only sets the value in
+  // the text face: the value is still released and drawn.
+  #[test]
+  fn panel_text_dynamic_layout_is_drawn() {
+    clear_state();
+    for frame in ["Panel", "Framed"] {
+      let result = interpret_with_stdout(&format!(
+        "Column[{{\"top\", {frame}[Text[Dynamic[Grid[{{StringJoin[\"po\", #] & /@ \
+         {{\"sition\", \"lar\"}}}}, Frame -> All]]]]}}]"
+      ))
+      .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(!svg.contains("Dynamic"), "{frame}: source leaked: {svg}");
+      assert!(!svg.contains("StringJoin"), "{frame}: unevaluated: {svg}");
+      assert!(svg.contains(">position</text>"), "{frame}: {svg}");
+      assert!(svg.contains(">polar</text>"), "{frame}: {svg}");
+    }
+  }
+
+  // Outside visual mode a `Dynamic` is not released; exporting a layout
+  // with a framed one must still terminate.
+  #[test]
+  fn framed_dynamic_item_exports_outside_visual_mode() {
+    clear_state();
+    for frame in ["Panel", "Framed"] {
+      let svg = interpret(&format!(
+        "ExportString[Column[{{{frame}[Dynamic[x]]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.starts_with("<svg"), "{frame}: {svg}");
+    }
+  }
+}
+
+mod pointer_wrappers_draw_their_content {
+  use super::*;
+
+  // `MouseAppearance`, `StatusArea` and `PopupWindow` only change what the
+  // pointer does over their content, which is drawn as it would be alone.
+  #[test]
+  fn wrapped_graphic_in_column_is_drawn() {
+    for (head, second) in [
+      ("MouseAppearance", "\"Arrow\""),
+      ("MouseAppearance", "Style[\"+\", Background -> Red]"),
+      ("StatusArea", "\"note\""),
+      ("PopupWindow", "\"more\""),
+    ] {
+      clear_state();
+      let result = interpret_with_stdout(&format!(
+        "Column[{{{head}[Graphics[Disk[]], {second}], \"caption\"}}]"
+      ))
+      .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(!svg.contains(head), "{head}: source leaked: {svg}");
+      assert!(
+        svg.contains("<ellipse")
+          || svg.contains("<circle")
+          || svg.contains("<path"),
+        "{head}: disk missing: {svg}"
+      );
+      assert!(svg.contains(">caption</text>"), "{head}: {svg}");
+    }
+  }
+
+  #[test]
+  fn wrapped_graphic_alone_is_drawn() {
+    clear_state();
+    let result =
+      interpret_with_stdout("MouseAppearance[Graphics[Disk[]], \"Arrow\"]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  // A script still echoes the call, as wolframscript does.
+  #[test]
+  fn stays_symbolic_in_a_script() {
+    clear_state();
+    assert_eq!(
+      interpret("MouseAppearance[Graphics[Disk[]], \"Arrow\"]").unwrap(),
+      "MouseAppearance[-Graphics-, Arrow]"
+    );
+  }
 }
 
 mod labeled_text_layout {

@@ -1223,6 +1223,8 @@ fn graph_render(
   let vertex_radius = vertex_size_default
     .as_ref()
     .map_or(auto_radius, size_radius);
+  let explicit_vertex_size =
+    vertex_size_default.is_some() || !vertex_size_rules.is_empty();
   let vertex_radii: Vec<f64> = vertices
     .iter()
     .map(|v| {
@@ -1420,7 +1422,7 @@ fn graph_render(
       // visibly outside the shorter arcs it encloses) rather than the small
       // fixed spacing used to separate ordinary parallel edges.
       let offset_mag = if layout_choice.linear {
-        clen
+        clen / 2.0
       } else {
         offset_idx * spacing
       };
@@ -1621,7 +1623,19 @@ fn graph_render(
           }
         }
       }
-      None => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
+      // An undirected `"LinearEmbedding"` arc is the `BezierCurve` Wolfram
+      // draws, whose control point (twice as high as the arc itself)
+      // counts toward the picture's extent.
+      None => match (curve_ctrl, default_pts.first(), default_pts.last()) {
+        (Some(ctrl), Some(&from), Some(&to))
+          if layout_choice.linear && !edge_data.directed =>
+        {
+          primitives.push(call1("BezierCurve", points_expr(&[from, ctrl, to])));
+        }
+        _ => {
+          primitives.push(line_or_arrow(edge_data.directed, &default_pts));
+        }
+      },
     }
 
     // `EdgeLabels -> {edge -> label, …}` (and GraphPlot's `{edge, label}`
@@ -1815,8 +1829,28 @@ fn graph_render(
       .map(|(_, s)| s.clone())
       .or_else(|| vertex_shape_default.clone());
     if let Some(shape) = shape
-      && let Some(inset) = vertex_shape_inset(&shape, x, y, vertex_radius)
+      && let Some(inset) =
+        vertex_shape_inset(&shape, x, y, vertex_radii[i], explicit_vertex_size)
     {
+      // A sized picture takes up its vertex's whole square in the drawing,
+      // however much of that square the picture itself leaves blank.
+      if explicit_vertex_size {
+        let r = vertex_radii[i];
+        primitives.push(Expr::List(
+          vec![
+            call1("Opacity", Expr::Integer(0)),
+            call1("EdgeForm", id_expr("None")),
+            call(
+              "Rectangle",
+              vec![
+                Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
+                Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
+              ],
+            ),
+          ]
+          .into(),
+        ));
+      }
       primitives.push(inset);
       continue;
     }
@@ -2853,24 +2887,8 @@ fn layered_layout(
   if components.len() > 1 {
     let mut pts = vec![(0.0, 0.0); n];
     for comp in &components {
-      let mut local = vec![usize::MAX; n];
-      let mut sub: DiGraph<usize, RenderEdgeData> = DiGraph::new();
-      for (k, &v) in comp.iter().enumerate() {
-        local[v] = k;
-        sub.add_node(k);
-      }
-      for edge in graph.edge_references() {
-        let (s, d) =
-          (local[edge.source().index()], local[edge.target().index()]);
-        if s != usize::MAX && d != usize::MAX {
-          sub.add_edge(
-            NodeIndex::new(s),
-            NodeIndex::new(d),
-            edge.weight().clone(),
-          );
-        }
-      }
-      let sub_root = root.map(|r| local[r]).filter(|&r| r != usize::MAX);
+      let sub = component_subgraph(graph, comp);
+      let sub_root = root.and_then(|r| comp.iter().position(|&v| v == r));
       let sub_pts = layered_layout(
         &sub,
         dir,
@@ -3392,7 +3410,7 @@ fn compute_layout(
   if components.len() <= 1 {
     // A tree is drawn as one, as Wolfram's automatic layout does: tidily
     // from its root (the one vertex nothing points at, else its center).
-    let root = {
+    let (root, rooted) = {
       let mut indeg = vec![0usize; n];
       for e in graph.edge_references() {
         if e.weight().directed {
@@ -3402,30 +3420,17 @@ fn compute_layout(
       let sources: Vec<usize> = (0..n).filter(|&v| indeg[v] == 0).collect();
       let directed = graph.edge_references().all(|e| e.weight().directed);
       match sources.as_slice() {
-        [only] if directed => *only,
-        _ => graph_center(graph),
+        [only] if directed => (*only, true),
+        _ => (graph_center(graph), false),
       }
     };
     if let Some(children) = tree_children(graph, root) {
       // A path lies along a horizontal line, from the end that comes
-      // first among the vertices.
-      let adj = edge_order_adjacency(graph);
-      if adj.iter().all(|a| a.len() <= 2)
-        && let Some(start) = (0..n).find(|&v| adj[v].len() <= 1)
-        && let Some(path) = tree_children(graph, start)
-      {
-        let mut pts = vec![(0.0, 0.0); n];
-        let (mut v, mut k) = (start, 0.0);
-        loop {
-          pts[v] = (k, 0.0);
-          match path[v].first() {
-            Some(&next) => {
-              v = next;
-              k += 1.0;
-            }
-            None => break,
-          }
-        }
+      // first among the vertices — unless its edges all lead away from a
+      // vertex in its middle: that one is a root with two branches, drawn
+      // above them like any other tree.
+      let branching_root = rooted && children[root].len() > 1;
+      if !branching_root && let Some(pts) = path_positions(graph) {
         return pts;
       }
       // A large tree would crowd its deepest layers into a sliver, so
@@ -3776,7 +3781,8 @@ fn parse_named_layout(value: &Expr) -> Option<NamedLayout> {
       }
     }
     "SpiralEmbedding" => NamedLayout::SpiralEmbedding,
-    "RadialEmbedding" => NamedLayout::Radial {
+    // `"RadialDrawing"` is `GraphPlot`'s older name for the same method.
+    "RadialEmbedding" | "RadialDrawing" => NamedLayout::Radial {
       root: sub("RootVertex").cloned(),
       layer_size: sub("LayerSizeFunction").cloned(),
     },
@@ -3926,21 +3932,117 @@ fn named_layout_positions(
       ))
     }
     NamedLayout::Radial { root, layer_size } => {
-      let root = root
-        .as_ref()
-        .and_then(lookup)
-        .unwrap_or_else(|| graph_center(graph));
-      Some(radial_layout(graph, root, layer_size.as_ref()))
+      let root = root.as_ref().and_then(lookup);
+      let radial = |part: &DiGraph<usize, RenderEdgeData>,
+                    root: Option<usize>| {
+        radial_layout(
+          part,
+          root.unwrap_or_else(|| graph_center(part)),
+          layer_size.as_ref(),
+        )
+      };
+      let components = weakly_connected_components(graph);
+      if components.len() > 1 {
+        return Some(layout_by_component(graph, &components, |part, comp| {
+          packed_path_positions(part).unwrap_or_else(|| {
+            radial(part, root.and_then(|r| comp.iter().position(|&v| v == r)))
+          })
+        }));
+      }
+      Some(radial(graph, root))
     }
     NamedLayout::Spring => {
       let components = weakly_connected_components(graph);
       if components.len() > 1 {
-        return None;
+        return Some(layout_by_component(graph, &components, |part, _| {
+          packed_path_positions(part).unwrap_or_else(|| {
+            let all: Vec<usize> = (0..part.node_count()).collect();
+            unit_mean_edge(force_layout_component(part, &all), part)
+          })
+        }));
       }
       let comp: Vec<usize> = (0..n).collect();
       Some(force_layout_component(graph, &comp))
     }
   }
+}
+
+/// The part of `graph` spanned by the vertices `comp`, renumbered by their
+/// position in `comp`.
+fn component_subgraph(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  comp: &[usize],
+) -> DiGraph<usize, RenderEdgeData> {
+  let mut local = vec![usize::MAX; graph.node_count()];
+  let mut sub: DiGraph<usize, RenderEdgeData> = DiGraph::new();
+  for (k, &v) in comp.iter().enumerate() {
+    local[v] = k;
+    sub.add_node(k);
+  }
+  for edge in graph.edge_references() {
+    let (s, d) = (local[edge.source().index()], local[edge.target().index()]);
+    if s != usize::MAX && d != usize::MAX {
+      sub.add_edge(NodeIndex::new(s), NodeIndex::new(d), edge.weight().clone());
+    }
+  }
+  sub
+}
+
+/// A disconnected graph drawn piece by piece: `layout` embeds each of the
+/// `components` on its own (it gets the component as a graph and the
+/// vertices it is made of), and the drawings are packed side by side,
+/// left-aligned in columns that make the block closest to a square.
+fn layout_by_component(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  components: &[Vec<usize>],
+  layout: impl Fn(&DiGraph<usize, RenderEdgeData>, &[usize]) -> Vec<(f64, f64)>,
+) -> Vec<(f64, f64)> {
+  let mut pts = vec![(0.0, 0.0); graph.node_count()];
+  for comp in components {
+    let part = component_subgraph(graph, comp);
+    for (&v, p) in comp.iter().zip(layout(&part, comp)) {
+      pts[v] = p;
+    }
+  }
+  pack_component_columns(components, pts, true, false)
+}
+
+/// A path that is one of several components (see [`path_positions`]):
+/// Wolfram draws it from the right, the end that comes first among the
+/// vertices last.
+fn packed_path_positions(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Option<Vec<(f64, f64)>> {
+  let pts = path_positions(graph)?;
+  let last = pts.len() as f64 - 1.0;
+  Some(pts.into_iter().map(|(x, y)| (last - x, y)).collect())
+}
+
+/// A path graph laid along a horizontal line with unit steps, from the
+/// end that comes first among the vertices; `None` for any other graph.
+fn path_positions(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Option<Vec<(f64, f64)>> {
+  let adj = edge_order_adjacency(graph);
+  let n = adj.len();
+  if n < 2 || adj.iter().any(|a| a.len() > 2) {
+    return None;
+  }
+  let start = (0..n).find(|&v| adj[v].len() <= 1)?;
+  let path = tree_children(graph, start)?;
+  let mut pts = vec![(0.0, 0.0); n];
+  let (mut v, mut k) = (start, 0.0);
+  loop {
+    pts[v] = (k, 0.0);
+    match path[v].first() {
+      Some(&next) => {
+        v = next;
+        k += 1.0;
+      }
+      None => break,
+    }
+  }
+  Some(pts)
 }
 
 /// The vertex of smallest eccentricity (the first such), treating every
@@ -4186,7 +4288,7 @@ fn pack_grid_components(
   components: &[Vec<usize>],
   pts: Vec<(f64, f64)>,
 ) -> Vec<(f64, f64)> {
-  pack_component_columns(components, pts, false)
+  pack_component_columns(components, pts, false, false)
 }
 
 /// Pack separately laid-out components (of a layered drawing, say) the
@@ -4197,7 +4299,7 @@ fn pack_square_components(
   components: &[Vec<usize>],
   pts: Vec<(f64, f64)>,
 ) -> Vec<(f64, f64)> {
-  pack_component_columns(components, pts, true)
+  pack_component_columns(components, pts, true, true)
 }
 
 /// Fill columns of height `column_height` first-fit with rectangles of
@@ -4222,10 +4324,15 @@ fn fill_columns(
   (columns, used)
 }
 
+/// Stack the components' padded bounding boxes in columns. `square` picks
+/// the column height that makes the block closest to a square (otherwise
+/// the tallest component sets it); `centered` centers each component
+/// across its column (otherwise they are left-aligned).
 fn pack_component_columns(
   components: &[Vec<usize>],
   mut pts: Vec<(f64, f64)>,
   square: bool,
+  centered: bool,
 ) -> Vec<(f64, f64)> {
   if components.len() <= 1 {
     return pts;
@@ -4291,7 +4398,7 @@ fn pack_component_columns(
     let mut y = 0.0;
     for &i in col {
       let (xmin, _, _, ymax) = bounds[i];
-      let inset = if square {
+      let inset = if centered {
         (width - widths[i]) / 2.0
       } else {
         0.0
@@ -4931,6 +5038,7 @@ fn vertex_shape_inset(
   x: f64,
   y: f64,
   radius: f64,
+  explicit_size: bool,
 ) -> Option<Expr> {
   let evaluated = crate::evaluator::evaluate_expr_to_expr(shape).ok()?;
   // `Graph[…]`/`Graphics[…]` stay symbolic under ordinary evaluation (the
@@ -4955,7 +5063,14 @@ fn vertex_shape_inset(
   // Large enough that a nested picture's own detail (an RNA arc diagram's
   // nested arcs, say) stays legible, without one vertex's icon swallowing
   // its neighbors in the outer layout.
-  let size = radius * 12.0;
+  //
+  // A `VertexSize` setting is the size of the picture itself: it fills the
+  // square the vertex's marker would have been inscribed in.
+  let size = if explicit_size {
+    radius * 2.0
+  } else {
+    radius * 12.0
+  };
   Some(call(
     "Inset",
     vec![
@@ -7184,6 +7299,19 @@ fn collect_directives(expr: &Expr) -> Vec<Expr> {
   }
 }
 
+/// The directives one part's style rule (`edge -> style`) gives it:
+/// `Directive[d1, d2]` and a list `{d1, d2}` both stand for their
+/// members, however deeply they nest.
+fn rule_directives(style: &Expr) -> Vec<Expr> {
+  match style {
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().flat_map(rule_directives).collect()
+    }
+    Expr::List(items) => items.iter().flat_map(rule_directives).collect(),
+    _ => vec![style.clone()],
+  }
+}
+
 /// Split a `VertexStyle` / `EdgeStyle` value into its per-part rules and
 /// the directives that apply to every part.
 ///
@@ -7281,7 +7409,7 @@ fn apply_style_rule(
     return part.clone();
   };
   let mut args = vec![part.clone()];
-  args.extend(collect_directives(style));
+  args.extend(rule_directives(style));
   call("Style", args)
 }
 
