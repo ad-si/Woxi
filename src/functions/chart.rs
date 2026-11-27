@@ -437,7 +437,7 @@ pub(crate) enum LabelSegment {
 /// the numbers in the row — into text and picture segments. `None` unless the
 /// row holds at least one picture.
 fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
-  if crate::functions::graphics::expr_to_svg_markup_lines(expr).len() == 1
+  if crate::functions::graphics::label_sets_one_picture(expr)
     // Set in the picture's text face, like the titles of plain text.
     && let Some(svg) =
       crate::functions::graphics::structured_legend_label_svg(expr)
@@ -1577,6 +1577,10 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool, bool) {
 /// Accepts strings, identifiers, and numeric values (so `ChartLabels ->
 /// Range[16]` and similar numeric label lists render correctly).
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
+  // `StyleForm` is displayed exactly as `Style`.
+  if let Some(styled) = crate::functions::graphics::style_forms_as_style(e) {
+    return expr_to_label(&styled);
+  }
   match e {
     Expr::String(s) => Some(s.clone()),
     // The bare symbol `None` always means "no label" for a label option
@@ -4353,6 +4357,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.chart_legends,
       opts.plot_range_x,
       &bar_labels,
+      opts.aspect_ratio.filter(|_| !opts.fixed_height),
+      bar_chart_look(args).label_style,
     );
     return Ok(crate::graphics_result(svg));
   }
@@ -6228,6 +6234,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     w,
     cy,
     1.0,
+    false,
   ));
 
   // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
@@ -7407,6 +7414,17 @@ pub(crate) fn with_chart_legend(
   legends: &[String],
   color: impl Fn(usize) -> (u8, u8, u8),
 ) -> String {
+  with_chart_legend_styled(svg, legends, color, false)
+}
+
+/// [`with_chart_legend`] with the labels in bold when `bold` is set (a
+/// `LabelStyle -> Bold` chart).
+pub(crate) fn with_chart_legend_styled(
+  svg: String,
+  legends: &[String],
+  color: impl Fn(usize) -> (u8, u8, u8),
+  bold: bool,
+) -> String {
   if legends.is_empty() {
     return svg;
   }
@@ -7440,8 +7458,20 @@ pub(crate) fn with_chart_legend(
     .filter(|v| *v > 0.0);
   let scale = shown_w.map_or(1.0, |sw| w / sw);
   // WL sets the legend beside the chart's image, which keeps its size.
+  // Bold glyphs run about a tenth wider than regular ones.
+  let bold_room = if bold {
+    legends
+      .iter()
+      .map(|l| crate::functions::plot::chart_legend_entry_width(l))
+      .fold(0.0, f64::max)
+      * 0.1
+  } else {
+    0.0
+  };
   let legend_width =
-    (crate::functions::plot::chart_legend_column_width(legends, 1.0)).round();
+    (crate::functions::plot::chart_legend_column_width(legends, 1.0)
+      + bold_room)
+      .round();
   let new_w = w + legend_width * scale;
   let mut new_tag = format!(
     "{}viewBox=\"0 0 {new_w} {h}{}",
@@ -7470,6 +7500,7 @@ pub(crate) fn with_chart_legend(
     w,
     h / 2.0,
     scale,
+    bold,
   ));
   let body = &svg[tag_end..];
   let close = body.rfind("</svg>").unwrap_or(body.len());
