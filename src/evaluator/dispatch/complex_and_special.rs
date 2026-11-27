@@ -3170,28 +3170,126 @@ fn script_template(name: &str, parts: Vec<Expr>) -> Expr {
   )
 }
 
-/// The boxes of an operand of `Infix` (`infix`) or `Prefix`, bracketed when
-/// it prints with an operator of its own: a sum or a rule in both, a
-/// product only after a prefix operator (`f@(a b)`, but `a b + c`). Calls,
-/// powers and atoms stay bare.
-fn operator_form_operand_box(operand: &Expr, infix: bool) -> Expr {
-  let boxes = expr_to_box_form(operand);
-  let operator_row = match &boxes {
-    Expr::FunctionCall { name, args } if name == "RowBox" => !matches!(
-      args.first(),
-      Some(Expr::List(items))
-        if matches!(items.get(1), Some(Expr::String(s)) if s == "[")
-    ),
-    _ => false,
-  };
-  let product = matches!(
-    canonical_operator_call(operand),
-    Expr::FunctionCall { ref name, .. } if name == "Times"
-  );
-  if operator_row && !(infix && product) {
-    paren_box(boxes)
+/// The box of an operator token of a display wrapper: an operator the
+/// FrontEnd recognizes is its bare text (`+`, `&&`), any other string a
+/// quoted literal (`"foo"`), anything else its own boxes.
+fn operator_form_token_box(
+  op: &Expr,
+  position: crate::syntax::OperatorPosition,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  match op {
+    Expr::String(s)
+      if crate::syntax::box_operator_token(s, position).is_some() =>
+    {
+      str_expr(s)
+    }
+    other => boxes(other),
+  }
+}
+
+/// The box of an operand of a display wrapper, bracketed when it is an
+/// operator row binding no tighter than the wrapper's operator token
+/// (`precedence`): `(a + b)*c`, `a b + c`, `f@(a!)`. A script, fraction or
+/// root is a unit of its own and never bracketed.
+fn operator_form_operand_box(
+  operand: &Expr,
+  precedence: f64,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  let operand = canonical_operator_call(operand);
+  let boxed = boxes(&operand);
+  if boxed_operand_bracketed(&operand, &boxed, precedence) {
+    paren_box(boxed)
   } else {
-    boxes
+    boxed
+  }
+}
+
+fn boxed_operand_bracketed(
+  operand: &Expr,
+  boxed: &Expr,
+  precedence: f64,
+) -> bool {
+  matches!(boxed, Expr::FunctionCall { name, .. } if name == "RowBox")
+    && crate::syntax::operator_display_precedence(operand)
+      .is_some_and(|p| p <= precedence)
+}
+
+/// Whether the operand of a display wrapper is bracketed next to an operator
+/// token of `precedence` (see `operator_form_operand_box`), for renderers
+/// that lay the row out as text (TeX).
+pub(crate) fn operator_form_operand_bracketed(
+  operand: &Expr,
+  precedence: f64,
+) -> bool {
+  let operand = canonical_operator_call(operand);
+  boxed_operand_bracketed(&operand, &expr_to_box_form(&operand), precedence)
+}
+
+/// The row of an `Infix` layout, its operands and operator boxed by
+/// `boxes` (StandardForm or TraditionalForm).
+fn infix_row(
+  layout: &crate::syntax::InfixLayout,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  use crate::syntax::{InfixOperator, OperatorPosition};
+  let (separator, precedence) = match &layout.operator {
+    InfixOperator::Head(head) => (
+      vec![
+        str_expr(" "),
+        str_expr("~"),
+        str_expr(head),
+        str_expr("~"),
+        str_expr(" "),
+      ],
+      crate::syntax::INFIX_DEFAULT_PRECEDENCE as f64,
+    ),
+    InfixOperator::Given(op) => (
+      vec![operator_form_token_box(op, OperatorPosition::Infix, boxes)],
+      crate::syntax::box_operator_token_precedence(op, OperatorPosition::Infix),
+    ),
+  };
+  let mut row = Vec::new();
+  for (i, operand) in layout.operands.iter().enumerate() {
+    if i > 0 {
+      row.extend(separator.iter().cloned());
+    }
+    row.push(operator_form_operand_box(operand, precedence, boxes));
+  }
+  row_box(row)
+}
+
+/// The row of `Prefix[f[x]]` (`f@x`) or `Postfix[f[x]]` (`x//f`), or with an
+/// operator in place of the head, `!x`, `x!`.
+fn prefix_postfix_row(
+  name: &str,
+  args: &[Expr],
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  use crate::syntax::OperatorPosition;
+  let Some((head, operand, op)) = crate::syntax::prefix_postfix_parts(args)
+  else {
+    unreachable!("guarded by the caller")
+  };
+  let position = if name == "Prefix" {
+    OperatorPosition::Prefix
+  } else {
+    OperatorPosition::Postfix
+  };
+  let default_op = if name == "Prefix" { "@" } else { "//" };
+  let token = op.cloned().unwrap_or_else(|| str_expr(default_op));
+  let precedence =
+    crate::syntax::box_operator_token_precedence(&token, position);
+  let operand = operator_form_operand_box(operand, precedence, boxes);
+  let token = operator_form_token_box(&token, position, boxes);
+  match (position, op) {
+    (OperatorPosition::Prefix, Some(_)) => row_box(vec![token, operand]),
+    (OperatorPosition::Prefix, None) => {
+      row_box(vec![str_expr(head), token, operand])
+    }
+    (_, Some(_)) => row_box(vec![operand, token]),
+    (_, None) => row_box(vec![operand, token, str_expr(head)]),
   }
 }
 
@@ -5128,79 +5226,28 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
       )
     }
-    // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
-    // expressions (an operator expression other than a product bracketed),
-    // a string operator contributing its text; `Infix[f[a, b]]` puts
-    // `~f~` between them. Like `Prefix` (`f@x`) and `Postfix` (`x//f`), the
-    // row is an `InterpretationBox` that reads back as the wrapper. With a
-    // precedence or grouping the wrapper boxes as a plain call.
+    // `Infix[{a, b}, "+"]` is the row `a + b` and `Infix[f[a, b]]` the row
+    // `a ~f~ b`, as an `InterpretationBox` that reads back as the wrapper,
+    // like `Prefix` (`f@x`) and `Postfix` (`x//f`). An operand binding no
+    // tighter than the operator is bracketed (see
+    // `operator_form_row`). With a precedence or grouping the wrapper boxes
+    // as a plain call.
     Expr::FunctionCall { name, args }
       if name == "Infix"
         && args.len() <= 2
-        && crate::syntax::infix_display_items(args).is_some() =>
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
     {
-      let operands: &[Expr] = match &args[0] {
-        Expr::List(items) => items,
-        Expr::FunctionCall { args: items, .. } => items,
-        _ => unreachable!("guarded by infix_display_items"),
-      };
-      let separator: Vec<Expr> = match (&args.get(1), &args[0]) {
-        (Some(Expr::String(s)), _) => vec![str_expr(s)],
-        (Some(op), _) => vec![expr_to_box_form(op)],
-        (None, Expr::FunctionCall { name: head, .. }) => vec![
-          str_expr(" "),
-          str_expr("~"),
-          str_expr(head),
-          str_expr("~"),
-          str_expr(" "),
-        ],
-        (None, _) => unreachable!("guarded by infix_display_items"),
-      };
-      let mut row = Vec::new();
-      for (i, operand) in operands.iter().enumerate() {
-        if i > 0 {
-          row.extend(separator.iter().cloned());
-        }
-        row.push(operator_form_operand_box(operand, true));
-      }
-      interpretation_box_of(row_box(row), expr)
+      interpretation_box_of(infix_row(&layout, &expr_to_box_form), expr)
     }
     Expr::FunctionCall { name, args }
       if (name == "Prefix" || name == "Postfix")
-        && (1..=2).contains(&args.len())
-        && matches!(&args[0], Expr::FunctionCall { args: inner, .. }
-          if inner.len() == 1) =>
+        && args.len() <= 2
+        && crate::syntax::prefix_postfix_parts(args).is_some() =>
     {
-      let Expr::FunctionCall {
-        name: head,
-        args: inner,
-      } = &args[0]
-      else {
-        unreachable!("guarded by the match arm")
-      };
-      let prefix = name == "Prefix";
-      let op = match args.get(1) {
-        Some(Expr::String(s)) => str_expr(s),
-        Some(other) => expr_to_box_form(other),
-        None if prefix => str_expr("@"),
-        None => str_expr("//"),
-      };
-      let row = if prefix {
-        let operand = operator_form_operand_box(&inner[0], false);
-        if args.len() == 2 {
-          vec![op, operand]
-        } else {
-          vec![str_expr(head), op, operand]
-        }
-      } else {
-        let operand = expr_to_box_form(&inner[0]);
-        if args.len() == 2 {
-          vec![operand, op]
-        } else {
-          vec![operand, op, str_expr(head)]
-        }
-      };
-      interpretation_box_of(row_box(row), expr)
+      interpretation_box_of(
+        prefix_postfix_row(name, args, &expr_to_box_form),
+        expr,
+      )
     }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):
@@ -8993,10 +9040,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
     }
-    // `Infix[{a, b}, "+"]` lays its operands out with the operator between
-    // them, each item displayed (a string operator contributes its text).
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      tf_row(items.iter().map(tf_display).collect())
+    // `Infix`, `Prefix` and `Postfix` lay out as in StandardForm, their
+    // parts in TraditionalForm boxes.
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      interpretation_box_of(infix_row(&layout, &tf), &call(name, args.to_vec()))
+    }
+    "Prefix" | "Postfix"
+      if args.len() <= 2
+        && crate::syntax::prefix_postfix_parts(args).is_some() =>
+    {
+      interpretation_box_of(
+        prefix_postfix_row(name, args, &tf),
+        &call(name, args.to_vec()),
+      )
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item

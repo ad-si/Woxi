@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- `Infix`, `Prefix` and `Postfix` print as the call in the script-mode
+    display and `Print`, like wolframscript, and are laid out only by
+    `ToString` (and in boxes). There an operand binding no tighter than
+    the wrapper's precedence is bracketed (`(a + b) ~f~ (c d)`,
+    `f@ (a!)`), `Infix[f[a, b]]` reads `a ~f~ b`, a bare list uses
+    `~List~`, a list of operators is shown between each pair, and a call
+    with fewer than two operands, a precedence that is not a machine
+    integer (`Infix::intm`) or an invalid grouping (`Infix::group`) keeps
+    its function form. In boxes the operands are bracketed by the
+    operator's own precedence (`a b + c` but `(a b)*c`), an operator the
+    FrontEnd does not know is a quoted string, and TraditionalForm boxes
+    read back as the wrapper too.
 - `ToBoxes[a . b]` is the infix row `a . b` (bracketed as a power base)
     and a call with a compound head (`f[a][b]`, `(a + b)[c]`) boxes as a
     row instead of a string. `Transpose[m, perm]` of something that is not

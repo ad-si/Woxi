@@ -8699,15 +8699,48 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       items.join(&separator)
     }
-    // Infix joins its operands with the operator, a string written literally.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      items
+    // Infix joins its operands with the operator, a string written
+    // literally, `Infix[f[a, b]]` with `\sim`: `a \sim f\sim  b`. An operand
+    // binding no tighter than the operator is bracketed, `(a+b)*c`.
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      use crate::syntax::{InfixOperator, OperatorPosition};
+      let (separator, precedence) = match &layout.operator {
+        InfixOperator::Head(head) => (
+          format!(
+            " \\sim {}\\sim  ",
+            expr_to_tex(&Expr::Identifier(head.clone()))
+          ),
+          crate::syntax::INFIX_DEFAULT_PRECEDENCE as f64,
+        ),
+        InfixOperator::Given(op) => (
+          match op {
+            Expr::String(text) => text.clone(),
+            other => expr_to_tex(other),
+          },
+          crate::syntax::box_operator_token_precedence(
+            op,
+            OperatorPosition::Infix,
+          ),
+        ),
+      };
+      layout
+        .operands
         .iter()
-        .map(|item| match item {
-          Expr::String(text) => text.clone(),
-          other => expr_to_tex(other),
+        .map(|operand| {
+          let text = expr_to_tex(operand);
+          if crate::evaluator::dispatch::complex_and_special::operator_form_operand_bracketed(
+            operand, precedence,
+          ) {
+            format!("({text})")
+          } else {
+            text
+          }
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .join(&separator)
     }
     // Column stacks its items in a left-aligned array.
     "Column" if !args.is_empty() => {
@@ -10000,14 +10033,31 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
     // `Infix[{a, b}, "+"]` is the row `a + b`; a string operator contributes
     // its text rather than a quoted literal.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      let parts: Vec<String> = items
-        .iter()
-        .map(|item| match item {
-          Expr::String(s) => format!("\"{}\"", escape_box_text(s)),
-          other => expr_to_boxes(other),
-        })
-        .collect();
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      let quoted = |s: &str| format!("\"{}\"", escape_box_text(s));
+      let separator: Vec<String> = match &layout.operator {
+        crate::syntax::InfixOperator::Head(head) => {
+          vec![
+            quoted(" "),
+            quoted("~"),
+            quoted(head),
+            quoted("~"),
+            quoted(" "),
+          ]
+        }
+        crate::syntax::InfixOperator::Given(Expr::String(s)) => vec![quoted(s)],
+        crate::syntax::InfixOperator::Given(op) => vec![expr_to_boxes(op)],
+      };
+      let mut parts = Vec::new();
+      for (i, operand) in layout.operands.iter().enumerate() {
+        if i > 0 {
+          parts.extend(separator.iter().cloned());
+        }
+        parts.push(expr_to_boxes(operand));
+      }
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
     // `Row` typesets through one of the FrontEnd's row templates rather than
