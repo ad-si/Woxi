@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `EdgeDetect` and `GradientFilter` take `Method -> "ShenCastan"` (the
+    gradient of a two-sided exponential), and
+    `EdgeDetect[…, "StraightEdges" -> s]` keeps only the edges on straight
+    lines, picked with a Hough transform. Both left the call unevaluated.
 - `Pane[content, {w, h}, Scrollbars -> True]` keeps content larger than
     its box at its own size behind scrollbars taken out of the box, instead
     of ignoring the option and cutting the content off; `Automatic` draws

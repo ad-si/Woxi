@@ -8669,8 +8669,19 @@ give `PolyhedronData::notent`, so notebooks that offer them in a menu
 
 ### EdgeDetect: `"ShenCastan"`, `"StraightEdges"` and the default threshold
 
-`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are computed;
-`"ShenCastan"` and a non-zero `"StraightEdges"` leave the call unevaluated.
+`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are compared
+against wolframscript below. `Method -> "ShenCastan"` (also of
+`GradientFilter`) and a non-zero `"StraightEdges"` are computed but have not
+been compared against wolframscript, whose kernels and line selection are
+not documented:
+
+- `"ShenCastan"` takes the gradient of the two-sided exponential
+  `Exp[-Abs[k]/(r/2)]` cut off at `Ceiling[r]`, scaled so a unit ramp has
+  slope 1, and thins it as the other methods do.
+- `"StraightEdges" -> s` votes each edge pixel into a Hough accumulator
+  (one degree by one pixel) along its own edge direction and keeps the
+  pixels on lines with at least the fraction `s` of the strongest line's
+  votes.
 
 With an explicit threshold `t` the result matches wolframscript pixel for
 pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
