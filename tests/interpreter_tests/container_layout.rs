@@ -334,4 +334,55 @@ mod container_layout {
     assert!(centers[1] - centers[0] > 30.0, "{centers:?}");
     assert!(centers[2] - centers[1] < 40.0, "{centers:?}");
   }
+
+  #[test]
+  fn string_beside_a_picture_keeps_the_letters_of_a_constant_name() {
+    // A string that happens to spell a constant (or `Null`) is still text:
+    // it must be drawn exactly like any other string of the same shape, not
+    // as the constant's glyph (or as nothing).
+    for (constant, plain) in [
+      ("E", "F"),
+      ("I", "J"),
+      ("Pi", "Pj"),
+      ("Infinity", "Infinitz"),
+      ("Degree", "Degref"),
+      ("Null", "Nulk"),
+    ] {
+      for template in [
+        "Row[{Graphics[Circle[], ImageSize -> 20], \"{}\"}]",
+        "Column[{Graphics[Circle[], ImageSize -> 20], \"{}\"}]",
+        "Grid[{{Graphics[Circle[], ImageSize -> 20], \"{}\"}}]",
+        "Labeled[Graphics[Circle[], ImageSize -> 20], \"{}\"]",
+        "Row[{Graphics[Circle[], ImageSize -> 20], Style[\"{}\", Red]}]",
+        "Text@Grid[{{Row[{Graphics[Circle[], ImageSize -> 20], \"{}\"}]}}]",
+      ] {
+        let svg = export_svg(&template.replace("{}", constant));
+        assert!(svg.contains(&format!(">{constant}</text>")), "{svg:.3000}");
+        let expected = export_svg(&template.replace("{}", plain))
+          .replace(&format!(">{plain}</text>"), &format!(">{constant}</text>"));
+        // Only the proportional faces advance differently per letter, so
+        // compare the markup around the text positions.
+        let strip = |s: &str| -> String {
+          let mut out = String::new();
+          let mut rest = s;
+          while let Some(i) = rest.find("<text x=\"") {
+            out.push_str(&rest[..i + 9]);
+            rest = &rest[i + 9..];
+            rest = &rest[rest.find('"').unwrap()..];
+          }
+          out + rest
+        };
+        if template.starts_with("Row[{Graphics[Circle[], ImageSize -> 20], \"")
+        {
+          assert_eq!(strip(&svg), strip(&expected), "{constant}");
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn constant_symbol_beside_a_picture_is_still_typeset_as_its_glyph() {
+    let svg = export_svg("Row[{Graphics[Circle[], ImageSize -> 20], Pi}]");
+    assert!(svg.contains("\u{03C0}"), "{svg:.3000}");
+  }
 }

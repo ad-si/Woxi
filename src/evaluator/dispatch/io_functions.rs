@@ -6862,6 +6862,17 @@ fn locator_pane_graphic_via_epilog(
 /// a `Style`); the parts of a `Row` already render as text.
 fn unquoted_display_string(expr: &Expr) -> Expr {
   match expr {
+    // A string that spells a symbol with a typeset form of its own (`"E"`,
+    // `"Pi"`, `"I"`, `"Null"`) stays a string: as a bare symbol it would be
+    // drawn as that symbol's glyph (`ⅇ`, `π`, `ⅈ`, nothing) rather than as
+    // the letters the string holds. A string's box is drawn without its
+    // quotation marks anyway.
+    Expr::String(s)
+      if s == "Null"
+        || crate::functions::graphics::typeset_constant_glyph(s).is_some() =>
+    {
+      expr.clone()
+    }
     // A string with inline `\!\(\*…\)` boxes is typeset, not printed.
     Expr::String(s) => {
       crate::functions::graphics::inline_box_string_to_box_expr(s).map_or_else(
