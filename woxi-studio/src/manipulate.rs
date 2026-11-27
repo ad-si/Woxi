@@ -41,6 +41,17 @@ pub fn text_svg_handle(svg: &str) -> svg::Handle {
   svg::Handle::from_memory(woxi::with_default_text_family(&svg).into_bytes())
 }
 
+/// The box a scrolling `Pane` body is shown in, scrollbars included.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollViewport {
+  pub width: f32,
+  pub height: f32,
+  /// Whether the pane scrolls sideways.
+  pub horizontal: bool,
+  /// Whether the pane scrolls up and down.
+  pub vertical: bool,
+}
+
 impl LabelIcon {
   pub fn from_svg(svg: String) -> Self {
     let (width, height) = svg_root_size(&svg).unwrap_or((24.0, 24.0));
@@ -247,6 +258,15 @@ pub enum ControlState {
     repetitions: Option<woxi::functions::graphics::TriggerRepetitions>,
     /// Sweeps finished since the last press of play.
     completed: u32,
+    /// The sweep runs downward, from `max` to `min` (`{u, 0, -10, -1,
+    /// Trigger}`, or an end that another control moved below the start).
+    descending: bool,
+    /// The buttons `AppearanceElements` asks for, in order (empty for the
+    /// default play/pause toggle).
+    elements: Vec<woxi::functions::graphics::TriggerElement>,
+    /// The direction button turned the animation around: it runs against
+    /// the sweep until the button is pressed again.
+    backward: bool,
   },
   /// A `Button[label, action]` row. Pressing it runs `action` (InputForm)
   /// against the live bindings — e.g. `time = 0; {U, V} = {Uinit, Vinit}`
@@ -1249,6 +1269,10 @@ pub struct ManipulateState {
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
+  /// The box of a `Pane[…, Scrollbars -> …]` body. `graphics_handle` then
+  /// holds the whole content at its own size, which the view scrolls inside
+  /// this box; the regions below are in the content's coordinates.
+  pub scroll_viewport: Option<ScrollViewport>,
   /// Pressable `Button` cells drawn inside the rendered picture (a board
   /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
   /// coordinates. The view overlays a real clickable area on each.
@@ -1343,6 +1367,10 @@ pub struct ManipulateState {
   /// Names of the controls drawn on the same line as the control before
   /// them (see `ManipulateSpec::row_joined_controls`).
   row_joined_controls: Vec<String>,
+  /// Names of the controls stacked below the control before them inside
+  /// one item of a panel line (see
+  /// `ManipulateSpec::column_stacked_controls`).
+  column_stacked_controls: Vec<String>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -1600,6 +1628,14 @@ impl ManipulateState {
           Some(ControlState::Button { .. })
         );
     }
+    // A text row written between the controls of one `Row` stays on the
+    // line of the control before it.
+    if let Some(ControlState::Heading { label, .. }) =
+      self.controls.get(ctrl_idx)
+    {
+      let key = woxi::functions::graphics::heading_visibility_key(label);
+      return ctrl_idx > 0 && self.row_joined_controls.contains(&key);
+    }
     (ctrl_idx > 0 || self.panel_displays.iter().any(|(_, at)| *at == 0))
       && self
         .controls
@@ -1607,6 +1643,22 @@ impl ManipulateState {
         .map(|c| c.name())
         .is_some_and(|name| {
           !name.is_empty() && self.row_joined_controls.iter().any(|n| n == name)
+        })
+  }
+
+  /// Whether the control at `ctrl_idx` sits directly below the control
+  /// before it inside one item of a panel line, because a
+  /// `Row[{Column[{Control[…], Control[…]}], Control[…]}]` argument stacks
+  /// them in a column with the row's other controls beside it.
+  pub fn stacks_under_previous_control(&self, ctrl_idx: usize) -> bool {
+    ctrl_idx > 0
+      && self
+        .controls
+        .get(ctrl_idx)
+        .map(|c| c.name())
+        .is_some_and(|name| {
+          !name.is_empty()
+            && self.column_stacked_controls.iter().any(|n| n == name)
         })
   }
 
@@ -1701,6 +1753,7 @@ impl ManipulateState {
       panel_displays: spec.panel_displays,
       display_trees: Vec::new(),
       graphics_handle: None,
+      scroll_viewport: None,
       button_regions: Vec::new(),
       tooltip_regions: Vec::new(),
       click_regions: Vec::new(),
@@ -1726,6 +1779,7 @@ impl ManipulateState {
       content_width: spec.content_width,
       content_height: spec.content_height,
       row_joined_controls: spec.row_joined_controls,
+      column_stacked_controls: spec.column_stacked_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       animation_rate: spec.animation_rate,
@@ -2607,14 +2661,16 @@ impl ManipulateState {
       for (i, c) in self.controls.iter_mut().enumerate() {
         if let ControlState::Trigger {
           min,
+          max,
           current,
           completed,
           repetitions: Some(_),
+          descending,
           ..
         } = c
         {
           *completed = 0;
-          *current = *min;
+          *current = if *descending { *max } else { *min };
           restarted.push(i);
         }
       }
@@ -2705,17 +2761,26 @@ impl ManipulateState {
         step,
         current,
         completed,
+        descending,
+        backward,
         ..
       } => {
-        let mut v = *current + rate_increment.unwrap_or(*step);
-        if max.is_finite() && v > *max + *step * 1e-6 {
+        // A descending sweep runs from `max` down to `min`, and the
+        // direction button turns either kind around.
+        let (start, end, sign) = if *descending != *backward {
+          (*max, *min, -1.0)
+        } else {
+          (*min, *max, 1.0)
+        };
+        let mut v = *current + sign * rate_increment.unwrap_or(*step);
+        if end.is_finite() && sign * (v - end) > *step * 1e-6 {
           *completed += 1;
           if limit.is_some_and(|n| *completed >= n) {
             // The last requested sweep is done: rest on the final frame.
-            v = *max;
+            v = end;
             finished = true;
           } else {
-            v = *min;
+            v = start;
           }
         }
         *current = v;
@@ -2727,6 +2792,72 @@ impl ManipulateState {
       self.playing = false;
     }
     self.reevaluate();
+  }
+
+  /// Move the Trigger at `ctrl_idx` one step along its sweep (`forward`) or
+  /// against it, wrapping around at either end — its step buttons. Returns
+  /// `true` if the control is a Trigger.
+  pub fn step_trigger(&mut self, ctrl_idx: usize, forward: bool) -> bool {
+    let Some(ControlState::Trigger {
+      min,
+      max,
+      step,
+      current,
+      descending,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    let up = *descending != forward;
+    let mut v = if up {
+      *current + *step
+    } else {
+      *current - *step
+    };
+    let eps = *step * 1e-6;
+    if up && max.is_finite() && v > *max + eps {
+      v = *min;
+    } else if !up && min.is_finite() && v < *min - eps {
+      v = if max.is_finite() { *max } else { *min };
+    }
+    *current = v;
+    self.sync_named_siblings(ctrl_idx);
+    true
+  }
+
+  /// Put the Trigger at `ctrl_idx` back on the start of its sweep and stop
+  /// the animation — its reset button. Returns `true` if the control is a
+  /// Trigger.
+  pub fn reset_trigger(&mut self, ctrl_idx: usize) -> bool {
+    let Some(ControlState::Trigger {
+      min,
+      max,
+      current,
+      completed,
+      descending,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *current = if *descending { *max } else { *min };
+    *completed = 0;
+    self.playing = false;
+    self.sync_named_siblings(ctrl_idx);
+    true
+  }
+
+  /// Turn around the direction the Trigger at `ctrl_idx` animates in — its
+  /// direction button. Returns `true` if the control is a Trigger.
+  pub fn flip_trigger_direction(&mut self, ctrl_idx: usize) -> bool {
+    let Some(ControlState::Trigger { backward, .. }) =
+      self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *backward = !*backward;
+    true
   }
 
   /// Re-run the body with the current control bindings and update the
@@ -2741,7 +2872,7 @@ impl ManipulateState {
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
     let before = self.bindings();
-    self.reevaluate_inner(true);
+    self.reevaluate_inner(Self::MAX_SETTLE_PASSES);
     self.settle_inner_dynamics(before);
   }
 
@@ -2776,7 +2907,7 @@ impl ManipulateState {
         break;
       }
       before = after;
-      self.reevaluate_inner(true);
+      self.reevaluate_inner(Self::MAX_SETTLE_PASSES);
     }
   }
 
@@ -2849,15 +2980,22 @@ impl ManipulateState {
     }
   }
 
-  /// The body of [`reevaluate`]. `allow_retry` guards the single re-run
-  /// that a re-resolved choice list can trigger: when the new list drops
-  /// the selected value, the output just rendered was for a value the
-  /// control no longer offers, so it is rendered once more for the value
-  /// the control settled on. The re-run cannot cascade — it resolves the
-  /// same lists against bindings that already satisfy them.
+  /// How many more times a body that keeps moving its own tracked controls
+  /// is run after the first pass, before the frame is drawn as is.
+  const MAX_SETTLE_PASSES: u8 = 3;
+
+  /// The body of [`reevaluate`]. `retries_left` is the budget of re-runs
+  /// left for a body that moves its own tracked controls. While it is
+  /// positive, a re-resolved choice list can also trigger a single re-run:
+  /// when the new list drops the selected value, the output just rendered
+  /// was for a value the control no longer offers, so it is rendered once
+  /// more for the value the control settled on. That re-run cannot
+  /// cascade — it resolves the same lists against bindings that already
+  /// satisfy them.
   ///
   /// [`reevaluate`]: Self::reevaluate
-  fn reevaluate_inner(&mut self, allow_retry: bool) {
+  fn reevaluate_inner(&mut self, retries_left: u8) {
+    let allow_retry = retries_left > 0;
     self.apply_pending_locator_resets();
     let bindings = self.bindings();
     let code = self.body.clone();
@@ -2975,7 +3113,9 @@ impl ManipulateState {
       // The content area is `ContentSize` wide: a list or other text wider
       // than that breaks into lines there, as the FrontEnd lays it out,
       // rather than running off in one long line.
-      if let Some(width) = content_width
+      // So does the text of a `Pane` at the pane's own width.
+      let pane_width = render.as_ref().ok().and_then(text_pane_width);
+      if let Some(width) = pane_width.or(content_width)
         && let Ok(r) = &render
         && let Some(flowed) = flow_to_content_width(r, width)
       {
@@ -3117,8 +3257,16 @@ impl ManipulateState {
     let mut moved_tracked_control = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        // A body that rewrites a variable its explicit `TrackedSymbols`
+        // names (a simulation ending each step with `tick += del`) is run
+        // again by the front end, until a pass leaves the variable alone.
+        let explicitly_tracked = self
+          .tracked_symbols
+          .as_ref()
+          .is_some_and(|t| t.iter().any(|n| *n == name));
         if slot.1 != value
-          && (self.module_locals.contains(&name)
+          && (explicitly_tracked
+            || self.module_locals.contains(&name)
             || self.dynamic_feedback_vars.contains(&name))
         {
           self.self_refreshing = true;
@@ -3158,15 +3306,18 @@ impl ManipulateState {
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
-      self.reevaluate_inner(false);
+      self.reevaluate_inner(0);
       return;
     }
     // The front end re-runs a body that changed a variable it tracks, so
     // the frame shows the values the body settled on: everything computed
-    // before the body's own `T = 450` is computed again for 450. A single
-    // extra pass settles a body that pins a control to a fixed value.
-    if allow_retry && moved_tracked_control {
-      self.reevaluate_inner(false);
+    // before the body's own `T = 450` is computed again for 450. One extra
+    // pass settles a body that pins a control to a fixed value; one that
+    // rejects a move in steps (limit the move and flag the bad position,
+    // put the control back, clear the flag) takes a pass per step. The
+    // budget keeps a body that never settles from holding up the frame.
+    if retries_left > 0 && moved_tracked_control {
+      self.reevaluate_inner(retries_left - 1);
       return;
     }
     // A `Dynamic` late in the body may set a module variable an earlier one
@@ -3177,7 +3328,7 @@ impl ManipulateState {
       && self.self_refreshing
       && matches!(&render, Ok(r) if !r.warnings.is_empty())
     {
-      self.reevaluate_inner(false);
+      self.reevaluate_inner(0);
       return;
     }
 
@@ -3217,6 +3368,18 @@ impl ManipulateState {
         };
 
         if let Some(svg) = result.graphics {
+          // A scrolling `Pane` is drawn as its whole content, which the
+          // view scrolls for real, rather than as the static picture
+          // with scrollbars drawn in.
+          let scroll_pane = woxi::scroll_pane_parts(&svg);
+          self.scroll_viewport =
+            scroll_pane.as_ref().map(|pane| ScrollViewport {
+              width: pane.width as f32,
+              height: pane.height as f32,
+              horizontal: pane.horizontal,
+              vertical: pane.vertical,
+            });
+          let svg = scroll_pane.map_or(svg, |pane| pane.content_svg);
           let handle = text_svg_handle(&svg);
           self.button_regions = button_regions_of(&svg);
           self.tooltip_regions = tooltip_regions_of(&svg);
@@ -3231,6 +3394,7 @@ impl ManipulateState {
           // No graphic: either a textual result or genuinely empty output.
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
+          self.scroll_viewport = None;
           self.button_regions.clear();
           self.tooltip_regions.clear();
           self.click_regions.clear();
@@ -3253,6 +3417,7 @@ impl ManipulateState {
         // Surface the evaluation error. The render path shows the error in
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
+        self.scroll_viewport = None;
         self.button_regions.clear();
         self.tooltip_regions.clear();
         self.click_regions.clear();
@@ -3298,28 +3463,40 @@ impl ManipulateState {
       let is_trigger = self.controls.iter().any(
         |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
       );
-      let (min, max, current) = match self.controls.iter_mut().find(|c| {
-        matches!(
-          c,
-          ControlState::Continuous { name: n, .. }
-          | ControlState::Trigger { name: n, .. } if n == name
-        )
-      }) {
-        Some(ControlState::Continuous {
-          min, max, current, ..
-        })
-        | Some(ControlState::Trigger {
-          min, max, current, ..
-        }) => (min, max, current),
-        _ => continue,
-      };
+      let mut no_direction = false;
+      let (min, max, current, descending) =
+        match self.controls.iter_mut().find(|c| {
+          matches!(
+            c,
+            ControlState::Continuous { name: n, .. }
+            | ControlState::Trigger { name: n, .. } if n == name
+          )
+        }) {
+          Some(ControlState::Continuous {
+            min, max, current, ..
+          }) => (min, max, current, &mut no_direction),
+          Some(ControlState::Trigger {
+            min,
+            max,
+            current,
+            descending,
+            ..
+          }) => (min, max, current, descending),
+          _ => continue,
+        };
       let was_inside = *min <= *current && *current <= *max;
+      // The bounds are resolved as the spec gives them: start first, then
+      // end. A Trigger sweeping downward keeps them the other way round.
+      if *descending {
+        std::mem::swap(min, max);
+      }
       if let Some(v) = new_min {
         *min = *v;
       }
       if let Some(v) = new_max {
         *max = *v;
       }
+      *descending = is_trigger && *max < *min;
       if *max < *min {
         std::mem::swap(min, max);
       }
@@ -3750,17 +3927,21 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label,
         label_runs,
         repetitions,
+        elements,
         ..
       } => ControlState::Trigger {
         name: name.clone(),
         label: label.clone(),
         label_runs: label_runs.clone(),
-        min: *min,
-        max: *max,
-        step: *step,
+        min: min.min(*max),
+        max: min.max(*max),
+        step: step.abs(),
         current: *initial,
         repetitions: repetitions.clone(),
         completed: 0,
+        descending: *max < *min,
+        elements: elements.clone(),
+        backward: false,
       },
       ManipulateControl::Button {
         label,
@@ -4006,6 +4187,74 @@ mod tests {
     let t = state.controls.iter().find(|c| c.name() == "t").unwrap();
     assert_eq!(t.current_code(), "7");
     assert_eq!(shown(&state), "107");
+  }
+
+  /// A body that rejects a move over several of its own runs — limit the
+  /// step, flag the bad position and count it, then put the control back,
+  /// then clear the flag — is run until it stops moving its control, as the
+  /// front end re-evaluates a `Dynamic` whose tracked variable changed. The
+  /// frame shows the settled state, and each rejected move is counted.
+  #[test]
+  fn body_rejecting_a_move_in_steps_runs_until_settled() {
+    let code = r#"Manipulate[
+      x = xOld + Clip[x - xOld, {-3, 3}];
+      hit = x > 5;
+      If[!hit, xOld = x; phase = 0,
+        If[phase == 0, count = count + 1; phase = 1, x = xOld]];
+      {x, hit, count},
+      {{x, 2}, 0, 10, 1}, {{xOld, 2}, None}, {{hit, False}, None},
+      {{phase, 0}, None}, {{count, 0}, None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let shown = |s: &ManipulateState| match s.check_render() {
+      Ok(r) => r.result,
+      Err(e) => panic!("render failed: {e}"),
+    };
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "x")
+      .expect("x control");
+    let slide = |state: &mut ManipulateState, to: f64| {
+      state.slide_continuous(idx, to);
+      if state.request_reeval(idx) {
+        state.run_scheduled_reeval();
+      }
+    };
+    assert_eq!(shown(&state), "{2, False, 0}");
+    slide(&mut state, 4.0);
+    assert_eq!(shown(&state), "{4, False, 0}");
+    // Rejected: back at the last good position, flag cleared, counted once.
+    slide(&mut state, 9.0);
+    assert_eq!(shown(&state), "{4, False, 1}");
+    assert_eq!(state.controls[idx].current_code(), "4");
+    // A second rejected move counts again.
+    slide(&mut state, 10.0);
+    assert_eq!(shown(&state), "{4, False, 2}");
+    slide(&mut state, 3.0);
+    assert_eq!(shown(&state), "{3, False, 2}");
+  }
+
+  /// A body that never settles (it moves its own control every run) is
+  /// re-run a bounded number of times per change, not forever.
+  #[test]
+  fn body_that_never_settles_stops_after_bounded_passes() {
+    let code = r#"Manipulate[x = Mod[x + 1, 10]; n = n + 1; {x, n},
+      {x, 0, 10, 1}, {{n, 0}, None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let n = |s: &ManipulateState| -> i64 {
+      let v = &s.state.iter().find(|(name, _)| name == "n").unwrap().1;
+      v.parse().expect("integer n")
+    };
+    let before = n(&state);
+    state.reevaluate();
+    assert_eq!(
+      n(&state) - before,
+      1 + ManipulateState::MAX_SETTLE_PASSES as i64
+    );
   }
 
   /// A Manipulate graphic's labels (`Text[Style["A", 20, "Label"], …]`)
@@ -4702,6 +4951,60 @@ mod tests {
     );
   }
 
+  /// A `Row[{Column[{Control[…], …}], Control[…], Button[…]}]` argument
+  /// keeps its column of controls as one block of the panel line: the
+  /// column's later controls stack below its first, and the control and
+  /// button written after the column sit beside it. Regression: the column
+  /// was flattened, so every control took a line of its own and only the
+  /// button stayed beside the last one.
+  #[test]
+  fn column_of_controls_in_a_row_stacks_beside_the_rows_other_controls() {
+    let code = r#"Manipulate[
+      {a, b, c, flag, seed},
+      {{seed, 1}, ControlType -> None},
+      Row[{Spacer[30],
+        Column[{
+          Control@{{a, 2, "a"}, 1, 3, 1, SetterBar},
+          Control@{{b, 2, "b"}, 1, 3, 1, SetterBar},
+          Control@{{c, 2, "c"}, 1, 3, 1, SetterBar},
+        }, Alignment -> Right],
+        Spacer[30],
+        Control@{{flag, False, "flag"}, {True, False}},
+        Spacer[30],
+        Button["again", seed = seed + 1; flag = False]}],
+      {d, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    let layout: Vec<(String, bool, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Button { label, .. } => format!("button {label}"),
+          other => other.name().to_string(),
+        };
+        (
+          key,
+          state.joins_previous_control(i),
+          state.stacks_under_previous_control(i),
+        )
+      })
+      .collect();
+    let expected: Vec<(String, bool, bool)> = vec![
+      ("a".into(), false, false),
+      ("b".into(), false, true),
+      ("c".into(), false, true),
+      ("flag".into(), true, false),
+      ("button again".into(), true, false),
+      ("d".into(), false, false),
+    ];
+    assert_eq!(layout, expected);
+  }
+
   /// Controls sharing one `Row[{Control[…], Spacer[…], Control[…]}]`
   /// argument keep that grouping in the Studio's control state, so a setter
   /// bar and the 2D slider beside it are drawn on one line, while the next
@@ -4892,6 +5195,51 @@ mod tests {
         "{place}"
       );
     }
+  }
+
+  /// Text written between the controls of one `Row` (blank padding or a
+  /// caption) stays on their line: the heading row it becomes joins the
+  /// control before it, and the control after it joins in turn. A text row
+  /// that leads a `Row`, or stands on its own, still starts a line.
+  #[test]
+  fn text_between_row_controls_stays_on_their_line() {
+    let code = r#"Manipulate[
+      {a, b, c, d},
+      "top",
+      Row[{Control[{a, 0, 1}], "      ", Control[{b, 0, 1}]}],
+      Row[{"lead", Control[{c, 0, 1}], Style["mid", Bold], "dle",
+        Control[{d, 0, 1}], "tail"}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(String, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Heading { label, .. } => label.clone(),
+          other => other.name().to_string(),
+        };
+        (key, state.joins_previous_control(i))
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = [
+      ("top", false),
+      ("a", false),
+      ("      ", true),
+      ("b", true),
+      ("lead", false),
+      ("c", true),
+      ("middle", true),
+      ("d", true),
+      ("tail", true),
+    ]
+    .iter()
+    .map(|(k, j)| (k.to_string(), *j))
+    .collect();
+    assert_eq!(joins, expected);
   }
 
   /// A custom control layout `Row[{Place[1], Spacer[…], Place[2]}]` puts
@@ -5092,6 +5440,45 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body `Pane[…, Scrollbars -> True, ImageSize -> {w, h}]` wider than
+  /// its box is shown whole inside a scrolling viewport of that size, not
+  /// cut off at the box's edge; without the option it has no viewport.
+  #[test]
+  fn pane_body_with_scrollbars_scrolls_its_whole_content() {
+    woxi::clear_state();
+    let build = |options: &str| {
+      let code = format!(
+        "Manipulate[Pane[Grid[{{Table[Graphics[Disk[], ImageSize -> 60], n]}}], \
+         ImageSize -> {{300, 200}}{options}], {{{{n, 8}}, 1, 12, 1}}]"
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate");
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget")
+    };
+    let mut state = build(", Scrollbars -> True");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.scroll_viewport,
+      Some(ScrollViewport {
+        width: 300.0,
+        height: 200.0,
+        horizontal: true,
+        vertical: true,
+      })
+    );
+    let svg = state.current_svg().expect("the row is drawn").to_string();
+    let content = woxi::scroll_pane_parts(&svg).expect("a scrolling pane");
+    let (content_w, _) =
+      svg_root_size(&content.content_svg).expect("content size");
+    assert!(
+      content_w > 300.0,
+      "the content keeps its width: {content_w}"
+    );
+    // The viewport follows the body as the controls move.
+    state.reevaluate();
+    assert!(state.scroll_viewport.is_some());
+    assert_eq!(build("").scroll_viewport, None);
   }
 
   /// A body `Pane[Text@Grid[…], {If[big, Automatic, w], …}, Alignment ->
@@ -6868,6 +7255,39 @@ mod tests {
     state.reevaluate();
     assert!(state.label_svg("a").is_some());
     assert_eq!(state.label_svgs.iter().filter(|(n, _)| n == "a").count(), 1);
+  }
+
+  /// A checkbox captioned with an arrow set over two letters (a vector
+  /// from one point to another) draws the caption as a typeset icon, the
+  /// arrow above its base, instead of spelling the arrow out after the
+  /// letters as `PQ^(⟶)`. A caption that reads as one line stays text.
+  #[test]
+  fn stacked_overscript_caption_renders_as_label_icon() {
+    let code = "Manipulate[{p, q}, \
+      {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+      {{q, False, \"draw Q\"}, {True, False}}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let icon = state.label_svg("p").expect("a typeset icon for p");
+    assert!(
+      icon.width > 30.0 && icon.height > 12.0,
+      "{}x{}",
+      icon.width,
+      icon.height
+    );
+    let ControlState::Discrete { label, .. } = &state.controls[0] else {
+      panic!("expected a discrete control: {:?}", state.controls[0]);
+    };
+    assert!(!label.contains("^("), "label: {label:?}");
+    assert!(state.label_svg("q").is_none());
+    let ControlState::Discrete { label, .. } = &state.controls[1] else {
+      panic!("expected a discrete control: {:?}", state.controls[1]);
+    };
+    assert_eq!(label, "draw Q");
+    // Toggling the checkbox keeps the icon.
+    state.reevaluate();
+    assert!(state.label_svg("p").is_some());
   }
 
   #[test]
@@ -9886,6 +10306,158 @@ mod tests {
     assert_eq!(trigger_step(&state), Some(0.1));
   }
 
+  /// A Trigger whose end and step are products with another control's
+  /// variable (a speed slider) follows that slider, and sweeps downward
+  /// from its start once the slider makes the end smaller than the start.
+  /// Regression: the step stayed at its initial size, and a downward sweep
+  /// jumped to the far end on the first tick.
+  #[test]
+  fn trigger_sweep_follows_signed_speed_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{angle, speed},
+        Row[{Control[{{speed, 1, \"speed\"}, -2, 2, 0.5}],
+          Control[{{angle, 0, \"run\"}, 0, 10*Sign[speed], 0.25*speed,
+            Trigger, DisplayAllSteps -> True}]}],
+        TrackedSymbols :> {speed, angle}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let trigger = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "angle" => Some((*min, *max, *step, *current)),
+        _ => None,
+      })
+    };
+    let speed_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "speed")
+      .unwrap();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.25, 0.0)));
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.25, 0.25)));
+    assert!(state.slide_continuous(speed_idx, 2.0));
+    state.reevaluate();
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.5, 0.75)));
+    // A negative speed turns the sweep around: it runs from 0 down to -10.
+    assert!(state.slide_continuous(speed_idx, -2.0));
+    state.reevaluate();
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, 0.0)));
+    state.advance_animation();
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, -1.0)));
+    // Past the end it starts over from the start of the sweep.
+    for _ in 0..19 {
+      state.advance_animation();
+    }
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, 0.0)));
+  }
+
+  /// A Trigger whose `AppearanceElements` name step, reset and direction
+  /// buttons offers them: a step moves one increment either way and wraps
+  /// at the ends, the direction button turns the animation around, and
+  /// reset returns to the start and stops playing.
+  #[test]
+  fn trigger_appearance_elements_step_reset_and_turn_around() {
+    use woxi::functions::graphics::TriggerElement;
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[u, {{u, 0}, 0, 4, 1, Trigger, AppearanceElements -> \
+        {\"StepLeftButton\", \"StepRightButton\", \"PlayPauseButton\", \
+         \"DirectionButton\", \"ResetButton\"}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let Some(ControlState::Trigger { elements, .. }) = state.controls.first()
+    else {
+      panic!("expected a Trigger row, got {:?}", state.controls);
+    };
+    assert_eq!(
+      elements,
+      &[
+        TriggerElement::StepLeft,
+        TriggerElement::StepRight,
+        TriggerElement::PlayPause,
+        TriggerElement::Direction,
+        TriggerElement::Reset,
+      ]
+    );
+    let current = |s: &ManipulateState| match &s.controls[0] {
+      ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger row, got {other:?}"),
+    };
+    assert!(state.step_trigger(0, true));
+    assert!(state.step_trigger(0, true));
+    assert_eq!(current(&state), 2.0);
+    assert!(state.step_trigger(0, false));
+    assert_eq!(current(&state), 1.0);
+    // Stepping left past the start wraps to the end, and back again.
+    state.step_trigger(0, false);
+    state.step_trigger(0, false);
+    assert_eq!(current(&state), 4.0);
+    state.step_trigger(0, true);
+    assert_eq!(current(&state), 0.0);
+    // Turned around, the animation runs from the end toward the start.
+    assert!(state.flip_trigger_direction(0));
+    state.advance_animation();
+    assert_eq!(current(&state), 4.0);
+    state.advance_animation();
+    assert_eq!(current(&state), 3.0);
+    state.flip_trigger_direction(0);
+    state.advance_animation();
+    assert_eq!(current(&state), 4.0);
+    state.toggle_play();
+    assert!(state.playing);
+    assert!(state.reset_trigger(0));
+    assert_eq!(current(&state), 0.0);
+    assert!(!state.playing, "reset stops the animation");
+    // A Trigger without the option keeps its default look.
+    let plain = woxi::interpret_to_expr("Manipulate[u, {u, 0, 4, 1, Trigger}]")
+      .expect("parse Manipulate expr");
+    let plain =
+      ManipulateState::from_expr(&plain).expect("build Manipulate widget");
+    assert!(matches!(
+      plain.controls.first(),
+      Some(ControlState::Trigger { elements, .. }) if elements.is_empty()
+    ));
+  }
+
+  /// A Trigger whose end lies below its start sweeps downward from the
+  /// start. Regression: it jumped to the end and stayed in place.
+  #[test]
+  fn trigger_with_descending_range_sweeps_downward() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[u, {u, 0, -3, -1, ControlType -> Trigger}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger { current, .. } => Some(*current),
+        _ => None,
+      })
+    };
+    let mut seen = vec![current(&state)];
+    for _ in 0..4 {
+      state.advance_animation();
+      seen.push(current(&state));
+    }
+    let expected: Vec<Option<f64>> =
+      [0.0, -1.0, -2.0, -3.0, 0.0].into_iter().map(Some).collect();
+    assert_eq!(seen, expected);
+  }
+
   /// A Trigger whose initial value lies outside its sweep rests on that
   /// value until it is pressed, also when one of its bounds is `Dynamic`.
   /// Regression: re-resolving the dynamic bound clamped the resting value
@@ -11006,19 +11578,49 @@ pub fn flow_to_content_width(
   render: &woxi::InterpretResult,
   width: f64,
 ) -> Option<woxi::InterpretResult> {
-  let svg = render.graphics.as_ref()?;
+  // A bare list has no picture of its own, only its typeset text.
+  let svg = render.graphics.as_ref().or(render.output_svg.as_ref())?;
   if woxi::functions::graphics::parse_svg_wh(svg).0 <= width + 0.5 {
     return None;
   }
-  let flowed = woxi::functions::graphics::wrap_wide_text_to_width(
-    render.expr.as_ref()?,
-    width,
-  )?;
+  // A text pane shows the text it wraps, and a list on its own breaks like
+  // the single item of a column.
+  let shown = match render.expr.as_ref()? {
+    Expr::FunctionCall { name, args }
+      if name == "Pane" && !args.is_empty() && render.graphics.is_none() =>
+    {
+      &args[0]
+    }
+    shown => shown,
+  };
+  let layout = match shown {
+    list @ Expr::List(_) => &Expr::FunctionCall {
+      name: "Column".to_string(),
+      args: vec![Expr::List(vec![list.clone()].into())].into(),
+    },
+    layout => layout,
+  };
+  let flowed =
+    woxi::functions::graphics::wrap_wide_text_to_width(layout, width)?;
   // Read back as source, so a `TraditionalForm` layout stays one rather
   // than turning into the box text InputForm shows it as.
   woxi::interpret_with_stdout(&woxi::syntax::expr_to_source_form(&flowed))
     .ok()
     .filter(|r| r.graphics.is_some())
+}
+
+/// The width of the `Pane[text, size]` that `render` shows as plain text
+/// (it drew no picture): the width its text breaks into lines at. `None`
+/// for any other output, or a pane without a fixed width.
+pub fn text_pane_width(render: &woxi::InterpretResult) -> Option<f64> {
+  match render.expr.as_ref()? {
+    Expr::FunctionCall { name, args }
+      if name == "Pane" && render.graphics.is_none() =>
+    {
+      woxi::functions::graphics::pane_width_points(args)
+    }
+    _ => None,
+  }
 }
 
 /// The room a Manipulate's content area keeps free on each side of a
@@ -11098,6 +11700,100 @@ mod repeated_option_tests {
     assert_eq!(state.error, None);
     assert_eq!(state.control_placement, ControlPlacement::Left);
     assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// A popup menu over entities lists each one under the name its notebook
+  /// icon showed, while the variable still holds the `Entity[…]` itself.
+  #[test]
+  fn entity_choices_are_listed_by_their_display_names() {
+    use woxi::functions::entity_ast::register_entity_label;
+    register_entity_label("KiteShape", "DeltaKite", "delta kite", "kite shape");
+    register_entity_label("KiteShape", "BoxKite", "box kite", "kite shape");
+    let code = r#"Manipulate[kite,
+      {{kite, Entity["KiteShape", "BoxKite"]},
+        {Entity["KiteShape", "DeltaKite"], Entity["KiteShape", "BoxKite"],
+         Entity["KiteShape", "UnnamedKite"]}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    match &state.controls[0] {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &["delta kite", "box kite", "Entity[KiteShape, UnnamedKite]"]
+        );
+        assert_eq!(values[0], r#"Entity["KiteShape", "DeltaKite"]"#);
+        assert_eq!(*current_index, 1);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Pane[list, ImageSize -> {w, h}]` body is text laid out in a box `w`
+  /// wide: a list too long for one line breaks into lines there, and the
+  /// entities in it are drawn as their framed icons, not as `[name]` text.
+  #[test]
+  fn text_pane_breaks_a_long_entity_list_at_its_width() {
+    use woxi::functions::entity_ast::register_entity_label;
+    for k in 1..=12 {
+      register_entity_label(
+        "LongNamedThing",
+        &format!("Thing{k}"),
+        &format!("a rather long name {k}"),
+        "long named thing",
+      );
+    }
+    let code = r#"Manipulate[
+      Pane[Table[Entity["LongNamedThing", "Thing" <> ToString[k]], {k, n}],
+        ImageSize -> {300, 300}],
+      {{n, 12}, 1, 12, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.content_width, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the widget shows the flowed list as a picture"
+    );
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    assert_eq!(text_pane_width(&body), Some(300.0));
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = &flowed.graphics.expect("the re-flowed list is a picture");
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(svg);
+    assert!(w <= 300.5, "the list is {w} wide: {svg}");
+    assert!(h > 100.0, "the list takes several lines, got {h} high");
+    assert!(svg.contains(">a rather long name 12<"), "{svg}");
+    assert!(
+      svg.contains(r#"rx="4.0""#),
+      "the icons keep their frame: {svg}"
+    );
+    assert!(!svg.contains("[a rather"), "{svg}");
+  }
+
+  /// The width a text pane breaks its text at is read from either spelling
+  /// of its size; a pane holding a picture, or one without a width, has none.
+  #[test]
+  fn text_pane_width_reads_both_size_spellings() {
+    let width = |code: &str| {
+      text_pane_width(&woxi::interpret_with_stdout(code).expect("evaluate"))
+    };
+    assert_eq!(width("Pane[{1, 2}, ImageSize -> {250, 100}]"), Some(250.0));
+    assert_eq!(width("Pane[{1, 2}, ImageSize -> 180]"), Some(180.0));
+    assert_eq!(width("Pane[{1, 2}, {220, 100}]"), Some(220.0));
+    assert_eq!(width("Pane[{1, 2}]"), None);
+    assert_eq!(width("{1, 2}"), None);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -11341,6 +12037,51 @@ mod repeated_option_tests {
     state.reevaluate();
     assert!(!state.wants_tick());
     assert_eq!(state.text_output.as_deref(), Some("3"));
+  }
+
+  /// A body that bumps a hidden variable its `TrackedSymbols` names runs
+  /// again on the app's timer, the way the front end re-runs it: a
+  /// simulation stepping itself with `tick += del` keeps going until a
+  /// pass leaves `tick` alone, and a variable outside `TrackedSymbols`
+  /// never keeps it going.
+  #[test]
+  fn a_body_bumping_its_tracked_symbol_keeps_running() {
+    let code = r#"Manipulate[
+      tick;
+      If[mode == "go", steps = steps + 1; tick += del];
+      If[mode == "once", steps = steps + 1];
+      steps,
+      Button["go", mode = "go"; tick += del],
+      Button["once", mode = "once"; tick += del],
+      Button["halt", mode = "idle"; tick += del],
+      {{mode, "idle"}, None}, {{steps, 0}, None},
+      {{tick, 0}, None}, {{del, $MachineEpsilon}, None},
+      TrackedSymbols :> {tick}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("0"));
+    assert!(!state.wants_tick(), "an idle simulation needs no timer");
+
+    state.apply_button_action(r#"mode = "once"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("1"));
+    assert!(
+      !state.wants_tick(),
+      "a step that only rewrites an untracked variable runs once"
+    );
+
+    state.apply_button_action(r#"mode = "go"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("2"));
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    state.tick();
+    state.tick();
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+    assert!(state.wants_tick());
+
+    state.apply_button_action(r#"mode = "idle"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+    assert!(!state.wants_tick(), "a halted simulation needs no timer");
   }
 
   /// A `DynamicModule` whose body is a statement sequence ending in a
