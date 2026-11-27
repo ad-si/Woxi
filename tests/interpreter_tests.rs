@@ -1751,17 +1751,28 @@ mod interpreter_tests {
     // Regression: `Show` rebuilt a BarChart without its ChartLabels and
     // FrameTicks/Ticks options, drawing numeric ticks instead of labels.
     clear_state();
-    let svg = interpret_with_stdout(
-      "Show[BarChart[{1, 2}, ChartLabels -> {\"Aa\", \"Bb\"}, Ticks -> None, \
-       Frame -> True, FrameTicks -> None], Graphics[Text[\"Cc\", {0.5, 0.9}]]]",
-    )
-    .unwrap()
-    .graphics
-    .expect("Show should produce graphics");
+    let shown = |options: &str| {
+      interpret_with_stdout(&format!(
+        "Show[BarChart[{{1, 2}}, ChartLabels -> {{\"Aa\", \"Bb\"}}, \
+         Frame -> True{options}], Graphics[Text[\"Cc\", {{0.5, 0.9}}]]]"
+      ))
+      .unwrap()
+      .graphics
+      .expect("Show should produce graphics")
+    };
+    let svg = shown("");
     for label in ["Aa", "Bb", "Cc"] {
       assert!(svg.contains(&format!(">{label}</text>")), "missing {label}");
     }
-    assert!(!svg.contains(">1.5</text>"), "numeric ticks drawn:\n{svg}");
+    // Only the value axis is numbered: its 1.5 appears once.
+    assert_eq!(svg.matches(">1.5</text>").count(), 1, "{svg}");
+    // The chart labels are the category axis' tick labels: without frame
+    // ticks neither they nor numbers are drawn.
+    let svg = shown(", Ticks -> None, FrameTicks -> None");
+    assert!(svg.contains(">Cc</text>"), "missing Cc");
+    for label in ["Aa", "Bb", "1.5"] {
+      assert!(!svg.contains(&format!(">{label}</text>")), "{label} drawn");
+    }
   }
 
   #[test]
@@ -3884,12 +3895,12 @@ mod interpreter_tests {
       !svg.contains("FractionBox"),
       "raw box source leaked into SVG: {svg}"
     );
+    // The exponent is the fraction itself, `p` stacked over `q`.
+    let p_pos = svg.find(">p</text>").expect("numerator p");
+    let bar_pos = svg[p_pos..].find("<line ").expect("fraction bar") + p_pos;
     assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\">p</tspan>/\
-         <tspan font-style=\"italic\">q</tspan>"
-      ),
-      "expected the nested fraction to render as p/q: {svg}"
+      svg[bar_pos..].contains(">q</text>"),
+      "expected the nested fraction to stack p over q: {svg}"
     );
   }
 
@@ -4289,7 +4300,12 @@ mod interpreter_tests {
       "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(X\\), \\(3\\)]\\)\", {0, 0}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">X₃<"), "expected X₃ in SVG, got: {svg}");
+    // The one-letter symbol of the box code is a math variable, set in
+    // italics like the rest of a graphic's `TraditionalForm` text.
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">X</tspan>₃<"),
+      "expected X₃ in SVG, got: {svg}"
+    );
     assert!(
       !svg.contains("SubscriptBox"),
       "raw box source leaked into SVG: {svg}"
@@ -4301,7 +4317,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_super.contains(">x²<"),
+      svg_super.contains("<tspan font-style=\"italic\">x</tspan>²<"),
       "expected x² in SVG, got: {svg_super}"
     );
 
@@ -4313,7 +4329,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_row.contains(">dX₆<"),
+      svg_row.contains(">d<tspan font-style=\"italic\">X</tspan>₆<"),
       "expected dX₆ in SVG, got: {svg_row}"
     );
   }
@@ -5504,6 +5520,45 @@ mod interpreter_tests {
       }
     }
     assert_eq!(icons, ["r", "s", "t"]);
+  }
+
+  #[test]
+  fn test_manipulate_stacked_script_captions_typeset_as_icons() {
+    // A caption whose inline boxes set a mark over (or under) a base that
+    // no combining accent draws — a long arrow over the two letters of a
+    // vector, a word under a symbol — is stacked, so it travels as caption
+    // code and renders an icon with no text runs. An accent with a
+    // combining form over a single letter, and a plain string, stay text.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{p, q, r, s, t}, \
+       {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+       {{q, 0, \"\\!\\(\\*UnderscriptBox[\\(m\\), \\(low\\)]\\)\"}, 0, 1}, \
+       {{r, 0, \"\\!\\(\\*OverscriptBox[\\(PQ\\), \\(^\\)]\\)\"}, 0, 1}, \
+       {{s, 0, \"\\!\\(\\*OverscriptBox[\\(u\\), \\(^\\)]\\) hat\"}, 0, 1}, \
+       {{t, 0, \"plain\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      let svg = svg.unwrap_or_else(|| panic!("no icon for {name}: {code}"));
+      assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+      assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+      icons.push(name.as_str());
+    }
+    assert_eq!(icons, ["p", "q", "r"]);
+    // The arrow is drawn above the base, not after it on the same line.
+    let (_, code) = &spec.dynamic_labels[0];
+    let (_, svg) =
+      woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+    let svg = svg.unwrap();
+    assert!(svg.contains("<path"), "the arrow is drawn: {svg}");
+    assert!(svg.contains(">PQ<"), "the base is its own text: {svg}");
+    assert!(!svg.contains("^("), "no spelled-out superscript: {svg}");
   }
 
   #[test]

@@ -8462,50 +8462,159 @@ mod cases {
     );
   }
 
-  /// StandardForm sets a one-argument `Transpose`, `ConjugateTranspose` and
-  /// `Conjugate` as a postfix superscript mark instead of spelling out the
-  /// head; the two-argument `Transpose` keeps its function form.
+  /// StandardForm sets `Transpose` and `ConjugateTranspose` through the
+  /// FrontEnd's postfix superscript template (`"Transpose2"` with a
+  /// permutation); a `Conjugate` keeps its function form there and takes
+  /// the template only in TraditionalForm.
   #[test]
   fn standard_form_postfix_marks() {
-    assert_case("ToBoxes[Transpose[m]]", "SuperscriptBox[m, \u{F3C7}]");
+    assert_case(
+      "ToBoxes[Transpose[m]]",
+      "TemplateBox[{m}, Transpose, SyntaxForm -> SuperscriptBox]",
+    );
     assert_case(
       "ToBoxes[ConjugateTranspose[m]]",
-      "SuperscriptBox[m, \u{F3C9}]",
+      "TemplateBox[{m}, ConjugateTranspose, SyntaxForm -> SuperscriptBox]",
     );
-    assert_case("ToBoxes[Conjugate[z]]", "SuperscriptBox[z, *]");
+    assert_case("ToBoxes[Conjugate[z]]", "RowBox[{Conjugate, [, z, ]}]");
+    assert_case(
+      "ToBoxes[Conjugate[a + b]]",
+      "RowBox[{Conjugate, [, RowBox[{a, +, b}], ]}]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[a + b]^2]",
+      "SuperscriptBox[RowBox[{Conjugate, [, RowBox[{a, +, b}], ]}], 2]",
+    );
     assert_case(
       "ToBoxes[f[Transpose[g[a]]]]",
-      "RowBox[{f, [, SuperscriptBox[RowBox[{g, [, a, ]}], \u{F3C7}], ]}]",
+      "RowBox[{f, [, TemplateBox[{RowBox[{g, [, a, ]}]}, Transpose, \
+       SyntaxForm -> SuperscriptBox], ]}]",
     );
     assert_case(
       "ToBoxes[Transpose[m, {2, 1, 3}]]",
-      "RowBox[{Transpose, [, RowBox[{m, ,, RowBox[{{, RowBox[{2, ,, 1, ,, 3}], }}]}], ]}]",
+      "TemplateBox[{m, RowBox[{{, RowBox[{2, ,, 1, ,, 3}], }}]}, Transpose2, \
+       SyntaxForm -> SuperscriptBox]",
+    );
+    assert_case(
+      "ToBoxes[ConjugateTranspose[m, 2]]",
+      "TemplateBox[{m, 2}, ConjugateTranspose2, SyntaxForm -> SuperscriptBox]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[z], TraditionalForm]",
+      "FormBox[TemplateBox[{z}, Conjugate, SyntaxForm -> SuperscriptBox], \
+       TraditionalForm]",
+    );
+    assert_case(
+      "ToBoxes[Conjugate[a + b], TraditionalForm]",
+      "FormBox[TemplateBox[{RowBox[{(, RowBox[{a, +, b}], )}]}, Conjugate, \
+       SyntaxForm -> SuperscriptBox], TraditionalForm]",
+    );
+    assert_case(
+      "ToBoxes[Transpose[m, {2, 1}], TraditionalForm]",
+      "FormBox[TemplateBox[{m, RowBox[{{, RowBox[{2, ,, 1}], }}]}, \
+       Transpose2, SyntaxForm -> SuperscriptBox], TraditionalForm]",
     );
   }
 
-  /// An operator expression is bracketed before it takes a postfix mark,
-  /// and a marked expression is bracketed as a power base.
+  /// A `Dot` boxes as the infix `.` (bracketed as a power base), and a call
+  /// with a compound head boxes its head like any other expression.
   #[test]
-  fn standard_form_postfix_marks_bracket_compound_bases() {
+  fn dot_and_curried_call_boxes() {
+    assert_case("ToBoxes[a . b . c]", "RowBox[{a, ., b, ., c}]");
     assert_case(
-      "ToBoxes[Transpose[a + b]]",
-      "SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], \u{F3C7}]",
+      "ToBoxes[(a b) . c]",
+      "RowBox[{RowBox[{(, RowBox[{a,  , b}], )}], ., c}]",
     );
     assert_case(
-      "ToBoxes[Conjugate[a b]]",
-      "SuperscriptBox[RowBox[{(, RowBox[{a,  , b}], )}], *]",
+      "ToBoxes[(a . b)^2]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a, ., b}], )}], 2]",
+    );
+    assert_case(
+      "ToBoxes[(a && b)^2]",
+      "SuperscriptBox[RowBox[{(, RowBox[{a, &&, b}], )}], 2]",
+    );
+    assert_case(
+      "ToBoxes[f[a][b, c]]",
+      "RowBox[{RowBox[{f, [, a, ]}], [, RowBox[{b, ,, c}], ]}]",
+    );
+    assert_case("ToBoxes[f[a][]]", "RowBox[{RowBox[{f, [, a, ]}], [, ]}]");
+    assert_case(
+      "ToBoxes[(a + b)[c]]",
+      "RowBox[{RowBox[{(, RowBox[{a, +, b}], )}], [, c, ]}]",
+    );
+  }
+
+  /// `Transpose` of something that is not an array stays unevaluated
+  /// without a message, whatever the permutation.
+  #[test]
+  fn transpose_of_a_non_array_is_silent() {
+    for input in [
+      "Transpose[m, {2, 1}]",
+      "Transpose[m, {0}]",
+      "Transpose[m, {1}]",
+      "Transpose[5, {2, 1}]",
+    ] {
+      woxi::clear_state();
+      let result = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(result.result, input);
+      assert!(result.warnings.is_empty(), "{input}: {:?}", result.warnings);
+    }
+  }
+
+  /// The operand of a postfix template is bracketed unless it boxes as an
+  /// atom, a square root, a call or a part, and a transpose is bracketed as
+  /// a power base.
+  #[test]
+  fn standard_form_postfix_marks_bracket_compound_bases() {
+    let t = |inner: &str| {
+      format!(
+        "TemplateBox[{{{inner}}}, Transpose, SyntaxForm -> SuperscriptBox]"
+      )
+    };
+    assert_case(
+      "ToBoxes[Transpose[a + b]]",
+      &t("RowBox[{(, RowBox[{a, +, b}], )}]"),
+    );
+    assert_case(
+      "ToBoxes[Transpose[a b]]",
+      &t("RowBox[{(, RowBox[{a,  , b}], )}]"),
     );
     assert_case(
       "ToBoxes[Transpose[a^2]]",
-      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, 2], )}], \u{F3C7}]",
+      &t("RowBox[{(, SuperscriptBox[a, 2], )}]"),
+    );
+    assert_case(
+      "ToBoxes[Transpose[-a]]",
+      &t("RowBox[{(, RowBox[{-, a}], )}]"),
+    );
+    assert_case(
+      "ToBoxes[Transpose[a!]]",
+      &t("RowBox[{(, RowBox[{a, !}], )}]"),
+    );
+    assert_case(
+      "ToBoxes[Transpose[1/a]]",
+      &t("RowBox[{(, FractionBox[1, a], )}]"),
+    );
+    assert_case(
+      "ToBoxes[Transpose[Subscript[a, 1]]]",
+      &t("RowBox[{(, SubscriptBox[a, 1], )}]"),
+    );
+    assert_case("ToBoxes[Transpose[Sqrt[a]]]", &t("SqrtBox[a]"));
+    assert_case(
+      "ToBoxes[Transpose[f[a][b]]]",
+      &t("RowBox[{RowBox[{f, [, a, ]}], [, b, ]}]"),
     );
     assert_case(
       "ToBoxes[Transpose[a]^2]",
-      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], 2]",
+      &format!("SuperscriptBox[RowBox[{{(, {}, )}}], 2]", t("a")),
     );
     assert_case(
       "ToBoxes[ConjugateTranspose[Transpose[a]]]",
-      "SuperscriptBox[RowBox[{(, SuperscriptBox[a, \u{F3C7}], )}], \u{F3C9}]",
+      &format!(
+        "TemplateBox[{{RowBox[{{(, {}, )}}]}}, ConjugateTranspose, \
+         SyntaxForm -> SuperscriptBox]",
+        t("a")
+      ),
     );
   }
 

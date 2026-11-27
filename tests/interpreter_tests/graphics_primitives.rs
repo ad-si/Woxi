@@ -250,6 +250,34 @@ mod graphics_primitives {
     assert!(!head.contains("rgb(255,255,255)"), "{head}");
   }
 
+  // A color scheme given by name colors the cells like the `ColorData`
+  // gradient of that name, clipping values beyond the scheme's range.
+  #[test]
+  fn raster_color_function_named_scheme() {
+    for (data, range) in [
+      ("{{0, 0.5}, {1, 10000}}", ""),
+      ("{{0, 5}, {10, 20}}", ", {{0, 0}, {2, 2}}, {0, 10}"),
+    ] {
+      for scheme in ["ThermometerColors", "Rainbow", "SunsetColors"] {
+        let named = svg_of(&format!(
+          "Graphics[Raster[{data}{range}, ColorFunction -> \"{scheme}\"]]"
+        ));
+        let explicit = svg_of(&format!(
+          "Graphics[Raster[{data}{range}, \
+           ColorFunction -> ColorData[\"{scheme}\"]]]"
+        ));
+        assert_eq!(named, explicit, "{scheme}");
+      }
+    }
+    let svg = svg_of(
+      "Graphics[Raster[{{0, 0.5}, {1, 10000}}, \
+       ColorFunction -> \"ThermometerColors\"]]",
+    );
+    assert!(svg.contains("rgb(42,31,202)"), "{svg}");
+    assert!(svg.contains("rgb(220,227,209)"), "{svg}");
+    assert_eq!(svg.matches("rgb(136,22,43)").count(), 2, "{svg}");
+  }
+
   // Scaling from the default `{0, 1}` range is the identity, so a color
   // function sees the values as given: a stored indexed `RasterBox` looks
   // its integer cells up in a palette, and a plain number from the color

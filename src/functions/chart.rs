@@ -253,12 +253,40 @@ fn numeric_value_expr(v: f64) -> Expr {
 /// A graphic's `FormatType` is `TraditionalForm`, so each item of a
 /// `Row`/`Column`/`Grid` label is typeset in it: `x == 5` reads `x = 5`,
 /// `1 + n` reads `n + 1` and `Mod[a, m]` reads `a mod m`.
+///
+/// So is a label that is one mathematical expression, on its own or under
+/// `Style`/`Text` wrappers: `Style[Fibonacci[n], 16]` reads `Fₙ` and
+/// `Style[Log[n], 16]` reads `log(n)`.
 fn traditional_label_layout(expr: &Expr) -> Expr {
   if crate::functions::graphics::is_traditional_layout(expr) {
-    crate::functions::graphics::traditionalize_layout_items(expr)
-  } else {
-    expr.clone()
+    return crate::functions::graphics::traditionalize_layout_items(expr);
   }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || (name == "Text" && args.len() == 1))
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = traditional_label_layout(&args[0]);
+      call(name, new_args)
+    }
+    Expr::FunctionCall { name, .. } if name == "TraditionalForm" => {
+      expr.clone()
+    }
+    _ if crate::functions::graphics::is_traditional_math_label(expr) => {
+      call("TraditionalForm", vec![expr.clone()])
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// A plot title's expression with its mathematical parts wrapped in
+/// `TraditionalForm`, the `FormatType` of every graphic: the items of a
+/// `Row`/`Column`/`Grid`, a lone mathematical expression and any sum, each
+/// under whatever `Style`/`Text` wrappers the title carries. Strings,
+/// numbers and the layout itself stay as written.
+pub(crate) fn traditional_plot_label(expr: &Expr) -> Expr {
+  traditional_sums(&traditional_label_layout(expr))
 }
 
 /// Typeset a label expression into its first line plus the lines after it.
@@ -409,7 +437,7 @@ pub(crate) enum LabelSegment {
 /// the numbers in the row — into text and picture segments. `None` unless the
 /// row holds at least one picture.
 fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
-  if crate::functions::graphics::expr_to_svg_markup_lines(expr).len() == 1
+  if crate::functions::graphics::label_sets_one_picture(expr)
     // Set in the picture's text face, like the titles of plain text.
     && let Some(svg) =
       crate::functions::graphics::structured_legend_label_svg(expr)
@@ -1221,9 +1249,8 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let (markup, rest) = markup_and_extra_lines(&traditional_sums(
-            &traditional_label_layout(other),
-          ));
+          let (markup, rest) =
+            markup_and_extra_lines(&traditional_plot_label(other));
           extra_lines = rest;
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
@@ -1274,9 +1301,7 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
           }
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
-          None => markup_and_extra_lines(&traditional_sums(
-            &traditional_label_layout(other),
-          )),
+          None => markup_and_extra_lines(&traditional_plot_label(other)),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
       let mut extra_lines = extra_lines;
@@ -1552,6 +1577,10 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool, bool) {
 /// Accepts strings, identifiers, and numeric values (so `ChartLabels ->
 /// Range[16]` and similar numeric label lists render correctly).
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
+  // `StyleForm` is displayed exactly as `Style`.
+  if let Some(styled) = crate::functions::graphics::style_forms_as_style(e) {
+    return expr_to_label(&styled);
+  }
   match e {
     Expr::String(s) => Some(s.clone()),
     // The bare symbol `None` always means "no label" for a label option
@@ -4328,6 +4357,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.chart_legends,
       opts.plot_range_x,
       &bar_labels,
+      opts.aspect_ratio.filter(|_| !opts.fixed_height),
+      bar_chart_look(args).label_style,
     );
     return Ok(crate::graphics_result(svg));
   }
@@ -4361,6 +4392,13 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         opts.chart_labels.clear();
       }
     }
+  }
+  // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+  let show_ticks = opts.ticks && (opts.frame_ticks || !look.frame);
+  // Chart labels under the bars are the tick labels of the category axis,
+  // so they go with the ticks.
+  if !show_ticks && matches!(opts.chart_label_position, LabelPosition::Below) {
+    opts.chart_labels.clear();
   }
   // `BarOrigin -> Top` hangs the bars from the top: the values are drawn
   // negated and the axis labels their magnitudes.
@@ -4400,8 +4438,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
-    opts.ticks && (opts.frame_ticks || !look.frame),
+    show_ticks,
     &opts.epilog,
     &look,
   )?;
@@ -5600,6 +5637,22 @@ fn bar_chart_structure(
       ));
     }
   }
+  // Nor does the frame's category edge count the bars.
+  if framed && !given("FrameTicks") {
+    let side = |ticks: &str| {
+      Expr::List(
+        vec![
+          crate::helpers::id_expr(ticks),
+          crate::helpers::id_expr(ticks),
+        ]
+        .into(),
+      )
+    };
+    defaults.push(crate::helpers::rule_expr(
+      crate::helpers::id_expr("FrameTicks"),
+      Expr::List(vec![side("Automatic"), side("None")].into()),
+    ));
+  }
   // Like the rendered chart, the bars fill a golden-ratio frame.
   if !given("AspectRatio") {
     defaults.push(crate::helpers::rule_expr(
@@ -6203,6 +6256,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     w,
     cy,
     1.0,
+    false,
   ));
 
   // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
@@ -7382,6 +7436,17 @@ pub(crate) fn with_chart_legend(
   legends: &[String],
   color: impl Fn(usize) -> (u8, u8, u8),
 ) -> String {
+  with_chart_legend_styled(svg, legends, color, false)
+}
+
+/// [`with_chart_legend`] with the labels in bold when `bold` is set (a
+/// `LabelStyle -> Bold` chart).
+pub(crate) fn with_chart_legend_styled(
+  svg: String,
+  legends: &[String],
+  color: impl Fn(usize) -> (u8, u8, u8),
+  bold: bool,
+) -> String {
   if legends.is_empty() {
     return svg;
   }
@@ -7415,8 +7480,20 @@ pub(crate) fn with_chart_legend(
     .filter(|v| *v > 0.0);
   let scale = shown_w.map_or(1.0, |sw| w / sw);
   // WL sets the legend beside the chart's image, which keeps its size.
+  // Bold glyphs run about a tenth wider than regular ones.
+  let bold_room = if bold {
+    legends
+      .iter()
+      .map(|l| crate::functions::plot::chart_legend_entry_width(l))
+      .fold(0.0, f64::max)
+      * 0.1
+  } else {
+    0.0
+  };
   let legend_width =
-    (crate::functions::plot::chart_legend_column_width(legends, 1.0)).round();
+    (crate::functions::plot::chart_legend_column_width(legends, 1.0)
+      + bold_room)
+      .round();
   let new_w = w + legend_width * scale;
   let mut new_tag = format!(
     "{}viewBox=\"0 0 {new_w} {h}{}",
@@ -7445,6 +7522,7 @@ pub(crate) fn with_chart_legend(
     w,
     h / 2.0,
     scale,
+    bold,
   ));
   let body = &svg[tag_end..];
   let close = body.rfind("</svg>").unwrap_or(body.len());
