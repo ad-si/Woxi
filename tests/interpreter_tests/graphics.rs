@@ -71321,7 +71321,9 @@ mod list_plot_wl15_ranges {
     // `PlotRange -> All` follows the same rule.
     let values = "{{1, 2}, {5, 1}, {11, 2}}";
     same(
-      &format!("ListPlot[{values}, AxesOrigin -> {{0.5, 0}}, PlotRange -> All]"),
+      &format!(
+        "ListPlot[{values}, AxesOrigin -> {{0.5, 0}}, PlotRange -> All]"
+      ),
       &explicit("ListPlot", values, (0.5, 11.0), (0.0, 2.0)),
     );
   }
