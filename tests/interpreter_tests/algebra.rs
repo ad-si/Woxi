@@ -26547,16 +26547,17 @@ mod solve_substitution_of_symbols {
       .unwrap(),
       "1"
     );
-    // No real solution: complex angles, none over the reals. (Rounded to
-    // two digits: `Cos[x]` is 1.84375 and `Cos[y]` -1.4375, which four
-    // digits would round at a tie the last bit of the float decides.)
+    // No real solution: complex angles, none over the reals. Cos[x] is
+    // exactly 59/32 and Cos[y] -23/16, so the scale avoids a rounding tie
+    // (`Round[18437.5]`) that floating-point noise would decide.
     assert_eq!(
       interpret(
-        "Union[Round[10^2 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+        "Union[Round[10^5 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
          NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]]"
       )
       .unwrap(),
-      "{{184, -155*I, -144, -103*I}, {184, 155*I, -144, 103*I}}"
+      "{{184375, -154900*I, -143750, -103267*I}, \
+       {184375, 154900*I, -143750, 103267*I}}"
     );
     let count = interpret(
       "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, \

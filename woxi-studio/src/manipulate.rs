@@ -6604,6 +6604,45 @@ mod tests {
     assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
   }
 
+  /// A setter labeled with a script written inside parentheses — the order
+  /// of a perturbation term, `E^(1)` — shows the parentheses. Regression:
+  /// the box was read back as source, where they only group the script, so
+  /// the label read `E¹` like a power.
+  #[test]
+  fn setter_labels_keep_parentheses_around_a_script() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[
+        u,
+        {{u, 1, "order"}, {
+          1 -> " \!\(\*SuperscriptBox[\(E\), \((0)\)]\) + \!\(\*SuperscriptBox[\(E\), \((1)\)]\) V",
+          2 -> "\!\(\*SubscriptBox[\(c\), \((2)\)]\)",
+          3 -> "\!\(\*SuperscriptBox[\(V\), \(2\)]\)"
+        }}
+      ]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("setter control");
+    assert_eq!(
+      labels,
+      vec![
+        " E\u{207D}\u{2070}\u{207E} + E\u{207D}\u{00B9}\u{207E} V",
+        "c\u{208D}\u{2082}\u{208E}",
+        "V\u{00B2}"
+      ]
+    );
+  }
+
   /// A popup choice labeled with a power whose exponent negates a styled
   /// piece (`e^(-Style["x", Italic])`) raises the whole exponent, its
   /// letter slanted, instead of spelling out the `Style[…]` source in
@@ -12705,5 +12744,27 @@ mod tooltip_region_tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert!(state.tooltip_regions.is_empty());
+  }
+
+  /// A body that extends a segment only while a slider is outside a range
+  /// hands `Line` an empty line (`Line[{{}}]`) the rest of the time. That
+  /// draws nothing; it must not turn the whole picture into an error box.
+  #[test]
+  fn line_holding_an_empty_branch_keeps_the_picture() {
+    let code = r#"Manipulate[
+      Graphics[{Circle[],
+        Line[{If[s > 1, {{1, 0}, {s, 0}}, {}]}],
+        Point[{s, 0}]},
+        PlotRange -> 3],
+      {{s, 0.5, "position"}, 0, 2, 0.01}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      !svg.contains("should be a pair of numbers"),
+      "empty line flagged as a bad coordinate: {svg}"
+    );
+    assert!(!svg.contains("<polyline"), "nothing to extend yet: {svg}");
   }
 }

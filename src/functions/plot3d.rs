@@ -559,7 +559,7 @@ fn line_draw_slots(
   camera: &Camera,
   end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, dots, camera, None, end_zones)
+  line_draw_bounds(verts, tris, segs, dots, camera, None, end_zones, 0.0)
     .into_iter()
     .map(|(slot, _)| slot)
     .collect()
@@ -572,14 +572,18 @@ fn line_draw_slots(
 /// drawn late must not lift a hidden edge over a face that hides it.
 /// `owners[k]` is the face edge `segs[k]` belongs to: the edge never goes
 /// before it, so the faces drawn before it need not be looked at.
+/// `halo` is how far the fill of a face reaches past its outline on
+/// screen, in projected units: the edge is drawn after the faces that
+/// lie beside it within that reach.
 fn outline_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
   owners: &[usize],
   camera: &Camera,
+  halo: f64,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None)
+  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None, halo)
     .into_iter()
     .zip(owners)
     .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
@@ -635,6 +639,10 @@ fn front_outline_edges(
   front
 }
 
+/// How far, in pixels, the fill of a face reaches past its outline: the
+/// band it is widened by plus half the hairline it is stroked with.
+const OUTLINE_HALO_PX: f64 = 0.75;
+
 /// For each piece `segs[k]`: the slot `line_draw_slots` describes, and the
 /// index of the first triangle that covers the piece on screen and lies in
 /// front of it. That first face is only looked for when `owners` gives
@@ -648,6 +656,7 @@ fn line_draw_bounds(
   camera: &Camera,
   owners: Option<&[usize]>,
   end_zones: Option<&[[f64; 2]]>,
+  halo: f64,
 ) -> Vec<(usize, usize)> {
   if tris.is_empty() || verts.len() != tris.len() {
     return vec![(0, usize::MAX); segs.len()];
@@ -677,12 +686,12 @@ fn line_draw_bounds(
     let xs = t.projected.map(|p| p.0);
     let ys = t.projected.map(|p| p.1);
     let (c0, r0) = cell(
-      xs.iter().copied().fold(f64::MAX, f64::min),
-      ys.iter().copied().fold(f64::MAX, f64::min),
+      xs.iter().copied().fold(f64::MAX, f64::min) - halo,
+      ys.iter().copied().fold(f64::MAX, f64::min) - halo,
     );
     let (c1, r1) = cell(
-      xs.iter().copied().fold(f64::MIN, f64::max),
-      ys.iter().copied().fold(f64::MIN, f64::max),
+      xs.iter().copied().fold(f64::MIN, f64::max) + halo,
+      ys.iter().copied().fold(f64::MIN, f64::max) + halo,
     );
     for r in r0..=r1 {
       for c in c0..=c1 {
@@ -724,6 +733,9 @@ fn line_draw_bounds(
       // paint a stub of the hidden line over that face.
       let mut end_slot = 0;
       let mut cap = usize::MAX;
+      // Just past the last face that lies beside an outline edge on
+      // screen, within the reach of its widened fill.
+      let mut touch_slot = 0;
       // A dot's disc reaches past its center: the faces behind the dot
       // that overlap its disc anywhere must be drawn before it too, as a
       // depth buffer keeps the whole disc (at the depth of its center) in
@@ -793,6 +805,14 @@ fn line_draw_bounds(
             continue;
           }
           let inset = depth_inside(&tris[k].projected, pm);
+          // A face beside an outline edge cannot hide it there, yet its
+          // fill is widened by a hairline (see
+          // `widen_across_internal_cuts`) that would nibble at the edge's
+          // line if the face were drawn later: the next facets around
+          // the rim of a small cylinder, each a fraction of a pixel wide.
+          if !ring && floor.is_some() && inset < 0.0 && inset >= -halo {
+            touch_slot = touch_slot.max(k + 1);
+          }
           if inset < -margin {
             continue;
           }
@@ -854,7 +874,7 @@ fn line_draw_bounds(
           }
         }
       }
-      let slot = slot.max(end_slot.min(cap));
+      let slot = slot.max(end_slot.max(touch_slot).min(cap));
       (slot.max(ring_slot.min(center_front)), first_front)
     })
     .collect()
@@ -3427,7 +3447,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // The cells a `RegionFunction` cuts: the parts of their two
         // triangles inside the region, clipped as the standalone render
         // clips them, with the cut points appended to the shared points.
-        if let (Some(mask), Some(rf)) = (mask, &region_function) {
+        // So are the cells at the edge of where the function is defined.
+        {
+          let mask: Vec<Vec<bool>> = index_of
+            .iter()
+            .map(|row| row.iter().map(Option::is_some).collect())
+            .collect();
           let compiled = crate::functions::plot::PlotBody2::new(
             bodies[surface_idx],
             &xvar,
@@ -3440,7 +3465,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .map(|z| [x, y, z])
           };
           let inside = |p: &[f64; 3]| {
-            crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+            region_function.as_ref().is_none_or(|rf| {
+              crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+            })
           };
           let mut clipped: Vec<Expr> = Vec::new();
           for i in 0..grid_n {
@@ -3455,9 +3482,6 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 [(i, j), (i + 1, j), (i, j + 1)],
                 [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
               ] {
-                if corners.iter().any(|&(a, b)| !grid[a][b].is_finite()) {
-                  continue;
-                }
                 let ins = corners.map(|(a, b)| mask[a][b]);
                 if !ins.iter().any(|b| *b) {
                   continue;
@@ -3811,14 +3835,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           [(i, j), (i + 1, j), (i, j + 1)],
           [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
         ] {
-          let Some(pts) = corners
-            .iter()
-            .map(|&(a, b)| vertex(a, b))
-            .collect::<Option<Vec<_>>>()
-          else {
-            continue;
-          };
-          let tri = [pts[0], pts[1], pts[2]];
+          // A corner where the function is undefined counts as outside:
+          // the triangle is cut where the surface stops being defined,
+          // just as it is cut along a `RegionFunction`'s edge.
+          let tri = corners.map(|(a, b)| [grid_x(a), grid_y(b), grid[a][b]]);
           let ins = corners.map(|(a, b)| mask[a][b]);
           if ins.iter().all(|b| *b) {
             push_triangle(tri, &mut all_triangles, &mut facets);
@@ -13931,6 +13951,111 @@ fn same_vertex_ring(a: &[Point3D], b: &[Point3D], eps: f64) -> bool {
   })
 }
 
+/// Whether the outline of a face styled `under` is hidden by the same
+/// outline drawn in the style `over` on top of it.
+fn outline_covered(under: &StyleState3D, over: &StyleState3D) -> bool {
+  !under.edges
+    || (over.edges
+      && over.edge_opacity >= 1.0
+      && over.edge_dashing.is_none()
+      && under.edge_dashing.is_none()
+      && under.edge_color == over.edge_color
+      && under.edge_width == over.edge_width)
+}
+
+/// Removes every sphere and cylinder that a later opaque one of the same
+/// place and size covers exactly, as [`drop_covered_duplicate_polygons`]
+/// does for polygons. Nested copies of a transformed group (an arm built
+/// by repeatedly joining a part to a shifted copy of everything so far)
+/// stack dozens of solids on one another: the facets of the copies
+/// underneath would be painted over the outline of the one on top.
+fn drop_covered_duplicate_solids(prims: &mut Vec<Primitive3D>) {
+  // The points and radius that place a round solid, and its style.
+  fn shape(prim: &Primitive3D) -> Option<([Point3D; 2], f64, &StyleState3D)> {
+    let (ends, radius, style) = match prim {
+      Primitive3D::Sphere {
+        center,
+        radius,
+        scaled: false,
+        style,
+      } => ([*center, *center], *radius, style),
+      Primitive3D::Cylinder {
+        p1,
+        p2,
+        radius,
+        style,
+      } => ([*p1, *p2], *radius, style),
+      _ => return None,
+    };
+    (radius.is_finite()
+      && ends
+        .iter()
+        .all(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite()))
+    .then_some((ends, radius, style))
+  }
+  let mut candidates: Vec<(usize, f64)> = Vec::new();
+  let mut scale = 0.0_f64;
+  for (i, prim) in prims.iter().enumerate() {
+    if let Some((ends, radius, _)) = shape(prim) {
+      for p in &ends {
+        scale = scale.max(p.x.abs()).max(p.y.abs()).max(p.z.abs());
+      }
+      scale = scale.max(radius.abs());
+      candidates.push((i, ends[0].x + ends[1].x));
+    }
+  }
+  if candidates.len() < 2 {
+    return;
+  }
+  let eps = 1e-9 * scale.max(1e-300);
+  let close = |a: &Point3D, b: &Point3D| {
+    (a.x - b.x).abs() <= eps
+      && (a.y - b.y).abs() <= eps
+      && (a.z - b.z).abs() <= eps
+  };
+  // Copies of one solid share the sum of their end points, so sorting by
+  // it brings them next to each other.
+  candidates.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+  let mut covered = vec![false; prims.len()];
+  for (pos, &(i, key)) in candidates.iter().enumerate() {
+    for &(j, other_key) in &candidates[pos + 1..] {
+      if other_key - key > 2.0 * eps {
+        break;
+      }
+      let (under, over) = (i.min(j), i.max(j));
+      if covered[under] {
+        continue;
+      }
+      let (Some((under_ends, under_radius, under_style)), Some(over_shape)) =
+        (shape(&prims[under]), shape(&prims[over]))
+      else {
+        continue;
+      };
+      let (over_ends, over_radius, over_style) = over_shape;
+      let same_kind = std::mem::discriminant(&prims[under])
+        == std::mem::discriminant(&prims[over]);
+      let same_place = (close(&under_ends[0], &over_ends[0])
+        && close(&under_ends[1], &over_ends[1]))
+        || (close(&under_ends[0], &over_ends[1])
+          && close(&under_ends[1], &over_ends[0]));
+      if same_kind
+        && same_place
+        && (under_radius.abs() - over_radius.abs()).abs() <= eps
+        && over_style.faces
+        && over_style.opacity >= 1.0
+        && outline_covered(under_style, over_style)
+      {
+        covered[under] = true;
+      }
+    }
+  }
+  let mut index = 0;
+  prims.retain(|_| {
+    index += 1;
+    !covered[index - 1]
+  });
+}
+
 /// Removes every opaque polygon that a later opaque polygon covers exactly.
 /// Of faces lying on one another the one given last is the one seen (see
 /// [`depth_order_edges`]), so the earlier copies add nothing to the picture.
@@ -13985,15 +14110,6 @@ fn drop_covered_duplicate_polygons(prims: &mut Vec<Primitive3D>) {
   // Copies of one polygon have one centroid, so sorting by it brings them
   // next to each other.
   candidates.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-  let outline_covered = |under: &StyleState3D, over: &StyleState3D| {
-    !under.edges
-      || (over.edges
-        && over.edge_opacity >= 1.0
-        && over.edge_dashing.is_none()
-        && under.edge_dashing.is_none()
-        && under.edge_color == over.edge_color
-        && under.edge_width == over.edge_width)
-  };
   let mut covered = vec![false; prims.len()];
   for (pos, &(i, cx)) in candidates.iter().enumerate() {
     for &(j, other_cx) in &candidates[pos + 1..] {
@@ -16956,6 +17072,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   drop_covered_duplicate_polygons(&mut prims);
+  drop_covered_duplicate_solids(&mut prims);
   let hidden_faces = hidden_cuboid_faces(&prims);
   let occluders = solid_occluders(&prims);
 
@@ -17306,14 +17423,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // facets keeps them from being painted over the near side where the
     // depth order of the two is ambiguous (a cone's base seen from the
     // side).
-    let closed_center = match prim {
-      Primitive3D::Sphere { center, .. } if prim_opacity >= 1.0 => {
-        Some(*center)
-      }
+    let solid_interior = match prim {
+      Primitive3D::Sphere { center, .. } => Some(*center),
       Primitive3D::Cylinder { p1, p2, .. }
-      | Primitive3D::Cone { p1, p2, .. }
-        if prim_opacity >= 1.0 =>
-      {
+      | Primitive3D::Cone { p1, p2, .. } => {
         // Any interior point serves to orient the faces of a convex solid.
         let w = if matches!(prim, Primitive3D::Cone { .. }) {
           0.25
@@ -17337,6 +17450,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => None,
     };
+    let closed_center = solid_interior.filter(|_| prim_opacity >= 1.0);
+    // Whether a facet of a convex solid is wound with its normal pointing
+    // into the solid.
+    let wound_inward = |a: Point3D, b: Point3D, c: Point3D| {
+      solid_interior.is_some_and(|inner| {
+        let at = tri_center(a, b, c);
+        let out = [at.x - inner.x, at.y - inner.y, at.z - inner.z];
+        v_dot(triangle_normal(a, b, c), out) < 0.0
+      })
+    };
     // A curved surface is lit at its corners and blended between them;
     // the analytic solids know their exact normals.
     let corner_colors =
@@ -17359,9 +17482,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           _ => None,
         };
-        let corners: Vec<[Point3D; 3]> =
-          tris.iter().map(|&(a, b, c)| [a, b, c]).collect();
-        crate::functions::smooth_shading::corner_colors(
+        // The corners are lit with every facet wound outward: which side
+        // of a facet on the silhouette shows is settled by its winding,
+        // and a solid's tessellation may wind its facets either way.
+        let inward: Vec<bool> = tris
+          .iter()
+          .map(|&(a, b, c)| wound_inward(a, b, c))
+          .collect();
+        let corners: Vec<[Point3D; 3]> = tris
+          .iter()
+          .zip(&inward)
+          .map(|(&(a, b, c), &flip)| if flip { [a, c, b] } else { [a, b, c] })
+          .collect();
+        let mut lit = crate::functions::smooth_shading::corner_colors(
           &corners,
           exact.as_deref(),
           &|at| {
@@ -17384,7 +17517,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             )
             .0
           },
-        )
+        );
+        for (colors, &flip) in lit.iter_mut().zip(&inward) {
+          if flip {
+            colors.swap(1, 2);
+          }
+        }
+        lit
       });
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
       if let Some(inner) = closed_center {
@@ -18622,6 +18761,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &outline_segs,
       &outline_owners,
       &camera,
+      OUTLINE_HALO_PX / scale.abs().max(1e-300),
     );
     let outline_slot = |pos: usize, e: usize| {
       outline_index

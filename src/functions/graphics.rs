@@ -3773,6 +3773,14 @@ fn is_empty_list(e: &Expr) -> bool {
   matches!(e, Expr::List(items) if items.is_empty())
 }
 
+/// Whether `e` is a `Line` argument that draws nothing: `{}`, or a list of
+/// lines every one of which is empty (`{{}}`, `{{}, {}}`). A front end shows
+/// such a line as nothing at all rather than as a bad coordinate, which is
+/// what a body relies on when a branch that has nothing to draw yields `{}`.
+fn is_empty_line_collection(e: &Expr) -> bool {
+  matches!(e, Expr::List(items) if items.iter().all(is_empty_list))
+}
+
 // ── AST walker ───────────────────────────────────────────────────────────
 
 /// Turn the primitives a `FilledCurve` component produced (from index
@@ -3991,7 +3999,7 @@ fn collect_primitives(
         "Line" if !args.is_empty() => {
           let before = prims.len();
           parse_line(args, style, prims);
-          if prims.len() == before && !is_empty_list(&args[0]) {
+          if prims.len() == before && !is_empty_line_collection(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
@@ -6475,24 +6483,16 @@ pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
 /// `base` size.
 /// `markup` moved right by `gap` points (a `Spacer` before it in a `Row`).
 ///
-/// Only the first run of characters carries the `dx`: wrapping the whole
-/// markup in one `<tspan dx>` would nest its own spans (a superscript, an
-/// italic letter) inside it, and resvg then raises every character of the
-/// wrapper that precedes a nested `baseline-shift` — `[He]2s²` would draw
-/// its `s` as part of the superscript.
+/// The gap is a run of its own: a no-break space set vanishingly small and
+/// tracked out to `gap` points ([`SPACER_GAP_OPEN`]). A `dx` shift would
+/// space the text the same way, but resvg leaves `dx` out of the
+/// `text-anchor` placement, so a centered `Row[{a, Spacer[n], b}]` would sit
+/// right of its center by half its spacers and run off the picture's edge.
+/// Being a sibling of the runs around it, the gap also never wraps their own
+/// spans (a superscript, an italic letter).
 fn markup_with_leading_gap(markup: &str, gap: f64) -> String {
-  let lead = markup.find('<').unwrap_or(markup.len());
-  if lead > 0 {
-    let (text, rest) = markup.split_at(lead);
-    return format!("<tspan dx=\"{gap:.2}\">{text}</tspan>{rest}");
-  }
-  if let Some(rest) = markup.strip_prefix("<tspan")
-    && rest.starts_with([' ', '>'])
-    && !rest[..rest.find('>').unwrap_or(rest.len())].contains(" dx=")
-  {
-    return format!("<tspan dx=\"{gap:.2}\"{rest}");
-  }
-  format!("<tspan dx=\"{gap:.2}\">{markup}</tspan>")
+  use crate::functions::plot_padding::{SPACER_GAP_CLOSE, SPACER_GAP_OPEN};
+  format!("{SPACER_GAP_OPEN}{gap:.2}{SPACER_GAP_CLOSE}{markup}")
 }
 
 /// How far a `baseline-shift="super"`/`"sub"` script moves off the
@@ -22467,6 +22467,10 @@ thread_local! {
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while typesetting the content of a `StyleBox[…, LimitsPositioning
+  /// -> False]`: its large operators keep their limits stacked under and
+  /// over the sign even where they would otherwise be set inline.
+  static BOX_STACKED_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
   /// Set while typesetting the text of a quoted string box (and any inline
   /// `\!\(\*…\)` boxes it carries) or a `StyleBox[…, FontSlant -> Plain]`:
   /// a string is literal text, so its single letters are not math variables
@@ -22576,12 +22580,19 @@ fn with_box_font_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
 fn script_font_size(font_size: f64) -> f64 {
   let size = font_size * 0.7;
   if BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get) {
-    let floor = 0.7 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
+    // The minimum is an absolute size, so large text (20 pt and up) still
+    // shrinks its second-level scripts.
+    let floor = (0.7 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get))
+      .min(TEXT_SCRIPT_MIN_SIZE);
     size.max(floor).min(font_size)
   } else {
     size
   }
 }
+
+/// The largest size the minimum script size of math inside a `Text[…]`
+/// reaches, in points.
+const TEXT_SCRIPT_MIN_SIZE: f64 = 10.0;
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
 fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
@@ -23203,17 +23214,25 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // (or smaller) fraction has a 0.8 pt rule with 3 pt gaps, an 80 pt
         // one a rule and gaps proportionally heavier.
         let em = (size / 14.0).max(1.0);
-        let gap = 3.0 * em;
         let line_thickness = 0.8 * em;
+        // A fraction in the running text of a `Text[…]` is set tight: the
+        // numerator's line box all but touches the rule, and the
+        // denominator starts 0.15 em below it.
+        let (gap_above, gap_below) =
+          if BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get) {
+            (0.04 * size, 0.15 * size - line_thickness)
+          } else {
+            (3.0 * em, 3.0 * em)
+          };
 
         // Numerator centered above line
         let num_x = (frac_w - num.width) / 2.0;
         let num_y = 0.0;
         // Line below numerator
-        let line_y = num.height + gap;
+        let line_y = num.height + gap_above;
         // Denominator centered below line
         let den_x = (frac_w - den.width) / 2.0;
-        let den_y = line_y + line_thickness + gap;
+        let den_y = line_y + line_thickness + gap_below;
 
         // The fraction line sits on the math axis, 0.26 em above the
         // baseline of the surrounding text (the middle of a `=` or `+`).
@@ -23277,7 +23296,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // base with an accent stacked on it (`OverDot[θ]`) keeps that
         // distance from its baseline rather than from its taller top, so
         // the subscript is not lifted to the accent.
-        let sub_y = (base.height * 0.4).max(base.baseline - 0.38 * font_size);
+        // A base reaching far below its baseline (a stacked fraction) hangs
+        // the subscript at its foot instead: the subscript's baseline sits
+        // 0.16 em above the base's lowest point, level with the last line
+        // of the base.
+        let sub_y = (base.height * 0.4)
+          .max(base.baseline - 0.38 * font_size)
+          .max(base.height - 0.16 * font_size - sub.baseline);
         let elements = format!(
           "{}{}",
           base.translate(0.0, 0.0),
@@ -23376,14 +23401,18 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // A bar accent (`_`, or a hyphen/minus typed as the overscript, the
         // antiquark b̄) is drawn as a rule spanning the base, not as a
         // raised dash glyph.
-        if is_bar_accent_box(&args[1]) {
-          let sw = (font_size * 0.06).max(0.6);
+        if let Some((bold, color)) = bar_accent_style(&args[1]) {
+          // A bold accent draws a heavier rule, a colored one its color.
+          let weight = if bold { 1.5 } else { 1.0 };
+          let sw = (font_size * 0.06).max(0.6) * weight;
           let gap = font_size * 0.12;
           let line_y = sw;
           let base_y = line_y + gap;
+          let stroke =
+            color.map_or_else(|| "currentColor".to_string(), Color::to_svg_rgb);
           let elements = format!(
             "<path d=\"M 0.00 {line_y:.2} L {:.2} {line_y:.2}\" fill=\"none\" \
-             stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>{}",
+             stroke=\"{stroke}\" stroke-width=\"{sw:.2}\"/>{}",
             base.width,
             base.translate(0.0, base_y)
           );
@@ -23419,6 +23448,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // they stacked under and over a display-size sign.
       "UnderscriptBox"
         if args.len() >= 2
+          && !BOX_STACKED_LIMITS.get()
           && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
             || BOX_INLINE_LIMITS.get())
           && matches!(&args[0], Expr::String(s) if s == "lim") =>
@@ -23430,6 +23460,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderscriptBox" | "UnderoverscriptBox"
         if args.len() >= 2
+          && !BOX_STACKED_LIMITS.get()
           && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
             || BOX_INLINE_LIMITS.get())
           && matches!(&args[0], Expr::String(s) if large_operator_scale(s).is_some()) =>
@@ -23564,6 +23595,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut upright = false;
         let mut opacity: Option<f64> = None;
         let mut font_family: Option<String> = None;
+        let mut stacked_limits = BOX_STACKED_LIMITS.get();
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -23639,10 +23671,19 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
                 show_contents =
                   !matches!(val, Expr::Identifier(v) if v == "False");
               }
+              // `LimitsPositioning -> False` keeps the limits of the large
+              // operators inside stacked; any other setting lets the
+              // surroundings decide again.
+              "LimitsPositioning" => {
+                stacked_limits =
+                  matches!(val, Expr::Identifier(v) if v == "False");
+              }
               _ => {}
             }
           }
         }
+        let previous_stacked_limits =
+          BOX_STACKED_LIMITS.replace(stacked_limits);
         let layout_content = || match font_family.as_deref() {
           Some(ff) => with_box_font_family(Some(ff), || {
             layout_box(&args[0], effective_font_size)
@@ -23654,6 +23695,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         } else {
           layout_content()
         };
+        BOX_STACKED_LIMITS.set(previous_stacked_limits);
         if !show_contents {
           return BoxLayout {
             elements: String::new(),
@@ -25235,50 +25277,65 @@ pub(crate) fn shallow_for_display(expr: &Expr, spec: Option<&Expr>) -> Expr {
 }
 
 /// The display preprocessing every typeset label goes through: a number
-/// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`])
-/// and the `"TraditionalForm"` style name turned into its form wrapper
-/// (see [`style_form_name_as_wrapper`]), and any `StyleForm` respelled as
-/// the `Style` it is displayed as (see [`style_forms_as_style`]) — a label
-/// typeset on its own, such as a tick label, passes no display entry point
-/// that would have respelled it. `None` when none applies.
+/// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`]),
+/// and any `StyleForm` respelled as the `Style` it is displayed as and the
+/// `"TraditionalForm"` style name turned into its form wrapper (see
+/// [`style_forms_as_style`]) — a label typeset on its own, such as a tick
+/// label, passes no display entry point that would have respelled it.
+/// `None` when none applies.
 fn normalize_display_style(expr: &Expr) -> Option<Expr> {
-  style_forms_as_style(expr)
-    .or_else(|| hoist_style_out_of_number_form(expr))
-    .or_else(|| style_form_name_as_wrapper(expr))
+  style_forms_as_style(expr).or_else(|| hoist_style_out_of_number_form(expr))
 }
 
-/// `Style[expr, …, "TraditionalForm", …]` names the TraditionalForm style,
-/// which sets `expr` in traditional notation (`P(X | A)` for `P[X | A]`):
-/// it typesets as `Style[TraditionalForm[expr], …]` with the other
-/// directives kept. `None` for anything else.
+/// `Style[expr, …, "TraditionalForm", …]` names the TraditionalForm style
+/// (as `FormatType -> TraditionalForm` selects it), which sets `expr` in
+/// traditional notation (`P(X | A)` for `P[X | A]`): it typesets as
+/// `Style[TraditionalForm[expr], LimitsPositioning -> False, …]` with the
+/// other directives kept. The style sets the expression's own boxes, whose
+/// large operators keep their limits stacked wherever they stand; only a
+/// `TraditionalForm[…]` wrapper lets a layout set them inline. A string is
+/// literal text in either notation and only loses the directive. `None`
+/// for anything else.
 fn style_form_name_as_wrapper(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
-  if !is_style_wrapper(name) || args.len() < 2 {
+  if !is_style_wrapper(name)
+    || args.len() < 2
+    || !args[1..].iter().any(is_traditional_form_directive)
+  {
     return None;
   }
-  let is_form =
-    |a: &Expr| matches!(a, Expr::String(s) if s == "TraditionalForm");
-  if !args[1..].iter().any(is_form) {
-    return None;
-  }
-  let body = match &args[0] {
-    Expr::String(_) => args[0].clone(),
-    Expr::FunctionCall { name: n, .. } if n == "TraditionalForm" => {
-      args[0].clone()
+  let rest = args[1..]
+    .iter()
+    .filter(|a| !is_traditional_form_directive(a))
+    .cloned();
+  let mut styled = match &args[0] {
+    Expr::String(_) => vec![args[0].clone()],
+    body => {
+      let form = match body {
+        Expr::FunctionCall { name: n, args: a }
+          if n == "TraditionalForm" && a.len() == 1 =>
+        {
+          body.clone()
+        }
+        other => call1("TraditionalForm", other.clone()),
+      };
+      vec![
+        form,
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("LimitsPositioning".to_string())),
+          replacement: Box::new(Expr::Identifier("False".to_string())),
+        },
+      ]
     }
-    other => call1("TraditionalForm", other.clone()),
   };
-  let rest: Vec<Expr> =
-    args[1..].iter().filter(|a| !is_form(a)).cloned().collect();
-  if rest.is_empty() {
-    return Some(body);
-  }
-  let mut styled = vec![body];
   styled.extend(rest);
+  if styled.len() == 1 {
+    return styled.pop();
+  }
   Some(Expr::FunctionCall {
-    name: name.clone(),
+    name: "Style".to_string(),
     args: styled.into(),
   })
 }
@@ -25473,7 +25530,10 @@ fn distribute_style_over_runs(attrs: &str, content: &str) -> String {
 /// `dominant-baseline` explicitly. resvg resets the baseline of a doubly
 /// nested `tspan` (`Style[2 Style[m, Italic] + 1, 18]` nests the italic run
 /// in the sized one), which lifted such a run above the rest of its line.
-fn pin_nested_tspan_baselines(markup: &str, baseline: &str) -> String {
+pub(crate) fn pin_nested_tspan_baselines(
+  markup: &str,
+  baseline: &str,
+) -> String {
   let mut out = String::with_capacity(markup.len());
   let mut depth = 0usize;
   let mut rest = markup;
@@ -26445,13 +26505,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // appears — among a `Row`'s items as readily as as its separator.
         // The width is absolute, not relative to the font: `Spacer[25]`
         // is the same gap next to 8-point text as next to 30-point text.
-        // With no following element to carry a `dx` (see the `Row` case
-        // below), the best this lone-item fallback can do is the
-        // letter-spacing trick — real renderers keep it for a non-final
-        // character, just not a trailing one.
+        // On its own it is the same tracked-out run it is among the items
+        // of a `Row` (see [`markup_with_leading_gap`]).
         "Spacer" => {
           let pts = args.first().and_then(expr_to_f64).unwrap_or(1.0);
-          format!("<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>")
+          markup_with_leading_gap("", pts)
         }
 
         // Framed[content, …] / Highlighted[content, …] set inline text —
@@ -26577,12 +26635,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
-        // as the separator — is carried as a `dx` on the *next* rendered
-        // part rather than printed as its own trailing tspan: SVG
-        // renderers (including the one Woxi Studio rasterizes with)
-        // don't apply `letter-spacing` after the last character of a
-        // tspan, so a gap placed there is silently dropped. `dx` on the
-        // following content has no such last-character special case.
+        // as the separator — is set before the *next* rendered part (see
+        // [`markup_with_leading_gap`]), adjacent gaps adding up to one.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
             // A second argument that is an option (`ImageMargins -> 1`)
@@ -27409,6 +27463,25 @@ pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
   }
   let _restore = Restore(LABEL_GREEK_ITALICS.with(|c| c.replace(true)));
   f()
+}
+
+/// The markup of a string set as plain text rather than in
+/// `TraditionalForm` — the content of a label's `Text["…"]` wrapper: the
+/// box code in it is typeset (`"\!\(\*SubscriptBox[\(A\), \(1\)]\)"`
+/// is an A with a subscript), but a single-letter symbol stays upright.
+pub(crate) fn text_style_box_string_to_svg(s: &str) -> String {
+  struct Restore(bool, bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+      SINGLE_LETTER_ITALICS.with(|c| c.set(self.1));
+    }
+  }
+  let _restore = Restore(
+    LABEL_GREEK_ITALICS.with(|c| c.replace(false)),
+    SINGLE_LETTER_ITALICS.with(|c| c.replace(false)),
+  );
+  box_string_to_svg(s)
 }
 
 /// Whether `c` is a lowercase Greek letter (including the variant forms
@@ -28512,16 +28585,23 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
 pub(crate) fn fit_title_font(lines: &[String], base: f64, width: f64) -> f64 {
   // Each glyph counts with its own advance: a run of spaces (a title
   // padded to line its letters up with the picture) is far narrower than
-  // as many letters.
-  let widest = lines
+  // as many letters. A fixed gap (a `Spacer` in a `Row`) does not shrink
+  // with the font: it comes off the room the letters have.
+  use crate::functions::plot_padding::{
+    line_width_em, spacer_gaps_points, text_width,
+  };
+  lines
     .iter()
-    .map(|l| crate::functions::plot_padding::text_width(l, 1.0))
-    .fold(0.0, f64::max);
-  if widest <= 0.0 {
-    base
-  } else {
-    base.min(((width - 8.0) / widest).max(9.0))
-  }
+    .flat_map(|l| l.split('\n'))
+    .filter_map(|line| {
+      // The bold widening is part of `text_width`, so the letters' share
+      // of a one-point line is what is left without its gaps.
+      let gaps = spacer_gaps_points(line);
+      let letters = text_width(line, 1.0) - gaps;
+      (line_width_em(line) > 0.0 && letters > 0.0)
+        .then(|| ((width - 8.0 - gaps) / letters).max(9.0))
+    })
+    .fold(base, f64::min)
 }
 
 /// A `PlotLabel` that is drawn as a picture rather than a line of text — a
@@ -29624,6 +29704,20 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       call1("TraditionalForm", e.clone())
     }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
+    // `Overscript[X, Style["_", Bold]]`: the styling is the accent's alone,
+    // so the base under it is set traditionally like any unstyled part.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Overscript" | "Underscript")
+        && args.len() == 2
+        && !has_explicit_style(&args[0])
+        && has_explicit_style(&args[1]) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![traditionalize_styled_label(&args[0]), args[1].clone()]
+          .into(),
+      }
+    }
     _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
   }
@@ -29749,7 +29843,7 @@ fn script_needs_typesetting(script: &Expr) -> bool {
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
 /// `scale` times its point size (the plot renderers draw at
 /// `RESOLUTION_SCALE`): the explicit `font-size`s a `Style[label, size]`
-/// carries are in points, as are the `dx` gaps and `letter-spacing` a
+/// carries are in points, as are the `dx` shifts and the `letter-spacing` a
 /// `Spacer[n]` becomes, so they all scale along with the base font the
 /// label's `<text>` element gets.
 pub fn box_string_to_svg_scaled(s: &str, scale: f64) -> String {
@@ -30016,6 +30110,39 @@ impl StretchyBrace {
 }
 
 fn is_bar_accent_box(script: &Expr) -> bool {
+  bar_accent_style(script).is_some()
+}
+
+/// Whether `script` is a bar accent (see [`is_plain_bar_accent`]), possibly
+/// under styling of its own (`Style["_", Bold, Red]`, or the `StyleBox` that
+/// becomes): `Some((bold, color))` with the weight and color the bar takes
+/// from that styling.
+fn bar_accent_style(script: &Expr) -> Option<(bool, Option<Color>)> {
+  match script {
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "StyleBox") && !args.is_empty() =>
+    {
+      let (mut bold, mut color) = bar_accent_style(&args[0])?;
+      for directive in &args[1..] {
+        match directive {
+          Expr::Identifier(d) if d == "Bold" => bold = true,
+          Expr::Identifier(d) if d == "Plain" => bold = false,
+          other => {
+            if let Some(c) = parse_color(other) {
+              color = Some(c);
+            }
+          }
+        }
+      }
+      Some((bold, color))
+    }
+    other => is_plain_bar_accent(other).then_some((false, None)),
+  }
+}
+
+/// Whether `script` is a string drawn as a bar over or under its base: an
+/// underscore, a hyphen or minus, or a macron.
+fn is_plain_bar_accent(script: &Expr) -> bool {
   let Expr::String(s) = script else {
     return false;
   };
@@ -32640,6 +32767,33 @@ fn plot_source_range_padding(ps: &crate::syntax::PlotSource) -> Option<Expr> {
   ))
 }
 
+/// Which of the x and y axes a `PlotRange` value pins to numbers: both for
+/// `n` and `{{x0, x1}, {y0, y1}}`, the y axis alone for a bare `{y0, y1}`
+/// or `{All, {y0, y1}}`, neither for `All` or `Automatic`.
+fn plot_range_pinned_axes(range: &Expr) -> (bool, bool) {
+  let is_number = |e: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(e).is_some_and(f64::is_finite)
+  };
+  let pins = |axis: &Expr| match axis {
+    Expr::List(ends) => ends.iter().any(is_number),
+    other => is_number(other),
+  };
+  match range {
+    Expr::List(axes) if axes.len() == 2 => {
+      if axes.iter().all(is_number) {
+        (false, true)
+      } else {
+        (pins(&axes[0]), pins(&axes[1]))
+      }
+    }
+    Expr::List(axes) if axes.len() == 1 => (pins(&axes[0]), false),
+    other => {
+      let both = is_number(other);
+      (both, both)
+    }
+  }
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
@@ -33017,6 +33171,51 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .any(|existing| option_name_value(existing).map(|(n, _)| n) == name)
     {
       merged_options.push(opt);
+    }
+  }
+
+  // The result keeps the leading plot's options, its `PlotRangePadding`
+  // (`Scaled[0.02]` and `Scaled[0.05]` around an automatic range) among
+  // them, so a `PlotRange` given to `Show` is padded by the fractions that
+  // plot left around its own data.
+  // An axis `Show` leaves alone keeps the range that plot drew, which is
+  // padded already.
+  if show_sets_plot_range
+    && !merged_options
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some(("PlotRangePadding", _))))
+    && let Some(ps) = plot_sources.first()
+    && let Some(padding) = plot_source_range_padding(ps)
+    && let Expr::List(sides) = &padding
+    && let Some(range) =
+      merged_options
+        .iter()
+        .find_map(|o| match option_name_value(o) {
+          Some(("PlotRange", v)) => Some(v.into_owned()),
+          _ => None,
+        })
+  {
+    let (pin_x, pin_y) = plot_range_pinned_axes(&range);
+    // An `All` axis is measured afresh from everything shown, unpadded.
+    let (all_x, all_y) = crate::functions::plot::plot_range_all_axes(&range);
+    let side = |padded: bool, padding: &Expr| {
+      if padded {
+        padding.clone()
+      } else {
+        id_expr("Automatic")
+      }
+    };
+    if (pin_x || pin_y) && sides.len() == 2 {
+      merged_options.push(rule_expr(
+        id_expr("PlotRangePadding"),
+        Expr::List(
+          vec![
+            side(pin_x || all_x, &sides[0]),
+            side(pin_y || all_y, &sides[1]),
+          ]
+          .into(),
+        ),
+      ));
     }
   }
 
@@ -34009,31 +34208,90 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
   name == "Style" || name == "StyleForm"
 }
 
-/// `expr` with every `StyleForm[…]` respelled as the `Style[…]` it is
-/// displayed as, or `None` when it holds none. The display entry points
-/// run this once so that no layout path needs its own `StyleForm` case.
+/// Whether a `Style` directive selects traditional typesetting: the named
+/// style `"TraditionalForm"`, or `FormatType -> TraditionalForm`.
+fn is_traditional_form_directive(directive: &Expr) -> bool {
+  let is_form =
+    |e: &Expr| matches!(e, Expr::Identifier(f) if f == "TraditionalForm");
+  match directive {
+    Expr::String(s) => s == "TraditionalForm",
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(o) if o == "FormatType")
+        && is_form(replacement)
+    }
+    Expr::FunctionCall { name, args } => {
+      name == "Rule"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(o) if o == "FormatType")
+        && is_form(&args[1])
+    }
+    _ => false,
+  }
+}
+
+/// Whether `expr` is a style wrapper the display paths do not handle as
+/// spelled: a `StyleForm`, or a `Style` carrying a directive that selects
+/// traditional typesetting.
+fn is_respelled_style(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if !args.is_empty()
+      && (name == "StyleForm"
+        || (name == "Style"
+          && args[1..].iter().any(is_traditional_form_directive))))
+}
+
+/// Whether `expr` holds a style wrapper for [`style_forms_as_style`] to
+/// respell, at any depth.
+fn holds_respelled_style(expr: &Expr) -> bool {
+  let go = holds_respelled_style;
+  is_respelled_style(expr)
+    || match expr {
+      Expr::FunctionCall { args, .. } => args.iter().any(go),
+      Expr::List(items) => items.iter().any(go),
+      Expr::BinaryOp { left, right, .. } => go(left) || go(right),
+      Expr::UnaryOp { operand, .. } => go(operand),
+      Expr::CurriedCall { func, args } => go(func) || args.iter().any(go),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => go(pattern) || go(replacement),
+      _ => false,
+    }
+}
+
+/// `expr` with every style wrapper respelled as the form it is displayed
+/// as, or `None` when it holds none to respell: a `StyleForm[…]` becomes
+/// the `Style[…]` it is an older spelling of, and a `Style` whose
+/// directives select traditional typesetting becomes a `Style` of
+/// `TraditionalForm[…]` (see [`style_form_name_as_wrapper`]). The display
+/// entry points run this once so that no layout path needs its own case
+/// for either.
 pub(crate) fn style_forms_as_style(expr: &Expr) -> Option<Expr> {
   fn respell(e: &Expr) -> Option<Expr> {
-    match e {
-      Expr::FunctionCall { name, args }
-        if name == "StyleForm" && !args.is_empty() =>
-      {
-        Some(Expr::FunctionCall {
-          name: "Style".to_string(),
-          args: args
-            .iter()
-            .map(|a| crate::functions::string_ast::map_expr_tree(a, &respell))
-            .collect(),
-        })
-      }
-      _ => None,
+    let Expr::FunctionCall { args, .. } = e else {
+      return None;
+    };
+    if !is_respelled_style(e) {
+      return None;
     }
+    let styled = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: args
+        .iter()
+        .map(|a| crate::functions::string_ast::map_expr_tree(a, &respell))
+        .collect(),
+    };
+    Some(style_form_name_as_wrapper(&styled).unwrap_or(styled))
   }
-  crate::functions::math_ast::numeric_utils::expr_contains_head(
-    expr,
-    "StyleForm",
-  )
-  .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
+  holds_respelled_style(expr)
+    .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
 }
 
 /// The options whose value is a label typeset on the graphic.
@@ -40051,6 +40309,25 @@ pub fn combine_layout_svgs(
 
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
 
+/// The SVG of one evaluated cell of a `GraphicsRow`/`GraphicsColumn`/
+/// `GraphicsGrid`. These layouts are a single picture whose cells are
+/// insets, so a cell that is not itself a picture (a caption string, a
+/// `Column` of a plot over a sentence, …) is lettered in the proportional
+/// face of a graphic's labels rather than the monospace face of an output
+/// cell. A `FontFamily` the cell sets itself still takes precedence.
+fn layout_cell_svg(cell: &Expr) -> String {
+  match cell {
+    Expr::Graphics { .. } | Expr::Image { .. } => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    // `Text[…]` sets that face already.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    _ => crate::evaluator::expr_to_svg(&in_text_face(cell)),
+  }
+}
+
 /// Extract SVG strings from a list of evaluated expressions.
 /// Items that are already Expr::Graphics are used directly; other
 /// expressions (Graph, TreeForm, Dataset, plain values, ...) are
@@ -40060,7 +40337,7 @@ fn extract_svgs_from_list(items: &[Expr]) -> Vec<String> {
   items
     .iter()
     .filter_map(|item| {
-      let svg = crate::evaluator::expr_to_svg(item);
+      let svg = layout_cell_svg(item);
       if svg.is_empty() { None } else { Some(svg) }
     })
     .collect()
@@ -42284,7 +42561,7 @@ fn render_items_at_size(
         ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
-      let mut svg = crate::evaluator::expr_to_svg(&evaluated);
+      let mut svg = layout_cell_svg(&evaluated);
       if svg.is_empty() {
         return None;
       }
@@ -42297,10 +42574,10 @@ fn render_items_at_size(
         && parse_svg_wh(&svg).0 > cell_w + 0.5
         && let Some(flowed) =
           wrap_list_text(&evaluated, cell_w, &[], false, &|c| {
-            parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+            parse_svg_wh(&layout_cell_svg(c)).0
           })
       {
-        let reflowed = crate::evaluator::expr_to_svg(&flowed);
+        let reflowed = layout_cell_svg(&flowed);
         if !reflowed.is_empty() {
           svg = reflowed;
         }
@@ -45035,7 +45312,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Underoverscript" | "Overscript" | "Underscript"
         if (name == "Underoverscript" && args.len() == 3)
           || (args.len() == 2
-            && !matches!(&args[1], Expr::String(s) if matches!(s.as_str(), "~" | "^" | "." | ".." | "_" | "-" | "\u{00AF}" | "\u{02C6}" | "\u{02DC}"))) =>
+            && !matches!(strip_style_wrappers(&args[1]), Expr::String(s) if matches!(s.as_str(), "~" | "^" | "." | ".." | "_" | "-" | "\u{00AF}" | "\u{02C6}" | "\u{02DC}"))) =>
       {
         let script =
           |e: &Expr| call("Style", vec![e.clone(), Expr::Real(10.0)]);
@@ -62150,6 +62427,71 @@ fn marked_subscript_box_runs(
   ])
 }
 
+/// Whether `text` is one parenthesized group: it opens with a parenthesis
+/// that closes only at its end (`(0)`, `(a (b))`, but not `(a) (b)`).
+fn is_parenthesized_group(text: &str) -> bool {
+  if !(text.starts_with('(') && text.ends_with(')')) {
+    return false;
+  }
+  let mut depth = 0i32;
+  let last = text.chars().count() - 1;
+  for (i, c) in text.chars().enumerate() {
+    match c {
+      '(' => depth += 1,
+      ')' => depth -= 1,
+      _ => {}
+    }
+    if depth == 0 && i < last {
+      return false;
+    }
+  }
+  depth == 0
+}
+
+/// Label runs for a `SuperscriptBox` / `SubscriptBox` whose script is
+/// written inside parentheses (`SuperscriptBox["E", RowBox[{"(", "0",
+/// ")"}]]`): the same runs as the script with its parentheses kept as
+/// text. None for any other box.
+fn parenthesized_script_box_runs(
+  segment: &str,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  // Read from the segment's text: parsing it as an expression would
+  // already drop the parentheses.
+  let (head, args) = [
+    ("Superscript", "SuperscriptBox"),
+    ("Subscript", "SubscriptBox"),
+  ]
+  .iter()
+  .find_map(|(head, box_head)| {
+    Some((
+      *head,
+      crate::notebook::positional_box_args(box_head, segment)?,
+    ))
+  })?;
+  let [base_source, script_source] = args.as_slice() else {
+    return None;
+  };
+  let script = crate::notebook::render_boxes_text(script_source);
+  let script = script.trim();
+  if !is_parenthesized_group(script) {
+    return None;
+  }
+  // The base names a glyph, as in the general case below: `E` is the
+  // letter, not the constant.
+  let base = crate::notebook::box_source_to_expression(base_source)
+    .or_else(|| Some(base_source.clone()))
+    .map(|code| quote_box_constant_names(&code))
+    .and_then(|code| crate::parse_to_expr(&code).ok())
+    .unwrap_or_else(|| {
+      Expr::String(crate::notebook::render_boxes_text(base_source))
+    });
+  Some(manipulate_label_runs(
+    &call(head, vec![base, Expr::String(script.to_string())]),
+    italic,
+  ))
+}
+
 /// Label runs for a `SubscriptBox` whose base is a plain atom and whose
 /// script is a text atom of spaced words (`SubscriptBox[y, "1 max"]`): the
 /// same runs as `Subscript[y, "1 max"]`. None for any other box.
@@ -62304,6 +62646,14 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // is lowered by the SVG writer, not flattened to `f_(3 db)`.
     if let Some(sub_runs) = marked_subscript_box_runs(&seg.text, italic) {
       runs.extend(sub_runs);
+      continue;
+    }
+    // A script written inside parentheses (`E^(0)`, a perturbation order)
+    // shows them: read back as source they would only group the script and
+    // vanish.
+    if let Some(script_runs) = parenthesized_script_box_runs(&seg.text, italic)
+    {
+      runs.extend(script_runs);
       continue;
     }
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)

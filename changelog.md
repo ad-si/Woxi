@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- The subscript of a stacked fraction (`Subscript[a/b, z]`) hangs at the
+    fraction's foot, level with the denominator, instead of beside its
+    rule.
+- A fraction in the running text of a `Text[…]` is set tight around its
+    rule, and the scripts inside it keep shrinking in large text (20 pt
+    and up), so a quotient of subscripted symbols fits the line — and a
+    `Pane` of that height — instead of being cut off.
+- `ListPlay` takes `PlayRange`: the default `Automatic` leaves outliers out
+    of the range the amplitudes are scaled to, so a single spike no longer
+    flattens the rest of the signal into silence, `All` fits every
+    amplitude, and `{amin, amax}` scales that range and clips the rest.
+- A `Sound` exported on its own (`ExportString[sound, "SVG"]`) is drawn as
+    its sound box instead of the source text of all its samples.
 - `FlipView[{e1, e2, …}, i]` shows the element it is flipped to in Woxi
     Studio and the Playground instead of its source text, and a click on it
     in Woxi Studio flips to the next element, on its own or inside a
