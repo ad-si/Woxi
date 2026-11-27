@@ -75575,6 +75575,137 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn show_draws_automatic_plot_markers_at_their_own_size() {
+    // `PlotMarkers -> Automatic` leaves the size open; merged into a
+    // curve's plot the markers used to become text of font size 0.
+    let over_curve = export_svg(
+      "Show[Plot[x, {x, 0, 3}], ListPlot[{{1, 2}, {2, 3}, {3, 1}}, \
+       PlotStyle -> Red, Filling -> Axis, PlotMarkers -> Automatic]]",
+    );
+    assert!(!over_curve.contains("font-size=\"0\""), "{over_curve}");
+    assert_eq!(
+      over_curve
+        .matches("rx=\"34.9\" ry=\"34.9\" fill=\"rgb(255,0,0)\"")
+        .count(),
+      3,
+      "{over_curve}"
+    );
+    // The same disks (3.49 pt) when `Show` builds a `Graphics` of it.
+    let over_graphics = export_svg(
+      "Show[ListPlot[{{1, 2}, {2, 3}, {3, 1}}, PlotMarkers -> Automatic], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert_eq!(
+      over_graphics.matches("rx=\"3.49\" ry=\"3.49\"").count(),
+      3,
+      "{over_graphics}"
+    );
+    // An explicit size scales the shapes, and each series takes the next:
+    // disks for the first, squares for the second.
+    let sized = export_svg(
+      "Show[Plot[x, {x, 0, 3}], ListPlot[{{{1, 2}, {2, 3}}, \
+       {{1, 1}, {2, 2}}}, PlotMarkers -> {Automatic, 8}]]",
+    );
+    assert_eq!(
+      sized.matches("rx=\"24.5\" ry=\"24.5\"").count(),
+      2,
+      "{sized}"
+    );
+    assert_eq!(
+      sized.matches("<polygon fill=\"rgb(242,160,36)\"").count(),
+      2,
+      "{sized}"
+    );
+  }
+
+  #[test]
+  fn show_draws_open_plot_markers_as_white_filled_outlines() {
+    // An `"OpenMarkers"` shape is white inside a 1.5 pt outline in the
+    // series color, whichever way `Show` merges the plot.
+    for (code, radius, width) in [
+      (
+        "Show[Plot[x, {x, 0, 3}], ListPlot[{{{1, 2}, {2, 3}}, \
+         {{1, 1}, {2, 2}}}, PlotMarkers -> \"OpenMarkers\"]]",
+        "30.0",
+        "15.0",
+      ),
+      (
+        "Show[ListPlot[{{{1, 2}, {2, 3}}, {{1, 1}, {2, 2}}}, \
+         PlotMarkers -> \"OpenMarkers\"], Graphics[Line[{{0, 0}, {1, 1}}]]]",
+        "3.00",
+        "1.50",
+      ),
+    ] {
+      let svg = export_svg(code);
+      assert!(!svg.contains('○') && !svg.contains('△'), "{svg}");
+      let disk =
+        format!("rx=\"{radius}\" ry=\"{radius}\" fill=\"rgb(255,255,255)\"");
+      assert_eq!(svg.matches(&disk).count(), 2, "{svg}");
+      let ring = format!(
+        "rx=\"{radius}\" ry=\"{radius}\" fill=\"none\" \
+         stroke=\"rgb(61,153,204)\" stroke-width=\"{width}\""
+      );
+      assert_eq!(svg.matches(&ring).count(), 2, "{svg}");
+      // The second series is the triangle.
+      assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+    }
+  }
+
+  #[test]
+  fn a_plot_overlay_places_shapes_at_offset_positions() {
+    // `Offset[{dx, dy}, pos]` moves a vertex or a center by printer's
+    // points from `pos`; an overlay used to drop such shapes.
+    let svg = export_svg(
+      "Plot[x, {x, 0, 3}, PlotRange -> {{0, 3}, {0, 3}}, Epilog -> {Red, \
+       Disk[Offset[{0, 0}, {1, 1}], Offset[3.]], \
+       Circle[Offset[{0, 10}, {1, 1}], Offset[3.]], \
+       Polygon[{Offset[{0, 5}, {2, 1}], Offset[{5, -5}, {2, 1}], \
+         Offset[{-5, -5}, {2, 1}]}], \
+       Line[{Offset[{-5, 0}, {1, 2}], Offset[{5, 0}, {1, 2}]}]}]",
+    );
+    let number_after = |tag: &str, key: &str| -> f64 {
+      let rest = &tag[tag.find(key).expect(key) + key.len()..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let red: Vec<&str> = svg
+      .split('<')
+      .filter(|t| t.contains("rgb(255,0,0)"))
+      .collect();
+    let ellipses: Vec<&&str> =
+      red.iter().filter(|t| t.starts_with("ellipse")).collect();
+    assert_eq!(ellipses.len(), 2, "{svg}");
+    // The circle sits 10 pt (100 units at this scale) above the disk.
+    let rise =
+      number_after(ellipses[0], "cy=\"") - number_after(ellipses[1], "cy=\"");
+    assert!((rise - 100.0).abs() < 0.2, "rise {rise}: {svg}");
+    assert_eq!(
+      number_after(ellipses[0], "cx=\""),
+      number_after(ellipses[1], "cx=\"")
+    );
+    // The triangle is 10 pt wide and tall around its anchor.
+    let polygon = red
+      .iter()
+      .find(|t| t.starts_with("polygon"))
+      .expect("polygon");
+    let corners: Vec<(f64, f64)> = polygon
+      [polygon.find("points=\"").unwrap() + 8..]
+      .split('"')
+      .next()
+      .unwrap()
+      .split_whitespace()
+      .map(|p| {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect();
+    assert_eq!(corners.len(), 3, "{svg}");
+    assert!((corners[1].0 - corners[2].0 - 100.0).abs() < 0.2, "{svg}");
+    assert!((corners[1].1 - corners[0].1 - 100.0).abs() < 0.2, "{svg}");
+    // The line is a 10 pt horizontal dash.
+    assert!(red.iter().any(|t| t.starts_with("polyline")), "{svg}");
+  }
+
+  #[test]
   fn show_keeps_plot_markers_of_a_joined_list_plot() {
     // The markers of a joined series sit on its data points over the
     // line, as on the plot drawn alone, for every series.

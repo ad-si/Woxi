@@ -26,7 +26,8 @@
 //! Set `REFRESH_TICKS=40` alongside `PRESS_BUTTONS` to then fire the app's
 //! timer that many times, re-running a body that keeps itself going; the
 //! variables (and, with `svg-out-dir`, the picture as
-//! `widget-<n>-refresh.svg`) are dumped afterwards.
+//! `widget-<n>-refresh.svg`) are dumped afterwards. Without `PRESS_BUTTONS`
+//! the timer drives the widget as it stands (e.g. after a `MOVE`).
 
 use std::path::PathBuf;
 
@@ -390,6 +391,40 @@ fn main() {
         println!("error={:?}", state.error);
         for (n, v) in &state.state {
           println!("  {n} = {v}");
+        }
+      }
+      // `REFRESH_TICKS` without `PRESS_BUTTONS`: the widget as it stands
+      // (e.g. after a `MOVE` that starts a simulation) is driven by the
+      // timer alone.
+      if std::env::var("PRESS_BUTTONS").is_err()
+        && let Some(k) = std::env::var("REFRESH_TICKS")
+          .ok()
+          .and_then(|t| t.parse::<usize>().ok())
+      {
+        let mut st = state.clone();
+        println!("wants_tick={}", st.wants_tick());
+        let started = std::time::Instant::now();
+        for _ in 0..k {
+          if st.wants_tick() {
+            st.tick();
+          }
+        }
+        println!(
+          "after {k} refresh ticks ({:.2?}): wants_tick={} error={:?}",
+          started.elapsed(),
+          st.wants_tick(),
+          st.error
+        );
+        for (n, v) in &st.state {
+          println!("  {n} = {v}");
+        }
+        if let Some(dir) = &svg_out_dir
+          && let Some(handle) = &st.graphics_handle
+          && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+        {
+          let out = dir.join(format!("widget-{widget_count}-refresh.svg"));
+          std::fs::write(&out, bytes).expect("write svg");
+          println!("wrote {}", out.display());
         }
       }
       if std::env::var("PRESS_BUTTONS").is_ok() {

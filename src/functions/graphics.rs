@@ -32011,7 +32011,7 @@ fn is_triangle_polygon(polygon: &Expr) -> bool {
 
 /// Draw the `PlotMarkers` glyph `marker` at each finite point of `points`:
 /// each is centered on its data point, in the marker's own color and size.
-fn push_marker_primitives(
+pub(crate) fn push_marker_primitives(
   prims: &mut Vec<Expr>,
   marker: &crate::syntax::PlotMarker,
   points: &[(f64, f64)],
@@ -32028,8 +32028,19 @@ fn push_marker_primitives(
       ],
     ));
   }
-  let outline =
-    crate::functions::plot::glyph_marker_outline(&marker.glyph, marker.size);
+  // An automatic or open marker has its own shapes and sizes; any other
+  // is the glyph it names.
+  let (outline, white_fill) =
+    match crate::functions::plot::shaped_marker_outline(marker) {
+      Some((shape, stroke, white_fill)) => (Some((shape, stroke)), white_fill),
+      None => (
+        crate::functions::plot::glyph_marker_outline(
+          &marker.glyph,
+          marker.size,
+        ),
+        false,
+      ),
+    };
   if let Some((_, Some(w))) = &outline {
     prims.push(call1("AbsoluteThickness", Expr::Real(*w)));
   }
@@ -32050,22 +32061,29 @@ fn push_marker_primitives(
           ],
         )
       };
-      prims.push(match shape {
+      let draw = |filled: bool| match shape {
         crate::functions::plot::GlyphOutline::Circle { r, cy } => call(
-          if stroke.is_some() { "Circle" } else { "Disk" },
+          if filled { "Disk" } else { "Circle" },
           vec![at(0.0, *cy), call1("Offset", Expr::Real(*r))],
         ),
         crate::functions::plot::GlyphOutline::Polygon(pts) => {
           let mut corners: Vec<Expr> =
             pts.iter().map(|&(dx, dy)| at(dx, dy)).collect();
-          if stroke.is_some() {
+          if filled {
+            call1("Polygon", Expr::List(corners.into()))
+          } else {
             corners.push(corners[0].clone());
             call1("Line", Expr::List(corners.into()))
-          } else {
-            call1("Polygon", Expr::List(corners.into()))
           }
         }
-      });
+      };
+      // An open marker hides what lies under it: white inside its outline.
+      if white_fill {
+        prims.push(Expr::List(
+          vec![Expr::Identifier("White".to_string()), draw(true)].into(),
+        ));
+      }
+      prims.push(draw(stroke.is_none()));
       continue;
     }
     prims.push(call(

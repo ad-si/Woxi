@@ -1111,7 +1111,22 @@ fn collect_reads_and_writes(
   reads: &mut Vec<String>,
   writes: &mut Vec<String>,
 ) {
+  collect_accesses(expr, reads, writes, false);
+}
+
+/// [`collect_reads_and_writes`], optionally leaving out what happens inside
+/// a `Dynamic[…]` (`skip_dynamics`): its content is not evaluated with the
+/// expression around it, only when the front end refreshes it.
+fn collect_accesses(
+  expr: &woxi::syntax::Expr,
+  reads: &mut Vec<String>,
+  writes: &mut Vec<String>,
+  skip_dynamics: bool,
+) {
   use woxi::syntax::Expr;
+  if skip_dynamics && dynamic_content(expr).is_some() {
+    return;
+  }
   if let Expr::Identifier(name) = expr {
     reads.push(name.clone());
     return;
@@ -1145,17 +1160,17 @@ fn collect_reads_and_writes(
               reads.push(v.clone());
             }
           }
-          other => collect_reads_and_writes(other, reads, writes),
+          other => collect_accesses(other, reads, writes, skip_dynamics),
         }
       }
       for rest in args.iter().skip(1) {
-        collect_reads_and_writes(rest, reads, writes);
+        collect_accesses(rest, reads, writes, skip_dynamics);
       }
       return;
     }
   }
   for sub in sub_exprs(expr) {
-    collect_reads_and_writes(sub, reads, writes);
+    collect_accesses(sub, reads, writes, skip_dynamics);
   }
 }
 
@@ -1169,6 +1184,10 @@ struct DynamicFeedback {
   /// it never reads, `last = s` next to `s = s + g`) that no other
   /// `Dynamic` of the body shows: nothing else is redrawn when they change.
   own_writes: Vec<String>,
+  /// The symbols the body reads outside every `Dynamic`. A change to one
+  /// of them re-runs the whole body; a change to any other symbol only
+  /// refreshes the `Dynamic`s showing it.
+  outer_reads: Vec<String>,
 }
 
 /// The feedback of the `Dynamic[…]`s inside `body`. With `whole_body`, the
@@ -1209,6 +1228,9 @@ fn dynamic_feedback(body: &str, whole_body: bool) -> DynamicFeedback {
     return out;
   };
   let mut dynamics = Vec::new();
+  collect_accesses(&parsed, &mut out.outer_reads, &mut Vec::new(), !whole_body);
+  out.outer_reads.sort();
+  out.outer_reads.dedup();
   if whole_body {
     dynamics.push(&parsed);
     let (reads, writes) = reads_and_writes(&parsed);
@@ -1339,6 +1361,15 @@ pub struct ManipulateState {
   /// refresh of that `Dynamic` is one step of it, and nothing else needs
   /// redrawing for them.
   dynamic_feedback_writes: Vec<String>,
+  /// The variables the body reads outside every `Dynamic[…]` (see
+  /// [`DynamicFeedback::outer_reads`]).
+  dynamic_outer_reads: Vec<String>,
+  /// Whether the change behind `self_refreshing` only concerns the body's
+  /// inner `Dynamic[…]`s: one of them rewrote a variable that the body
+  /// around them never reads. The front end then refreshes just those
+  /// `Dynamic`s, leaving the rest of the body (which may reset the very
+  /// state they step) alone.
+  refresh_inner_only: bool,
   /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
   /// body (see `ManipulateSpec::refresh_interval`).
   refresh_interval: Option<String>,
@@ -1741,6 +1772,7 @@ impl ManipulateState {
     let DynamicFeedback {
       vars: dynamic_feedback_vars,
       own_writes: dynamic_feedback_writes,
+      outer_reads: dynamic_outer_reads,
     } = dynamic_feedback(
       &body,
       spec.body_wrapper == woxi::functions::graphics::BodyWrapper::Dynamic,
@@ -1788,6 +1820,8 @@ impl ManipulateState {
       self_refreshing: false,
       dynamic_feedback_vars,
       dynamic_feedback_writes,
+      dynamic_outer_reads,
+      refresh_inner_only: false,
       refresh_interval: spec.refresh_interval,
       timed_refresh: None,
       last_refresh: None,
@@ -2581,11 +2615,12 @@ impl ManipulateState {
   /// it drew at random stays on screen — but every `Dynamic` inside that
   /// value still follows the variables it reads, e.g. a feedback line
   /// comparing the picked answer with the question's solution.
-  fn refresh_inner_dynamics(&mut self) {
+  fn refresh_inner_dynamics(&mut self) -> bool {
     let Some(value) = self.body_value.take() else {
-      return;
+      return false;
     };
-    if contains_dynamic(&value) {
+    let refreshed = contains_dynamic(&value);
+    if refreshed {
       let code = woxi::syntax::expr_to_source_form(&value);
       let body = std::mem::replace(&mut self.body, code);
       self.reevaluate();
@@ -2594,6 +2629,7 @@ impl ManipulateState {
     // Later refreshes start from the body's own value again, with its
     // `Dynamic`s still in place.
     self.body_value = Some(value);
+    refreshed
   }
 
   /// Run a throttled re-evaluation when the debounce timer fires. Clears the
@@ -2630,7 +2666,14 @@ impl ManipulateState {
       // A timed `Refresh` body polling `MousePosition["Graphics"]` (a
       // mouse-trail recorder) sees where the cursor is now.
       woxi::set_mouse_position(self.pointer_graphics_position());
-      self.reevaluate();
+      // A `Dynamic` stepping state the body around it never reads is
+      // refreshed on its own; anything else re-runs the body.
+      let inner_only = self.self_refreshing
+        && self.refresh_inner_only
+        && self.timed_refresh.is_none();
+      if !(inner_only && self.refresh_inner_dynamics()) {
+        self.reevaluate();
+      }
       woxi::set_mouse_position(None);
     }
   }
@@ -3253,6 +3296,7 @@ impl ManipulateState {
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
     self.self_refreshing = false;
+    self.refresh_inner_only = true;
     // Whether the body moved one of its own tracked controls to a new
     // value (`T = 450` in a branch that pins the temperature).
     let mut moved_tracked_control = false;
@@ -3271,6 +3315,12 @@ impl ManipulateState {
             || self.dynamic_feedback_vars.contains(&name))
         {
           self.self_refreshing = true;
+          if explicitly_tracked
+            || self.module_locals.contains(&name)
+            || self.dynamic_outer_reads.contains(&name)
+          {
+            self.refresh_inner_only = false;
+          }
         }
         slot.1 = value.clone();
       }
@@ -12395,10 +12445,8 @@ mod dynamic_feedback_tests {
     assert_eq!(shared.vars, ["n", "m"]);
     assert_eq!(shared.own_writes, ["m"]);
     // Writes outside any `Dynamic` do not count…
-    assert_eq!(
-      dynamic_feedback("n = n + 1; Dynamic[n]", false),
-      DynamicFeedback::default()
-    );
+    let outside = dynamic_feedback("n = n + 1; Dynamic[n]", false);
+    assert!(outside.vars.is_empty() && outside.own_writes.is_empty());
     // …nor does a `Dynamic` that only assigns what it never reads…
     assert_eq!(
       dynamic_feedback("Dynamic[c = 5; a]", false),
@@ -12409,6 +12457,119 @@ mod dynamic_feedback_tests {
       dynamic_feedback("n = n + 1; Disk[{n, 0}]", true).vars,
       ["n"]
     );
+  }
+
+  /// What the body reads outside its `Dynamic`s is what re-runs the whole
+  /// body; a `Dynamic`'s own reads only refresh that `Dynamic`.
+  #[test]
+  fn dynamic_feedback_separates_the_reads_outside_dynamics() {
+    let feedback = dynamic_feedback(
+      "If[fresh, at = start]; w = 2 k; Dynamic[at = at + k; Disk[{at, w}]]",
+      false,
+    );
+    assert_eq!(feedback.vars, ["at"]);
+    assert_eq!(feedback.outer_reads, ["fresh", "k", "start"]);
+    // `Dynamic@…` is a refresh boundary as well.
+    assert_eq!(
+      dynamic_feedback("Row[{a, Dynamic@Row[{b, c}]}]", false).outer_reads,
+      ["a"]
+    );
+    // A peeled `Dynamic` body is read as a whole.
+    assert_eq!(
+      dynamic_feedback("n = n + k; Disk[{n, 0}]", true).outer_reads,
+      ["k", "n"]
+    );
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a particle simulation
+  /// whose body sets up the initial state and whose inner `Dynamic` then
+  /// integrates that state one step per refresh while a checkbox is set).
+  /// The Studio re-ran the whole body on every refresh, so the state was
+  /// set up again each time and the simulation never got past its first
+  /// step. This is a self-authored, construct-equivalent example.
+  #[test]
+  fn self_feeding_dynamic_refreshes_without_rerunning_the_body() {
+    let code = r#"Manipulate[
+      If[!keep, at = start; clock = 0];
+      Dynamic@Row[{Graphics[{If[go, at = at + k; clock += 1]; Point[{at, 0}]},
+        PlotRange -> {{0, 100}, {-1, 1}}], shown = clock}],
+      {{go, False}, {False, True}},
+      {k, 1, 4, 1},
+      {{start, 10}, 0, 50, 10},
+      {{keep, False}, {False, True}},
+      {{at, 10}, ControlType -> None},
+      {{clock, 0}, ControlType -> None},
+      {{shown, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(var(&state, "at"), "10");
+    assert!(!state.wants_tick(), "a stopped simulation needs no timer");
+
+    // Starting it re-runs the body once (the checkbox is read by the
+    // `Dynamic` only, but a control change always does)…
+    assert!(state.select_discrete_index(0, 1));
+    state.reevaluate();
+    assert_eq!(var(&state, "at"), "11", "the first frame is one step");
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    // …and every refresh after that only steps the `Dynamic` on.
+    state.tick();
+    assert_eq!(var(&state, "at"), "12", "the body did not start over");
+    state.tick();
+    state.tick();
+    assert_eq!(var(&state, "at"), "14");
+    assert_eq!(var(&state, "clock"), "4");
+    assert_eq!(var(&state, "shown"), "4");
+    assert!(state.error.is_none(), "refresh failed: {:?}", state.error);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the picture is still drawn"
+    );
+
+    // A control the body reads starts it over at the new values.
+    assert!(state.slide_continuous(2, 30.0));
+    state.reevaluate();
+    assert_eq!(var(&state, "at"), "31");
+    assert_eq!(var(&state, "clock"), "1");
+    state.tick();
+    assert_eq!(var(&state, "at"), "32");
+
+    // Stopping it leaves the state alone and the timer off.
+    assert!(state.select_discrete_index(3, 1));
+    assert!(state.select_discrete_index(0, 0));
+    state.reevaluate();
+    assert_eq!(var(&state, "at"), "32");
+    assert!(!state.wants_tick(), "a stopped simulation needs no timer");
+  }
+
+  /// A `Dynamic` that rewrites a variable the body around it reads makes
+  /// the front end run that body again, not just the `Dynamic`.
+  #[test]
+  fn dynamic_writing_what_the_body_reads_reruns_the_body() {
+    let code = r#"Manipulate[
+      runs = runs + 1;
+      Row[{at, " ", Dynamic[If[at < limit, at = at + 1]; at]}],
+      {limit, 3, 9, 1},
+      {{at, 0}, ControlType -> None},
+      {{runs, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let runs = |state: &ManipulateState| -> i64 {
+      var(state, "runs").parse().expect("a count")
+    };
+    assert!(
+      state.wants_tick(),
+      "the Dynamic changed what the body reads"
+    );
+    let before = runs(&state);
+    state.tick();
+    assert!(runs(&state) > before, "the tick re-ran the body");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
