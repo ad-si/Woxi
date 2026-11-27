@@ -4065,7 +4065,7 @@ fn keep_fixed_pane_box(
   // far as that text gives way, rather than being cut off at the right.
   let overflow = functions::graphics::parse_svg_wh(svg).0 - w;
   if overflow > 0.5
-    && !shrink
+    && shrink == functions::graphics::PaneOverflow::Clip
     && let Some(narrower) =
       functions::graphics::grid_wrapped_to_pane_width(source, overflow)
   {
