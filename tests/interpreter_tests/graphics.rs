@@ -71308,6 +71308,41 @@ mod list_plot_wl15_ranges {
     );
   }
 
+  // Regression: the lowering sets the axes off from the data, so a range
+  // that already reaches down to an `AxesOrigin` below the data is not
+  // lowered a second time past that origin.
+  #[test]
+  fn axes_origin_below_the_data_is_not_lowered_again() {
+    let data = "{{3, 5}, {6, 7}}";
+    same(
+      &format!("ListPlot[{data}, AxesOrigin -> {{2, 4}}]"),
+      &explicit("ListPlot", data, (2.0, 6.0), (4.0, 7.0)),
+    );
+    // `PlotRange -> All` follows the same rule.
+    let values = "{{1, 2}, {5, 1}, {11, 2}}";
+    same(
+      &format!("ListPlot[{values}, AxesOrigin -> {{0.5, 0}}, PlotRange -> All]"),
+      &explicit("ListPlot", values, (0.5, 11.0), (0.0, 2.0)),
+    );
+  }
+
+  // An origin inside the automatic set-off leaves the lowered range as it
+  // is: x 3..6 is lowered by 3/48, y 5..7 by 2/18.
+  #[test]
+  fn axes_origin_within_the_set_off_keeps_the_lowered_range() {
+    let data = "{{3, 5}, {6, 7}}";
+    let (x0, y0) = (3.0 - 3.0 / 48.0, 5.0 - 2.0 / 18.0);
+    let lowered = explicit("ListPlot", data, (x0, 6.0), (y0, 7.0)).replace(
+      &format!("AxesOrigin -> {{{x0}, {y0}}}"),
+      "AxesOrigin -> {2.99, 4.95}",
+    );
+    assert!(lowered.contains("AxesOrigin -> {2.99, 4.95}"));
+    same(
+      &format!("ListPlot[{data}, AxesOrigin -> {{2.99, 4.95}}]"),
+      &lowered,
+    );
+  }
+
   #[test]
   fn x_reaches_zero_within_a_sixth_of_its_maximum() {
     // 0.5 <= 3/6 reaches 0, 0.6 does not; y 2..6 has 2 <= 6/2 and does too.
