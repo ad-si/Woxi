@@ -22249,6 +22249,25 @@ pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
     Expr::String(t) if t == "Subsuperscript" => ("SubsuperscriptBox", 3),
     // `TemplateBox[{m, n}, "Mod"]` is the row `m mod n`.
     Expr::String(t) if t == "Mod" => ("RowBox", 2),
+    // The postfix templates set their mark as a superscript of the operand:
+    // `mᵀ`, `m†`, `z*` (a `Transpose2` permutation is not drawn).
+    Expr::String(t) => {
+      let mark = match t.as_str() {
+        "Transpose" | "Transpose2" => "\u{F3C7}",
+        "ConjugateTranspose" | "ConjugateTranspose2" => "\u{F3C9}",
+        "Conjugate" => "*",
+        _ => return None,
+      };
+      let items = template_box_items(&args[0])?;
+      let arity = if t.ends_with('2') { 2 } else { 1 };
+      if items.len() != arity {
+        return None;
+      }
+      return Some(call(
+        "SuperscriptBox",
+        vec![items[0].clone(), str_expr(mark)],
+      ));
+    }
     _ => return None,
   };
   let items = template_box_items(&args[0])?;
@@ -25881,15 +25900,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             expr_to_svg_markup(&args[0]),
           )
         }
-        // The conjugate, transpose and Hermitian adjoint are postfix marks
-        // in StandardForm: `z*`, `mᵀ`, `m†`. An operator expression is
-        // bracketed before taking the mark, `(a + b)ᵀ`.
-        "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
-          let mark = match name.as_str() {
-            "Conjugate" => "*",
-            "Transpose" => "T",
-            _ => "\u{2020}",
-          };
+        // The transpose and Hermitian adjoint are postfix marks in
+        // StandardForm: `mᵀ`, `m†` (a `Conjugate` keeps its function form
+        // there). An operator expression is bracketed before taking the
+        // mark, `(a + b)ᵀ`.
+        "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
+          let mark = if name == "Transpose" { "T" } else { "\u{2020}" };
           let base = expr_to_svg_markup(&args[0]);
           let bracketed = matches!(
             &args[0],
@@ -31030,7 +31046,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // Scattered points with a `Filling` carry a stem from each point to the
     // fill reference, drawn under the points at the filling opacity.
     fill_layer.extend(crate::functions::plot::scatter_stem_primitives(
-      &ps.series, si, ps.y_range, 0.2,
+      &ps.series, si, ps.y_range, 0.3,
     ));
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));

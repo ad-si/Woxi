@@ -1856,22 +1856,25 @@ mod layout_display {
     for (code, boxes) in [
       ("ToBoxes[Factorial[n]]", "RowBox[{n, !}]"),
       ("ToBoxes[Factorial2[n]]", "RowBox[{n, !!}]"),
-      ("ToBoxes[HoldForm[Factorial[7]]]", "RowBox[{7, !}]"),
+      (
+        "ToBoxes[HoldForm[Factorial[7]]]",
+        "TagBox[RowBox[{7, !}], HoldForm]",
+      ),
       (
         "ToBoxes[HoldForm[(a + b)!]]",
-        "RowBox[{RowBox[{(, RowBox[{a, +, b}], )}], !}]",
+        "TagBox[RowBox[{RowBox[{(, RowBox[{a, +, b}], )}], !}], HoldForm]",
       ),
       (
         "ToBoxes[HoldForm[(-3)!]]",
-        "RowBox[{RowBox[{(, RowBox[{-, 3}], )}], !}]",
+        "TagBox[RowBox[{RowBox[{(, RowBox[{-, 3}], )}], !}], HoldForm]",
       ),
       (
         "ToBoxes[HoldForm[(4!)!]]",
-        "RowBox[{RowBox[{(, RowBox[{4, !}], )}], !}]",
+        "TagBox[RowBox[{RowBox[{(, RowBox[{4, !}], )}], !}], HoldForm]",
       ),
       (
         "ToBoxes[HoldForm[f[x]!]]",
-        "RowBox[{RowBox[{f, [, x, ]}], !}]",
+        "TagBox[RowBox[{RowBox[{f, [, x, ]}], !}], HoldForm]",
       ),
     ] {
       assert_eq!(interpret(code).unwrap(), boxes, "{code}");

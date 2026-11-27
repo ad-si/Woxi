@@ -493,6 +493,26 @@ not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
 &&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
 operands themselves are parenthesized by precedence).
 
+### StandardForm boxes: `==` and derivatives
+
+```sh
+wolframscript -code 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "\[Equal]", "b"}]
+woxi eval 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "==", "b"}]
+wolframscript -code 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", TagBox[RowBox[{"(", "3", ")"}], Derivative], MultilineFunction -> None]
+woxi eval 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", "′′′"]
+```
+
+WL boxes `Equal` with the private-use `\[Equal]` (U+F431) and a derivative
+with `MultilineFunction -> None`, its order of three or more as a
+`TagBox[…, Derivative]` around `(n)`. Woxi writes `==` and leaves out the
+option, because its box renderers read a two-argument `SuperscriptBox` and
+have no glyph for `\[Equal]` yet. The same difference shows up in an
+operand of `Infix` or `Prefix` boxes.
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -1877,6 +1897,21 @@ lag 4). For a nearly nonstationary machine process the value agrees to
 about 8 digits only: WL's 1.2819544533776392*^8 against Woxi's
 1.2819544632769972*^8 for `ARMAProcess[{1.997…, -0.997…}, {0.268…}, 1]`,
 whose exact value is 1.28195445098…*^8.
+
+The same goes for an `ARProcess`/`MAProcess` at an integer lag, where WL's
+values contradict its own symbolic form at that lag:
+
+```sh
+wolframscript -code 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 7/6, 7/12, 5/12}
+wolframscript -code 'CovarianceFunction[ARProcess[{1/2}, 1], h]'   # 2^(2 - Abs[h])/3
+woxi eval 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 2/3, 1/3, 1/6}
+```
+
+Woxi gives `γ(h) = a^|h| v/(1 - a^2)` at every lag. `CorrelationFunction`
+(WL `{1, 7/8, 7/16, 5/16}` against Woxi's `{1, 1/2, 1/4, 1/8}`, also with
+the times given as `CorrelationFunction[proc, s, t]`) follows from it.
 
 ### Guard digits of small arbitrary-precision numbers
 
