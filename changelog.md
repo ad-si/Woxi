@@ -2,6 +2,9 @@
 
 # Unreleased
 
+- A translucent `Sphere` in `Graphics3D` has a smooth, round rim: it is
+    tessellated about the line of sight like an opaque one, where it used
+    to show a saw-toothed band along its outline.
 - Woxi Studio keeps re-running a `Manipulate` body that rewrites a
     variable named in its `TrackedSymbols` (a simulation stepping itself
     with `tick += del` behind a "run" button), where it stopped after a
