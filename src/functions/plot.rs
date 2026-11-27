@@ -5740,13 +5740,18 @@ pub(crate) fn plot_labels_svg(
     let fs = title_pt * sf;
     // A title wider than the picture (a long `Row` of text) shrinks to fit
     // instead of being clipped at both edges.
+    // Parts that set their own size (`Row[{Style["a", 16], …}]`) are
+    // measured at that size and shrink along with the rest.
+    let glyph_ratio = plot_padding::plot_title_glyph_font(opts) / title_pt;
     let widest = sl.max_line_chars() as f64;
-    let fs = if widest > 0.0 && sl.frame.is_none() {
-      fs.min((canvas_width - 8.0 * sf) / (widest * 0.52))
+    let fit = if widest > 0.0 && sl.frame.is_none() {
+      ((canvas_width - 8.0 * sf) / (widest * 0.52 * fs * glyph_ratio)).min(1.0)
     } else {
-      fs
+      1.0
     };
-    let ty = layout.title_top + ascent(fs / sf) * sf;
+    let fs = fs * fit;
+    // The baseline leaves room for the tallest glyphs of the line.
+    let ty = layout.title_top + ascent(fs * glyph_ratio / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
     // `ImagePadding` leaves less room above the plot than the box needs;
     // its text sits below the frame's 6pt top margin, which the title band
@@ -5857,7 +5862,7 @@ pub(crate) fn plot_labels_svg(
         title_pitch,
       )
     } else {
-      sl.svg_scaled_stacked(sf, tx, title_pitch)
+      sl.svg_scaled_stacked(sf * fit, tx, title_pitch)
     };
     if !sl.segments.is_empty() {
       // Center the line on the band the tallest picture claims.
