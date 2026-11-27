@@ -706,6 +706,9 @@ fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = with_generalized_variables(args, nsolve_ast) {
     return result;
   }
+  if let Some(result) = try_nsolve_trig_system(args) {
+    return Ok(result);
+  }
   // A system of several equations with machine coefficients is solved the
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
@@ -808,7 +811,9 @@ fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
   // its own head — unless a numeric multi-seed search below finds real
   // roots that no symbolic technique reached in closed form.
-  if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve") {
+  // (A system whose elimination failed comes back as `ToRules[Reduce[...]]`.)
+  if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve" || name == "ToRules")
+  {
     if let Some(result) = try_nsolve_bracketed(args) {
       return Ok(result);
     }
@@ -13217,6 +13222,184 @@ fn has_non_finite_value(solution: &Expr) -> bool {
       || crate::syntax::expr_children(e).into_iter().any(bad)
   }
   bad(solution)
+}
+
+/// `NSolve[{eqns}, {vars}]` for a system in which two or more unknowns
+/// occur only as `Cos[v]` and `Sin[v]`: such a system is polynomial in those
+/// cosines and sines. Each pair becomes two fresh unknowns tied together by
+/// `c^2 + s^2 == 1`, the polynomial system is solved, and every solution is
+/// mapped back to the principal angle `ArcTan[c, s]` (`-I Log[c + I s]` for
+/// a complex pair). Unknowns that occur in no such call stay as they are.
+fn try_nsolve_trig_system(args: &[Expr]) -> Option<Expr> {
+  fn conjuncts(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::List(items) => items.iter().for_each(|e| conjuncts(e, out)),
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        conjuncts(left, out);
+        conjuncts(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().for_each(|e| conjuncts(e, out));
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  fn mentions(expr: &Expr, symbol: &str) -> bool {
+    matches!(expr, Expr::Identifier(s) if s == symbol)
+      || crate::syntax::expr_children(expr)
+        .into_iter()
+        .any(|child| mentions(child, symbol))
+  }
+  if args.len() < 2 || args.len() > 3 {
+    return None;
+  }
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  if vars.len() < 2 {
+    return None;
+  }
+  let mut eqs = Vec::new();
+  conjuncts(&args[0], &mut eqs);
+  let mut system = Expr::List(eqs.into());
+  let ctx = format!("{}{}", expr_to_string(&system), expr_to_string(&args[1]));
+  let fresh = |prefix: &str, index: usize| {
+    let mut k = index;
+    let mut name = format!("{prefix}{k}");
+    while ctx.contains(&name) {
+      k += 1000;
+      name = format!("{prefix}{k}");
+    }
+    Expr::Identifier(name)
+  };
+  // Per unknown: the fresh cosine and sine symbols of an angle, or `None`
+  // for an unknown that is solved for directly.
+  let mut angles: Vec<Option<(Expr, Expr)>> = Vec::with_capacity(vars.len());
+  let mut inner_vars = Vec::new();
+  let mut identities = Vec::new();
+  for (i, var) in vars.iter().enumerate() {
+    let Expr::Identifier(name) = var else {
+      return None;
+    };
+    let cos = call1("Cos", var.clone());
+    let sin = call1("Sin", var.clone());
+    let c = fresh("WoxiSolveCos", i);
+    let s = fresh("WoxiSolveSin", i);
+    let replaced =
+      substitute_expr(&substitute_expr(&system, &cos, &c), &sin, &s);
+    if expr_to_string(&replaced) == expr_to_string(&system) {
+      inner_vars.push(var.clone());
+      angles.push(None);
+      continue;
+    }
+    if mentions(&replaced, name) {
+      return None;
+    }
+    system = replaced;
+    identities.push(call(
+      "Equal",
+      vec![
+        call(
+          "Plus",
+          vec![
+            call("Power", vec![c.clone(), Expr::Integer(2)]),
+            call("Power", vec![s.clone(), Expr::Integer(2)]),
+          ],
+        ),
+        Expr::Integer(1),
+      ],
+    ));
+    inner_vars.push(c.clone());
+    inner_vars.push(s.clone());
+    angles.push(Some((c, s)));
+  }
+  if angles.iter().flatten().count() < 2 {
+    return None;
+  }
+  let Expr::List(equations) = &system else {
+    return None;
+  };
+  let equations: Vec<Expr> =
+    equations.iter().cloned().chain(identities).collect();
+  let equations =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::List(equations.into()))
+      .ok()?;
+  let mut inner_args = vec![equations, Expr::List(inner_vars.into())];
+  inner_args.extend(args.get(2).cloned());
+  let solved = crate::quietly(|| nsolve_ast(&inner_args)).ok()?;
+  let Expr::List(solutions) = &solved else {
+    return None;
+  };
+  let mut mapped: Vec<Expr> = Vec::with_capacity(solutions.len());
+  let mut seen = std::collections::HashSet::new();
+  for solution in solutions {
+    let Expr::List(rules) = solution else {
+      return None;
+    };
+    let value_of = |symbol: &Expr| -> Option<Expr> {
+      rules.iter().find_map(|rule| match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if expr_to_string(pattern) == expr_to_string(symbol) => {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      })
+    };
+    let mut point = Vec::with_capacity(vars.len());
+    for (var, angle) in vars.iter().zip(&angles) {
+      let value = match angle {
+        None => value_of(var)?,
+        Some((c, s)) => {
+          let (c, s) = (value_of(c)?, value_of(s)?);
+          let (c_num, s_num) =
+            (try_extract_complex_f64(&c)?, try_extract_complex_f64(&s)?);
+          let angle = if c_num.1 == 0.0 && s_num.1 == 0.0 {
+            call("ArcTan", vec![c, s])
+          } else {
+            // -I Log[c + I s]
+            call(
+              "Times",
+              vec![
+                call("Complex", vec![Expr::Integer(0), Expr::Integer(-1)]),
+                call1(
+                  "Log",
+                  call(
+                    "Plus",
+                    vec![
+                      c,
+                      call(
+                        "Times",
+                        vec![
+                          call(
+                            "Complex",
+                            vec![Expr::Integer(0), Expr::Integer(1)],
+                          ),
+                          s,
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          };
+          crate::evaluator::evaluate_function_call_ast("N", &[angle]).ok()?
+        }
+      };
+      point.push(rule_expr(var.clone(), value));
+    }
+    let point = Expr::List(point.into());
+    if seen.insert(expr_to_string(&point)) {
+      mapped.push(point);
+    }
+  }
+  Some(sort_nsolve_solutions(Expr::List(mapped.into())))
 }
 
 /// Numeric last resort for `NSolve[{eqns}, {vars}]` with as many equations

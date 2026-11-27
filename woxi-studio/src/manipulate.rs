@@ -6945,6 +6945,39 @@ mod tests {
     assert_eq!(state.label_svgs.iter().filter(|(n, _)| n == "a").count(), 1);
   }
 
+  /// A checkbox captioned with an arrow set over two letters (a vector
+  /// from one point to another) draws the caption as a typeset icon, the
+  /// arrow above its base, instead of spelling the arrow out after the
+  /// letters as `PQ^(⟶)`. A caption that reads as one line stays text.
+  #[test]
+  fn stacked_overscript_caption_renders_as_label_icon() {
+    let code = "Manipulate[{p, q}, \
+      {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+      {{q, False, \"draw Q\"}, {True, False}}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let icon = state.label_svg("p").expect("a typeset icon for p");
+    assert!(
+      icon.width > 30.0 && icon.height > 12.0,
+      "{}x{}",
+      icon.width,
+      icon.height
+    );
+    let ControlState::Discrete { label, .. } = &state.controls[0] else {
+      panic!("expected a discrete control: {:?}", state.controls[0]);
+    };
+    assert!(!label.contains("^("), "label: {label:?}");
+    assert!(state.label_svg("q").is_none());
+    let ControlState::Discrete { label, .. } = &state.controls[1] else {
+      panic!("expected a discrete control: {:?}", state.controls[1]);
+    };
+    assert_eq!(label, "draw Q");
+    // Toggling the checkbox keeps the icon.
+    state.reevaluate();
+    assert!(state.label_svg("p").is_some());
+  }
+
   #[test]
   fn button_with_dynamic_label_follows_live_bindings() {
     let code = r#"Manipulate[

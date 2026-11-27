@@ -15,12 +15,12 @@ $ wo 'ToBoxes[TraditionalForm[n!]]'
 TagBox[FormBox[RowBox[{n, !}], TraditionalForm], TraditionalForm, Editable -> True]
 ```
 
-`Mod` is written as the infix operator `mod`, with a product operand in
+`Mod` is set by its `Mod` template, with a product operand in
 parentheses:
 
 ```scrut
 $ wo 'ToBoxes[TraditionalForm[Mod[2 x, 7]]]'
-TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]
+TagBox[FormBox[TemplateBox[{RowBox[{(, RowBox[{2,  , x}], )}], 7}, Mod], TraditionalForm], TraditionalForm, Editable -> True]
 ```
 
 A special function carries its order as a subscript and any further index

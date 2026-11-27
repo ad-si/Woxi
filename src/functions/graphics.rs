@@ -16456,6 +16456,25 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
     ..Default::default()
   };
   match content {
+    // The box code a string embeds (`"\!\(\*SubscriptBox[\(E\), \(1\)]\) =
+    // 0.08"`) is typeset traditionally too — an italic `E` — while the
+    // string's plain text stays upright. Box code one line of text cannot
+    // show keeps the plain reading of the whole string.
+    Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
+      let norm = normalize_box_markers(s);
+      let cs: Vec<char> = norm.chars().collect();
+      let mut runs = Vec::new();
+      for (unit, is_box_code) in parse_box_units_tagged(&cs) {
+        match (&unit, is_box_code) {
+          (Expr::String(run), false) => runs.push(plain(run.clone())),
+          (_, true) if let Some(unit_runs) = traditional_box_runs(&unit) => {
+            runs.extend(unit_runs);
+          }
+          _ => return Some(vec![plain(graphics_text_content(content))]),
+        }
+      }
+      Some(runs)
+    }
     Expr::String(_) | Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(vec![plain(graphics_text_content(content))])
     }
@@ -22249,6 +22268,25 @@ pub(crate) fn script_template_box(e: &Expr) -> Option<Expr> {
     Expr::String(t) if t == "Subsuperscript" => ("SubsuperscriptBox", 3),
     // `TemplateBox[{m, n}, "Mod"]` is the row `m mod n`.
     Expr::String(t) if t == "Mod" => ("RowBox", 2),
+    // The postfix templates set their mark as a superscript of the operand:
+    // `mᵀ`, `m†`, `z*` (a `Transpose2` permutation is not drawn).
+    Expr::String(t) => {
+      let mark = match t.as_str() {
+        "Transpose" | "Transpose2" => "\u{F3C7}",
+        "ConjugateTranspose" | "ConjugateTranspose2" => "\u{F3C9}",
+        "Conjugate" => "*",
+        _ => return None,
+      };
+      let items = template_box_items(&args[0])?;
+      let arity = if t.ends_with('2') { 2 } else { 1 };
+      if items.len() != arity {
+        return None;
+      }
+      return Some(call(
+        "SuperscriptBox",
+        vec![items[0].clone(), str_expr(mark)],
+      ));
+    }
     _ => return None,
   };
   let items = template_box_items(&args[0])?;
@@ -23141,8 +23179,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
         // internally; recognize it here the same way rather than requiring
-        // callers to normalize every directive to `Rule` form first.
-        for opt in &args[1..] {
+        // callers to normalize every directive to `Rule` form first. A list
+        // (or `Directive`) of directives — `Style[expr, {Red, Bold}]` — is
+        // the same as its members written out one by one.
+        for opt in splice_directives(&args[1..]) {
           let (key, val) = match opt {
             Expr::Rule {
               pattern,
@@ -24796,9 +24836,13 @@ pub(crate) fn shallow_for_display(expr: &Expr, spec: Option<&Expr>) -> Expr {
 /// The display preprocessing every typeset label goes through: a number
 /// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`])
 /// and the `"TraditionalForm"` style name turned into its form wrapper
-/// (see [`style_form_name_as_wrapper`]). `None` when neither applies.
+/// (see [`style_form_name_as_wrapper`]), and any `StyleForm` respelled as
+/// the `Style` it is displayed as (see [`style_forms_as_style`]) — a label
+/// typeset on its own, such as a tick label, passes no display entry point
+/// that would have respelled it. `None` when none applies.
 fn normalize_display_style(expr: &Expr) -> Option<Expr> {
-  hoist_style_out_of_number_form(expr)
+  style_forms_as_style(expr)
+    .or_else(|| hoist_style_out_of_number_form(expr))
     .or_else(|| style_form_name_as_wrapper(expr))
 }
 
@@ -25881,15 +25925,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             expr_to_svg_markup(&args[0]),
           )
         }
-        // The conjugate, transpose and Hermitian adjoint are postfix marks
-        // in StandardForm: `z*`, `mᵀ`, `m†`. An operator expression is
-        // bracketed before taking the mark, `(a + b)ᵀ`.
-        "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
-          let mark = match name.as_str() {
-            "Conjugate" => "*",
-            "Transpose" => "T",
-            _ => "\u{2020}",
-          };
+        // The transpose and Hermitian adjoint are postfix marks in
+        // StandardForm: `mᵀ`, `m†` (a `Conjugate` keeps its function form
+        // there). An operator expression is bracketed before taking the
+        // mark, `(a + b)ᵀ`.
+        "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
+          let mark = if name == "Transpose" { "T" } else { "\u{2020}" };
           let base = expr_to_svg_markup(&args[0]);
           let bracketed = matches!(
             &args[0],
@@ -31030,7 +31071,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // Scattered points with a `Filling` carry a stem from each point to the
     // fill reference, drawn under the points at the filling opacity.
     fill_layer.extend(crate::functions::plot::scatter_stem_primitives(
-      &ps.series, si, ps.y_range, 0.2,
+      &ps.series, si, ps.y_range, 0.3,
     ));
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));
@@ -43506,6 +43547,55 @@ fn inline_fraction_string_svg_at(
   expr: &Expr,
   default_size: f64,
 ) -> Option<String> {
+  inline_box_svg_where(expr, default_size, box_has_fraction)
+}
+
+/// Whether a box tree holds an over- or underscript that has to be stacked
+/// on its base: a mark with no combining accent (the long arrow over the
+/// `AB` of a vector, a rate constant over a reaction arrow), or an accent
+/// that does not span its base set over more than one character.
+fn box_has_stacked_script(boxes: &Expr) -> bool {
+  match boxes {
+    Expr::FunctionCall { name, args } => {
+      let stacked = matches!(name.as_str(), "OverscriptBox" | "UnderscriptBox")
+        && args.len() >= 2
+        && {
+          let base = box_expr_to_plain_in(&args[0], false);
+          let mark = box_expr_to_plain_in(&args[1], false);
+          match combining_accent(mark.trim(), name == "OverscriptBox") {
+            Some((_, whole_base)) => {
+              !whole_base && base.trim().chars().count() > 1
+            }
+            None => !mark.trim().is_empty(),
+          }
+        };
+      stacked || args.iter().any(box_has_stacked_script)
+    }
+    Expr::List(items) => items.iter().any(box_has_stacked_script),
+    _ => false,
+  }
+}
+
+/// The type size (px) the frontend sets a control caption at.
+const CAPTION_FONT: f64 = 12.0;
+
+/// The picture of a control caption whose inline box notation stacks a
+/// script over or under its base (an `OverscriptBox` setting a long arrow
+/// over the `AB` of a vector), at the caption size and in the box layout's
+/// monospace face, which the text captions beside it are set in too. `None`
+/// for a caption that reads as one line of text.
+fn stacked_script_caption_svg(caption: &Expr) -> Option<String> {
+  inline_box_svg_where(caption, CAPTION_FONT, box_has_stacked_script)
+}
+
+/// A (possibly `Style`d) string of inline box notation, or a displayed box
+/// tree, typeset through the box layout when `needs_layout` holds for its
+/// boxes.
+fn inline_box_svg_where(
+  expr: &Expr,
+  default_size: f64,
+  needs_layout: fn(&Expr) -> bool,
+) -> Option<String> {
   let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
@@ -43527,7 +43617,7 @@ fn inline_fraction_string_svg_at(
     }
     _ => return None,
   };
-  if !box_has_fraction(&boxes) {
+  if !needs_layout(&boxes) {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -45152,16 +45242,22 @@ fn column_layout_svg(
 /// Render `Row[{items...}]` or `Row[{items...}, sep]` as a horizontal SVG layout.
 /// When `sep` is `Spacer[n]`, uses `n` points of horizontal space between items.
 /// When `sep` is any other expression, renders it as text between items.
+/// Whether `name[args…]` only dresses the text it holds as its first
+/// argument: a `Style[…]`, or the `Text[…]` a text display pushes onto the
+/// items of its row.
+fn is_text_flow_wrapper(name: &str, args: &[Expr]) -> bool {
+  (is_style_wrapper(name) && !args.is_empty())
+    || (name == "Text" && args.len() == 1)
+}
+
 /// The text of a row item that is a string starting or ending with a
-/// newline, possibly inside `Style[…]` wrappers. Such a string breaks the
+/// newline, possibly inside `Style[…]` and `Text[…]` wrappers. Such a string breaks the
 /// line; a stacked 2D text like `"1\n-\n3"` (a typeset fraction) has its
 /// newlines in the middle and stays one centered block.
 fn newline_text(item: &Expr) -> Option<&str> {
   match item {
     Expr::String(s) if breaks_line(s) => Some(s),
-    Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && !args.is_empty() =>
-    {
+    Expr::FunctionCall { name, args } if is_text_flow_wrapper(name, args) => {
       newline_text(&args[0])
     }
     _ => None,
@@ -45224,12 +45320,97 @@ fn breaks_line(s: &str) -> bool {
     })
 }
 
+/// The line pitch, in points, a `LineSpacing -> {c, n}` directive of the
+/// `Style` around a text item (under any `Text` wrappers) asks for: `c`
+/// times the item's font size plus `n` points. `None` for an item without
+/// the directive, or with one that is not such a pair.
+fn line_spacing_pitch(item: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = item else {
+    return None;
+  };
+  if !is_text_flow_wrapper(name, args) {
+    return None;
+  }
+  let own = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "LineSpacing")
+    .and_then(|(_, v)| match v {
+      Expr::List(pair) if pair.len() == 2 => {
+        Some((expr_to_f64(&pair[0])?, expr_to_f64(&pair[1])?))
+      }
+      _ => None,
+    })
+    .filter(|(c, n)| *c >= 0.0 && *n >= 0.0);
+  match own {
+    Some((c, n)) => {
+      let size = extract_cell_style(item).font_size.unwrap_or(14.0);
+      Some(c * size + n)
+    }
+    None => line_spacing_pitch(&args[0]),
+  }
+}
+
+/// The lines of a text flow stacked `pitch` points apart, whatever height
+/// each line's own box has: line `k` is centered on the middle of the
+/// `k`-th `pitch`-tall band. `align` (`"Left"`, `"Center"` or `"Right"`)
+/// places each line in the width of the longest. A pitch tighter than the
+/// lines lets them overlap, as the front end sets them; the picture still
+/// holds the whole first and last line.
+fn lines_at_pitch_svg(
+  lines: &[Expr],
+  align: &str,
+  pitch: f64,
+) -> Option<String> {
+  let drawn: Vec<(String, f64, f64)> = lines
+    .iter()
+    .map(|line| {
+      let svg = nested_layout_svg(line)?;
+      let (w, h) = parse_svg_wh(&svg);
+      Some((svg, w, h))
+    })
+    .collect::<Option<_>>()?;
+  let width = drawn.iter().map(|(_, w, _)| *w).fold(0.0_f64, f64::max);
+  // The top of line `k`'s box, before the block is moved down to hold
+  // whatever sticks out above the first band.
+  let top = |k: usize, h: f64| (k as f64 + 0.5) * pitch - h / 2.0;
+  let min_top = drawn
+    .iter()
+    .enumerate()
+    .map(|(k, (_, _, h))| top(k, *h))
+    .fold(0.0_f64, f64::min);
+  let height = drawn
+    .iter()
+    .enumerate()
+    .map(|(k, (_, _, h))| top(k, *h) + h)
+    .fold(0.0_f64, f64::max)
+    - min_top;
+  let mut svg = format!(
+    "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    w = width.ceil(),
+    h = height.ceil(),
+  );
+  for (k, (child, w, h)) in drawn.iter().enumerate() {
+    let x = match align {
+      "Left" => 0.0,
+      "Right" => width - w,
+      _ => (width - w) / 2.0,
+    };
+    let y = top(k, *h) - min_top;
+    svg.push_str(&format!(
+      "<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" viewBox=\"0 0 {w} {h}\">\n"
+    ));
+    svg.push_str(strip_svg_wrapper(child));
+    svg.push_str("</svg>\n");
+  }
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
 /// `item` with its innermost string replaced by `text`.
 fn with_text(item: &Expr, text: &str) -> Expr {
   match item {
-    Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && !args.is_empty() =>
-    {
+    Expr::FunctionCall { name, args } if is_text_flow_wrapper(name, args) => {
       let mut new_args = args.clone();
       new_args[0] = with_text(&args[0], text);
       Expr::FunctionCall {
@@ -45704,12 +45885,16 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     .collect();
   if args.len() == 1 && flow_items.iter().any(|i| newline_text(i).is_some()) {
     let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+    // The blank each line shows when nothing follows its break: set like
+    // the text that broke the line, so it is as tall as a line of it.
+    let mut blanks: Vec<Expr> = vec![str_expr(" ")];
     for item in &flow_items {
       match newline_text(item) {
         Some(text) => {
           for (k, seg) in text.split('\n').enumerate() {
             if k > 0 {
               lines.push(Vec::new());
+              blanks.push(with_text(item, " "));
             }
             if !seg.is_empty() {
               lines.last_mut().unwrap().push(with_text(item, seg));
@@ -45721,13 +45906,10 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     }
     let rows: Vec<Expr> = lines
       .into_iter()
-      .map(|line| {
+      .zip(blanks)
+      .map(|(line, blank)| {
         // A blank line still takes one line of height.
-        let line = if line.is_empty() {
-          vec![str_expr(" ")]
-        } else {
-          line
-        };
+        let line = if line.is_empty() { vec![blank] } else { line };
         call1("Row", Expr::List(line.into()))
       })
       .collect();
@@ -45737,7 +45919,20 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     // its short lines rather than hanging them flush left. A row given an
     // explicit `ImageSize` keeps its lines flush left in that fixed box
     // and never reaches here (it has more than one argument).
-    return stacked_boxes_svg(rows, "Center");
+    // A `TextAlignment` the items' style carries places the lines
+    // instead, and a `LineSpacing` sets the pitch they follow at.
+    let align = flow_items.iter().find_map(text_alignment_anchor).map_or(
+      "Center",
+      |anchor| match anchor {
+        "start" => "Left",
+        "end" => "Right",
+        _ => "Center",
+      },
+    );
+    return match flow_items.iter().find_map(line_spacing_pitch) {
+      Some(pitch) => lines_at_pitch_svg(&rows, align, pitch),
+      None => stacked_boxes_svg(rows, align),
+    };
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
@@ -46809,9 +47004,21 @@ fn framed_box_to_svg(
       );
     // A `FontFamily` (or a named style's face) sets the text atoms in that
     // family, measured with its own glyph advances.
-    let layout = with_box_font_family(style.font_family.as_deref(), || {
+    let mut layout = with_box_font_family(style.font_family.as_deref(), || {
       layout_box(&crate::strip_number_precision_markers(&boxes), size)
     });
+    // `Background -> color` on the `Style` paints the text's own box, inside
+    // the frame's margins.
+    if let Some(bg) = style.background {
+      layout.elements = format!(
+        "<rect x=\"0\" y=\"0\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{} stroke=\"none\"/>{}",
+        layout.width,
+        layout.height,
+        bg.to_svg_rgb(),
+        bg.opacity_attr(),
+        layout.elements,
+      );
+    }
     let fill = style
       .color
       .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
@@ -57890,6 +58097,12 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     label if is_numeric_arithmetic_caption(label) => {
       Some(crate::syntax::expr_to_source_form(label))
     }
+    // A caption whose inline boxes stack a script on its base (an arrow
+    // over the `AB` of a vector) has no one-line text form either, so it
+    // is drawn as an icon as well.
+    label if stacked_script_caption_svg(label).is_some() => {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
 }
@@ -57954,7 +58167,8 @@ pub fn manipulate_eval_caption(
   // whole, words included, so the picture is not lost. A numeric fraction
   // or radical (`8/9`) is typeset as stacked math, also an icon.
   let svg = control_caption_svg(&evaluated)
-    .or_else(|| arithmetic_caption_svg(&evaluated));
+    .or_else(|| arithmetic_caption_svg(&evaluated))
+    .or_else(|| stacked_script_caption_svg(&evaluated));
   let runs = if svg.is_some() {
     Vec::new()
   } else {
