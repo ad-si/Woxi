@@ -26394,6 +26394,62 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Layered onto other graphics, the `Filling` of a `ColorFunction`
+    /// curve keeps the curve's colors at full strength, as on the plot
+    /// drawn alone; it used to fall back to the faint series color.
+    #[test]
+    fn show_color_function_filling_takes_the_curve_colors() {
+      let counts = |opts: &str| {
+        interpret(&format!(
+          "g = Show[Graphics[Point[{{0, 0}}]], \
+           ListLinePlot[{{{{0, 1}}, {{1, -1}}, {{2, 2}}, {{3, 0}}, {{4, 1}}}}, \
+           ColorFunction -> (Hue[#] &), Filling -> Axis{opts}]]; \
+           {{Count[g, Polygon[_, VertexColors -> _], Infinity], \
+           Count[g, Polygon[_], Infinity], \
+           Cases[g, Opacity[o_] :> o, Infinity]}}"
+        ))
+        .unwrap()
+      };
+      assert_eq!(counts(""), "{6, 0, {1.}}");
+      assert_eq!(counts(", FillingStyle -> Automatic"), "{6, 0, {1.}}");
+      // An explicit `FillingStyle` replaces the color function.
+      assert_eq!(counts(", FillingStyle -> Opacity[0.5]"), "{0, 1, {0.5}}");
+    }
+
+    /// The colored fill is one piece per step of the curve: a step
+    /// crossing the level splits there, one ending on it is a triangle,
+    /// and one running along it encloses nothing.
+    #[test]
+    fn show_color_function_filling_splits_steps_at_the_level() {
+      assert_eq!(
+        interpret(
+          "Cases[Show[Graphics[Point[{0, 0}]], \
+           ListLinePlot[{{0, 1}, {1, -1}, {2, 0}, {3, 0}, {4, 2}}, \
+           ColorFunction -> (Hue[#] &), ColorFunctionScaling -> False, \
+           Filling -> Axis]], Polygon[p_, _] :> p, Infinity]"
+        )
+        .unwrap(),
+        "{{{0., 1.}, {0.5, 0.}, {0., 0.}}, {{0.5, 0.}, {1., -1.}, {1., 0.}}, \
+         {{1., -1.}, {2., 0.}, {1., 0.}}, {{3., 0.}, {4., 2.}, {4., 0.}}}"
+      );
+    }
+
+    /// Each piece of the colored fill is drawn as one gradient, not as
+    /// flat facets, and none at the default filling opacity.
+    #[test]
+    fn show_color_function_filling_is_drawn_as_gradients() {
+      let svg = export_svg(
+        "Show[Graphics[Point[{0, 0}]], \
+         ListLinePlot[{{0, 1}, {1, -1}, {2, 2}, {3, 0}, {4, 1}}, \
+         ColorFunction -> (Hue[#] &), Filling -> Axis]]",
+      );
+      let polygons: Vec<&str> =
+        svg.lines().filter(|l| l.contains("<polygon")).collect();
+      assert_eq!(polygons.len(), 6, "{polygons:?}");
+      assert!(polygons.iter().all(|l| l.contains("fill=\"url(#")));
+      assert!(!svg.contains("fill-opacity=\"0.2\""));
+    }
+
     /// `PlotPoints -> {nu, nv}` (also as an expression such as `k*{4, 4}`)
     /// sets the grid of a two-parameter region.
     #[test]
