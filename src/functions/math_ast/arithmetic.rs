@@ -11031,6 +11031,14 @@ fn absorb_coefficient_into_power(
 }
 
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Two machine-complex numbers (the elements of a complex matrix product)
+  // multiply directly.
+  if let [l, r] = args
+    && let Some(product) =
+      super::fast_machine_complex_binop(BinaryOperator::Times, l, r)
+  {
+    return Ok(product);
+  }
   if let Some(image) = image_arithmetic(args, |a, b| a * b) {
     return Ok(image);
   }
@@ -13810,6 +13818,13 @@ fn real_over_exact_quotient(x: f64, b: &Expr) -> Option<f64> {
 }
 
 pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // A machine-complex divisor (the elements of a complex matrix quotient)
+  // divides directly.
+  if let Some(quotient) =
+    super::fast_machine_complex_binop(BinaryOperator::Divide, a, b)
+  {
+    return Ok(quotient);
+  }
   // 0 / expr → 0 (Real if either operand is Real, else Integer).
   let b_is_zero =
     matches!(b, Expr::Integer(0)) || matches!(b, Expr::Real(z) if *z == 0.0);
@@ -14594,7 +14609,12 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// `log z = ln|z| + i arg(z)` (`z` nonzero). A part that is rounding noise
 /// next to the result's size comes back as `0.`; the threshold is relative,
 /// so `z^(-1/3)` of a huge `z` keeps its tiny parts.
-fn machine_complex_powf(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+pub(crate) fn machine_complex_powf(
+  a: f64,
+  b: f64,
+  c: f64,
+  d: f64,
+) -> (f64, f64) {
   let ln_abs = a.hypot(b).ln();
   let arg_z = b.atan2(a);
   let re_exp = c * ln_abs - d * arg_z;
@@ -14813,6 +14833,13 @@ fn bigfloat_imaginary_coefficient(e: &Expr) -> Option<&Expr> {
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // A machine-complex power (`2^m` or `m^2` over a complex matrix) is taken
+  // directly.
+  if let Some(power) =
+    super::fast_machine_complex_binop(BinaryOperator::Power, base, exp)
+  {
+    return Ok(power);
+  }
   // An arbitrary-precision imaginary base `c I` to an integer power is
   // `c^n I^n`, its precision that of the real power:
   // `(0.5`30 I)^2` is `-0.25`29.699`.

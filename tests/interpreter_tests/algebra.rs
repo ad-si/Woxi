@@ -26431,6 +26431,103 @@ mod solve_substitution_of_symbols {
       "0.2034"
     );
   }
+
+  #[test]
+  fn nsolve_trig_system_in_two_angles() {
+    // Polynomial in the cosines and sines of both unknowns: the principal
+    // angles of every solution, in a finite list.
+    assert_eq!(
+      interpret(
+        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], \
+         Sin[x] == 1.5 Sin[y]}, {x, y}]]"
+      )
+      .unwrap(),
+      "{{16961, 24189}, {-16961, -24189}}"
+    );
+    // The arguments may be shifted by a multiple of Pi/2 (folded away by
+    // the evaluator), and the equations may be a conjunction.
+    assert_eq!(
+      interpret(
+        "Round[10^4 {a, b} /. NSolve[Cos[a] == 2 - 2 Cos[Pi - b] && \
+         Sin[a] == 2 Sin[Pi - b], {a, b}]]"
+      )
+      .unwrap(),
+      "{{13181, 26362}, {-13181, -26362}}"
+    );
+    // The solutions satisfy the equations as written.
+    assert_eq!(
+      interpret(
+        "Max[Abs[{Cos[x] - 0.3 - 0.9 Cos[y], Sin[x] - 0.2 - 0.9 Sin[y]} /. \
+         NSolve[{Cos[x] == 0.3 + 0.9 Cos[y], Sin[x] == 0.2 + 0.9 Sin[y]}, \
+         {x, y}]]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn nsolve_trig_system_independent_equations() {
+    assert_eq!(
+      interpret(
+        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1/2, Sin[y] == 1/2}, {x, y}]]"
+      )
+      .unwrap(),
+      "{{10472, 26180}, {10472, 5236}, {-10472, 26180}, {-10472, 5236}}"
+    );
+  }
+
+  #[test]
+  fn nsolve_trig_system_with_plain_unknown() {
+    assert_eq!(
+      interpret(
+        "Round[10^4 {x, y, z} /. NSolve[{Cos[x] + Cos[y] == z, \
+         Sin[x] == Sin[y], z == 1}, {x, y, z}]]"
+      )
+      .unwrap(),
+      "{{10472, 10472, 10000}, {-10472, -10472, 10000}}"
+    );
+  }
+
+  #[test]
+  fn nsolve_trig_system_tangent_and_disjoint_cases() {
+    // A double solution is listed once.
+    assert_eq!(
+      interpret(
+        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 5/2 + 3/2 Cos[y], \
+         Sin[x] == 3/2 Sin[y]}, {x, y}]]"
+      )
+      .unwrap(),
+      "{{0, 31416}}"
+    );
+    // No real solution: complex angles, none over the reals.
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(
+        "NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}, \
+         Reals]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn nsolve_unsolved_system_stays_unevaluated() {
+    // Used to leak the internal `ToRules[Reduce[...]]` fallback.
+    assert_eq!(
+      interpret("NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}]")
+        .unwrap(),
+      "NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}]"
+    );
+  }
 }
 
 mod difference_root {
