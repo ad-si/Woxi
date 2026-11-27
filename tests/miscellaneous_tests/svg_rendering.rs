@@ -5565,6 +5565,45 @@ mod tests {
       );
     }
 
+    /// `Panel[Text[Grid[…]]]` draws the table inside the panel's gray box,
+    /// on its own and as an item of a `Row` next to a picture. Regression:
+    /// the pass that looks through the panel to the `Text` table drew the
+    /// table alone, so a legend panel beside a plot lost its box.
+    #[test]
+    fn a_panel_around_a_text_table_keeps_its_box() {
+      let panel = r#"Panel[Text[Grid[{{1, "one"}, {2, "two"}}]]]"#;
+      for code in [
+        panel.to_string(),
+        format!("Row[{{Graphics[Disk[], ImageSize -> 50], {panel}}}]"),
+      ] {
+        let result =
+          woxi::interpret_with_stdout(&code).expect("interpret should succeed");
+        let svg = result.graphics.expect("the panel is a picture");
+        assert!(
+          svg.contains(r#"fill="rgb(245,245,245)""#),
+          "{code} draws no panel box: {svg}"
+        );
+        assert!(svg.contains("two"), "{code} draws no table: {svg}");
+      }
+    }
+
+    /// `Framed[Text[Grid[…]]]` likewise keeps its border around the table.
+    #[test]
+    fn a_frame_around_a_text_table_keeps_its_border() {
+      let table = r#"Text[Grid[{{1, "one"}, {2, "two"}}]]"#;
+      let bare = woxi::interpret_with_stdout(table)
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the table is a picture");
+      let framed = woxi::interpret_with_stdout(&format!("Framed[{table}]"))
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the framed table is a picture");
+      assert!(!bare.contains("<rect"), "{bare}");
+      assert!(framed.contains("<rect"), "{framed}");
+      assert!(framed.contains("two"), "{framed}");
+    }
+
     /// A table of pictures in a fixed-size `Pane` takes up the pane's whole
     /// box, not just the table's own size.
     #[test]
