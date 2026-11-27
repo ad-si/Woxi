@@ -4690,8 +4690,9 @@ mod image_advanced {
     );
   }
 
-  // Method -> "ShenCastan": the gradient of a two-sided exponential
-  // `Exp[-Abs[k]/(r/2)]`, scaled so a unit ramp has slope 1.
+  // Method -> "ShenCastan": the gradient of the two-sided exponential
+  // `Erfc[Sqrt[2]]^(Abs[k]/r)` (`ShenCastanMatrix`), scaled so a unit ramp
+  // has slope 1.
   #[test]
   fn gradient_filter_shen_castan_kernels() {
     clear_state();
@@ -4701,7 +4702,7 @@ mod image_advanced {
          Method -> \"ShenCastan\"]]]"
       )
       .unwrap(),
-      "{{0, 1060, 3940, 3940, 1060, 0, 0}}"
+      "{{0, 748, 4252, 4252, 748, 0, 0}}"
     );
     // The middle of a ramp of slope 1/10, away from the padded border.
     assert_eq!(
@@ -4721,16 +4722,148 @@ mod image_advanced {
     );
   }
 
+  // The kernel reaches `Round[r]` pixels (a half rounds up) and decays by
+  // the scale `r/2`, or by the `sigma` of `{r, sigma}`. For a range that
+  // is not a whole number the smoothing across the gradient does not sum
+  // to 1 (it is divided by the exponential's sum up to `r`), which scales
+  // the response.
+  #[test]
+  fn gradient_filter_shen_castan_fractional_range() {
+    clear_state();
+    let taps = |r: &str| {
+      interpret(&format!(
+        "Round[10^6 ImageData[GradientFilter[Image[{{ReplacePart[\
+         ConstantArray[0., 31], 16 -> 1.]}}, \"Real64\"], {r}, \
+         Method -> \"ShenCastan\"]][[1, 17 ;; 20]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(taps("0.5"), "{500090, 0, 0, 0}");
+    assert_eq!(taps("1.1"), "{499157, 0, 0, 0}");
+    assert_eq!(taps("1.5"), "{401100, 51121, 0, 0}");
+    assert_eq!(taps("2.25"), "{329345, 83409, 0, 0}");
+    assert_eq!(taps("2.5"), "{275209, 79959, 23231, 0}");
+    let across = |r: &str| {
+      interpret(&format!(
+        "Round[10^6 ImageData[GradientFilter[Image[ReplacePart[\
+         ConstantArray[0., {{9, 9}}], {{5, 5}} -> 1.], \"Real64\"], {r}, \
+         Method -> \"ShenCastan\"]][[5, 6 ;; 8]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(across("{2, 0.7}"), "{329383, 36236, 0}");
+    assert_eq!(across("{2.5, 1.5}"), "{117732, 42030, 15005}");
+  }
+
+  // Every gradient method reaches `Round[r]` pixels, a half rounding up:
+  // nothing at all below 1/2.
+  #[test]
+  fn gradient_filter_fractional_range() {
+    clear_state();
+    let taps = |r: &str, method: &str| {
+      interpret(&format!(
+        "Round[10^6 ImageData[GradientFilter[Image[{{ReplacePart[\
+         ConstantArray[0., 31], 16 -> 1.]}}, \"Real64\"], {r}{method}]]\
+         [[1, 17 ;; 19]]]"
+      ))
+      .unwrap()
+    };
+    let sobel = ", Method -> \"Sobel\"";
+    assert_eq!(taps("0.4", sobel), "{0, 0, 0}");
+    assert_eq!(taps("1.1", sobel), "{500000, 0, 0}");
+    assert_eq!(taps("1.5", sobel), "{250000, 125000, 0}");
+    assert_eq!(taps("2.25", sobel), "{250000, 125000, 0}");
+    assert_eq!(taps("2.5", sobel), "{156250, 125000, 31250}");
+    assert_eq!(taps("0.4", ""), "{0, 0, 0}");
+    assert_eq!(taps("0.5", ""), "{500000, 0, 0}");
+    assert_eq!(taps("1.5", ""), "{321496, 89252, 0}");
+    assert_eq!(taps("2.25", ""), "{228436, 135782, 0}");
+    assert_eq!(taps("2.5", ""), "{155291, 110600, 41170}");
+  }
+
+  // `GaussianFilter` and `Blur` cut their kernel at `Round[r]` too, and
+  // take an exact radius.
+  #[test]
+  fn gaussian_filter_fractional_radius() {
+    clear_state();
+    let taps = |call: &str| {
+      interpret(&format!(
+        "imp = Image[{{ReplacePart[ConstantArray[0., 31], 16 -> 1.]}}, \
+         \"Real64\"]; Round[10^6 ImageData[{call}][[1, 16 ;; 19]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(taps("GaussianFilter[imp, 0.4]"), "{1000000, 0, 0, 0}");
+    assert_eq!(taps("GaussianFilter[imp, 1.1]"), "{769768, 115116, 0, 0}");
+    assert_eq!(taps("Blur[imp, 1.1]"), "{769768, 115116, 0, 0}");
+    assert_eq!(
+      taps("GaussianFilter[imp, 2.25]"),
+      "{419837, 223621, 66460, 0}"
+    );
+    assert_eq!(
+      taps("GaussianFilter[imp, {2.25, 1.}]"),
+      "{474559, 211838, 50882, 0}"
+    );
+    assert_eq!(
+      taps("GaussianFilter[imp, 5/2]"),
+      "{361566, 220992, 78696, 19529}"
+    );
+  }
+
+  // `LaplacianFilter` takes a whole number of pixels only.
+  #[test]
+  fn laplacian_filter_fractional_range_is_rejected() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[LaplacianFilter[Image[{{0., 1., 0., 0., 1.}}], 1.5]]")
+        .unwrap(),
+      "LaplacianFilter"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LaplacianFilter::bdrad: 1.5 is not a valid neighborhood range \
+         specification."
+      )),
+      "{msgs:?}"
+    );
+  }
+
   #[test]
   fn edge_detect_shen_castan() {
     clear_state();
+    // (An ideal step, whose two sides respond alike, is not compared: which
+    // of the two pixels Wolfram keeps depends on its rounding noise.)
+    let img = "img = Image[Table[N[(Sin[x/2.] Cos[y/3. + x/5.])/2 + .5], \
+               {y, 16}, {x, 16}]];";
     assert_eq!(
-      interpret(
-        "ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], \
-         2, .1, Method -> \"ShenCastan\"]][[3]]"
-      )
+      interpret(&format!(
+        "{img} Table[Total[ImageData[EdgeDetect[img, r, t, \
+         Method -> \"ShenCastan\"]], 2], {{r, {{1, 1.5, 2, 3}}}}, \
+         {{t, {{.02, .05, .1}}}}]"
+      ))
       .unwrap(),
-      "{0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0}"
+      "{{68, 68, 66}, {65, 65, 64}, {64, 64, 64}, {61, 60, 60}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{img} ImageData[EdgeDetect[img, 2, .05, \
+         Method -> \"ShenCastan\"]][[3 ;; 5]]"
+      ))
+      .unwrap(),
+      "{{0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0}, \
+       {0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0}, \
+       {0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1}}"
+    );
+    // A fractional range, for the other methods too.
+    assert_eq!(
+      interpret(&format!(
+        "{img} Table[Total[ImageData[EdgeDetect[img, r, t, Method -> m]], 2], \
+         {{r, {{1.1, 1.5, 2.25}}}}, {{t, {{.02, .05}}}}, \
+         {{m, {{\"Sobel\", \"Canny\"}}}}]"
+      ))
+      .unwrap(),
+      "{{{68, 68}, {68, 68}}, {{62, 64}, {62, 64}}, {{62, 62}, {62, 62}}}"
     );
     assert_eq!(
       interpret("Head[EdgeDetect[Image[{{0., 1.}}], Method -> \"Nope\"]]")
@@ -4774,10 +4907,30 @@ mod image_advanced {
         "{True, True, True}"
       );
     }
-    // The setting is a fraction.
+    // The setting is a fraction: a number outside 0 to 1 counts as the
+    // nearer end, and anything else is no setting.
     assert_eq!(
       interpret(
         "Head[EdgeDetect[Image[{{0., 1.}}], 1, .1, \"StraightEdges\" -> 2]]"
+      )
+      .unwrap(),
+      "Image"
+    );
+    assert_eq!(
+      interpret(
+        "img = Image[Table[If[x > 20 || (x - 10)^2 + (y - 20)^2 < 30, 1., 0.], \
+         {y, 40}, {x, 40}]]; \
+         {EdgeDetect[img, 1, .1, \"StraightEdges\" -> 2] === \
+          EdgeDetect[img, 1, .1, \"StraightEdges\" -> 1], \
+          EdgeDetect[img, 1, .1, \"StraightEdges\" -> -1] === \
+          EdgeDetect[img, 1, .1]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "Head[EdgeDetect[Image[{{0., 1.}}], 1, .1, \"StraightEdges\" -> \"x\"]]"
       )
       .unwrap(),
       "EdgeDetect"

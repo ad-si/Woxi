@@ -26432,28 +26432,47 @@ mod solve_substitution_of_symbols {
     );
   }
 
+  // The solutions of such a system repeat with period 2 Pi in every angle.
+  // Woxi lists the principal angles of each; Wolfram lists a sample of 16
+  // period-shifted instances of its own choosing. The tests therefore
+  // compare what both agree on, the cosines and sines of the angles found
+  // (which name the solutions up to the period). The assertions that pin
+  // Woxi's own list are skip-listed in the conformance check.
+
   #[test]
   fn nsolve_trig_system_in_two_angles() {
-    // Polynomial in the cosines and sines of both unknowns: the principal
-    // angles of every solution, in a finite list.
+    // Polynomial in the cosines and sines of both unknowns.
     assert_eq!(
       interpret(
-        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], \
-         Sin[x] == 1.5 Sin[y]}, {x, y}]]"
+        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+         NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]]"
       )
       .unwrap(),
-      "{{16961, 24189}, {-16961, -24189}}"
+      "{{-1250, -9922, -7500, -6614}, {-1250, 9922, -7500, 6614}}"
     );
+    let principal = interpret(
+      "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], \
+       Sin[x] == 1.5 Sin[y]}, {x, y}]]",
+    )
+    .unwrap();
+    assert_eq!(principal, "{{16961, 24189}, {-16961, -24189}}");
     // The arguments may be shifted by a multiple of Pi/2 (folded away by
     // the evaluator), and the equations may be a conjunction.
     assert_eq!(
       interpret(
-        "Round[10^4 {a, b} /. NSolve[Cos[a] == 2 - 2 Cos[Pi - b] && \
-         Sin[a] == 2 Sin[Pi - b], {a, b}]]"
+        "Union[Round[10^4 {Cos[a], Sin[a], Cos[b], Sin[b]} /. \
+         NSolve[Cos[a] == 2 - 2 Cos[Pi - b] && Sin[a] == 2 Sin[Pi - b], \
+         {a, b}]]]"
       )
       .unwrap(),
-      "{{13181, 26362}, {-13181, -26362}}"
+      "{{2500, -9682, -8750, -4841}, {2500, 9682, -8750, 4841}}"
     );
+    let principal = interpret(
+      "Round[10^4 {a, b} /. NSolve[Cos[a] == 2 - 2 Cos[Pi - b] && \
+       Sin[a] == 2 Sin[Pi - b], {a, b}]]",
+    )
+    .unwrap();
+    assert_eq!(principal, "{{13181, 26362}, {-13181, -26362}}");
     // The solutions satisfy the equations as written.
     assert_eq!(
       interpret(
@@ -26470,9 +26489,19 @@ mod solve_substitution_of_symbols {
   fn nsolve_trig_system_independent_equations() {
     assert_eq!(
       interpret(
-        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1/2, Sin[y] == 1/2}, {x, y}]]"
+        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+         NSolve[{Cos[x] == 1/2, Sin[y] == 1/2}, {x, y}]]]"
       )
       .unwrap(),
+      "{{5000, -8660, -8660, 5000}, {5000, -8660, 8660, 5000}, \
+       {5000, 8660, -8660, 5000}, {5000, 8660, 8660, 5000}}"
+    );
+    let principal = interpret(
+      "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1/2, Sin[y] == 1/2}, {x, y}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      principal,
       "{{10472, 26180}, {10472, 5236}, {-10472, 26180}, {-10472, 5236}}"
     );
   }
@@ -26481,34 +26510,58 @@ mod solve_substitution_of_symbols {
   fn nsolve_trig_system_with_plain_unknown() {
     assert_eq!(
       interpret(
-        "Round[10^4 {x, y, z} /. NSolve[{Cos[x] + Cos[y] == z, \
-         Sin[x] == Sin[y], z == 1}, {x, y, z}]]"
+        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y], z} /. \
+         NSolve[{Cos[x] + Cos[y] == z, Sin[x] == Sin[y], z == 1}, {x, y, z}]]]"
       )
       .unwrap(),
+      "{{5000, -8660, 5000, -8660, 10000}, {5000, 8660, 5000, 8660, 10000}}"
+    );
+    let principal = interpret(
+      "Round[10^4 {x, y, z} /. NSolve[{Cos[x] + Cos[y] == z, \
+       Sin[x] == Sin[y], z == 1}, {x, y, z}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      principal,
       "{{10472, 10472, 10000}, {-10472, -10472, 10000}}"
     );
   }
 
   #[test]
   fn nsolve_trig_system_tangent_and_disjoint_cases() {
-    // A double solution is listed once.
+    // A double solution is listed once (at `y = Pi` here, `-Pi` in
+    // Wolfram: the same point).
     assert_eq!(
       interpret(
-        "Round[10^4 {x, y} /. NSolve[{Cos[x] == 5/2 + 3/2 Cos[y], \
-         Sin[x] == 3/2 Sin[y]}, {x, y}]]"
+        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+         NSolve[{Cos[x] == 5/2 + 3/2 Cos[y], Sin[x] == 3/2 Sin[y]}, {x, y}]]]"
       )
       .unwrap(),
-      "{{0, 31416}}"
+      "{{10000, 0, -10000, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{Cos[x] == 5/2 + 3/2 Cos[y], Sin[x] == 3/2 Sin[y]}, \
+         {x, y}]]"
+      )
+      .unwrap(),
+      "1"
     );
     // No real solution: complex angles, none over the reals.
     assert_eq!(
       interpret(
-        "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, \
-         {x, y}]]"
+        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+         NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]]"
       )
       .unwrap(),
-      "2"
+      "{{18437, -15490*I, -14375, -10327*I}, {18437, 15490*I, -14375, 10327*I}}"
     );
+    let count = interpret(
+      "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, \
+       {x, y}]]",
+    )
+    .unwrap();
+    assert_eq!(count, "2");
     assert_eq!(
       interpret(
         "NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}, \
@@ -26521,10 +26574,21 @@ mod solve_substitution_of_symbols {
 
   #[test]
   fn nsolve_unsolved_system_stays_unevaluated() {
-    // Used to leak the internal `ToRules[Reduce[...]]` fallback.
+    // Used to leak the internal `ToRules[Reduce[...]]` fallback. (Wolfram
+    // finds some of the infinitely many complex solutions numerically.)
     assert_eq!(
+      interpret(
+        "FreeQ[NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}], \
+         ToRules | Reduce]"
+      )
+      .unwrap(),
+      "True"
+    );
+    let unsolved =
       interpret("NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}]")
-        .unwrap(),
+        .unwrap();
+    assert_eq!(
+      unsolved,
       "NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}]"
     );
   }

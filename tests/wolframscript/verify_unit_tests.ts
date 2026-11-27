@@ -2833,6 +2833,19 @@ function main() {
     "s = NSolve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, {x, y}]; Round[{x, y} /. s, 0.001]",
     "mu = 0.1; s = NSolve[{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, -y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3)) y}, {x, y}]; {Length[s], Sort[Round[{x, y} /. s, 0.001]]}",
     "r = Rationalize[#, 0] &; s = N[Solve[{x^2 + (r[-0.532088886237956] - y)^2 == r[0.4679111137620437], (r[0.5652579374235682] - x)^2 + (r[-0.32635182233306964] - y)^2 == r[0.05643698595227112]}, {x, y}]]; Round[10^6 {x, y} /. s]",
+    // NSolve of a system in the cosines and sines of several unknowns:
+    // Woxi lists the principal angles, wolframscript 15 a sample of 16
+    // period-shifted instances of its own choosing (and 16 complex roots of
+    // the system Woxi leaves unevaluated). These pin Woxi's own list; the
+    // same tests compare the cosines and sines, which both agree on. See
+    // "NSolve of a system in the cosines and sines of several unknowns" in
+    // conformance_gaps.md.
+    "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]",
+    "Round[10^4 {a, b} /. NSolve[Cos[a] == 2 - 2 Cos[Pi - b] && Sin[a] == 2 Sin[Pi - b], {a, b}]]",
+    "Round[10^4 {x, y} /. NSolve[{Cos[x] == 1/2, Sin[y] == 1/2}, {x, y}]]",
+    "Round[10^4 {x, y, z} /. NSolve[{Cos[x] + Cos[y] == z, Sin[x] == Sin[y], z == 1}, {x, y, z}]]",
+    "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]",
+    "NSolve[{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}, {x, y}]",
     // FindInstance picks a point by an internal heuristic (1027, -1075).
     "FindInstance[x > 1000, x]",
     "FindInstance[x < -1000, x]",
