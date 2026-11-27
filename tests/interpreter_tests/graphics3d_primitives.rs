@@ -22,6 +22,186 @@ fn fills(svg: &str) -> std::collections::BTreeSet<String> {
 mod solids {
   use super::*;
 
+  /// Round solids stacked exactly on one another are drawn once: the one
+  /// given last hides the others. Regression: every copy was tessellated,
+  /// and the facets of the copies underneath were painted over the rim
+  /// outline of the one on top, breaking it into dashes.
+  #[test]
+  fn coinciding_round_solids_are_drawn_once() {
+    let scene = |prims: &str| {
+      svg(&format!(
+        "Graphics3D[{{{prims}}}, PlotRange -> 2, Boxed -> False]"
+      ))
+    };
+    for solid in [
+      "Cylinder[{{0, 0, 0}, {0.3, 0.2, 1}}, 0.4]",
+      "Sphere[{0.2, 0.1, 0.3}, 0.7]",
+    ] {
+      let once = scene(solid);
+      assert_eq!(
+        scene(&format!("{solid}, {solid}, {solid}")),
+        once,
+        "{solid}"
+      );
+      // A copy moved onto the same place by a transformation counts too.
+      assert_eq!(
+        scene(&format!(
+          "Translate[Translate[{solid}, {{1, 2, 3}}], {{-1, -2, -3}}], {solid}"
+        )),
+        once,
+        "{solid}"
+      );
+      // The last one given is the one seen.
+      assert_eq!(
+        scene(&format!("{{Red, {solid}}}, {{Blue, {solid}}}")),
+        scene(&format!("{{Blue, {solid}}}")),
+        "{solid}"
+      );
+      // A see-through copy on top hides nothing.
+      assert!(
+        polygon_count(&scene(&format!("{solid}, {{Opacity[0.5], {solid}}}")))
+          > polygon_count(&once),
+        "{solid}"
+      );
+    }
+    // A cylinder given from its other end is the same solid.
+    assert_eq!(
+      polygon_count(&scene(
+        "Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.4], \
+         Cylinder[{{0, 0, 1}, {0, 0, 0}}, 0.4]"
+      )),
+      polygon_count(&scene("Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.4]"))
+    );
+    // Solids of another size or place are all kept.
+    assert!(
+      polygon_count(&scene(
+        "Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.4], \
+         Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.3], \
+         Cylinder[{{0, 0, 0}, {0, 0, 1.2}}, 0.4]"
+      )) > 2 * polygon_count(&scene("Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.4]"))
+    );
+  }
+
+  /// The facets on the silhouette of a cylinder are lit on their outer
+  /// side. Under a single light from above, the underside of a lying
+  /// cylinder is dark right down to its lower outline. Regression: the
+  /// facets next to the outline were lit as if seen from inside, a bright
+  /// saw-toothed fringe along the dark edge.
+  #[test]
+  fn cylinder_silhouette_facets_are_lit_from_outside() {
+    let s = svg(
+      "Graphics3D[{White, Cylinder[{{-2, 0, 0}, {2, 0, 0}}, 0.5]}, \
+       Lighting -> {{\"Directional\", White, {{0, 0, 10}, {0, 0, 0}}}}, \
+       ViewPoint -> {0, -10, 1}, Boxed -> False, ImageSize -> 400]",
+    );
+    // The colors a paint server blends between.
+    let mut paints: std::collections::HashMap<&str, Vec<u8>> =
+      std::collections::HashMap::new();
+    for def in s.split("<linearGradient id=\"").skip(1) {
+      let id = def.split('"').next().unwrap();
+      let def = def.split("</linearGradient>").next().unwrap();
+      let levels = def
+        .split("stop-color=\"#")
+        .skip(1)
+        .map(|c| u8::from_str_radix(&c[..2], 16).unwrap())
+        .collect();
+      paints.insert(id, levels);
+    }
+    // The brightest red level of each facet, with the facet's top and
+    // bottom on the page.
+    let mut facets: Vec<(f64, f64, u8)> = Vec::new();
+    for poly in s.split("<polygon points=\"").skip(1) {
+      let points = poly.split('"').next().unwrap();
+      let ys: Vec<f64> = points
+        .split_whitespace()
+        .map(|p| p.split(',').nth(1).unwrap().parse().unwrap())
+        .collect();
+      let fill = poly.split("fill=\"").nth(1).unwrap();
+      let level = if let Some(id) = fill.strip_prefix("url(#") {
+        let id = id.split(')').next().unwrap();
+        *paints[id].iter().max().unwrap()
+      } else {
+        let rgb = fill.strip_prefix("rgb(").expect("a plain fill");
+        rgb.split(',').next().unwrap().parse().unwrap()
+      };
+      facets.push((
+        ys.iter().copied().fold(f64::MAX, f64::min),
+        ys.iter().copied().fold(f64::MIN, f64::max),
+        level,
+      ));
+    }
+    let top = facets.iter().map(|f| f.0).fold(f64::MAX, f64::min);
+    let bottom = facets.iter().map(|f| f.1).fold(f64::MIN, f64::max);
+    let low = top + 0.8 * (bottom - top);
+    let underside: Vec<_> = facets.iter().filter(|f| f.0 > low).collect();
+    assert!(underside.len() > 10, "{} facets", underside.len());
+    assert!(
+      underside.iter().all(|f| f.2 < 40),
+      "lit facets on the underside: {:?}",
+      underside.iter().filter(|f| f.2 >= 40).collect::<Vec<_>>()
+    );
+    // The top of the cylinder is lit.
+    assert!(facets.iter().any(|f| f.2 > 200));
+  }
+
+  /// The outline of a cylinder's end is one unbroken line however small
+  /// the cylinder is drawn. Regression: at a few pixels across, the
+  /// widened fills of the next facets around the rim, drawn after a rim
+  /// segment, covered half of it and left the rim as a row of dots.
+  #[test]
+  fn rim_of_a_tiny_cylinder_is_drawn_over_the_facets_beside_it() {
+    let s = svg(
+      "Graphics3D[Cylinder[{{0, 0, 0}, {0, 0, 0.9}}, 0.4], \
+       PlotRange -> {{-16, 16}, {-16, 16}, {-2, 20}}, Boxed -> False, \
+       ImageSize -> 350]",
+    );
+    let elements: Vec<&str> = s.lines().collect();
+    let points = |el: &str| -> Vec<(f64, f64)> {
+      el.split("points=\"")
+        .nth(1)
+        .and_then(|p| p.split('"').next())
+        .unwrap_or("")
+        .split_whitespace()
+        .filter_map(|p| {
+          let (x, y) = p.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect()
+    };
+    let attr = |el: &str, name: &str| -> f64 {
+      el.split(&format!("{name}=\""))
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    };
+    let mut rims = 0;
+    for (i, el) in elements.iter().enumerate() {
+      if !el.starts_with("<line ") {
+        continue;
+      }
+      rims += 1;
+      let mid = (
+        f64::midpoint(attr(el, "x1"), attr(el, "x2")),
+        f64::midpoint(attr(el, "y1"), attr(el, "y2")),
+      );
+      // No facet painted later has a corner within a third of a pixel of
+      // the middle of the segment.
+      for later in elements[i + 1..]
+        .iter()
+        .filter(|e| e.starts_with("<polygon"))
+      {
+        assert!(
+          points(later)
+            .iter()
+            .all(|p| (p.0 - mid.0).hypot(p.1 - mid.1) > 0.3),
+          "{later} is painted over {el}"
+        );
+      }
+    }
+    assert!(rims > 20, "{rims} rim segments");
+  }
+
   /// `Axes -> Automatic` draws the three labeled axes of a 3D scene, the
   /// same as `Axes -> True` (Demonstrations often pass it to `Show`).
   /// Regression: it was ignored, leaving the box without ticks or labels.
