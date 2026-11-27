@@ -42798,6 +42798,10 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
+      // `MouseAppearance[expr, cursor]`, `StatusArea[expr, note]` and
+      // `PopupWindow[expr, contents]` only say what the pointer does over
+      // `expr`; they draw exactly as `expr` does.
+      "MouseAppearance" | "StatusArea" | "PopupWindow" => !args.is_empty(),
       // `ExpressionCell[expr, style, opts]` (and `TextCell[expr, …]`) is a cell that shows `expr`.
       "Item" | "Pane" | "ExpressionCell" | "TextCell" => !args.is_empty(),
       // A blank-string factor (`"\n" * cell`, a newline typed into a layout

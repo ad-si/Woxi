@@ -5324,6 +5324,21 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// Whether `expr` is a `Dynamic[…]`, possibly inside `Text[…]` wrappers.
+fn is_dynamic_under_text(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Text" && args.len() == 1 =>
+    {
+      is_dynamic_under_text(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, args } => {
+      name == "Dynamic" && !args.is_empty()
+    }
+    _ => false,
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // A `Text[…]` item of a layout sets its math one script level down, as
   // the same `Text` does on its own (see `render_visual_display_pipeline`).
@@ -5419,16 +5434,24 @@ fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
   // A frame around a `Dynamic` shows the dynamic's current value, which the
   // front end computes when the frame is drawn — in document order, so a
   // later `Dynamic` may read what this one sets.
-  if let syntax::Expr::FunctionCall { name, args } = expr
+  // A `Text` in between (`Panel[Text[Dynamic[Grid[…]]]]`) only sets the
+  // value in the text face. Outside visual mode a `Dynamic` stays as it is
+  // written, so there is nothing to release.
+  if is_visual_mode()
+    && let syntax::Expr::FunctionCall { name, args } = expr
     && matches!(name.as_str(), "Panel" | "Framed")
-    && matches!(args.first(), Some(syntax::Expr::FunctionCall { name: d, .. }) if d == "Dynamic")
+    && args.first().is_some_and(is_dynamic_under_text)
   {
     let mut new_args = args.to_vec();
     new_args[0] = render_inline_display_wrapper(&args[0]);
-    return render_inline_display_wrapper(&syntax::Expr::FunctionCall {
-      name: name.clone(),
-      args: new_args.into(),
-    });
+    // A value that is itself a `Dynamic` is drawn as it stands rather
+    // than released over and over.
+    if !is_dynamic_under_text(&new_args[0]) {
+      return render_inline_display_wrapper(&syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      });
+    }
   }
   // A `Pane[picture, {width, height}]` item reserves its whole box in the
   // layout, the picture placed in it by the Pane's `Alignment` — peeling

@@ -10088,29 +10088,60 @@ fn parse_vertex_normals3d(opts: &[Expr]) -> Option<Vec<[f64; 3]>> {
   })
 }
 
-/// The texture of triangle `i` in the fan triangulation of a textured,
-/// convex polygon: corners `0`, `i + 1`, `i + 2` of the polygon.
-fn fan_texture(
-  prim: &Primitive3D,
-  style: &StyleState3D,
-  i: usize,
-  tri_count: usize,
-) -> Option<TriangleTexture> {
+/// The image and per-corner texture coordinates of a textured polygon:
+/// one without holes, under a `Texture`, with a coordinate for each corner.
+fn polygon_texture<'a>(
+  prim: &'a Primitive3D,
+  style: &'a StyleState3D,
+) -> Option<(
+  &'a std::sync::Arc<image::RgbImage>,
+  &'a [Point3D],
+  &'a [(f64, f64)],
+)> {
   let Primitive3D::Polygon3D { points, holes, .. } = prim else {
     return None;
   };
   let (image, coords) =
     (style.texture.as_ref()?, style.texture_coords.as_ref()?);
-  if !holes.is_empty()
-    || coords.len() != points.len()
-    || tri_count + 2 != points.len()
-    || !is_convex_polygon3d(points)
-  {
-    return None;
-  }
+  (holes.is_empty() && coords.len() == points.len()).then_some((
+    image,
+    points.as_slice(),
+    coords.as_slice(),
+  ))
+}
+
+/// The texture of triangle `i` (with corners `tri`) of a textured polygon
+/// split into `tri_count` triangles. In a fan from the first corner the
+/// triangle has corners `0`, `i + 1`, `i + 2` of the polygon; a concave
+/// planar polygon goes through the general triangulator instead, whose
+/// triangles take the coordinates of the polygon corners they sit on.
+fn fan_texture(
+  prim: &Primitive3D,
+  style: &StyleState3D,
+  i: usize,
+  tri_count: usize,
+  tri: [Point3D; 3],
+) -> Option<TriangleTexture> {
+  let (image, points, coords) = polygon_texture(prim, style)?;
+  let uv =
+    if tri_count + 2 == points.len() && !uses_polygon_triangulator(points) {
+      [coords[0], coords[i + 1], coords[i + 2]]
+    } else {
+      let nearest = |at: Point3D| {
+        let distance = |p: &Point3D| {
+          (p.x - at.x).powi(2) + (p.y - at.y).powi(2) + (p.z - at.z).powi(2)
+        };
+        points
+          .iter()
+          .zip(coords)
+          .min_by(|(a, _), (b, _)| distance(a).total_cmp(&distance(b)))
+          .map(|(_, uv)| *uv)
+      };
+      [nearest(tri[0])?, nearest(tri[1])?, nearest(tri[2])?]
+    };
   Some(TriangleTexture {
     image: image.clone(),
-    uv: [coords[0], coords[i + 1], coords[i + 2]],
+    uv,
     shade: (255, 255, 255),
   })
 }
@@ -10158,7 +10189,32 @@ fn emit_textured_triangle(
   let det = (s[1].0 - s[0].0) * (s[2].1 - s[0].1)
     - (s[2].0 - s[0].0) * (s[1].1 - s[0].1);
   if det.abs() < 1e-9 {
-    return false;
+    // The corners share one line of the image (a sliver of a tessellated
+    // surface, or a facet at a pole): there is no image area to map, so
+    // the facet takes the color of the image where it sits.
+    let (su, sv) = s
+      .iter()
+      .fold((0.0, 0.0), |(a, b), &(u, v)| (a + u / 3.0, b + v / 3.0));
+    let px = (su.rem_euclid(w) as u32).min(tex.image.width() - 1);
+    let py = (sv.rem_euclid(h) as u32).min(tex.image.height() - 1);
+    let [r, g, b] = tex.image.get_pixel(px, py).0;
+    let lit = |c: u8, shade: u8| (c as u16 * shade as u16 / 255) as u8;
+    let (r, g, b) = (
+      lit(r, tex.shade.0),
+      lit(g, tex.shade.1),
+      lit(b, tex.shade.2),
+    );
+    let opacity_attr = if opacity < 1.0 {
+      format!(" opacity=\"{opacity}\"")
+    } else {
+      String::new()
+    };
+    svg.push_str(&format!(
+      "<polygon points=\"{:.2},{:.2} {:.2},{:.2} {:.2},{:.2}\" fill=\"rgb({r},{g},{b})\"{opacity_attr}/>\n",
+      corners[0].0, corners[0].1, corners[1].0, corners[1].1, corners[2].0,
+      corners[2].1
+    ));
+    return true;
   }
   let solve = |d0: f64, d1: f64, d2: f64| {
     let p =
@@ -17081,7 +17137,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => (None, None),
     };
-    if vertex_colors.is_some() || vertex_normals.is_some() {
+    // A textured polygon shows its image rather than a color gradient:
+    // its `VertexNormals` then light each fan triangle as a whole (see
+    // `fan_normal` below).
+    let textured = polygon_texture(prim, prim_style).is_some();
+    if !textured && (vertex_colors.is_some() || vertex_normals.is_some()) {
       // A flat face is lit the same everywhere but for its color, so the
       // lit color is linear across it: each fan triangle is lit at its
       // corners and filled with the gradient between them.
@@ -17258,6 +17318,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
       let normal =
         polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
+      // The mean of the corners' own normals, on the face's side: a mesh
+      // of textured facets then shades as the smooth surface it samples.
+      let fan_normal = vertex_normals
+        .filter(|n| textured && tri_count + 2 == n.len())
+        .and_then(|normals| {
+          let mut sum = [0.0; 3];
+          for k in [0, i + 1, i + 2] {
+            let n = normals[k];
+            let sign = if v_dot(n, normal) < 0.0 { -1.0 } else { 1.0 };
+            for (s, c) in sum.iter_mut().zip(n) {
+              *s += sign * c;
+            }
+          }
+          let len = v_dot(sum, sum).sqrt();
+          (len > 1e-15).then(|| sum.map(|v| v / len))
+        });
+      let normal = fan_normal.unwrap_or(normal);
       let (color, _) = shade_facet(
         SurfaceDefault::Plain(base_color),
         None,
@@ -17286,23 +17363,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
-          // The texture takes the place of the surface color, so the
-          // lighting is that of a white surface.
-          let mut white = prim_style.clone();
-          white.color = None;
-          white.back_color = None;
-          t.shade = shade_facet(
-            SurfaceDefault::Plain((255, 255, 255)),
-            None,
-            Some(&white),
-            normal,
-            center,
-            &scene,
-          )
-          .0;
-          t
-        }),
+        texture: fan_texture(prim, prim_style, i, tri_count, [v0, v1, v2]).map(
+          |mut t| {
+            // The texture takes the place of the surface color, so the
+            // lighting is that of a white surface.
+            let mut white = prim_style.clone();
+            white.color = None;
+            white.back_color = None;
+            t.shade = shade_facet(
+              SurfaceDefault::Plain((255, 255, 255)),
+              None,
+              Some(&white),
+              normal,
+              center,
+              &scene,
+            )
+            .0;
+            t
+          },
+        ),
         vertex_colors,
       });
     }
