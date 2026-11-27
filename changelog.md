@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- An entity a notebook stores as its icon keeps the name the icon shows:
+    `ToBoxes` gives the `TemplateBox[{…}, "Entity"]` icon for it, typeset
+    output draws that name in a rounded frame instead of the `Entity[…]`
+    source, and a Manipulate popup menu lists entity choices by name.
+- A `FrameBox` on a `DisplayForm` line of a `Column` is drawn as a frame
+    instead of as `[content]` text.
+- Woxi Studio breaks the text of a `Pane[list, ImageSize -> {w, h}]`
+    Manipulate body into lines at the pane's width, and breaks a bare list
+    at a `ContentSize` width too.
 - A plot title that is a `Row` broken into several lines by its strings
     (`PlotLabel -> Row[{"first line.\nratio ", a/b, "."}]`) stacks a
     fraction, radical or over-/underscript standing in one of its lines

@@ -782,6 +782,41 @@ fn template_box_interpretation(args: &[String]) -> Option<String> {
   Some(extract_cell_content(value))
 }
 
+/// Keep the name an entity icon is displayed under. The icon is
+/// `TemplateBox[{"\"Mars\"", RowBox[…], "\"Entity[…]\"", "\"planet\""},
+/// "Entity"]`: its first slot is the entity's label and its fourth the
+/// description of the entity's type. `source` is the `Entity["type",
+/// "name"]` the icon stands for.
+fn remember_entity_icon_label(source: &str, parts: &[&str]) {
+  use crate::syntax::{Expr, string_to_expr};
+  let string_slot = |i: usize| -> Option<String> {
+    let text = extract_cell_content(parts.get(i)?.trim());
+    match string_to_expr(text.trim()).ok()? {
+      Expr::String(ref s) => Some(s.clone()),
+      _ => None,
+    }
+  };
+  let Some(label) = string_slot(0) else {
+    return;
+  };
+  let Ok(entity) = string_to_expr(source) else {
+    return;
+  };
+  if let Expr::FunctionCall { name, args } = &entity
+    && name == "Entity"
+    && args.len() == 2
+    && let (Expr::String(type_name), Expr::String(entity_name)) =
+      (&args[0], &args[1])
+  {
+    crate::functions::entity_ast::register_entity_label(
+      type_name,
+      entity_name,
+      &label,
+      &string_slot(3).unwrap_or_default(),
+    );
+  }
+}
+
 /// The value stored under `key` in a `TemplateBox`'s association argument
 /// (`<|"key" -> value, …|>`).
 fn template_box_assoc_entry<'a>(assoc: &'a str, key: &str) -> Option<&'a str> {
@@ -1144,6 +1179,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     {
       let source = extract_cell_content(entity);
       if source.starts_with("Entity[") {
+        remember_entity_icon_label(&source, &parts);
         return Some(source);
       }
     }
@@ -7910,6 +7946,33 @@ Cell["Chapter 2", "Chapter"]
     // `Entity[…]` in its second slot.
     let s = r#"TemplateBox[{"\"Mars\"", RowBox[{"Entity", "[", RowBox[{"\"Planet\"", ",", "\"Mars\""}], "]"}], "\"Entity[\\\"Planet\\\", \\\"Mars\\\"]\"", "\"planet\""}, "Entity"]"#;
     assert_eq!(extract_cell_content(s), r#"Entity["Planet","Mars"]"#);
+  }
+
+  #[test]
+  fn test_entity_template_box_keeps_its_display_name() {
+    // The icon's first slot is the name the entity is shown under and its
+    // fourth the description of its type; both outlive the reduction of the
+    // cell to the plain `Entity[…]` source.
+    let s = r#"TemplateBox[{"\"Maple\[Hyphen]Syrup Jar\"", RowBox[{"Entity", "[", RowBox[{"\"PantryItem\"", ",", "\"MapleSyrupJar\""}], "]"}], "\"Entity[\\\"PantryItem\\\", \\\"MapleSyrupJar\\\"]\"", "\"pantry item\""}, "Entity"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      r#"Entity["PantryItem","MapleSyrupJar"]"#
+    );
+    let entity =
+      crate::syntax::string_to_expr(r#"Entity["PantryItem", "MapleSyrupJar"]"#)
+        .unwrap();
+    assert_eq!(
+      crate::functions::entity_ast::entity_label(&entity),
+      Some((
+        "Maple\u{2010}Syrup Jar".to_string(),
+        "pantry item".to_string()
+      ))
+    );
+    // An entity no notebook showed has no display name.
+    let unseen =
+      crate::syntax::string_to_expr(r#"Entity["PantryItem", "NeverShownJar"]"#)
+        .unwrap();
+    assert_eq!(crate::functions::entity_ast::entity_label(&unseen), None);
   }
 
   #[test]
