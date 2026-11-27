@@ -194,6 +194,44 @@ mod container_layout {
     assert_eq!(label_font(&svg, "above"), beside, "{svg}");
   }
 
+  /// `Text[Style[Row[{tables and pictures}], size]]` as a whole output
+  /// sizes the tables in the proportional text face they are drawn in, the
+  /// way the same expression exports: measured in the monospace face of a
+  /// bare `Row`, a line of text took a third more room than it needs and
+  /// pushed the last table out of a `Pane` the row fits in.
+  #[test]
+  fn text_row_output_sizes_its_tables_in_the_text_face() {
+    for items in [
+      "Grid[{{\"speed = 12.5 km / h\"}}]",
+      "Grid[{{\"speed = 12.5 km / h\"}, {Row[{\"t = \", 3.25}]}}, \
+       Alignment -> Left], Graphics[{Disk[]}, ImageSize -> {60, 90}], \
+       Grid[{{\"distance = 40.625 km\"}}]",
+    ] {
+      let code = format!("Text[Style[Row[{{{items}}}], 17]]");
+      clear_state();
+      let shown = woxi::interpret_with_stdout(&code)
+        .unwrap()
+        .graphics
+        .expect("the row is a graphic");
+      assert_eq!(root_size(&shown), root_size(&export_svg(&code)), "{code}");
+      assert!(!shown.contains("mono"), "{shown}");
+    }
+    // Both tables and the picture between them fit the pane, so nothing
+    // is clipped and the row is centered in it.
+    clear_state();
+    let pane = woxi::interpret_with_stdout(
+      "Pane[Text[Style[Row[{Grid[{{\"speed = 12.5 km / h\"}}], \
+       Graphics[{Disk[]}, ImageSize -> {60, 90}], \
+       Grid[{{\"distance = 40.625 km\"}}]}], 17]], {450, 200}, \
+       Alignment -> {Center, Center}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("the pane is a graphic");
+    assert_eq!(root_size(&pane), ("450".to_string(), "200".to_string()));
+    assert!(!pane.contains("clip-path=\"url(#paneClip"), "{pane}");
+  }
+
   /// A `Row` in the text face is as wide as its text with the thin gaps
   /// between the digit groups of a long number, so the last digits are not
   /// cut off by the row's box.
