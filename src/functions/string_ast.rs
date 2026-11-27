@@ -8309,6 +8309,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "Transpose" if args.len() == 1 => {
       format!("{}^T", tex_atom_or_paren(&args[0]))
     }
+    "ConjugateTranspose" if args.len() == 1 => {
+      format!("{}^{{\\dagger }}", tex_atom_or_paren(&args[0]))
+    }
+    // With a permutation the mark carries it: `m^{T:\{2,1\}}`.
+    "Transpose" | "ConjugateTranspose" if args.len() == 2 => {
+      let mark = if name == "Transpose" {
+        "T"
+      } else {
+        "\\dagger "
+      };
+      format!(
+        "{}^{{{mark}:{}}}",
+        tex_atom_or_paren(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
     "Inverse" if args.len() == 1 => {
       format!("{}^{{-1}}", tex_atom_or_paren(&args[0]))
     }
@@ -8683,15 +8699,48 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       items.join(&separator)
     }
-    // Infix joins its operands with the operator, a string written literally.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      items
+    // Infix joins its operands with the operator, a string written
+    // literally, `Infix[f[a, b]]` with `\sim`: `a \sim f\sim  b`. An operand
+    // binding no tighter than the operator is bracketed, `(a+b)*c`.
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      use crate::syntax::{InfixOperator, OperatorPosition};
+      let (separator, precedence) = match &layout.operator {
+        InfixOperator::Head(head) => (
+          format!(
+            " \\sim {}\\sim  ",
+            expr_to_tex(&Expr::Identifier(head.clone()))
+          ),
+          crate::syntax::INFIX_DEFAULT_PRECEDENCE as f64,
+        ),
+        InfixOperator::Given(op) => (
+          match op {
+            Expr::String(text) => text.clone(),
+            other => expr_to_tex(other),
+          },
+          crate::syntax::box_operator_token_precedence(
+            op,
+            OperatorPosition::Infix,
+          ),
+        ),
+      };
+      layout
+        .operands
         .iter()
-        .map(|item| match item {
-          Expr::String(text) => text.clone(),
-          other => expr_to_tex(other),
+        .map(|operand| {
+          let text = expr_to_tex(operand);
+          if crate::evaluator::dispatch::complex_and_special::operator_form_operand_bracketed(
+            operand, precedence,
+          ) {
+            format!("({text})")
+          } else {
+            text
+          }
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .join(&separator)
     }
     // Column stacks its items in a left-aligned array.
     "Column" if !args.is_empty() => {
@@ -9719,6 +9768,16 @@ fn unescape_box_spaces(chars: &[char]) -> String {
     .replace("\\ ", " ")
 }
 
+/// Whether a group sits alone in an argument slot of box source: `out` (the
+/// source written so far) ends at a `[` or `,` and `rest` (what follows the
+/// group) starts at a `,` or `]`.
+fn is_box_argument_slot(out: &str, rest: &[char]) -> bool {
+  let opens = matches!(out.trim_end().chars().last(), Some('[' | ','));
+  let closes =
+    matches!(rest.iter().find(|c| !c.is_whitespace()), Some(',' | ']'));
+  opens && closes
+}
+
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
 ///
@@ -9749,6 +9808,18 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
         out.extend(&chars[i + 1..close]);
         out.push('"');
         i = close + 1;
+        continue;
+      }
+      // An empty group (`\(\)`, the script slot left blank in
+      // `SubscriptBox[\(S\), \(\)]`) is an empty text atom: stripped
+      // bare, the missing argument would be read as `Null`.
+      BOX_OPEN
+        if !in_box_text
+          && matching_box_close(chars, i) == Some(i + 1)
+          && is_box_argument_slot(&out, &chars[i + 2..]) =>
+      {
+        out.push_str("\"\"");
+        i += 2;
         continue;
       }
       // A group holding only spaces (`\(\ \)`, the blank base a
@@ -9984,14 +10055,31 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
     // `Infix[{a, b}, "+"]` is the row `a + b`; a string operator contributes
     // its text rather than a quoted literal.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      let parts: Vec<String> = items
-        .iter()
-        .map(|item| match item {
-          Expr::String(s) => format!("\"{}\"", escape_box_text(s)),
-          other => expr_to_boxes(other),
-        })
-        .collect();
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      let quoted = |s: &str| format!("\"{}\"", escape_box_text(s));
+      let separator: Vec<String> = match &layout.operator {
+        crate::syntax::InfixOperator::Head(head) => {
+          vec![
+            quoted(" "),
+            quoted("~"),
+            quoted(head),
+            quoted("~"),
+            quoted(" "),
+          ]
+        }
+        crate::syntax::InfixOperator::Given(Expr::String(s)) => vec![quoted(s)],
+        crate::syntax::InfixOperator::Given(op) => vec![expr_to_boxes(op)],
+      };
+      let mut parts = Vec::new();
+      for (i, operand) in layout.operands.iter().enumerate() {
+        if i > 0 {
+          parts.extend(separator.iter().cloned());
+        }
+        parts.push(expr_to_boxes(operand));
+      }
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
     // `Row` typesets through one of the FrontEnd's row templates rather than
