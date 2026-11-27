@@ -39951,6 +39951,25 @@ pub fn combine_layout_svgs(
 
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
 
+/// The SVG of one evaluated cell of a `GraphicsRow`/`GraphicsColumn`/
+/// `GraphicsGrid`. These layouts are a single picture whose cells are
+/// insets, so a cell that is not itself a picture (a caption string, a
+/// `Column` of a plot over a sentence, …) is lettered in the proportional
+/// face of a graphic's labels rather than the monospace face of an output
+/// cell. A `FontFamily` the cell sets itself still takes precedence.
+fn layout_cell_svg(cell: &Expr) -> String {
+  match cell {
+    Expr::Graphics { .. } | Expr::Image { .. } => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    // `Text[…]` sets that face already.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    _ => crate::evaluator::expr_to_svg(&in_text_face(cell)),
+  }
+}
+
 /// Extract SVG strings from a list of evaluated expressions.
 /// Items that are already Expr::Graphics are used directly; other
 /// expressions (Graph, TreeForm, Dataset, plain values, ...) are
@@ -39960,7 +39979,7 @@ fn extract_svgs_from_list(items: &[Expr]) -> Vec<String> {
   items
     .iter()
     .filter_map(|item| {
-      let svg = crate::evaluator::expr_to_svg(item);
+      let svg = layout_cell_svg(item);
       if svg.is_empty() { None } else { Some(svg) }
     })
     .collect()
@@ -42184,7 +42203,7 @@ fn render_items_at_size(
         ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
-      let mut svg = crate::evaluator::expr_to_svg(&evaluated);
+      let mut svg = layout_cell_svg(&evaluated);
       if svg.is_empty() {
         return None;
       }
@@ -42197,10 +42216,10 @@ fn render_items_at_size(
         && parse_svg_wh(&svg).0 > cell_w + 0.5
         && let Some(flowed) =
           wrap_list_text(&evaluated, cell_w, &[], false, &|c| {
-            parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+            parse_svg_wh(&layout_cell_svg(c)).0
           })
       {
-        let reflowed = crate::evaluator::expr_to_svg(&flowed);
+        let reflowed = layout_cell_svg(&flowed);
         if !reflowed.is_empty() {
           svg = reflowed;
         }
