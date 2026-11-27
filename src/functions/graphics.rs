@@ -16456,6 +16456,25 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
     ..Default::default()
   };
   match content {
+    // The box code a string embeds (`"\!\(\*SubscriptBox[\(E\), \(1\)]\) =
+    // 0.08"`) is typeset traditionally too — an italic `E` — while the
+    // string's plain text stays upright. Box code one line of text cannot
+    // show keeps the plain reading of the whole string.
+    Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
+      let norm = normalize_box_markers(s);
+      let cs: Vec<char> = norm.chars().collect();
+      let mut runs = Vec::new();
+      for (unit, is_box_code) in parse_box_units_tagged(&cs) {
+        match (&unit, is_box_code) {
+          (Expr::String(run), false) => runs.push(plain(run.clone())),
+          (_, true) if let Some(unit_runs) = traditional_box_runs(&unit) => {
+            runs.extend(unit_runs);
+          }
+          _ => return Some(vec![plain(graphics_text_content(content))]),
+        }
+      }
+      Some(runs)
+    }
     Expr::String(_) | Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(vec![plain(graphics_text_content(content))])
     }
