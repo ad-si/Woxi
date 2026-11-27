@@ -2923,6 +2923,68 @@ pub fn apply_curried_call(
         .iter()
         .all(crate::functions::predicate_ast::is_numeric_q);
       match &func_args[0] {
+        // The functions `ParametricNDSolve` returns for the unknowns of
+        // one system (`{x -> ParametricFunction[…], y -> …}`) each pick
+        // their own unknown out of the same solve. That solve is taken
+        // through a function of its own, so the unknowns share one
+        // integration per set of parameter values instead of repeating
+        // it for each of them.
+        Expr::NamedFunction {
+          params,
+          body,
+          bracketed,
+        } if numeric
+          && params.len() == args.len()
+          && matches!(body.as_ref(), Expr::FunctionCall { name, args: pick }
+            if name == "ReplaceAll"
+              && pick.len() == 2
+              && matches!(&pick[0], Expr::Identifier(_))
+              && matches!(&pick[1], Expr::FunctionCall { name, args: solve }
+                if name == "First"
+                  && matches!(solve.as_slice(), [Expr::FunctionCall { name, .. }]
+                    if name == "NDSolve"))) =>
+        {
+          let Expr::FunctionCall { args: pick, .. } = body.as_ref() else {
+            unreachable!("guarded by the match arm")
+          };
+          let shared = Expr::FunctionCall {
+            name: "ParametricFunction".into(),
+            args: vec![Expr::NamedFunction {
+              params: params.clone(),
+              body: Box::new(pick[1].clone()),
+              bracketed: *bracketed,
+            }]
+            .into(),
+          };
+          let solution = apply_curried_call(&shared, args)?;
+          // The solution is a list of rules `unknown -> function`; the
+          // unknown's own rule is read off as it stands, without
+          // evaluating the (large) solution again.
+          let picked = match &solution {
+            Expr::List(rules) => rules.iter().find_map(|rule| match rule {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if crate::evaluator::pattern_matching::expr_equal(
+                pattern, &pick[0],
+              ) =>
+              {
+                Some(replacement.as_ref().clone())
+              }
+              _ => None,
+            }),
+            _ => None,
+          };
+          match picked {
+            Some(function) => Ok(function),
+            None => {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "ReplaceAll".into(),
+                args: vec![pick[0].clone(), solution].into(),
+              })
+            }
+          }
+        }
         Expr::NamedFunction { params, .. }
           if numeric && params.len() == args.len() =>
         {

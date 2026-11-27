@@ -493,6 +493,26 @@ not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
 &&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
 operands themselves are parenthesized by precedence).
 
+### StandardForm boxes: `==` and derivatives
+
+```sh
+wolframscript -code 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "\[Equal]", "b"}]
+woxi eval 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "==", "b"}]
+wolframscript -code 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", TagBox[RowBox[{"(", "3", ")"}], Derivative], MultilineFunction -> None]
+woxi eval 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", "′′′"]
+```
+
+WL boxes `Equal` with the private-use `\[Equal]` (U+F431) and a derivative
+with `MultilineFunction -> None`, its order of three or more as a
+`TagBox[…, Derivative]` around `(n)`. Woxi writes `==` and leaves out the
+option, because its box renderers read a two-argument `SuperscriptBox` and
+have no glyph for `\[Equal]` yet. The same difference shows up in an
+operand of `Infix` or `Prefix` boxes.
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -2199,6 +2219,20 @@ equilibria of the restricted three-body problem (where the published output
 of a Demonstration shows `Last` picking the point between the masses); the
 complete wolframscript order of that list, and of other radical systems,
 has **not been verified**.
+
+### `NSolve` of a system in the cosines and sines of several unknowns
+
+```sh
+woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
+# {{x -> 1.696…, y -> 2.418…}, {x -> -1.696…, y -> -2.418…}}
+```
+
+Woxi lists the principal angles of every solution, descending by the first
+unknown. The published snapshots of a Demonstration show that Wolfram also
+returns a finite list of numbers here, but with some angles shifted by a
+multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
+period it picks and the complete order of the list have **not been
+verified**.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -7311,6 +7345,14 @@ internal hash order. Woxi keeps input order.
   its own deterministic force layout. Its native Wolfram cube orientation
   is independent of `SeedRandom`; both systems use the same default
   `ViewPoint -> {1.3, -2.4, 2}`.
+- **Disconnected graphs under a named embedding**: `"RadialEmbedding"`
+  (`GraphPlot`'s `"RadialDrawing"`) and the spring embeddings lay out each
+  component on its own (a path along a horizontal line, drawn from the
+  right) and stack the padded bounding boxes in left-aligned columns. WL
+  bends the paths of a spring embedding slightly and may put two short
+  components side by side below a wide one. `"LinearEmbedding"` and
+  `"CircularEmbedding"` still put all vertices on one line or circle, where
+  WL's `GraphPlot` draws one line or circle per component.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
@@ -8253,6 +8295,19 @@ proportions differ from wolframscript. Named edge shapes other than
 `GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
 `"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
 
+### Large graphs keep the small-graph vertex style
+
+```sh
+woxi eval 'ExportString[Graph[Range[1000], Table[i <-> i + 1, {i, 999}], GraphLayout -> "LinearEmbedding"], "SVG"]'
+```
+
+Wolfram draws the vertices of a graph with very many vertices (around a
+thousand; the exact threshold is not established) as points of a fixed
+size in a darker blue, so they stay visible however small the layout's
+units come out. Woxi sizes them from the layout's extent like any other
+graph's, where they all but vanish. Not verified against wolframscript
+beyond published pictures.
+
 ## Colorize
 
 - `Colorize[m, ImageSize -> …]` ignores `ImageSize` (`Image` carries no
@@ -8614,8 +8669,19 @@ give `PolyhedronData::notent`, so notebooks that offer them in a menu
 
 ### EdgeDetect: `"ShenCastan"`, `"StraightEdges"` and the default threshold
 
-`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are computed;
-`"ShenCastan"` and a non-zero `"StraightEdges"` leave the call unevaluated.
+`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are compared
+against wolframscript below. `Method -> "ShenCastan"` (also of
+`GradientFilter`) and a non-zero `"StraightEdges"` are computed but have not
+been compared against wolframscript, whose kernels and line selection are
+not documented:
+
+- `"ShenCastan"` takes the gradient of the two-sided exponential
+  `Exp[-Abs[k]/(r/2)]` cut off at `Ceiling[r]`, scaled so a unit ramp has
+  slope 1, and thins it as the other methods do.
+- `"StraightEdges" -> s` votes each edge pixel into a Hough accumulator
+  (one degree by one pixel) along its own edge direction and keeps the
+  pixels on lines with at least the fraction `s` of the strongest line's
+  votes.
 
 With an explicit threshold `t` the result matches wolframscript pixel for
 pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
@@ -10164,6 +10230,20 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   column about 207 pt wide, together spanning only about 365 x 218 pt of the
   500 x 350 picture; Woxi gives each cell half the width (left about 238 pt
   wide). Same undecoded shrink as the item above.
+- `Show[BarChart[{a, b}, BarSpacing -> Large, PlotRange -> {-0.1, 1},
+  Frame -> True, FrameTicks -> None, ImageSize -> {100, 200}, AspectRatio ->
+  Full], Graphics[{Text[…, {0.5, 0.9}], Text[…, {2., 0.9}]}]]` (read off a
+  notebook front end snapshot, no wolframscript at hand): Wolfram's frame
+  runs from about -0.4 to 3.4 across, a whole bar step beyond the bars on
+  either side, and keeps about 35 pt free below the frame although it has
+  no ticks or label there. Woxi's frame hugs the bars (about 0.2 to 2.4)
+  and fills the picture to its bottom edge, so a text centered on the last
+  bar is cut off at the edge.
+- `GraphicsRow` of pictures that each fix `ImageSize -> {w, h}`, with an
+  `ImageSize` of its own, is laid out from a front end snapshot: the row is
+  5% of its height taller than the pictures whatever `Spacings` says. The
+  same rule for `GraphicsGrid`/`GraphicsColumn` and for pictures with only
+  a width is not decoded (see the two items above).
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a

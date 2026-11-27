@@ -588,6 +588,146 @@ fn split_fraction(expr: &Expr) -> (i128, Expr, Expr) {
 pub fn inverse_z_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let result = inverse_z_transform_closed_form(args)?;
+  // The closed forms cover exact inputs only; a rational function with
+  // machine-number coefficients is inverted through its numeric poles.
+  if let Expr::FunctionCall { name, .. } = &result
+    && name == "InverseZTransform"
+    && args.len() == 3
+    && crate::syntax::contains_inexact(&args[0])
+    && let (Expr::Identifier(z), Expr::Identifier(n)) = (&args[1], &args[2])
+    && let Some(numeric) = inverse_z_numeric_partial_fractions(&args[0], z, n)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&numeric);
+  }
+  Ok(result)
+}
+
+/// Numeric partial-fraction inversion of a rational function `P(z)/Q(z)`
+/// with purely numeric (real) coefficients and `deg P <= deg Q`.
+///
+/// In `w = 1/z` the sequence is the Taylor expansion of `P'(w)/Q'(w)`:
+/// the polynomial part contributes `c_k DiscreteDelta[n - k]` (this is
+/// where poles at `z = 0` end up), and each simple root `s` of `Q'`
+/// contributes `-(A/s) (1/s)^n` with `A = R'(s)/Q''(s)` the residue of the
+/// proper remainder. Complex roots give complex powers, whose imaginary
+/// parts cancel between conjugates for integer `n`.
+///
+/// Returns `None` when a coefficient isn't a real number, the function is
+/// not causal (`deg P > deg Q`), or a nonzero pole is repeated.
+fn inverse_z_numeric_partial_fractions(
+  expr: &Expr,
+  z: &str,
+  n: &str,
+) -> Option<Expr> {
+  use crate::evaluator::dispatch::calculus_functions::{
+    complex_div, eval_poly_complex, poly_divide_f64, polynomial_f64_coeffs,
+  };
+
+  let combined =
+    crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
+  let num_expr =
+    crate::functions::numerator_ast(std::slice::from_ref(&combined)).ok()?;
+  let den_expr = crate::functions::denominator_ast(&[combined]).ok()?;
+  let z_id = Expr::Identifier(z.to_string());
+  let trim = |mut p: Vec<f64>| {
+    while p.len() > 1 && p.last() == Some(&0.0) {
+      p.pop();
+    }
+    p
+  };
+  let num = trim(polynomial_f64_coeffs(&num_expr, &z_id)?);
+  let den = trim(polynomial_f64_coeffs(&den_expr, &z_id)?);
+  if num.iter().chain(&den).any(|c| !c.is_finite())
+    || den.iter().all(|&c| c == 0.0)
+    || num.len() > den.len()
+  {
+    return None;
+  }
+
+  // Coefficients in w = 1/z, lowest degree first: multiply both sides by
+  // z^-deg(Q), which reverses the coefficient lists.
+  let degree = den.len() - 1;
+  let mut num_w = vec![0.0; degree + 1];
+  for (k, &c) in num.iter().enumerate() {
+    num_w[degree - k] = c;
+  }
+  let den_w: Vec<f64> = trim(den.iter().rev().copied().collect());
+
+  let (quotient, remainder) = if num_w.len() >= den_w.len() {
+    poly_divide_f64(&num_w, &den_w)
+  } else {
+    (Vec::new(), num_w)
+  };
+
+  let n_id = || Expr::Identifier(n.to_string());
+  let mut terms: Vec<Expr> = quotient
+    .iter()
+    .enumerate()
+    .filter(|&(_, &c)| c != 0.0)
+    .map(|(k, &c)| {
+      let shifted = match k {
+        0 => n_id(),
+        _ => plus(vec![Expr::Integer(-(k as i128)), n_id()]),
+      };
+      times(vec![Expr::Real(c), call1("DiscreteDelta", shifted)])
+    })
+    .collect();
+
+  if den_w.len() > 1 {
+    let roots =
+      crate::functions::polynomial_ast::solve::durand_kerner_roots(&den_w);
+    let scale = roots
+      .iter()
+      .fold(0.0_f64, |m, &(re, im)| m.max(re.hypot(im)));
+    for i in 0..roots.len() {
+      for j in (i + 1)..roots.len() {
+        let (ar, ai) = roots[i];
+        let (br, bi) = roots[j];
+        if (ar - br).hypot(ai - bi) < 1e-6 * scale {
+          return None;
+        }
+      }
+    }
+    let derivative: Vec<f64> =
+      (1..den_w.len()).map(|k| den_w[k] * k as f64).collect();
+    let number = |re: f64, im: f64, real: bool| {
+      if real {
+        Expr::Real(re)
+      } else {
+        call("Complex", vec![Expr::Real(re), Expr::Real(im)])
+      }
+    };
+    for &(re, im) in &roots {
+      let (pr, pi) = eval_poly_complex(&remainder, re, im);
+      let (qr, qi) = eval_poly_complex(&derivative, re, im);
+      if (qr == 0.0 && qi == 0.0) || (re == 0.0 && im == 0.0) {
+        return None;
+      }
+      let (ar, ai) = complex_div(pr, pi, qr, qi);
+      // -(A/s) and the pole 1/s
+      let (cr, ci) = complex_div(-ar, -ai, re, im);
+      let (br, bi) = complex_div(1.0, 0.0, re, im);
+      let real = im.abs() < 1e-9 * scale;
+      if cr == 0.0 && (real || ci == 0.0) {
+        continue;
+      }
+      terms.push(times(vec![
+        number(cr, ci, real),
+        pow2(number(br, bi, real), n_id()),
+      ]));
+    }
+  }
+
+  Some(match terms.len() {
+    0 => Expr::Real(0.0),
+    _ => plus(terms),
+  })
+}
+
+fn inverse_z_transform_closed_form(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("InverseZTransform", args);
   if args.len() != 3 {
     return Ok(unevaluated(args));
