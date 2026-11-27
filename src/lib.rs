@@ -4095,6 +4095,27 @@ fn keep_frame_boxes(
   result
 }
 
+/// `rendered` inside the gray box of the `Panel[content, rest…]` around it
+/// (`rest` holds the panel's labels and options). The pass that looks
+/// through a `Panel` to the `Text` table inside draws the table alone; in a
+/// notebook the panel still shows its box.
+fn keep_panel_box(
+  rest: &[syntax::Expr],
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let syntax::Expr::Graphics { svg, .. } = &rendered else {
+    return rendered;
+  };
+  let mut panel_args = vec![rendered.clone()];
+  panel_args.extend(rest.iter().cloned());
+  let Some(panel) = functions::graphics::panel_to_svg(&panel_args) else {
+    return rendered;
+  };
+  // The boxed picture replaces the bare one the cell would show.
+  remove_captured_graphics(svg);
+  graphics_result(panel)
+}
+
 /// Whether `expr` is a `Column[…]` or a `Grid[…]`, possibly under
 /// `Style[…, directives]` wrappers.
 fn is_text_layout(expr: &syntax::Expr) -> bool {
@@ -4248,6 +4269,13 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         );
       }
       match render_grid_if_needed(args[0].clone()) {
+        // The table is drawn inside the frame or the gray box around it.
+        graphics @ syntax::Expr::Graphics { .. } if name == "Framed" => {
+          keep_frame_boxes(&[args[1..].to_vec()], graphics)
+        }
+        graphics @ syntax::Expr::Graphics { .. } if name == "Panel" => {
+          keep_panel_box(&args[1..], graphics)
+        }
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
         }

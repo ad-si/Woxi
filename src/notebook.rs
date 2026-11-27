@@ -1490,16 +1490,16 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `Blank[]` pattern instead of the macron mark it typesets.
       "OverscriptBox" if args.len() == 2 => {
         format!(
-          "Overscript[{}, \"{}\"]",
+          "Overscript[{}, {}]",
           conv(&args[0]),
-          escape_string(&conv(&args[1]))
+          quoted_script_mark(&conv(&args[1]))
         )
       }
       "UnderscriptBox" if args.len() == 2 => {
         format!(
-          "Underscript[{}, \"{}\"]",
+          "Underscript[{}, {}]",
           conv(&args[0]),
-          escape_string(&conv(&args[1]))
+          quoted_script_mark(&conv(&args[1]))
         )
       }
       // `UnderoverscriptBox[a, b, c]` → `Underoverscript[a, b, c]`, as the
@@ -4920,6 +4920,23 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
   parts
 }
 
+/// The mark of an `OverscriptBox`/`UnderscriptBox` as a string literal.
+/// A mark the boxes already write as one (`"\"\<.\>\""`) is kept as it is;
+/// a bare mark is quoted.
+fn quoted_script_mark(mark: &str) -> String {
+  if mark.len() >= 2
+    && mark.starts_with('"')
+    && matches!(
+      crate::parse_to_expr(mark),
+      Ok(crate::syntax::Expr::String(_))
+    )
+  {
+    mark.to_string()
+  } else {
+    format!("\"{}\"", escape_string(mark))
+  }
+}
+
 // ── Serialization ───────────────────────────────────────────────────
 
 /// Escape a string for Wolfram Language output.
@@ -7538,6 +7555,19 @@ Cell["Chapter 2", "Chapter"]
     // A compound index expression still parses as one, so it stays bare.
     let s = r#"BoxData[SubscriptBox["x", RowBox[{"i", "+", "1"}]]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[x, i+1]");
+  }
+
+  /// A mark that is already written as a string literal in the boxes
+  /// (`OverscriptBox["x", "\"\<.\>\""]`, the dot of a typed
+  /// `Overscript[x, "."]`) is that string, not a string holding quote
+  /// characters. Regression: such a mark was quoted a second time, so a
+  /// time-derivative label drew its dot between two quotation marks.
+  #[test]
+  fn test_overscript_box_keeps_a_string_literal_mark() {
+    let s = r#"BoxData[OverscriptBox["v", "\"\<..\>\""]]"#;
+    assert_eq!(extract_cell_content(s), "Overscript[v, \"..\"]");
+    let s = r#"BoxData[UnderscriptBox["v", "\"\<~\>\""]]"#;
+    assert_eq!(extract_cell_content(s), "Underscript[v, \"~\"]");
   }
 
   /// `OverscriptBox`/`UnderscriptBox` become the evaluable `Overscript`/
