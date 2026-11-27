@@ -4279,6 +4279,44 @@ fn group_digits_from_left(digits: &str, block: usize, sep: &str) -> String {
 /// value renders without a `× 10^e` factor (integer argument, or an exponent of
 /// zero). This drives both the `ToString` 2D text renderer and the box-form
 /// renderer used by the Playground/Studio SVG output.
+/// The mantissa and exponent `ScientificForm[x, spec]` or
+/// `EngineeringForm[x, spec]` shows. `spec` is the digit specification: none
+/// (six digits), `n` digits, or `{n, f}` for at most `n` digits with at most
+/// `f` of them to the right of the decimal point.
+pub(crate) fn exponent_form_parts(
+  head: &str,
+  x: &Expr,
+  spec: Option<&Expr>,
+) -> Option<(String, Option<i64>)> {
+  let engineering = head == "EngineeringForm";
+  let n = match spec {
+    None => 6,
+    Some(Expr::Integer(n)) => i64::try_from(*n).ok()?,
+    Some(Expr::List(pair)) if pair.len() == 2 => {
+      let n = number_form_digit_budget(&pair[0])?;
+      let Expr::Integer(f) = &pair[1] else {
+        return None;
+      };
+      let f = i64::try_from(*f).ok().filter(|f| *f >= 0)?;
+      // Digits the mantissa has left of its decimal point: one in
+      // scientific notation, one to three in engineering notation.
+      let integer_digits = match x {
+        Expr::Real(v) if engineering && *v != 0.0 && v.is_finite() => {
+          v.abs().log10().floor().rem_euclid(3.0) as i64 + 1
+        }
+        _ => 1,
+      };
+      n.min(integer_digits.saturating_add(f))
+    }
+    Some(_) => return None,
+  };
+  if engineering {
+    engineering_form_parts(x, n)
+  } else {
+    scientific_form_parts(x, n)
+  }
+}
+
 pub(crate) fn scientific_form_parts(
   x: &Expr,
   n: i64,
@@ -8309,6 +8347,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "Transpose" if args.len() == 1 => {
       format!("{}^T", tex_atom_or_paren(&args[0]))
     }
+    "ConjugateTranspose" if args.len() == 1 => {
+      format!("{}^{{\\dagger }}", tex_atom_or_paren(&args[0]))
+    }
+    // With a permutation the mark carries it: `m^{T:\{2,1\}}`.
+    "Transpose" | "ConjugateTranspose" if args.len() == 2 => {
+      let mark = if name == "Transpose" {
+        "T"
+      } else {
+        "\\dagger "
+      };
+      format!(
+        "{}^{{{mark}:{}}}",
+        tex_atom_or_paren(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
     "Inverse" if args.len() == 1 => {
       format!("{}^{{-1}}", tex_atom_or_paren(&args[0]))
     }
@@ -8683,15 +8737,48 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       items.join(&separator)
     }
-    // Infix joins its operands with the operator, a string written literally.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      items
+    // Infix joins its operands with the operator, a string written
+    // literally, `Infix[f[a, b]]` with `\sim`: `a \sim f\sim  b`. An operand
+    // binding no tighter than the operator is bracketed, `(a+b)*c`.
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      use crate::syntax::{InfixOperator, OperatorPosition};
+      let (separator, precedence) = match &layout.operator {
+        InfixOperator::Head(head) => (
+          format!(
+            " \\sim {}\\sim  ",
+            expr_to_tex(&Expr::Identifier(head.clone()))
+          ),
+          crate::syntax::INFIX_DEFAULT_PRECEDENCE as f64,
+        ),
+        InfixOperator::Given(op) => (
+          match op {
+            Expr::String(text) => text.clone(),
+            other => expr_to_tex(other),
+          },
+          crate::syntax::box_operator_token_precedence(
+            op,
+            OperatorPosition::Infix,
+          ),
+        ),
+      };
+      layout
+        .operands
         .iter()
-        .map(|item| match item {
-          Expr::String(text) => text.clone(),
-          other => expr_to_tex(other),
+        .map(|operand| {
+          let text = expr_to_tex(operand);
+          if crate::evaluator::dispatch::complex_and_special::operator_form_operand_bracketed(
+            operand, precedence,
+          ) {
+            format!("({text})")
+          } else {
+            text
+          }
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .join(&separator)
     }
     // Column stacks its items in a left-aligned array.
     "Column" if !args.is_empty() => {
@@ -9719,6 +9806,16 @@ fn unescape_box_spaces(chars: &[char]) -> String {
     .replace("\\ ", " ")
 }
 
+/// Whether a group sits alone in an argument slot of box source: `out` (the
+/// source written so far) ends at a `[` or `,` and `rest` (what follows the
+/// group) starts at a `,` or `]`.
+fn is_box_argument_slot(out: &str, rest: &[char]) -> bool {
+  let opens = matches!(out.trim_end().chars().last(), Some('[' | ','));
+  let closes =
+    matches!(rest.iter().find(|c| !c.is_whitespace()), Some(',' | ']'));
+  opens && closes
+}
+
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
 ///
@@ -9749,6 +9846,18 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
         out.extend(&chars[i + 1..close]);
         out.push('"');
         i = close + 1;
+        continue;
+      }
+      // An empty group (`\(\)`, the script slot left blank in
+      // `SubscriptBox[\(S\), \(\)]`) is an empty text atom: stripped
+      // bare, the missing argument would be read as `Null`.
+      BOX_OPEN
+        if !in_box_text
+          && matching_box_close(chars, i) == Some(i + 1)
+          && is_box_argument_slot(&out, &chars[i + 2..]) =>
+      {
+        out.push_str("\"\"");
+        i += 2;
         continue;
       }
       // A group holding only spaces (`\(\ \)`, the blank base a
@@ -9984,14 +10093,31 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
     // `Infix[{a, b}, "+"]` is the row `a + b`; a string operator contributes
     // its text rather than a quoted literal.
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      let parts: Vec<String> = items
-        .iter()
-        .map(|item| match item {
-          Expr::String(s) => format!("\"{}\"", escape_box_text(s)),
-          other => expr_to_boxes(other),
-        })
-        .collect();
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      let quoted = |s: &str| format!("\"{}\"", escape_box_text(s));
+      let separator: Vec<String> = match &layout.operator {
+        crate::syntax::InfixOperator::Head(head) => {
+          vec![
+            quoted(" "),
+            quoted("~"),
+            quoted(head),
+            quoted("~"),
+            quoted(" "),
+          ]
+        }
+        crate::syntax::InfixOperator::Given(Expr::String(s)) => vec![quoted(s)],
+        crate::syntax::InfixOperator::Given(op) => vec![expr_to_boxes(op)],
+      };
+      let mut parts = Vec::new();
+      for (i, operand) in layout.operands.iter().enumerate() {
+        if i > 0 {
+          parts.extend(separator.iter().cloned());
+        }
+        parts.push(expr_to_boxes(operand));
+      }
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
     // `Row` typesets through one of the FrontEnd's row templates rather than
@@ -10029,18 +10155,12 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
     // plain-number cases fall through to the generic call rendering.
     "ScientificForm" | "EngineeringForm"
       if (1..=2).contains(&args.len())
-        && matches!(args.get(1), None | Some(Expr::Integer(1..))) =>
+        && matches!(
+          args.get(1),
+          None | Some(Expr::Integer(1..) | Expr::List(_))
+        ) =>
     {
-      let n = match args.get(1) {
-        Some(Expr::Integer(n)) => i64::try_from(*n).unwrap_or(6),
-        _ => 6,
-      };
-      let parts = if name == "ScientificForm" {
-        scientific_form_parts(&args[0], n)
-      } else {
-        engineering_form_parts(&args[0], n)
-      };
-      match parts {
+      match exponent_form_parts(name, &args[0], args.get(1)) {
         Some((mantissa, Some(exp))) => format!(
           "RowBox[{{\"{mantissa}\", \"×\", SuperscriptBox[\"10\", \"{exp}\"]}}]"
         ),
@@ -18958,16 +19078,19 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
   }) {
     return None;
   }
-  let n = match positional.get(1) {
-    None => 6,
+  let spec = positional.get(1).copied();
+  if !matches!(spec, None | Some(Expr::Integer(_) | Expr::List(_))) {
+    return None;
+  }
+  let n = match spec {
     Some(Expr::Integer(n)) => *n as i64,
-    Some(_) => return None,
+    _ => 6,
   };
   // An engineering mantissa has one to three integer digits (123.456 ×
   // 10^6); asking for fewer pads them with zeros, which wolframscript
   // reports.
   if head == "EngineeringForm"
-    && positional.len() == 2
+    && matches!(spec, Some(Expr::Integer(_)))
     && let Expr::Real(f) = positional[0]
     && *f != 0.0
     && f.is_finite()
@@ -18980,11 +19103,7 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
   }
   let opts = number_form_options(head, inner);
   render_form_threaded(positional[0], |x| {
-    let (mantissa, exp) = if head == "ScientificForm" {
-      scientific_form_parts(x, n)?
-    } else {
-      engineering_form_parts(x, n)?
-    };
+    let (mantissa, exp) = exponent_form_parts(head, x, spec)?;
     let mantissa = apply_mantissa_options(&mantissa, &opts);
     Some(sci_parts_to_2d_string(&mantissa, exp))
   })

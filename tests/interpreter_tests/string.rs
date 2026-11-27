@@ -8132,6 +8132,62 @@ mod make_boxes {
     );
   }
 
+  // `{n, f}` shows at most n digits, at most f of them right of the decimal
+  // point, without padding the mantissa with zeros.
+  #[test]
+  fn to_string_scientific_form_digits_right_of_point() {
+    assert_eq!(
+      interpret("ToString[ScientificForm[3.3333333*^-9, {3, 2}]]").unwrap(),
+      "         -9\n3.33 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[ScientificForm[1.9878*^-17, {6, 2}]]").unwrap(),
+      "         -17\n1.99 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[ScientificForm[3.*^16, {3, 2}]]").unwrap(),
+      "       16\n3. \u{00d7} 10"
+    );
+    // The digit count still limits the mantissa when it is the smaller.
+    assert_eq!(
+      interpret("ToString[ScientificForm[218224.7, {2, 4}]]").unwrap(),
+      "        5\n2.2 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[ScientificForm[{12345.6, 0.00098765}, {4, 1}]]")
+        .unwrap(),
+      "         4          -4\n{1.2 \u{00d7} 10 , 9.9 \u{00d7} 10  }"
+    );
+  }
+
+  // An engineering mantissa has one to three digits left of the point.
+  #[test]
+  fn to_string_engineering_form_digits_right_of_point() {
+    assert_eq!(
+      interpret("ToString[EngineeringForm[12345.678, {6, 1}]]").unwrap(),
+      "         3\n12.3 \u{00d7} 10"
+    );
+  }
+
+  #[test]
+  fn make_boxes_scientific_form_digits_right_of_point() {
+    assert_eq!(
+      interpret("ToString[ToBoxes[ScientificForm[3.3333333*^-9, {3, 2}]][[1, 1, 1]], InputForm]").unwrap(),
+      r#"RowBox[{"\"3.33\"", "×", SuperscriptBox["10", "\"-9\""]}]"#
+    );
+  }
+
+  // A grid cell holding the form shows the shortened mantissa.
+  #[test]
+  fn scientific_form_digits_right_of_point_in_grid_svg() {
+    let svg = interpret(
+      "ExportString[Grid[{{\"a\", ScientificForm[3.3333333*^-9, {3, 2}]}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("3.33\u{00d7}10<tspan"), "{svg}");
+    assert!(!svg.contains("3.333"), "{svg}");
+  }
+
   #[test]
   fn to_string_engineering_form_list() {
     // The third element has exponent 0 and collapses to a plain number.

@@ -1006,7 +1006,7 @@ DisplayForm,"Wrapper that causes box expressions to be rendered visually",✅,pu
 TransferFunctionModel,"Transfer-function model of a linear system (continuous; delays)",✅,pure,8.0,957
 Shortest,"Pattern wrapper that tries the shortest match first — the default for both string and expression sequences",✅,pure,6.0,958
 Region,"Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion/BoundaryMeshRegion/ImplicitRegion/BooleanRegion/TransformedRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D; Style[reg + directives] applies styling)",✅,pure,11.1,959
-EdgeDetect,"Detects edges by thinning the derivative-of-Gaussian gradient to single-pixel ridges",✅,pure,8.0,962
+EdgeDetect,"Detects edges by thinning a gradient (Gaussian, Sobel or Shen-Castan) to single-pixel ridges, optionally keeping only straight ones",✅,pure,8.0,962
 JacobiP,"Jacobi polynomial",✅,pure,1.0,962
 VectorAngle,"Angle between two vectors",✅,pure,6.0,962
 CoefficientArrays,"Returns sparse arrays of polynomial coefficients indexed by total degree in the given variables or forms",✅,pure,5.0,964
@@ -1167,7 +1167,7 @@ HoldAllComplete,"Attribute that prevents all evaluation",✅,1,3.0,1122
 Blur,"Applies Gaussian blur to an image",✅,pure,7.0,1124
 CirclePoints,"Gives equally spaced points on a circle",✅,pure,10.1,1126
 NetChain,"",🚫,,11.0,1126
-FiniteGroupData,"",🚫,,7.0,1127
+FiniteGroupData,"The 32 crystallographic point groups {CrystallographicPointGroup n}: Name / StandardName / Order / Elements / CrystalSystem / CrystalForm / PointGroupType / MultiplicationTable / CayleyGraph; no other finite groups and no ElementNames",🚧,pure,7.0,1127
 Factorial2,"Returns the double factorial",✅,pure,1.0,1128
 ListCorrelate,"Discrete cross-correlation of two lists with optional overhang cyclic or list padding and generalized operations",✅,pure,4.0,1129
 After,"",🚫,,3.0,1130

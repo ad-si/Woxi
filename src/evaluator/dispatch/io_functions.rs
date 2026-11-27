@@ -7359,6 +7359,19 @@ fn wrap_pane_text_at(
         whole_words,
         proportional,
       )?;
+      // A `LineSpacing` or `TextAlignment` lays out the lines of one text,
+      // which a `Column` of separate items knows nothing of: the broken
+      // lines stay one `Row` with hard line breaks, whose text flow
+      // honors both.
+      let lays_out_lines = args[1..].iter().any(|d| {
+        matches!(d, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(k)
+            if k == "LineSpacing" || k == "TextAlignment"))
+      });
+      let inner = match lines_as_flowed_row(&inner) {
+        Some(row) if lays_out_lines => row,
+        _ => inner,
+      };
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
@@ -7814,11 +7827,57 @@ fn wrap_pane_text_at(
   }
 }
 
+/// The `Column[{line, …}]` of lines `wrap_pane_text` broke a `Row` into,
+/// restated as the one `Row` of their pieces with a `"\n"` item between
+/// two lines. `None` for anything but such a one-argument `Column`.
+fn lines_as_flowed_row(lines: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = lines else {
+    return None;
+  };
+  let [Expr::List(rows)] = &args[..] else {
+    return None;
+  };
+  if name != "Column" {
+    return None;
+  }
+  let mut pieces: Vec<Expr> = Vec::new();
+  for (i, row) in rows.iter().enumerate() {
+    if i > 0 {
+      pieces.push(Expr::String("\n".to_string()));
+    }
+    match row {
+      // A blank line holds nothing between its two breaks.
+      Expr::String(s) if s == " " => {}
+      Expr::FunctionCall { name, args }
+        if name == "Row"
+          && args.len() == 1
+          && matches!(&args[0], Expr::List(_)) =>
+      {
+        if let Expr::List(items) = &args[0] {
+          pieces.extend(items.iter().cloned());
+        }
+      }
+      piece => pieces.push(piece.clone()),
+    }
+  }
+  Some(call1("Row", Expr::List(pieces.into())))
+}
+
 /// Mark the lines `wrap_pane_text` broke a `Text[…]` into as `Text`
 /// displays, looking through the `Column`s and `Style`s that hold them, so
 /// each is drawn in the proportional text face it was measured in.
 fn text_display_lines(lines: &Expr) -> Expr {
   match lines {
+    // A styled `Row` of hard-broken lines (see `lines_as_flowed_row`) is
+    // one text: the `Text` goes around the style, where a `Text` display
+    // of a styled row is drawn in the text face.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && matches!(args.first(), Some(Expr::FunctionCall { name, .. })
+          if name == "Row") =>
+    {
+      call1("Text", lines.clone())
+    }
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Column" | "Style" | "TraditionalForm")
         && !args.is_empty() =>
@@ -7941,21 +8000,51 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
   None
 }
 
-/// The `{width, height}` of a `Pane[content, {w, h}]` or
-/// `Pane[content, ImageSize -> {w, h}]` call.
-/// Whether a `Pane` states `ImageSizeAction -> "ShrinkToFit"`: content
-/// larger than the box is scaled down to fit it instead of being clipped.
-pub(crate) fn pane_shrinks_to_fit(options: &[Expr]) -> bool {
-  options.iter().any(|opt| {
-    matches!(
-      opt,
-      Expr::Rule { pattern, replacement }
-        if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSizeAction")
-          && matches!(&**replacement, Expr::String(s) if s == "ShrinkToFit")
-    )
-  })
+/// What a `Pane` does with content larger than its box: `Scrollbars -> …`
+/// keeps it at its own size behind scrollbars, `ImageSizeAction ->
+/// "ShrinkToFit"` scales it down to fit, and otherwise it is clipped.
+pub(crate) fn pane_overflow(
+  options: &[Expr],
+) -> crate::functions::graphics::PaneOverflow {
+  use crate::functions::graphics::{PaneOverflow, ScrollbarMode};
+  let option = |name: &str| {
+    options.iter().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == name) => {
+        Some(&**replacement)
+      }
+      _ => None,
+    })
+  };
+  let mode = |e: &Expr| match e {
+    Expr::Identifier(n) if n == "True" => ScrollbarMode::Always,
+    Expr::Identifier(n) if n == "Automatic" => ScrollbarMode::WhenNeeded,
+    _ => ScrollbarMode::Never,
+  };
+  // `Scrollbars -> {horizontal, vertical}` sets the two bars apart.
+  let (horizontal, vertical) = match option("Scrollbars") {
+    Some(Expr::List(bars)) if bars.len() == 2 => {
+      (mode(&bars[0]), mode(&bars[1]))
+    }
+    Some(both) => (mode(both), mode(both)),
+    None => (ScrollbarMode::Never, ScrollbarMode::Never),
+  };
+  if horizontal != ScrollbarMode::Never || vertical != ScrollbarMode::Never {
+    return PaneOverflow::Scroll {
+      horizontal,
+      vertical,
+    };
+  }
+  match option("ImageSizeAction") {
+    Some(Expr::String(s)) if s == "ShrinkToFit" => PaneOverflow::ShrinkToFit,
+    _ => PaneOverflow::Clip,
+  }
 }
 
+/// The `{width, height}` of a `Pane[content, {w, h}]` or
+/// `Pane[content, ImageSize -> {w, h}]` call.
 pub(crate) fn pane_fixed_size(args: &[Expr]) -> Option<Vec<Expr>> {
   let pair = |e: &Expr| match e {
     Expr::List(size) if size.len() == 2 => Some(size.to_vec()),
@@ -8274,46 +8363,67 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // A table wider than the pane, each cell of which fits, wraps the
+      // text of its widest column.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            let w = pane_size_component(&size[0])?;
+            let natural =
+              crate::functions::graphics::parse_svg_wh(&expr_to_svg(&args[0]))
+                .0;
+            (natural > w + 0.5)
+              .then(|| {
+                crate::functions::graphics::grid_wrapped_to_pane_width(
+                  &args[0],
+                  natural - w,
+                )
+              })
+              .flatten()
+          }
+          _ => None,
+        });
       // A grid wider than the pane squeezes its automatically sized
-      // pictures to fit.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            let w = pane_size_component(&size[0])?;
-            crate::functions::graphics::fit_grid_to_pane_width(
-              &args[0],
-              w,
-              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
-            )
-          }
-          _ => None,
-        });
+      // pictures to fit. Behind scrollbars the content keeps its own size.
+      let squeeze_size = pane_size.as_ref().filter(|_| {
+        !matches!(
+          pane_overflow(&args[1..]),
+          crate::functions::graphics::PaneOverflow::Scroll { .. }
+        )
+      });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_grid_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       // An automatically sized tree wider than the pane is squeezed to fit.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            let w = pane_size_component(&size[0])?;
-            crate::functions::graphics::fit_tree_to_pane_width(
-              &args[0],
-              w,
-              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
-            )
-          }
-          _ => None,
-        });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_tree_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       // A plot with `ImageSize -> Full | Scaled[s]` sizes itself from the
       // pane.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            crate::functions::graphics::size_plot_to_pane(
-              &args[0],
-              pane_size_component(&size[0])?,
-              pane_size_component(&size[1])?,
-            )
-          }
-          _ => None,
-        });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => crate::functions::graphics::size_plot_to_pane(
+          &args[0],
+          pane_size_component(&size[0])?,
+          pane_size_component(&size[1])?,
+        ),
+        _ => None,
+      });
       // A width alone also breaks the text cells of a grid inside the pane
       // (a long list next to pictures) into lines that fit it.
       if name == "Pane"
@@ -8346,7 +8456,7 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
             h,
             pane_alignment(&args[1..]),
             false,
-            pane_shrinks_to_fit(&args[1..]),
+            pane_overflow(&args[1..]),
           );
         }
         return inner_svg;
@@ -8379,7 +8489,7 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
                 crate::functions::graphics::pane_picture_is_auto_sized(
                   wrapped.as_ref().unwrap_or(&args[0]),
                 ),
-                pane_shrinks_to_fit(&args[1..]),
+                pane_overflow(&args[1..]),
               )
             }
             _ => inner_svg,
