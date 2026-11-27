@@ -5287,14 +5287,20 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "{svg}");
     }
 
-    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
-    /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
+    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma
+    /// over a stacked quotient, not as the literal `TildeTilde[…]`/`Sum[…]`
+    /// source.
     #[test]
     fn text_approximation_of_a_sum() {
       let svg = export_svg(
         "Grid[{{Style[HoldForm[a \\[TildeTilde] Sum[1/k, {k, 1, n}]], \"TraditionalForm\"]}}]",
       );
-      assert!(svg.contains("a \u{2248} \u{2211}"), "{svg}");
+      for glyph in ["a", "\u{2248}", "\u{2211}"] {
+        assert!(svg.contains(&format!(">{glyph}</text>")), "{glyph}: {svg}");
+      }
+      // The quotient is stacked on a fraction bar.
+      assert!(svg.contains("<line "), "{svg}");
+      assert!(!svg.contains("1/k"), "{svg}");
       assert!(!svg.contains("TildeTilde"), "{svg}");
       assert!(!svg.contains("Sum["), "{svg}");
     }
@@ -6940,6 +6946,52 @@ mod graphics {
            PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}]"
         ),
         0
+      );
+    }
+
+    /// A `Cuboid` reaching past an explicit `PlotRange` is cut off at the
+    /// box, like every other solid: it covers what the part of it inside
+    /// the range covers, and one wholly outside the range is not drawn.
+    #[test]
+    fn graphics3d_cuboid_is_cut_off_at_the_plot_range() {
+      // The bounding box of everything filled in the picture.
+      let extent = |solid: &str| -> Option<[f64; 4]> {
+        let svg = export_svg(&format!(
+          "Graphics3D[{solid}, PlotRange -> {{{{-1, 1}}, {{0, 1}}, {{0, 1}}}},            Boxed -> False]"
+        ));
+        let mut ext: Option<[f64; 4]> = None;
+        for l in svg.lines().filter(|l| l.starts_with("<polygon ")) {
+          let points = l.split("points=\"").nth(1).unwrap();
+          for pair in points[..points.find('"').unwrap()].split(' ') {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            let e = ext.get_or_insert([x, y, x, y]);
+            *e = [e[0].min(x), e[1].min(y), e[2].max(x), e[3].max(y)];
+          }
+        }
+        ext
+      };
+      let inside = extent("Cuboid[{-1, 0, 0}, {1, 1, 1}]").unwrap();
+      for solid in [
+        // Sticking out on the side away from the viewer, on the side
+        // toward the viewer, on both, and along two axes at once.
+        "Cuboid[{-3, 0, 0}, {1, 1, 1}]",
+        "Cuboid[{-1, 0, 0}, {4, 1, 1}]",
+        "Cuboid[{-3, 0, 0}, {4, 1, 1}]",
+        "Cuboid[{-3, -2, 0}, {1, 1, 1}]",
+        // The corners may come in either order.
+        "Cuboid[{1, 1, 1}, {-3, 0, 0}]",
+      ] {
+        let cut = extent(solid).unwrap_or_else(|| panic!("{solid}"));
+        for (a, b) in cut.iter().zip(inside) {
+          assert!((a - b).abs() < 1.0, "{solid}: {cut:?} vs {inside:?}");
+        }
+      }
+      assert_eq!(extent("Cuboid[{2, 0, 0}, {3, 1, 1}]"), None);
+      // Other solids of the scene are left alone.
+      assert!(
+        extent("{Cuboid[{2, 0, 0}, {3, 1, 1}], Cuboid[{0, 0, 0}, {1, 1, 1}]}")
+          .is_some()
       );
     }
 
@@ -8686,6 +8738,34 @@ mod graphics {
         svg.contains("<title>Coordinate pts should be a pair of numbers"),
         "Should contain error message in title attribute: {svg}"
       );
+    }
+
+    /// A list of lines in which every line is empty draws nothing; it is
+    /// not a malformed coordinate, so the rest of the picture stays intact.
+    #[test]
+    fn line_of_only_empty_lines_draws_nothing() {
+      for line in ["Line[{}]", "Line[{{}}]", "Line[{{}, {}}]"] {
+        let svg = export_svg(&format!("Graphics[{{{line}, Circle[]}}]"));
+        assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+        assert!(!svg.contains("<polyline"), "{svg}");
+        assert_eq!(svg, export_svg("Graphics[{Circle[]}]"), "{line}");
+      }
+    }
+
+    /// Empty lines mixed with real ones are skipped.
+    #[test]
+    fn line_skips_empty_lines_among_real_ones() {
+      let svg =
+        export_svg("Graphics[{Line[{{}, {{0, 0}, {1, 1}}, {}}], Circle[]}]");
+      assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+      assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
+    }
+
+    /// A line whose entries are neither points nor lines is still an error.
+    #[test]
+    fn line_with_empty_and_malformed_entries_shows_error() {
+      let svg = export_svg("Graphics[{Line[{{}, {1, 2}}]}]");
+      assert!(svg.contains("should be a pair of numbers"), "{svg}");
     }
 
     #[test]
@@ -45100,6 +45180,100 @@ mod grid_frame_and_background {
     assert!(width < 60, "column sized from the source text: {width}");
   }
 
+  /// The named style `"TraditionalForm"` (or `FormatType ->
+  /// TraditionalForm`) typesets what a `Style` wraps in two dimensions, on
+  /// its own and as an item of a layout. Regression: the directive was
+  /// ignored and the formula written on one line.
+  #[test]
+  fn traditional_form_style_typesets_its_content() {
+    fn height(svg: &str) -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    }
+    let named =
+      export_svg(r#"Style[HoldForm[a/(b + Sqrt[c])], "TraditionalForm"]"#);
+    assert!(!named.contains("TraditionalForm"), "{named}");
+    assert_eq!(
+      named,
+      export_svg(
+        r#"Style[TraditionalForm[HoldForm[a/(b + Sqrt[c])]], LimitsPositioning -> False]"#
+      )
+    );
+    assert_eq!(
+      named,
+      export_svg(
+        r#"Style[HoldForm[a/(b + Sqrt[c])], FormatType -> TraditionalForm]"#
+      )
+    );
+    // The other directives still apply to the typeset formula.
+    let colored = export_svg(
+      r#"Style[HoldForm[a/(b + Sqrt[c])], Red, "TraditionalForm", 20]"#,
+    );
+    assert_eq!(
+      colored,
+      export_svg(
+        r#"Style[TraditionalForm[HoldForm[a/(b + Sqrt[c])]], LimitsPositioning -> False, Red, 20]"#
+      )
+    );
+    assert!(colored.contains("rgb(255,0,0)"), "{colored}");
+    // A string is literal text in either notation.
+    assert_eq!(
+      export_svg(r#"Style["some text", "TraditionalForm", Bold]"#),
+      export_svg(r#"Style["some text", Bold]"#)
+    );
+    // As a layout item the formula is typeset rather than set on one line.
+    for layout in ["Grid[{{item}}]", "Column[{item}]", "Row[{item, \"z\"}]"] {
+      let body = "HoldForm[Sum[f[j], {j, 1, m}]]";
+      let plain = export_svg(&layout.replace("item", body));
+      let styled = export_svg(
+        &layout
+          .replace("item", &format!(r#"Style[{body}, "TraditionalForm"]"#)),
+      );
+      assert!(!styled.contains("TraditionalForm"), "{styled}");
+      assert!(height(&styled) > height(&plain) + 5.0, "{layout}: {styled}");
+    }
+  }
+
+  /// A formula in the `"TraditionalForm"` style keeps the limits of its
+  /// large operators stacked under and over the sign in a `Grid` cell,
+  /// where an explicit `TraditionalForm[…]` item carries them as scripts;
+  /// `LimitsPositioning -> False` asks for the same on any styled formula.
+  #[test]
+  fn traditional_form_style_stacks_operator_limits_in_a_grid() {
+    fn size(svg: &str, attr: &str) -> f64 {
+      svg
+        .split(&format!("{attr}=\""))
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    }
+    for operator in ["Sum", "Product"] {
+      let body = format!("HoldForm[{operator}[f[j], {{j, 1, m}}]]");
+      let inline =
+        export_svg(&format!("Grid[{{{{TraditionalForm[{body}]}}}}]"));
+      let named = export_svg(&format!(
+        r#"Grid[{{{{Style[{body}, "TraditionalForm"]}}}}]"#
+      ));
+      let explicit = export_svg(&format!(
+        "Grid[{{{{Style[TraditionalForm[{body}], LimitsPositioning -> False]}}}}]"
+      ));
+      assert_eq!(named, explicit);
+      assert!(
+        size(&named, "height") > size(&inline, "height") + 10.0,
+        "limits stacked: {named}"
+      );
+      assert!(
+        size(&named, "width") < size(&inline, "width"),
+        "limits not beside the sign: {named}"
+      );
+    }
+  }
+
   /// A `StyleForm` item is styled content wherever it sits: in a `Row`
   /// inside a displayed `Grid` that also holds a picture, and around
   /// `TraditionalForm` at the top level. Regression: both printed the
@@ -71353,9 +71527,18 @@ mod generalized_bar_chart {
        \" = \", 0.9}], {0, 0}], Text[TraditionalForm[Abs[x]], {0, 1}]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">P(X | A) = 0.9<"), "{svg}");
-    // The one-letter symbol is set in italics, as everywhere in
+    // The one-letter symbols are set in italics, as everywhere in
     // `TraditionalForm`.
+    let italic = |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+    assert!(
+      svg.contains(&format!(
+        ">{}({} | {}) = 0.9<",
+        italic("P"),
+        italic("X"),
+        italic("A")
+      )),
+      "{svg}"
+    );
     assert!(
       svg.contains(">|<tspan font-style=\"italic\">x</tspan>|<"),
       "{svg}"
@@ -71372,7 +71555,12 @@ mod generalized_bar_chart {
        {0, 0}], Text[(a -> b) :> c, {0, 1}]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">a \u{2192} 0<"), "{svg}");
+    // The one-letter symbol is set in italics, as everywhere in
+    // `TraditionalForm`.
+    assert!(
+      svg.contains("><tspan font-style=\"italic\">a</tspan> \u{2192} 0<"),
+      "{svg}"
+    );
     assert!(svg.contains(">(a \u{2192} b) \u{29F4} c<"), "{svg}");
     assert!(!svg.contains("-&gt;"), "{svg}");
   }
