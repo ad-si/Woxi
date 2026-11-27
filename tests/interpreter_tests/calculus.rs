@@ -12020,14 +12020,17 @@ mod ndsolve {
   fn interpolating_function_values_on_grid_of_vector_solution() {
     // A vector-valued NDSolve solution has one row of components per grid
     // point; the context-qualified name (as a notebook that loaded the
-    // package via `Get` spells it) resolves to the same function.
+    // package spells it) resolves to the same function. Both accessors are
+    // qualified so a `Global` symbol of the same name cannot shadow them.
     assert_eq!(
       interpret(
-        "f = NDSolve[{X'[t] == -X[t], X[0] == {1., 2., 3.}}, X, {t, 0, 1}]\
+        "Needs[\"DifferentialEquations`InterpolatingFunctionAnatomy`\"]; \
+         f = NDSolve[{X'[t] == -X[t], X[0] == {1., 2., 3.}}, X, {t, 0, 1}]\
            [[1, 1, 2]]; \
          v = DifferentialEquations`InterpolatingFunctionAnatomy`\
          InterpolatingFunctionValuesOnGrid[f]; \
-         {Length[v] == Length[InterpolatingFunctionGrid[f]], \
+         {Length[v] == Length[DifferentialEquations`\
+         InterpolatingFunctionAnatomy`InterpolatingFunctionGrid[f]], \
           Dimensions[v][[2]], First[v], MatrixQ[v, NumericQ]}"
       )
       .unwrap(),
@@ -21231,6 +21234,70 @@ mod inverse_z_transform {
       interpret("InverseZTransform[Sin[z], z, n]").unwrap(),
       "InverseZTransform[Sin[z], z, n]"
     );
+  }
+
+  /// Regression: a rational function with machine-number coefficients
+  /// stayed unevaluated, so sequences tabulated from it never became
+  /// numbers. It is inverted through its numeric poles.
+  #[test]
+  fn machine_coefficients_real_pole() {
+    assert_eq!(
+      interpret("InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]").unwrap(),
+      "3.75*(-0.25)^m - 4.*DiscreteDelta[m]"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Evaluate[InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]], \
+         {m, 0, 4}]"
+      )
+      .unwrap(),
+      "{-0.25, -0.9375, 0.234375, -0.05859375, 0.0146484375}"
+    );
+  }
+
+  /// The sequence is the series of the function in 1/z, whatever the
+  /// poles: complex-conjugate pairs, and poles at the origin (delays).
+  #[test]
+  fn machine_coefficients_match_the_series_in_inverse_z() {
+    for f in [
+      "(2. z^2 + z)/(z^2 - 0.5 z + 0.3)/z^2",
+      "(1.5 z^3 - z + 0.2)/((z - 0.5) (z + 0.25) (z^2 + 0.1 z + 0.6))",
+      "0.5/z^3 + 2./z",
+      "(0.7 z)/(z - 1.5)",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Max[Abs[Table[Evaluate[InverseZTransform[{f}, z, m]], {{m, 0, 7}}] - \
+           CoefficientList[Normal[Series[{f} /. z -> 1/w, {{w, 0, 7}}]], w, 8]]] \
+           < 10^-9"
+        ))
+        .unwrap(),
+        "True",
+        "{f}"
+      );
+    }
+  }
+
+  #[test]
+  fn machine_coefficients_unsupported_stay_unevaluated() {
+    // Not causal (more zeros than poles), a repeated nonzero pole, and a
+    // symbolic coefficient.
+    for (input, expected) in [
+      (
+        "InverseZTransform[2.5*z^2, z, m]",
+        "InverseZTransform[2.5*z^2, z, m]",
+      ),
+      (
+        "InverseZTransform[1./(z - 0.5)^2, z, m]",
+        "InverseZTransform[1./(-0.5 + z)^2, z, m]",
+      ),
+      (
+        "InverseZTransform[(a*z)/(z - 1.5), z, m]",
+        "InverseZTransform[(a*z)/(-1.5 + z), z, m]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected);
+    }
   }
 }
 

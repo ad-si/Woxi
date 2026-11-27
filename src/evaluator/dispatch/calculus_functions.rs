@@ -2867,7 +2867,10 @@ fn inverse_laplace_partial_fractions(
 /// `CoefficientList[poly, var]`, converted to `f64`s from lowest to highest
 /// degree. `None` if any coefficient isn't a plain number once evaluated,
 /// which routes the caller back to leaving the call unevaluated.
-fn polynomial_f64_coeffs(poly: &Expr, var: &Expr) -> Option<Vec<f64>> {
+pub(crate) fn polynomial_f64_coeffs(
+  poly: &Expr,
+  var: &Expr,
+) -> Option<Vec<f64>> {
   let list =
     crate::functions::coefficient_list_ast(&[poly.clone(), var.clone()])
       .ok()?;
@@ -2886,7 +2889,10 @@ fn polynomial_f64_coeffs(poly: &Expr, var: &Expr) -> Option<Vec<f64>> {
 /// Divide one polynomial by another, both lowest-degree-first as from
 /// `CoefficientList`, into `(quotient, remainder)`. Used to split off the
 /// polynomial part of an improper fraction.
-fn poly_divide_f64(num: &[f64], den: &[f64]) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn poly_divide_f64(
+  num: &[f64],
+  den: &[f64],
+) -> (Vec<f64>, Vec<f64>) {
   let mut rem = num.to_vec();
   let den_degree = den.len() - 1;
   let lead = den[den_degree];
@@ -2905,7 +2911,11 @@ fn poly_divide_f64(num: &[f64], den: &[f64]) -> (Vec<f64>, Vec<f64>) {
 
 /// Evaluate a real-coefficient polynomial (lowest-degree-first, as from
 /// `CoefficientList`) at a complex point via Horner's method.
-fn eval_poly_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
+pub(crate) fn eval_poly_complex(
+  coeffs: &[f64],
+  zr: f64,
+  zi: f64,
+) -> (f64, f64) {
   let mut re = 0.0;
   let mut im = 0.0;
   for &c in coeffs.iter().rev() {
@@ -2918,7 +2928,7 @@ fn eval_poly_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
 }
 
 /// Complex division `(ar + ai i) / (br + bi i)`.
-fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
+pub(crate) fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
   let denom = br * br + bi * bi;
   ((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
 }

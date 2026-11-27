@@ -1148,6 +1148,23 @@ pub fn dispatch_math_functions(
         return Some(result);
       }
     }
+    // At a symbolic lag, the closed form between times `h` and 0.
+    "CovarianceFunction"
+      if args.len() == 2
+        && matches!(&args[0], Expr::FunctionCall { name, .. }
+          if matches!(name.as_str(), "ARMAProcess" | "ARProcess" | "MAProcess"))
+        && !crate::functions::predicate_ast::is_numeric_q(&args[1]) =>
+    {
+      let result = crate::functions::math_ast::covariance_function_ast(&[
+        args[0].clone(),
+        args[1].clone(),
+        Expr::Integer(0),
+      ]);
+      if !matches!(&result, Ok(Expr::FunctionCall { name, .. }) if name == "CovarianceFunction")
+      {
+        return Some(result);
+      }
+    }
     "CovarianceFunction" if args.len() == 2 => {
       // Sample autocovariance of a numeric time series at an integer lag.
       if let Some(result) =
