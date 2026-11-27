@@ -10103,8 +10103,11 @@ fn polygon_texture<'a>(
   };
   let (image, coords) =
     (style.texture.as_ref()?, style.texture_coords.as_ref()?);
-  (holes.is_empty() && coords.len() == points.len())
-    .then_some((image, points.as_slice(), coords.as_slice()))
+  (holes.is_empty() && coords.len() == points.len()).then_some((
+    image,
+    points.as_slice(),
+    coords.as_slice(),
+  ))
 }
 
 /// The texture of triangle `i` (with corners `tri`) of a textured polygon
@@ -10120,23 +10123,22 @@ fn fan_texture(
   tri: [Point3D; 3],
 ) -> Option<TriangleTexture> {
   let (image, points, coords) = polygon_texture(prim, style)?;
-  let uv = if tri_count + 2 == points.len()
-    && !uses_polygon_triangulator(points)
-  {
-    [coords[0], coords[i + 1], coords[i + 2]]
-  } else {
-    let nearest = |at: Point3D| {
-      let distance = |p: &Point3D| {
-        (p.x - at.x).powi(2) + (p.y - at.y).powi(2) + (p.z - at.z).powi(2)
+  let uv =
+    if tri_count + 2 == points.len() && !uses_polygon_triangulator(points) {
+      [coords[0], coords[i + 1], coords[i + 2]]
+    } else {
+      let nearest = |at: Point3D| {
+        let distance = |p: &Point3D| {
+          (p.x - at.x).powi(2) + (p.y - at.y).powi(2) + (p.z - at.z).powi(2)
+        };
+        points
+          .iter()
+          .zip(coords)
+          .min_by(|(a, _), (b, _)| distance(a).total_cmp(&distance(b)))
+          .map(|(_, uv)| *uv)
       };
-      points
-        .iter()
-        .zip(coords)
-        .min_by(|(a, _), (b, _)| distance(a).total_cmp(&distance(b)))
-        .map(|(_, uv)| *uv)
+      [nearest(tri[0])?, nearest(tri[1])?, nearest(tri[2])?]
     };
-    [nearest(tri[0])?, nearest(tri[1])?, nearest(tri[2])?]
-  };
   Some(TriangleTexture {
     image: image.clone(),
     uv,
@@ -10197,8 +10199,11 @@ fn emit_textured_triangle(
     let py = (sv.rem_euclid(h) as u32).min(tex.image.height() - 1);
     let [r, g, b] = tex.image.get_pixel(px, py).0;
     let lit = |c: u8, shade: u8| (c as u16 * shade as u16 / 255) as u8;
-    let (r, g, b) =
-      (lit(r, tex.shade.0), lit(g, tex.shade.1), lit(b, tex.shade.2));
+    let (r, g, b) = (
+      lit(r, tex.shade.0),
+      lit(g, tex.shade.1),
+      lit(b, tex.shade.2),
+    );
     let opacity_attr = if opacity < 1.0 {
       format!(" opacity=\"{opacity}\"")
     } else {
@@ -17323,24 +17328,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count, [v0, v1, v2])
-          .map(|mut t| {
-          // The texture takes the place of the surface color, so the
-          // lighting is that of a white surface.
-          let mut white = prim_style.clone();
-          white.color = None;
-          white.back_color = None;
-          t.shade = shade_facet(
-            SurfaceDefault::Plain((255, 255, 255)),
-            None,
-            Some(&white),
-            normal,
-            center,
-            &scene,
-          )
-          .0;
-          t
-        }),
+        texture: fan_texture(prim, prim_style, i, tri_count, [v0, v1, v2]).map(
+          |mut t| {
+            // The texture takes the place of the surface color, so the
+            // lighting is that of a white surface.
+            let mut white = prim_style.clone();
+            white.color = None;
+            white.back_color = None;
+            t.shade = shade_facet(
+              SurfaceDefault::Plain((255, 255, 255)),
+              None,
+              Some(&white),
+              normal,
+              center,
+              &scene,
+            )
+            .0;
+            t
+          },
+        ),
         vertex_colors,
       });
     }

@@ -8095,7 +8095,11 @@ mod interpreter_tests {
       // the content itself — as visual mode does here. The script-mode echo
       // `Deploy[x]` is covered by deploy_stays_symbolic_in_text_mode.
       ("Deploy[x]", "x"),
-      ("MouseAppearance[a, b]", "MouseAppearance[a, b]"),
+      // MouseAppearance only changes the pointer over its content, so a
+      // front end shows the content itself, as visual mode does here. The
+      // script-mode echo is covered by
+      // pointer_wrappers_draw_their_content::stays_symbolic_in_a_script.
+      ("MouseAppearance[a, b]", "a"),
       ("Editable[x]", "Editable[x]"),
       ("Selectable[x]", "Selectable[x]"),
       ("DynamicWrapper[a, b]", "DynamicWrapper[a, b]"),

@@ -4266,16 +4266,13 @@ fn rebuild_saved_images(code: &str) -> String {
         extract_image_from_boxes(split_top_level_commas(args).first()?)?;
       Some((image, tail))
     });
-    match image {
-      Some((image, tail)) => {
-        out.push_str(&rest[..at]);
-        out.push_str(&image);
-        rest = tail;
-      }
-      None => {
-        out.push_str(&rest[..at + OPENING.len()]);
-        rest = after;
-      }
+    if let Some((image, tail)) = image {
+      out.push_str(&rest[..at]);
+      out.push_str(&image);
+      rest = tail;
+    } else {
+      out.push_str(&rest[..at + OPENING.len()]);
+      rest = after;
     }
   }
   out.push_str(rest);
