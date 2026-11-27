@@ -24058,20 +24058,12 @@ fn exponent_form_display_parts(
       None => (text.clone(), None),
     });
   }
-  let n = format_precision_arg(args.get(1), 6);
-  let parts = if name == "ScientificForm" {
-    crate::functions::string_ast::scientific_form_parts(first, n)
-  } else {
-    crate::functions::string_ast::engineering_form_parts(first, n)
-  }?;
+  let spec = args[1..]
+    .iter()
+    .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+  let parts =
+    crate::functions::string_ast::exponent_form_parts(name, first, spec)?;
   Some((parts.0, parts.1.map(|e| e.to_string())))
-}
-
-fn format_precision_arg(arg: Option<&Expr>, default: i64) -> i64 {
-  match arg {
-    Some(Expr::Integer(n)) => *n as i64,
-    _ => default,
-  }
 }
 
 /// The digits `BaseForm[x, base]` displays, via the one renderer that

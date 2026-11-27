@@ -27124,7 +27124,11 @@ fn parametric_plot3d_curve_ast(
       Expr::Real(z),
       Expr::Real(t_scaled),
     ];
-    crate::evaluator::function_application::apply_curried_call(cf, &args).ok()
+    // A function whose value is not a color (its body left symbolic, say)
+    // colors nothing: the curve keeps the color it would have without one.
+    crate::evaluator::function_application::apply_curried_call(cf, &args)
+      .ok()
+      .filter(|col| crate::functions::graphics::parse_color(col).is_some())
   };
 
   // Build a primitives list: [<style>, Line[pts1], <style>, Line[pts2], …]
@@ -27140,34 +27144,29 @@ fn parametric_plot3d_curve_ast(
         (tube.clone(), Some(style))
       }
     };
-    if color_function.is_none() {
-      // Each curve takes the next color of the default plot palette (blue
-      // first) rather than plain gray — also under a `PlotStyle` that only
-      // sets a thickness or dashing (`PlotStyle -> Thick`).
-      let (r, g, b) = crate::functions::plot::PLOT_COLORS
-        [group_idx % crate::functions::plot::PLOT_COLORS.len()];
-      prim_items.push(call(
-        "Directive",
-        vec![
-          call(
-            "RGBColor",
-            vec![
-              Expr::Real(f64::from(r) / 255.0),
-              Expr::Real(f64::from(g) / 255.0),
-              Expr::Real(f64::from(b) / 255.0),
-            ],
-          ),
-          call1("AbsoluteThickness", Expr::Integer(2)),
-        ],
-      ));
-    } else {
-      // A space curve is stroked 2 wide, like the curves of a 2D plot,
-      // not as the hairline a bare `Line` in `Graphics3D` gets.
-      prim_items.push(call1(
-        "Directive",
+    // Each curve takes the next color of the default plot palette (blue
+    // first) rather than plain gray — also under a `PlotStyle` that only
+    // sets a thickness or dashing (`PlotStyle -> Thick`). A `ColorFunction`
+    // recolors the curve piece by piece, wherever it gives a color. The
+    // curve is stroked 2 wide, like the curves of a 2D plot, not as the
+    // hairline a bare `Line` in `Graphics3D` gets.
+    let (r, g, b) = crate::functions::plot::PLOT_COLORS
+      [group_idx % crate::functions::plot::PLOT_COLORS.len()];
+    let base_style = call(
+      "Directive",
+      vec![
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
+          ],
+        ),
         call1("AbsoluteThickness", Expr::Integer(2)),
-      ));
-    }
+      ],
+    );
+    prim_items.push(base_style);
     // A curve drawn as a tube ends in a flat cut, not in the hemisphere a
     // bare `Tube` gets: Wolfram's snapshot of a helix plotted with
     // `PlotStyle -> {Tube[r]}` shows the disk closing its upper end. A
@@ -27205,17 +27204,17 @@ fn parametric_plot3d_curve_ast(
       if let Some((x, y, z)) = point {
         if color_function.is_some() {
           // One colored segment per step, joined to the previous vertex.
-          if let Some((px, py, pz, pt)) = prev
-            && let Some(col) = segment_color(
+          if let Some((px, py, pz, pt)) = prev {
+            if let Some(col) = segment_color(
               [
                 f64::midpoint(px, x),
                 f64::midpoint(py, y),
                 f64::midpoint(pz, z),
               ],
               f64::midpoint(pt, t),
-            )
-          {
-            prim_items.push(call1("Directive", col));
+            ) {
+              prim_items.push(call1("Directive", col));
+            }
             prim_items.push(call1(
               "Line",
               Expr::List(

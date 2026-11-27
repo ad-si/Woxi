@@ -10909,6 +10909,32 @@ mod plot3d {
       assert!(svg.contains(",0,0)\""));
     }
 
+    /// A `ColorFunction` whose value is not a color (its body names the
+    /// plot variable, which the function's own parameters do not bind)
+    /// leaves the curve in its default palette color, at every sample,
+    /// instead of drawing it black.
+    #[test]
+    fn parametric_curve_keeps_default_color_for_non_color_function() {
+      clear_state();
+      let plot = "ParametricPlot3D[{Cos[t], Sin[t], Sin[3 t]}, {t, 0, 2 Pi}, \
+                  PlotStyle -> {Thick}, ColorFunctionScaling -> False, \
+                  ColorFunction -> Function[{x, y, z}, \
+                  ColorData[\"BlueGreenYellow\"][0.5 + 0.5 Sin[3 t]]]]";
+      let result = interpret(&format!(
+        "DeleteDuplicates[Cases[{plot}[[1]], _RGBColor, Infinity]] == \
+         DeleteDuplicates[Cases[ParametricPlot3D[{{Cos[t], Sin[t], Sin[3 t]}}, \
+         {{t, 0, 2 Pi}}][[1]], _RGBColor, Infinity]]"
+      ))
+      .unwrap();
+      assert_eq!(result, "True");
+      let result =
+        interpret(&format!("FreeQ[{plot}, _ColorDataFunction | _Sin]"))
+          .unwrap();
+      assert_eq!(result, "True");
+      let svg = interpret(&format!("ExportString[{plot}, \"SVG\"]")).unwrap();
+      assert!(!svg.contains("stroke=\"black\""), "{svg}");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.

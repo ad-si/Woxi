@@ -4279,6 +4279,44 @@ fn group_digits_from_left(digits: &str, block: usize, sep: &str) -> String {
 /// value renders without a `× 10^e` factor (integer argument, or an exponent of
 /// zero). This drives both the `ToString` 2D text renderer and the box-form
 /// renderer used by the Playground/Studio SVG output.
+/// The mantissa and exponent `ScientificForm[x, spec]` or
+/// `EngineeringForm[x, spec]` shows. `spec` is the digit specification: none
+/// (six digits), `n` digits, or `{n, f}` for at most `n` digits with at most
+/// `f` of them to the right of the decimal point.
+pub(crate) fn exponent_form_parts(
+  head: &str,
+  x: &Expr,
+  spec: Option<&Expr>,
+) -> Option<(String, Option<i64>)> {
+  let engineering = head == "EngineeringForm";
+  let n = match spec {
+    None => 6,
+    Some(Expr::Integer(n)) => i64::try_from(*n).ok()?,
+    Some(Expr::List(pair)) if pair.len() == 2 => {
+      let n = number_form_digit_budget(&pair[0])?;
+      let Expr::Integer(f) = &pair[1] else {
+        return None;
+      };
+      let f = i64::try_from(*f).ok().filter(|f| *f >= 0)?;
+      // Digits the mantissa has left of its decimal point: one in
+      // scientific notation, one to three in engineering notation.
+      let integer_digits = match x {
+        Expr::Real(v) if engineering && *v != 0.0 && v.is_finite() => {
+          v.abs().log10().floor().rem_euclid(3.0) as i64 + 1
+        }
+        _ => 1,
+      };
+      n.min(integer_digits.saturating_add(f))
+    }
+    Some(_) => return None,
+  };
+  if engineering {
+    engineering_form_parts(x, n)
+  } else {
+    scientific_form_parts(x, n)
+  }
+}
+
 pub(crate) fn scientific_form_parts(
   x: &Expr,
   n: i64,
@@ -10029,18 +10067,12 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
     // plain-number cases fall through to the generic call rendering.
     "ScientificForm" | "EngineeringForm"
       if (1..=2).contains(&args.len())
-        && matches!(args.get(1), None | Some(Expr::Integer(1..))) =>
+        && matches!(
+          args.get(1),
+          None | Some(Expr::Integer(1..)) | Some(Expr::List(_))
+        ) =>
     {
-      let n = match args.get(1) {
-        Some(Expr::Integer(n)) => i64::try_from(*n).unwrap_or(6),
-        _ => 6,
-      };
-      let parts = if name == "ScientificForm" {
-        scientific_form_parts(&args[0], n)
-      } else {
-        engineering_form_parts(&args[0], n)
-      };
-      match parts {
+      match exponent_form_parts(name, &args[0], args.get(1)) {
         Some((mantissa, Some(exp))) => format!(
           "RowBox[{{\"{mantissa}\", \"×\", SuperscriptBox[\"10\", \"{exp}\"]}}]"
         ),
@@ -18958,16 +18990,19 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
   }) {
     return None;
   }
-  let n = match positional.get(1) {
-    None => 6,
+  let spec = positional.get(1).copied();
+  if !matches!(spec, None | Some(Expr::Integer(_)) | Some(Expr::List(_))) {
+    return None;
+  }
+  let n = match spec {
     Some(Expr::Integer(n)) => *n as i64,
-    Some(_) => return None,
+    _ => 6,
   };
   // An engineering mantissa has one to three integer digits (123.456 ×
   // 10^6); asking for fewer pads them with zeros, which wolframscript
   // reports.
   if head == "EngineeringForm"
-    && positional.len() == 2
+    && matches!(spec, Some(Expr::Integer(_)))
     && let Expr::Real(f) = positional[0]
     && *f != 0.0
     && f.is_finite()
@@ -18980,11 +19015,7 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
   }
   let opts = number_form_options(head, inner);
   render_form_threaded(positional[0], |x| {
-    let (mantissa, exp) = if head == "ScientificForm" {
-      scientific_form_parts(x, n)?
-    } else {
-      engineering_form_parts(x, n)?
-    };
+    let (mantissa, exp) = exponent_form_parts(head, x, spec)?;
     let mantissa = apply_mantissa_options(&mantissa, &opts);
     Some(sci_parts_to_2d_string(&mantissa, exp))
   })
