@@ -1885,3 +1885,142 @@ mod column_plot_label {
     );
   }
 }
+
+/// `Show` draws the axes and automatic grid lines of a framed plot the way
+/// the plot does on its own: only strictly inside the plot's unpadded range.
+mod show_framed_plot_axes {
+  use super::*;
+
+  /// The x positions of the straight vertical strokes (`<line>`s and
+  /// two-point `<polyline>`s) spanning at least 80% of the picture's
+  /// height: the frame's sides, an axis and the vertical grid lines.
+  fn full_height_verticals(svg: &str) -> Vec<f64> {
+    let view_box = svg.split("viewBox=\"").nth(1).unwrap();
+    let height: f64 = view_box[..view_box.find('"').unwrap()]
+      .split(' ')
+      .nth(3)
+      .unwrap()
+      .parse()
+      .unwrap();
+    let attr = |tag: &str, name: &str| -> Option<f64> {
+      let start = tag.find(&format!(" {name}=\""))? + name.len() + 3;
+      tag[start..start + tag[start..].find('"')?].parse().ok()
+    };
+    let mut xs = Vec::new();
+    for tag in svg.split('<') {
+      let segment = if tag.starts_with("line ") {
+        (|| {
+          Some((
+            (attr(tag, "x1")?, attr(tag, "y1")?),
+            (attr(tag, "x2")?, attr(tag, "y2")?),
+          ))
+        })()
+      } else if tag.starts_with("polyline ") {
+        let points: Vec<(f64, f64)> = tag
+          .split(" points=\"")
+          .nth(1)
+          .and_then(|p| p.split('"').next())
+          .unwrap_or("")
+          .split_whitespace()
+          .filter_map(|p| {
+            let (x, y) = p.split_once(',')?;
+            Some((x.parse().ok()?, y.parse().ok()?))
+          })
+          .collect();
+        (points.len() == 2).then(|| (points[0], points[1]))
+      } else {
+        None
+      };
+      if let Some(((x1, y1), (x2, y2))) = segment
+        && (x1 - x2).abs() < 0.5
+        && (y1 - y2).abs() > 0.8 * height
+      {
+        xs.push(x1);
+      }
+    }
+    xs
+  }
+
+  // The y axis of a plot over `{x, 0, 10}` lies on the end of the unpadded
+  // range, so the frame leaves it out; `Show` adding an option must not
+  // bring it back.
+  #[test]
+  fn show_with_options_draws_the_plot_unchanged() {
+    for plot in [
+      "Plot[Sin[x], {x, 0, 10}, Frame -> True",
+      "Plot[x^2 - 3, {x, 0, 4}, Frame -> True, PlotRange -> {-5, 5}",
+      "Plot[Cos[x], {x, -3, 10}, Frame -> True",
+    ] {
+      assert_eq!(
+        svg_of(&format!("Show[{plot}], GridLines -> Automatic]")),
+        svg_of(&format!("{plot}, GridLines -> Automatic]")),
+        "{plot}"
+      );
+    }
+  }
+
+  // Layering further plots keeps the leading plot's axes: none on the end
+  // of its range, one where the origin is strictly inside.
+  #[test]
+  fn layered_plots_keep_the_leading_plots_axes() {
+    let count = |code: &str| full_height_verticals(&svg_of(code)).len();
+    // Nothing but what the plot draws on its own: no axis at x = 0.
+    let plain = count("Plot[Sin[x], {x, 0, 10}, Frame -> True]");
+    assert_eq!(
+      count(
+        "Show[Plot[Sin[x], {x, 0, 10}, Frame -> True], \
+         Table[Plot[c, {x, 1, 12}], {c, {0.2, 0.5}}]]"
+      ),
+      plain
+    );
+    // The y axis at x = 0 as well.
+    assert_eq!(
+      count(
+        "Show[Plot[Sin[x], {x, -3, 10}, Frame -> True], \
+         Plot[0.5, {x, 1, 12}]]"
+      ),
+      plain + 1
+    );
+    // A `PlotRange` given to `Show` is the unpadded range itself.
+    assert_eq!(
+      count(
+        "Show[Plot[Sin[x], {x, 0, 10}, Frame -> True], \
+         Plot[0.5, {x, 1, 12}], PlotRange -> {{-2, 10}, {-2, 2}}]"
+      ),
+      plain + 1
+    );
+  }
+
+  // The same holds when graphics primitives are layered over the plot,
+  // which draws through the generic graphics renderer: no axis and no
+  // automatic grid line on the ends of the plot's range.
+  #[test]
+  fn primitives_over_a_plot_keep_its_axes_and_grid_lines() {
+    let count = |code: &str| full_height_verticals(&svg_of(code)).len();
+    let disk = "Graphics[Disk[{5, 0}, 0.3]]";
+    let framed = "Plot[Sin[x], {x, 0, 10}, Frame -> True]";
+    let inner = "Plot[Sin[x], {x, -3, 10}, Frame -> True]";
+    let plain = count(&format!("Show[{framed}, {disk}]"));
+    assert_eq!(count(&format!("Show[{inner}, {disk}]")), plain + 1);
+    // Grid lines at x = 2, 4, 6, 8 but not at 0 or 10.
+    assert_eq!(
+      count(&format!("Show[{framed}, {disk}, GridLines -> Automatic]")),
+      plain + 4
+    );
+    // Explicit grid lines are drawn wherever they are asked for.
+    assert_eq!(
+      count(&format!(
+        "Show[{framed}, {disk}, GridLines -> {{{{0, 5}}, None}}]"
+      )),
+      plain + 2
+    );
+    // Without a frame the axes are drawn as ever.
+    let unframed = "Plot[Sin[x], {x, 0, 10}]";
+    assert_eq!(
+      count(&format!("Show[{unframed}, {disk}]")),
+      count(&format!(
+        "Show[{unframed}, {disk}, Axes -> {{True, False}}]"
+      )) + 1
+    );
+  }
+}

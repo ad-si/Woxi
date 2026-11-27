@@ -1574,6 +1574,22 @@ mod operator_only_heads_display_infix {
     );
   }
 
+  /// `TraditionalForm` writes these heads with their character too, an
+  /// operand that binds no tighter in parentheses.
+  #[test]
+  fn traditional_form_boxes_are_infix() {
+    assert_eq!(
+      interpret("ToBoxes[RightArrow[a, b + c], TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{a, \u{2192}, RowBox[{b, +, c}]}], TraditionalForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[CupCap[a, LeftArrow[b, c]], TraditionalForm]")
+        .unwrap(),
+      "FormBox[RowBox[{a, \u{224D}, RowBox[{(, RowBox[{b, \u{2190}, c}], )}]}], \
+       TraditionalForm]"
+    );
+  }
+
   #[test]
   fn no_unimplemented_warning() {
     let result = interpret_with_stdout("Equilibrium[a, b]").unwrap();

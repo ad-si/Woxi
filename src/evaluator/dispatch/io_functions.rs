@@ -6280,6 +6280,25 @@ fn locator_marker(
           ],
         )
       }
+      // Without a size to scale to, the picture is still centered on the
+      // locator: `Graphics[Point[p]]` as the marker of the locator at `p`
+      // draws its point there, not at `p + p`.
+      (true, None, Some(((x0, x1), (y0, y1)))) => {
+        let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+        if cx == 0.0 && cy == 0.0 {
+          return translate(&prims);
+        }
+        call(
+          "Translate",
+          vec![
+            prims,
+            call(
+              "Plus",
+              vec![point.clone(), Expr::List(vec![num(-cx), num(-cy)].into())],
+            ),
+          ],
+        )
+      }
       _ => translate(&prims),
     }
   };
@@ -7207,6 +7226,20 @@ fn pane_text_units(text: &str) -> Vec<(String, usize)> {
   units
 }
 
+/// Whether a `Row` item is written out as plain text on its line: a string,
+/// a number, a symbol, or a (nested) list of them in braces.
+fn is_written_out_atom(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(s) => !s.contains('\n'),
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::Identifier(_) => true,
+    Expr::List(items) => items.iter().all(is_written_out_atom),
+    _ => false,
+  }
+}
+
 /// The width in points `expr` is drawn at when it lays out as a picture of
 /// its own (a `Column`, a typeset fraction), or `None` for plain text,
 /// whose width the caller measures glyph by glyph.
@@ -7597,6 +7630,21 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
+        // A number, a symbol or a flat list of them is written out as text
+        // on the line, so under `Text[…]` it is as wide as its glyphs in
+        // the proportional text face, like the strings beside it.
+        if proportional
+          && atom_px[u.idx].is_none()
+          && let Some(atom) = atoms[u.idx].as_ref()
+          && is_written_out_atom(atom)
+        {
+          u.width = crate::syntax::expr_to_output(atom)
+            .chars()
+            .map(crate::functions::plot_padding::char_width_em)
+            .sum::<f64>()
+            * line_size;
+          continue;
+        }
         // An item that is no plain text is as wide as it is drawn: a
         // typeset grid, fraction or column is much narrower than the
         // characters of its expression.

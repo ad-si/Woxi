@@ -695,7 +695,8 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     let (fill_groups, curve_groups): (Vec<Vec<Expr>>, Vec<Expr>) = source
       .series
       .iter()
-      .map(|s| {
+      .enumerate()
+      .map(|(index, s)| {
         let to_list = |pts: &[(f64, f64)]| {
           Expr::List(
             pts
@@ -799,6 +800,14 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
           );
           fills.push(Expr::List(vec![styled_fill, polygon].into()));
         }
+        // Scattered points with a `Filling` carry a stem from each point
+        // to the fill reference instead of a shaded area.
+        fills.extend(crate::functions::plot::scatter_stem_primitives(
+          &source.series,
+          index,
+          source.y_range,
+          0.3,
+        ));
         (fills, Expr::List(group.into()))
       })
       .unzip();
