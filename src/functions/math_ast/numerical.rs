@@ -2291,10 +2291,26 @@ thread_local! {
 /// expression is not of that kind or does not evaluate.
 pub fn fold_complex_bigfloat(expr: &Expr) -> Option<Expr> {
   fn scan(e: &Expr, min: &mut Option<f64>, machine: &mut bool, i: &mut bool) {
+    // One machine real settles it (the expression is not of this kind), so
+    // the rest — a large table of them, say — is not looked at.
+    if *machine {
+      return;
+    }
     match e {
       Expr::Real(_) => *machine = true,
       Expr::BigFloat(_, p) => *min = Some(min.map_or(*p, |m: f64| m.min(*p))),
       Expr::Identifier(n) if n == "I" => *i = true,
+      Expr::Integer(_) | Expr::String(_) | Expr::Identifier(_) => {}
+      Expr::List(items) => {
+        for child in items {
+          scan(child, min, machine, i);
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for child in args {
+          scan(child, min, machine, i);
+        }
+      }
       _ => {
         for child in crate::syntax::expr_children(e) {
           scan(child, min, machine, i);

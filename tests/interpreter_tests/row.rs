@@ -1004,6 +1004,90 @@ mod dynamic_release_in_frames {
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);
     assert!(result.graphics.unwrap().contains(">7</text>"));
   }
+
+  // A `Text` between the frame and its `Dynamic` only sets the value in
+  // the text face: the value is still released and drawn.
+  #[test]
+  fn panel_text_dynamic_layout_is_drawn() {
+    clear_state();
+    for frame in ["Panel", "Framed"] {
+      let result = interpret_with_stdout(&format!(
+        "Column[{{\"top\", {frame}[Text[Dynamic[Grid[{{StringJoin[\"po\", #] & /@ \
+         {{\"sition\", \"lar\"}}}}, Frame -> All]]]]}}]"
+      ))
+      .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(!svg.contains("Dynamic"), "{frame}: source leaked: {svg}");
+      assert!(!svg.contains("StringJoin"), "{frame}: unevaluated: {svg}");
+      assert!(svg.contains(">position</text>"), "{frame}: {svg}");
+      assert!(svg.contains(">polar</text>"), "{frame}: {svg}");
+    }
+  }
+
+  // Outside visual mode a `Dynamic` is not released; exporting a layout
+  // with a framed one must still terminate.
+  #[test]
+  fn framed_dynamic_item_exports_outside_visual_mode() {
+    clear_state();
+    for frame in ["Panel", "Framed"] {
+      let svg = interpret(&format!(
+        "ExportString[Column[{{{frame}[Dynamic[x]]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.starts_with("<svg"), "{frame}: {svg}");
+    }
+  }
+}
+
+mod pointer_wrappers_draw_their_content {
+  use super::*;
+
+  // `MouseAppearance`, `StatusArea` and `PopupWindow` only change what the
+  // pointer does over their content, which is drawn as it would be alone.
+  #[test]
+  fn wrapped_graphic_in_column_is_drawn() {
+    for (head, second) in [
+      ("MouseAppearance", "\"Arrow\""),
+      ("MouseAppearance", "Style[\"+\", Background -> Red]"),
+      ("StatusArea", "\"note\""),
+      ("PopupWindow", "\"more\""),
+    ] {
+      clear_state();
+      let result = interpret_with_stdout(&format!(
+        "Column[{{{head}[Graphics[Disk[]], {second}], \"caption\"}}]"
+      ))
+      .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(!svg.contains(head), "{head}: source leaked: {svg}");
+      assert!(
+        svg.contains("<ellipse")
+          || svg.contains("<circle")
+          || svg.contains("<path"),
+        "{head}: disk missing: {svg}"
+      );
+      assert!(svg.contains(">caption</text>"), "{head}: {svg}");
+    }
+  }
+
+  #[test]
+  fn wrapped_graphic_alone_is_drawn() {
+    clear_state();
+    let result =
+      interpret_with_stdout("MouseAppearance[Graphics[Disk[]], \"Arrow\"]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  // A script still echoes the call, as wolframscript does.
+  #[test]
+  fn stays_symbolic_in_a_script() {
+    clear_state();
+    assert_eq!(
+      interpret("MouseAppearance[Graphics[Disk[]], \"Arrow\"]").unwrap(),
+      "MouseAppearance[-Graphics-, Arrow]"
+    );
+  }
 }
 
 mod labeled_text_layout {
@@ -1562,4 +1646,146 @@ fn text_row_items_are_measured_in_the_drawn_sans_face() {
     (xs[2] - (paren + digits + paren / 2.0)).abs() < 0.2,
     "{xs:?}"
   );
+}
+
+/// The font sizes an exported SVG sets its text in, smallest first.
+fn svg_font_sizes(svg: &str) -> Vec<f64> {
+  let body = svg.rsplit("</defs>").next().unwrap();
+  let mut sizes: Vec<f64> = body
+    .split("font-size=\"")
+    .skip(1)
+    .map(|s| s.split('"').next().unwrap().parse().unwrap())
+    .collect();
+  sizes.sort_by(f64::total_cmp);
+  sizes
+}
+
+/// Where an exported formula puts the baseline of its base text (the first
+/// 14 pt glyph, drawn 11.2 pt below the top of its own group), measured
+/// from the top of the formula.
+fn formula_base_baseline(formula_svg: &str) -> f64 {
+  let dy: f64 = formula_svg
+    .split("<g transform=\"translate(0.0,")
+    .nth(1)
+    .and_then(|s| s.split(')').next())
+    .unwrap()
+    .parse()
+    .unwrap();
+  dy + 11.2
+}
+
+/// Math inside a `Text[…]` stops shrinking after the first script step: the
+/// exponent of a term in a fraction, and the subscript of that exponent, are
+/// as large as a first-level script of the text (0.7 of it), not a further
+/// 0.7 smaller at each level, which made them unreadably small.
+#[test]
+fn text_formula_scripts_stop_shrinking_after_the_first_level() {
+  clear_state();
+  for formula in [
+    "(t/c)^Subscript[m, 1]/(1 + b)",
+    "a (1 - Exp[-(t/Subscript[t, 2])^Subscript[m, 1]])",
+    "x^y^z^w",
+  ] {
+    let svg = interpret(&format!(
+      r#"ExportString[Text[Row[{{"y = ", TraditionalForm[{formula}]}}]], "SVG"]"#
+    ))
+    .unwrap();
+    let sizes = svg_font_sizes(&svg);
+    assert!(sizes[0] >= 9.8 - 1e-9, "{formula}: {sizes:?}");
+    assert!(sizes[sizes.len() - 1] <= 14.0, "{formula}: {sizes:?}");
+  }
+}
+
+/// Outside text, each script level is still 0.7 of the one before.
+#[test]
+fn formula_scripts_outside_text_shrink_at_every_level() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[TraditionalForm[x^y^z], "SVG"]"#).unwrap();
+  let sizes = svg_font_sizes(&svg);
+  assert_eq!(sizes, vec![6.9, 9.8, 14.0], "{svg}");
+}
+
+/// An exponent that holds a stacked fraction is raised until its lowest
+/// point clears the base's baseline, instead of hanging far below the line
+/// the base stands on.
+#[test]
+fn tall_exponent_is_raised_clear_of_the_baseline() {
+  clear_state();
+  for formula in ["Exp[-(t/c)^m]", "x^((a/b)^2 + 1)", "(1 + x)^(-(t/c)^m)"] {
+    let svg = interpret(&format!(
+      r#"ExportString[TraditionalForm[{formula}], "SVG"]"#
+    ))
+    .unwrap();
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap()
+      .parse()
+      .unwrap();
+    let body = svg.rsplit("</defs>").next().unwrap();
+    // Below the baseline there is only the base's own descent (and, for a
+    // parenthesized base, its brackets), not the exponent's fraction.
+    let below = height - formula_base_baseline(body);
+    assert!(below < 5.0, "{formula}: {below} below the baseline\n{body}");
+  }
+}
+
+/// A plain exponent keeps its usual place: 0.39 em above the baseline.
+#[test]
+fn plain_exponent_keeps_its_raise() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[TraditionalForm[x^Subscript[m, 1]], "SVG"]"#)
+      .unwrap();
+  let body = svg.rsplit("</defs>").next().unwrap();
+  // The base x sits 0.39 em (5.46 pt) lower than its 9.8 pt exponent's
+  // baseline (7.84 pt below the exponent's top): 11.2 = dy + ... gives
+  // dy = 5.46 + 7.84 - 11.2.
+  let dy = formula_base_baseline(body) - 11.2;
+  assert!((dy - 2.1).abs() < 0.11, "{dy}\n{body}");
+}
+
+/// A formula beside text in a `Row` stands on the text's line. One whose
+/// raised exponent makes it much taller above the line than below used to
+/// be centered as a whole, which sank its base text under the row's text.
+/// The row is also only as tall as the formula needs, without the same
+/// blank space added below the line.
+#[test]
+fn row_sets_a_tall_formula_on_the_line_of_its_text() {
+  clear_state();
+  for wrap in ["", "Text@"] {
+    let svg = interpret(&format!(
+      r#"ExportString[{wrap}Row[{{"y = ", TraditionalForm[Exp[-(t/c)^m]]}}], "SVG"]"#
+    ))
+    .unwrap();
+    let body = svg.rsplit("</defs>").next().unwrap();
+    let attr = |s: &str, name: &str| -> f64 {
+      s.split(&format!("{name}=\""))
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    // The central line the row's text is drawn on.
+    let text = body.split("<text ").nth(1).unwrap();
+    let text_line = attr(text, "y");
+    // The formula's picture, and the central line of its base text: 0.3 em
+    // above the baseline.
+    let picture = body.split("<svg x=\"").nth(1).unwrap();
+    let picture_top = attr(&format!("x=\"{picture}"), "y");
+    let picture_height = attr(picture, "height");
+    let base_line = picture_top + formula_base_baseline(picture) - 0.3 * 14.0;
+    assert!(
+      (text_line - base_line).abs() < 0.6,
+      "{wrap}: text at {text_line}, formula base at {base_line}\n{body}"
+    );
+    let row_height = attr(&svg, "height");
+    assert!(
+      row_height < picture_height + 6.0,
+      "{wrap}: row {row_height} for a formula {picture_height} high"
+    );
+  }
 }

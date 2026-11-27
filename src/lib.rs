@@ -24,6 +24,7 @@ pub mod wasm;
 /// face) never shows through.
 pub use evaluator::dispatch::io_functions::with_default_text_family;
 pub use expr_list::ExprList;
+pub use functions::graphics::{ScrollPane, scroll_pane_parts};
 
 pub use woxi_parser::{Rule, WolframParser};
 
@@ -4094,6 +4095,27 @@ fn keep_frame_boxes(
   result
 }
 
+/// `rendered` inside the gray box of the `Panel[content, rest…]` around it
+/// (`rest` holds the panel's labels and options). The pass that looks
+/// through a `Panel` to the `Text` table inside draws the table alone; in a
+/// notebook the panel still shows its box.
+fn keep_panel_box(
+  rest: &[syntax::Expr],
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let syntax::Expr::Graphics { svg, .. } = &rendered else {
+    return rendered;
+  };
+  let mut panel_args = vec![rendered.clone()];
+  panel_args.extend(rest.iter().cloned());
+  let Some(panel) = functions::graphics::panel_to_svg(&panel_args) else {
+    return rendered;
+  };
+  // The boxed picture replaces the bare one the cell would show.
+  remove_captured_graphics(svg);
+  graphics_result(panel)
+}
+
 /// Whether `expr` is a `Column[…]` or a `Grid[…]`, possibly under
 /// `Style[…, directives]` wrappers.
 fn is_text_layout(expr: &syntax::Expr) -> bool {
@@ -4247,6 +4269,13 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         );
       }
       match render_grid_if_needed(args[0].clone()) {
+        // The table is drawn inside the frame or the gray box around it.
+        graphics @ syntax::Expr::Graphics { .. } if name == "Framed" => {
+          keep_frame_boxes(&[args[1..].to_vec()], graphics)
+        }
+        graphics @ syntax::Expr::Graphics { .. } if name == "Panel" => {
+          keep_panel_box(&args[1..], graphics)
+        }
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
         }
@@ -5324,6 +5353,21 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// Whether `expr` is a `Dynamic[…]`, possibly inside `Text[…]` wrappers.
+fn is_dynamic_under_text(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Text" && args.len() == 1 =>
+    {
+      is_dynamic_under_text(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, args } => {
+      name == "Dynamic" && !args.is_empty()
+    }
+    _ => false,
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // A `Text[…]` item of a layout sets its math one script level down, as
   // the same `Text` does on its own (see `render_visual_display_pipeline`).
@@ -5419,16 +5463,24 @@ fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
   // A frame around a `Dynamic` shows the dynamic's current value, which the
   // front end computes when the frame is drawn — in document order, so a
   // later `Dynamic` may read what this one sets.
-  if let syntax::Expr::FunctionCall { name, args } = expr
+  // A `Text` in between (`Panel[Text[Dynamic[Grid[…]]]]`) only sets the
+  // value in the text face. Outside visual mode a `Dynamic` stays as it is
+  // written, so there is nothing to release.
+  if is_visual_mode()
+    && let syntax::Expr::FunctionCall { name, args } = expr
     && matches!(name.as_str(), "Panel" | "Framed")
-    && matches!(args.first(), Some(syntax::Expr::FunctionCall { name: d, .. }) if d == "Dynamic")
+    && args.first().is_some_and(is_dynamic_under_text)
   {
     let mut new_args = args.to_vec();
     new_args[0] = render_inline_display_wrapper(&args[0]);
-    return render_inline_display_wrapper(&syntax::Expr::FunctionCall {
-      name: name.clone(),
-      args: new_args.into(),
-    });
+    // A value that is itself a `Dynamic` is drawn as it stands rather
+    // than released over and over.
+    if !is_dynamic_under_text(&new_args[0]) {
+      return render_inline_display_wrapper(&syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      });
+    }
   }
   // A `Pane[picture, {width, height}]` item reserves its whole box in the
   // layout, the picture placed in it by the Pane's `Alignment` — peeling
@@ -5721,14 +5773,18 @@ fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
     .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
-  let expr = pane_box
+  // Behind scrollbars the content keeps its own size instead.
+  let squeeze_box = pane_box.filter(|(_, _, _, overflow)| {
+    !matches!(overflow, functions::graphics::PaneOverflow::Scroll { .. })
+  });
+  let expr = squeeze_box
     .and_then(|(w, _, _, _)| {
       functions::graphics::fit_grid_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // An automatically sized tree wider than the box is squeezed to its width
   // rather than clipped.
-  let expr = pane_box
+  let expr = squeeze_box
     .and_then(|(w, _, _, _)| {
       functions::graphics::fit_tree_to_pane_width(&expr, w, &measured_width)
     })
@@ -5871,7 +5927,12 @@ fn unwrap_tooltips(mut expr: syntax::Expr) -> syntax::Expr {
 /// other Pane shape.
 fn pane_fixed_size(
   expr: &syntax::Expr,
-) -> Option<(f64, f64, Option<(f64, f64)>, bool)> {
+) -> Option<(
+  f64,
+  f64,
+  Option<(f64, f64)>,
+  functions::graphics::PaneOverflow,
+)> {
   let mut current = expr;
   loop {
     let syntax::Expr::FunctionCall { name, args } = current else {
@@ -5894,7 +5955,7 @@ fn pane_fixed_size(
           w,
           h,
           evaluator::dispatch::io_functions::pane_alignment(&args[1..]),
-          evaluator::dispatch::io_functions::pane_shrinks_to_fit(&args[1..]),
+          evaluator::dispatch::io_functions::pane_overflow(&args[1..]),
         ));
       }
       _ => return None,
