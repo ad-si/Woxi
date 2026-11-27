@@ -2,6 +2,9 @@
 
 # Unreleased
 
+- A translucent `Sphere` in `Graphics3D` has a smooth, round rim: it is
+    tessellated about the line of sight like an opaque one, where it used
+    to show a saw-toothed band along its outline.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

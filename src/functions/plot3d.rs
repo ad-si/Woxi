@@ -12599,10 +12599,10 @@ fn tessellate_sphere(
   tessellate_sphere_about(center, radius, detail, [0.0, 0.0, 1.0])
 }
 
-/// The detail an opaque sphere is tessellated with once its pole faces the
-/// viewer (see [`tessellate_sphere_about`]): its far half is culled, and
-/// its outline is the equator, so latitude bands are traded for longitude
-/// segments. The equator stays a band boundary (an even band count), and
+/// The detail a sphere is tessellated with once its pole faces the viewer
+/// (see [`tessellate_sphere_about`]): its outline is the equator, where
+/// the near and far halves meet, so latitude bands are traded for
+/// longitude segments. The equator stays a band boundary (an even band count), and
 /// the outline gets twice the segments of the plain `detail`, up to 48 —
 /// round to a fraction of a pixel at any usual size, without crowding
 /// slivers around the pole that faces the viewer.
@@ -12613,8 +12613,8 @@ fn viewer_facing_sphere_detail(detail: (usize, usize)) -> (usize, usize) {
 }
 
 /// Tessellate a sphere into latitude/longitude triangles whose pole points
-/// along `pole`. With the pole toward the viewer, the outline an opaque
-/// sphere shows is its equator — the ring every longitude segment lies on
+/// along `pole`. With the pole toward the viewer, the outline a sphere
+/// shows is its equator — the ring every longitude segment lies on
 /// — so its silhouette is as round as the segment count allows, whatever
 /// the view direction.
 fn tessellate_sphere_about(
@@ -16785,11 +16785,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ..
         } => {
           let detail = sphere_detail(*radius, sphere_extent, sphere_count);
-          // The far half of an opaque sphere is culled below, so it is
-          // tessellated about the line of sight: its outline is then the
-          // finely divided equator rather than a coarse slanted cut
-          // through the latitude bands.
-          let tris = if style.faces && style.opacity >= 1.0 {
+          // A sphere is tessellated about the line of sight: its outline is
+          // then the finely divided equator rather than a coarse slanted
+          // cut through the latitude bands. An opaque sphere has its far
+          // half culled below; a see-through one shows both halves, which
+          // must end on that same ring or the near half's saw-toothed edge
+          // shows through as a jagged rim one layer thinner than the rest.
+          let tris = if style.faces {
             tessellate_sphere_about(
               center,
               *radius,
