@@ -82897,6 +82897,40 @@ mod show_filled_points_and_stacked_labels {
     assert_eq!(lines("{False, False}"), (0, 0));
     assert_eq!(lines("{None, None}"), lines("None"));
   }
+
+  /// A cell of a graphics layout that is not a picture (a caption, a
+  /// `Column` of a picture over a sentence) is an inset of the one picture
+  /// the layout makes, so it is lettered in the proportional face of a
+  /// graphic's labels, not the monospace face of an output cell.
+  #[test]
+  fn graphics_layout_text_cells_use_label_face() {
+    clear_state();
+    for code in [
+      "GraphicsGrid[{{\"caption\", Graphics[Disk[]]}}]",
+      "GraphicsRow[{\"caption\", Graphics[Disk[]]}]",
+      "GraphicsColumn[{{1, 2}, Graphics[Disk[]]}]",
+      "GraphicsGrid[{{Graphics[Disk[]], Column[{Graphics[Circle[], \
+       ImageSize -> 50], Style[Row[{\"r = \", 1.25}], 12], x^2}]}}]",
+      "g = Graphics[Disk[]]; GraphicsRow[{g, Column[{g, \"caption\"}]}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(svg.contains("<text"), "{code}: {svg}");
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+    }
+  }
+
+  /// A `FontFamily` a text cell of a graphics layout sets itself wins over
+  /// the layout's label face, and an explicit font size is kept.
+  #[test]
+  fn graphics_layout_text_cell_keeps_own_font() {
+    clear_state();
+    let svg = export_svg(
+      "GraphicsGrid[{{Style[\"m\", 12, FontFamily -> \"Courier\"], \
+       Graphics[Disk[]]}}]",
+    );
+    assert!(svg.contains("font-family=\"Courier"), "{svg}");
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
+  }
 }
 
 /// `AxesStyle` on a 3D box styles each axis as a whole: its line, its

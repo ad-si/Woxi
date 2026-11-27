@@ -22576,12 +22576,19 @@ fn with_box_font_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
 fn script_font_size(font_size: f64) -> f64 {
   let size = font_size * 0.7;
   if BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get) {
-    let floor = 0.7 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
+    // The minimum is an absolute size, so large text (20 pt and up) still
+    // shrinks its second-level scripts.
+    let floor = (0.7 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get))
+      .min(TEXT_SCRIPT_MIN_SIZE);
     size.max(floor).min(font_size)
   } else {
     size
   }
 }
+
+/// The largest size the minimum script size of math inside a `Text[…]`
+/// reaches, in points.
+const TEXT_SCRIPT_MIN_SIZE: f64 = 10.0;
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
 fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
@@ -23203,17 +23210,25 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // (or smaller) fraction has a 0.8 pt rule with 3 pt gaps, an 80 pt
         // one a rule and gaps proportionally heavier.
         let em = (size / 14.0).max(1.0);
-        let gap = 3.0 * em;
         let line_thickness = 0.8 * em;
+        // A fraction in the running text of a `Text[…]` is set tight: the
+        // numerator's line box all but touches the rule, and the
+        // denominator starts 0.15 em below it.
+        let (gap_above, gap_below) =
+          if BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get) {
+            (0.04 * size, 0.15 * size - line_thickness)
+          } else {
+            (3.0 * em, 3.0 * em)
+          };
 
         // Numerator centered above line
         let num_x = (frac_w - num.width) / 2.0;
         let num_y = 0.0;
         // Line below numerator
-        let line_y = num.height + gap;
+        let line_y = num.height + gap_above;
         // Denominator centered below line
         let den_x = (frac_w - den.width) / 2.0;
-        let den_y = line_y + line_thickness + gap;
+        let den_y = line_y + line_thickness + gap_below;
 
         // The fraction line sits on the math axis, 0.26 em above the
         // baseline of the surrounding text (the middle of a `=` or `+`).
@@ -23277,7 +23292,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // base with an accent stacked on it (`OverDot[θ]`) keeps that
         // distance from its baseline rather than from its taller top, so
         // the subscript is not lifted to the accent.
-        let sub_y = (base.height * 0.4).max(base.baseline - 0.38 * font_size);
+        // A base reaching far below its baseline (a stacked fraction) hangs
+        // the subscript at its foot instead: the subscript's baseline sits
+        // 0.16 em above the base's lowest point, level with the last line
+        // of the base.
+        let sub_y = (base.height * 0.4)
+          .max(base.baseline - 0.38 * font_size)
+          .max(base.height - 0.16 * font_size - sub.baseline);
         let elements = format!(
           "{}{}",
           base.translate(0.0, 0.0),
@@ -40197,6 +40218,25 @@ pub fn combine_layout_svgs(
 
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
 
+/// The SVG of one evaluated cell of a `GraphicsRow`/`GraphicsColumn`/
+/// `GraphicsGrid`. These layouts are a single picture whose cells are
+/// insets, so a cell that is not itself a picture (a caption string, a
+/// `Column` of a plot over a sentence, …) is lettered in the proportional
+/// face of a graphic's labels rather than the monospace face of an output
+/// cell. A `FontFamily` the cell sets itself still takes precedence.
+fn layout_cell_svg(cell: &Expr) -> String {
+  match cell {
+    Expr::Graphics { .. } | Expr::Image { .. } => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    // `Text[…]` sets that face already.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    _ => crate::evaluator::expr_to_svg(&in_text_face(cell)),
+  }
+}
+
 /// Extract SVG strings from a list of evaluated expressions.
 /// Items that are already Expr::Graphics are used directly; other
 /// expressions (Graph, TreeForm, Dataset, plain values, ...) are
@@ -40206,7 +40246,7 @@ fn extract_svgs_from_list(items: &[Expr]) -> Vec<String> {
   items
     .iter()
     .filter_map(|item| {
-      let svg = crate::evaluator::expr_to_svg(item);
+      let svg = layout_cell_svg(item);
       if svg.is_empty() { None } else { Some(svg) }
     })
     .collect()
@@ -42430,7 +42470,7 @@ fn render_items_at_size(
         ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
-      let mut svg = crate::evaluator::expr_to_svg(&evaluated);
+      let mut svg = layout_cell_svg(&evaluated);
       if svg.is_empty() {
         return None;
       }
@@ -42443,10 +42483,10 @@ fn render_items_at_size(
         && parse_svg_wh(&svg).0 > cell_w + 0.5
         && let Some(flowed) =
           wrap_list_text(&evaluated, cell_w, &[], false, &|c| {
-            parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+            parse_svg_wh(&layout_cell_svg(c)).0
           })
       {
-        let reflowed = crate::evaluator::expr_to_svg(&flowed);
+        let reflowed = layout_cell_svg(&flowed);
         if !reflowed.is_empty() {
           svg = reflowed;
         }
