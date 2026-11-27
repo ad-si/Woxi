@@ -10053,14 +10053,14 @@ mod plot3d {
     // Regression: a subscripted label whose script has letters lost its
     // `TraditionalForm` typesetting: `Subscript[x, n + 1]` was drawn with an
     // upright x. Base and script are typeset like any expression label,
-    // with italic letters. The sum in a subscript keeps the order it has
-    // (`1+n`, which is what Wolfram draws), unlike a sum in an exponent or
-    // a label of its own, which reads `n+1`.
+    // with italic letters and the sum ordered `n+1`, in a subscript as in
+    // an exponent or a label of its own (wolframscript rasterizes the
+    // label exactly like the held `n + 1`).
     #[test]
     fn subscript_axes_labels_typeset_their_parts_in_traditional_form() {
       let expected = "<tspan font-style=\"italic\">x</tspan>\
         <tspan baseline-shift=\"sub\" font-size=\"70%\">\
-        1+<tspan font-style=\"italic\">n</tspan></tspan>";
+        <tspan font-style=\"italic\">n</tspan>+1</tspan>";
       for code in [
         "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
          AxesLabel -> {Subscript[x, n + 1], None, None}]",
@@ -10073,7 +10073,7 @@ mod plot3d {
         assert!(svg.contains(expected), "{code}: {svg}");
         assert!(!svg.contains("1 + n"), "{code}: {svg}");
       }
-      // An exponent and a bare sum are still ordered traditionally.
+      // So are an exponent and a bare sum.
       let svg = export_svg(
         "Plot[t, {t, 0, 1}, AxesLabel -> {Superscript[x, n + 1], n + 1}]",
       );
@@ -10092,8 +10092,20 @@ mod plot3d {
       assert_eq!(
         interpret("ToBoxes[Subscript[x, n + 1] + n + 1, TraditionalForm]")
           .unwrap(),
-        "FormBox[RowBox[{SubscriptBox[x, RowBox[{1, +, n}]], +, n, +, 1}], \
+        "FormBox[RowBox[{SubscriptBox[x, RowBox[{n, +, 1}]], +, n, +, 1}], \
          TraditionalForm]"
+      );
+      assert_eq!(
+        interpret(
+          "ToBoxes[Superscript[x, n + 1] + Subsuperscript[a, 1 + k, 2 + b^2] \
+           + Overscript[q, 1 + r], TraditionalForm]"
+        )
+        .unwrap(),
+        "FormBox[RowBox[{TemplateBox[{a, RowBox[{k, +, 1}], \
+         RowBox[{SuperscriptBox[b, 2], +, 2}]}, Subsuperscript, \
+         SyntaxForm -> SubsuperscriptBox], +, TemplateBox[{x, \
+         RowBox[{n, +, 1}]}, Superscript, SyntaxForm -> SuperscriptBox], +, \
+         OverscriptBox[q, RowBox[{r, +, 1}]]}], TraditionalForm]"
       );
       // A styled script keeps its own styling.
       let svg = export_svg(
@@ -16407,7 +16419,7 @@ mod plot3d {
     /// A `Row` plot label typesets its items in TraditionalForm, as a
     /// graphic's `FormatType` asks: `==` is `=`, a sum puts its constant
     /// last, `Mod` is the infix `mod`, and relations and arrows are spaced.
-    /// The sum inside a subscript keeps its own order (`1+n`).
+    /// The sum inside a subscript is ordered the same way (`n+1`).
     #[test]
     fn plot_label_row_items_are_traditional_form() {
       let svg = export_svg(
@@ -16417,7 +16429,7 @@ mod plot3d {
       assert!(svg.contains("</tspan> = 5 "), "{svg}");
       assert!(
         svg.contains(
-          ">1+<tspan font-style=\"italic\">n</tspan></tspan> \u{2192} ("
+          "<tspan font-style=\"italic\">n</tspan>+1</tspan> \u{2192} ("
         ),
         "{svg}"
       );
