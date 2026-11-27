@@ -1119,7 +1119,14 @@ fn graph_render(
     let pts = layout_choice.positions(&graph, &index_map);
     // `GraphPlot` reports its layout with edges 1 long on average, moved
     // to the origin; the drawing keeps the internal scale and maps back.
-    if plot_units {
+    // The components of a disconnected graph are packed in plot units
+    // already, below and right of the origin: Wolfram reports them there.
+    // So is a radial drawing, which has its own scale (see
+    // [`unit_rms_edge`]).
+    if plot_units && layout_choice.is_in_plot_units(&graph) {
+      coord_scale = 1.0;
+      coord_center = (0.0, 0.0);
+    } else if plot_units {
       let lengths: Vec<f64> = graph
         .edge_references()
         .map(|e| {
@@ -3247,6 +3254,20 @@ impl LayoutChoice {
 
   /// The vertex positions of this embedding (the automatic layout when
   /// none was named or the named one does not apply).
+  /// Whether `positions` come in `GraphPlot`'s units as they are: a radial
+  /// drawing, or the components of `graph` embedded one by one and packed
+  /// (see [`layout_by_component`]).
+  fn is_in_plot_units(&self, graph: &DiGraph<usize, RenderEdgeData>) -> bool {
+    if self.layered.is_some() || self.circular {
+      return false;
+    }
+    match self.named {
+      Some(NamedLayout::Radial { .. }) => true,
+      Some(NamedLayout::Spring) => weakly_connected_components(graph).len() > 1,
+      _ => false,
+    }
+  }
+
   fn positions(
     &self,
     graph: &DiGraph<usize, RenderEdgeData>,
@@ -3944,10 +3965,17 @@ fn named_layout_positions(
       let components = weakly_connected_components(graph);
       if components.len() > 1 {
         return Some(layout_by_component(graph, &components, |part, comp| {
-          packed_path_positions(part).unwrap_or_else(|| {
+          embedded_path_positions(part).unwrap_or_else(|| {
             radial(part, root.and_then(|r| comp.iter().position(|&v| v == r)))
           })
         }));
+      }
+      // A single edge lies flat, like the one of a disconnected graph.
+      if root.is_none()
+        && n == 2
+        && let Some(pts) = embedded_path_positions(graph)
+      {
+        return Some(pts);
       }
       Some(radial(graph, root))
     }
@@ -3955,7 +3983,7 @@ fn named_layout_positions(
       let components = weakly_connected_components(graph);
       if components.len() > 1 {
         return Some(layout_by_component(graph, &components, |part, _| {
-          packed_path_positions(part).unwrap_or_else(|| {
+          reversed_path_positions(part).unwrap_or_else(|| {
             let all: Vec<usize> = (0..part.node_count()).collect();
             unit_mean_edge(force_layout_component(part, &all), part)
           })
@@ -4007,15 +4035,29 @@ fn layout_by_component(
   pack_component_columns(components, pts, true, false)
 }
 
-/// A path that is one of several components (see [`path_positions`]):
-/// Wolfram draws it from the right, the end that comes first among the
-/// vertices last.
-fn packed_path_positions(
+/// A path that is one of the components of a spring embedding (see
+/// [`path_positions`]), drawn from the right: the end that comes first
+/// among the vertices last. (Wolfram's spring solvers bend such a path
+/// slightly and start it at either end.)
+fn reversed_path_positions(
   graph: &DiGraph<usize, RenderEdgeData>,
 ) -> Option<Vec<(f64, f64)>> {
   let pts = path_positions(graph)?;
   let last = pts.len() as f64 - 1.0;
   Some(pts.into_iter().map(|(x, y)| (last - x, y)).collect())
+}
+
+/// A path as a radial embedding draws it (see [`path_positions`]): from
+/// the end that comes first among the vertices, except that a single edge
+/// runs from the right, its first vertex at 1.
+fn embedded_path_positions(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Option<Vec<(f64, f64)>> {
+  let pts = path_positions(graph)?;
+  if pts.len() != 2 {
+    return Some(pts);
+  }
+  Some(pts.into_iter().map(|(x, y)| (1.0 - x, y)).collect())
 }
 
 /// A path graph laid along a horizontal line with unit steps, from the
@@ -4133,7 +4175,32 @@ fn radial_layout(
     let r = offsets[depth[v]];
     pts[v] = (r * angle.cos(), r * angle.sin());
   }
-  unit_mean_edge(pts, graph)
+  unit_rms_edge(pts, graph)
+}
+
+/// `pts` scaled so the root mean square of the graph's edge lengths is 1 —
+/// the scale of Wolfram's radial drawings, whose edges between two rings
+/// (and across a cycle) are not all of one length — and moved to the origin
+/// (see [`shift_to_origin`]).
+fn unit_rms_edge(
+  mut pts: Vec<(f64, f64)>,
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Vec<(f64, f64)> {
+  let squares: Vec<f64> = graph
+    .edge_references()
+    .map(|e| {
+      let (p, q) = (pts[e.source().index()], pts[e.target().index()]);
+      (p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)
+    })
+    .filter(|d| *d > 0.0)
+    .collect();
+  if !squares.is_empty() {
+    let rms = (squares.iter().sum::<f64>() / squares.len() as f64).sqrt();
+    for p in &mut pts {
+      *p = (p.0 / rms, p.1 / rms);
+    }
+  }
+  shift_to_origin(pts)
 }
 
 /// `pts` moved so the lowest coordinate on each axis is 0, as Wolfram

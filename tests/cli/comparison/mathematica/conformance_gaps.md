@@ -7347,12 +7347,26 @@ internal hash order. Woxi keeps input order.
   `ViewPoint -> {1.3, -2.4, 2}`.
 - **Disconnected graphs under a named embedding**: `"RadialEmbedding"`
   (`GraphPlot`'s `"RadialDrawing"`) and the spring embeddings lay out each
-  component on its own (a path along a horizontal line, drawn from the
-  right) and stack the padded bounding boxes in left-aligned columns. WL
-  bends the paths of a spring embedding slightly and may put two short
-  components side by side below a wide one. `"LinearEmbedding"` and
+  component on its own and stack the padded bounding boxes in left-aligned
+  columns, from the origin downward. For the radial embedding the
+  coordinates match wolframscript on trees (paths from the end that comes
+  first, a single edge from the right, the largest component on top;
+  `GraphPlot` reports the same coordinates as `GraphEmbedding`). For the
+  spring embeddings they do not: WL bends the paths slightly, starts them
+  at either end, orders the components differently (an edge above a
+  three-vertex path, a four-vertex path above both) and may put two short
+  components side by side below a wide one; Woxi draws straight paths from
+  the right, the largest component on top. `"LinearEmbedding"` and
   `"CircularEmbedding"` still put all vertices on one line or circle, where
   WL's `GraphPlot` draws one line or circle per component.
+- **Root of a radial embedding with several centers**: a radial drawing is
+  scaled so the root mean square of its edge lengths is 1 (verified on
+  trees, a triangle and graphs with cycles). Its root is the graph's
+  center; when several vertices have the smallest eccentricity Woxi takes
+  the first, while WL takes vertex 2 for the cycle
+  `{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}` (also with a pendant `1 -> 5`) but
+  vertex 1 for the triangle. The rule is **not decoded**, so such drawings
+  can come out mirrored or rooted elsewhere.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
