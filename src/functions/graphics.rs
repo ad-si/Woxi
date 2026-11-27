@@ -55301,6 +55301,9 @@ fn joined_line_controls(
   // The non-control pieces since the last control: they form the
   // caption `control_group_items` puts in front of the next control.
   let mut caption: Vec<&Expr> = Vec::new();
+  // Whether that caption follows a control on this line, so the heading
+  // row it becomes stays on the control's line.
+  let mut caption_joins = false;
   for item in items {
     let item = match item {
       Expr::FunctionCall { name, args: inner }
@@ -55314,6 +55317,7 @@ fn joined_line_controls(
       Expr::FunctionCall { name, args: c }
         if name == "Control" && !c.is_empty() =>
       {
+        record_joined_caption(&caption, caption_joins, out);
         match control_spec_variable(&c[0]) {
           Some(var) => {
             if after_control || is_live_panel_caption(&caption) {
@@ -55348,9 +55352,13 @@ fn joined_line_controls(
         if name == "Button" && b.len() >= 2 =>
       {
         after_control = true;
+        record_joined_caption(&caption, caption_joins, out);
         caption.clear();
       }
       Expr::String(_) => {
+        if caption.is_empty() {
+          caption_joins = after_control;
+        }
         after_control = true;
         caption.push(item);
       }
@@ -55358,11 +55366,18 @@ fn joined_line_controls(
         if (name == "Style" || name == "Text")
           && !row_item_holds_control(item) =>
       {
+        if caption.is_empty() {
+          caption_joins = after_control;
+        }
         after_control = true;
         caption.push(item);
       }
       other if skip_non_controls && !contains_control_call(other) => {}
       other => {
+        // A picture or other non-text item starts a line of its own.
+        if caption.is_empty() {
+          caption_joins = false;
+        }
         after_control = false;
         if expr_contains_call(other, &["Control"]) {
           caption.clear();
@@ -55373,6 +55388,34 @@ fn joined_line_controls(
       }
     }
   }
+  record_joined_caption(&caption, caption_joins, out);
+}
+
+/// File the heading row a `Row`'s caption pieces become (see
+/// `control_group_items`) under its `heading_visibility_key` in the
+/// row-joined list when it follows a control on the same line: the text of
+/// `Row[{Control[…], "   ", Control[…]}]` sits between the two controls
+/// instead of starting a line of its own. A live caption is a panel
+/// display, not a heading, and is left alone.
+fn record_joined_caption(
+  caption: &[&Expr],
+  joins: bool,
+  out: &mut Vec<String>,
+) {
+  if !joins || caption.is_empty() || is_live_panel_caption(caption) {
+    return;
+  }
+  let label_runs = match caption {
+    [single] => manipulate_label_runs(single, false),
+    pieces => manipulate_label_runs(
+      &call1(
+        "Row",
+        Expr::List(pieces.iter().map(|e| (*e).clone()).collect()),
+      ),
+      false,
+    ),
+  };
+  out.push(heading_visibility_key(&flatten_label_runs(&label_runs)));
 }
 
 /// Whether the caption pieces a `Row` places in front of a `Control[…]`
@@ -69906,6 +69949,33 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.row_joined_controls, vec!["g", "h"]);
   }
 
+  /// Text between two controls of one `Row` becomes a heading row that
+  /// joins the line of the control before it (filed under its
+  /// `heading_visibility_key`), so the three sit side by side. Text
+  /// leading a `Row` starts the line and is not filed.
+  #[test]
+  fn text_between_row_controls_joins_their_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, c}, \
+       Row[{Control[{a, 0, 1}], \"   \", Control[{b, 0, 1}]}], \
+       Row[{\"lead\", Control[{c, 0, 1}], \"tail\"}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "", "b", "", "c", ""]);
+    assert_eq!(
+      spec.row_joined_controls,
+      vec![
+        heading_visibility_key("   "),
+        "b".to_string(),
+        "c".to_string(),
+        heading_visibility_key("tail"),
+      ]
+    );
+  }
+
   /// A free-standing display among the control specs (a `Grid` of live
   /// readouts after a `Delimiter`, a `Row` with a `Dynamic` before a
   /// slider) is a row of the control panel at the place it was written,
@@ -71006,8 +71076,9 @@ mod manipulate_button_enabled_tests {
   /// Controls written side by side in one `Row[{Control[…], Spacer[…],
   /// Control[…]}]` argument share one line of the control panel: every
   /// control after the first of a row is recorded as joining the one
-  /// before it. A plain control spec, a new `Row`, and a non-control item
-  /// between two controls each start a new line.
+  /// before it, as is the text row a string between two controls becomes.
+  /// A plain control spec, a new `Row`, and a non-text item between two
+  /// controls each start a new line.
   #[test]
   fn row_of_controls_shares_one_line() {
     let expr = crate::parse_to_expr(
@@ -71021,7 +71092,15 @@ mod manipulate_button_enabled_tests {
     )
     .expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
-    assert_eq!(spec.row_joined_controls, vec!["q", "r", "w"]);
+    assert_eq!(
+      spec.row_joined_controls,
+      vec![
+        "q".to_string(),
+        heading_visibility_key(""),
+        "r".to_string(),
+        "w".to_string()
+      ]
+    );
   }
 
   #[test]

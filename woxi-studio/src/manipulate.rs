@@ -1600,6 +1600,14 @@ impl ManipulateState {
           Some(ControlState::Button { .. })
         );
     }
+    // A text row written between the controls of one `Row` stays on the
+    // line of the control before it.
+    if let Some(ControlState::Heading { label, .. }) =
+      self.controls.get(ctrl_idx)
+    {
+      let key = woxi::functions::graphics::heading_visibility_key(label);
+      return ctrl_idx > 0 && self.row_joined_controls.contains(&key);
+    }
     (ctrl_idx > 0 || self.panel_displays.iter().any(|(_, at)| *at == 0))
       && self
         .controls
@@ -4892,6 +4900,51 @@ mod tests {
         "{place}"
       );
     }
+  }
+
+  /// Text written between the controls of one `Row` (blank padding or a
+  /// caption) stays on their line: the heading row it becomes joins the
+  /// control before it, and the control after it joins in turn. A text row
+  /// that leads a `Row`, or stands on its own, still starts a line.
+  #[test]
+  fn text_between_row_controls_stays_on_their_line() {
+    let code = r#"Manipulate[
+      {a, b, c, d},
+      "top",
+      Row[{Control[{a, 0, 1}], "      ", Control[{b, 0, 1}]}],
+      Row[{"lead", Control[{c, 0, 1}], Style["mid", Bold], "dle",
+        Control[{d, 0, 1}], "tail"}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(String, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Heading { label, .. } => label.clone(),
+          other => other.name().to_string(),
+        };
+        (key, state.joins_previous_control(i))
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = [
+      ("top", false),
+      ("a", false),
+      ("      ", true),
+      ("b", true),
+      ("lead", false),
+      ("c", true),
+      ("middle", true),
+      ("d", true),
+      ("tail", true),
+    ]
+    .iter()
+    .map(|(k, j)| (k.to_string(), *j))
+    .collect();
+    assert_eq!(joins, expected);
   }
 
   /// A custom control layout `Row[{Place[1], Spacer[…], Place[2]}]` puts
