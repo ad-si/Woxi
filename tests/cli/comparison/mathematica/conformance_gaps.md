@@ -342,6 +342,18 @@ canonical order of their boxes less the numeric coefficient, which
 reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
 `Sin[x] + Sin[2 x]`) are unverified.
 
+### TraditionalForm sets Greek-letter factors of a product first
+
+Known only from the stored output of a Demonstration (no `wolframscript`
+run): with `\[Alpha]`, `\[Beta]` and the other symbols undefined,
+`TraditionalForm[P V \[Beta] Subscript[c, v]/Subscript[c, p]]` is drawn as
+`β P V c_v / c_p`, `T V \[Alpha]/Subscript[c, p]` as `α T V / c_p`, and
+`P \[Beta] Subscript[c, v]/(T \[Alpha])` as `β P c_v / (α T)` — the Greek
+letters lead and the subscripted `c` stays last. Woxi sets the first as
+`c_v P V β / c_p`: it keeps the canonical order of the plain symbols and
+orders `Subscript[c, v]` as its base `c` (ahead of `P`). The rule behind
+Wolfram's order is not established.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh

@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- The subscript of a stacked fraction (`Subscript[a/b, z]`) hangs at the
+    fraction's foot, level with the denominator, instead of beside its
+    rule.
+- A fraction in the running text of a `Text[…]` is set tight around its
+    rule, and the scripts inside it keep shrinking in large text (20 pt
+    and up), so a quotient of subscripted symbols fits the line — and a
+    `Pane` of that height — instead of being cut off.
 - `FlipView[{e1, e2, …}, i]` shows the element it is flipped to in Woxi
     Studio and the Playground instead of its source text, and a click on it
     in Woxi Studio flips to the next element, on its own or inside a

@@ -1696,6 +1696,100 @@ fn text_formula_scripts_stop_shrinking_after_the_first_level() {
   }
 }
 
+/// The minimum script size of `Text[…]` math is an absolute size, not a
+/// share of the text's: in 20 pt text the subscript of a term in a fraction
+/// (15 pt) is 0.7 of that term, well below a first-level script (14 pt).
+#[test]
+fn large_text_formula_scripts_still_shrink_at_the_second_level() {
+  clear_state();
+  for formula in ["x Subscript[c, v]/y", "x/Subscript[c, p]", "(a^n + 1)/b"] {
+    let svg = interpret(&format!(
+      r#"ExportString[Style[Text[TraditionalForm[{formula}]], 20], "SVG"]"#
+    ))
+    .unwrap();
+    let sizes = svg_font_sizes(&svg);
+    assert_eq!(sizes[0], 10.5, "{formula}: {sizes:?}");
+    assert_eq!(sizes[sizes.len() - 1], 15.0, "{formula}: {sizes:?}");
+  }
+}
+
+/// The `height` of an exported SVG.
+fn svg_height(svg: &str) -> f64 {
+  svg
+    .split(" height=\"")
+    .nth(1)
+    .and_then(|s| s.split('"').next())
+    .unwrap()
+    .parse()
+    .unwrap()
+}
+
+/// A fraction in the running text of a `Text[…]` is set tight — the
+/// numerator just above the rule, the denominator just below — so a 20 pt
+/// quotient of subscripted symbols fits a 40 pt line instead of being cut
+/// off by a `Pane` of that height.
+#[test]
+fn text_fraction_is_set_tight_around_its_rule() {
+  clear_state();
+  for formula in [
+    "a b/c",
+    "a Subscript[c, v]/Subscript[c, p]",
+    "Subscript[a, 1]/(b Subscript[c, 2])",
+  ] {
+    let text = interpret(&format!(
+      r#"ExportString[Style[Text[TraditionalForm[{formula}]], 20], "SVG"]"#
+    ))
+    .unwrap();
+    assert!(svg_height(&text) <= 40.0, "{formula}: {text}");
+  }
+  // Outside text the fraction keeps its 3 pt gaps.
+  let plain =
+    interpret(r#"ExportString[TraditionalForm[a/b], "SVG"]"#).unwrap();
+  assert!(plain.contains(r#"y1="17.7""#), "{plain}");
+  assert!(plain.contains("translate(2.0,21.5)"), "{plain}");
+}
+
+/// The subscript of a stacked fraction hangs at the fraction's foot, its
+/// baseline about level with the denominator's, instead of beside the
+/// fraction's rule where the subscript of a one-line base sits.
+#[test]
+fn subscript_of_a_fraction_hangs_at_its_foot() {
+  clear_state();
+  // The y of the baseline of the `<text>` holding `glyph`: the offset of
+  // its enclosing group plus its own `y`.
+  fn baseline_of(svg: &str, glyph: &str) -> f64 {
+    let end = svg.find(&format!(">{glyph}</text>")).unwrap();
+    let head = &svg[..end];
+    let number = |s: &str, end: char| -> f64 {
+      s.split(end).next().unwrap().parse().unwrap()
+    };
+    let dy = number(
+      head
+        .rsplit("translate(")
+        .next()
+        .unwrap()
+        .split(',')
+        .nth(1)
+        .unwrap(),
+      ')',
+    );
+    dy + number(head.rsplit(" y=\"").next().unwrap(), '"')
+  }
+  for (base, last) in [("a/b", "b"), ("(a + 1)/b", "b"), ("x^2/c", "c")] {
+    let svg = interpret(&format!(
+      r#"ExportString[TraditionalForm[Subscript[{base}, z]], "SVG"]"#
+    ))
+    .unwrap();
+    let (sub, den) = (baseline_of(&svg, "z"), baseline_of(&svg, last));
+    assert!((sub - den).abs() <= 2.0, "{base}: {sub} vs {den}\n{svg}");
+  }
+  // A one-line base keeps its subscript 0.38 em above its baseline.
+  let svg =
+    interpret(r#"ExportString[TraditionalForm[Subscript[a, z]], "SVG"]"#)
+      .unwrap();
+  assert!(svg.contains("translate(8.8,5.9)"), "{svg}");
+}
+
 /// Outside text, each script level is still 0.7 of the one before.
 #[test]
 fn formula_scripts_outside_text_shrink_at_every_level() {
