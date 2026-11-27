@@ -11546,6 +11546,10 @@ wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
   - `TranslationTransform[…][Line[…]]` re-nests the point list.
   - `ImageResize` uses nearest-neighbor when it enlarges a 1×2 image.
   - `Normal[GraphicsComplex[…, Text["a", 3]]]` loses the coordinate.
+- **`ListPlay` automatic play range**: the procedure behind
+  `PlayRange -> Automatic` is internal to WL; Woxi leaves outliers out with
+  the automatic `PlotRange` procedure, so the samples of a signal that has
+  outliers may be scaled differently than in wolframscript.
 - **Plot internals**: a further ~110 structural plot assertions differ:
   GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
   sampling counts, and where directives sit (see the existing plot-internals
