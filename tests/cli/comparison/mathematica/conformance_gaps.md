@@ -10219,6 +10219,20 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   column about 207 pt wide, together spanning only about 365 x 218 pt of the
   500 x 350 picture; Woxi gives each cell half the width (left about 238 pt
   wide). Same undecoded shrink as the item above.
+- `Show[BarChart[{a, b}, BarSpacing -> Large, PlotRange -> {-0.1, 1},
+  Frame -> True, FrameTicks -> None, ImageSize -> {100, 200}, AspectRatio ->
+  Full], Graphics[{Text[…, {0.5, 0.9}], Text[…, {2., 0.9}]}]]` (read off a
+  notebook front end snapshot, no wolframscript at hand): Wolfram's frame
+  runs from about -0.4 to 3.4 across, a whole bar step beyond the bars on
+  either side, and keeps about 35 pt free below the frame although it has
+  no ticks or label there. Woxi's frame hugs the bars (about 0.2 to 2.4)
+  and fills the picture to its bottom edge, so a text centered on the last
+  bar is cut off at the edge.
+- `GraphicsRow` of pictures that each fix `ImageSize -> {w, h}`, with an
+  `ImageSize` of its own, is laid out from a front end snapshot: the row is
+  5% of its height taller than the pictures whatever `Spacings` says. The
+  same rule for `GraphicsGrid`/`GraphicsColumn` and for pictures with only
+  a width is not decoded (see the two items above).
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a

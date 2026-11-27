@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `GraphicsRow[…, ImageSize -> …]` of pictures that each fix their
+    `ImageSize -> {w, h}` keeps their sizes in proportion and scales them
+    together to fit the row (a 100 x 200 chart beside a 175 x 200 plot was
+    drawn as wide as the plot), a negative `Spacings` draws neighbors over
+    each other, and what that pushes past the row's margin is cut off.
+- `BarChart` leaves out the `ChartLabels` under the bars when the ticks
+    are turned off (`FrameTicks -> None` on a framed chart, `Ticks -> None`
+    otherwise), as they are the category axis' tick labels.
+- `Show` of a framed `BarChart` no longer numbers the frame's category
+    edge.
 - A translucent `Sphere` in `Graphics3D` has a smooth, round rim: it is
     tessellated about the line of sight like an opaque one, where it used
     to show a saw-toothed band along its outline.

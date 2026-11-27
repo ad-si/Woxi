@@ -1751,17 +1751,28 @@ mod interpreter_tests {
     // Regression: `Show` rebuilt a BarChart without its ChartLabels and
     // FrameTicks/Ticks options, drawing numeric ticks instead of labels.
     clear_state();
-    let svg = interpret_with_stdout(
-      "Show[BarChart[{1, 2}, ChartLabels -> {\"Aa\", \"Bb\"}, Ticks -> None, \
-       Frame -> True, FrameTicks -> None], Graphics[Text[\"Cc\", {0.5, 0.9}]]]",
-    )
-    .unwrap()
-    .graphics
-    .expect("Show should produce graphics");
+    let shown = |options: &str| {
+      interpret_with_stdout(&format!(
+        "Show[BarChart[{{1, 2}}, ChartLabels -> {{\"Aa\", \"Bb\"}}, \
+         Frame -> True{options}], Graphics[Text[\"Cc\", {{0.5, 0.9}}]]]"
+      ))
+      .unwrap()
+      .graphics
+      .expect("Show should produce graphics")
+    };
+    let svg = shown("");
     for label in ["Aa", "Bb", "Cc"] {
       assert!(svg.contains(&format!(">{label}</text>")), "missing {label}");
     }
-    assert!(!svg.contains(">1.5</text>"), "numeric ticks drawn:\n{svg}");
+    // Only the value axis is numbered: its 1.5 appears once.
+    assert_eq!(svg.matches(">1.5</text>").count(), 1, "{svg}");
+    // The chart labels are the category axis' tick labels: without frame
+    // ticks neither they nor numbers are drawn.
+    let svg = shown(", Ticks -> None, FrameTicks -> None");
+    assert!(svg.contains(">Cc</text>"), "missing Cc");
+    for label in ["Aa", "Bb", "1.5"] {
+      assert!(!svg.contains(&format!(">{label}</text>")), "{label} drawn");
+    }
   }
 
   #[test]

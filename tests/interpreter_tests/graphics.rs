@@ -27733,6 +27733,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!plain.contains("font-style=\"italic\""), "{plain}");
     }
 
+    /// Regression: the labels under the bars are the tick labels of the
+    /// category axis, so `FrameTicks -> None` on a framed chart (or
+    /// `Ticks -> None` on an unframed one) removes them; they used to
+    /// stay.
+    #[test]
+    fn bar_chart_labels_go_with_the_ticks() {
+      clear_state();
+      let labeled = |options: &str| {
+        export_svg(&format!(
+          "BarChart[{{1, 2}}, ChartLabels -> {{\"left\", \"right\"}}{options}]"
+        ))
+        .contains("left")
+      };
+      assert!(labeled(""));
+      assert!(labeled(", Frame -> True"));
+      assert!(!labeled(", Frame -> True, FrameTicks -> None"));
+      assert!(!labeled(", Ticks -> None"));
+      // Labels placed on the bars are not tick labels.
+      assert!(export_svg(
+        "BarChart[{1, 2}, ChartLabels -> Placed[{\"left\", \"right\"}, Above], \
+         Ticks -> None]"
+      )
+      .contains("left"));
+    }
+
     /// A `Column` chart label stacks its lines (each in its own style)
     /// and a rotated one turns as a block; the lines used to run together
     /// into one line of text.
@@ -41758,6 +41783,59 @@ mod graphics_row {
     .map(|(w, _)| w)
     .collect();
     assert_eq!(widths, vec!["150".to_string(), "100".to_string()]);
+  }
+
+  /// Regression: a `GraphicsRow` with an `ImageSize` of its own split its
+  /// width evenly among pictures that each fix their `ImageSize -> {w, h}`,
+  /// so a 100 x 200 chart beside a 175 x 200 plot was drawn as large as the
+  /// plot. The pictures keep their proportions to each other, scaled
+  /// together to fit the row, and a negative spacing overlaps them.
+  #[test]
+  fn sized_row_scales_own_sized_cells_together() {
+    clear_state();
+    let code = "GraphicsRow[{\
+       Plot[x, {x, 0, 1}, ImageSize -> {175, 200}], \
+       Graphics[Disk[], ImageSize -> {100, 200}]}, \
+       ImageSize -> {525, 350}, Spacings -> -20]";
+    assert_eq!(outer_size(code), (525, 350));
+    // The padded row (247 x 220 in the cells' units) fits the height:
+    // the cells come first after the clipping viewport.
+    let sizes = cell_sizes(code);
+    assert_eq!(
+      sizes[1..],
+      [
+        ("278".to_string(), "318".to_string()),
+        ("159".to_string(), "318".to_string()),
+      ]
+    );
+    // Columns of 155 and 80 units: the second cell starts before the
+    // first one ends.
+    let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let xs: Vec<f64> = svg
+      .split("<svg ")
+      .skip(3)
+      .map(|tag| {
+        let tail = tag.split("x=\"").nth(1).unwrap();
+        tail.split('"').next().unwrap().parse().unwrap()
+      })
+      .collect();
+    assert_eq!(xs, vec![-6.0, 240.0]);
+
+    // The size may sit on the first picture of a `Show` or at the end of
+    // a compound cell; a wider row is limited by its width instead.
+    let nested = "GraphicsRow[{\
+       Show[Plot[x, {x, 0, 1}, ImageSize -> {100, 100}], Graphics[Point[{0, 0}]]], \
+       (a = 1; Graphics[Disk[], ImageSize -> {100, 100}])}, \
+       ImageSize -> 424, Spacings -> 0]";
+    assert_eq!(
+      cell_sizes(nested)[1..],
+      [
+        ("200".to_string(), "200".to_string()),
+        ("200".to_string(), "200".to_string()),
+      ]
+    );
+    // 200 + 12 units wide, 105 + 10 high, at twice the size.
+    assert_eq!(outer_size(nested), (424, 230));
   }
 
   /// A numeric `ImageSize` on a plot cell only sets its shape, as it does
