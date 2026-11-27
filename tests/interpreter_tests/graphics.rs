@@ -44933,6 +44933,100 @@ mod grid_frame_and_background {
     assert!(width < 60, "column sized from the source text: {width}");
   }
 
+  /// The named style `"TraditionalForm"` (or `FormatType ->
+  /// TraditionalForm`) typesets what a `Style` wraps in two dimensions, on
+  /// its own and as an item of a layout. Regression: the directive was
+  /// ignored and the formula written on one line.
+  #[test]
+  fn traditional_form_style_typesets_its_content() {
+    fn height(svg: &str) -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    }
+    let named =
+      export_svg(r#"Style[HoldForm[a/(b + Sqrt[c])], "TraditionalForm"]"#);
+    assert!(!named.contains("TraditionalForm"), "{named}");
+    assert_eq!(
+      named,
+      export_svg(
+        r#"Style[TraditionalForm[HoldForm[a/(b + Sqrt[c])]], LimitsPositioning -> False]"#
+      )
+    );
+    assert_eq!(
+      named,
+      export_svg(
+        r#"Style[HoldForm[a/(b + Sqrt[c])], FormatType -> TraditionalForm]"#
+      )
+    );
+    // The other directives still apply to the typeset formula.
+    let colored = export_svg(
+      r#"Style[HoldForm[a/(b + Sqrt[c])], Red, "TraditionalForm", 20]"#,
+    );
+    assert_eq!(
+      colored,
+      export_svg(
+        r#"Style[TraditionalForm[HoldForm[a/(b + Sqrt[c])]], LimitsPositioning -> False, Red, 20]"#
+      )
+    );
+    assert!(colored.contains("rgb(255,0,0)"), "{colored}");
+    // A string is literal text in either notation.
+    assert_eq!(
+      export_svg(r#"Style["some text", "TraditionalForm", Bold]"#),
+      export_svg(r#"Style["some text", Bold]"#)
+    );
+    // As a layout item the formula is typeset rather than set on one line.
+    for layout in ["Grid[{{item}}]", "Column[{item}]", "Row[{item, \"z\"}]"] {
+      let body = "HoldForm[Sum[f[j], {j, 1, m}]]";
+      let plain = export_svg(&layout.replace("item", body));
+      let styled = export_svg(
+        &layout
+          .replace("item", &format!(r#"Style[{body}, "TraditionalForm"]"#)),
+      );
+      assert!(!styled.contains("TraditionalForm"), "{styled}");
+      assert!(height(&styled) > height(&plain) + 5.0, "{layout}: {styled}");
+    }
+  }
+
+  /// A formula in the `"TraditionalForm"` style keeps the limits of its
+  /// large operators stacked under and over the sign in a `Grid` cell,
+  /// where an explicit `TraditionalForm[…]` item carries them as scripts;
+  /// `LimitsPositioning -> False` asks for the same on any styled formula.
+  #[test]
+  fn traditional_form_style_stacks_operator_limits_in_a_grid() {
+    fn size(svg: &str, attr: &str) -> f64 {
+      svg
+        .split(&format!("{attr}=\""))
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    }
+    for operator in ["Sum", "Product"] {
+      let body = format!("HoldForm[{operator}[f[j], {{j, 1, m}}]]");
+      let inline =
+        export_svg(&format!("Grid[{{{{TraditionalForm[{body}]}}}}]"));
+      let named = export_svg(&format!(
+        r#"Grid[{{{{Style[{body}, "TraditionalForm"]}}}}]"#
+      ));
+      let explicit = export_svg(&format!(
+        "Grid[{{{{Style[TraditionalForm[{body}], LimitsPositioning -> False]}}}}]"
+      ));
+      assert_eq!(named, explicit);
+      assert!(
+        size(&named, "height") > size(&inline, "height") + 10.0,
+        "limits stacked: {named}"
+      );
+      assert!(
+        size(&named, "width") < size(&inline, "width"),
+        "limits not beside the sign: {named}"
+      );
+    }
+  }
+
   /// A `StyleForm` item is styled content wherever it sits: in a `Row`
   /// inside a displayed `Grid` that also holds a picture, and around
   /// `TraditionalForm` at the top level. Regression: both printed the
@@ -71186,9 +71280,18 @@ mod generalized_bar_chart {
        \" = \", 0.9}], {0, 0}], Text[TraditionalForm[Abs[x]], {0, 1}]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">P(X | A) = 0.9<"), "{svg}");
-    // The one-letter symbol is set in italics, as everywhere in
+    // The one-letter symbols are set in italics, as everywhere in
     // `TraditionalForm`.
+    let italic = |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+    assert!(
+      svg.contains(&format!(
+        ">{}({} | {}) = 0.9<",
+        italic("P"),
+        italic("X"),
+        italic("A")
+      )),
+      "{svg}"
+    );
     assert!(
       svg.contains(">|<tspan font-style=\"italic\">x</tspan>|<"),
       "{svg}"
@@ -71205,7 +71308,12 @@ mod generalized_bar_chart {
        {0, 0}], Text[(a -> b) :> c, {0, 1}]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">a \u{2192} 0<"), "{svg}");
+    // The one-letter symbol is set in italics, as everywhere in
+    // `TraditionalForm`.
+    assert!(
+      svg.contains("><tspan font-style=\"italic\">a</tspan> \u{2192} 0<"),
+      "{svg}"
+    );
     assert!(svg.contains(">(a \u{2192} b) \u{29F4} c<"), "{svg}");
     assert!(!svg.contains("-&gt;"), "{svg}");
   }
