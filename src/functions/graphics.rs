@@ -41437,6 +41437,9 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
+    if let Some(row) = own_sized_row(items, &args[1..], &opts) {
+      return Ok(row);
+    }
     // Without an `ImageSize` of the row's own, pictures that each set
     // their own width keep it as long as they fit the automatic row width
     // together: three panels of `ImageSize -> {130, 300}`,
@@ -41496,6 +41499,177 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     extract_svgs_from_list(&items)
   };
   Ok(finish_graphics_row(svgs, &opts))
+}
+
+/// The margin `GraphicsRow` leaves around its cells, in the units of
+/// their `ImageSize`s (its `PlotRangePadding -> {6, 5}`).
+const GRAPHICS_ROW_PADDING: (f64, f64) = (6.0, 5.0);
+
+/// The share of the row height a `GraphicsRow` of sized pictures leaves
+/// free above and below them, on top of `GRAPHICS_ROW_PADDING`.
+const GRAPHICS_ROW_HEIGHT_MARGIN: f64 = 0.05;
+
+/// The `ImageSize -> {w, h}` option among `args`, when both sides are
+/// positive numbers.
+fn image_size_pair_option(args: &[Expr]) -> Option<(f64, f64)> {
+  let size = args.iter().rev().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let Expr::List(dims) = size else {
+    return None;
+  };
+  let [w, h] = dims.as_slice() else {
+    return None;
+  };
+  let (w, h) = (try_eval_to_f64(w)?, try_eval_to_f64(h)?);
+  (w > 0.0 && h > 0.0).then_some((w, h))
+}
+
+/// The `{width, height}` a layout cell fixes for itself through a numeric
+/// `ImageSize -> {w, h}`: on the graphics call itself, on the first
+/// picture of a `Show` that sets none (a `Show` keeps the options of its
+/// first graphic), or on the last statement of a compound cell
+/// (`a = …; Show[…]`).
+fn own_image_dims(item: &Expr) -> Option<(f64, f64)> {
+  match item {
+    Expr::CompoundExpr(steps) => own_image_dims(steps.last()?),
+    Expr::FunctionCall { name, args } if name == "CompoundExpression" => {
+      own_image_dims(args.last()?)
+    }
+    Expr::FunctionCall { name, args } if is_graphics_producing_head(name) => {
+      let has_size = args.iter().any(|a| {
+        matches!(a, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+      });
+      if has_size {
+        image_size_pair_option(args)
+      } else if name == "Show" {
+        own_image_dims(args.first()?)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `with_fixed_image_size` that also reaches the picture a compound cell
+/// ends with, leaving the statements before it as they are.
+fn with_fixed_image_size_in_cell(item: &Expr, w: i128, h: i128) -> Expr {
+  match item {
+    Expr::CompoundExpr(steps) if !steps.is_empty() => {
+      let mut steps: Vec<Expr> = steps.to_vec();
+      let last = steps.len() - 1;
+      steps[last] = with_fixed_image_size_in_cell(&steps[last], w, h);
+      Expr::CompoundExpr(steps)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CompoundExpression" && !args.is_empty() =>
+    {
+      let mut steps: Vec<Expr> = args.iter().cloned().collect();
+      let last = steps.len() - 1;
+      steps[last] = with_fixed_image_size_in_cell(&steps[last], w, h);
+      call(name.as_str(), steps)
+    }
+    other => with_fixed_image_size(other, w, h),
+  }
+}
+
+/// A `GraphicsRow` with an `ImageSize` of its own whose pictures each fix
+/// their `ImageSize -> {w, h}`; `None` for any other row.
+///
+/// Wolfram lays such a row out in the units of those sizes: every column
+/// is as wide as its picture plus the spacing, with the picture centered
+/// in it, so a negative spacing draws neighbors over each other. The row
+/// is as tall as the tallest picture plus a margin, is padded by
+/// `GRAPHICS_ROW_PADDING`, and is then scaled as a whole to fit the row's
+/// `ImageSize`, centered. What a negative spacing pushes past the padded
+/// row is cut off.
+fn own_sized_row(
+  items: &[Expr],
+  option_args: &[Expr],
+  opts: &LayoutOptions,
+) -> Option<Expr> {
+  let target_w = opts.target_width?;
+  if opts.frame != FrameSetting::None || opts.aspect_full {
+    return None;
+  }
+  let dims: Vec<(f64, f64)> =
+    items.iter().map(own_image_dims).collect::<Option<_>>()?;
+  // The spacing as written: a number counts the same units as the sizes.
+  let spacing = parse_layout_options(option_args).h_spacing;
+  let gap = |w: f64| {
+    match spacing {
+      SpacingSpec::Points(p) => p,
+      SpacingSpec::Scaled(f) => f * w,
+    }
+    .max(MAX_CELL_OVERLAP * w)
+  };
+  let (pad_x, pad_y) = GRAPHICS_ROW_PADDING;
+  let row_h = dims.iter().map(|d| d.1).fold(0.0, f64::max);
+  let range_w: f64 = dims.iter().map(|&(w, _)| w + gap(w)).sum();
+  let range_h = row_h * (1.0 + GRAPHICS_ROW_HEIGHT_MARGIN);
+  let (full_w, full_h) = (range_w + 2.0 * pad_x, range_h + 2.0 * pad_y);
+  if full_w <= 0.0 || full_h <= 0.0 {
+    return None;
+  }
+  let scale = match opts.target_height {
+    Some(target_h) => (target_w / full_w).min(target_h / full_h),
+    None => target_w / full_w,
+  };
+  let total_h = opts.target_height.unwrap_or(full_h * scale);
+  // The padded row, centered in the picture; the cells are placed in it.
+  let (clip_w, clip_h) = (full_w * scale, full_h * scale);
+  let (clip_x, clip_y) = ((target_w - clip_w) / 2.0, (total_h - clip_h) / 2.0);
+
+  let (w, h) = (
+    (target_w - 1e-6).ceil() as u32,
+    (total_h - 1e-6).ceil() as u32,
+  );
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+  ));
+  if let Some(bg) = &opts.background {
+    svg.push_str(&format!(
+      "<rect width=\"100%\" height=\"100%\" fill=\"{}\"{}/>\n",
+      bg.to_svg_rgb(),
+      bg.opacity_attr(),
+    ));
+  }
+  svg.push_str(&format!(
+    "<svg x=\"{clip_x:.2}\" y=\"{clip_y:.2}\" width=\"{clip_w:.2}\" height=\"{clip_h:.2}\" viewBox=\"0 0 {clip_w:.2} {clip_h:.2}\" overflow=\"hidden\">\n",
+  ));
+  let mut column_x = pad_x;
+  for (item, &(item_w, item_h)) in items.iter().zip(&dims) {
+    let column_w = item_w + gap(item_w);
+    let cell_w = (item_w * scale).round().max(1.0);
+    let cell_h = (item_h * scale).round().max(1.0);
+    let rewritten =
+      with_fixed_image_size_in_cell(item, cell_w as i128, cell_h as i128);
+    let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
+    let parsed =
+      parse_svg_dimensions(&crate::evaluator::expr_to_svg(&evaluated))?;
+    let cell = LayoutCell {
+      x: (column_x + (column_w - item_w) / 2.0) * scale,
+      y_off: (pad_y + (range_h - item_h) / 2.0) * scale,
+      w: cell_w,
+      h: cell_h,
+      view_box: parsed.view_box,
+      inner: parsed.inner_content,
+    };
+    write_cell_svg(&mut svg, &cell, 0.0);
+    column_x += column_w;
+  }
+  svg.push_str("</svg>\n</svg>");
+  crate::clear_captured_graphics();
+  Some(crate::graphics_result(svg))
 }
 
 /// The width an inline graphics call (`Plot[…, ImageSize -> {w, h}]`,

@@ -4362,6 +4362,13 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+  let show_ticks = opts.ticks && (opts.frame_ticks || !look.frame);
+  // Chart labels under the bars are the tick labels of the category axis,
+  // so they go with the ticks.
+  if !show_ticks && matches!(opts.chart_label_position, LabelPosition::Below) {
+    opts.chart_labels.clear();
+  }
   // `BarOrigin -> Top` hangs the bars from the top: the values are drawn
   // negated and the axis labels their magnitudes.
   let groups = if opts.bar_origin_top {
@@ -4400,8 +4407,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
-    opts.ticks && (opts.frame_ticks || !look.frame),
+    show_ticks,
     &opts.epilog,
     &look,
   )?;
@@ -5599,6 +5605,22 @@ fn bar_chart_structure(
         ),
       ));
     }
+  }
+  // Nor does the frame's category edge count the bars.
+  if framed && !given("FrameTicks") {
+    let side = |ticks: &str| {
+      Expr::List(
+        vec![
+          crate::helpers::id_expr(ticks),
+          crate::helpers::id_expr(ticks),
+        ]
+        .into(),
+      )
+    };
+    defaults.push(crate::helpers::rule_expr(
+      crate::helpers::id_expr("FrameTicks"),
+      Expr::List(vec![side("Automatic"), side("None")].into()),
+    ));
   }
   // Like the rendered chart, the bars fill a golden-ratio frame.
   if !given("AspectRatio") {

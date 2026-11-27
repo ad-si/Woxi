@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `GraphicsRow[…, ImageSize -> …]` of pictures that each fix their
+    `ImageSize -> {w, h}` keeps their sizes in proportion and scales them
+    together to fit the row (a 100 x 200 chart beside a 175 x 200 plot was
+    drawn as wide as the plot), a negative `Spacings` draws neighbors over
+    each other, and what that pushes past the row's margin is cut off.
+- `BarChart` leaves out the `ChartLabels` under the bars when the ticks
+    are turned off (`FrameTicks -> None` on a framed chart, `Ticks -> None`
+    otherwise), as they are the category axis' tick labels.
+- `Show` of a framed `BarChart` no longer numbers the frame's category
+    edge.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
