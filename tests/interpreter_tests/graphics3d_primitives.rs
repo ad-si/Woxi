@@ -4161,6 +4161,46 @@ mod surface_outlines_and_meshes {
     assert!(meeting >= 40, "{meeting} mesh line ends on the rim: {s}");
   }
 
+  // Where the plotted function stops being real, Plot3D cuts the surface
+  // along the edge of its domain, as Wolfram does. Dropping every sampling
+  // cell with an undefined corner left a jagged staircase short of it.
+  #[test]
+  fn plot3d_surface_runs_to_the_edge_of_the_real_domain() {
+    assert_eq!(
+      interpret(
+        "g = Plot3D[Sqrt[1 - x^2 - y^2], {x, -2, 2}, {y, -2, 2}, \
+         Mesh -> None]; \
+         p = Cases[g, GraphicsComplex[pts_, ___] :> pts, Infinity][[1]]; \
+         r = Norm[Most[#]] & /@ p; \
+         {Max[r] <= 1, Max[r] > 1 - 10^-3, Count[r, v_ /; v > 0.99] > 20}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+    // The standalone render outlines that edge like any other boundary.
+    let s = svg(
+      "Plot3D[Sqrt[1 - x^2 - y^2], {x, -2, 2}, {y, -2, 2}, Mesh -> None, \
+       BoundaryStyle -> Blue]",
+    );
+    assert!(line_ends(&s, "rgb(0,0,255)").len() > 20, "{s}");
+  }
+
+  // A `RegionFunction` and the function's own domain cut the same surface.
+  #[test]
+  fn plot3d_region_function_and_real_domain_both_cut_the_surface() {
+    assert_eq!(
+      interpret(
+        "g = Plot3D[Sqrt[1 - x^2 - y^2], {x, -2, 2}, {y, -2, 2}, \
+         Mesh -> None, RegionFunction -> Function[{x, y, z}, x > 0]]; \
+         p = Cases[g, GraphicsComplex[pts_, ___] :> pts, Infinity][[1]]; \
+         r = Norm[Most[#]] & /@ p; \
+         {Max[r] <= 1, Max[r] > 1 - 10^-3, Min[p[[All, 1]]] >= 0}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
   // Wolfram's ListPlot3D cuts each grid cell along its diagonal from
   // `(i, j)` to `(i + 1, j + 1)`. From the default `ViewPoint ->
   // {1.3, -2.4, 2}` that diagonal joins the leftmost and the rightmost

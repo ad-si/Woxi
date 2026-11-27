@@ -3447,7 +3447,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // The cells a `RegionFunction` cuts: the parts of their two
         // triangles inside the region, clipped as the standalone render
         // clips them, with the cut points appended to the shared points.
-        if let (Some(mask), Some(rf)) = (mask, &region_function) {
+        // So are the cells at the edge of where the function is defined.
+        {
+          let mask: Vec<Vec<bool>> = index_of
+            .iter()
+            .map(|row| row.iter().map(Option::is_some).collect())
+            .collect();
           let compiled = crate::functions::plot::PlotBody2::new(
             bodies[surface_idx],
             &xvar,
@@ -3460,7 +3465,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .map(|z| [x, y, z])
           };
           let inside = |p: &[f64; 3]| {
-            crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+            region_function.as_ref().is_none_or(|rf| {
+              crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+            })
           };
           let mut clipped: Vec<Expr> = Vec::new();
           for i in 0..grid_n {
@@ -3475,9 +3482,6 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 [(i, j), (i + 1, j), (i, j + 1)],
                 [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
               ] {
-                if corners.iter().any(|&(a, b)| !grid[a][b].is_finite()) {
-                  continue;
-                }
                 let ins = corners.map(|(a, b)| mask[a][b]);
                 if !ins.iter().any(|b| *b) {
                   continue;
@@ -3831,14 +3835,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           [(i, j), (i + 1, j), (i, j + 1)],
           [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
         ] {
-          let Some(pts) = corners
-            .iter()
-            .map(|&(a, b)| vertex(a, b))
-            .collect::<Option<Vec<_>>>()
-          else {
-            continue;
-          };
-          let tri = [pts[0], pts[1], pts[2]];
+          // A corner where the function is undefined counts as outside:
+          // the triangle is cut where the surface stops being defined,
+          // just as it is cut along a `RegionFunction`'s edge.
+          let tri = corners.map(|(a, b)| [grid_x(a), grid_y(b), grid[a][b]]);
           let ins = corners.map(|(a, b)| mask[a][b]);
           if ins.iter().all(|b| *b) {
             push_triangle(tri, &mut all_triangles, &mut facets);
