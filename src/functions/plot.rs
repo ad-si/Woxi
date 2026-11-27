@@ -4197,6 +4197,9 @@ pub(crate) struct PlotOptions {
   /// `AxesOrigin` of an all-positive range sits there rather than at the
   /// padded edge.
   pub axes_origin_low: (Option<f64>, Option<f64>),
+  /// Keep the y tick label that sits on the x axis: a chart's `0` beside
+  /// a vertical axis at the left end of the range, which a plot drops.
+  pub keep_y_label_on_x_axis: bool,
   /// Ticks option: true = show tick marks and labels (default), false = hide
   pub ticks: bool,
   /// `Ticks -> {xspec, yspec}` with explicit positions: each entry is a
@@ -4775,6 +4778,7 @@ impl Default for PlotOptions {
       mesh_point_size: None,
       axes_origin: (None, None),
       axes_origin_low: (None, None),
+      keep_y_label_on_x_axis: false,
     }
   }
 }
@@ -8305,7 +8309,7 @@ fn generate_svg_with_options(
       label_fill,
       axes_style: &opts.axes_style,
       ticks_style: &opts.ticks_style,
-      keep_y_label_on_x_axis: false,
+      keep_y_label_on_x_axis: opts.keep_y_label_on_x_axis,
       label_color: label_style_fill.as_deref(),
       tick_font: plot_padding::plot_tick_font(opts),
     });
@@ -9270,6 +9274,7 @@ pub(crate) fn build_plot_source(
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
     legends: Vec::new(),
     legend_positions: Vec::new(),
+    axes_layout: crate::syntax::AxesLayout::Plot,
   }
 }
 
@@ -10010,6 +10015,15 @@ pub(crate) fn render_merged_plot_source(
       fill_range(overrides.x, source.x_range).unwrap_or(ux),
       pinned_y.unwrap_or(uy),
     ));
+  }
+
+  // A chart's vertical axis stands at the left end of the range and keeps
+  // the `0` beside it, unless `AxesOrigin` places it.
+  if source.axes_layout == crate::syntax::AxesLayout::Chart
+    && opts.axes_origin.0.is_none()
+  {
+    opts.axes_origin.0 = Some(x_range.0);
+    opts.keep_y_label_on_x_axis = true;
   }
 
   if drawn.iter().any(|s| !s.labels.is_empty()) {
@@ -14136,22 +14150,43 @@ pub(crate) fn histogram_plot_source(
     });
   }
 
-  let y_hi = if max_h > 0.0 { max_h * 1.05 } else { 1.0 };
+  // The range the histogram itself draws: the bins and 0..tallest bar,
+  // padded as `generate_histogram_svg` pads them, so the bars sit in the
+  // same place when `Show` redraws them with other graphics.
+  let x_data = (bin_edges[0], bin_edges[num_bins]);
+  let y_data = (0.0, if max_h > 0.0 { max_h } else { 1.0 });
   Some(crate::syntax::PlotSource {
     series,
-    x_range: (bin_edges[0], bin_edges[num_bins]),
-    y_range: (0.0, y_hi),
+    x_range: histogram_padded_range(x_data, HISTOGRAM_X_PADDING),
+    y_range: histogram_padded_range(y_data, HISTOGRAM_Y_PADDING),
     image_size,
     options: Vec::new(),
     log_x: false,
     log_y: false,
-    plot_range: None,
+    plot_range: Some((x_data, y_data)),
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: None,
     legends: Vec::new(),
     legend_positions: Vec::new(),
+    axes_layout: crate::syntax::AxesLayout::Chart,
   })
+}
+
+/// WL 15's `PlotRangePadding` of a `Histogram`, `{{Scaled[0.02],
+/// Scaled[0.02]}, {Scaled[0.02], Scaled[0.05]}}`: the fractions of the
+/// padded span added below and above the x and the y range.
+const HISTOGRAM_X_PADDING: (f64, f64) = (0.02, 0.02);
+const HISTOGRAM_Y_PADDING: (f64, f64) = (0.02, 0.05);
+
+/// `(lo, hi)` widened by the `Scaled` fractions `(below, above)` of the
+/// padded span.
+fn histogram_padded_range(
+  (lo, hi): (f64, f64),
+  (below, above): (f64, f64),
+) -> (f64, f64) {
+  let span = (hi - lo) / (1.0 - below - above);
+  (lo - below * span, hi + above * span)
 }
 
 pub(crate) fn generate_histogram_svg(
@@ -14238,10 +14273,6 @@ pub(crate) fn generate_histogram_svg(
   // `PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02],
   // Scaled[0.05]}}` pads it (fractions of the padded span): the padding
   // applies to an explicit range as well, so its end ticks stay inside.
-  let scaled_pad = |lo: f64, hi: f64, below: f64, above: f64| {
-    let span = (hi - lo) / (1.0 - below - above);
-    (lo - below * span, hi + above * span)
-  };
   // A `PlotRange` names values, which a log axis draws as logarithms.
   let to_draw = |(lo, hi): (f64, f64), log: bool, ln: fn(f64) -> f64| {
     if log { (ln(lo), ln(hi)) } else { (lo, hi) }
@@ -14251,13 +14282,14 @@ pub(crate) fn generate_histogram_svg(
     |r| to_draw(r, opts.log_y, f64::ln),
   );
   let y_hi = if y_hi <= y_lo { y_lo + 1.0 } else { y_hi };
-  let (y_min, y_max) = scaled_pad(y_lo, y_hi, 0.02, 0.05);
+  let (y_min, y_max) =
+    histogram_padded_range((y_lo, y_hi), HISTOGRAM_Y_PADDING);
   let (x_lo, x_hi) = opts.plot_range_x.map_or_else(
     || (bin_edges[0], bin_edges[num_bins]),
     |r| to_draw(r, opts.log_x, f64::log10),
   );
   let x_hi = if x_hi <= x_lo { x_lo + 1.0 } else { x_hi };
-  let (x_lo, x_hi) = scaled_pad(x_lo, x_hi, 0.02, 0.02);
+  let (x_lo, x_hi) = histogram_padded_range((x_lo, x_hi), HISTOGRAM_X_PADDING);
 
   let s = RESOLUTION_SCALE as i32;
   let sf = RESOLUTION_SCALE as f64;

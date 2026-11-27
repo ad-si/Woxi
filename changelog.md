@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Show[Histogram[…], …]` keeps the histogram's range padding and axes:
+    the bars start a little inside the vertical axis as on the histogram
+    alone, and with `AxesOrigin -> {0, 0}` the crossing is no longer
+    labeled with a `0` on both axes.
 - An entity a notebook stores as its icon keeps the name the icon shows:
     `ToBoxes` gives the `TemplateBox[{…}, "Entity"]` icon for it, typeset
     output draws that name in a rounded frame instead of the `Entity[…]`

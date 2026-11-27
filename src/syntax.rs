@@ -196,6 +196,20 @@ pub struct PlotSource {
   /// then keeps that range like an automatic one, clipping other graphics
   /// reaching past it, where a function plot's `All` spans everything shown.
   pub settles_all_range: bool,
+  /// How the axes are laid out by default.
+  pub axes_layout: AxesLayout,
+}
+
+/// The default layout of a plot's axes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AxesLayout {
+  /// A plot's: the axes cross at the origin and drop the label there.
+  #[default]
+  Plot,
+  /// A chart's (`Histogram`): the vertical axis stands at the left end of
+  /// the drawn range unless `AxesOrigin` moves it, and the `0` of the count
+  /// axis stays beside it.
+  Chart,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
