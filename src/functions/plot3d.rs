@@ -8760,6 +8760,10 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 /// of the bounding box, far thinner than the curves of a plot.
 const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
 
+/// The distance between the centers of neighboring lines of a 3D text
+/// label, in ems.
+const TEXT3D_LINE_PITCH_EM: f64 = 1.2;
+
 /// The outline color of a face under the default `EdgeForm`.
 const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
 
@@ -18781,7 +18785,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A stacked fraction is about two lines tall.
       font_size * 2.4
     } else {
-      font_size * 1.2 * label.split('\n').count() as f64
+      // As in 2D graphics, a line's box is one em tall and neighboring
+      // lines sit a line pitch apart, so the label's top and bottom
+      // edges lie half an em beyond its first and last lines' centers.
+      let line_count = label.split('\n').count() as f64;
+      font_size * (1.0 + TEXT3D_LINE_PITCH_EM * (line_count - 1.0))
     };
     let x = sx - offset.0 * text_w / 2.0;
     let y = sy + offset.1 * text_h / 2.0;
@@ -18864,7 +18872,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       continue;
     }
     let lines = crate::functions::graphics::split_markup_lines(label);
-    let line_height = font_size * 1.2;
+    let line_height = font_size * TEXT3D_LINE_PITCH_EM;
     let mut body = String::new();
     if lines.len() == 1 {
       body.push_str(&lines[0]);
@@ -18875,7 +18883,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let dy = if i == 0 { first_dy } else { line_height };
         body.push_str(&crate::functions::graphics::stacked_line_tspan(
           &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
-          "middle",
+          "central",
           line,
         ));
       }
@@ -18885,7 +18893,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
     svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-           dominant-baseline=\"middle\" font-family=\"sans-serif\" \
+           dominant-baseline=\"central\" font-family=\"sans-serif\" \
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
   }

@@ -2417,6 +2417,56 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
+  /// The `y` of the `<text>` element holding `label`.
+  fn text_label_y(svg: &str, label: &str) -> f64 {
+    let line = svg
+      .lines()
+      .find(|l| l.starts_with("<text") && l.contains(&format!(">{label}<")))
+      .unwrap_or_else(|| panic!("no label {label}: {svg}"));
+    let start = line.find(" y=\"").unwrap() + " y=\"".len();
+    let end = start + line[start..].find('"').unwrap();
+    line[start..end].parse().unwrap()
+  }
+
+  /// A label's box is one em tall and centered on its line, so pinning it
+  /// by its top or by its bottom edge moves it half an em either way. It
+  /// used to be taken as a 1.2 em box about the x-height's middle, which
+  /// set a label pinned by its bottom edge too far above its point.
+  #[test]
+  fn text_offset_pins_an_edge_of_a_one_em_box() {
+    for size in [12.0, 30.0] {
+      let s = svg(&format!(
+        "Graphics3D[{{Style[{{Text[\"Qc\", {{0, 0, 0}}], \
+         Text[\"Qt\", {{0, 0, 0}}, {{0, 1}}], \
+         Text[\"Qb\", {{0, 0, 0}}, {{0, -1}}]}}, FontSize -> {size}]}}]"
+      ));
+      let center = text_label_y(&s, "Qc");
+      assert!((text_label_y(&s, "Qt") - center - size / 2.0).abs() < 0.11);
+      assert!((center - text_label_y(&s, "Qb") - size / 2.0).abs() < 0.11);
+      assert!(s.contains("dominant-baseline=\"central\""), "{s}");
+    }
+  }
+
+  /// Each further line of a label adds a line pitch to its box.
+  #[test]
+  fn multi_line_text_offset_spans_the_block_of_lines() {
+    let s = svg(
+      "Graphics3D[{Text[\"Qc\\nRc\", {0, 0, 0}], \
+       Text[\"Qt\\nRt\", {0, 0, 0}, {0, 1}]}]",
+    );
+    let block_y = |first: &str| {
+      let line = s
+        .lines()
+        .find(|l| l.starts_with("<text") && l.contains(first))
+        .unwrap_or_else(|| panic!("no label {first}: {s}"));
+      let start = line.find(" y=\"").unwrap() + " y=\"".len();
+      let end = start + line[start..].find('"').unwrap();
+      line[start..end].parse::<f64>().unwrap()
+    };
+    // Two 12-point lines a 1.2 em pitch apart: a 26.4-point block.
+    assert!((block_y("Qt") - block_y("Qc") - 13.2).abs() < 0.11, "{s}");
+  }
+
   /// The arrowhead `<polygon>`s of a scene: the filled, unstroked ones
   /// (faces are stroked with a hairline), each with its point list.
   fn head_polygons(svg: &str) -> Vec<&str> {
