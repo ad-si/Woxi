@@ -182,8 +182,8 @@ mod solids {
       }
       rims += 1;
       let mid = (
-        (attr(el, "x1") + attr(el, "x2")) / 2.0,
-        (attr(el, "y1") + attr(el, "y2")) / 2.0,
+        f64::midpoint(attr(el, "x1"), attr(el, "x2")),
+        f64::midpoint(attr(el, "y1"), attr(el, "y2")),
       );
       // No facet painted later has a corner within a third of a pixel of
       // the middle of the segment.
