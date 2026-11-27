@@ -229,15 +229,45 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
   markup
     .split('\n')
     .map(|line| {
-      visible_chars(line)
-        .into_iter()
-        .map(char_width_em)
-        .sum::<f64>()
-        + tspan_shift_em(line)
+      line_width_em(line) * size * weight_scale(markup)
+        + spacer_gaps_points(line)
     })
     .fold(0.0, f64::max)
-    * size
-    * weight_scale(markup)
+}
+
+/// The width, in ems of its font size, of what a line of label markup sets
+/// in type: its visible characters and digit-group gaps, without the fixed
+/// gaps [`spacer_gaps_points`] measures (and before any bold widening).
+pub(crate) fn line_width_em(line: &str) -> f64 {
+  let gaps = line.matches(SPACER_GAP_OPEN).count() as f64;
+  visible_chars(line)
+    .into_iter()
+    .map(char_width_em)
+    .sum::<f64>()
+    + tspan_shift_em(line)
+    // The no-break space that carries a fixed gap is set vanishingly small.
+    - gaps * char_width_em('\u{00A0}')
+}
+
+/// The markup around the width of a fixed gap in a line of label text (a
+/// `Spacer[n]` in a `Row`): a no-break space set at 1% of the label size,
+/// so that its own width vanishes, and tracked out to the gap's width in
+/// points. Unlike a `dx` shift, the tracking is part of the line's advance
+/// in every renderer, so `text-anchor` centers the line with its gaps.
+pub(crate) const SPACER_GAP_OPEN: &str =
+  "<tspan font-size=\"1%\" letter-spacing=\"";
+pub(crate) const SPACER_GAP_CLOSE: &str = "\">\u{00A0}</tspan>";
+
+/// The total width, in points, of the fixed gaps ([`SPACER_GAP_OPEN`]) in
+/// a line of markup. They keep their width whatever the size of the label.
+pub(crate) fn spacer_gaps_points(line: &str) -> f64 {
+  line
+    .match_indices(SPACER_GAP_OPEN)
+    .filter_map(|(i, _)| {
+      let value = &line[i + SPACER_GAP_OPEN.len()..];
+      value[..value.find('"')?].parse::<f64>().ok()
+    })
+    .sum()
 }
 
 /// The total horizontal shift, in ems, of the `<tspan dx="…em">` runs in a
@@ -366,6 +396,8 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
   {
     return w * size / TICK_FONT;
   }
+  // A label carrying its own size (`Style[8, 14]`) is set at it.
+  let size = markup_font_size(markup).unwrap_or(size);
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
     && chars.iter().all(|c| {
@@ -891,7 +923,11 @@ impl Decorations {
 pub(crate) fn tick_label_height(markup: &str, size: f64) -> f64 {
   match crate::functions::graphics::axes_label_picture_size(markup) {
     Some((_, h)) => h * size / TICK_FONT,
-    None => block_height(label_lines(markup), size),
+    // A label carrying its own size (`Style[8, 14]`) is set at it.
+    None => block_height(
+      label_lines(markup),
+      markup_font_size(markup).unwrap_or(size),
+    ),
   }
 }
 

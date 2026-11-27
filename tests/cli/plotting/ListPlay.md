@@ -15,3 +15,12 @@ Sound
 $ wo 'Head[ListPlay[Table[Sin[2 Pi 50 t], {t, 0, 1, 1./2000}]]]'
 Sound
 ```
+
+`PlayRange` sets the range of amplitudes that is scaled onto `-1` to `+1`;
+amplitudes outside it are clipped. The default `Automatic` leaves outliers out
+of the range, `All` fits every amplitude.
+
+```scrut
+$ wo 'ListPlay[{1, -1, 0, 5}, PlayRange -> {-2, 2}][[1, 1]]'
+{0.5, -0.5, 0., 0.99999}
+```

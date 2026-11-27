@@ -8254,6 +8254,14 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
   if let Some(color) = crate::functions::graphics::displayed_color(expr) {
     return crate::functions::graphics::color_swatch_svg(&color);
   }
+  // A sound is drawn as the sound box a notebook shows for it — a play
+  // button and the waveform — on its own as much as inside a layout, not
+  // as the source text of its samples.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Sound")
+    && let Some(svg) = crate::functions::sound::sound_svg(expr)
+  {
+    return svg;
+  }
   match expr {
     // `TextGrid[…]` is effectively `Text[Grid[…]]`: its cells are set in
     // the proportional text face, so a column of `-1`s is only as wide as

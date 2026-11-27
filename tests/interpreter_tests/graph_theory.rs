@@ -10661,16 +10661,16 @@ mod wolfram_graph_layouts {
 
   #[test]
   fn radial_embedding_draws_each_component_on_its_own() {
-    // Every piece is embedded separately (a path along a line, drawn from
-    // the right) and the pieces are packed below each other, the largest
-    // first, padded by 3/16.
+    // Every piece is embedded separately (a path along a line from the end
+    // that comes first, a single edge from the right) and the pieces are
+    // packed below each other, the largest first, padded by 3/16.
     assert_eq!(
       interpret(
         "Round[1000 GraphEmbedding[Graph[{1 <-> 2, 3 <-> 4, 4 <-> 5}, \
          GraphLayout -> \"RadialEmbedding\"]]]"
       )
       .unwrap(),
-      "{{1188, -563}, {188, -563}, {2188, -188}, {1188, -188}, {188, -188}}"
+      "{{1188, -563}, {188, -563}, {188, -188}, {1188, -188}, {2188, -188}}"
     );
     // A star keeps its radial shape next to the other pieces: the hub is
     // one unit from every leaf.
@@ -10725,13 +10725,96 @@ mod wolfram_graph_layouts {
          Method -> \"RadialDrawing\"][[1, 1]]]"
       )
       .unwrap(),
-      "{{1000, 0}, {0, 0}, {2000, 375}, {1000, 375}, {0, 375}}"
+      "{{1188, -563}, {188, -563}, {188, -188}, {1188, -188}, {2188, -188}}"
+    );
+  }
+
+  /// A single edge lies flat with its first vertex at the right, alone or
+  /// as one of several components; a longer path starts at the end that
+  /// comes first among the vertices. The components are stacked from the
+  /// origin downward, the largest on top, each padded on every side.
+  #[test]
+  fn radial_drawing_of_paths_and_components() {
+    let plot = |edges: &str| {
+      interpret(&format!(
+        "Round[10000 GraphPlot[{edges}, Method -> \"RadialDrawing\"][[1, 1]]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(plot("{1 -> 2}"), "{{10000, 0}, {0, 0}}");
+    assert_eq!(plot("{2 -> 1}"), "{{10000, 0}, {0, 0}}");
+    assert_eq!(plot("{3 -> 2, 2 -> 1}"), "{{0, 0}, {10000, 0}, {20000, 0}}");
+    assert_eq!(
+      plot("{1 -> 2, 5 -> 4, 4 -> 3}"),
+      "{{11875, -5625}, {1875, -5625}, {1875, -1875}, {11875, -1875}, \
+       {21875, -1875}}"
+    );
+    assert_eq!(
+      plot("{1 -> 2, 3 -> 4, 4 -> 5, 5 -> 6, 7 -> 8, 8 -> 9}"),
+      "{{12500, -12501}, {2500, -12501}, {2500, -2500}, {12500, -2500}, \
+       {22500, -2500}, {32500, -2500}, {2500, -7500}, {12500, -7500}, \
+       {22500, -7500}}"
+    );
+    // A star keeps its shape beside an edge.
+    assert_eq!(
+      interpret(
+        "Round[1000 GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5, 4 -> 6}, \
+         Method -> \"RadialDrawing\"][[1, 1]]]"
+      )
+      .unwrap(),
+      "{{1265, -2294}, {265, -2294}, {265, -265}, {1131, -765}, \
+       {1131, -1765}, {1997, -265}}"
+    );
+    // The embedding of the graph is the plot's.
+    assert_eq!(
+      interpret(
+        "GraphEmbedding[Graph[{1 -> 2, 3 -> 4, 4 -> 5}, \
+         GraphLayout -> \"RadialEmbedding\"]] == GraphPlot[{1 -> 2, 3 -> 4, \
+         4 -> 5}, Method -> \"RadialEmbedding\"][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// A radial drawing is scaled so the root mean square of its edge
+  /// lengths is 1: the edges between two rings, and those closing a
+  /// cycle, are not all of one length.
+  #[test]
+  fn radial_drawing_has_unit_root_mean_square_edge() {
+    assert_eq!(
+      interpret(
+        "p = GraphPlot[{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 5, 2 -> 6, 3 -> 7, 3 -> 8, \
+         4 -> 9, 4 -> 10}, Method -> \"RadialDrawing\"][[1, 1]]; \
+         Round[10^6 {Norm[p[[1]] - p[[2]]], Norm[p[[1]] - p[[5]]], \
+         Norm[p[[2]] - p[[5]]]}]"
+      )
+      .unwrap(),
+      "{858356, 1716713, 1063773}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10000 GraphPlot[{1 -> 2, 2 -> 3, 1 -> 3}, \
+         Method -> \"RadialDrawing\"][[1, 1]]]"
+      )
+      .unwrap(),
+      "{{7071, 0}, {0, 0}, {14142, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10000 GraphPlot[{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 3, 4 -> 5, 4 -> 6, \
+         5 -> 6}, Method -> \"RadialDrawing\"][[1, 1]]]"
+      )
+      .unwrap(),
+      "{{4492, 8985}, {0, 13477}, {0, 4492}, {10845, 8985}, {13477, 0}, \
+       {13477, 17969}}"
     );
   }
 
   #[test]
   fn radial_embedding_layer_size_function_spaces_the_rings() {
-    // Ring k lies f[k] beyond ring k - 1: 1/3 and then 1/9 out.
+    // Ring k lies f[k] beyond ring k - 1: 1/3 and then 1/9 out, in the
+    // scale that makes the root mean square of the two edges 1.
     assert_eq!(
       interpret(
         "Round[GraphEmbedding[Graph[{1 -> 2, 2 -> 3}, GraphLayout -> \
@@ -10739,7 +10822,7 @@ mod wolfram_graph_layouts {
          \"LayerSizeFunction\" -> (3^-# &)}]], 0.001]"
       )
       .unwrap(),
-      "{{0., 2.}, {0., 0.5}, {0., 0.}}"
+      "{{0., 1.7890000000000001}, {0., 0.447}, {0., 0.}}"
     );
   }
 

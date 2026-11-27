@@ -5075,6 +5075,73 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_list_play_automatic_play_range_leaves_out_an_outlier() {
+      // The default `PlayRange -> Automatic` leaves a lone spike out of the
+      // range the amplitudes are scaled onto, so the rest of the signal
+      // keeps its swing instead of being flattened next to the bottom.
+      let data = "d = Append[Table[Sin[t], {t, 0., 30, 0.1}], 500.]; ";
+      for call in ["ListPlay[d]", "ListPlay[d, PlayRange -> Automatic]"] {
+        assert_eq!(
+          interpret(&format!(
+            "{data}s = {call}[[1, 1]]; \
+             {{Min[s], Max[s], Max[Most[s]] - Min[Most[s]] > 0.5}}"
+          ))
+          .unwrap(),
+          "{-1., 0.99999, True}"
+        );
+      }
+    }
+
+    #[test]
+    fn test_list_play_play_range_all_scales_to_the_whole_extent() {
+      // `PlayRange -> All` fits every amplitude, spike included.
+      assert_eq!(
+        interpret(
+          "d = Append[Table[Sin[t], {t, 0., 30, 0.1}], 500.]; \
+           s = ListPlay[d, PlayRange -> All][[1, 1]]; \
+           {Min[s], Max[s], Max[Most[s]] < -0.99}"
+        )
+        .unwrap(),
+        "{-1., 0.99999, True}"
+      );
+    }
+
+    #[test]
+    fn test_list_play_explicit_play_range_clips() {
+      // `PlayRange -> {amin, amax}` maps that range onto [-1, 1] and clips
+      // the amplitudes outside it.
+      assert_eq!(
+        interpret("ListPlay[{1, -1, 0, 5, -7}, PlayRange -> {-2, 2}][[1, 1]]")
+          .unwrap(),
+        "{0.5, -0.5, 0., 0.99999, -1.}"
+      );
+      // An empty range is silent.
+      assert_eq!(
+        interpret("ListPlay[{1, 2, 3}, PlayRange -> {1, 1}][[1, 1]]").unwrap(),
+        "{0., 0., 0.}"
+      );
+    }
+
+    #[test]
+    fn test_export_string_svg_of_a_sound_draws_the_sound_box() {
+      // A sound on its own is exported as its sound box (play button and
+      // waveform), not as the source text of all its samples.
+      let svg = interpret(
+        "ExportString[ListPlay[Table[Sin[0.3 t], {t, 0, 2000}]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("<circle"), "play button drawn");
+      assert!(!svg.contains("SampledSoundList"), "no source text");
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width");
+      assert!(width < 400.0, "sound box width, got {width}");
+    }
+
+    #[test]
     fn test_export_wav_explicit_format() {
       // The format can be given explicitly instead of via the extension.
       let path = temp_file("woxi_test_explicit_wav.bin");

@@ -316,26 +316,159 @@ fn point_group_index(spec: &Expr) -> Option<usize> {
   }
 }
 
+/// Every property Wolfram's `FiniteGroupData` knows, as
+/// `FiniteGroupData["Properties"]` lists them. Woxi computes only some
+/// (see `property`); the others stay unevaluated.
+const PROPERTIES: [&str; 82] = [
+  "Abelian",
+  "AlternateNames",
+  "AlternateStandardNames",
+  "Alternating",
+  "AutomorphismGroup",
+  "BravaisLattices",
+  "CayleyGraph",
+  "Center",
+  "CenterElements",
+  "CharacterTable",
+  "Classes",
+  "ClassNumber",
+  "CommutatorSubgroup",
+  "CommutatorSubgroupElements",
+  "ConjugacyClasses",
+  "ConjugacyClassNames",
+  "ConjugacyClassSizes",
+  "CrystalFamily",
+  "CrystalForm",
+  "CrystalSystem",
+  "CycleGraph",
+  "CycleIndex",
+  "Cycles",
+  "Cyclic",
+  "DefiningRelations",
+  "Dihedral",
+  "ElementNames",
+  "Elements",
+  "Exponent",
+  "Generators",
+  "HermannMauguin",
+  "Information",
+  "InnerAutomorphismGroup",
+  "InverseGenerators",
+  "Inverses",
+  "IsomorphicGroups",
+  "LatticeSystems",
+  "MatrixRepresentation",
+  "MultiplicationTable",
+  "Name",
+  "Nonabelian",
+  "Nonalternating",
+  "Noncyclic",
+  "Nondihedral",
+  "Nonperfect",
+  "Nonsimple",
+  "Nonsolvable",
+  "Nonsporadic",
+  "Nonsymmetric",
+  "Nontransitive",
+  "NormalSubgroupElements",
+  "NormalSubgroups",
+  "Notation",
+  "Orbifold",
+  "Order",
+  "OuterAutomorphismGroup",
+  "ParameterRange",
+  "Perfect",
+  "PermutationGroupRepresentation",
+  "PermutationRepresentation",
+  "PointGroupType",
+  "QuotientGroups",
+  "RepresentationDimensions",
+  "RepresentationNames",
+  "Schoenflies",
+  "SchurMultiplier",
+  "ShortName",
+  "Shubnikov",
+  "Simple",
+  "SmallGroupID",
+  "Solvable",
+  "SpaceRepresentation",
+  "Sporadic",
+  "StandardName",
+  "SubgroupElements",
+  "Subgroups",
+  "SylowSubgroupCounts",
+  "SylowSubgroupElements",
+  "SylowSubgroups",
+  "Symmetric",
+  "Transitive",
+  "Transitivity",
+];
+
+/// Whether `spec` names the point-group family without naming one of its
+/// 32 groups: the bare family name, or an index out of range. Wolfram has
+/// no such entity (the family is not a class either).
+fn is_unknown_point_group(spec: &Expr) -> bool {
+  match spec {
+    Expr::String(family) => family == FAMILY,
+    Expr::List(items) => matches!(
+      &items[..],
+      [Expr::String(family), Expr::Integer(n)]
+        if family == FAMILY && !(1..=32).contains(n)
+    ),
+    _ => false,
+  }
+}
+
 pub fn finite_group_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("FiniteGroupData", args));
-  // FiniteGroupData["CrystallographicPointGroup"] lists the family.
-  if let [Expr::String(class)] = args
-    && class == FAMILY
+  if let [Expr::String(request)] = args
+    && request == "Properties"
   {
     return Ok(Expr::List(
-      (1..=32).map(standard_name).collect::<Vec<_>>().into(),
+      PROPERTIES
+        .iter()
+        .map(|p| Expr::String(p.to_string()))
+        .collect::<Vec<_>>()
+        .into(),
     ));
   }
   let Some(n) = args.first().and_then(point_group_index) else {
+    if let Some(spec) = args.first()
+      && is_unknown_point_group(spec)
+    {
+      crate::emit_message(&format!(
+        "FiniteGroupData::notent: {} is not a known entity, class or tag \
+         for FiniteGroupData. Use FiniteGroupData[] for a list of entities.",
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+      ));
+    }
     return unevaluated();
   };
   let group = &POINT_GROUPS[n - 1];
+  // A property Woxi does not compute stays unevaluated; a name that is no
+  // property at all is reported.
+  let unknown = |prop: &str| {
+    if !PROPERTIES.contains(&prop) {
+      crate::emit_message(&format!(
+        "FiniteGroupData::notprop: {prop} is not a known property for \
+         FiniteGroupData. Use FiniteGroupData[\"Properties\"] for a list of \
+         properties."
+      ));
+    }
+  };
   match &args[1..] {
     [] => Ok(standard_name(n)),
-    [Expr::String(prop)] => match property(n, group, prop)? {
-      Some(value) => Ok(value),
-      None => unevaluated(),
-    },
+    [Expr::String(prop)] if prop == "Properties" => {
+      finite_group_data_ast(&args[1..])
+    }
+    [Expr::String(prop)] => {
+      if let Some(value) = property(n, group, prop)? {
+        Ok(value)
+      } else {
+        unknown(prop);
+        unevaluated()
+      }
+    }
     // A list of properties gives the list of their values.
     [Expr::List(props)] => {
       let mut values = Vec::with_capacity(props.len());
@@ -343,9 +476,11 @@ pub fn finite_group_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let Expr::String(prop) = prop else {
           return unevaluated();
         };
-        match property(n, group, prop)? {
-          Some(value) => values.push(value),
-          None => return unevaluated(),
+        if let Some(value) = property(n, group, prop)? {
+          values.push(value);
+        } else {
+          unknown(prop);
+          return unevaluated();
         }
       }
       Ok(Expr::List(values.into()))
