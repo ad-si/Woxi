@@ -24285,6 +24285,30 @@ mod parametric_ndsolve {
       "{0.8, 2.}"
     );
   }
+
+  /// Regression: the functions `ParametricNDSolve` returns for the unknowns
+  /// of one system each integrated the whole system again, so reading all
+  /// the unknowns at one set of parameter values cost one solve apiece.
+  /// They share a single solve per set of values (`g` counts them), and
+  /// each still picks out its own unknown.
+  #[test]
+  fn unknowns_of_one_system_share_a_solve() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "count = 0; g[a_?NumericQ] := (count++; a); \
+         pf = ParametricNDSolve[{y'[t] == -g[a] y[t], y[0] == 1, \
+           z'[t] == y[t], z[0] == 0}, {y, z}, {t, 0, 1}, {a}]; \
+         {py, pz} = {y, z} /. pf; \
+         first = Round[10000 {py[2.][0.5], pz[2.][0.5], py[2.][1.]}]; \
+         once = count; \
+         next = Round[10000 {py[3.][0.5], pz[3.][0.5]}]; \
+         {once, count, first, next}"
+      )
+      .unwrap(),
+      "{1, 2, {3679, 3161, 1353}, {2231, 2590}}"
+    );
+  }
 }
 
 mod integrate_polynomial_over_sqrt_quadratic {

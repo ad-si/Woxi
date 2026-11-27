@@ -929,14 +929,20 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     .map(|l| svg_markup_visible_text(l))
     .collect::<Vec<_>>()
     .join(" ");
+  Some(picture_label(svg, w, h, &text))
+}
+
+/// A title drawn as one picture `w` by `h` (its `svg`), with `text` as its
+/// readable content.
+fn picture_label(svg: String, w: f64, h: f64, text: &str) -> StyledLabel {
   let segments = vec![LabelSegment::Graphic { svg, w, h }];
   let mut extra_lines = Vec::new();
   claim_picture_room(&segments, &mut extra_lines);
-  Some(StyledLabel {
+  StyledLabel {
     text: if text.trim().is_empty() {
       " ".into()
     } else {
-      text
+      text.to_string()
     },
     markup: Some(String::new()),
     extra_lines,
@@ -948,7 +954,7 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     line_frames: Vec::new(),
     segments,
     line_alignment: ColumnAlignment::Center,
-  })
+  }
 }
 
 /// How the lines of a stacked title line up: a `Column` sets them flush
@@ -1007,6 +1013,18 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
   // text; it is typeset whole, with any `Framed` box around it.
   if let Some(label) = stacked_picture_label(expr) {
     return Some(label);
+  }
+  // Columns standing side by side in a `Row` keep their own widths and
+  // alignments, so the row is typeset whole as well.
+  if let Some((svg, w, h)) =
+    crate::functions::graphics::plot_label_column_row_svg(expr)
+  {
+    let text = crate::functions::graphics::expr_to_svg_markup_lines(expr)
+      .iter()
+      .map(|l| svg_markup_visible_text(l))
+      .collect::<Vec<_>>()
+      .join(" ");
+    return Some(picture_label(svg, w, h, &text));
   }
   // `Framed[title]` boxes the title it would otherwise draw, on the panel
   // its `Background` names.

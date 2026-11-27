@@ -88,6 +88,13 @@ pub fn contains_subtraction(expr: &Expr) -> bool {
       op: UnaryOperator::Minus,
       ..
     } => true,
+    // The bulk of a large evaluated expression (a table of numbers) is
+    // walked in place, without collecting each node's children first.
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) | Expr::Identifier(_) => {
+      false
+    }
+    Expr::List(items) => items.iter().any(contains_subtraction),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_subtraction),
     _ => crate::syntax::expr_children(expr)
       .into_iter()
       .any(contains_subtraction),
