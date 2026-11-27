@@ -65111,9 +65111,15 @@ mod grid_text_in_graphics {
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(\*OverscriptBox[\(AB\), \(_\)] × \*OverscriptBox[\(AC\), \(_\)]\), \(2\)]\)", {0, 0}]], "SVG"]"#,
     )
     .unwrap();
-    // Typeset factors set side by side, the same as the evaluated
-    // `Times[Overscript[…], Overscript[…]]`.
-    assert!(svg.contains("(AB\u{0304} AC\u{0304})/2"), "{svg}");
+    // The factors stay side by side in the numerator of the stacked
+    // fraction, each under its bar, with the `×` between them.
+    let (num, den) = svg.split_once("<line ").expect("a fraction bar");
+    assert!(
+      num.contains(">AB</text>") && num.contains(">AC</text>"),
+      "{svg}"
+    );
+    assert!(num.contains(">×</text>"), "{svg}");
+    assert!(den.contains(">2</text>"), "{svg}");
   }
 
   #[test]
@@ -65121,7 +65127,45 @@ mod grid_text_in_graphics {
     let svg = interpret(
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(a*b*c\), \(2\)]\)", {0, 0}]], "SVG"]"#,
     ).unwrap();
-    assert!(svg.contains(">(a*b*c)/2</text>"));
+    let (num, den) = svg.split_once("<line ").expect("a fraction bar");
+    assert!(num.contains(">a*b*c</text>"), "{svg}");
+    assert!(den.contains(">2</text>"), "{svg}");
+  }
+
+  /// Regression: a string whose inline box notation holds a fraction, set
+  /// among the parts of a `Row` (a Demonstration's `K = [C]/([A][B])`
+  /// caption), was flattened to the one-line `[C]/[A][B]`. Wolfram stacks
+  /// the numerator over the denominator, in line with the row's other parts.
+  #[test]
+  fn row_with_inline_fraction_box_string_stacks_the_fraction() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text[Row[{"K = ", Style["\!\(\*FractionBox[\(u\), \(\(v\) w\)]\)", Italic]}], {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    let (before, after) = svg.split_once("<line ").expect("a fraction bar");
+    assert!(before.contains(">K = </text>"), "{svg}");
+    assert!(before.contains(">u</text>"), "{svg}");
+    assert!(after.contains(">v</text>"), "{svg}");
+    assert!(!svg.contains(">u/"), "{svg}");
+  }
+
+  /// Regression: the `Bold`/`Italic` of a `Style` around a label that is
+  /// laid out as boxes (it holds a stacked fraction) was dropped, so the
+  /// label was drawn in the regular face.
+  #[test]
+  fn styled_stacked_label_keeps_its_face() {
+    let label = |style: &str| {
+      interpret(&format!(
+        r#"ExportString[Graphics[Text[Style[Row[{{"m = ", p/q}}]{style}], {{0, 0}}]], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    assert!(!label("").contains("font-weight=\"bold\""));
+    let bold = label(", Bold");
+    assert!(bold.contains("font-weight=\"bold\""), "{bold}");
+    assert!(bold.contains("<line "), "{bold}");
+    let italic = label(", Italic, 20");
+    assert!(italic.contains("font-style=\"italic\""), "{italic}");
   }
 
   #[test]
@@ -65146,7 +65190,11 @@ mod grid_text_in_graphics {
       r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(my\ height\), \(my\ shadow\ length\)]\)=\!\(\*FractionBox[\(a\), \(b\)]\)", {0, 0}]], "SVG"]"#,
     )
     .unwrap();
-    assert!(svg.contains("(my height)/(my shadow length)=a/b"), "{svg}");
+    assert!(svg.contains(">my height</text>"), "{svg}");
+    assert!(svg.contains(">my shadow length</text>"), "{svg}");
+    assert!(svg.contains(">=</text>"), "{svg}");
+    // Both fractions are stacked over a bar of their own.
+    assert_eq!(svg.matches("<line ").count(), 2, "{svg}");
     assert!(!svg.contains('*'), "{svg}");
   }
 
@@ -77425,6 +77473,86 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
       "{extra}"
     );
   }
+}
+
+/// Regression: an elongated unboxed `Graphics3D` with an automatic range,
+/// seen from a distant `ViewPoint` at `ImageSize -> {w, h}`, was framed by
+/// the sphere around its box and drawn at about 0.6× its size. Wolfram's
+/// snapshot of a Demonstration's row of three cylinders (a 12 × 2 × 4 row
+/// at `ImageSize -> {550, 350}`, seen from `ViewPoint -> {2, -10, 2}`)
+/// draws the row across nearly the whole width, as the outline fit does.
+/// A pinned `PlotRange`, a compact box and the default camera's distance
+/// keep the sphere framing.
+#[test]
+fn elongated_unboxed_3d_scene_seen_from_afar_fits_its_outline() {
+  let scene = |gap: f64, extra: &str| {
+    format!(
+      "Graphics3D[Table[Cylinder[{{{{x, 0, 0}}, {{x, 0, 4}}}}, 1], \
+       {{x, 0, {}, {gap}}}], Boxed -> False, \
+       ImageSize -> {{550, 350}}{extra}]",
+      2.0 * gap
+    )
+  };
+  let width = |code: &str| {
+    let svg = export_svg(code);
+    let xs: Vec<f64> = svg
+      .split("points=\"")
+      .skip(1)
+      .flat_map(|rest| {
+        let pts = &rest[..rest.find('"').unwrap()];
+        pts
+          .split_whitespace()
+          .filter_map(|p| p.split(',').next()?.parse::<f64>().ok())
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  let far = ", ViewPoint -> {2, -10, 2}";
+  for frame in [false, true] {
+    let draw = |code: String| {
+      if frame {
+        woxi::with_manipulate_frame(|| width(&code))
+      } else {
+        width(&code)
+      }
+    };
+    let fitted = draw(scene(5.0, far));
+    assert!(
+      (480.0..=550.0).contains(&fitted),
+      "frame = {frame}: expected the row to span the width, got {fitted}"
+    );
+    assert!(
+      (fitted - draw(scene(5.0, &format!("{far}, SphericalRegion -> False"))))
+        .abs()
+        < 0.5
+    );
+    // Sphere framing is kept under a pinned range, …
+    let pinned =
+      format!("{far}, PlotRange -> {{{{-1, 11}}, {{-1, 1}}, {{0, 4}}}}");
+    assert!(
+      (draw(scene(5.0, &pinned))
+        - draw(scene(5.0, &format!("{pinned}, SphericalRegion -> True"))))
+      .abs()
+        < 0.5
+    );
+    // … for a compact box (three overlapping cylinders: 4 × 2 × 4) …
+    assert!(
+      (draw(scene(1.0, far))
+        - draw(scene(1.0, &format!("{far}, SphericalRegion -> True"))))
+      .abs()
+        < 0.5
+    );
+  }
+  // … and from the default camera's distance in a `Manipulate` frame.
+  let near = ", ViewPoint -> {1.3, -2.4, 2}";
+  assert!(
+    (woxi::with_manipulate_frame(|| width(&scene(5.0, near)))
+      - width(&scene(5.0, &format!("{near}, SphericalRegion -> True"))))
+    .abs()
+      < 0.5
+  );
 }
 
 /// Regression: a `Manipulate` frame's unboxed `Graphics3D` with neither a

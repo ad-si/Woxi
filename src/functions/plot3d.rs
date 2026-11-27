@@ -11394,18 +11394,23 @@ fn push_text3d_label(
   // A label whose inline box notation hangs limits on a large operator
   // (an integral with its bounds) is laid out as boxes, the way the 2D
   // `Text` draws it: the sign tall, its limits at its ends.
+  //
+  // So is a label holding a built-up fraction or a root (a quotient, or a
+  // string whose inline box notation stacks one), on its own or among the
+  // parts of a `Row`: the fraction stacks inline with the text around it.
   let picture =
-    crate::functions::graphics::label_has_large_operator_script(label_expr)
-      .then(|| {
-        let color = match text_style.color {
-          Some((r, g, b)) => format!("rgb({r},{g},{b})"),
-          None => crate::functions::graphics::theme().text_primary.to_string(),
-        };
-        crate::functions::graphics::stacked_label_picture(
-          label_expr, font_size, "", &color,
-        )
-      })
-      .flatten();
+    (crate::functions::graphics::label_has_large_operator_script(label_expr)
+      || crate::functions::graphics::label_typesets_fraction(label_expr))
+    .then(|| {
+      let color = match text_style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => crate::functions::graphics::theme().text_primary.to_string(),
+      };
+      crate::functions::graphics::stacked_label_picture(
+        label_expr, font_size, "", &color,
+      )
+    })
+    .flatten();
   prims.push(Primitive3D::Text3D {
     label,
     pos,
@@ -15843,6 +15848,15 @@ const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
 /// filling a 300 × 400 picture).
 const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
+/// Distance of an explicit `ViewPoint` from the box center, in units of
+/// the box's longest side, from which an elongated unboxed scene keeps the
+/// outline fit in a picture of fixed size (see its use in `graphics3d_ast`):
+/// twice the default camera's distance (`{1.3, -2.4, 2}`, 3.38 away), from
+/// where the view is nearly a parallel projection. Wolfram's snapshots put
+/// the limit between that default distance (sphere-framed) and a
+/// `ViewPoint -> {2, -10, 2}` (10.4 away, outline-fitted).
+const DISTANT_VIEW_POINT: f64 = 6.77;
+
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
 ///
@@ -16576,7 +16590,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
   // below their `PlotLabel` does (sphere framing would span 180). The
   // layout draws such a cell again (see `outline_fitted_cell_svg`).
-  let explicitly_framed = plot_range.is_some() || explicit_view_point;
+  // An elongated box around an automatic range keeps the outline fit when
+  // it is seen from an explicit but distant `ViewPoint` (see
+  // `DISTANT_VIEW_POINT`), as it does under the default camera (see
+  // `COMPACT_BOX_MAX_SIDE_RATIO`): Wolfram's snapshot
+  // of a Demonstration's row of three unboxed cylinders with their captions
+  // (a 12 × 2 × 7.2 box) at `ImageSize -> {550, 350}`, seen from
+  // `ViewPoint -> {2, -10, 2}`, draws the 12 units about 505 px wide, as
+  // the outline fit does (sphere framing would span 310).
+  let elongated_automatic_range = plot_range.is_none() && {
+    let sides = primitives_extent(&prims).map(|(lo, hi)| hi - lo);
+    let longest = sides.into_iter().fold(0.0, f64::max);
+    let shortest = sides.into_iter().fold(f64::INFINITY, f64::min);
+    longest.is_finite()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && longest > COMPACT_BOX_MAX_SIDE_RATIO * shortest
+      && view_distance.is_finite()
+      && view_distance >= DISTANT_VIEW_POINT
+  };
+  let explicitly_framed =
+    plot_range.is_some() || (explicit_view_point && !elongated_automatic_range);
   let automatic_sphere = !spherical_region
     && !spherical_region_off
     && !OUTLINE_FIT_CELL.get()

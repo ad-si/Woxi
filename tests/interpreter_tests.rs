@@ -3884,12 +3884,12 @@ mod interpreter_tests {
       !svg.contains("FractionBox"),
       "raw box source leaked into SVG: {svg}"
     );
+    // The exponent is the fraction itself, `p` stacked over `q`.
+    let p_pos = svg.find(">p</text>").expect("numerator p");
+    let bar_pos = svg[p_pos..].find("<line ").expect("fraction bar") + p_pos;
     assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\">p</tspan>/\
-         <tspan font-style=\"italic\">q</tspan>"
-      ),
-      "expected the nested fraction to render as p/q: {svg}"
+      svg[bar_pos..].contains(">q</text>"),
+      "expected the nested fraction to stack p over q: {svg}"
     );
   }
 

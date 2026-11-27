@@ -482,6 +482,39 @@ mod solids {
     assert!(s.contains("font-style=\"italic\""), "got: {s}");
   }
 
+  /// Regression: a `Row` label holding a fraction (a quotient, or a string
+  /// whose inline box notation stacks one) was broken over several lines of
+  /// text — `x = a` above `b`, or the fraction flattened to `a/b` with the
+  /// row pushed a line up onto its neighbor. It is laid out as boxes, the
+  /// fraction stacked in line with the row's other parts, as in `Graphics`.
+  #[test]
+  fn row_text_label_stacks_its_fraction_inline() {
+    for label in [
+      "Row[{\"k = \", u/v}]",
+      "Style[Row[{\"k = \", \"\\!\\(\\*FractionBox[\\(u\\), \\(v\\)]\\)\"}], 20, Bold]",
+    ] {
+      let s = svg(&format!("Graphics3D[{{Text[{label}, {{0, 0, 0}}]}}]"));
+      // One nested picture: the lead-in, then `u` over a bar over `v`.
+      let pic =
+        &s[s.find("<svg x=").unwrap_or_else(|| panic!("{label}: {s}"))..];
+      let k = pic
+        .find(">k = </text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      let u = pic
+        .find(">u</text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      let bar = pic.find("<line ").unwrap_or_else(|| panic!("{label}: {s}"));
+      let v = pic
+        .find(">v</text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      assert!(k < u && u < bar && bar < v, "{label}: {s}");
+      assert!(!s.contains("<tspan x="), "{label}: {s}");
+    }
+    let bold =
+      svg("Graphics3D[{Text[Style[Row[{\"k = \", u/v}], Bold], {0, 0, 0}]}]");
+    assert!(bold.contains("font-weight=\"bold\""), "{bold}");
+  }
+
   /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
   /// is drawn as its combining mark on the base (`T̂`, `x̃`), not as a
   /// superscript beside it; a non-accent overscript is stacked above it.
