@@ -1223,6 +1223,8 @@ fn graph_render(
   let vertex_radius = vertex_size_default
     .as_ref()
     .map_or(auto_radius, size_radius);
+  let explicit_vertex_size =
+    vertex_size_default.is_some() || !vertex_size_rules.is_empty();
   let vertex_radii: Vec<f64> = vertices
     .iter()
     .map(|v| {
@@ -1420,7 +1422,7 @@ fn graph_render(
       // visibly outside the shorter arcs it encloses) rather than the small
       // fixed spacing used to separate ordinary parallel edges.
       let offset_mag = if layout_choice.linear {
-        clen
+        clen / 2.0
       } else {
         offset_idx * spacing
       };
@@ -1621,7 +1623,19 @@ fn graph_render(
           }
         }
       }
-      None => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
+      // An undirected `"LinearEmbedding"` arc is the `BezierCurve` Wolfram
+      // draws, whose control point (twice as high as the arc itself)
+      // counts toward the picture's extent.
+      None => match (curve_ctrl, default_pts.first(), default_pts.last()) {
+        (Some(ctrl), Some(&from), Some(&to))
+          if layout_choice.linear && !edge_data.directed =>
+        {
+          primitives.push(call1("BezierCurve", points_expr(&[from, ctrl, to])));
+        }
+        _ => {
+          primitives.push(line_or_arrow(edge_data.directed, &default_pts));
+        }
+      },
     }
 
     // `EdgeLabels -> {edge -> label, …}` (and GraphPlot's `{edge, label}`
@@ -1815,8 +1829,28 @@ fn graph_render(
       .map(|(_, s)| s.clone())
       .or_else(|| vertex_shape_default.clone());
     if let Some(shape) = shape
-      && let Some(inset) = vertex_shape_inset(&shape, x, y, vertex_radius)
+      && let Some(inset) =
+        vertex_shape_inset(&shape, x, y, vertex_radii[i], explicit_vertex_size)
     {
+      // A sized picture takes up its vertex's whole square in the drawing,
+      // however much of that square the picture itself leaves blank.
+      if explicit_vertex_size {
+        let r = vertex_radii[i];
+        primitives.push(Expr::List(
+          vec![
+            call1("Opacity", Expr::Integer(0)),
+            call1("EdgeForm", id_expr("None")),
+            call(
+              "Rectangle",
+              vec![
+                Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
+                Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
+              ],
+            ),
+          ]
+          .into(),
+        ));
+      }
       primitives.push(inset);
       continue;
     }
@@ -3376,7 +3410,7 @@ fn compute_layout(
   if components.len() <= 1 {
     // A tree is drawn as one, as Wolfram's automatic layout does: tidily
     // from its root (the one vertex nothing points at, else its center).
-    let root = {
+    let (root, rooted) = {
       let mut indeg = vec![0usize; n];
       for e in graph.edge_references() {
         if e.weight().directed {
@@ -3386,14 +3420,17 @@ fn compute_layout(
       let sources: Vec<usize> = (0..n).filter(|&v| indeg[v] == 0).collect();
       let directed = graph.edge_references().all(|e| e.weight().directed);
       match sources.as_slice() {
-        [only] if directed => *only,
-        _ => graph_center(graph),
+        [only] if directed => (*only, true),
+        _ => (graph_center(graph), false),
       }
     };
     if let Some(children) = tree_children(graph, root) {
       // A path lies along a horizontal line, from the end that comes
-      // first among the vertices.
-      if let Some(pts) = path_positions(graph) {
+      // first among the vertices — unless its edges all lead away from a
+      // vertex in its middle: that one is a root with two branches, drawn
+      // above them like any other tree.
+      let branching_root = rooted && children[root].len() > 1;
+      if !branching_root && let Some(pts) = path_positions(graph) {
         return pts;
       }
       // A large tree would crowd its deepest layers into a sliver, so
@@ -5001,6 +5038,7 @@ fn vertex_shape_inset(
   x: f64,
   y: f64,
   radius: f64,
+  explicit_size: bool,
 ) -> Option<Expr> {
   let evaluated = crate::evaluator::evaluate_expr_to_expr(shape).ok()?;
   // `Graph[…]`/`Graphics[…]` stay symbolic under ordinary evaluation (the
@@ -5025,7 +5063,14 @@ fn vertex_shape_inset(
   // Large enough that a nested picture's own detail (an RNA arc diagram's
   // nested arcs, say) stays legible, without one vertex's icon swallowing
   // its neighbors in the outer layout.
-  let size = radius * 12.0;
+  //
+  // A `VertexSize` setting is the size of the picture itself: it fills the
+  // square the vertex's marker would have been inscribed in.
+  let size = if explicit_size {
+    radius * 2.0
+  } else {
+    radius * 12.0
+  };
   Some(call(
     "Inset",
     vec![
@@ -7254,6 +7299,19 @@ fn collect_directives(expr: &Expr) -> Vec<Expr> {
   }
 }
 
+/// The directives one part's style rule (`edge -> style`) gives it:
+/// `Directive[d1, d2]` and a list `{d1, d2}` both stand for their
+/// members, however deeply they nest.
+fn rule_directives(style: &Expr) -> Vec<Expr> {
+  match style {
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().flat_map(rule_directives).collect()
+    }
+    Expr::List(items) => items.iter().flat_map(rule_directives).collect(),
+    _ => vec![style.clone()],
+  }
+}
+
 /// Split a `VertexStyle` / `EdgeStyle` value into its per-part rules and
 /// the directives that apply to every part.
 ///
@@ -7351,7 +7409,7 @@ fn apply_style_rule(
     return part.clone();
   };
   let mut args = vec![part.clone()];
-  args.extend(collect_directives(style));
+  args.extend(rule_directives(style));
   call("Style", args)
 }
 
