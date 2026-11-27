@@ -8671,17 +8671,34 @@ give `PolyhedronData::notent`, so notebooks that offer them in a menu
 
 `Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are compared
 against wolframscript below. `Method -> "ShenCastan"` (also of
-`GradientFilter`) and a non-zero `"StraightEdges"` are computed but have not
-been compared against wolframscript, whose kernels and line selection are
-not documented:
+`GradientFilter`) is compared too: the kernel is `ShenCastanMatrix`'s, the
+two-sided exponential `Erfc[Sqrt[2]]^(Abs[k]/r)` cut off at `Round[r]` (as
+every gradient method, `GaussianFilter` and `Blur` cut theirs), with a
+derivative scaled so a unit ramp has slope 1. What still differs:
 
-- `"ShenCastan"` takes the gradient of the two-sided exponential
-  `Exp[-Abs[k]/(r/2)]` cut off at `Ceiling[r]`, scaled so a unit ramp has
-  slope 1, and thins it as the other methods do.
+- **Ties on an ideal step.** Both pixels next to a step between two flat
+  areas respond alike, and Woxi keeps both. wolframscript's response
+  carries rounding noise (about 1e-8 times the intensity, visible in
+  `ImageData[GradientFilter[…]]` of a constant area), which decides the
+  tie: for a range of 2 it keeps only the pixel on the bright side, for 1
+  both, for 3 one or both depending on the method and on whether the edge
+  runs along rows or columns.
+
+  ```sh
+  wolframscript -code 'ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], 2, .1]][[3]]'
+  # {0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}
+  woxi eval 'ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], 2, .1]][[3]]'
+  # {0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0}
+  ```
 - `"StraightEdges" -> s` votes each edge pixel into a Hough accumulator
   (one degree by one pixel) along its own edge direction and keeps the
   pixels on lines with at least the fraction `s` of the strongest line's
-  votes.
+  votes. The ends agree with wolframscript (0 keeps everything, 1 the
+  strongest line, numbers outside 0 to 1 count as the nearer end), but the
+  selection in between is Woxi's own: on a 40 x 40 disk-and-half-plane
+  image `s = 0.2` keeps 108 pixels in wolframscript and 80 in Woxi.
+  (`"StraightEdges" -> Automatic` crashes the wolframscript 15.0 kernel on
+  that image.)
 
 With an explicit threshold `t` the result matches wolframscript pixel for
 pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
