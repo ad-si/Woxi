@@ -63870,6 +63870,53 @@ mod graphics3d_cylinder_scene_ring_cap {
     );
     assert!(n < 15_000, "12 bars and a drum drew {n} polygons");
   }
+
+  /// Regression: a `Cylinder` reaching past an explicit `PlotRange` was cut
+  /// open from a tessellation with the full 200 rings, so a slanted rod
+  /// standing on the floor of the box (its end circle dips just below it)
+  /// drew over 19,000 polygons. It is now cut from the rings it would be
+  /// drawn with; both halves of the cut-open rod show, hence twice the
+  /// side quads of an uncut one.
+  #[test]
+  fn cylinder_cut_by_the_plot_range_keeps_the_scene_ring_cap() {
+    let rod = "Cylinder[{{1, -0.5, 0}, {1, 0, 1.7}}, 0.03]";
+    let cut = polygons(&format!(
+      "Graphics3D[{rod}, PlotRange -> {{{{-2, 2}}, {{-2, 2}}, {{0, 6}}}}]"
+    ));
+    assert!(
+      cut <= 2 * (24 * 48 * 2 + 2 * 48),
+      "a rod cut by the box must not get more than 24 rings: {cut} polygons"
+    );
+    // Cutting must still leave the rod drawn.
+    assert!(cut > 48, "the cut rod is missing: {cut} polygons");
+  }
+
+  /// A cylinder running far past the box is cut into rings measured
+  /// against what the box shows of it, so the visible piece is still
+  /// subdivided along its length instead of being a single ring.
+  #[test]
+  fn cylinder_far_longer_than_the_plot_range_is_still_subdivided() {
+    let n = polygons(
+      "Graphics3D[Cylinder[{{0, 0, -500}, {0, 0, 500}}, 0.2], \
+       PlotRange -> {{-1, 1}, {-1, 1}, {-1, 1}}]",
+    );
+    assert!(
+      n >= 4 * 48,
+      "the visible piece needs several rings: {n} polygons"
+    );
+    assert!(n <= 2 * (200 * 48 * 2 + 2 * 48), "{n} polygons");
+  }
+
+  /// A crowd of thin rods standing on the floor of an explicit `PlotRange`
+  /// (the legs of a frame) is throttled like an uncut crowd.
+  #[test]
+  fn crowd_of_cylinders_cut_by_the_plot_range_stays_small() {
+    let n = polygons(
+      "Graphics3D[Table[Cylinder[{{x, -0.5, 0}, {x, 0, 1.7}}, 0.03], \
+       {x, -1, 1, 0.2}], PlotRange -> {{-2, 2}, {-2, 2}, {0, 6}}]",
+    );
+    assert!(n < 12_000, "11 cut rods drew {n} polygons");
+  }
 }
 
 mod revolution_plot3d_part_extraction {
