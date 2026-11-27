@@ -1717,8 +1717,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
         }
         "ImagePadding" => {
-          opts.image_padding =
-            crate::functions::plot::parse_image_padding(replacement);
+          opts.set_image_padding(replacement);
         }
         "IntervalMarkersStyle" => {
           opts.interval_markers_color =

@@ -232,6 +232,70 @@ mod container_layout {
     assert!(!pane.contains("clip-path=\"url(#paneClip"), "{pane}");
   }
 
+  /// A `Style[Column[…], size]` cell of a grid is set in the grid's text
+  /// face like a bare `Column` cell, at the size the cell asks for —
+  /// whether the column is plain lines or holds typeset rows.
+  #[test]
+  fn styled_column_cell_of_a_grid_is_set_in_the_grid_face() {
+    for column in [
+      "Column[{\"first\", \"second\"}]",
+      "Column[{Row[{\"first = \", Subscript[Style[\"q\", Italic],        \"in\"]}], Row[{\"second\", 2.5}]}]",
+    ] {
+      for grid in [
+        format!("Grid[{{{{Style[{column}, 17]}}}}]"),
+        format!("Text[Grid[{{{{Style[{column}, 17], \"beside\"}}}}]]"),
+      ] {
+        let svg = export_svg(&grid);
+        assert!(!svg.contains("mono"), "{grid}: {svg}");
+        assert!(svg.contains("font-size=\"17\""), "{grid}: {svg}");
+        clear_state();
+        let shown = woxi::interpret_with_stdout(&grid)
+          .unwrap()
+          .graphics
+          .expect("the grid is a graphic");
+        assert!(!shown.contains("mono"), "{grid}: {shown}");
+      }
+    }
+    // The cell's own directives still win over the grid's.
+    let svg = export_svg(
+      "Style[Grid[{{Style[Column[{\"first\", \"second\"}], 17]}}], 11]",
+    );
+    assert!(svg.contains("font-size=\"17\""), "{svg}");
+    assert!(!svg.contains("font-size=\"11\""), "{svg}");
+  }
+
+  /// A horizontal value in the row part of a grid's `Alignment`
+  /// (`{Center, {Left}}`) sets the row's items against its top edge, the
+  /// same as `Top`, instead of centering them.
+  #[test]
+  fn horizontal_value_as_a_row_alignment_sets_the_row_at_its_top() {
+    let grid = |alignment: &str| {
+      let svg = export_svg(&format!(
+        "Grid[{{{{Graphics[Disk[], ImageSize -> {{20, 20}}],          Graphics[Disk[], ImageSize -> {{20, 80}}]}}}},          Alignment -> {alignment}]"
+      ));
+      svg
+        .match_indices("<svg x=")
+        .map(|(i, _)| {
+          let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+          let start = tag.find(" y=\"").unwrap() + 4;
+          tag[start..start + tag[start..].find('"').unwrap()].to_string()
+        })
+        .collect::<Vec<_>>()
+    };
+    let top = grid("{Center, Top}");
+    assert_eq!(top.len(), 2);
+    assert_eq!(top[0], top[1]);
+    for alignment in [
+      "{Center, {Left}}",
+      "{Center, Right}",
+      "{{Center, Center}, {Left, Left}}",
+    ] {
+      assert_eq!(grid(alignment), top, "{alignment}");
+    }
+    let centered = grid("{Center, Center}");
+    assert_ne!(centered[0], centered[1]);
+  }
+
   /// A `Row` in the text face is as wide as its text with the thin gaps
   /// between the digit groups of a long number, so the last digits are not
   /// cut off by the row's box.

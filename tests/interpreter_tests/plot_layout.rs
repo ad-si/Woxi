@@ -996,6 +996,45 @@ mod automatic_image_padding {
     );
   }
 
+  /// `ImagePadding -> {{l, r}, {Automatic, Automatic}}` fixes the sides it
+  /// gives and leaves the others to the decorations, instead of being
+  /// dropped whole.
+  #[test]
+  fn image_padding_with_automatic_sides_fixes_the_given_ones() {
+    let tick_x = |svg: &str, label: &str| -> f64 {
+      let end = svg.find(&format!(">{label}</text>")).expect("tick label");
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let start = tag.find(" x=\"").unwrap() + 4;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    let plot = |options: &str| {
+      svg_of(&format!(
+        "Plot[3, {{x, 0, 100}}, PlotRange -> {{{{0, 100}}, {{0, 20}}}},          ImageSize -> 300{options}]"
+      ))
+    };
+    // 50 pt on both sides of a 300 pt image: the x axis spans 50..250.
+    let both = plot(", ImagePadding -> {{50, 50}, {Automatic, Automatic}}");
+    assert_eq!(tick_x(&both, "0"), 500.0);
+    assert_eq!(tick_x(&both, "100"), 2500.0);
+    // The automatic sides are the ones the plot has without the option.
+    let auto = plot("");
+    let left = plot(", ImagePadding -> {{50, Automatic}, {Automatic, 40}}");
+    assert_eq!(tick_x(&left, "0"), 500.0);
+    assert_eq!(tick_x(&left, "100"), tick_x(&auto, "100"));
+    let right = plot(", ImagePadding -> {{All, 80}, {Automatic, Automatic}}");
+    assert_eq!(tick_x(&right, "0"), tick_x(&auto, "0"));
+    assert_eq!(tick_x(&right, "100"), 2200.0);
+    // The same holds for a plot of data.
+    let data = "ListLinePlot[{{0, 1}, {100, 2}}, PlotRange -> {{0, 100}, \
+                {0, 20}}, ImageSize -> 300, ImagePadding -> {{50, 50}, \
+                {Automatic, 10}}]";
+    let svg = svg_of(data);
+    assert_eq!(tick_x(&svg, "0"), 500.0);
+    assert_eq!(tick_x(&svg, "100"), 2500.0);
+  }
+
   #[test]
   fn end_labels_overhanging_a_small_frame_widen_its_padding() {
     assert_eq!(

@@ -4469,6 +4469,11 @@ pub(crate) struct PlotOptions {
   /// usable frame instead of losing it to fixed label margins. `None` keeps
   /// the automatic margins.
   pub image_padding: Option<[f64; 4]>,
+  /// An `ImagePadding` that leaves some sides automatic (`{{50, 50},
+  /// {Automatic, Automatic}}`): the sides given, `None` for the automatic
+  /// ones, which take the room the plot's decorations need when the image
+  /// is laid out. `None` when every side is given or none is.
+  pub image_padding_sides: Option<[Option<f64>; 4]>,
   /// `AspectRatio -> r`: ratio (height/width) of the plotting *area* (the
   /// data frame, excluding label/tick margins). When set, the total image
   /// height is derived so the frame has this ratio, matching Wolfram. `None`
@@ -4815,6 +4820,7 @@ impl Default for PlotOptions {
       overlay_label_curves: Vec::new(),
       background: None,
       image_padding: None,
+      image_padding_sides: None,
       aspect_ratio: None,
       aspect_automatic: false,
       aspect_full: false,
@@ -6806,6 +6812,26 @@ fn generate_svg_with_options(
       None => w * ar,
     })
   });
+  // An `ImagePadding` with automatic sides fixes the sides it gives; the
+  // others keep the room the decorations need, so the padding is whole
+  // from here on.
+  let partly_padded;
+  let opts = match (opts.image_padding_sides, &auto_padding) {
+    (Some([left, right, bottom, top]), Some(auto)) => {
+      partly_padded = PlotOptions {
+        image_padding: Some([
+          left.unwrap_or(auto.left),
+          right.unwrap_or(auto.right),
+          bottom.unwrap_or(auto.bottom),
+          top.unwrap_or(auto.top),
+        ]),
+        image_padding_sides: None,
+        ..opts.clone()
+      };
+      &partly_padded
+    }
+    _ => opts,
+  };
   let to_render = |v: f64| (v * sf).round().max(0.0) as u32;
   let pad = auto_padding.unwrap_or_default();
   let top_margin = to_render(pad.above()) as i32;
@@ -17715,6 +17741,19 @@ fn padded_margins(
 /// pixels. Accepted forms mirror Wolfram: a single number (all four sides),
 /// `{{left, right}, {bottom, top}}`, `None`/`0` (no padding) and
 /// `Automatic`/`All` (which keep the automatic margins, i.e. `None` here).
+impl PlotOptions {
+  /// Take the value of an `ImagePadding` option: all four sides when they
+  /// are given, or the given ones alone when the rest are automatic.
+  pub(crate) fn set_image_padding(&mut self, value: &Expr) {
+    self.image_padding = parse_image_padding(value);
+    self.image_padding_sides = if self.image_padding.is_some() {
+      None
+    } else {
+      parse_image_padding_sides(value)
+    };
+  }
+}
+
 pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
   let [l, r, b, t] = parse_image_padding_sides(value)?;
   Some([l?, r?, b?, t?])
@@ -18819,7 +18858,7 @@ pub(crate) fn apply_common_plot_option(
         matches!(replacement, Expr::Identifier(v) if v == "True");
     }
     "ImagePadding" => {
-      plot_opts.image_padding = parse_image_padding(replacement);
+      plot_opts.set_image_padding(replacement);
     }
     "PlotLayout" => {
       plot_opts.plot_layout =
