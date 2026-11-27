@@ -1098,6 +1098,13 @@ pub fn transpose_perm_ast(
   let unevaluated =
     || Ok(call("Transpose", vec![list.clone(), perm_list.clone()]));
 
+  // Something that is not an array at all (`Transpose[m, {2, 1}]` of a
+  // symbol, a number or a call) stays unevaluated without a message, even
+  // for an invalid permutation.
+  if rank == 0 && !matches!(list, Expr::List(_)) {
+    return unevaluated();
+  }
+
   // perm[s] gives the result level that input level s is moved to. Entries must
   // be positive machine integers (perm1) within 1..=k (perm2): at most k
   // distinct result levels can come from k input levels.

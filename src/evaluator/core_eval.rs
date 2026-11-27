@@ -588,7 +588,7 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
 
 /// Check whether user-defined rules (DownValues, or upvalues installed via
 /// TagSetDelayed) are attached to the given head.
-fn has_user_rules(name: &str) -> bool {
+pub(crate) fn has_user_rules(name: &str) -> bool {
   crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name))
 }
 
@@ -2112,6 +2112,18 @@ fn evaluate_expr_to_expr_uncached(
         && !has_user_rules("Plus")
       {
         return Ok(expr.clone());
+      }
+      // One with a zero real part (`0. + 0.*I`, most of a filtered
+      // spectrum) is its normalized form as well.
+      if name == "Plus"
+        && let Some((re, im)) =
+          crate::functions::math_ast::signed_machine_complex_shape(expr)
+        && !has_user_rules("Plus")
+        && !has_user_rules("Times")
+      {
+        return Ok(crate::functions::math_ast::normalized_machine_complex(
+          re, im,
+        ));
       }
       // `System`Plus[1, 2]` is the built-in `Plus[1, 2]`: a head that spells
       // out the System context evaluates as its short name.
@@ -4168,6 +4180,20 @@ fn evaluate_expr_to_expr_uncached(
         | BinaryOperator::Minus
         | BinaryOperator::Times
         | BinaryOperator::Divide => {
+          // A machine-complex number in the infix shape arithmetic builds
+          // (`re + im*I`, a zero part included) evaluates to its
+          // `Plus[re, Times[im, I]]` form; taking the general path for
+          // every element dominated arithmetic on complex arrays.
+          if matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
+            && let Some((re, im)) =
+              crate::functions::math_ast::signed_machine_complex_shape(expr)
+            && !has_user_rules("Plus")
+            && !has_user_rules("Times")
+          {
+            return Ok(crate::functions::math_ast::normalized_machine_complex(
+              re, im,
+            ));
+          }
           return evaluate_flat_chain(*op, left, right);
         }
         _ => {}
