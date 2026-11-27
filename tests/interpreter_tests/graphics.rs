@@ -68117,6 +68117,106 @@ fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
 }
 
 #[test]
+fn pane_scrollbars_keep_oversized_content_behind_a_viewport() {
+  // Regression: `Scrollbars -> True` on a fixed-size `Pane` was ignored, so
+  // content past the box was cut off with no scrollbar to reach it. The
+  // bars are taken out of the box and the content keeps its own size.
+  let wide = "Grid[{{StringJoin[Table[\"a\", 80]]}}]";
+  let svg =
+    export_svg(&format!("Pane[{wide}, {{200, 100}}, Scrollbars -> True]"));
+  assert!(
+    svg
+      .starts_with("<svg width=\"200\" height=\"100\" viewBox=\"0 0 200 100\""),
+    "{svg}"
+  );
+  assert!(
+    svg.contains("<rect x=\"0\" y=\"0\" width=\"185\" height=\"85\"/>"),
+    "{svg}"
+  );
+  // Both tracks are drawn, but only the overflowing axis has a thumb.
+  let bars = &svg[svg.find("woxi-scrollbars").expect("scrollbars")..];
+  assert_eq!(bars.matches("<rect").count(), 3, "{bars}");
+  assert_eq!(bars.matches("rx=").count(), 1, "{bars}");
+  // The same Pane given as an `ImageSize` option scrolls as well.
+  let by_option = export_svg(&format!(
+    "Pane[{wide}, Scrollbars -> True, ImageSize -> {{200, 100}}]"
+  ));
+  assert_eq!(by_option, svg);
+}
+
+#[test]
+fn pane_scrollbars_follow_each_axis_setting() {
+  let wide = "Grid[{{StringJoin[Table[\"a\", 80]]}}]";
+  let tall = "Column[Range[30]]";
+  let bars_of = |pane: &str| {
+    let svg = export_svg(pane);
+    match svg.find("woxi-scrollbars") {
+      Some(i) => svg[i..].matches("<rect").count(),
+      None => 0,
+    }
+  };
+  // `Automatic` draws a bar only on the axis that overflows.
+  assert_eq!(
+    bars_of(&format!(
+      "Pane[{wide}, {{200, 100}}, Scrollbars -> Automatic]"
+    )),
+    2
+  );
+  assert_eq!(
+    bars_of(&format!(
+      "Pane[{tall}, {{200, 100}}, Scrollbars -> Automatic]"
+    )),
+    2
+  );
+  // Content that fits needs none, and is laid out as without the option.
+  assert_eq!(bars_of("Pane[x, {200, 100}, Scrollbars -> Automatic]"), 0);
+  assert_eq!(
+    export_svg("Pane[x, {200, 100}, Scrollbars -> Automatic]"),
+    export_svg("Pane[x, {200, 100}]")
+  );
+  assert_eq!(
+    export_svg(&format!("Pane[{wide}, {{200, 100}}, Scrollbars -> False]")),
+    export_svg(&format!("Pane[{wide}, {{200, 100}}]"))
+  );
+  // `{horizontal, vertical}` sets the two bars apart: a track alone for
+  // the vertical one here, as the content is not tall.
+  let vertical_only = export_svg(&format!(
+    "Pane[{wide}, {{200, 100}}, Scrollbars -> {{False, True}}]"
+  ));
+  assert!(
+    vertical_only
+      .contains("<rect x=\"0\" y=\"0\" width=\"185\" height=\"100\"/>"),
+    "{vertical_only}"
+  );
+  assert_eq!(
+    bars_of(&format!(
+      "Pane[{wide}, {{200, 100}}, Scrollbars -> {{True, False}}]"
+    )),
+    2
+  );
+}
+
+#[test]
+fn pane_scrollbars_keep_a_plot_at_its_own_size() {
+  // A scalable picture is shrunk to a plain Pane's box, but scrolls at its
+  // own size behind scrollbars.
+  let plot = "Plot[Sin[x], {x, 0, 6}, ImageSize -> 400]";
+  let svg =
+    export_svg(&format!("Pane[{plot}, {{200, 100}}, Scrollbars -> True]"));
+  let pane = woxi::scroll_pane_parts(&svg).expect("a scrolling pane");
+  assert_eq!((pane.width, pane.height), (200.0, 100.0));
+  assert!(pane.horizontal && pane.vertical);
+  assert!(
+    pane.content_svg.starts_with("<svg width=\"400\""),
+    "{}",
+    &pane.content_svg[..80]
+  );
+  // A Pane without scrollbars has no content to scroll.
+  let plain = export_svg(&format!("Pane[{plot}, {{200, 100}}]"));
+  assert_eq!(woxi::scroll_pane_parts(&plain), None);
+}
+
+#[test]
 fn pane_shrink_to_fit_keeps_the_declared_box_size() {
   // Regression: a shrunk `Pane` collapsed to the scaled content's height
   // (a wide one-line grid made a 200 x 5 pane) instead of keeping its

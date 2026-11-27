@@ -41,6 +41,17 @@ pub fn text_svg_handle(svg: &str) -> svg::Handle {
   svg::Handle::from_memory(woxi::with_default_text_family(&svg).into_bytes())
 }
 
+/// The box a scrolling `Pane` body is shown in, scrollbars included.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollViewport {
+  pub width: f32,
+  pub height: f32,
+  /// Whether the pane scrolls sideways.
+  pub horizontal: bool,
+  /// Whether the pane scrolls up and down.
+  pub vertical: bool,
+}
+
 impl LabelIcon {
   pub fn from_svg(svg: String) -> Self {
     let (width, height) = svg_root_size(&svg).unwrap_or((24.0, 24.0));
@@ -1249,6 +1260,10 @@ pub struct ManipulateState {
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
+  /// The box of a `Pane[…, Scrollbars -> …]` body. `graphics_handle` then
+  /// holds the whole content at its own size, which the view scrolls inside
+  /// this box; the regions below are in the content's coordinates.
+  pub scroll_viewport: Option<ScrollViewport>,
   /// Pressable `Button` cells drawn inside the rendered picture (a board
   /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
   /// coordinates. The view overlays a real clickable area on each.
@@ -1729,6 +1744,7 @@ impl ManipulateState {
       panel_displays: spec.panel_displays,
       display_trees: Vec::new(),
       graphics_handle: None,
+      scroll_viewport: None,
       button_regions: Vec::new(),
       tooltip_regions: Vec::new(),
       click_regions: Vec::new(),
@@ -3266,6 +3282,18 @@ impl ManipulateState {
         };
 
         if let Some(svg) = result.graphics {
+          // A scrolling `Pane` is drawn as its whole content, which the
+          // view scrolls for real, rather than as the static picture
+          // with scrollbars drawn in.
+          let scroll_pane = woxi::scroll_pane_parts(&svg);
+          self.scroll_viewport =
+            scroll_pane.as_ref().map(|pane| ScrollViewport {
+              width: pane.width as f32,
+              height: pane.height as f32,
+              horizontal: pane.horizontal,
+              vertical: pane.vertical,
+            });
+          let svg = scroll_pane.map_or(svg, |pane| pane.content_svg);
           let handle = text_svg_handle(&svg);
           self.button_regions = button_regions_of(&svg);
           self.tooltip_regions = tooltip_regions_of(&svg);
@@ -3280,6 +3308,7 @@ impl ManipulateState {
           // No graphic: either a textual result or genuinely empty output.
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
+          self.scroll_viewport = None;
           self.button_regions.clear();
           self.tooltip_regions.clear();
           self.click_regions.clear();
@@ -3302,6 +3331,7 @@ impl ManipulateState {
         // Surface the evaluation error. The render path shows the error in
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
+        self.scroll_viewport = None;
         self.button_regions.clear();
         self.tooltip_regions.clear();
         self.click_regions.clear();
@@ -5308,6 +5338,45 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body `Pane[…, Scrollbars -> True, ImageSize -> {w, h}]` wider than
+  /// its box is shown whole inside a scrolling viewport of that size, not
+  /// cut off at the box's edge; without the option it has no viewport.
+  #[test]
+  fn pane_body_with_scrollbars_scrolls_its_whole_content() {
+    woxi::clear_state();
+    let build = |options: &str| {
+      let code = format!(
+        "Manipulate[Pane[Grid[{{Table[Graphics[Disk[], ImageSize -> 60], n]}}], \
+         ImageSize -> {{300, 200}}{options}], {{{{n, 8}}, 1, 12, 1}}]"
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate");
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget")
+    };
+    let mut state = build(", Scrollbars -> True");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.scroll_viewport,
+      Some(ScrollViewport {
+        width: 300.0,
+        height: 200.0,
+        horizontal: true,
+        vertical: true,
+      })
+    );
+    let svg = state.current_svg().expect("the row is drawn").to_string();
+    let content = woxi::scroll_pane_parts(&svg).expect("a scrolling pane");
+    let (content_w, _) =
+      svg_root_size(&content.content_svg).expect("content size");
+    assert!(
+      content_w > 300.0,
+      "the content keeps its width: {content_w}"
+    );
+    // The viewport follows the body as the controls move.
+    state.reevaluate();
+    assert!(state.scroll_viewport.is_some());
+    assert_eq!(build("").scroll_viewport, None);
   }
 
   /// A body `Pane[Text@Grid[…], {If[big, Automatic, w], …}, Alignment ->

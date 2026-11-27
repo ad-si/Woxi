@@ -5878,6 +5878,11 @@ fn render_manipulate_widget<'a>(
           .on_release(Message::ManipulateMouseReleased(cell_idx))
           .into()
       };
+    // A `Pane[…, Scrollbars -> …]` body scrolls inside its box.
+    let picture = match state.scroll_viewport {
+      Some(viewport) => scroll_pane_element(picture, viewport),
+      None => picture,
+    };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref handle) = state.typeset_handle {
     // A textual result is shown typeset, as an ordinary output cell shows
@@ -6473,6 +6478,44 @@ fn render_display_node<'a>(
       }
     }
   }
+}
+
+/// Thickness of a scrolling `Pane`'s scrollbar, which the FrontEnd takes
+/// out of the pane's box.
+const PANE_SCROLLBAR_WIDTH: f32 = 11.0;
+const PANE_SCROLLBAR_MARGIN: f32 = 2.0;
+
+/// The scrollbars a scrolling `Pane` shows: one per direction it scrolls
+/// in, embedded in the pane's box rather than floating over its content.
+fn scroll_pane_direction(
+  viewport: manipulate::ScrollViewport,
+) -> scrollable::Direction {
+  let bar = scrollable::Scrollbar::new()
+    .width(PANE_SCROLLBAR_WIDTH)
+    .scroller_width(PANE_SCROLLBAR_WIDTH)
+    .margin(PANE_SCROLLBAR_MARGIN)
+    .spacing(0);
+  match (viewport.horizontal, viewport.vertical) {
+    (true, false) => scrollable::Direction::Horizontal(bar),
+    (false, true) => scrollable::Direction::Vertical(bar),
+    _ => scrollable::Direction::Both {
+      vertical: bar,
+      horizontal: bar,
+    },
+  }
+}
+
+/// Show the whole content of a `Pane[…, Scrollbars -> …]` inside the pane's
+/// fixed box, scrolled by its scrollbars (or the wheel).
+fn scroll_pane_element<'a>(
+  content: Element<'a, Message>,
+  viewport: manipulate::ScrollViewport,
+) -> Element<'a, Message> {
+  scrollable(content)
+    .width(iced::Length::Fixed(viewport.width))
+    .height(iced::Length::Fixed(viewport.height))
+    .direction(scroll_pane_direction(viewport))
+    .into()
 }
 
 /// Build a clickable hyperlink button: blue label, transparent

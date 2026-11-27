@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `Pane[content, {w, h}, Scrollbars -> True]` keeps content larger than
+    its box at its own size behind scrollbars taken out of the box, instead
+    of ignoring the option and cutting the content off; `Automatic` draws
+    a bar only on an axis that overflows and `{horizontal, vertical}` sets
+    the two apart. Woxi Studio scrolls such a `Manipulate` body for real.
 - `GraphicsRow[…, ImageSize -> …]` of pictures that each fix their
     `ImageSize -> {w, h}` keeps their sizes in proportion and scales them
     together to fit the row (a 100 x 200 chart beside a 175 x 200 plot was
