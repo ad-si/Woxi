@@ -4850,7 +4850,22 @@ fn render_manipulate_widget<'a>(
   let mut line: Vec<Element<'a, Message>> = Vec::new();
   let mut line_outer: Option<Column<'a, Message>> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
-    close_line_item(&mut controls_col, &mut line_outer, &mut line);
+    // A control stacked below the one before it (a `Column` of controls
+    // inside a `Row`, see `ManipulateState::stacks_under_previous_control`)
+    // is drawn into that control's still-open line item instead of
+    // starting an item or a line of its own.
+    let stacks = line_outer.is_some()
+      && state.stacks_under_previous_control(ctrl_idx)
+      && state
+        .control_is_visible
+        .get(ctrl_idx)
+        .copied()
+        .unwrap_or(true)
+      && placement_slot(state.placement_of(ctrl_idx)) == current_slot
+      && panel_trees_at(ctrl_idx).next().is_none();
+    if !stacks {
+      close_line_item(&mut controls_col, &mut line_outer, &mut line);
+    }
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
@@ -4873,18 +4888,20 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     let slot = placement_slot(state.placement_of(ctrl_idx));
-    let joins_line = !line.is_empty()
-      && slot == current_slot
-      && state.joins_previous_control(ctrl_idx);
-    if !joins_line {
-      flush_control_line(&mut controls_col, &mut line);
+    if !stacks {
+      let joins_line = !line.is_empty()
+        && slot == current_slot
+        && state.joins_previous_control(ctrl_idx);
+      if !joins_line {
+        flush_control_line(&mut controls_col, &mut line);
+      }
+      switch_slot(&mut controls_col, &mut current_slot, slot);
+      side_used[slot] = true;
+      line_outer = Some(std::mem::replace(
+        &mut controls_col,
+        Column::new().spacing(6).width(Fill),
+      ));
     }
-    switch_slot(&mut controls_col, &mut current_slot, slot);
-    side_used[slot] = true;
-    line_outer = Some(std::mem::replace(
-      &mut controls_col,
-      Column::new().spacing(6).width(Fill),
-    ));
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state

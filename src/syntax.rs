@@ -12286,47 +12286,69 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // in separator position is an option, not a separator; any non-Rule
       // extra argument keeps the expression in its full form (matching
       // wolframscript, e.g. Row[{1, 2}, "|", "x"]).
-      // OutputForm-only: `Infix[{a, b}, h]` lays out as the row `a h b`.
+      // `ToString`'s OutputForm text lays `Infix[{a, b}, h]` out as the row
+      // `a h b` (`a ~f~ b` for `Infix[f[a, b]]`), an operand binding no
+      // tighter than the precedence bracketed: `(a + b) ~f~ (c d)`. The
+      // printed display (a bare echo, `Print`) keeps the call, as
+      // wolframscript's script mode does.
       if is_output
+        && IN_TO_STRING_OUTPUT.with(std::cell::Cell::get)
         && name == "Infix"
-        && let Some(items) = infix_display_items(args)
       {
-        return items.iter().map(&fmt).collect();
-      }
-      // OutputForm-only: `Prefix[f[x]]` lays out as `f@ x`, `Postfix[f[x]]`
-      // as `x // f`; an operator given instead goes right before or after
-      // the operand (`!x`, `x!`). A sum or product after a prefix operator
-      // is bracketed: `f@ (a + b)`.
-      if is_output
-        && (name == "Prefix" || name == "Postfix")
-        && (1..=3).contains(&args.len())
-        && let Expr::FunctionCall {
-          name: head,
-          args: inner,
-        } = &args[0]
-        && inner.len() == 1
-      {
-        let operand = fmt(&inner[0]);
-        let op = args.get(1).map(&fmt);
-        if name == "Prefix" {
-          let operand = if matches!(
-            &inner[0],
-            Expr::FunctionCall { name, args } if (name == "Plus" || name == "Times") && args.len() >= 2
-          ) || matches!(&inner[0], Expr::BinaryOp { .. })
-          {
-            format!("({operand})")
-          } else {
-            operand
+        if let Some(message) = operator_form_spec_message(name, args) {
+          crate::emit_message(&message);
+        } else if let Some(layout) = infix_layout(args) {
+          let separator = match &layout.operator {
+            InfixOperator::Head(head) => format!(" ~{head}~ "),
+            InfixOperator::Given(op) => fmt(op),
           };
-          return match op {
-            Some(op) => format!("{op}{operand}"),
-            None => format!("{head}@ {operand}"),
+          return layout
+            .operands
+            .iter()
+            .map(|operand| {
+              let text = fmt(operand);
+              if bracketed_display_operand(operand, layout.precedence) {
+                format!("({text})")
+              } else {
+                text
+              }
+            })
+            .collect::<Vec<_>>()
+            .join(&separator);
+        }
+      }
+      // Likewise `Prefix[f[x]]` is `f@ x` and `Postfix[f[x]]` is `x // f`
+      // under `ToString`; an operator given instead goes right before or
+      // after the operand (`!x`, `x!`). The operand is bracketed when it
+      // binds no tighter than the precedence (`Prefix`'s 640 and
+      // `Postfix`'s 70 by default): `f@ (a + b)`, `a + b // f`.
+      if is_output
+        && IN_TO_STRING_OUTPUT.with(std::cell::Cell::get)
+        && (name == "Prefix" || name == "Postfix")
+      {
+        if let Some(message) = operator_form_spec_message(name, args) {
+          crate::emit_message(&message);
+        } else if let Some((head, operand, op)) = prefix_postfix_parts(args) {
+          let prefix = name == "Prefix";
+          let precedence = match args.get(2) {
+            Some(Expr::Integer(p)) => *p as i64,
+            _ if prefix => 640,
+            _ => 70,
+          };
+          let text = fmt(operand);
+          let operand_text = if bracketed_display_operand(operand, precedence) {
+            format!("({text})")
+          } else {
+            text
+          };
+          let op = op.map(&fmt);
+          return match (prefix, op) {
+            (true, Some(op)) => format!("{op}{operand_text}"),
+            (true, None) => format!("{head}@ {operand_text}"),
+            (false, Some(op)) => format!("{operand_text}{op}"),
+            (false, None) => format!("{operand_text} // {head}"),
           };
         }
-        return match op {
-          Some(op) => format!("{operand}{op}"),
-          None => format!("{operand} // {head}"),
-        };
       }
       if is_output
         && name == "Row"
@@ -15211,46 +15233,236 @@ pub fn expr_to_output(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Output)
 }
 
-/// The display items of `Infix[expr, h, …]` (the `args` of the call): the
-/// operands of `expr` with the operator `h` between each pair. A bare
-/// `Infix[f[a, b, …]]` uses its head as the operator, set off by tildes —
-/// `a ~ f ~ b ~ …`. A string item stands for the text it displays; every
-/// display renderer lays the items out as one row, so `Infix` is formatted
-/// in one place. The optional precedence and grouping arguments affect only
-/// parenthesization by an enclosing operator and are not needed to lay the
-/// row out. `None` when the call has no operands to join.
-pub fn infix_display_items(args: &[Expr]) -> Option<Vec<Expr>> {
+/// The operator an `Infix` row sets between its operands.
+#[derive(Debug, Clone)]
+pub enum InfixOperator {
+  /// `Infix[f[a, b]]` (or a bare list, whose head is `List`): the head set
+  /// off by tildes, `a ~f~ b`.
+  Head(String),
+  /// `Infix[{a, b}, h]`: the operator `h` itself, whatever it is (a string
+  /// contributes its text, a list is shown as a list).
+  Given(Expr),
+}
+
+/// The layout of `Infix[expr, h, prec, grouping]` (the `args` of the call),
+/// shared by every display renderer.
+#[derive(Debug, Clone)]
+pub struct InfixLayout {
+  pub operands: Vec<Expr>,
+  pub operator: InfixOperator,
+  /// The precedence an operand must bind tighter than to go unbracketed in
+  /// the OutputForm text: the third argument, `630` (that of `~`) by
+  /// default.
+  pub precedence: i64,
+}
+
+/// `Infix`'s own default precedence, that of `a ~f~ b`.
+pub const INFIX_DEFAULT_PRECEDENCE: i64 = 630;
+
+/// The layout of an `Infix` call, or `None` when it stays the call: it has
+/// fewer than two operands, or a precedence that is not a machine integer or
+/// a grouping that is not `NonAssociative`, `None`, `Left` or `Right` (see
+/// [`operator_form_spec_message`]).
+pub fn infix_layout(args: &[Expr]) -> Option<InfixLayout> {
   if args.is_empty() || args.len() > 4 {
     return None;
   }
-  let (operands, head): (&[Expr], Option<&str>) = match &args[0] {
-    Expr::List(items) => (items, None),
-    Expr::FunctionCall { name, args: items } => (items, Some(name.as_str())),
+  let (operands, head): (&[Expr], &str) = match &args[0] {
+    Expr::List(items) => (items, "List"),
+    Expr::FunctionCall { name, args: items } => (items, name.as_str()),
     _ => return None,
   };
-  if operands.is_empty() {
+  if operands.len() < 2 || operator_form_spec_message("Infix", args).is_some() {
     return None;
   }
-  let separator: Vec<Expr> = match (args.get(1), head) {
-    // A list of operators is left as the call.
-    (Some(Expr::List(_)), _) => return None,
-    (Some(op), _) => vec![op.clone()],
-    (None, Some(head)) => vec![
-      Expr::String(" ~ ".to_string()),
-      Expr::Identifier(head.to_string()),
-      Expr::String(" ~ ".to_string()),
-    ],
-    // A bare list has no head to stand in as its operator.
-    (None, None) => return None,
+  let operator = match args.get(1) {
+    Some(op) => InfixOperator::Given(op.clone()),
+    None => InfixOperator::Head(head.to_string()),
   };
-  let mut items = Vec::with_capacity(operands.len() * (separator.len() + 1));
-  for (i, operand) in operands.iter().enumerate() {
-    if i > 0 {
-      items.extend(separator.iter().cloned());
-    }
-    items.push(operand.clone());
+  let precedence = match args.get(2) {
+    Some(Expr::Integer(p)) => i64::try_from(*p).ok()?,
+    _ => INFIX_DEFAULT_PRECEDENCE,
+  };
+  Some(InfixLayout {
+    operands: operands.to_vec(),
+    operator,
+    precedence,
+  })
+}
+
+/// The message `ToString` reports for an `Infix`, `Prefix` or `Postfix`
+/// (`head`) whose precedence (third argument) is not a machine integer or
+/// whose grouping (fourth) is not a grouping specification; the call then
+/// keeps its function form.
+pub fn operator_form_spec_message(head: &str, args: &[Expr]) -> Option<String> {
+  if let Some(prec) = args.get(2)
+    && !matches!(prec, Expr::Integer(p) if i64::try_from(*p).is_ok())
+  {
+    // The call is spelled out from its parts: formatting it whole would
+    // ask for this message again.
+    let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+    return Some(format!(
+      "{head}::intm: Machine-sized integer expected at position 3 in \
+       {head}[{}].",
+      parts.join(", ")
+    ));
   }
-  Some(items)
+  if let Some(group) = args.get(3)
+    && !matches!(group, Expr::Identifier(g)
+      if matches!(g.as_str(), "NonAssociative" | "None" | "Left" | "Right"))
+  {
+    return Some(format!(
+      "{head}::group: Grouping specification {} is not NonAssociative, None, \
+       Left or Right.",
+      expr_to_output(group)
+    ));
+  }
+  None
+}
+
+/// The layout of `Prefix[f[x], h, prec, grouping]` or `Postfix[…]`: the
+/// head of the one-argument expression (a `{x}` list's is `List`), its
+/// operand, and the operator given in place of the head.
+pub fn prefix_postfix_parts(
+  args: &[Expr],
+) -> Option<(&str, &Expr, Option<&Expr>)> {
+  if !(1..=4).contains(&args.len()) {
+    return None;
+  }
+  let (head, operand) = match &args[0] {
+    Expr::FunctionCall { name, args: inner } if inner.len() == 1 => {
+      (name.as_str(), &inner[0])
+    }
+    Expr::List(items) if items.len() == 1 => ("List", &items[0]),
+    _ => return None,
+  };
+  Some((head, operand, args.get(1)))
+}
+
+/// The `Precedence` of the operator `e` prints with as an operand of a
+/// display wrapper (`Infix`, `Prefix`, `Postfix`), on Wolfram's scale, or
+/// `None` when it prints without one (an atom, a call, a part). A negative
+/// number and a negation bind like a unary minus (480), a rational like a
+/// quotient (470).
+pub fn operator_display_precedence(e: &Expr) -> Option<f64> {
+  use crate::evaluator::dispatch::precedence_table::tabulated_precedence;
+  match e {
+    Expr::Integer(n) if *n < 0 => Some(480.0),
+    Expr::Real(f) if *f < 0.0 => Some(480.0),
+    Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => Some(480.0),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => Some(480.0),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Some(470.0)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      Some(480.0)
+    }
+    Expr::BinaryOp { op, .. } => Some(match op {
+      BinaryOperator::Alternatives => 160.0,
+      BinaryOperator::Or | BinaryOperator::And => 215.0,
+      BinaryOperator::Plus | BinaryOperator::Minus => 310.0,
+      BinaryOperator::Times => 400.0,
+      BinaryOperator::Divide => 470.0,
+      BinaryOperator::StringJoin => 600.0,
+      BinaryOperator::Power => 590.0,
+    }),
+    Expr::FunctionCall { name, .. }
+      if is_factorial_call(e) || printed_infix_precedence(e).is_some() =>
+    {
+      tabulated_precedence(name)
+    }
+    // A nested display wrapper binds with the precedence it was given; one
+    // without (`a ~g~ b ~f~ c`) is never bracketed.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Infix" | "Prefix" | "Postfix")
+        && operator_form_spec_message(name, args).is_none() =>
+    {
+      match args.get(2) {
+        Some(Expr::Integer(p)) => Some(*p as f64),
+        _ => None,
+      }
+    }
+    _ => printed_infix_precedence(e).map(|p| f64::from(p) * 10.0),
+  }
+}
+
+/// Whether an operand of a display wrapper is bracketed in its text: when it
+/// prints with an operator binding no tighter than the wrapper's
+/// `precedence` — `(a + b) ~f~ c`, `f@ (a!)`, but `a + b // f`.
+pub fn bracketed_display_operand(operand: &Expr, precedence: i64) -> bool {
+  operator_display_precedence(operand).is_some_and(|p| p <= precedence as f64)
+}
+
+/// The `Precedence` of an operator token placed between (`Infix`), before
+/// (`Prefix`) or after (`Postfix`) operands in typeset boxes, which brackets
+/// the operands binding no tighter than it. An operator the FrontEnd does
+/// not know (`"foo"`, a symbol, a number) binds between `<>` and `!`.
+pub fn box_operator_token_precedence(
+  token: &Expr,
+  position: OperatorPosition,
+) -> f64 {
+  const UNKNOWN: f64 = 605.0;
+  let Expr::String(s) = token else {
+    return UNKNOWN;
+  };
+  box_operator_token(s, position).unwrap_or(UNKNOWN)
+}
+
+/// Where an operator token sits relative to its operands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorPosition {
+  Infix,
+  Prefix,
+  Postfix,
+}
+
+/// The `Precedence` of an operator token the FrontEnd recognizes, or `None`
+/// for other text (which is then boxed as a quoted string).
+pub fn box_operator_token(s: &str, position: OperatorPosition) -> Option<f64> {
+  use OperatorPosition::{Postfix, Prefix};
+  Some(match (s, position) {
+    ("!" | "!!", Postfix) => 610.0,
+    ("!", _) => 230.0,
+    ("-" | "\u{2212}", Prefix) => 480.0,
+    ("+", Prefix) => 490.0,
+    (";", _) => 10.0,
+    ("=" | ":=" | "^=" | "^:=" | "+=" | "-=" | "*=" | "/=", _) => 40.0,
+    ("//", _) => 70.0,
+    ("&", _) => 90.0,
+    ("/." | "//.", _) => 110.0,
+    ("->" | ":>" | "\u{f522}" | "\u{f51f}", _) => 120.0,
+    ("<->", _) => 125.0,
+    ("/;", _) => 130.0,
+    ("~~", _) => 135.0,
+    (":", _) => 150.0,
+    ("|", _) => 160.0,
+    ("||" | "&&" | "\u{2227}" | "\u{2228}", _) => 215.0,
+    (
+      "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=!=" | "\u{2260}"
+      | "\u{2264}" | "\u{2265}",
+      _,
+    ) => 290.0,
+    ("+" | "-" | "\u{2212}" | "\u{00b1}" | "\u{2213}", _) => 310.0,
+    ("*" | "\u{00d7}", _) => 400.0,
+    ("/" | "\u{00f7}", _) => 470.0,
+    (".", _) => 490.0,
+    ("**", _) => 510.0,
+    ("^", _) => 590.0,
+    ("<>", _) => 600.0,
+    ("/@" | "//@" | "@@" | "@@@", _) => 620.0,
+    ("~", _) => 630.0,
+    ("@", _) => 640.0,
+    _ => return None,
+  })
 }
 
 /// Text that tells apart expressions which differ only in the pictures they
@@ -19904,6 +20116,15 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
     {
       expr_to_textbox(&args[0])
     }
+    // `ToString` lays `Infix`, `Prefix` and `Postfix` out in 2D too, their
+    // operands in their own 2D form: `(a b)+c`, `f@ (a!)` (see the 1D
+    // renderer in `format_expr_impl`).
+    Expr::FunctionCall { name, args }
+      if IN_TO_STRING_OUTPUT.with(std::cell::Cell::get)
+        && let Some(tb) = operator_form_textbox(name, args) =>
+    {
+      tb
+    }
     // `MatrixForm[matrix]` nested in a larger 2D layout (e.g. as a fraction
     // numerator) keeps its text grid instead of the literal head.
     Expr::FunctionCall { name, args }
@@ -20201,6 +20422,57 @@ fn infix_operator_textbox(expr: &Expr) -> Option<TextBox> {
 /// Render a base expression for Power, adding parens if needed for precedence.
 /// Unlike its StandardForm boxes, the 2D OutputForm of a factorial base is
 /// bare: `ToString[(a!)^2]` sets `a!` under the exponent.
+/// The 2D layout of an `Infix`, `Prefix` or `Postfix` call (`name`), or
+/// `None` when it keeps its function form.
+fn operator_form_textbox(name: &str, args: &[Expr]) -> Option<TextBox> {
+  let operand_box = |operand: &Expr, precedence: i64| {
+    let tb = expr_to_textbox(operand);
+    if bracketed_display_operand(operand, precedence) {
+      parenthesize(&tb)
+    } else {
+      tb
+    }
+  };
+  match name {
+    "Infix" => {
+      let layout = infix_layout(args)?;
+      let separator = match &layout.operator {
+        InfixOperator::Head(head) => TextBox::atom(&format!(" ~{head}~ ")),
+        InfixOperator::Given(op) => expr_to_textbox(op),
+      };
+      let mut parts = Vec::new();
+      for (i, operand) in layout.operands.iter().enumerate() {
+        if i > 0 {
+          parts.push(separator.clone());
+        }
+        parts.push(operand_box(operand, layout.precedence));
+      }
+      Some(TextBox::hconcat(&parts))
+    }
+    "Prefix" | "Postfix" => {
+      if operator_form_spec_message(name, args).is_some() {
+        return None;
+      }
+      let (head, operand, op) = prefix_postfix_parts(args)?;
+      let prefix = name == "Prefix";
+      let precedence = match args.get(2) {
+        Some(Expr::Integer(p)) => *p as i64,
+        _ if prefix => 640,
+        _ => 70,
+      };
+      let operand = operand_box(operand, precedence);
+      let op = op.map(expr_to_textbox);
+      Some(TextBox::hconcat(&match (prefix, op) {
+        (true, Some(op)) => vec![op, operand],
+        (true, None) => vec![TextBox::atom(&format!("{head}@ ")), operand],
+        (false, Some(op)) => vec![operand, op],
+        (false, None) => vec![operand, TextBox::atom(&format!(" // {head}"))],
+      }))
+    }
+    _ => None,
+  }
+}
+
 fn expr_to_textbox_base(expr: &Expr) -> TextBox {
   if power_base_needs_parens(expr) && !is_factorial_call(expr) {
     let inner = expr_to_textbox(expr);
