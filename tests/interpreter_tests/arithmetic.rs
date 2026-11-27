@@ -9196,7 +9196,8 @@ mod cases {
     );
     // Any other argument shape is not that notation.
     assert!(
-      held_traditional_boxes("ClebschGordan[a, b, c]").contains("ClebschGordan")
+      held_traditional_boxes("ClebschGordan[a, b, c]")
+        .contains("ClebschGordan")
     );
   }
 
