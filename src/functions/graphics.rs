@@ -22214,6 +22214,21 @@ fn with_box_font_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
   f()
 }
 
+/// The size a sub- or superscript of text at `font_size` is set at: 0.7 of
+/// its base. Math inside a `Text[…]` stops shrinking after the first step
+/// (the text style's minimum script size): a script of a script — the
+/// subscript of an exponent, the exponent of a term in a fraction — is as
+/// large as a first-level script of the text, never smaller.
+fn script_font_size(font_size: f64) -> f64 {
+  let size = font_size * 0.7;
+  if BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get) {
+    let floor = 0.7 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
+    size.max(floor).min(font_size)
+  } else {
+    size
+  }
+}
+
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
 fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
   struct Restore;
@@ -22816,12 +22831,17 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SuperscriptBox: base with raised exponent
       "SuperscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
-        let sup = layout_box_nested(&args[1], font_size * 0.7);
+        let sup = layout_box_nested(&args[1], script_font_size(font_size));
         // Wolfram raises a superscript's baseline 0.39 em above a text
         // base's; a taller base (a fraction, a parenthesized sum) lifts it
         // by as much as the base rises above a text line (ascent 0.8 em).
-        let raise =
-          0.39 * font_size + (base.baseline - 0.8 * font_size).max(0.0);
+        // An exponent that reaches far below its own baseline (a stacked
+        // fraction in parentheses) is raised further, so that its lowest
+        // point still clears the base's baseline by 0.12 em instead of
+        // hanging under the line.
+        let raise = (0.39 * font_size
+          + (base.baseline - 0.8 * font_size).max(0.0))
+        .max(sup.height - sup.baseline + 0.12 * font_size);
         let sup_top = base.baseline - raise - sup.baseline;
         let (base_y, sup_y) = if sup_top >= 0.0 {
           (0.0, sup_top)
@@ -22844,7 +22864,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SubscriptBox: base with lowered subscript
       "SubscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
-        let sub = layout_box_nested(&args[1], font_size * 0.7);
+        let sub = layout_box_nested(&args[1], script_font_size(font_size));
         // A text base (ascent 0.8 em, height 1.05 em) drops its subscript
         // to 0.4 of its height, i.e. 0.38 em above the base's baseline. A
         // base with an accent stacked on it (`OverDot[θ]`) keeps that
@@ -22867,8 +22887,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SubsuperscriptBox: base with both
       "SubsuperscriptBox" if args.len() == 3 => {
         let base = layout_box(&args[0], font_size);
-        let sub = layout_box_nested(&args[1], font_size * 0.7);
-        let sup = layout_box_nested(&args[2], font_size * 0.7);
+        let sub = layout_box_nested(&args[1], script_font_size(font_size));
+        let sup = layout_box_nested(&args[2], script_font_size(font_size));
         // A large-operator base (∫) carries its limits like a display
         // integral: the upper bound at the top-right tip and the lower bound
         // at the bottom, nudged left to sit under the slanted stem (the sign's
@@ -23752,6 +23772,19 @@ pub fn layout_to_svg(layout: &BoxLayout, fill: &str) -> String {
      </svg>",
     layout.elements,
   )
+}
+
+/// [`layout_to_svg`] of a formula typeset at `size`, in the text color,
+/// recording the formula's text axis — the central line of its base text,
+/// about a third of the font size above the baseline — so a row sets it on
+/// the line of the text beside it. A formula that rises far above its base
+/// line (a raised exponent holding a fraction) would otherwise be centered
+/// as a whole, its base text sunk below the row's.
+fn layout_to_svg_on_text_axis(layout: &BoxLayout, size: f64) -> String {
+  let mut svg = layout_to_svg(layout, theme().text_primary);
+  let axis = (layout.baseline - size * 0.3).max(0.0);
+  crate::functions::container_layout::set_baseline_attr(&mut svg, axis);
+  svg
 }
 
 /// Estimate the display width of a stacked fraction in parent character units.
@@ -34329,7 +34362,7 @@ fn traditional_inline_box_content_svg(
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
-  Some(layout_to_svg(&layout, theme().text_primary))
+  Some(layout_to_svg_on_text_axis(&layout, size))
 }
 
 /// `outer`, a run of style wrappers whose innermost content is `inner`,
@@ -43365,7 +43398,7 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
-  Some(layout_to_svg(&layout, theme().text_primary))
+  Some(layout_to_svg_on_text_axis(&layout, 14.0))
 }
 
 /// The markup an `AxesLabel` entry draws as: a label whose inline box
@@ -46109,17 +46142,22 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     0.0
   };
   let content_w = items_width + seps_total;
-  // A picture that records its text axis is set with that axis on the
-  // row's center line, so it reaches as far above and below the center as
-  // the larger of its two extents.
-  let total_h = cells
-    .iter()
-    .map(|c| match c {
+  // How far the row reaches above and below the line its text is centered
+  // on. A text item (and a picture without an axis of its own) is centered
+  // on that line; a picture that records its text axis is set with the
+  // axis on it, so it may reach further one way than the other — a formula
+  // whose raised exponent holds a fraction rises above the line without
+  // leaving as much blank space below it.
+  let centered = v_align == "center";
+  let mut above = f64::midpoint(font_size, pad_y);
+  let mut below = above;
+  for c in &cells {
+    let (up, down) = match c {
       Cell::Svg {
         height,
         axis: Some(a),
         ..
-      } if v_align == "center" => 2.0 * a.max(height - a),
+      } if centered => (*a, height - a),
       // A script stacked over its base (`Overscript[arrow, k]`) rises
       // above the line; the line stays centered, so it grows both ways.
       Cell::Text {
@@ -46128,25 +46166,25 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         size,
         ..
       } => {
-        height
-          + 2.0
-            * crate::functions::plot_padding::stacked_script_room(markup, *size)
+        let half = height / 2.0
+          + crate::functions::plot_padding::stacked_script_room(markup, *size);
+        (half, half)
       }
-      Cell::Svg { .. } => cell_height(c),
-    })
-    .fold(font_size + pad_y, f64::max);
+      Cell::Svg { .. } => (cell_height(c) / 2.0, cell_height(c) / 2.0),
+    };
+    above = above.max(up);
+    below = below.max(down);
+  }
   // The same holds for a stacked script in the separator between items.
-  let total_h = match &separator {
-    Separator::Text(text, _) if cells.len() > 1 => total_h.max(
-      font_size
-        + pad_y
-        + 2.0
-          * crate::functions::plot_padding::stacked_script_room(
-            text, font_size,
-          ),
-    ),
-    _ => total_h,
-  };
+  if let Separator::Text(text, _) = &separator
+    && cells.len() > 1
+  {
+    let half = f64::midpoint(font_size, pad_y)
+      + crate::functions::plot_padding::stacked_script_room(text, font_size);
+    above = above.max(half);
+    below = below.max(half);
+  }
+  let total_h = above + below;
   let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
   let svg_w = canvas_w.ceil().max(1.0) as u32;
@@ -46157,12 +46195,19 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
-  let mid_y = total_h / 2.0;
+  // The line the row's text is centered on: the middle of the row unless
+  // a picture's axis pushed it off center.
+  let mid_y = above;
+  let off_center = (above - below).abs() > 0.05;
+  if off_center {
+    // A row this one is an item of sets it by that line, too.
+    crate::functions::container_layout::set_baseline_attr(&mut svg, mid_y);
+  }
   let text_fill = theme().text_primary;
   let cell_top = |h: f64| match v_align {
     "top" => 0.0,
     "bottom" => total_h - h,
-    _ => (total_h - h) / 2.0,
+    _ => mid_y - h / 2.0,
   };
 
   let mut x: f64 = match h_align {

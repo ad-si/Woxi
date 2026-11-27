@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- An exponent that holds a stacked fraction (`TraditionalForm[Exp[-(t/c)^m]]`)
+    is raised clear of its base's baseline instead of hanging below the
+    line, and a `Row` sets such a formula on the line of the text beside
+    it — and is only as tall as the formula needs — rather than centering
+    it as a whole.
+- Math inside a `Text[…]` stops shrinking after the first script level:
+    the exponent of a term in a fraction and the subscript of an exponent
+    are as large as a first-level script instead of ever smaller.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
