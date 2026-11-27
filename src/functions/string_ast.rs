@@ -9768,6 +9768,16 @@ fn unescape_box_spaces(chars: &[char]) -> String {
     .replace("\\ ", " ")
 }
 
+/// Whether a group sits alone in an argument slot of box source: `out` (the
+/// source written so far) ends at a `[` or `,` and `rest` (what follows the
+/// group) starts at a `,` or `]`.
+fn is_box_argument_slot(out: &str, rest: &[char]) -> bool {
+  let opens = matches!(out.trim_end().chars().last(), Some('[' | ','));
+  let closes =
+    matches!(rest.iter().find(|c| !c.is_whitespace()), Some(',' | ']'));
+  opens && closes
+}
+
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
 ///
@@ -9798,6 +9808,18 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
         out.extend(&chars[i + 1..close]);
         out.push('"');
         i = close + 1;
+        continue;
+      }
+      // An empty group (`\(\)`, the script slot left blank in
+      // `SubscriptBox[\(S\), \(\)]`) is an empty text atom: stripped
+      // bare, the missing argument would be read as `Null`.
+      BOX_OPEN
+        if !in_box_text
+          && matching_box_close(chars, i) == Some(i + 1)
+          && is_box_argument_slot(&out, &chars[i + 2..]) =>
+      {
+        out.push_str("\"\"");
+        i += 2;
         continue;
       }
       // A group holding only spaces (`\(\ \)`, the blank base a

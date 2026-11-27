@@ -44193,6 +44193,125 @@ mod grid_frame_and_background {
     );
   }
 
+  /// A `StyleForm` tick or frame label is typeset like the `Style` it is
+  /// displayed as. Regression: the label showed the wrapper's own source
+  /// (`StyleForm(12)`).
+  #[test]
+  fn style_form_tick_and_frame_labels_render_like_style() {
+    let plot = |head: &str| {
+      export_svg(&format!(
+        r#"Plot[x, {{x, 0, 2}}, Frame -> True, FrameLabel -> {head}["abc", Bold],
+          FrameTicks -> {{Automatic, Automatic, Automatic,
+            {{{{0, {head}[3]}}, {{1, {head}[12]}}, {{2, {head}[7, Red]}}}}}}]"#
+      ))
+    };
+    let svg = plot("StyleForm");
+    assert!(!svg.contains("StyleForm"), "{svg}");
+    assert!(svg.contains(">12</text>"), "{svg}");
+    assert!(
+      svg.contains(r#"<tspan fill="rgb(255,0,0)">7</tspan>"#),
+      "{svg}"
+    );
+    assert_eq!(svg, plot("Style"));
+  }
+
+  /// An empty script slot in a string's box code (`\(\)`) typesets as
+  /// nothing. Regression: a `Text` in a graphic showed it as `Null`.
+  #[test]
+  fn empty_script_slot_in_box_string_is_blank() {
+    for (label, shown) in [
+      (r#"c \!\(\*SubscriptBox[\(S\), \(\)]\) g"#, "c S g"),
+      (r#"c \!\(\*SuperscriptBox[\(S\), \(\)]\) g"#, "c S g"),
+      (r#"c \!\(\*SubscriptBox[\(S\), \(2\)]\) g"#, "c S₂ g"),
+      (r#"C\!\(\*SubscriptBox[\(\), \(2\)]\)=9"#, "C₂=9"),
+    ] {
+      let svg = export_svg(&format!(r#"Graphics[Text["{label}", {{0, 0}}]]"#));
+      assert!(!svg.contains("Null"), "{label}: {svg}");
+      assert!(svg.contains(&format!(">{shown}</text>")), "{label}: {svg}");
+    }
+  }
+
+  /// The `y` of each line (a one-line sub-picture) of the flowed text in
+  /// `svg`, top to bottom.
+  fn flowed_line_tops(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<svg x=") && l.contains(r#"height="22.0""#))
+      .filter_map(|l| {
+        let rest = l.split(r#" y=""#).nth(1)?;
+        rest.split('"').next()?.parse().ok()
+      })
+      .collect()
+  }
+
+  /// The lines of a `Text[Style[Row[…], …]]` item with hard line breaks
+  /// flow under one another in a `Column` given an alignment, set in the
+  /// text face. Regression: the `Text` pushed onto the row's items hid
+  /// their newlines, so the multi-line string sat as one tall cell between
+  /// its neighbors.
+  #[test]
+  fn text_row_with_line_breaks_flows_in_an_aligned_column() {
+    let svg = export_svg(
+      r#"Column[{Graphics[Circle[], ImageSize -> {350, 50}],
+        Text[Style[Row[{"first (", 8.5, " units)\nsecond line of the text\nthird ",
+          2.5, " end"}], 14]]}, Center]"#,
+    );
+    let tops = flowed_line_tops(&svg);
+    assert_eq!(tops, vec![0.0, 22.0, 44.0], "{svg}");
+    assert!(!svg.contains("Mono"), "set in the text face: {svg}");
+  }
+
+  /// `LineSpacing -> {c, n}` sets the lines of a flowed text `c` font
+  /// sizes plus `n` points apart, and `TextAlignment` places them — with
+  /// or without a sized `Pane` around. Regression: both were ignored, and
+  /// in a `Pane` the lines holding several items hung flush left.
+  #[test]
+  fn line_spacing_and_text_alignment_lay_out_flowed_text() {
+    let column = |directives: &str| {
+      format!(
+        r#"Column[{{Graphics[Circle[], ImageSize -> {{350, 50}}],
+          Text[Style[Row[{{"first (", 8.5, " units)\n\nsecond line of the text\n\nthird ",
+            2.5, " end"}}], 14{directives}]]}}, Center]"#
+      )
+    };
+    for (directives, pitch) in [
+      (", LineSpacing -> {0, 8}", 8.0),
+      (", LineSpacing -> {1, 2}", 16.0),
+      (", TextAlignment -> \"Center\", LineSpacing -> {0, 8}", 8.0),
+    ] {
+      let bare = export_svg(&column(directives));
+      let paned = export_svg(&format!(
+        "Pane[{}, ImageSize -> {{350, 350}}]",
+        column(directives)
+      ));
+      for svg in [&bare, &paned] {
+        let tops = flowed_line_tops(svg);
+        let expected: Vec<f64> = (0..5).map(|k| k as f64 * pitch).collect();
+        assert_eq!(tops, expected, "{directives}: {svg}");
+        assert!(!svg.contains("Mono"), "{directives}: {svg}");
+      }
+    }
+
+    // The lines are centered by default and flush with the side a
+    // `TextAlignment` names.
+    let line_lefts = |directives: &str| -> Vec<f64> {
+      export_svg(&format!(
+        "Pane[{}, ImageSize -> {{350, 350}}]",
+        column(directives)
+      ))
+      .lines()
+      .filter(|l| l.starts_with("<svg x=") && l.contains(r#"height="22.0""#))
+      .filter_map(|l| l.split('"').nth(1)?.parse().ok())
+      .collect()
+    };
+    let centered = line_lefts(", LineSpacing -> {0, 8}");
+    assert!(centered[0] > 0.0 && centered[2] == 0.0, "{centered:?}");
+    let left = line_lefts(", TextAlignment -> Left, LineSpacing -> {0, 8}");
+    assert!(left.iter().all(|x| *x == 0.0), "{left:?}");
+    let right = line_lefts(", TextAlignment -> Right, LineSpacing -> {0, 8}");
+    assert!(right[0] > centered[0] && right[2] == 0.0, "{right:?}");
+  }
+
   /// A `StyleForm` result that is not drawn still prints under its own name.
   #[test]
   fn style_form_keeps_its_name_as_text() {

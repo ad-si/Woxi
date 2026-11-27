@@ -17299,6 +17299,10 @@ pub(crate) fn parse_explicit_tick_entries(
         // before it is read as text.
         let label_expr =
           evaluate_expr_to_expr(&pair[1]).unwrap_or_else(|_| pair[1].clone());
+        // `StyleForm` is displayed exactly as `Style`.
+        let label_expr =
+          crate::functions::graphics::style_forms_as_style(&label_expr)
+            .unwrap_or(label_expr);
         // An expression the plain-text label reader has no reading for
         // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
         // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
@@ -18382,6 +18386,9 @@ pub(crate) fn apply_common_plot_option(
   // here, so every option below reads the value it stands for.
   let evaluated =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  // `StyleForm` in a label is displayed exactly as `Style`.
+  let evaluated = crate::functions::graphics::style_forms_as_style(&evaluated)
+    .unwrap_or(evaluated);
   let replacement = &evaluated;
   match name {
     "ImageSize" => {

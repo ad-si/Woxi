@@ -1552,6 +1552,10 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool, bool) {
 /// Accepts strings, identifiers, and numeric values (so `ChartLabels ->
 /// Range[16]` and similar numeric label lists render correctly).
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
+  // `StyleForm` is displayed exactly as `Style`.
+  if let Some(styled) = crate::functions::graphics::style_forms_as_style(e) {
+    return expr_to_label(&styled);
+  }
   match e {
     Expr::String(s) => Some(s.clone()),
     // The bare symbol `None` always means "no label" for a label option
