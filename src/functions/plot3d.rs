@@ -11394,18 +11394,23 @@ fn push_text3d_label(
   // A label whose inline box notation hangs limits on a large operator
   // (an integral with its bounds) is laid out as boxes, the way the 2D
   // `Text` draws it: the sign tall, its limits at its ends.
+  //
+  // So is a label holding a built-up fraction or a root (a quotient, or a
+  // string whose inline box notation stacks one), on its own or among the
+  // parts of a `Row`: the fraction stacks inline with the text around it.
   let picture =
-    crate::functions::graphics::label_has_large_operator_script(label_expr)
-      .then(|| {
-        let color = match text_style.color {
-          Some((r, g, b)) => format!("rgb({r},{g},{b})"),
-          None => crate::functions::graphics::theme().text_primary.to_string(),
-        };
-        crate::functions::graphics::stacked_label_picture(
-          label_expr, font_size, "", &color,
-        )
-      })
-      .flatten();
+    (crate::functions::graphics::label_has_large_operator_script(label_expr)
+      || crate::functions::graphics::label_typesets_fraction(label_expr))
+    .then(|| {
+      let color = match text_style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => crate::functions::graphics::theme().text_primary.to_string(),
+      };
+      crate::functions::graphics::stacked_label_picture(
+        label_expr, font_size, "", &color,
+      )
+    })
+    .flatten();
   prims.push(Primitive3D::Text3D {
     label,
     pos,
@@ -12599,10 +12604,10 @@ fn tessellate_sphere(
   tessellate_sphere_about(center, radius, detail, [0.0, 0.0, 1.0])
 }
 
-/// The detail an opaque sphere is tessellated with once its pole faces the
-/// viewer (see [`tessellate_sphere_about`]): its far half is culled, and
-/// its outline is the equator, so latitude bands are traded for longitude
-/// segments. The equator stays a band boundary (an even band count), and
+/// The detail a sphere is tessellated with once its pole faces the viewer
+/// (see [`tessellate_sphere_about`]): its outline is the equator, where
+/// the near and far halves meet, so latitude bands are traded for
+/// longitude segments. The equator stays a band boundary (an even band count), and
 /// the outline gets twice the segments of the plain `detail`, up to 48 —
 /// round to a fraction of a pixel at any usual size, without crowding
 /// slivers around the pole that faces the viewer.
@@ -12613,8 +12618,8 @@ fn viewer_facing_sphere_detail(detail: (usize, usize)) -> (usize, usize) {
 }
 
 /// Tessellate a sphere into latitude/longitude triangles whose pole points
-/// along `pole`. With the pole toward the viewer, the outline an opaque
-/// sphere shows is its equator — the ring every longitude segment lies on
+/// along `pole`. With the pole toward the viewer, the outline a sphere
+/// shows is its equator — the ring every longitude segment lies on
 /// — so its silhouette is as round as the segment count allows, whatever
 /// the view direction.
 fn tessellate_sphere_about(
@@ -15843,6 +15848,15 @@ const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
 /// filling a 300 × 400 picture).
 const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
+/// Distance of an explicit `ViewPoint` from the box center, in units of
+/// the box's longest side, from which an elongated unboxed scene keeps the
+/// outline fit in a picture of fixed size (see its use in `graphics3d_ast`):
+/// twice the default camera's distance (`{1.3, -2.4, 2}`, 3.38 away), from
+/// where the view is nearly a parallel projection. Wolfram's snapshots put
+/// the limit between that default distance (sphere-framed) and a
+/// `ViewPoint -> {2, -10, 2}` (10.4 away, outline-fitted).
+const DISTANT_VIEW_POINT: f64 = 6.77;
+
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
 ///
@@ -16576,7 +16590,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
   // below their `PlotLabel` does (sphere framing would span 180). The
   // layout draws such a cell again (see `outline_fitted_cell_svg`).
-  let explicitly_framed = plot_range.is_some() || explicit_view_point;
+  // An elongated box around an automatic range keeps the outline fit when
+  // it is seen from an explicit but distant `ViewPoint` (see
+  // `DISTANT_VIEW_POINT`), as it does under the default camera (see
+  // `COMPACT_BOX_MAX_SIDE_RATIO`): Wolfram's snapshot
+  // of a Demonstration's row of three unboxed cylinders with their captions
+  // (a 12 × 2 × 7.2 box) at `ImageSize -> {550, 350}`, seen from
+  // `ViewPoint -> {2, -10, 2}`, draws the 12 units about 505 px wide, as
+  // the outline fit does (sphere framing would span 310).
+  let elongated_automatic_range = plot_range.is_none() && {
+    let sides = primitives_extent(&prims).map(|(lo, hi)| hi - lo);
+    let longest = sides.into_iter().fold(0.0, f64::max);
+    let shortest = sides.into_iter().fold(f64::INFINITY, f64::min);
+    longest.is_finite()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && longest > COMPACT_BOX_MAX_SIDE_RATIO * shortest
+      && view_distance.is_finite()
+      && view_distance >= DISTANT_VIEW_POINT
+  };
+  let explicitly_framed =
+    plot_range.is_some() || (explicit_view_point && !elongated_automatic_range);
   let automatic_sphere = !spherical_region
     && !spherical_region_off
     && !OUTLINE_FIT_CELL.get()
@@ -16785,11 +16818,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ..
         } => {
           let detail = sphere_detail(*radius, sphere_extent, sphere_count);
-          // The far half of an opaque sphere is culled below, so it is
-          // tessellated about the line of sight: its outline is then the
-          // finely divided equator rather than a coarse slanted cut
-          // through the latitude bands.
-          let tris = if style.faces && style.opacity >= 1.0 {
+          // A sphere is tessellated about the line of sight: its outline is
+          // then the finely divided equator rather than a coarse slanted
+          // cut through the latitude bands. An opaque sphere has its far
+          // half culled below; a see-through one shows both halves, which
+          // must end on that same ring or the near half's saw-toothed edge
+          // shows through as a jagged rim one layer thinner than the rest.
+          let tris = if style.faces {
             tessellate_sphere_about(
               center,
               *radius,

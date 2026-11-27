@@ -1984,25 +1984,152 @@ mod graph_rendering {
     );
   }
 
+  /// The `(x, y)` pairs of the first `<path d="M… Q… …">` in an SVG: its
+  /// start, control and end points.
+  fn first_quadratic_path(svg: &str) -> Vec<(f64, f64)> {
+    svg
+      .split("<path d=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .expect("a curved edge should render as a path")
+      .split(|c: char| c == 'M' || c == 'Q' || c.is_whitespace())
+      .filter(|pair| !pair.is_empty())
+      .map(|pair| {
+        let (x, y) = pair.split_once(',').expect("an x,y pair");
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect()
+  }
+
   #[test]
   fn graph_linear_embedding_draws_arcs_not_straight_lines() {
     // `GraphLayout -> "LinearEmbedding"` places vertices on a line and
-    // draws every edge as a semicircular arc above it (Mathematica's
-    // standard way to lay out, e.g., an RNA sequence's base-pairing graph)
-    // rather than a straight chord.
+    // draws every edge as an arc above it (Mathematica's standard way to
+    // lay out, e.g., an RNA sequence's base-pairing graph) rather than a
+    // straight chord.
     let result = interpret(
       "ExportString[Graph[{1, 2}, {1 <-> 2}, GraphLayout -> \"LinearEmbedding\"], \"SVG\"]"
     ).unwrap();
-    let points_attr = result
-      .split("points=\"")
+    let pts = first_quadratic_path(&result);
+    assert_eq!(pts.len(), 3, "expected a quadratic curve: {result}");
+    // The control point lies above the line through the endpoints (SVG's
+    // y axis points down).
+    assert!(pts[1].1 < pts[0].1 && pts[1].1 < pts[2].1, "{pts:?}");
+  }
+
+  #[test]
+  fn graph_linear_embedding_arc_height_is_a_quarter_of_its_span() {
+    // The arc's control point sits half the endpoints' distance above the
+    // line, so the arc itself peaks at a quarter of it — and the picture
+    // leaves room for the control point, making it half as tall as wide.
+    let result = interpret(
+      "ExportString[Graph[Range[5], {1 <-> 5, 2 <-> 3}, \
+       GraphLayout -> \"LinearEmbedding\"], \"SVG\"]",
+    )
+    .unwrap();
+    let cx: Vec<f64> = result
+      .split("cx=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next()?.parse().ok())
+      .collect();
+    let cy: f64 = result
+      .split("cy=\"")
       .nth(1)
-      .and_then(|s| s.split('"').next())
-      .expect("edge should render as a polyline");
-    let point_count = points_attr.split_whitespace().count();
+      .and_then(|s| s.split('"').next()?.parse().ok())
+      .unwrap();
+    let span = cx[4] - cx[0];
+    let pts = first_quadratic_path(&result);
+    let rise = cy - pts[1].1;
     assert!(
-      point_count > 2,
-      "LinearEmbedding edge should render as a curved arc (many points), got {point_count} points: {points_attr}"
+      (rise - span / 2.0).abs() < 0.02 * span,
+      "control point {rise} above the line, vertices {span} apart"
     );
+  }
+
+  #[test]
+  fn graph_edge_style_rule_with_directive_list() {
+    // `EdgeStyle -> {edge -> {d1, d2}}` styles that edge with every
+    // directive of the list, as `edge -> Directive[d1, d2]` does.
+    for style in [
+      "{GrayLevel[1/2], Thick}",
+      "Directive[GrayLevel[1/2], Thick]",
+    ] {
+      let result = interpret(&format!(
+        "ExportString[Graph[{{1, 2, 3}}, {{1 <-> 2, 2 <-> 3, 3 <-> 1}}, \
+         EdgeStyle -> {{(1 <-> 2) -> {style}}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert_eq!(
+        result
+          .matches("stroke=\"rgb(128,128,128)\" stroke-width=\"2.00\"")
+          .count(),
+        1,
+        "{style}: {result}"
+      );
+    }
+  }
+
+  #[test]
+  fn graph_directed_tree_with_two_branches_puts_root_on_top() {
+    // Two edges leading away from one vertex make a tree with that vertex
+    // as its root, drawn above its two children — not a horizontal path.
+    let centers = |code: &str| -> Vec<(f64, f64)> {
+      let svg = interpret(code).unwrap();
+      let attr = |name: &str| -> Vec<f64> {
+        svg
+          .split(&format!(" {name}=\""))
+          .skip(1)
+          .filter_map(|s| s.split('"').next()?.parse().ok())
+          .collect()
+      };
+      attr("cx").into_iter().zip(attr("cy")).collect()
+    };
+    let tree = centers("ExportString[Graph[{x -> y, x -> z}], \"SVG\"]");
+    assert_eq!(tree.len(), 3);
+    let (root, left, right) = (tree[0], tree[1], tree[2]);
+    assert!(root.1 < left.1, "root above its children: {tree:?}");
+    assert!((left.1 - right.1).abs() < 0.01, "{tree:?}");
+    assert!(left.0 < root.0 && root.0 < right.0, "{tree:?}");
+    // A chain of edges is still a horizontal path.
+    let chain = centers("ExportString[Graph[{x -> y, y -> z}], \"SVG\"]");
+    assert!((chain[0].1 - chain[2].1).abs() < 0.01, "{chain:?}");
+  }
+
+  #[test]
+  fn graph_vertex_shape_is_sized_by_vertex_size() {
+    // `VertexSize -> s` is the size of a `VertexShape` picture: `s` times
+    // the smallest distance between two vertices, whether given bare or
+    // as a one-element list.
+    for size in ["0.5", "{0.5}"] {
+      let result = interpret(&format!(
+        "ExportString[Graph[{{x -> y, x -> z}}, \
+         VertexShape -> Graphics[{{Red, Disk[]}}], VertexSize -> {size}], \
+         \"SVG\"]"
+      ))
+      .unwrap();
+      let disks: Vec<(f64, f64)> = result
+        .split("<ellipse cx=\"")
+        .skip(1)
+        .map(|s| {
+          let num = |key: &str| -> f64 {
+            s.split(key)
+              .nth(1)
+              .and_then(|t| t.split('"').next()?.parse().ok())
+              .unwrap()
+          };
+          (s.split('"').next().unwrap().parse().unwrap(), num("rx=\""))
+        })
+        .collect();
+      assert_eq!(disks.len(), 3, "{result}");
+      let spacing = disks[2].0 - disks[1].0;
+      for (_, rx) in &disks {
+        assert!(
+          (2.0 * rx - 0.5 * spacing).abs() < 0.01 * spacing,
+          "{size}: diameter {} for vertices {spacing} apart",
+          2.0 * rx
+        );
+      }
+    }
   }
 
   #[test]
@@ -10529,6 +10656,76 @@ mod wolfram_graph_layouts {
       )
       .unwrap(),
       "{{0.707, 0.707}, {0., 1.414}, {0., 0.}, {1.414, 0.}, {1.414, 1.414}}"
+    );
+  }
+
+  #[test]
+  fn radial_embedding_draws_each_component_on_its_own() {
+    // Every piece is embedded separately (a path along a line, drawn from
+    // the right) and the pieces are packed below each other, the largest
+    // first, padded by 3/16.
+    assert_eq!(
+      interpret(
+        "Round[1000 GraphEmbedding[Graph[{1 <-> 2, 3 <-> 4, 4 <-> 5}, \
+         GraphLayout -> \"RadialEmbedding\"]]]"
+      )
+      .unwrap(),
+      "{{1188, -563}, {188, -563}, {2188, -188}, {1188, -188}, {188, -188}}"
+    );
+    // A star keeps its radial shape next to the other pieces: the hub is
+    // one unit from every leaf.
+    assert_eq!(
+      interpret(
+        "With[{p = GraphEmbedding[Graph[{1 <-> 2, 1 <-> 3, 1 <-> 4, \
+         5 <-> 6, 7 <-> 8}, GraphLayout -> \"RadialEmbedding\"]]}, \
+         {Round[EuclideanDistance[p[[1]], #] & /@ p[[2 ;; 4]], 0.001], \
+          p[[5, 2]] == p[[6, 2]], p[[7, 2]] == p[[8, 2]], \
+          p[[5, 2]] > p[[7, 2]]}]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, True, True, True}"
+    );
+  }
+
+  #[test]
+  fn spring_embedding_draws_each_component_on_its_own() {
+    // The paths lie on horizontal lines with unit steps, below the
+    // larger piece; nothing overlaps.
+    assert_eq!(
+      interpret(
+        "With[{p = GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1, \
+         3 <-> 4, 5 <-> 6, 6 <-> 7, 8 <-> 9}, \
+         GraphLayout -> \"SpringEmbedding\"]]}, \
+         {Round[p[[5 ;; 7]] - Table[p[[7]], 3], 0.001], \
+          Round[p[[8]] - p[[9]], 0.001], \
+          Min[p[[1 ;; 4, 2]]] > p[[5, 2]] > p[[8, 2]], \
+          DuplicateFreeQ[Round[p, 0.001]]}]"
+      )
+      .unwrap(),
+      "{{{2., 0.}, {1., 0.}, {0., 0.}}, {1., 0.}, True, True}"
+    );
+  }
+
+  #[test]
+  fn graph_plot_radial_drawing_is_the_radial_embedding() {
+    // `"RadialDrawing"` is the legacy name of the method.
+    assert_eq!(
+      interpret(
+        "GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5, 4 -> 6}, \
+         Method -> \"RadialDrawing\"][[1, 1]] == \
+         GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5, 4 -> 6}, \
+         Method -> \"RadialEmbedding\"][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Round[1000 GraphPlot[{1 -> 2, 3 -> 4, 4 -> 5}, \
+         Method -> \"RadialDrawing\"][[1, 1]]]"
+      )
+      .unwrap(),
+      "{{1000, 0}, {0, 0}, {2000, 375}, {1000, 375}, {0, 375}}"
     );
   }
 

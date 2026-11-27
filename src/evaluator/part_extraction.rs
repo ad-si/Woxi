@@ -1089,6 +1089,14 @@ fn sparse_array_part(
   let entries = row_entries().unwrap_or_else(|| {
     crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, data)
   });
+  // Indices taken in increasing order (a span, `All`) keep the stored
+  // entries in order: the part's storage is then written directly instead
+  // of going through a rule list.
+  let ordered = selections
+    .iter()
+    .all(|(_, sel)| sel.windows(2).all(|pair| pair[0] < pair[1]))
+    && !new_dims.contains(&0);
+  let mut kept: Vec<(Vec<usize>, Expr)> = Vec::new();
   let mut rules: Vec<Expr> = Vec::new();
   for (pos, value) in entries {
     let mut outs: Vec<Vec<usize>> = vec![Vec::new()];
@@ -1122,6 +1130,14 @@ fn sparse_array_part(
     if new_dims.is_empty() {
       return Some(Ok(value));
     }
+    if ordered {
+      kept.extend(
+        outs
+          .into_iter()
+          .map(|o| (o.into_iter().map(|i| i + 1).collect(), value.clone())),
+      );
+      continue;
+    }
     for o in outs {
       rules.push(Expr::Rule {
         pattern: Box::new(Expr::List(
@@ -1133,6 +1149,22 @@ fn sparse_array_part(
   }
   if new_dims.is_empty() {
     return Some(Ok(background.clone()));
+  }
+  if ordered {
+    // An entry stored at the background is no entry of the part.
+    let at_background =
+      crate::functions::list_helpers_ast::SparseBackground::new(background);
+    kept.retain(|(_, value)| {
+      !crate::functions::list_helpers_ast::is_sparse_background(
+        value,
+        &at_background,
+      )
+    });
+    return Some(Ok(
+      crate::evaluator::dispatch::list_operations::build_sparse_array_csr(
+        &new_dims, background, &kept,
+      ),
+    ));
   }
   Some(crate::evaluator::evaluate_function_call_ast(
     "SparseArray",
