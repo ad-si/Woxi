@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- Arithmetic on arrays of machine-complex numbers is several times
+    faster: products, quotients, `Log[b, z]` and `b^z` of the elements are
+    taken directly (a zero real or imaginary part included), and a
+    `SparseArray` mask applied to such an array keeps to its stored
+    values — `2^sparse`, `sparse + c` and a span part `sparse[[a ;; b,
+    c ;; d]]` no longer build the dense array and a rule list. A
+    `SparseArray[{i_, j_} /; cond -> v, dims]` pattern rule substitutes the
+    indices straight into the condition, whose constant bounds
+    (`i >= (n - m)/2 + 1`) are worked out once. Filtering a 512×512
+    image's Fourier spectrum in a `Manipulate` went from about 50 s to
+    15 s per update in a debug build.
 - A horizontal `BarChart` (`BarOrigin -> Left`) honors `AspectRatio` (the
     picture's height follows the plotting area instead of staying at the
     default), sets its `ChartLegends` column beside the image like a
