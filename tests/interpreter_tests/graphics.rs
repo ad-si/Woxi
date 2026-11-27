@@ -31498,7 +31498,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {y, -4, 4}, Contours -> {0}, ContourShading -> None]]]"
         )
         .unwrap(),
-        "GraphicsComplex"
+        "List"
       );
       let lines = interpret(
         "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
@@ -31820,7 +31820,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            Head[Graphics[g[[1]], g[[2]]]]}"
         )
         .unwrap(),
-        "{2, GraphicsComplex, List, Graphics}"
+        "{2, List, List, Graphics}"
       );
     }
 
@@ -61434,17 +61434,17 @@ mod color_data_indexed {
     assert_eq!(
       interpret("Head[ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}][[1]]]")
         .unwrap(),
-      "GraphicsComplex"
+      "List"
     );
     assert_eq!(
       interpret(
         "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
          ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, \
-         {Head[prims], Cases[prims, _RGBColor, Infinity], \
+         {Head[prims], Head[prims[[1]]], Cases[prims, _RGBColor, Infinity], \
          Head[First[Cases[prims, _Line, Infinity]]]}]"
       )
       .unwrap(),
-      "{GraphicsComplex, {RGBColor[1, 0.5, 0.5]}, Line}"
+      "{List, GraphicsComplex, {RGBColor[1, 0.5, 0.5]}, Line}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
@@ -61459,7 +61459,7 @@ mod color_data_indexed {
          Head[ContourPlot[lineA == 0, {x, -9, 9}, {y, -9, 9}][[1]]]"
       )
       .unwrap(),
-      "GraphicsComplex"
+      "List"
     );
   }
 
@@ -61484,20 +61484,21 @@ mod color_data_indexed {
     );
   }
 
-  // The `GraphicsComplex` is the graphic's first argument itself (not an
-  // element of a primitive list), so `plot[[1, 1]]` is the point table.
+  // The graphic's first argument lists the `GraphicsComplex` followed by
+  // an empty group, so `plot[[1, 1, 1]]` is the point table.
   #[test]
-  fn contour_plot_first_argument_is_the_graphics_complex() {
+  fn contour_plot_first_argument_lists_the_graphics_complex() {
     clear_state();
     for body in ["x^2 + y", "x^2 + y^2 == 1"] {
       assert_eq!(
         interpret(&format!(
           "p = ContourPlot[{body}, {{x, -2, 2}}, {{y, -2, 2}}]; \
-           {{Head[First[p]], MatrixQ[p[[1, 1]]], Last[Dimensions[p[[1, 1]]]], \
+           {{Head[First[p]], Head[p[[1, 1]]], MatrixQ[p[[1, 1, 1]]], \
+            Last[Dimensions[p[[1, 1, 1]]]], p[[1, 2]], \
             Head[First[First[FullForm[p]]]]}}"
         ))
         .unwrap(),
-        "{GraphicsComplex, True, 2, GraphicsComplex}"
+        "{List, GraphicsComplex, True, 2, {}, List}"
       );
     }
   }
