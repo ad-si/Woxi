@@ -9683,10 +9683,9 @@ Found comparing the graphics-tests renders (2026-11):
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
     (WL 100 x 17).
   - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],
-    PlotRange -> 10, ImageSize -> 300]` is 300 x 297 (WL 300 x 300): WL
-    keeps the plot's `PlotRangePadding` under the explicit range, so the
-    end tick labels need no padding; with `PlotRange -> {{-1, 3}, {0, 1}}`
-    297 → 94 (WL 88).
+    PlotRange -> {{-1, 3}, {0, 1}}, ImageSize -> 300]` is 300 x 90 (WL
+    300 x 88). With `PlotRange -> 10` it is 300 x 300 like WL: the plot's
+    `PlotRangePadding` is kept under the explicit range.
   - `GraphicsGrid` of two `Rectangle[{0, 0}, {2, 1}]` is 600 x 171 (WL
     165), of two `Rectangle[{0, 0}, {1, 4}]` 226 wide (WL 225).
 - 3D picture size: Graphics3D and the Plot3D-family renderers now follow

@@ -3441,17 +3441,20 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
         continue;
       }
       let lines = label.split('\n').count();
-      let pitch = line_pitch(l.font) * sf;
+      // A label carrying its own size (`Style[8, 14]`) is set at it.
+      let own_pt = plot_padding::markup_font_size(label).unwrap_or(l.font);
+      let label = &sized_tick_label(label, sf);
+      let pitch = line_pitch(own_pt) * sf;
       let text = match edge {
         0 => format!(
           "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
-          py + gap + ascent(l.font) * sf,
+          py + gap + ascent(own_pt) * sf,
           stacked_lines_svg(label, px, pitch),
         ),
         2 => format!(
           "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
           py - gap
-            - (line_height(l.font) - ascent(l.font)) * sf
+            - (line_height(own_pt) - ascent(own_pt)) * sf
             - (lines - 1) as f64 * pitch,
           stacked_lines_svg(label, px, pitch),
         ),
@@ -5428,10 +5431,14 @@ pub(crate) fn explicit_ticks_svg(
         out.push_str(&picture);
         continue;
       }
+      // A label carrying its own size (`Style[8, 14]`) is set at it.
+      let own_font =
+        plot_padding::markup_font_size(label).map_or(tick_font, |pt| sf * pt);
+      let label = sized_tick_label(label, sf);
       out.push_str(&format!(
         "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
-        axis_y + tick_font,
-        stacked_lines_svg(label, px, tick_font * 1.2),
+        axis_y + own_font,
+        stacked_lines_svg(&label, px, own_font * 1.2),
       ));
     }
   }
@@ -5457,6 +5464,7 @@ pub(crate) fn explicit_ticks_svg(
         out.push_str(&picture);
         continue;
       }
+      let label = sized_tick_label(label, sf);
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
         plot_x0 - tick_len,
@@ -5464,6 +5472,13 @@ pub(crate) fn explicit_ticks_svg(
     }
   }
   out
+}
+
+/// A tick label's markup for a rendering drawn at `sf` units per point: the
+/// absolute sizes it sets itself (`Style[8, 14]` is `font-size="14"`) are in
+/// points like the tick font, so they scale with the rendering too.
+pub(crate) fn sized_tick_label(label: &str, sf: f64) -> String {
+  crate::functions::chart::scale_markup_lengths(label, sf)
 }
 
 /// Core SVG generation for 2D line plots with full option support.

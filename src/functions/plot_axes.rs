@@ -410,18 +410,22 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           svg.push_str(&picture);
           continue;
         }
+        // A label carrying its own size (`Style[8, 14]`) is set at it.
+        let own_pt = crate::functions::plot_padding::markup_font_size(label)
+          .unwrap_or(tick_font);
+        let label = crate::functions::plot::sized_tick_label(label, sf);
         // A label of several lines (`Row[{"\n", x}]`) runs downward from
         // the first, and blanks padding a label keep their width.
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\"{}>{}</text>\n",
-          axis_y + (TICK_LABEL_GAP + ascent(tick_font)) * sf,
-          crate::functions::plot::preserve_blanks_attr(label),
+          axis_y + (TICK_LABEL_GAP + ascent(own_pt)) * sf,
+          crate::functions::plot::preserve_blanks_attr(&label),
           crate::functions::plot::stacked_lines_svg(
-            label,
+            &label,
             x,
-            line_height(tick_font) * sf
+            line_height(own_pt) * sf
           ),
         ));
       }
@@ -467,17 +471,20 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           svg.push_str(&picture);
           continue;
         }
+        let own_pt = crate::functions::plot_padding::markup_font_size(label)
+          .unwrap_or(tick_font);
+        let label = crate::functions::plot::sized_tick_label(label, sf);
         let label_x = axis_x - TICK_LABEL_GAP * sf;
         svg.push_str(&format!(
           "<text x=\"{label_x:.1}\" y=\"{:.1}\" text-anchor=\"end\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\"{}>{}</text>\n",
-          y + (ascent(tick_font) - line_height(tick_font) / 2.0) * sf,
-          crate::functions::plot::preserve_blanks_attr(label),
+          y + (ascent(own_pt) - line_height(own_pt) / 2.0) * sf,
+          crate::functions::plot::preserve_blanks_attr(&label),
           crate::functions::plot::stacked_lines_svg(
-            label,
+            &label,
             label_x,
-            line_height(tick_font) * sf
+            line_height(own_pt) * sf
           ),
         ));
       }
