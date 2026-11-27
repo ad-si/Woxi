@@ -3773,6 +3773,14 @@ fn is_empty_list(e: &Expr) -> bool {
   matches!(e, Expr::List(items) if items.is_empty())
 }
 
+/// Whether `e` is a `Line` argument that draws nothing: `{}`, or a list of
+/// lines every one of which is empty (`{{}}`, `{{}, {}}`). A front end shows
+/// such a line as nothing at all rather than as a bad coordinate, which is
+/// what a body relies on when a branch that has nothing to draw yields `{}`.
+fn is_empty_line_collection(e: &Expr) -> bool {
+  matches!(e, Expr::List(items) if items.iter().all(is_empty_list))
+}
+
 // ── AST walker ───────────────────────────────────────────────────────────
 
 /// Turn the primitives a `FilledCurve` component produced (from index
@@ -3991,7 +3999,7 @@ fn collect_primitives(
         "Line" if !args.is_empty() => {
           let before = prims.len();
           parse_line(args, style, prims);
-          if prims.len() == before && !is_empty_list(&args[0]) {
+          if prims.len() == before && !is_empty_line_collection(&args[0]) {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
