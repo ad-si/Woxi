@@ -8309,6 +8309,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "Transpose" if args.len() == 1 => {
       format!("{}^T", tex_atom_or_paren(&args[0]))
     }
+    "ConjugateTranspose" if args.len() == 1 => {
+      format!("{}^{{\\dagger }}", tex_atom_or_paren(&args[0]))
+    }
+    // With a permutation the mark carries it: `m^{T:\{2,1\}}`.
+    "Transpose" | "ConjugateTranspose" if args.len() == 2 => {
+      let mark = if name == "Transpose" {
+        "T"
+      } else {
+        "\\dagger "
+      };
+      format!(
+        "{}^{{{mark}:{}}}",
+        tex_atom_or_paren(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
     "Inverse" if args.len() == 1 => {
       format!("{}^{{-1}}", tex_atom_or_paren(&args[0]))
     }

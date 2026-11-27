@@ -70084,9 +70084,10 @@ mod generalized_bar_chart {
     );
   }
 
-  /// An unevaluated `Transpose`, `ConjugateTranspose` or `Conjugate` in a
-  /// label draws as its postfix mark (`mᵀ`, `m†`, `z*`), an operator
-  /// operand bracketed, rather than as the spelled-out head.
+  /// An unevaluated `Transpose` or `ConjugateTranspose` in a label draws as
+  /// its postfix mark (`mᵀ`, `m†`), an operator operand bracketed, rather
+  /// than as the spelled-out head; a `Conjugate` keeps its StandardForm
+  /// function form.
   #[test]
   fn label_draws_transpose_and_conjugate_as_postfix_marks() {
     let mark = |m: &str| {
@@ -70098,7 +70099,7 @@ mod generalized_bar_chart {
       "Graphics[{}, PlotLabel -> g[ConjugateTranspose[a + b], Conjugate[z]]]",
     );
     assert!(
-      svg.contains(&format!("g[(a + b){}, z{}]", mark("\u{2020}"), mark("*"))),
+      svg.contains(&format!("g[(a + b){}, Conjugate[z]]", mark("\u{2020}"))),
       "{svg}"
     );
     // The permuting two-argument form is an ordinary function call.

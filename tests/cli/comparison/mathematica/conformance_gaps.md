@@ -493,6 +493,26 @@ not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
 &&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
 operands themselves are parenthesized by precedence).
 
+### StandardForm boxes: `==` and derivatives
+
+```sh
+wolframscript -code 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "\[Equal]", "b"}]
+woxi eval 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "==", "b"}]
+wolframscript -code 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", TagBox[RowBox[{"(", "3", ")"}], Derivative], MultilineFunction -> None]
+woxi eval 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", "′′′"]
+```
+
+WL boxes `Equal` with the private-use `\[Equal]` (U+F431) and a derivative
+with `MultilineFunction -> None`, its order of three or more as a
+`TagBox[…, Derivative]` around `(n)`. Woxi writes `==` and leaves out the
+option, because its box renderers read a two-argument `SuperscriptBox` and
+have no glyph for `\[Equal]` yet. The same difference shows up in an
+operand of `Infix` or `Prefix` boxes.
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as

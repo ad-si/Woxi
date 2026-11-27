@@ -3530,27 +3530,57 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
       if name == "Rational" && args.len() == 2)
 }
 
-/// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
-/// `ConjugateTranspose`, which StandardForm sets as a superscript mark.
+/// Whether `expr` is a `Transpose` or `ConjugateTranspose` of one or two
+/// arguments, which StandardForm sets through a superscript template.
 fn is_postfix_marked_call(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
-    if args.len() == 1
-      && matches!(name.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose"))
+    if (1..=2).contains(&args.len())
+      && matches!(name.as_str(), "Transpose" | "ConjugateTranspose"))
 }
 
-/// Whether `expr` already sets with a superscript (a power or a postfix
-/// mark), so it is bracketed before taking another postfix mark.
-fn is_superscripted_call(expr: &Expr) -> bool {
-  is_postfix_marked_call(expr)
-    || matches!(expr, Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2)
-    || matches!(
-      expr,
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        ..
-      }
-    )
+/// The box of the operand of a postfix superscript template (`mᵀ`, `m†`,
+/// `z*`): bracketed unless it boxes as an atom, a square root or a call or
+/// part (`f[a]ᵀ`, `a〚1〛ᵀ`, `{a, b}ᵀ`) — a sum, product, power, script or
+/// another template is, `(a + b)ᵀ`, `(a²)ᵀ`, `(a₁)ᵀ`.
+fn postfix_template_operand(operand: &Expr) -> Expr {
+  let boxed = expr_to_box_form(&canonical_operator_call(operand));
+  let bare = match &boxed {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, .. } if name == "SqrtBox" => true,
+    Expr::FunctionCall { name, args } if name == "RowBox" => matches!(
+      args.first(),
+      Some(Expr::List(items))
+        if matches!(items.get(1), Some(Expr::String(s)) if s == "[" || s == "\u{301A}")
+          || matches!(items.first(), Some(Expr::String(s)) if s == "{")
+    ),
+    _ => false,
+  };
+  if bare { boxed } else { paren_box(boxed) }
+}
+
+/// `TemplateBox[{operand, …}, "Transpose", SyntaxForm -> SuperscriptBox]`:
+/// the FrontEnd's postfix template for `Transpose`, `ConjugateTranspose`
+/// (and, in TraditionalForm, `Conjugate`). A second argument (the
+/// permutation) uses the `"Transpose2"` template.
+pub(crate) fn postfix_template(name: &str, args: &[Expr]) -> Expr {
+  let mut parts = vec![postfix_template_operand(&args[0])];
+  parts.extend(args[1..].iter().map(expr_to_box_form));
+  let tag = if args.len() == 2 {
+    format!("{name}2")
+  } else {
+    name.to_string()
+  };
+  call(
+    "TemplateBox",
+    vec![
+      Expr::List(parts.into()),
+      str_expr(&tag),
+      crate::helpers::rule_expr(
+        Expr::Identifier("SyntaxForm".to_string()),
+        Expr::Identifier("SuperscriptBox".to_string()),
+      ),
+    ],
+  )
 }
 
 /// The infix symbol StandardForm sets between the arguments of a logical,
@@ -3561,6 +3591,7 @@ fn infix_operator_symbol(head: &str) -> Option<&'static str> {
     "Or" => "||",
     "StringJoin" => "<>",
     "Alternatives" => "|",
+    "Dot" => ".",
     _ => return None,
   })
 }
@@ -3573,6 +3604,7 @@ fn box_operator_precedence(head: &str) -> Option<u16> {
     "Not" => 230,
     "Plus" => 310,
     "Times" => 400,
+    "Dot" => 490,
     "StringJoin" => 600,
     _ => return None,
   })
@@ -5063,10 +5095,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         if name == "SuperscriptBox");
       let factorial = matches!(&base, Expr::FunctionCall { name, args }
         if (name == "Factorial" || name == "Factorial2") && args.len() == 1);
+      // An infix operator expression (`a . b`, `a && b`) too.
+      let infix = matches!(&base, Expr::FunctionCall { name, args }
+        if args.len() >= 2 && infix_operator_symbol(name).is_some());
       let base_box = if needs_paren_as_power_base(&base)
         || is_postfix_marked_call(&base)
         || superscripted
         || factorial
+        || infix
       {
         paren_box(boxed)
       } else {
@@ -5075,29 +5111,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
     }
-    // The conjugate, transpose and Hermitian adjoint are postfix marks in
-    // StandardForm too: `z*`, `mᵀ` (`\[Transpose]`) and `m†`
-    // (`\[ConjugateTranspose]`). A base that is
-    // an operator expression is bracketed, `(a + b)ᵀ`, `(a²)ᵀ`.
-    Expr::FunctionCall { name, args }
-      if matches!(
-        name.as_str(),
-        "Conjugate" | "Transpose" | "ConjugateTranspose"
-      ) && args.len() == 1 =>
-    {
-      let mark = match name.as_str() {
-        "Conjugate" => "*",
-        "Transpose" => "\u{F3C7}",
-        _ => "\u{F3C9}",
-      };
-      let base = canonical_operator_call(&args[0]);
-      let base_box =
-        if needs_paren_as_power_base(&base) || is_superscripted_call(&base) {
-          paren_box(expr_to_box_form(&base))
-        } else {
-          expr_to_box_form(&base)
-        };
-      call("SuperscriptBox", vec![base_box, str_expr(mark)])
+    // The transpose and Hermitian adjoint are postfix marks in StandardForm:
+    // `mᵀ` and `m†`, through the FrontEnd's superscript template
+    // (`TemplateBox[{m}, "Transpose", SyntaxForm -> SuperscriptBox]`). A
+    // `Conjugate` keeps its function form here; only TraditionalForm marks
+    // it `z*`.
+    Expr::FunctionCall { name, args } if is_postfix_marked_call(expr) => {
+      postfix_template(name, args)
     }
     Expr::FunctionCall { name, args }
       if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>
@@ -5741,6 +5761,28 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         if args.len() == 1 {
           parts.push(box_subexpr_via_user_rules(&args[0]));
         } else {
+          let mut inner = Vec::new();
+          for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+              inner.push(str_expr(","));
+            }
+            inner.push(box_subexpr_via_user_rules(arg));
+          }
+          parts.push(row_box(inner));
+        }
+      }
+      parts.push(str_expr("]"));
+      row_box(parts)
+    }
+    // A call with a compound head, `f[a][b]`, boxes its head like any
+    // other expression (bracketed when it is an operator expression,
+    // `(a + b)[c]`), followed by the bracketed arguments.
+    Expr::CurriedCall { func, args } => {
+      let mut parts = vec![postfix_template_operand(func), str_expr("[")];
+      match args.as_slice() {
+        [] => {}
+        [arg] => parts.push(box_subexpr_via_user_rules(arg)),
+        args => {
           let mut inner = Vec::new();
           for (i, arg) in args.iter().enumerate() {
             if i > 0 {
@@ -9139,15 +9181,31 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         None => bars,
       }
     }
-    // The conjugate, transpose and Hermitian adjoint are postfix marks:
-    // `z*`, `Aᵀ` (an upright `\[Transpose]`), `A†`.
-    "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
-      let mark = match name {
-        "Conjugate" => "*",
-        "Transpose" => "\u{F3C7}",
-        _ => "\u{2020}",
+    // The conjugate, transpose and Hermitian adjoint are postfix marks,
+    // `z*`, `Aᵀ`, `A†`, set through the FrontEnd's superscript template:
+    // `TemplateBox[{z}, "Conjugate", SyntaxForm -> SuperscriptBox]`. A
+    // transpose with a permutation uses the `"Transpose2"` template.
+    "Conjugate" | "Transpose" | "ConjugateTranspose"
+      if args.len() == 1 || (args.len() == 2 && name != "Conjugate") =>
+    {
+      let mut parts = vec![tf_script_base(&args[0])];
+      parts.extend(args[1..].iter().map(tf));
+      let tag = if args.len() == 2 {
+        format!("{name}2")
+      } else {
+        name.to_string()
       };
-      tf_box("SuperscriptBox", vec![tf_script_base(&args[0]), tf_string(mark)])
+      tf_box(
+        "TemplateBox",
+        vec![
+          Expr::List(parts.into()),
+          tf_string(&tag),
+          crate::helpers::rule_expr(
+            Expr::Identifier("SyntaxForm".to_string()),
+            Expr::Identifier("SuperscriptBox".to_string()),
+          ),
+        ],
+      )
     }
     _ if args.len() >= 2 && tf_infix_glyph(name).is_some() => {
       tf_infix(name, args)

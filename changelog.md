@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `ToBoxes[a . b]` is the infix row `a . b` (bracketed as a power base)
+    and a call with a compound head (`f[a][b]`, `(a + b)[c]`) boxes as a
+    row instead of a string. `Transpose[m, perm]` of something that is not
+    an array stays unevaluated without a `Transpose::tperm` message.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
@@ -128,10 +132,13 @@
     (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
     keeps the explicit intervals of the others; the whole range was
     dropped, so the scene filled its frame.
-- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
-    stays unevaluated is typeset in StandardForm as a postfix superscript
-    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
-    notebook output and picture labels, instead of the spelled-out head.
+- An unevaluated `Transpose` and `ConjugateTranspose` is typeset as a
+    postfix superscript mark (`mᵀ`, `m†`, an operator operand bracketed)
+    through the FrontEnd's template, `TemplateBox[{m}, "Transpose",
+    SyntaxForm -> SuperscriptBox]` (`"Transpose2"` with a permutation), in
+    `ToBoxes`, notebook output and picture labels, instead of the
+    spelled-out head. `Conjugate` takes the `z*` template in
+    TraditionalForm only, like in Wolfram.
 - `ParametricPlot` applies a `ColorFunction` that declares four
     parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
     region; the curve was drawn black.
