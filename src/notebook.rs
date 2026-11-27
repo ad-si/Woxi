@@ -3218,6 +3218,28 @@ pub(crate) fn render_traditional_boxes_text(s: &str) -> String {
   text
 }
 
+/// Superscripts of digits (and a sign) read best as Unicode superscript
+/// characters: `V²`, `∇²`, `10⁻³`. `None` when `s` holds anything else.
+pub fn superscript_unicode(s: &str) -> Option<String> {
+  s.chars()
+    .map(|c| match c {
+      '0' => Some('⁰'),
+      '1' => Some('¹'),
+      '2' => Some('²'),
+      '3' => Some('³'),
+      '4' => Some('⁴'),
+      '5' => Some('⁵'),
+      '6' => Some('⁶'),
+      '7' => Some('⁷'),
+      '8' => Some('⁸'),
+      '9' => Some('⁹'),
+      '-' => Some('⁻'),
+      '+' => Some('⁺'),
+      _ => None,
+    })
+    .collect()
+}
+
 pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
@@ -3287,28 +3309,6 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
   // how to unwrap an inline-math/inline-formula cell's content.
   if s.starts_with("Cell[") {
     return render_text_element(s);
-  }
-
-  // Superscripts of digits (and a leading minus) read best as Unicode
-  // superscript characters: `V²`, `∇²`, `10⁻³`.
-  fn superscript_unicode(s: &str) -> Option<String> {
-    s.chars()
-      .map(|c| match c {
-        '0' => Some('⁰'),
-        '1' => Some('¹'),
-        '2' => Some('²'),
-        '3' => Some('³'),
-        '4' => Some('⁴'),
-        '5' => Some('⁵'),
-        '6' => Some('⁶'),
-        '7' => Some('⁷'),
-        '8' => Some('⁸'),
-        '9' => Some('⁹'),
-        '-' => Some('⁻'),
-        '+' => Some('⁺'),
-        _ => None,
-      })
-      .collect()
   }
 
   for head in [

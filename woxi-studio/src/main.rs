@@ -6648,6 +6648,12 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   let s = format_manipulate_number(v);
   if is_real && v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
     format!("{s}.")
+  } else if let Some((mantissa, power)) = s.split_once('×')
+    && is_real
+    && !mantissa.contains('.')
+  {
+    // A whole mantissa keeps the dot too: `7.×10⁻⁶`.
+    format!("{mantissa}.×{power}")
   } else {
     s
   }
@@ -6673,6 +6679,9 @@ fn format_manipulate_number(v: f64) -> String {
   if v.fract() == 0.0 && v.abs() < 1e15 {
     return group_integer_digits(&format!("{}", v as i64));
   }
+  if v.abs() < 0.01 {
+    return format_small_manipulate_number(v);
+  }
   let s = format!("{:.3}", v);
   // Trim trailing zeros and a lone decimal point.
   let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -6681,6 +6690,33 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     group_integer_digits(trimmed)
   }
+}
+
+/// A readout for a nonzero value too small for three decimals to show
+/// (`0.0000065` would read `0`): four significant digits, written out down
+/// to Wolfram's scientific-notation threshold (`0.00123`) and as a power of
+/// ten below it (`6.5×10⁻⁶`).
+fn format_small_manipulate_number(v: f64) -> String {
+  // Let the formatter round, so `9.99996e-6` carries into `1×10⁻⁵`.
+  let sci = format!("{v:.3e}");
+  let Some((mantissa, exponent)) = sci.split_once('e') else {
+    return sci;
+  };
+  let exponent: i32 = exponent.parse().unwrap_or(0);
+  let trim = |s: &str| {
+    if s.contains('.') {
+      s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+      s.to_string()
+    }
+  };
+  if exponent >= -5 {
+    let decimals = (3 - exponent).max(0) as usize;
+    return trim(&format!("{v:.decimals$}"));
+  }
+  let power = woxi::notebook::superscript_unicode(&exponent.to_string())
+    .unwrap_or_else(|| format!("^{exponent}"));
+  format!("{}×10{power}", trim(mantissa))
 }
 
 /// Split the integer part of a formatted number into blocks of three
@@ -9484,6 +9520,28 @@ mod tests {
     assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
     assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
     assert_eq!(format_slider_value(-0.125, false), "-0.125");
+  }
+
+  #[test]
+  fn slider_value_readout_keeps_small_values_visible() {
+    use super::{format_manipulate_number, format_slider_value};
+    // Below the scientific-notation threshold: a power of ten.
+    assert_eq!(format_slider_value(6.5e-6, true), "6.5×10⁻⁶");
+    assert_eq!(format_slider_value(7.1023e-6, true), "7.102×10⁻⁶");
+    assert_eq!(format_slider_value(-2.5e-12, true), "-2.5×10⁻¹²");
+    assert_eq!(format_slider_value(7e-6, true), "7.×10⁻⁶");
+    assert_eq!(format_slider_value(7e-6, false), "7×10⁻⁶");
+    // Rounding carries into the next power.
+    assert_eq!(format_manipulate_number(9.99996e-6), "0.00001");
+    assert_eq!(format_manipulate_number(9.99996e-7), "1×10⁻⁶");
+    // Small, but still written out, with four significant digits.
+    assert_eq!(format_manipulate_number(0.00001), "0.00001");
+    assert_eq!(format_manipulate_number(0.000123456), "0.0001235");
+    assert_eq!(format_manipulate_number(0.00712), "0.00712");
+    assert_eq!(format_manipulate_number(-0.007), "-0.007");
+    // Larger values keep their three decimals; zero stays zero.
+    assert_eq!(format_manipulate_number(0.0125), "0.013");
+    assert_eq!(format_manipulate_number(0.0), "0");
   }
 
   #[test]
