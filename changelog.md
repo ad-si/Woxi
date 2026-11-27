@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `Plot3D` cuts a surface off where it leaves the vertical `PlotRange` and
+    fills the cut with the light gray cap of `ClippingStyle -> Automatic`
+    (`None` leaves it open, a color fills it with that color) instead of
+    flattening the surface onto the box face in its own color, and a
+    height mesh (`MeshFunctions -> {#3 &}`) spreads its lines over the
+    range shown.
+- `ContourPlot` takes `PlotRange -> {zmin, zmax}`: the contour levels are
+    chosen over that range and the parts beyond it are left blank. A mesh
+    function also receives the plotted value as its third argument, so
+    `MeshFunctions -> {#3 &}` draws its level curves.
 - The subscript of a stacked fraction (`Subscript[a/b, z]`) hangs at the
     fraction's foot, level with the denominator, instead of beside its
     rule.

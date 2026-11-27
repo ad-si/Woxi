@@ -2499,6 +2499,46 @@ pub(crate) fn triangle_normal(
   }
 }
 
+/// How `Plot3D` fills the parts of a surface cut off by the vertical
+/// `PlotRange`, its `ClippingStyle`.
+enum ClippingCap {
+  /// `Automatic`: a flat, unlit light gray.
+  Gray,
+  /// `None`: the cut is left open.
+  Open,
+  /// A color or directive, lit like a surface of that style.
+  Styled(Box<StyleState3D>),
+}
+
+/// The part of the polygon `poly` at or below the height `z` (`below`), or
+/// at or above it, with each edge crossing that height cut there.
+fn clip_polygon_at_height(
+  poly: &[[f64; 3]],
+  z: f64,
+  below: bool,
+) -> Vec<[f64; 3]> {
+  let keeps = |p: &[f64; 3]| if below { p[2] <= z } else { p[2] >= z };
+  let mut out = Vec::with_capacity(poly.len() + 2);
+  for (k, a) in poly.iter().enumerate() {
+    let b = &poly[(k + 1) % poly.len()];
+    if keeps(a) {
+      out.push(*a);
+    }
+    if keeps(a) != keeps(b) {
+      let t = (z - a[2]) / (b[2] - a[2]);
+      out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), z]);
+    }
+  }
+  out
+}
+
+/// The triangles fanned out from the first corner of a convex polygon.
+fn fan_triangles(poly: &[[f64; 3]]) -> Vec<[[f64; 3]; 3]> {
+  (1..poly.len().saturating_sub(1))
+    .map(|k| [poly[0], poly[k], poly[k + 1]])
+    .collect()
+}
+
 /// The part of a sampled surface triangle `tri` that a `RegionFunction`
 /// keeps, given which corners are inside (`ins`, at least one of them).
 /// Each edge with one end inside and one outside crosses the region's
@@ -2948,6 +2988,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `ClippingStyle`: how the parts cut off by the vertical range are drawn.
+  let mut clipping_cap = ClippingCap::Gray;
   // `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` fixes the horizontal
   // range too, which is then not padded.
   let mut xy_range_explicit = false;
@@ -3083,6 +3125,22 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             z_clip = parse_z_only_range(replacement);
           }
+        }
+        Expr::Identifier(name) if name == "ClippingStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          clipping_cap = match &value {
+            Expr::Identifier(s) if s == "None" => ClippingCap::Open,
+            Expr::Identifier(s) if s == "Automatic" => ClippingCap::Gray,
+            other => {
+              let mut style = StyleState3D::default();
+              if apply_3d_directive(other, &mut style) {
+                ClippingCap::Styled(Box::new(style))
+              } else {
+                ClippingCap::Gray
+              }
+            }
+          };
         }
         Expr::Identifier(name) if name == "PlotRangePadding" => {
           let value = evaluate_expr_to_expr(replacement)
@@ -3246,6 +3304,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let (sampled_z_min, sampled_z_max) = (global_z_min, global_z_max);
   // The automatic vertical range drops outlying heights, as WL's does: a
   // pole or a jump at the domain's edge is cut off instead of squashing
   // the rest of the surface into a sliver of the box.
@@ -3279,6 +3338,21 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
+  // The heights the surface is cut off at: the ends of the vertical range
+  // that leave sampled heights out (an explicit range, or outliers the
+  // automatic one drops). An end that merely follows the samples cuts
+  // nothing, so the surface still runs on to a domain edge found between
+  // the samples.
+  let cut_lo = if z_clip.is_some() || z_lo > sampled_z_min {
+    z_lo
+  } else {
+    f64::NEG_INFINITY
+  };
+  let cut_hi = if z_clip.is_some() || z_hi < sampled_z_max {
+    z_hi
+  } else {
+    f64::INFINITY
+  };
 
   // The box spans the plotted range widened by `PlotRangePadding`: an
   // automatic range gets `Scaled[0.02]` on each side, an explicit one
@@ -3710,7 +3784,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (0..=grid_n)
           .map(|i| {
             (0..=grid_n)
-              .map(|j| vertex(i, j).map_or(f64::NAN, |p| f.eval(p)))
+              .map(|j| {
+                // Past the vertical range the surface is cut off, so a
+                // mesh function sees the height of the cut there.
+                vertex(i, j).map_or(f64::NAN, |p| {
+                  f.eval([p[0], p[1], p[2].clamp(z_lo, z_hi)])
+                })
+              })
               .collect()
           })
           .collect()
@@ -3840,30 +3920,95 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // just as it is cut along a `RegionFunction`'s edge.
           let tri = corners.map(|(a, b)| [grid_x(a), grid_y(b), grid[a][b]]);
           let ins = corners.map(|(a, b)| mask[a][b]);
-          if ins.iter().all(|b| *b) {
-            push_triangle(tri, &mut all_triangles, &mut facets);
+          // The parts of the triangle inside the vertical range, with the
+          // mesh function values at their corners. A triangle reaching
+          // past the range is cut at the box face, and the part beyond is
+          // drawn flat on the face in the `ClippingStyle`.
+          let mut meshed: Vec<([[f64; 3]; 3], bool)> = Vec::new();
+          let whole = ins.iter().all(|b| *b);
+          let pieces: Vec<[[f64; 3]; 3]> = if whole {
+            vec![tri]
           } else if ins.iter().any(|b| *b) {
             // Cut along the region's edge.
             let (poly, cut) =
               clip_surface_triangle(tri, ins, &surface_at, &inside);
-            for k in 1..poly.len().saturating_sub(1) {
-              push_triangle(
-                [poly[0], poly[k], poly[k + 1]],
-                &mut all_triangles,
-                &mut facets,
-              );
-            }
-            if cut.len() == 2 {
+            // No outline where the edge lies in a part cut off by the
+            // vertical range (around a pole, say).
+            if cut.len() == 2
+              && cut.iter().any(|p| (cut_lo..=cut_hi).contains(&p[2]))
+            {
               boundary_segments.push([cut[0], cut[1]]);
+            }
+            fan_triangles(&poly)
+          } else {
+            Vec::new()
+          };
+          for piece in pieces {
+            if piece.iter().all(|p| (cut_lo..=cut_hi).contains(&p[2])) {
+              push_triangle(piece, &mut all_triangles, &mut facets);
+              if whole {
+                meshed.push((piece, false));
+              }
+              continue;
+            }
+            let kept = clip_polygon_at_height(
+              &clip_polygon_at_height(&piece, cut_hi, true),
+              cut_lo,
+              false,
+            );
+            for part in fan_triangles(&kept) {
+              push_triangle(part, &mut all_triangles, &mut facets);
+              if whole {
+                meshed.push((part, true));
+              }
+            }
+            for (face, below) in [(cut_hi, false), (cut_lo, true)] {
+              if matches!(clipping_cap, ClippingCap::Open) {
+                break;
+              }
+              let beyond = clip_polygon_at_height(&piece, face, below);
+              for part in fan_triangles(&beyond) {
+                let [v0, v1, v2] = part.map(|p| to_box([p[0], p[1], face]));
+                let (color, opacity) = match &clipping_cap {
+                  ClippingCap::Styled(style) => shade_facet(
+                    SurfaceDefault::Theme(surface_idx),
+                    None,
+                    Some(style.as_ref()),
+                    triangle_normal(v0, v1, v2),
+                    tri_center(v0, v1, v2),
+                    &scene,
+                  ),
+                  _ => ((204, 204, 204), 1.0),
+                };
+                all_triangles.push(Triangle {
+                  boundary: [true; 3],
+                  edge_color: None,
+                  edge_opacity: 1.0,
+                  edge_width: None,
+                  edge_dashing: None,
+                  projected: [v0, v1, v2].map(|v| project(v, &camera)),
+                  depth: depth(tri_center(v0, v1, v2), &camera),
+                  color,
+                  opacity,
+                  texture: None,
+                  vertex_colors: None,
+                });
+              }
             }
           }
           // Mesh contours through this triangle (marching triangles).
-          if explicit_mesh
-            && mesh_mode != MeshMode::None
-            && ins.iter().all(|b| *b)
-          {
+          if !explicit_mesh || mesh_mode == MeshMode::None {
+            meshed.clear();
+          }
+          for (tri, cut) in meshed {
             for (k, lv) in levels.iter().enumerate() {
-              let vals = corners.map(|(a, b)| mesh_values[k][a][b]);
+              // A whole grid triangle has its values sampled already; a
+              // piece cut from one is evaluated at its own corners.
+              let vals = if cut {
+                tri.map(|p| mesh_fns[k].eval(p))
+              } else {
+                corners.map(|(a, b)| mesh_values[k][a][b])
+              };
               if vals.iter().any(|v| !v.is_finite()) {
                 continue;
               }

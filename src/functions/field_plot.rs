@@ -3111,9 +3111,37 @@ struct RegionMask<'a> {
   /// `(k + 1/2)/m` of the span (`DensityPlot`'s color cells); `false` when
   /// it lies on node `k`, at `k/(m - 1)` of the span.
   cell_centered: bool,
+  /// An explicit `PlotRange -> {zmin, zmax}` the plot cuts its values at:
+  /// no mesh line is drawn where the plot leaves the clipped part blank.
+  value_range: Option<(f64, f64)>,
 }
 
 impl RegionMask<'_> {
+  /// The plotted value nearest the point at fractions `(u, v)` of the
+  /// plot's x and y spans, which a mesh function receives as its third
+  /// argument (`MeshFunctions -> {#3 &}`); `None` outside the region.
+  fn value_at(&self, u: f64, v: f64) -> Option<f64> {
+    let cols = self.grid.len();
+    let rows = self.grid.first().map_or(0, std::vec::Vec::len);
+    if cols == 0 || rows == 0 {
+      return None;
+    }
+    let index = |t: f64, m: usize| {
+      let p = if self.cell_centered {
+        (t * m as f64).floor()
+      } else {
+        (t * (m.max(2) - 1) as f64).round()
+      };
+      p.clamp(0.0, (m - 1) as f64) as usize
+    };
+    self
+      .grid
+      .get(index(u, cols))
+      .and_then(|column| column.get(index(v, rows)))
+      .copied()
+      .filter(|value| value.is_finite())
+  }
+
   /// Whether the point at fractions `(u, v)` of the plot's x and y spans
   /// lies outside the region. On a cell-centered grid a point is outside
   /// only when every cell touching it is, so mesh lines run right up to the
@@ -3183,10 +3211,25 @@ fn sample_mesh_grid(
         continue;
       }
       // A mesh function is usually a pure function of the two
-      // coordinates (`10 #1 &`); a plain expression in x and y works too.
-      let v = mesh_function_value(f, xvar, yvar, x, y)?;
+      // coordinates and the plotted value (`10 #1 &`, `#3 &`); a plain
+      // expression in x and y works too.
+      let field = region_mask.and_then(|m| m.value_at(u, v));
+      // Past an explicit value range the plot is blank, so the mesh is
+      // too; the function sees the value at the cut there, which keeps
+      // the levels of `#3 &` spread over the whole range.
+      let clip = region_mask.and_then(|m| m.value_range);
+      let clipped = field
+        .zip(clip)
+        .is_some_and(|(z, (lo, hi))| z < lo || z > hi);
+      let field = match (field, clip) {
+        (Some(z), Some((lo, hi))) => Some(z.clamp(lo, hi)),
+        _ => field,
+      };
+      let v = mesh_function_value(f, xvar, yvar, x, y, field)?;
       if v.is_finite() {
-        grid[i][j] = v;
+        if !clipped {
+          grid[i][j] = v;
+        }
         v_min = v_min.min(v);
         v_max = v_max.max(v);
       }
@@ -3309,19 +3352,23 @@ fn mesh_structure_items(
 }
 
 /// Evaluate a mesh function at one grid point, whether it is written as a
-/// pure function of the coordinates or as an expression in them.
+/// pure function of the coordinates (and of the plotted value `field`
+/// there, its third argument) or as an expression in them.
 fn mesh_function_value(
   f: &Expr,
   xvar: &str,
   yvar: &str,
   x: f64,
   y: f64,
+  field: Option<f64>,
 ) -> Option<f64> {
   match f {
     Expr::Function { .. } | Expr::NamedFunction { .. } => {
+      let mut args = vec![Expr::Real(x), Expr::Real(y)];
+      args.extend(field.map(Expr::Real));
       let applied = Expr::CurriedCall {
         func: Box::new(f.clone()),
-        args: vec![Expr::Real(x), Expr::Real(y)],
+        args,
       };
       try_eval_to_f64(&evaluate_expr_to_expr(&applied).ok()?)
     }
@@ -3876,10 +3923,12 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(mask) => RegionMask {
       grid: mask,
       cell_centered: false,
+      value_range: None,
     },
     None => RegionMask {
       grid: &grid,
       cell_centered: true,
+      value_range: None,
     },
   };
   let mesh_grids = sample_mesh_grids(
@@ -4405,11 +4454,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // would drop a genuine minority of values (the inlet ramp of a field
   // saturated over most of the domain), leaving it without levels or
   // shading.
-  let range_of = |values: &[f64]| match opts.contours {
-    ContourSpec::Count(_) if opts.value_range.is_none() => {
-      full_value_range(values)
-    }
-    _ => opts.sampled_range(values),
+  // An explicit `PlotRange -> {zmin, zmax}` fixes the range instead: the
+  // levels and band colors span it, and the values beyond it are left
+  // blank (the default `ClippingStyle -> None`).
+  let range_of = |values: &[f64]| match (opts.value_range, &opts.contours) {
+    (Some(range), _) => range,
+    (None, ContourSpec::Count(_)) => full_value_range(values),
+    (None, _) => opts.sampled_range(values),
   };
   let (v_min, v_max) = range_of(&samples);
   let (level_min, level_max) = range_of(&all_samples);
@@ -4432,6 +4483,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     RegionMask {
       grid: &grid,
       cell_centered: false,
+      value_range: opts.value_range,
     },
   );
 
@@ -7326,6 +7378,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     RegionMask {
       grid: &mask,
       cell_centered: false,
+      value_range: None,
     },
   );
   push_mesh_grids(&mut svg, &mesh, &area, &opts);
