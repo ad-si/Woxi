@@ -21235,6 +21235,70 @@ mod inverse_z_transform {
       "InverseZTransform[Sin[z], z, n]"
     );
   }
+
+  /// Regression: a rational function with machine-number coefficients
+  /// stayed unevaluated, so sequences tabulated from it never became
+  /// numbers. It is inverted through its numeric poles.
+  #[test]
+  fn machine_coefficients_real_pole() {
+    assert_eq!(
+      interpret("InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]").unwrap(),
+      "3.75*(-0.25)^m - 4.*DiscreteDelta[m]"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Evaluate[InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]], \
+         {m, 0, 4}]"
+      )
+      .unwrap(),
+      "{-0.25, -0.9375, 0.234375, -0.05859375, 0.0146484375}"
+    );
+  }
+
+  /// The sequence is the series of the function in 1/z, whatever the
+  /// poles: complex-conjugate pairs, and poles at the origin (delays).
+  #[test]
+  fn machine_coefficients_match_the_series_in_inverse_z() {
+    for f in [
+      "(2. z^2 + z)/(z^2 - 0.5 z + 0.3)/z^2",
+      "(1.5 z^3 - z + 0.2)/((z - 0.5) (z + 0.25) (z^2 + 0.1 z + 0.6))",
+      "0.5/z^3 + 2./z",
+      "(0.7 z)/(z - 1.5)",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Max[Abs[Table[Evaluate[InverseZTransform[{f}, z, m]], {{m, 0, 7}}] - \
+           CoefficientList[Normal[Series[{f} /. z -> 1/w, {{w, 0, 7}}]], w, 8]]] \
+           < 10^-9"
+        ))
+        .unwrap(),
+        "True",
+        "{f}"
+      );
+    }
+  }
+
+  #[test]
+  fn machine_coefficients_unsupported_stay_unevaluated() {
+    // Not causal (more zeros than poles), a repeated nonzero pole, and a
+    // symbolic coefficient.
+    for (input, expected) in [
+      (
+        "InverseZTransform[2.5*z^2, z, m]",
+        "InverseZTransform[2.5*z^2, z, m]",
+      ),
+      (
+        "InverseZTransform[1./(z - 0.5)^2, z, m]",
+        "InverseZTransform[1./(-0.5 + z)^2, z, m]",
+      ),
+      (
+        "InverseZTransform[(a*z)/(z - 1.5), z, m]",
+        "InverseZTransform[(a*z)/(-1.5 + z), z, m]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected);
+    }
+  }
 }
 
 mod convolve {
@@ -24283,6 +24347,55 @@ mod parametric_ndsolve {
       )
       .unwrap(),
       "{0.8, 2.}"
+    );
+  }
+
+  /// Regression: the functions `ParametricNDSolve` returns for the unknowns
+  /// of one system each integrated the whole system again, so reading all
+  /// the unknowns at one set of parameter values cost one solve apiece.
+  /// They share a single solve per set of values (`g` counts them), and
+  /// each still picks out its own unknown.
+  #[test]
+  fn unknowns_of_one_system_share_a_solve() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "count = 0; g[a_?NumericQ] := (count++; a); \
+         pf = ParametricNDSolve[{y'[t] == -g[a] y[t], y[0] == 1, \
+           z'[t] == y[t], z[0] == 0}, {y, z}, {t, 0, 1}, {a}]; \
+         {py, pz} = {y, z} /. pf; \
+         first = Round[10000 {py[2.][0.5], pz[2.][0.5], py[2.][1.]}]; \
+         once = count; \
+         next = Round[10000 {py[3.][0.5], pz[3.][0.5]}]; \
+         {once, count, first, next}"
+      )
+      .unwrap(),
+      "{1, 2, {3679, 3161, 1353}, {2231, 2590}}"
+    );
+  }
+}
+
+mod sums_over_interpolation_data {
+  use super::*;
+
+  /// A term carrying an `InterpolatingFunction`'s table is grouped by its
+  /// structure, not by its printed form — and when it is the only such
+  /// term of a sum it is not keyed at all. Like terms still collect, and
+  /// the sum still evaluates once its variable is given.
+  #[test]
+  fn terms_holding_a_solution_collect_and_evaluate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = y /. First[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 2}]]; \
+         g = f[t]; \
+         {g + g === 2 g, g - g, Head[0.3 - g], Head[g + 2 f[u]], \
+          Length[g + 2 f[u] + g], \
+          Round[1000 ((0.3 - g + 2 g) /. t -> 1.)], \
+          Round[1000 ((1 - g)^2 /. t -> 0.5)]}"
+      )
+      .unwrap(),
+      "{True, 0, Plus, Plus, 2, 668, 155}"
     );
   }
 }

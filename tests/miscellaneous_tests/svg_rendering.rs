@@ -4111,21 +4111,30 @@ mod tests {
 
     #[test]
     fn postfix_marks_parenthesize_composite_bases() {
+      // The marks are the FrontEnd's postfix templates, as in Wolfram:
+      // `TemplateBox[{A}, "Transpose", SyntaxForm -> SuperscriptBox]`.
       let boxes = tf("Transpose[Transpose[A]]");
-      assert!(
-        boxes.contains(&"\u{F3C7}".escape_debug().to_string()),
-        "transpose mark: {boxes}"
+      assert_eq!(
+        boxes.matches("\"Transpose\"").count(),
+        2,
+        "transpose template: {boxes}"
       );
       assert!(boxes.contains("\"(\""), "(Aᵀ)ᵀ: {boxes}");
       let boxes = tf("Conjugate[z w]");
       assert!(
-        boxes.contains("\"*\"") && boxes.contains("\"(\""),
+        boxes.contains("\"Conjugate\"") && boxes.contains("\"(\""),
         "{boxes}"
       );
       let boxes = tf("ConjugateTranspose[A]");
       assert!(
-        boxes.contains("\u{2020}") && !boxes.contains("\"(\""),
+        boxes.contains("\"ConjugateTranspose\"") && !boxes.contains("\"(\""),
         "{boxes}"
+      );
+      // The renderers draw a template as its superscript mark.
+      let svg = tf_svg("TraditionalForm[ConjugateTranspose[A]]");
+      assert!(
+        svg.contains("\u{F3C9}") || svg.contains("\u{2020}"),
+        "{svg}"
       );
     }
 

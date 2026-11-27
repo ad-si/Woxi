@@ -4723,9 +4723,11 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// 256-bin cluster-variance split wolframscript uses; an explicit `t`
 /// is compared against the gradient magnitude directly.
 ///
-/// Trailing rules are options: `Method -> "Canny"` (or `Automatic`) and
-/// `"StraightEdges" -> 0` describe what is computed here; any other
-/// option value leaves the call unevaluated.
+/// Trailing rules are options: `Method` picks the gradient (`"Canny"` or
+/// `Automatic`, `"Sobel"`, `"ShenCastan"`; see `gradient_method`) and
+/// `"StraightEdges" -> s` with `0 <= s <= 1` keeps only the edges on
+/// straight lines (see `keep_straight_edges`). Any other option leaves the
+/// call unevaluated.
 pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   let option_start = all_args
     .iter()
@@ -4738,32 +4740,36 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(unevaluated("EdgeDetect", all_args));
   }
-  let is_str = |e: &Expr, v: &str| matches!(e, Expr::String(s) if s == v);
-  let supported = opts.iter().all(|o| match o {
-    Expr::Rule {
+  // `"StraightEdges" -> s` is EdgeDetect's own; the rest name the gradient.
+  let mut method_opts = Vec::new();
+  let mut straight_edges = 0.0;
+  for o in opts {
+    let (Expr::Rule {
       pattern,
       replacement,
     }
     | Expr::RuleDelayed {
       pattern,
       replacement,
-    } => match pattern.as_ref() {
-      Expr::Identifier(k) if k == "Method" => {
-        is_str(replacement, "Canny")
-          || is_str(replacement, "Sobel")
-          || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
-      }
-      p if is_str(p, "StraightEdges") => {
-        crate::functions::math_ast::try_eval_to_f64(replacement) == Some(0.0)
-          || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
-      }
-      _ => false,
-    },
-    _ => false,
-  });
-  if !supported {
-    return Ok(unevaluated("EdgeDetect", all_args));
+    }) = o
+    else {
+      return Ok(unevaluated("EdgeDetect", all_args));
+    };
+    if !matches!(pattern.as_ref(), Expr::String(k) if k == "StraightEdges") {
+      method_opts.push(o.clone());
+      continue;
+    }
+    straight_edges = match replacement.as_ref() {
+      Expr::Identifier(a) if a == "Automatic" => 0.0,
+      other => match crate::functions::math_ast::try_eval_to_f64(other) {
+        Some(v) if (0.0..=1.0).contains(&v) => v,
+        _ => return Ok(unevaluated("EdgeDetect", all_args)),
+      },
+    };
   }
+  let Some(method) = gradient_method(&method_opts) else {
+    return Ok(unevaluated("EdgeDetect", all_args));
+  };
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "EdgeDetect expects 1 to 3 arguments".into(),
@@ -4817,18 +4823,7 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  let sobel = opts.iter().any(|o| {
-    matches!(o, Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement }
-      if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method")
-        && is_str(replacement, "Sobel"))
-  });
-  let axis_kernels = |radius: f64| {
-    if sobel {
-      GradientKernels::sobel(radius.ceil().max(1.0) as usize)
-    } else {
-      GradientKernels::gaussian(gaussian_axis_from_radius(radius))
-    }
-  };
+  let axis_kernels = |radius: f64| GradientKernels::for_radius(method, radius);
   // The gradient of the image grown by one replicated pixel on each side:
   // non-maximum suppression samples the magnitude up to a pixel outside
   // the image, where wolframscript uses the gradient of the padded image.
@@ -4929,6 +4924,15 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  if straight_edges > 0.0 {
+    let gradients: Vec<(f64, f64)> = (0..w * h)
+      .map(|i| {
+        let at = inner(i / w, i % w);
+        (pdx[at], pdy[at])
+      })
+      .collect();
+    keep_straight_edges(&mut result, w, h, &gradients, straight_edges);
+  }
 
   Ok(Expr::Image {
     color_space: None,
@@ -4939,6 +4943,58 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     data: Arc::new(result),
     image_type: ImageType::Bit,
   })
+}
+
+/// `"StraightEdges" -> s`: keep only the edge pixels that lie on a
+/// straight line, found with a Hough transform. Each edge pixel votes for
+/// the lines through it that run along its edge (normal to its gradient,
+/// give or take `SPREAD` degrees), in an accumulator of one-degree by
+/// one-pixel cells. A pixel stays when a line through it, or through a
+/// pixel beside it, collected at least the fraction `s` of the strongest
+/// line's votes.
+fn keep_straight_edges(
+  edges: &mut [f64],
+  w: usize,
+  h: usize,
+  gradients: &[(f64, f64)],
+  s: f64,
+) {
+  const ANGLES: i64 = 180;
+  const SPREAD: i64 = 2;
+  let diagonal = (w as f64).hypot(h as f64).ceil() as i64 + 1;
+  let offsets = (2 * diagonal + 1) as usize;
+  let directions: Vec<(f64, f64)> = (0..ANGLES)
+    .map(|a| (a as f64).to_radians().sin_cos())
+    .map(|(sin, cos)| (cos, sin))
+    .collect();
+  let cell = |i: usize, angle: usize| {
+    let (cos, sin) = directions[angle];
+    let offset = (i % w) as f64 * cos + (i / w) as f64 * sin;
+    angle * offsets + (offset.round() as i64 + diagonal) as usize
+  };
+  let mut votes = vec![0_u32; ANGLES as usize * offsets];
+  for i in (0..w * h).filter(|&i| edges[i] > 0.0) {
+    let (gx, gy) = gradients[i];
+    let normal = gy.atan2(gx).to_degrees().round() as i64;
+    for d in -SPREAD..=SPREAD {
+      votes[cell(i, (normal + d).rem_euclid(ANGLES) as usize)] += 1;
+    }
+  }
+  let needed = s * f64::from(votes.iter().copied().max().unwrap_or(0));
+  // A pixel on a line need not have voted for it (its own gradient turns
+  // where the line steps from one pixel row to the next), and a line that
+  // is not along a cell's direction crosses into the neighboring offsets.
+  let on_strong_line = |i: usize| {
+    (0..ANGLES as usize).any(|angle| {
+      let at = cell(i, angle);
+      (at - 1..=at + 1).any(|c| f64::from(votes[c]) >= needed)
+    })
+  };
+  for i in 0..w * h {
+    if edges[i] > 0.0 && !on_strong_line(i) {
+      edges[i] = 0.0;
+    }
+  }
 }
 
 /// The threshold `FindThreshold` picks for the gradient magnitudes, so
@@ -6755,7 +6811,7 @@ pub fn gradient_filter_ast(
   if args.len() != 2 {
     return Ok(unevaluated());
   }
-  let Some(sobel) = gradient_method_is_sobel(opts) else {
+  let Some(method) = gradient_method(opts) else {
     return Ok(unevaluated());
   };
 
@@ -6767,7 +6823,7 @@ pub fn gradient_filter_ast(
       .filter(|v| *v >= 0.0)
       .map(|v| v as usize),
   ) && r == 1
-    && !sobel
+    && method == GradientMethod::Gaussian
     // Restrict to flat numeric lists (not nested-list matrices, which
     // need the 2D path further down).
     && !elems.iter().any(|e| matches!(e, Expr::List(_)))
@@ -6849,15 +6905,21 @@ pub fn gradient_filter_ast(
     let mut out: Vec<f64> = vec![0.0; data.len()];
     for c_idx in 0..ch {
       let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
-      let kernels = if sobel {
-        // The Sobel kernel's half-width is the radius rounded up.
-        let r = match &args[1] {
-          Expr::Real(f) => f.ceil() as usize,
-          _ => radius,
-        };
-        GradientKernels::sobel(r)
-      } else {
-        GradientKernels::gaussian(GaussianAxis { radius, sigma })
+      let kernels = match method {
+        GradientMethod::Sobel => {
+          // The Sobel kernel's half-width is the radius rounded up.
+          let r = match &args[1] {
+            Expr::Real(f) => f.ceil() as usize,
+            _ => radius,
+          };
+          GradientKernels::sobel(r)
+        }
+        GradientMethod::ShenCastan => {
+          GradientKernels::shen_castan(GaussianAxis { radius, sigma })
+        }
+        GradientMethod::Gaussian => {
+          GradientKernels::gaussian(GaussianAxis { radius, sigma })
+        }
       };
       let (dx, dy) = plane_gradient(&plane, w, h, &kernels, &kernels);
       for i in 0..w * h {
@@ -6878,11 +6940,21 @@ pub fn gradient_filter_ast(
   Ok(unevaluated())
 }
 
-/// Read a gradient's `Method` option: `Some(true)` for `"Sobel"`,
-/// `Some(false)` for the default derivative of Gaussian, `None` for
-/// anything else (left unevaluated).
-fn gradient_method_is_sobel(opts: &[Expr]) -> Option<bool> {
-  let mut sobel = false;
+/// The derivative a gradient is built from, as its `Method` option names it.
+#[derive(Clone, Copy, PartialEq)]
+enum GradientMethod {
+  /// Derivative of the discrete Gaussian (the default, `"Canny"`).
+  Gaussian,
+  /// Binomial generalization of the Sobel kernels.
+  Sobel,
+  /// Derivative of a two-sided exponential.
+  ShenCastan,
+}
+
+/// Read a gradient's `Method` option; `None` for anything that is not a
+/// known method (the call is left unevaluated).
+fn gradient_method(opts: &[Expr]) -> Option<GradientMethod> {
+  let mut method = GradientMethod::Gaussian;
   for o in opts {
     let (Expr::Rule {
       pattern,
@@ -6898,14 +6970,17 @@ fn gradient_method_is_sobel(opts: &[Expr]) -> Option<bool> {
     if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method") {
       return None;
     }
-    match replacement.as_ref() {
-      Expr::String(m) if m == "Sobel" => sobel = true,
-      Expr::String(m) if m == "Canny" || m == "Gaussian" => sobel = false,
-      Expr::Identifier(a) if a == "Automatic" => sobel = false,
+    method = match replacement.as_ref() {
+      Expr::String(m) if m == "Sobel" => GradientMethod::Sobel,
+      Expr::String(m) if m == "ShenCastan" => GradientMethod::ShenCastan,
+      Expr::String(m) if m == "Canny" || m == "Gaussian" => {
+        GradientMethod::Gaussian
+      }
+      Expr::Identifier(a) if a == "Automatic" => GradientMethod::Gaussian,
       _ => return None,
-    }
+    };
   }
-  Some(sobel)
+  Some(method)
 }
 
 /// The two partial derivatives of one image plane, smoothed by the
@@ -6960,6 +7035,52 @@ struct GradientKernels {
 }
 
 impl GradientKernels {
+  /// The kernels of `method` for a range of `radius` pixels: a half-width
+  /// of `Ceiling[radius]` and, where the method has one, a scale of
+  /// `radius/2`.
+  fn for_radius(method: GradientMethod, radius: f64) -> Self {
+    match method {
+      GradientMethod::Sobel => Self::sobel(radius.ceil().max(1.0) as usize),
+      GradientMethod::ShenCastan => {
+        Self::shen_castan(gaussian_axis_from_radius(radius))
+      }
+      GradientMethod::Gaussian => {
+        Self::gaussian(gaussian_axis_from_radius(radius))
+      }
+    }
+  }
+
+  /// `Method -> "ShenCastan"`: the two-sided exponential
+  /// `Exp[-Abs[k]/sigma]` cut off at the half-width, and its derivative
+  /// `-Sign[k] Exp[-Abs[k]/sigma]`. The first sums to 1; the second is
+  /// scaled so a unit ramp has slope 1.
+  fn shen_castan(axis: GaussianAxis) -> Self {
+    let radius = axis.radius as i64;
+    let weight = |k: i64| {
+      if axis.sigma > 0.0 {
+        (-(k.abs() as f64) / axis.sigma).exp()
+      } else if k == 0 {
+        1.0
+      } else {
+        0.0
+      }
+    };
+    let total: f64 = (-radius..=radius).map(weight).sum();
+    let smooth = (-radius..=radius).map(|k| weight(k) / total).collect();
+    let slope: f64 =
+      (-radius..=radius).map(|k| k.abs() as f64 * weight(k)).sum();
+    let derivative = (-radius..=radius)
+      .map(|k| {
+        if slope > 0.0 {
+          -(k.signum() as f64) * weight(k) / slope
+        } else {
+          0.0
+        }
+      })
+      .collect();
+    GradientKernels { smooth, derivative }
+  }
+
   /// The discrete Gaussian and its derivative (`GradientFilter`'s default).
   fn gaussian(axis: GaussianAxis) -> Self {
     let smooth = gaussian_filter_kernel(axis.radius, axis.sigma);
