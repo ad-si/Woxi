@@ -8688,6 +8688,34 @@ mod graphics {
       );
     }
 
+    /// A list of lines in which every line is empty draws nothing; it is
+    /// not a malformed coordinate, so the rest of the picture stays intact.
+    #[test]
+    fn line_of_only_empty_lines_draws_nothing() {
+      for line in ["Line[{}]", "Line[{{}}]", "Line[{{}, {}}]"] {
+        let svg = export_svg(&format!("Graphics[{{{line}, Circle[]}}]"));
+        assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+        assert!(!svg.contains("<polyline"), "{svg}");
+        assert_eq!(svg, export_svg("Graphics[{Circle[]}]"), "{line}");
+      }
+    }
+
+    /// Empty lines mixed with real ones are skipped.
+    #[test]
+    fn line_skips_empty_lines_among_real_ones() {
+      let svg =
+        export_svg("Graphics[{Line[{{}, {{0, 0}, {1, 1}}, {}}], Circle[]}]");
+      assert!(!svg.contains("should be a pair of numbers"), "{svg}");
+      assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
+    }
+
+    /// A line whose entries are neither points nor lines is still an error.
+    #[test]
+    fn line_with_empty_and_malformed_entries_shows_error() {
+      let svg = export_svg("Graphics[{Line[{{}, {1, 2}}]}]");
+      assert!(svg.contains("should be a pair of numbers"), "{svg}");
+    }
+
     #[test]
     fn line_with_symbolic_arg_shows_error() {
       let svg = export_svg("Graphics[{Line[pts]}]");

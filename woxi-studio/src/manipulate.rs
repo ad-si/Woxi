@@ -12745,4 +12745,26 @@ mod tooltip_region_tests {
     assert_eq!(state.error, None);
     assert!(state.tooltip_regions.is_empty());
   }
+
+  /// A body that extends a segment only while a slider is outside a range
+  /// hands `Line` an empty line (`Line[{{}}]`) the rest of the time. That
+  /// draws nothing; it must not turn the whole picture into an error box.
+  #[test]
+  fn line_holding_an_empty_branch_keeps_the_picture() {
+    let code = r#"Manipulate[
+      Graphics[{Circle[],
+        Line[{If[s > 1, {{1, 0}, {s, 0}}, {}]}],
+        Point[{s, 0}]},
+        PlotRange -> 3],
+      {{s, 0.5, "position"}, 0, 2, 0.01}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      !svg.contains("should be a pair of numbers"),
+      "empty line flagged as a bad coordinate: {svg}"
+    );
+    assert!(!svg.contains("<polyline"), "nothing to extend yet: {svg}");
+  }
 }
