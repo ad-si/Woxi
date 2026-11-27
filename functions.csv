@@ -1167,7 +1167,7 @@ HoldAllComplete,"Attribute that prevents all evaluation",✅,1,3.0,1122
 Blur,"Applies Gaussian blur to an image",✅,pure,7.0,1124
 CirclePoints,"Gives equally spaced points on a circle",✅,pure,10.1,1126
 NetChain,"",🚫,,11.0,1126
-FiniteGroupData,"",🚫,,7.0,1127
+FiniteGroupData,"The 32 crystallographic point groups {CrystallographicPointGroup n}: Name / StandardName / Order / Elements / CrystalSystem / CrystalForm / PointGroupType / MultiplicationTable / CayleyGraph; no other finite groups and no ElementNames",🚧,pure,7.0,1127
 Factorial2,"Returns the double factorial",✅,pure,1.0,1128
 ListCorrelate,"Discrete cross-correlation of two lists with optional overhang cyclic or list padding and generalized operations",✅,pure,4.0,1129
 After,"",🚫,,3.0,1130

@@ -11321,6 +11321,29 @@ both margins are about 11 pixels; the `PlotRangePadding` that
 `AbsoluteOptions` reports for such a plot is not yet checked against
 wolframscript.
 
+### `FiniteGroupData` covers only the crystallographic point groups, partly unverified
+
+`FiniteGroupData[{"CrystallographicPointGroup", n}, property]` answers
+`"Name"`, `"StandardName"`, `"Order"`, `"Elements"`, `"CrystalSystem"`,
+`"CrystalForm"`, `"PointGroupType"`, `"MultiplicationTable"` and
+`"CayleyGraph"`; every other group and property stays unevaluated.
+Unlike the other entries here, parts of this one could **not be checked
+against wolframscript** (none was available) and rest on the reference page
+and on a rendered D6h table:
+
+- `"MultiplicationTable"` matches Wolfram's for D6h (group 27). The other
+  tables follow the same layout (rotations, then the reflected coset, then
+  both times the inversion; lexicographic permutations of four points for
+  T and O), which gives a valid table of the right group but possibly with
+  the elements in a different order than Wolfram's.
+- `"CayleyGraph"` uses Woxi's own choice of generators and vertex layout.
+- `"ElementNames"` is `Missing["NotAvailable"]`; Wolfram names the symmetry
+  operations.
+- The typeset notations (`"Notation"`, `"Schoenflies"`, `"HermannMauguin"`,
+  `"Orbifold"`, `"Shubnikov"`) and the short names (`FiniteGroupData["C4h"]`)
+  are not implemented.
+
+
 ## Unit-test conformance batch (2026-11-25)
 
 These divergences surfaced in one `make test-conformance` run against
