@@ -3553,6 +3553,29 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           std::f64::consts::PI / base_ln,
         );
       }
+      // Log[base, z] of a machine-complex z (the elements of a complex
+      // matrix) with a positive machine-size base: `Log[z]` times the
+      // machine reciprocal of `Log[base]`, as the canonical quotient below
+      // evaluates, without building it.
+      if let Some(base) = match &args[0] {
+        Expr::Real(b) if *b > 0.0 && *b != 1.0 && b.is_finite() => Some(*b),
+        Expr::Integer(n) if *n >= 2 && *n < (1i128 << 53) => Some(*n as f64),
+        _ => None,
+      } && let Some((x, y)) =
+        crate::functions::math_ast::machine_complex_shape(&args[1])
+        && x.is_finite()
+        && y.is_finite()
+        && !(y == 0.0 && y.is_sign_negative())
+      {
+        let reciprocal = 1.0 / base.ln();
+        let re = x.hypot(y).ln() * reciprocal;
+        let im = y.atan2(x) * reciprocal;
+        if re != 0.0 && re.is_finite() && reciprocal.is_finite() {
+          return Ok(crate::functions::math_ast::machine_complex_result(
+            re, im,
+          ));
+        }
+      }
       // Canonicalize Log[base, x] → Log[x]/Log[base] (evaluated so
       // sub-expressions like Log[0] collapse to -Infinity).
       let result =

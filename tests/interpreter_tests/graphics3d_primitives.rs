@@ -199,6 +199,74 @@ mod solids {
     assert!(rough < 0.2, "crowded sphere outline roughness {rough}");
   }
 
+  /// A see-through sphere is tessellated about the line of sight like an
+  /// opaque one, so its near and far halves meet on the outline: seen
+  /// head-on, its facets' corners lie on a few rings around the center,
+  /// the outermost being the finely divided equator. Regression: only
+  /// opaque spheres were, so a translucent one was cut along a slanted,
+  /// saw-toothed path through its latitude bands, whose facets, lit half
+  /// from the front and half from behind, showed as a jagged rim.
+  #[test]
+  fn translucent_sphere_halves_meet_on_its_outline() {
+    for view in ["{1.3, -2.4, 2}", "{0, 0, 10}", "{3, -1, 0.5}"] {
+      for opacity in ["0.2", "0.6"] {
+        let s = svg(&format!(
+          "Graphics3D[{{Opacity[{opacity}], Sphere[]}}, Boxed -> False, \
+           ViewPoint -> {view}]"
+        ));
+        let pts: Vec<(f64, f64)> = s
+          .split("<polygon points=\"")
+          .skip(1)
+          .filter_map(|p| p.split('"').next())
+          .flat_map(|p| p.split_whitespace())
+          .filter_map(|p| {
+            let (x, y) = p.split_once(',')?;
+            Some((x.parse().ok()?, y.parse().ok()?))
+          })
+          .collect();
+        let span = |f: fn(&(f64, f64)) -> f64| {
+          let v = pts.iter().map(f);
+          (
+            v.clone().fold(f64::MAX, f64::min),
+            v.fold(f64::MIN, f64::max),
+          )
+        };
+        let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let radius = (x1 - x0).max(y1 - y0) / 2.0;
+        let dist =
+          |p: &(f64, f64)| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt();
+        // Corner distances from the center, in hundredths of the radius.
+        let mut rings: Vec<i64> = pts
+          .iter()
+          .map(|p| (100.0 * dist(p) / radius).round() as i64)
+          .collect();
+        rings.sort_unstable();
+        rings.dedup();
+        // A slanted latitude/longitude mesh spreads its corners over
+        // nearly every distance.
+        assert!(
+          rings.len() < 40,
+          "{view}, opacity {opacity}: corners on {} rings",
+          rings.len()
+        );
+        // The outline is the equator, not a coarse cut.
+        let mut rim: Vec<(i64, i64)> = pts
+          .iter()
+          .filter(|p| dist(p) > 0.985 * radius)
+          .map(|p| ((p.0 * 10.0).round() as i64, (p.1 * 10.0).round() as i64))
+          .collect();
+        rim.sort_unstable();
+        rim.dedup();
+        assert!(
+          rim.len() >= 48,
+          "{view}, opacity {opacity}: {} corners on the outline",
+          rim.len()
+        );
+      }
+    }
+  }
+
   /// Only the part of a sphere poking out of another stays; a see-through
   /// enclosing solid hides nothing.
   #[test]
@@ -480,6 +548,39 @@ mod solids {
     let s =
       svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSlant -> Italic]}]");
     assert!(s.contains("font-style=\"italic\""), "got: {s}");
+  }
+
+  /// Regression: a `Row` label holding a fraction (a quotient, or a string
+  /// whose inline box notation stacks one) was broken over several lines of
+  /// text — `x = a` above `b`, or the fraction flattened to `a/b` with the
+  /// row pushed a line up onto its neighbor. It is laid out as boxes, the
+  /// fraction stacked in line with the row's other parts, as in `Graphics`.
+  #[test]
+  fn row_text_label_stacks_its_fraction_inline() {
+    for label in [
+      "Row[{\"k = \", u/v}]",
+      "Style[Row[{\"k = \", \"\\!\\(\\*FractionBox[\\(u\\), \\(v\\)]\\)\"}], 20, Bold]",
+    ] {
+      let s = svg(&format!("Graphics3D[{{Text[{label}, {{0, 0, 0}}]}}]"));
+      // One nested picture: the lead-in, then `u` over a bar over `v`.
+      let pic =
+        &s[s.find("<svg x=").unwrap_or_else(|| panic!("{label}: {s}"))..];
+      let k = pic
+        .find(">k = </text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      let u = pic
+        .find(">u</text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      let bar = pic.find("<line ").unwrap_or_else(|| panic!("{label}: {s}"));
+      let v = pic
+        .find(">v</text>")
+        .unwrap_or_else(|| panic!("{label}: {s}"));
+      assert!(k < u && u < bar && bar < v, "{label}: {s}");
+      assert!(!s.contains("<tspan x="), "{label}: {s}");
+    }
+    let bold =
+      svg("Graphics3D[{Text[Style[Row[{\"k = \", u/v}], Bold], {0, 0, 0}]}]");
+    assert!(bold.contains("font-weight=\"bold\""), "{bold}");
   }
 
   /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
@@ -2314,6 +2415,56 @@ mod arrows_and_box {
     assert!(!hidden.contains(">Qz<"));
     let faded = svg("Graphics3D[{Opacity[0.3], Text[\"Qz\", {0, 0, 0}]}]");
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
+  }
+
+  /// The `y` of the `<text>` element holding `label`.
+  fn text_label_y(svg: &str, label: &str) -> f64 {
+    let line = svg
+      .lines()
+      .find(|l| l.starts_with("<text") && l.contains(&format!(">{label}<")))
+      .unwrap_or_else(|| panic!("no label {label}: {svg}"));
+    let start = line.find(" y=\"").unwrap() + " y=\"".len();
+    let end = start + line[start..].find('"').unwrap();
+    line[start..end].parse().unwrap()
+  }
+
+  /// A label's box is one em tall and centered on its line, so pinning it
+  /// by its top or by its bottom edge moves it half an em either way. It
+  /// used to be taken as a 1.2 em box about the x-height's middle, which
+  /// set a label pinned by its bottom edge too far above its point.
+  #[test]
+  fn text_offset_pins_an_edge_of_a_one_em_box() {
+    for size in [12.0, 30.0] {
+      let s = svg(&format!(
+        "Graphics3D[{{Style[{{Text[\"Qc\", {{0, 0, 0}}], \
+         Text[\"Qt\", {{0, 0, 0}}, {{0, 1}}], \
+         Text[\"Qb\", {{0, 0, 0}}, {{0, -1}}]}}, FontSize -> {size}]}}]"
+      ));
+      let center = text_label_y(&s, "Qc");
+      assert!((text_label_y(&s, "Qt") - center - size / 2.0).abs() < 0.11);
+      assert!((center - text_label_y(&s, "Qb") - size / 2.0).abs() < 0.11);
+      assert!(s.contains("dominant-baseline=\"central\""), "{s}");
+    }
+  }
+
+  /// Each further line of a label adds a line pitch to its box.
+  #[test]
+  fn multi_line_text_offset_spans_the_block_of_lines() {
+    let s = svg(
+      "Graphics3D[{Text[\"Qc\\nRc\", {0, 0, 0}], \
+       Text[\"Qt\\nRt\", {0, 0, 0}, {0, 1}]}]",
+    );
+    let block_y = |first: &str| {
+      let line = s
+        .lines()
+        .find(|l| l.starts_with("<text") && l.contains(first))
+        .unwrap_or_else(|| panic!("no label {first}: {s}"));
+      let start = line.find(" y=\"").unwrap() + " y=\"".len();
+      let end = start + line[start..].find('"').unwrap();
+      line[start..end].parse::<f64>().unwrap()
+    };
+    // Two 12-point lines a 1.2 em pitch apart: a 26.4-point block.
+    assert!((block_y("Qt") - block_y("Qc") - 13.2).abs() < 0.11, "{s}");
   }
 
   /// The arrowhead `<polygon>`s of a scene: the filled, unstroked ones
