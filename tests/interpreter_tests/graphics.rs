@@ -65969,11 +65969,11 @@ mod grid_text_in_graphics {
       (num(" width"), num(" height"))
     };
     // A symmetric range gives a square drawing area, however lopsided the
-    // curve is. (wolframscript: 300 x 300 and 300 x 88 — it keeps the
-    // plot's `PlotRangePadding` under the explicit range, so the tick
-    // labels at its ends need no padding; see conformance_gaps.md.)
-    assert_eq!(size("10"), (300, 297));
-    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 94));
+    // curve is: the plot's `PlotRangePadding` is kept under the explicit
+    // range, so the tick labels at its ends need no padding.
+    // (wolframscript: 300 x 300 and 300 x 88; see conformance_gaps.md.)
+    assert_eq!(size("10"), (300, 300));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 90));
   }
 
   #[test]

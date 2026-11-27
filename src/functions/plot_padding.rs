@@ -366,6 +366,8 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
   {
     return w * size / TICK_FONT;
   }
+  // A label carrying its own size (`Style[8, 14]`) is set at it.
+  let size = markup_font_size(markup).unwrap_or(size);
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
     && chars.iter().all(|c| {
@@ -891,7 +893,11 @@ impl Decorations {
 pub(crate) fn tick_label_height(markup: &str, size: f64) -> f64 {
   match crate::functions::graphics::axes_label_picture_size(markup) {
     Some((_, h)) => h * size / TICK_FONT,
-    None => block_height(label_lines(markup), size),
+    // A label carrying its own size (`Style[8, 14]`) is set at it.
+    None => block_height(
+      label_lines(markup),
+      markup_font_size(markup).unwrap_or(size),
+    ),
   }
 }
 

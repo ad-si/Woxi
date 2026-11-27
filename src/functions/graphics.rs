@@ -23342,14 +23342,18 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // A bar accent (`_`, or a hyphen/minus typed as the overscript, the
         // antiquark b̄) is drawn as a rule spanning the base, not as a
         // raised dash glyph.
-        if is_bar_accent_box(&args[1]) {
-          let sw = (font_size * 0.06).max(0.6);
+        if let Some((bold, color)) = bar_accent_style(&args[1]) {
+          // A bold accent draws a heavier rule, a colored one its color.
+          let weight = if bold { 1.5 } else { 1.0 };
+          let sw = (font_size * 0.06).max(0.6) * weight;
           let gap = font_size * 0.12;
           let line_y = sw;
           let base_y = line_y + gap;
+          let stroke =
+            color.map_or_else(|| "currentColor".to_string(), Color::to_svg_rgb);
           let elements = format!(
             "<path d=\"M 0.00 {line_y:.2} L {:.2} {line_y:.2}\" fill=\"none\" \
-             stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>{}",
+             stroke=\"{stroke}\" stroke-width=\"{sw:.2}\"/>{}",
             base.width,
             base.translate(0.0, base_y)
           );
@@ -25439,7 +25443,10 @@ fn distribute_style_over_runs(attrs: &str, content: &str) -> String {
 /// `dominant-baseline` explicitly. resvg resets the baseline of a doubly
 /// nested `tspan` (`Style[2 Style[m, Italic] + 1, 18]` nests the italic run
 /// in the sized one), which lifted such a run above the rest of its line.
-fn pin_nested_tspan_baselines(markup: &str, baseline: &str) -> String {
+pub(crate) fn pin_nested_tspan_baselines(
+  markup: &str,
+  baseline: &str,
+) -> String {
   let mut out = String::with_capacity(markup.len());
   let mut depth = 0usize;
   let mut rest = markup;
@@ -29595,6 +29602,20 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       call1("TraditionalForm", e.clone())
     }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
+    // `Overscript[X, Style["_", Bold]]`: the styling is the accent's alone,
+    // so the base under it is set traditionally like any unstyled part.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Overscript" | "Underscript")
+        && args.len() == 2
+        && !has_explicit_style(&args[0])
+        && has_explicit_style(&args[1]) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![traditionalize_styled_label(&args[0]), args[1].clone()]
+          .into(),
+      }
+    }
     _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
   }
@@ -29987,6 +30008,39 @@ impl StretchyBrace {
 }
 
 fn is_bar_accent_box(script: &Expr) -> bool {
+  bar_accent_style(script).is_some()
+}
+
+/// Whether `script` is a bar accent (see [`is_plain_bar_accent`]), possibly
+/// under styling of its own (`Style["_", Bold, Red]`, or the `StyleBox` that
+/// becomes): `Some((bold, color))` with the weight and color the bar takes
+/// from that styling.
+fn bar_accent_style(script: &Expr) -> Option<(bool, Option<Color>)> {
+  match script {
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "StyleBox") && !args.is_empty() =>
+    {
+      let (mut bold, mut color) = bar_accent_style(&args[0])?;
+      for directive in &args[1..] {
+        match directive {
+          Expr::Identifier(d) if d == "Bold" => bold = true,
+          Expr::Identifier(d) if d == "Plain" => bold = false,
+          other => {
+            if let Some(c) = parse_color(other) {
+              color = Some(c);
+            }
+          }
+        }
+      }
+      Some((bold, color))
+    }
+    other => is_plain_bar_accent(other).then_some((false, None)),
+  }
+}
+
+/// Whether `script` is a string drawn as a bar over or under its base: an
+/// underscore, a hyphen or minus, or a macron.
+fn is_plain_bar_accent(script: &Expr) -> bool {
   let Expr::String(s) = script else {
     return false;
   };
@@ -32567,6 +32621,33 @@ fn plot_source_range_padding(ps: &crate::syntax::PlotSource) -> Option<Expr> {
   ))
 }
 
+/// Which of the x and y axes a `PlotRange` value pins to numbers: both for
+/// `n` and `{{x0, x1}, {y0, y1}}`, the y axis alone for a bare `{y0, y1}`
+/// or `{All, {y0, y1}}`, neither for `All` or `Automatic`.
+fn plot_range_pinned_axes(range: &Expr) -> (bool, bool) {
+  let is_number = |e: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(e).is_some_and(f64::is_finite)
+  };
+  let pins = |axis: &Expr| match axis {
+    Expr::List(ends) => ends.iter().any(is_number),
+    other => is_number(other),
+  };
+  match range {
+    Expr::List(axes) if axes.len() == 2 => {
+      if axes.iter().all(is_number) {
+        (false, true)
+      } else {
+        (pins(&axes[0]), pins(&axes[1]))
+      }
+    }
+    Expr::List(axes) if axes.len() == 1 => (pins(&axes[0]), false),
+    other => {
+      let both = is_number(other);
+      (both, both)
+    }
+  }
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
@@ -32944,6 +33025,51 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .any(|existing| option_name_value(existing).map(|(n, _)| n) == name)
     {
       merged_options.push(opt);
+    }
+  }
+
+  // The result keeps the leading plot's options, its `PlotRangePadding`
+  // (`Scaled[0.02]` and `Scaled[0.05]` around an automatic range) among
+  // them, so a `PlotRange` given to `Show` is padded by the fractions that
+  // plot left around its own data.
+  // An axis `Show` leaves alone keeps the range that plot drew, which is
+  // padded already.
+  if show_sets_plot_range
+    && !merged_options
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some(("PlotRangePadding", _))))
+    && let Some(ps) = plot_sources.first()
+    && let Some(padding) = plot_source_range_padding(ps)
+    && let Expr::List(sides) = &padding
+    && let Some(range) =
+      merged_options
+        .iter()
+        .find_map(|o| match option_name_value(o) {
+          Some(("PlotRange", v)) => Some(v.into_owned()),
+          _ => None,
+        })
+  {
+    let (pin_x, pin_y) = plot_range_pinned_axes(&range);
+    // An `All` axis is measured afresh from everything shown, unpadded.
+    let (all_x, all_y) = crate::functions::plot::plot_range_all_axes(&range);
+    let side = |padded: bool, padding: &Expr| {
+      if padded {
+        padding.clone()
+      } else {
+        id_expr("Automatic")
+      }
+    };
+    if (pin_x || pin_y) && sides.len() == 2 {
+      merged_options.push(rule_expr(
+        id_expr("PlotRangePadding"),
+        Expr::List(
+          vec![
+            side(pin_x || all_x, &sides[0]),
+            side(pin_y || all_y, &sides[1]),
+          ]
+          .into(),
+        ),
+      ));
     }
   }
 
@@ -44935,7 +45061,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Underoverscript" | "Overscript" | "Underscript"
         if (name == "Underoverscript" && args.len() == 3)
           || (args.len() == 2
-            && !matches!(&args[1], Expr::String(s) if matches!(s.as_str(), "~" | "^" | "." | ".." | "_" | "-" | "\u{00AF}" | "\u{02C6}" | "\u{02DC}"))) =>
+            && !matches!(strip_style_wrappers(&args[1]), Expr::String(s) if matches!(s.as_str(), "~" | "^" | "." | ".." | "_" | "-" | "\u{00AF}" | "\u{02C6}" | "\u{02DC}"))) =>
       {
         let script =
           |e: &Expr| call("Style", vec![e.clone(), Expr::Real(10.0)]);

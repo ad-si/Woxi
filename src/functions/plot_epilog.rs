@@ -1399,6 +1399,12 @@ fn render_item(
               text_w + m_left + m_right,
             ));
           }
+          // resvg shifts a nested `tspan` once more per level unless it
+          // names the baseline itself, which lifted the styled parts of a
+          // row (`Row[{Style[Subscript[…], 12], " = ", …}]`) off its line.
+          let label = crate::functions::graphics::pin_nested_tspan_baselines(
+            &label, "middle",
+          );
           out.push_str(&format!(
             "<text x=\"{line_x:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
