@@ -8797,6 +8797,23 @@ fn tf_series_data(args: &[Expr]) -> Option<Expr> {
   Some(tf_row(items))
 }
 
+/// The argument lists of an angular-momentum coupling symbol: three
+/// `{j, m}` pairs (`ClebschGordan`, `ThreeJSymbol`; `len` 2) or two
+/// `{j₁, j₂, j₃}` triples (`SixJSymbol`; `len` 3).
+fn tf_angular_pairs(args: &[Expr], len: usize) -> Option<Vec<&[Expr]>> {
+  let count = if len == 2 { 3 } else { 2 };
+  if args.len() != count {
+    return None;
+  }
+  args
+    .iter()
+    .map(|arg| match arg {
+      Expr::List(items) if items.len() == len => Some(&items[..]),
+      _ => None,
+    })
+    .collect()
+}
+
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   if let Some(boxed) = root_approximation_box(name, args) {
     return boxed;
@@ -9256,6 +9273,58 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       ),
       tf_string(")"),
     ]),
+    // `InputForm[expr]` keeps its one-line input text inside traditional
+    // typesetting (`1/2` stays linear), the boxes StandardForm gives it.
+    "InputForm" if args.len() == 1 => {
+      expr_to_box_form(&unevaluated(name, args))
+    }
+    // The Clebsch–Gordan coefficient is the bracket of the uncoupled and
+    // the coupled state: `⟨j₁ j₂ m₁ m₂ | j₁ j₂ j m⟩`.
+    "ClebschGordan" if tf_angular_pairs(args, 2).is_some() => {
+      let p = tf_angular_pairs(args, 2).unwrap();
+      let spaced = |items: [&Expr; 4]| {
+        let mut row = Vec::with_capacity(7);
+        for (i, item) in items.into_iter().enumerate() {
+          if i > 0 {
+            row.push(tf_string(" "));
+          }
+          row.push(tf(item));
+        }
+        tf_row(row)
+      };
+      tf_row(vec![
+        tf_string("\u{2329}"),
+        spaced([&p[0][0], &p[1][0], &p[0][1], &p[1][1]]),
+        tf_string("\u{F432}"),
+        spaced([&p[0][0], &p[1][0], &p[2][0], &p[2][1]]),
+        tf_string("\u{232A}"),
+      ])
+    }
+    // The Wigner 3-j symbol stacks its momenta over their projections in
+    // parentheses, the 6-j symbol its two triples in braces.
+    "ThreeJSymbol" if tf_angular_pairs(args, 2).is_some() => {
+      let p = tf_angular_pairs(args, 2).unwrap();
+      let row = |k: usize| -> Expr {
+        Expr::List(p.iter().map(|pair| tf(&pair[k])).collect())
+      };
+      tf_row(vec![
+        tf_string("("),
+        tf_box("GridBox", vec![Expr::List(vec![row(0), row(1)].into())]),
+        tf_string(")"),
+      ])
+    }
+    "SixJSymbol" if tf_angular_pairs(args, 3).is_some() => {
+      let p = tf_angular_pairs(args, 3).unwrap();
+      let rows: Vec<Expr> = p
+        .iter()
+        .map(|triple| Expr::List(triple.iter().map(tf).collect()))
+        .collect();
+      tf_row(vec![
+        tf_string("{"),
+        tf_box("GridBox", vec![Expr::List(rows.into())]),
+        tf_string("}"),
+      ])
+    }
     // Generalized hypergeometric functions: ₚFₙ(a₁, …; b₁, …; z), with a
     // tilde over the F for the regularized ones.
     "Hypergeometric0F1" | "Hypergeometric0F1Regularized" if args.len() == 2 => {

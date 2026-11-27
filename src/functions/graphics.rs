@@ -25564,6 +25564,19 @@ pub(crate) fn pin_nested_tspan_baselines(
   out
 }
 
+/// The text an `InputForm[expr]` wrapper displays: the one-line input form
+/// of `expr`. `None` for anything that is not such a wrapper.
+pub fn input_form_display_text(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "InputForm" && args.len() == 1 =>
+    {
+      Some(crate::syntax::expr_to_input_form(&args[0]))
+    }
+    _ => None,
+  }
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup(&styled);
@@ -25576,6 +25589,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     && !args.is_empty()
   {
     return expr_to_svg_markup(&dynamic_current_value(expr));
+  }
+  // `InputForm[expr]` typesets as the one-line input text of `expr`
+  // (`1/2`, not a stacked fraction, and never the `InputForm[…]` wrapper).
+  if let Some(text) = input_form_display_text(expr) {
+    return svg_escape(&text);
   }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -61351,6 +61369,15 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       }]
     }
   };
+  // `InputForm[expr]` reads as the one-line input text of `expr`: a choice
+  // `1/2 -> InputForm[1/2]` is labeled `1/2`.
+  if let Some(text) = input_form_display_text(expr) {
+    return vec![LabelRun {
+      text,
+      italic,
+      ..Default::default()
+    }];
+  }
   // A machine real is shown the way a notebook displays it, to six
   // significant digits: a `Range[0.1, 2, 0.1]` popup reads `0.3`, not the
   // `0.30000000000000004` its exact binary value spells out in InputForm.
@@ -72983,6 +73010,44 @@ mod manipulate_traditional_form_choice_svg_tests {
         assert_eq!(value_labels[1], "ab");
       }
       other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice labeled `InputForm[v]` reads as the one-line input text of
+  /// `v` (`1/2`), not as the `InputForm[…]` wrapper.
+  #[test]
+  fn choice_labels_show_input_form_text() {
+    let control = discrete_control(
+      "Manipulate[j, {{j, 1/2, \"j\"}, \
+       (# -> InputForm[#] &) /@ Range[-1/2, 3/2, 1/2], SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["-1/2", "0", "1/2", "1", "3/2"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `InputForm[expr]` inside a text label is set as its one-line input
+  /// text, whichever renderer draws the label: the inline markup of a
+  /// styled row and the box layout of a row holding a script.
+  #[test]
+  fn input_form_in_a_label_is_set_as_input_text() {
+    let markup = |code: &str| {
+      expr_to_svg_markup(&crate::syntax::string_to_expr(code).unwrap())
+    };
+    assert_eq!(markup("InputForm[1/2]"), "1/2");
+    assert_eq!(markup("InputForm[x^2 < y]"), "x^2 &lt; y");
+    assert_eq!(markup("InputForm[\"s\"]"), "&quot;s&quot;");
+    for code in [
+      "ExportString[Style[Row[{\"j = \", InputForm[3/2]}], Bold], \"SVG\"]",
+      "ExportString[Grid[{{Text[Row[{Subscript[\"j\", 1], \" = \", \
+       InputForm[3/2]}]]}}], \"SVG\"]",
+    ] {
+      let svg = crate::interpret(code).unwrap();
+      assert!(svg.contains("3/2"), "{code}: {svg}");
+      assert!(!svg.contains("InputForm"), "{code}: {svg}");
     }
   }
 
