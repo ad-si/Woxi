@@ -43522,6 +43522,55 @@ fn inline_fraction_string_svg_at(
   expr: &Expr,
   default_size: f64,
 ) -> Option<String> {
+  inline_box_svg_where(expr, default_size, box_has_fraction)
+}
+
+/// Whether a box tree holds an over- or underscript that has to be stacked
+/// on its base: a mark with no combining accent (the long arrow over the
+/// `AB` of a vector, a rate constant over a reaction arrow), or an accent
+/// that does not span its base set over more than one character.
+fn box_has_stacked_script(boxes: &Expr) -> bool {
+  match boxes {
+    Expr::FunctionCall { name, args } => {
+      let stacked = matches!(name.as_str(), "OverscriptBox" | "UnderscriptBox")
+        && args.len() >= 2
+        && {
+          let base = box_expr_to_plain_in(&args[0], false);
+          let mark = box_expr_to_plain_in(&args[1], false);
+          match combining_accent(mark.trim(), name == "OverscriptBox") {
+            Some((_, whole_base)) => {
+              !whole_base && base.trim().chars().count() > 1
+            }
+            None => !mark.trim().is_empty(),
+          }
+        };
+      stacked || args.iter().any(box_has_stacked_script)
+    }
+    Expr::List(items) => items.iter().any(box_has_stacked_script),
+    _ => false,
+  }
+}
+
+/// The type size (px) the frontend sets a control caption at.
+const CAPTION_FONT: f64 = 12.0;
+
+/// The picture of a control caption whose inline box notation stacks a
+/// script over or under its base (an `OverscriptBox` setting a long arrow
+/// over the `AB` of a vector), at the caption size and in the box layout's
+/// monospace face, which the text captions beside it are set in too. `None`
+/// for a caption that reads as one line of text.
+fn stacked_script_caption_svg(caption: &Expr) -> Option<String> {
+  inline_box_svg_where(caption, CAPTION_FONT, box_has_stacked_script)
+}
+
+/// A (possibly `Style`d) string of inline box notation, or a displayed box
+/// tree, typeset through the box layout when `needs_layout` holds for its
+/// boxes.
+fn inline_box_svg_where(
+  expr: &Expr,
+  default_size: f64,
+  needs_layout: fn(&Expr) -> bool,
+) -> Option<String> {
   let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
@@ -43543,7 +43592,7 @@ fn inline_fraction_string_svg_at(
     }
     _ => return None,
   };
-  if !box_has_fraction(&boxes) {
+  if !needs_layout(&boxes) {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -57822,6 +57871,12 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     label if is_numeric_arithmetic_caption(label) => {
       Some(crate::syntax::expr_to_source_form(label))
     }
+    // A caption whose inline boxes stack a script on its base (an arrow
+    // over the `AB` of a vector) has no one-line text form either, so it
+    // is drawn as an icon as well.
+    label if stacked_script_caption_svg(label).is_some() => {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
 }
@@ -57886,7 +57941,8 @@ pub fn manipulate_eval_caption(
   // whole, words included, so the picture is not lost. A numeric fraction
   // or radical (`8/9`) is typeset as stacked math, also an icon.
   let svg = control_caption_svg(&evaluated)
-    .or_else(|| arithmetic_caption_svg(&evaluated));
+    .or_else(|| arithmetic_caption_svg(&evaluated))
+    .or_else(|| stacked_script_caption_svg(&evaluated));
   let runs = if svg.is_some() {
     Vec::new()
   } else {

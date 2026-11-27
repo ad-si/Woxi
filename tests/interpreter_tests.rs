@@ -5507,6 +5507,45 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_stacked_script_captions_typeset_as_icons() {
+    // A caption whose inline boxes set a mark over (or under) a base that
+    // no combining accent draws — a long arrow over the two letters of a
+    // vector, a word under a symbol — is stacked, so it travels as caption
+    // code and renders an icon with no text runs. An accent with a
+    // combining form over a single letter, and a plain string, stay text.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{p, q, r, s, t}, \
+       {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+       {{q, 0, \"\\!\\(\\*UnderscriptBox[\\(m\\), \\(low\\)]\\)\"}, 0, 1}, \
+       {{r, 0, \"\\!\\(\\*OverscriptBox[\\(PQ\\), \\(^\\)]\\)\"}, 0, 1}, \
+       {{s, 0, \"\\!\\(\\*OverscriptBox[\\(u\\), \\(^\\)]\\) hat\"}, 0, 1}, \
+       {{t, 0, \"plain\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      let svg = svg.unwrap_or_else(|| panic!("no icon for {name}: {code}"));
+      assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+      assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+      icons.push(name.as_str());
+    }
+    assert_eq!(icons, ["p", "q", "r"]);
+    // The arrow is drawn above the base, not after it on the same line.
+    let (_, code) = &spec.dynamic_labels[0];
+    let (_, svg) =
+      woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+    let svg = svg.unwrap();
+    assert!(svg.contains("<path"), "the arrow is drawn: {svg}");
+    assert!(svg.contains(">PQ<"), "the base is its own text: {svg}");
+    assert!(!svg.contains("^("), "no spelled-out superscript: {svg}");
+  }
+
+  #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
     // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
     // picture above the drawing), not printed as the wrapper's source, and
