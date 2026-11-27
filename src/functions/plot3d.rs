@@ -30076,8 +30076,8 @@ mod cuboid_clipping_tests {
 
   #[test]
   fn a_cuboid_outside_the_box_leaves_nothing() {
-    assert!(faces(pt(3.0, 0.0, 0.0), pt(5.0, 1.0, 1.0)).is_empty());
-    assert!(faces(pt(0.0, 2.0, 0.0), pt(1.0, 3.0, 1.0)).is_empty());
+    assert_eq!(faces(pt(3.0, 0.0, 0.0), pt(5.0, 1.0, 1.0)), []);
+    assert_eq!(faces(pt(0.0, 2.0, 0.0), pt(1.0, 3.0, 1.0)), []);
   }
 
   #[test]
