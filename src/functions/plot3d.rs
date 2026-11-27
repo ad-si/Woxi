@@ -8760,6 +8760,10 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 /// of the bounding box, far thinner than the curves of a plot.
 const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
 
+/// The distance between the centers of neighboring lines of a 3D text
+/// label, in ems.
+const TEXT3D_LINE_PITCH_EM: f64 = 1.2;
+
 /// The outline color of a face under the default `EdgeForm`.
 const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
 
@@ -10088,29 +10092,60 @@ fn parse_vertex_normals3d(opts: &[Expr]) -> Option<Vec<[f64; 3]>> {
   })
 }
 
-/// The texture of triangle `i` in the fan triangulation of a textured,
-/// convex polygon: corners `0`, `i + 1`, `i + 2` of the polygon.
-fn fan_texture(
-  prim: &Primitive3D,
-  style: &StyleState3D,
-  i: usize,
-  tri_count: usize,
-) -> Option<TriangleTexture> {
+/// The image and per-corner texture coordinates of a textured polygon:
+/// one without holes, under a `Texture`, with a coordinate for each corner.
+fn polygon_texture<'a>(
+  prim: &'a Primitive3D,
+  style: &'a StyleState3D,
+) -> Option<(
+  &'a std::sync::Arc<image::RgbImage>,
+  &'a [Point3D],
+  &'a [(f64, f64)],
+)> {
   let Primitive3D::Polygon3D { points, holes, .. } = prim else {
     return None;
   };
   let (image, coords) =
     (style.texture.as_ref()?, style.texture_coords.as_ref()?);
-  if !holes.is_empty()
-    || coords.len() != points.len()
-    || tri_count + 2 != points.len()
-    || !is_convex_polygon3d(points)
-  {
-    return None;
-  }
+  (holes.is_empty() && coords.len() == points.len()).then_some((
+    image,
+    points.as_slice(),
+    coords.as_slice(),
+  ))
+}
+
+/// The texture of triangle `i` (with corners `tri`) of a textured polygon
+/// split into `tri_count` triangles. In a fan from the first corner the
+/// triangle has corners `0`, `i + 1`, `i + 2` of the polygon; a concave
+/// planar polygon goes through the general triangulator instead, whose
+/// triangles take the coordinates of the polygon corners they sit on.
+fn fan_texture(
+  prim: &Primitive3D,
+  style: &StyleState3D,
+  i: usize,
+  tri_count: usize,
+  tri: [Point3D; 3],
+) -> Option<TriangleTexture> {
+  let (image, points, coords) = polygon_texture(prim, style)?;
+  let uv =
+    if tri_count + 2 == points.len() && !uses_polygon_triangulator(points) {
+      [coords[0], coords[i + 1], coords[i + 2]]
+    } else {
+      let nearest = |at: Point3D| {
+        let distance = |p: &Point3D| {
+          (p.x - at.x).powi(2) + (p.y - at.y).powi(2) + (p.z - at.z).powi(2)
+        };
+        points
+          .iter()
+          .zip(coords)
+          .min_by(|(a, _), (b, _)| distance(a).total_cmp(&distance(b)))
+          .map(|(_, uv)| *uv)
+      };
+      [nearest(tri[0])?, nearest(tri[1])?, nearest(tri[2])?]
+    };
   Some(TriangleTexture {
     image: image.clone(),
-    uv: [coords[0], coords[i + 1], coords[i + 2]],
+    uv,
     shade: (255, 255, 255),
   })
 }
@@ -10158,7 +10193,32 @@ fn emit_textured_triangle(
   let det = (s[1].0 - s[0].0) * (s[2].1 - s[0].1)
     - (s[2].0 - s[0].0) * (s[1].1 - s[0].1);
   if det.abs() < 1e-9 {
-    return false;
+    // The corners share one line of the image (a sliver of a tessellated
+    // surface, or a facet at a pole): there is no image area to map, so
+    // the facet takes the color of the image where it sits.
+    let (su, sv) = s
+      .iter()
+      .fold((0.0, 0.0), |(a, b), &(u, v)| (a + u / 3.0, b + v / 3.0));
+    let px = (su.rem_euclid(w) as u32).min(tex.image.width() - 1);
+    let py = (sv.rem_euclid(h) as u32).min(tex.image.height() - 1);
+    let [r, g, b] = tex.image.get_pixel(px, py).0;
+    let lit = |c: u8, shade: u8| (c as u16 * shade as u16 / 255) as u8;
+    let (r, g, b) = (
+      lit(r, tex.shade.0),
+      lit(g, tex.shade.1),
+      lit(b, tex.shade.2),
+    );
+    let opacity_attr = if opacity < 1.0 {
+      format!(" opacity=\"{opacity}\"")
+    } else {
+      String::new()
+    };
+    svg.push_str(&format!(
+      "<polygon points=\"{:.2},{:.2} {:.2},{:.2} {:.2},{:.2}\" fill=\"rgb({r},{g},{b})\"{opacity_attr}/>\n",
+      corners[0].0, corners[0].1, corners[1].0, corners[1].1, corners[2].0,
+      corners[2].1
+    ));
+    return true;
   }
   let solve = |d0: f64, d1: f64, d2: f64| {
     let p =
@@ -11394,18 +11454,23 @@ fn push_text3d_label(
   // A label whose inline box notation hangs limits on a large operator
   // (an integral with its bounds) is laid out as boxes, the way the 2D
   // `Text` draws it: the sign tall, its limits at its ends.
+  //
+  // So is a label holding a built-up fraction or a root (a quotient, or a
+  // string whose inline box notation stacks one), on its own or among the
+  // parts of a `Row`: the fraction stacks inline with the text around it.
   let picture =
-    crate::functions::graphics::label_has_large_operator_script(label_expr)
-      .then(|| {
-        let color = match text_style.color {
-          Some((r, g, b)) => format!("rgb({r},{g},{b})"),
-          None => crate::functions::graphics::theme().text_primary.to_string(),
-        };
-        crate::functions::graphics::stacked_label_picture(
-          label_expr, font_size, "", &color,
-        )
-      })
-      .flatten();
+    (crate::functions::graphics::label_has_large_operator_script(label_expr)
+      || crate::functions::graphics::label_typesets_fraction(label_expr))
+    .then(|| {
+      let color = match text_style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => crate::functions::graphics::theme().text_primary.to_string(),
+      };
+      crate::functions::graphics::stacked_label_picture(
+        label_expr, font_size, "", &color,
+      )
+    })
+    .flatten();
   prims.push(Primitive3D::Text3D {
     label,
     pos,
@@ -12599,10 +12664,10 @@ fn tessellate_sphere(
   tessellate_sphere_about(center, radius, detail, [0.0, 0.0, 1.0])
 }
 
-/// The detail an opaque sphere is tessellated with once its pole faces the
-/// viewer (see [`tessellate_sphere_about`]): its far half is culled, and
-/// its outline is the equator, so latitude bands are traded for longitude
-/// segments. The equator stays a band boundary (an even band count), and
+/// The detail a sphere is tessellated with once its pole faces the viewer
+/// (see [`tessellate_sphere_about`]): its outline is the equator, where
+/// the near and far halves meet, so latitude bands are traded for
+/// longitude segments. The equator stays a band boundary (an even band count), and
 /// the outline gets twice the segments of the plain `detail`, up to 48 —
 /// round to a fraction of a pixel at any usual size, without crowding
 /// slivers around the pole that faces the viewer.
@@ -12613,8 +12678,8 @@ fn viewer_facing_sphere_detail(detail: (usize, usize)) -> (usize, usize) {
 }
 
 /// Tessellate a sphere into latitude/longitude triangles whose pole points
-/// along `pole`. With the pole toward the viewer, the outline an opaque
-/// sphere shows is its equator — the ring every longitude segment lies on
+/// along `pole`. With the pole toward the viewer, the outline a sphere
+/// shows is its equator — the ring every longitude segment lies on
 /// — so its silhouette is as round as the segment count allows, whatever
 /// the view direction.
 fn tessellate_sphere_about(
@@ -15847,6 +15912,15 @@ const THIN_SHEET_MAX_SIDE_RATIO: f64 = 0.01;
 /// filling a 300 × 400 picture).
 const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
+/// Distance of an explicit `ViewPoint` from the box center, in units of
+/// the box's longest side, from which an elongated unboxed scene keeps the
+/// outline fit in a picture of fixed size (see its use in `graphics3d_ast`):
+/// twice the default camera's distance (`{1.3, -2.4, 2}`, 3.38 away), from
+/// where the view is nearly a parallel projection. Wolfram's snapshots put
+/// the limit between that default distance (sphere-framed) and a
+/// `ViewPoint -> {2, -10, 2}` (10.4 away, outline-fitted).
+const DISTANT_VIEW_POINT: f64 = 6.77;
+
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
 ///
@@ -16580,7 +16654,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // {0, 0, 6}`, draws the 24 units about 250 px wide, as the outline fit
   // below their `PlotLabel` does (sphere framing would span 180). The
   // layout draws such a cell again (see `outline_fitted_cell_svg`).
-  let explicitly_framed = plot_range.is_some() || explicit_view_point;
+  // An elongated box around an automatic range keeps the outline fit when
+  // it is seen from an explicit but distant `ViewPoint` (see
+  // `DISTANT_VIEW_POINT`), as it does under the default camera (see
+  // `COMPACT_BOX_MAX_SIDE_RATIO`): Wolfram's snapshot
+  // of a Demonstration's row of three unboxed cylinders with their captions
+  // (a 12 × 2 × 7.2 box) at `ImageSize -> {550, 350}`, seen from
+  // `ViewPoint -> {2, -10, 2}`, draws the 12 units about 505 px wide, as
+  // the outline fit does (sphere framing would span 310).
+  let elongated_automatic_range = plot_range.is_none() && {
+    let sides = primitives_extent(&prims).map(|(lo, hi)| hi - lo);
+    let longest = sides.into_iter().fold(0.0, f64::max);
+    let shortest = sides.into_iter().fold(f64::INFINITY, f64::min);
+    longest.is_finite()
+      && !primitives_extent(&prims).into_iter().any(range_is_flat)
+      && longest > COMPACT_BOX_MAX_SIDE_RATIO * shortest
+      && view_distance.is_finite()
+      && view_distance >= DISTANT_VIEW_POINT
+  };
+  let explicitly_framed =
+    plot_range.is_some() || (explicit_view_point && !elongated_automatic_range);
   let automatic_sphere = !spherical_region
     && !spherical_region_off
     && !OUTLINE_FIT_CELL.get()
@@ -16789,11 +16882,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ..
         } => {
           let detail = sphere_detail(*radius, sphere_extent, sphere_count);
-          // The far half of an opaque sphere is culled below, so it is
-          // tessellated about the line of sight: its outline is then the
-          // finely divided equator rather than a coarse slanted cut
-          // through the latitude bands.
-          let tris = if style.faces && style.opacity >= 1.0 {
+          // A sphere is tessellated about the line of sight: its outline is
+          // then the finely divided equator rather than a coarse slanted
+          // cut through the latitude bands. An opaque sphere has its far
+          // half culled below; a see-through one shows both halves, which
+          // must end on that same ring or the near half's saw-toothed edge
+          // shows through as a jagged rim one layer thinner than the rest.
+          let tris = if style.faces {
             tessellate_sphere_about(
               center,
               *radius,
@@ -17050,7 +17145,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => (None, None),
     };
-    if vertex_colors.is_some() || vertex_normals.is_some() {
+    // A textured polygon shows its image rather than a color gradient:
+    // its `VertexNormals` then light each fan triangle as a whole (see
+    // `fan_normal` below).
+    let textured = polygon_texture(prim, prim_style).is_some();
+    if !textured && (vertex_colors.is_some() || vertex_normals.is_some()) {
       // A flat face is lit the same everywhere but for its color, so the
       // lit color is linear across it: each fan triangle is lit at its
       // corners and filled with the gradient between them.
@@ -17227,6 +17326,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
       let normal =
         polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
+      // The mean of the corners' own normals, on the face's side: a mesh
+      // of textured facets then shades as the smooth surface it samples.
+      let fan_normal = vertex_normals
+        .filter(|n| textured && tri_count + 2 == n.len())
+        .and_then(|normals| {
+          let mut sum = [0.0; 3];
+          for k in [0, i + 1, i + 2] {
+            let n = normals[k];
+            let sign = if v_dot(n, normal) < 0.0 { -1.0 } else { 1.0 };
+            for (s, c) in sum.iter_mut().zip(n) {
+              *s += sign * c;
+            }
+          }
+          let len = v_dot(sum, sum).sqrt();
+          (len > 1e-15).then(|| sum.map(|v| v / len))
+        });
+      let normal = fan_normal.unwrap_or(normal);
       let (color, _) = shade_facet(
         SurfaceDefault::Plain(base_color),
         None,
@@ -17255,23 +17371,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
-          // The texture takes the place of the surface color, so the
-          // lighting is that of a white surface.
-          let mut white = prim_style.clone();
-          white.color = None;
-          white.back_color = None;
-          t.shade = shade_facet(
-            SurfaceDefault::Plain((255, 255, 255)),
-            None,
-            Some(&white),
-            normal,
-            center,
-            &scene,
-          )
-          .0;
-          t
-        }),
+        texture: fan_texture(prim, prim_style, i, tri_count, [v0, v1, v2]).map(
+          |mut t| {
+            // The texture takes the place of the surface color, so the
+            // lighting is that of a white surface.
+            let mut white = prim_style.clone();
+            white.color = None;
+            white.back_color = None;
+            t.shade = shade_facet(
+              SurfaceDefault::Plain((255, 255, 255)),
+              None,
+              Some(&white),
+              normal,
+              center,
+              &scene,
+            )
+            .0;
+            t
+          },
+        ),
         vertex_colors,
       });
     }
@@ -17442,15 +17560,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unboxed lone triangle, unit cube or pair of cubes as large as boxed
   // ones) unless the scene is made of round solids alone: an unboxed
   // `Sphere[]` exports 360 × 363 (boxed: 360 × 391) and a cylinder of
-  // radius 1 and height 3 262 × 432 (boxed: 320 × 432).
-  let round_solids_only = !prims.is_empty()
+  // radius 1 and height 3 262 × 432 (boxed: 320 × 432). Lines, arrows and
+  // points drawn alongside the round solids leave that fit in place and
+  // are part of the contents: a Demonstration's two unboxed concentric
+  // spheres with field arrows between them at `ImageSize -> 220` fill the
+  // picture's width in every snapshot, and the arrows sticking out of the
+  // outer sphere in one of them shrink it by just their reach.
+  let is_round_solid = |p: &Primitive3D| {
+    matches!(
+      p,
+      Primitive3D::Sphere { .. }
+        | Primitive3D::Cylinder { .. }
+        | Primitive3D::Cone { .. }
+    )
+  };
+  let round_solids_only = prims.iter().any(is_round_solid)
     && prims.iter().all(|p| {
-      matches!(
-        p,
-        Primitive3D::Sphere { .. }
-          | Primitive3D::Cylinder { .. }
-          | Primitive3D::Cone { .. }
-      )
+      is_round_solid(p)
+        || matches!(
+          p,
+          Primitive3D::Line3D { .. }
+            | Primitive3D::Arrow3D { .. }
+            | Primitive3D::Point3DPrim { .. }
+        )
     });
   // In a picture of fixed width and height, contents with depth whose box
   // is the taller shape for the frame are framed by that box, before
@@ -18691,7 +18823,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A stacked fraction is about two lines tall.
       font_size * 2.4
     } else {
-      font_size * 1.2 * label.split('\n').count() as f64
+      // As in 2D graphics, a line's box is one em tall and neighboring
+      // lines sit a line pitch apart, so the label's top and bottom
+      // edges lie half an em beyond its first and last lines' centers.
+      let line_count = label.split('\n').count() as f64;
+      font_size * (1.0 + TEXT3D_LINE_PITCH_EM * (line_count - 1.0))
     };
     let x = sx - offset.0 * text_w / 2.0;
     let y = sy + offset.1 * text_h / 2.0;
@@ -18774,7 +18910,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       continue;
     }
     let lines = crate::functions::graphics::split_markup_lines(label);
-    let line_height = font_size * 1.2;
+    let line_height = font_size * TEXT3D_LINE_PITCH_EM;
     let mut body = String::new();
     if lines.len() == 1 {
       body.push_str(&lines[0]);
@@ -18785,7 +18921,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let dy = if i == 0 { first_dy } else { line_height };
         body.push_str(&crate::functions::graphics::stacked_line_tspan(
           &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
-          "middle",
+          "central",
           line,
         ));
       }
@@ -18795,7 +18931,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
     svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-           dominant-baseline=\"middle\" font-family=\"sans-serif\" \
+           dominant-baseline=\"central\" font-family=\"sans-serif\" \
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
   }
