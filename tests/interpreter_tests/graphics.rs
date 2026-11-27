@@ -17767,17 +17767,12 @@ mod plot3d {
       let fill = svg.find("fill=\"rgb(255,255,0)\"").expect("a background");
       assert!(fill < content && content < border, "{svg}");
       // A thicker border is covered by margins that would clear a thin one.
-      let (border, content, svg) = (|| {
-        let svg = export_svg(&format!(
-          "Framed[{picture}, FrameMargins -> 2, \
-           FrameStyle -> Directive[Black, AbsoluteThickness[4]]]"
-        ));
-        (
-          svg.find("stroke-width=\"4\"").expect("a thick border"),
-          svg.find("fill=\"rgb(255,0,0)\"").expect("a picture"),
-          svg,
-        )
-      })();
+      let svg = export_svg(&format!(
+        "Framed[{picture}, FrameMargins -> 2, \
+         FrameStyle -> Directive[Black, AbsoluteThickness[4]]]"
+      ));
+      let border = svg.find("stroke-width=\"4\"").expect("a thick border");
+      let content = svg.find("fill=\"rgb(255,0,0)\"").expect("a picture");
       assert!(border > content, "{svg}");
       // No border at all: nothing is stroked over the picture.
       let svg = export_svg(&format!(
