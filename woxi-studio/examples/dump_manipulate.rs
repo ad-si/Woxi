@@ -19,7 +19,10 @@
 //! the control values (and, with `svg-out-dir`, the picture as
 //! `widget-<n>-ticks.svg`) are dumped afterwards.
 //! Set `PRESS_PICTURE=k` to press the k-th `Button` drawn inside the
-//! picture; the variables are dumped afterwards.
+//! picture, or `PRESS_PICTURE="3,0,7"` to press several in turn (each index
+//! counts the buttons as they are drawn after the previous press); the
+//! variables (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-press.svg`) are dumped after each press.
 //! Set `PRESS_BUTTONS=1` to press every control-panel button in turn, or
 //! `PRESS_BUTTONS="Solve,Reset"` to press only the buttons with those labels;
 //! the variables are dumped after each press.
@@ -292,6 +295,7 @@ fn main() {
       if let Some(dir) = &svg_out_dir
         && let Some(svg) = &state.typeset_output
       {
+        std::fs::create_dir_all(dir).expect("create svg out dir");
         let out = dir.join(format!("widget-{widget_count}-typeset.svg"));
         std::fs::write(&out, svg).expect("write typeset SVG");
         println!("wrote {}", out.display());
@@ -379,17 +383,30 @@ fn main() {
           println!("wrote {}", out.display());
         }
       }
-      if let Some(k) = std::env::var("PRESS_PICTURE")
-        .ok()
-        .and_then(|k| k.parse::<usize>().ok())
-        && let Some(region) = state.button_regions.get(k)
+      for k in std::env::var("PRESS_PICTURE")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|k| k.trim().parse::<usize>().ok())
       {
+        let Some(region) = state.button_regions.get(k) else {
+          println!("picture button {k}: no such button");
+          continue;
+        };
         let action = region.action.clone();
         println!("picture button {k}: {action}");
         state.apply_button_action(&action);
         println!("error={:?}", state.error);
         for (n, v) in &state.state {
           println!("  {n} = {v}");
+        }
+        if let Some(dir) = &svg_out_dir
+          && let Some(handle) = &state.graphics_handle
+          && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+        {
+          std::fs::create_dir_all(dir).expect("create svg out dir");
+          let out = dir.join(format!("widget-{widget_count}-press.svg"));
+          std::fs::write(&out, bytes).expect("write svg");
+          println!("wrote {}", out.display());
         }
       }
       if std::env::var("PRESS_BUTTONS").is_ok() {

@@ -8065,6 +8065,7 @@ fn button_text_plate_svg(args: &[Expr]) -> String {
     font,
     button_is_pressed(args),
     column,
+    button_is_enabled(args),
   );
   let background = args
     .iter()
@@ -8127,7 +8128,7 @@ fn button_plate_svg_styled(
   h: f64,
   font: Option<&StyleState>,
 ) -> String {
-  button_plate_svg_lines(&[svg_escape(label)], w, h, font, false, false)
+  button_plate_svg_lines(&[svg_escape(label)], w, h, font, false, false, true)
 }
 
 /// The height one more line of a multi-line button label adds to its plate.
@@ -8137,7 +8138,8 @@ const BUTTON_PLATE_LINE_HEIGHT: f64 = 18.0;
 /// entry of `lines` (inline SVG markup, already escaped). A single line is
 /// centered; the lines of a `Column` label are set flush left when
 /// `left_aligned`. `pressed` draws the flat gray plate of `Appearance ->
-/// "Pressed"` instead of the raised white one.
+/// "Pressed"` instead of the raised white one; a button that is not
+/// `enabled` is grayed out: a pale outline around a gray label.
 fn button_plate_svg_lines(
   lines: &[String],
   w: f64,
@@ -8145,6 +8147,7 @@ fn button_plate_svg_lines(
   font: Option<&StyleState>,
   pressed: bool,
   left_aligned: bool,
+  enabled: bool,
 ) -> String {
   let (size, fill, face) = match font {
     Some(f) => {
@@ -8159,10 +8162,17 @@ fn button_plate_svg_lines(
     }
     None => ("14".to_string(), "#000000".to_string(), String::new()),
   };
+  let fill = if enabled {
+    fill
+  } else {
+    BUTTON_DISABLED_LABEL.to_string()
+  };
   let (plate_fill, plate_stroke) = if pressed {
     (BUTTON_PRESSED_FILL, BUTTON_PRESSED_FILL)
-  } else {
+  } else if enabled {
     ("#FDFDFD", "#BFBFBF")
+  } else {
+    ("#FDFDFD", BUTTON_DISABLED_STROKE)
   };
   let (anchor, x) = if left_aligned {
     ("start", BUTTON_PLATE_PAD_X)
@@ -8190,6 +8200,26 @@ fn button_plate_svg_lines(
 /// The plate color of a button drawn with `Appearance -> "Pressed"` (and of
 /// the unselected choices of a `TogglerBar`).
 const BUTTON_PRESSED_FILL: &str = "#EDEDED";
+
+/// Whether a `Button[label, action, opts…]` can be pressed: always, unless
+/// its `Enabled` option evaluates to `False`. The option value is held with
+/// the rest of the button, and a `Dynamic[…]` anywhere in it stands for its
+/// current value (`Enabled -> Dynamic[s != ""] && ready`).
+fn button_is_enabled(button_args: &[Expr]) -> bool {
+  !button_args.iter().skip(2).any(|o| {
+    matches!(option_kv(o), Some(("Enabled", value))
+    if matches!(
+      evaluate_expr_to_expr(&release_dynamics(value)),
+      Ok(Expr::Identifier(ref v)) if v == "False"
+    ))
+  })
+}
+
+/// The label color of a `Button` that cannot be pressed.
+const BUTTON_DISABLED_LABEL: &str = "#9F9F9F";
+
+/// The plate outline of a `Button` that cannot be pressed.
+const BUTTON_DISABLED_STROKE: &str = "#DFDFDF";
 
 /// Whether a `Button[label, action, opts…]` asks for `Appearance ->
 /// "Pressed"`. The option value is held with the rest of the button, so a
@@ -36559,13 +36589,26 @@ pub(crate) fn labeled_cell_in_grid_options(
 /// the same way; a text-only one is set by the grid's own text pass, which
 /// already applies the style.
 fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
-  let nested = match cell {
+  // A nested grid wearing a `Style` of its own (`Style[Grid[…], 24]`)
+  // inherits the outer style the same way; its own directives come last,
+  // so they still take precedence.
+  let (layout, own_directives): (&Expr, &[Expr]) = match cell {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      (&args[0], &args[1..])
+    }
+    _ => (cell, &[]),
+  };
+  let nested = match layout {
     Expr::FunctionCall { name, args }
       if matches!(args.first(), Some(Expr::List(_))) =>
     {
       match name.as_str() {
         "Grid" | "TextGrid" => true,
-        "Row" | "Column" => grid_cell_graphic(cell).is_some(),
+        "Row" | "Column" => {
+          own_directives.is_empty() && grid_cell_graphic(cell).is_some()
+        }
         _ => false,
       }
     }
@@ -36583,10 +36626,46 @@ fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
   call(
     "Style",
-    std::iter::once(cell.clone())
+    std::iter::once(layout.clone())
       .chain(directives)
+      .chain(own_directives.iter().cloned())
       .collect::<Vec<_>>(),
   )
+}
+
+/// A `Pane[content, {w, h}]` that is a cell of a `Grid` sets its content
+/// like the rest of the grid's text: in the grid's face, size, weight, slant
+/// and color (the sans face by default), not as a free-standing pane, whose
+/// text defaults to monospace. Directives of the content's own come later
+/// and so still take precedence. A picture is left as it is.
+fn pane_cell_in_grid_style(pane_args: &[Expr], style: &GridStyle) -> Expr {
+  let content = &pane_args[0];
+  if matches!(content, Expr::Graphics { .. } | Expr::Image { .. }) {
+    return call("Pane", pane_args.to_vec());
+  }
+  let mut directives = grid_style_directives(style);
+  directives.push(rule_expr(
+    id_expr("FontFamily"),
+    Expr::String(grid_text_family(style)),
+  ));
+  let (inner, own): (&Expr, &[Expr]) = match content {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      (&args[0], &args[1..])
+    }
+    _ => (content, &[]),
+  };
+  let styled = call(
+    "Style",
+    std::iter::once(inner.clone())
+      .chain(directives)
+      .chain(own.iter().cloned())
+      .collect::<Vec<_>>(),
+  );
+  let mut new_args = pane_args.to_vec();
+  new_args[0] = styled;
+  call("Pane", new_args)
 }
 
 /// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
@@ -37188,7 +37267,10 @@ fn grid_svg_styled_internal_reporting(
         && crate::evaluator::dispatch::io_functions::pane_fixed_size(args)
           .is_some()
       {
-        let svg = crate::evaluator::expr_to_svg(cell);
+        let svg = crate::evaluator::expr_to_svg(&pane_cell_in_grid_style(
+          args,
+          default_style,
+        ));
         if svg.starts_with("<svg") {
           *cell = Expr::Graphics {
             svg,
@@ -37268,6 +37350,10 @@ fn grid_svg_styled_internal_reporting(
   let mut col_headings: Vec<Expr> = Vec::new();
   let mut spacings_h: Option<f64> = None; // horizontal spacing override
   let mut spacings_v: Option<f64> = None; // vertical spacing override
+  // `Spacings -> Offset[d]`: the gap as an absolute `d` points, on either
+  // axis, whatever the size of the text.
+  let mut spacing_points_h: Option<f64> = None;
+  let mut spacing_points_v: Option<f64> = None;
   // `Spacings -> {{i -> s, …}, …}` sets the gap at individual column
   // positions: position `i` is the gap to the left of column `i`, and
   // position `ncols + 1` the margin after the last column. Positions left
@@ -37696,8 +37782,20 @@ fn grid_svg_styled_internal_reporting(
           }
         }
         "Spacings" => {
+          let offset_points = |spec: &Expr| match spec {
+            Expr::FunctionCall { name, args }
+              if name == "Offset" && args.len() == 1 =>
+            {
+              expr_to_f64(&args[0])
+            }
+            _ => None,
+          };
           // Spacings -> {h, v} or Spacings -> n
           match replacement.as_ref() {
+            offset if offset_points(offset).is_some() => {
+              spacing_points_h = offset_points(offset);
+              spacing_points_v = offset_points(offset);
+            }
             Expr::Integer(n) => {
               spacings_h = Some(*n as f64);
               spacings_v = Some(*n as f64);
@@ -37715,14 +37813,14 @@ fn grid_svg_styled_internal_reporting(
                   Expr::List(_) => {
                     col_spacings = parse_position_spacings(&items[0]);
                   }
-                  _ => {}
+                  other => spacing_points_h = offset_points(other),
                 }
               }
               if items.len() >= 2 {
                 match &items[1] {
                   Expr::Integer(n) => spacings_v = Some(*n as f64),
                   Expr::Real(f) => spacings_v = Some(*f),
-                  _ => {}
+                  other => spacing_points_v = offset_points(other),
                 }
               }
             }
@@ -37874,12 +37972,16 @@ fn grid_svg_styled_internal_reporting(
   let pad_x: f64 = match (table_pad_x, spacings_h) {
     (Some(px), _) => px, // TableSpacing → pixels directly
     (None, Some(h)) => h * char_width, // Spacings h in ems → pixel padding
-    (None, None) => 12.0 * size_scale, // default horizontal padding per cell
+    (None, None) => match spacing_points_h {
+      Some(points) => points.max(0.0), // Spacings -> Offset[d]: as given
+      None => 12.0 * size_scale,       // default horizontal padding per cell
+    },
   };
   let row_gap: f64 = match (table_row_gap, spacings_v) {
     (Some(g), _) => g, // TableSpacing → pixels directly
     (None, Some(v)) => v * font_size, // Spacings v in ems → pixel gap
-    (None, None) => 0.0, // default: no extra row gap
+    // Spacings -> Offset[d]: as given; by default no extra row gap.
+    (None, None) => spacing_points_v.map_or(0.0, |points| points.max(0.0)),
   };
   let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
@@ -38736,8 +38838,12 @@ fn grid_svg_styled_internal_reporting(
         };
         // `Row[{…, "  ", …}]` spaces its parts with the string it was
         // given, and Wolfram draws every one of those spaces. SVG collapses
-        // runs of whitespace unless the element asks it not to.
-        let space_attr = if markup.contains("  ") {
+        // runs of whitespace — and drops the blanks a cell starts or ends
+        // with (`" R "`) — unless the element asks it not to.
+        let space_attr = if markup.contains("  ")
+          || markup.starts_with(' ')
+          || markup.ends_with(' ')
+        {
           " xml:space=\"preserve\""
         } else {
           ""
@@ -41681,23 +41787,7 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   let background = option("Background")
     .and_then(|b| evaluate_expr_to_expr(&b).ok())
     .and_then(|b| parse_color(&b));
-  let enabled = match option("Enabled") {
-    Some(cond) => {
-      let cond = match &cond {
-        Expr::FunctionCall { name, args }
-          if name == "Dynamic" && !args.is_empty() =>
-        {
-          args[0].clone()
-        }
-        other => other.clone(),
-      };
-      !matches!(
-        evaluate_expr_to_expr(&cond),
-        Ok(Expr::Identifier(ref v)) if v == "False"
-      )
-    }
-    None => true,
-  };
+  let enabled = button_is_enabled(button_args);
   let Some(open_end) = svg
     .find("<svg")
     .and_then(|s| svg[s..].find('>').map(|e| s + e + 1))

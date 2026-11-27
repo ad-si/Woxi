@@ -28101,22 +28101,21 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = 
       "body must evaluate cleanly: {:?}",
       state.error
     );
-    // A `Pane[Grid[…]]` of plain text/numbers (no embedded picture) is left
-    // to the text renderer rather than composed into an SVG — matching
-    // `a_pane_without_pictures_is_not_composed` in svg_rendering.rs.
+    // A `Pane[Grid[…]]` of plain text/numbers is drawn as the table, in
+    // the pane's whole box — matching
+    // `a_pane_of_a_text_table_is_drawn_as_the_table` in svg_rendering.rs.
+    let initial_table = state
+      .current_svg()
+      .expect("the reference table must be drawn")
+      .to_string();
     assert!(
-      state.graphics_handle.is_none(),
-      "a text-only reference table composes no picture: {:?}",
-      state.graphics_handle
+      initial_table.starts_with("<svg width=\"300\" height=\"200\""),
+      "{initial_table:.200}"
     );
-    let initial_text = state
-      .text_output
-      .clone()
-      .expect("the reference table must render as text");
     assert!(
-      initial_text.contains("flour to water")
-        && initial_text.contains("sugar share"),
-      "the ratio rows must appear in the rendered table: {initial_text}"
+      initial_table.contains("flour to water")
+        && initial_table.contains("sugar share"),
+      "the ratio rows must appear in the drawn table: {initial_table}"
     );
 
     // The Setter's buttons show each choice's Tooltip *display* value
@@ -28180,13 +28179,13 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = 
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    assert!(state.graphics_handle.is_none());
-    let switched_text = state
-      .text_output
-      .expect("the reference table must still render as text");
+    let switched_table = state
+      .current_svg()
+      .expect("the reference table must still be drawn")
+      .to_string();
     assert_ne!(
-      initial_text, switched_text,
-      "switching the reference record must change the rendered table"
+      initial_table, switched_table,
+      "switching the reference record must change the drawn table"
     );
   }
 

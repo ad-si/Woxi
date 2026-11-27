@@ -5578,6 +5578,82 @@ mod tests {
     }
   }
 
+  /// A body that picks between views and returns a sized `Pane` of a plain
+  /// text table draws the table in the pane's box, not its source text.
+  #[test]
+  fn switched_body_returning_pane_of_text_grid_draws_the_table() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      rows = Table[Style[BaseForm[i + j, n], Bold, 18], {i, 0, n - 1}, {j, 0, n - 1}];
+      Switch[view,
+        sums, Pane[Grid[rows, Alignment -> Right,
+          Spacings -> {Offset[0.4], Offset[0.4]},
+          Dividers -> {2 -> True, 2 -> True}], ImageSize -> {400, 200}],
+        note, Pane[Text["none"], ImageSize -> {400, 200}]],
+      {{n, 3}, 2, 5, 1},
+      {{view, sums}, {sums, note}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let svg = state
+      .current_svg()
+      .unwrap_or_else(|| panic!("no picture, text {:?}", state.text_output))
+      .to_string();
+    assert!(
+      svg.starts_with("<svg width=\"400\" height=\"200\""),
+      "{svg:.200}"
+    );
+    // The largest sum of the table, in base 3.
+    assert!(svg.contains(">11<tspan"), "{svg}");
+  }
+
+  /// The keys of a keypad drawn by the body follow their `Enabled`
+  /// conditions as the widget's variables change: a key whose condition
+  /// (with a `Dynamic` operand) is false is grayed out and has no region to
+  /// press, and gets one as soon as a press makes the condition true.
+  #[test]
+  fn picture_buttons_follow_their_enabled_conditions() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[Text[Grid[{{
+        Button["add", typed = typed <> "1"],
+        Button["run", done = True, Enabled -> Dynamic[typed != ""] && ! done],
+        Pane[Style[Dynamic[typed], 24], ImageSize -> {120, 30}]}}]],
+        ImageSize -> {400, 100}],
+      {{typed, ""}, ControlType -> None},
+      {{done, False}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let actions = |state: &ManipulateState| -> Vec<String> {
+      state
+        .button_regions
+        .iter()
+        .map(|r| r.action.clone())
+        .collect()
+    };
+    let grayed = |state: &ManipulateState| {
+      state.current_svg().unwrap().contains("#9F9F9F")
+    };
+    assert_eq!(actions(&state).len(), 1, "{:?}", actions(&state));
+    assert!(grayed(&state));
+    let add = actions(&state)[0].clone();
+    state.apply_button_action(&add);
+    assert_eq!(state.error, None);
+    assert_eq!(actions(&state).len(), 2, "{:?}", actions(&state));
+    assert!(!grayed(&state));
+    // The typed text shows in the text face of the `Text` display.
+    let svg = state.current_svg().unwrap().to_string();
+    assert!(svg.contains(">1</text>"), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+    let run = actions(&state)[1].clone();
+    state.apply_button_action(&run);
+    assert_eq!(actions(&state).len(), 1, "{:?}", actions(&state));
+    assert!(grayed(&state));
+  }
+
   /// A body that is `Text@Style[TraditionalForm[Column[…]]]` of held
   /// `Integrate` calls draws the typeset stack, not the `Column(…)` call
   /// as text.

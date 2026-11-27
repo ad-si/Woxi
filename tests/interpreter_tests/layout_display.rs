@@ -2675,4 +2675,171 @@ mod color_swatch_items {
       "aRGBColor[1, 0, 0]"
     );
   }
+
+  /// A `Button` whose `Enabled` condition is false is grayed out and cannot
+  /// be pressed. A `Dynamic[…]` inside the condition stands for its current
+  /// value, also as one operand of a larger condition.
+  #[test]
+  fn disabled_button_is_grayed_out_and_not_pressable() {
+    for (condition, enabled) in [
+      ("False", false),
+      ("True", true),
+      ("Dynamic[1 > 2]", false),
+      ("Dynamic[1 < 2]", true),
+      ("Dynamic[1 > 2] && True", false),
+      ("Dynamic[1 < 2] && True", true),
+      ("Dynamic[1 < 2] && 3 > 4", false),
+      ("3 < 4 && Dynamic[\"\" != \"\"]", false),
+    ] {
+      let svg = svg_of(&format!(
+        "Grid[{{{{Button[\"go\", x = 1, Enabled -> {condition}]}}}}]"
+      ));
+      assert_eq!(svg.contains("woxi-btn-"), enabled, "{condition}: {svg}");
+      assert_eq!(
+        svg.contains("fill=\"#9F9F9F\""),
+        !enabled,
+        "{condition}: {svg}"
+      );
+      assert_eq!(
+        svg.contains("stroke=\"#DFDFDF\""),
+        !enabled,
+        "{condition}: {svg}"
+      );
+    }
+    // A styled label is grayed out as well, whatever its own color.
+    let svg = svg_of(
+      "Grid[{{Button[Style[\"go\", 24, Red], x = 1, Enabled -> False]}}]",
+    );
+    assert!(svg.contains("font-size=\"24\" fill=\"#9F9F9F\""), "{svg}");
+    // A button without the option is drawn as before.
+    let svg = svg_of("Grid[{{Button[\"go\", x = 1]}}]");
+    assert!(svg.contains("fill=\"#000000\""), "{svg}");
+    assert!(svg.contains("stroke=\"#BFBFBF\""), "{svg}");
+  }
+
+  /// The blanks a text cell of a `Grid` starts or ends with are drawn: the
+  /// column is measured with them, so dropping them would shift the text.
+  #[test]
+  fn grid_text_cell_keeps_its_leading_and_trailing_blanks() {
+    for cell in [" R ", " R", "R "] {
+      let svg = svg_of(&format!("Grid[{{{{1, \"{cell}\", 2}}}}]"));
+      assert!(
+        svg.contains(&format!("xml:space=\"preserve\">{cell}</text>")),
+        "{cell:?}: {svg}"
+      );
+    }
+    let svg = svg_of("Grid[{{1, \"R\", 2}}]");
+    assert!(!svg.contains("xml:space"), "{svg}");
+  }
+
+  /// A `Grid` nested in a cell of a `Text[Grid[…]]` is set in the text face
+  /// whether or not it wears a `Style` of its own, down to its `BaseForm`
+  /// cells (which default to the monospace face elsewhere).
+  #[test]
+  fn styled_nested_grid_inherits_the_outer_grid_face() {
+    for nested in [
+      "Grid[{{BaseForm[20, 3], \"R\", 5}}]",
+      "Style[Grid[{{BaseForm[20, 3], \"R\", 5}}], 24]",
+    ] {
+      let svg = svg_of(&format!("Text[Grid[{{{{{nested}}}}}]]"));
+      assert!(svg.contains(">202<tspan"), "{nested}: {svg}");
+      assert!(!svg.contains("monospace"), "{nested}: {svg}");
+    }
+    // The nested grid's own directives still apply, and win over the
+    // outer grid's.
+    let svg =
+      svg_of("Style[Grid[{{Style[Grid[{{\"in\"}}], 24], \"out\"}}], 10]");
+    assert!(svg.contains("font-size=\"24\" fill=\"black\" text-anchor=\"middle\" dominant-baseline=\"central\">in<"), "{svg}");
+    assert!(svg.contains("font-size=\"10\""), "{svg}");
+  }
+
+  /// The text of a fixed-size `Pane` cell is set like the text cells beside
+  /// it: in the grid's face and size, the pane's own style taking
+  /// precedence.
+  #[test]
+  fn pane_cell_text_is_set_in_the_grid_style() {
+    let face = |svg: &str, text: &str| -> String {
+      let end = svg.find(&format!(">{text}</text>")).expect(text);
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end].to_string()
+    };
+    let svg = svg_of("Grid[{{Pane[\"ab\", {240, 24}], \"cd\"}}]");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(face(&svg, "ab").contains("font-size=\"14\""), "{svg}");
+    let svg = svg_of(
+      "Style[Grid[{{Pane[\"ab\", {240, 40}], \"cd\",        Pane[Style[\"ef\", 24], {240, 40}]}}], 18, Bold]",
+    );
+    for text in ["ab", "cd"] {
+      let attrs = face(&svg, text);
+      assert!(attrs.contains("font-size=\"18\""), "{text}: {svg}");
+      assert!(attrs.contains("font-weight=\"bold\""), "{text}: {svg}");
+    }
+    assert!(face(&svg, "ef").contains("font-size=\"24\""), "{svg}");
+    // The pane still reserves its box.
+    assert!(svg.contains("width=\"240.0\" height=\"40.0\""), "{svg}");
+  }
+
+  /// `Spacings -> Offset[d]` separates the cells of a `Grid` by `d` points
+  /// on each axis it is given for, whatever the size of the text.
+  #[test]
+  fn grid_offset_spacings_are_absolute_points() {
+    let size = |code: &str| -> (f64, f64) {
+      let svg = svg_of(code);
+      let attr = |name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        let start = svg.find(&key).unwrap() + key.len();
+        svg[start..start + svg[start..].find('"').unwrap()]
+          .parse()
+          .unwrap()
+      };
+      (attr("width"), attr("height"))
+    };
+    let grid = |options: &str| {
+      size(&format!(
+        "Grid[{{{{11, 22}}, {{33, 44}}, {{55, 66}}}}{options}]"
+      ))
+    };
+    let (w0, h0) = grid(", Spacings -> {0, 0}");
+    let (w, h) = grid(", Spacings -> {Offset[10], Offset[6]}");
+    // Two columns carry 10 points each; two gaps between three rows (and
+    // the half gaps at the ends) add 6 points each.
+    assert!((w - w0 - 20.0).abs() <= 1.0, "{w} vs {w0}");
+    assert!((h - h0 - 18.0).abs() <= 1.0, "{h} vs {h0}");
+    // One axis alone, and one offset for both.
+    let (w1, h1) = grid(", Spacings -> {Offset[10], 0}");
+    assert!((w1 - w).abs() <= 1.0 && (h1 - h0).abs() <= 1.0);
+    let (w2, h2) = grid(", Spacings -> Offset[10]");
+    assert!((w2 - w).abs() <= 1.0 && h2 > h, "{w2}x{h2}");
+    // A small offset packs the table tighter than the default spacing.
+    let (wd, _) = grid("");
+    let (wt, _) = grid(", Spacings -> {Offset[0.4], Offset[0.4]}");
+    assert!(wt < wd - 10.0, "{wt} vs {wd}");
+  }
+
+  /// In a notebook a table inside a fixed-size `Pane` is drawn like a bare
+  /// `Grid`, in the pane's whole box — not printed as its source.
+  #[test]
+  fn top_level_pane_of_text_grid_is_drawn_in_the_pane_box() {
+    for size in ["ImageSize -> {300, 120}", "{300, 120}"] {
+      clear_state();
+      let result = interpret_with_stdout(&format!(
+        "Pane[Grid[{{{{Style[BaseForm[3, 5], Bold], \"b\"}}, {{1, 2}}}},          Dividers -> {{2 -> True, 2 -> True}}], {size}]"
+      ))
+      .unwrap();
+      assert_eq!(result.result, "-Graphics-", "{size}");
+      let svg = result.graphics.unwrap();
+      assert!(
+        svg.starts_with("<svg width=\"300\" height=\"120\""),
+        "{size}: {svg:.200}"
+      );
+      assert!(svg.contains(">b</text>"), "{size}: {svg}");
+      assert_eq!(svg.matches("<line").count(), 2, "{size}: {svg}");
+    }
+    // The terminal keeps the symbolic echo.
+    clear_state();
+    assert_eq!(
+      interpret("Pane[Grid[{{1, 2}}], {300, 120}]").unwrap(),
+      "Pane[Grid[{{1, 2}}], {300, 120}]"
+    );
+  }
 }
