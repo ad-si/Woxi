@@ -6710,6 +6710,204 @@ fn wrap_text_to_points(text: &str, width: f64, font_size: f64) -> String {
     .join("\n")
 }
 
+/// The table in a `Pane` (under `Text`/`Style`/`Item` wrappers, in either
+/// order) that is `overflow` points wider than the pane, with the text of
+/// its widest text column broken onto further lines to take that much less
+/// room, the way the front end wraps a table to the width of its pane. A
+/// string breaks at its spaces, as does a `Row` of text atoms, which
+/// becomes a `Column` of shorter rows. `None` when the content is no
+/// `Grid`, the grid fixes its own `ItemSize`, or no cell can give way.
+pub(crate) fn grid_wrapped_to_pane_width(
+  source: &Expr,
+  overflow: f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = source else {
+    return None;
+  };
+  if matches!(name.as_str(), "Pane" | "Text" | "Style" | "Item")
+    && !args.is_empty()
+  {
+    let inner = grid_wrapped_to_pane_width(&args[0], overflow)?;
+    let mut rebuilt = vec![inner];
+    rebuilt.extend(args[1..].iter().cloned());
+    return Some(call(name, rebuilt));
+  }
+  let Some(Expr::List(rows)) = args.first() else {
+    return None;
+  };
+  if name != "Grid"
+    || args[1..]
+      .iter()
+      .filter_map(option_kv)
+      .any(|(k, _)| k == "ItemSize")
+  {
+    return None;
+  }
+  let font_size = 14.0;
+  let em = |s: &str| -> f64 {
+    s.chars()
+      .map(crate::functions::plot_padding::char_width_em)
+      .sum::<f64>()
+      * font_size
+  };
+  // The text a row item shows, for measuring.
+  fn atom_text(e: &Expr) -> String {
+    match e {
+      Expr::String(s) => s.clone(),
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        atom_text(&args[0])
+      }
+      other => crate::syntax::expr_to_string(other),
+    }
+  }
+  // The items of a one-line text `Row` cell.
+  let row_items = |cell: &Expr| -> Option<Vec<Expr>> {
+    one_line_text_row(cell)?;
+    match cell {
+      Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+        match &args[0] {
+          Expr::List(items) => Some(items.to_vec()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let cell_width = |cell: &Expr| -> Option<f64> {
+    match cell {
+      Expr::String(text)
+        if !text.contains(crate::functions::string_ast::BOX_START) =>
+      {
+        text.split('\n').map(&em).reduce(f64::max)
+      }
+      _ => Some(row_items(cell)?.iter().map(|i| em(&atom_text(i))).sum()),
+    }
+  };
+  // The column whose widest text cell is the widest of the table.
+  let mut widest: Option<(usize, f64)> = None;
+  for row in rows {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    for (j, cell) in cells.iter().enumerate() {
+      if let Some(w) = cell_width(cell)
+        && widest.is_none_or(|(_, best)| w > best)
+      {
+        widest = Some((j, w));
+      }
+    }
+  }
+  let (column, width) = widest?;
+  let target = width - overflow;
+  if target <= 0.0 {
+    return None;
+  }
+  // A `Row` broken at the spaces of its strings into lines of at most
+  // `target` points, each word keeping the style of its item.
+  let wrap_row = |items: &[Expr]| -> Option<Expr> {
+    let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+    let mut line_w = 0.0;
+    for item in items {
+      let (words, restyle) = match item {
+        Expr::String(s) => (
+          s.split(' ').map(str::to_string).collect::<Vec<String>>(),
+          Box::new(Expr::String) as Box<dyn Fn(String) -> Expr>,
+        ),
+        Expr::FunctionCall { name, args }
+          if name == "Style"
+            && matches!(args.first(), Some(Expr::String(_))) =>
+        {
+          let Some(Expr::String(s)) = args.first() else {
+            return None;
+          };
+          let directives = args[1..].to_vec();
+          (
+            s.split(' ').map(str::to_string).collect::<Vec<String>>(),
+            Box::new(move |word| {
+              let mut styled = vec![Expr::String(word)];
+              styled.extend(directives.iter().cloned());
+              call("Style", styled)
+            }) as Box<dyn Fn(String) -> Expr>,
+          )
+        }
+        other => {
+          let w = em(&atom_text(other));
+          if line_w > 0.0 && line_w + w > target {
+            lines.push(Vec::new());
+            line_w = 0.0;
+          }
+          lines.last_mut()?.push(other.clone());
+          line_w += w;
+          continue;
+        }
+      };
+      // Words after the first follow a space, which a line break replaces.
+      for (k, word) in words.into_iter().enumerate() {
+        let lead = if k > 0 { " " } else { "" };
+        let w = em(&word);
+        if line_w > 0.0 && line_w + em(lead) + w > target {
+          lines.push(Vec::new());
+          line_w = 0.0;
+          if !word.is_empty() {
+            lines.last_mut()?.push(restyle(word));
+          }
+        } else if !word.is_empty() || k > 0 {
+          lines.last_mut()?.push(restyle(format!("{lead}{word}")));
+          line_w += em(lead);
+        }
+        line_w += w;
+      }
+    }
+    lines.retain(|line| !line.is_empty());
+    (lines.len() > 1).then(|| {
+      call1(
+        "Column",
+        Expr::List(
+          lines
+            .into_iter()
+            .map(|line| call1("Row", Expr::List(line.into())))
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+      )
+    })
+  };
+  let mut changed = false;
+  let new_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      let Expr::List(cells) = row else {
+        return row.clone();
+      };
+      let mut cells = cells.to_vec();
+      if let Some(cell) = cells.get_mut(column)
+        && cell_width(cell).is_some_and(|w| w > target)
+      {
+        let wrapped = match &*cell {
+          Expr::String(text) => {
+            let wrapped = wrap_text_to_points(text, target, font_size);
+            (wrapped != *text).then_some(Expr::String(wrapped))
+          }
+          other => row_items(other).and_then(|items| wrap_row(&items)),
+        };
+        if let Some(wrapped) = wrapped {
+          *cell = wrapped;
+          changed = true;
+        }
+      }
+      Expr::List(cells.into())
+    })
+    .collect();
+  if !changed {
+    return None;
+  }
+  let mut rebuilt = vec![Expr::List(new_rows.into())];
+  rebuilt.extend(args[1..].iter().cloned());
+  Some(call("Grid", rebuilt))
+}
+
 /// Peel `Style[…]`-like wrappers off `expr`, returning the innermost content.
 pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   match expr {
