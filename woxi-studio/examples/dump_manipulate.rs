@@ -197,7 +197,19 @@ fn main() {
         } else {
           mark.to_string()
         };
+        // Where the control sits relative to the one before it: on the
+        // same panel line, or stacked below it within one item of a line.
+        let mark = if state.stacks_under_previous_control(i) {
+          format!("{mark} [stacks under previous]")
+        } else if state.joins_previous_control(i) {
+          format!("{mark} [joins previous line]")
+        } else {
+          mark
+        };
         println!("  {c:?}{mark}");
+        if state.joins_previous_control(i) {
+          println!("    joins the previous control's line");
+        }
         // Only a control placed apart from the rest of the panel says so.
         let side = state.placement_of(i);
         if side != state.control_placement {
@@ -310,10 +322,11 @@ fn main() {
         let render = woxi::with_scoped_globals(&bindings, || {
           woxi::interpret_with_stdout(&state.display_code(&state.body))
         });
-        // Lay the output out in the `ContentSize` area, as the Studio does.
+        // Lay the output out in the `ContentSize` area (or at the width of
+        // the text pane it is), as the Studio does.
         let render = render.map(|res| {
-          state
-            .content_width
+          manipulate::text_pane_width(&res)
+            .or(state.content_width)
             .and_then(|w| manipulate::flow_to_content_width(&res, w))
             .unwrap_or(res)
         });
