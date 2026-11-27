@@ -16826,6 +16826,99 @@ mod plot3d {
       );
     }
 
+    /// The baseline (`y`) of the `<text>` holding `needle`, the font size
+    /// its largest run is drawn at, and the top of the plot frame, all in
+    /// render units.
+    fn label_baseline_and_size(svg: &str, needle: &str) -> (f64, f64) {
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains(needle))
+        .expect("the plot label");
+      let baseline: f64 = label
+        .split_once("y=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("the label baseline");
+      let size = label
+        .split("font-size=\"")
+        .skip(1)
+        .filter_map(|r| r.split_once('"')?.0.parse::<f64>().ok())
+        .fold(0.0, f64::max);
+      (baseline, size)
+    }
+
+    /// A plot label whose parts set their own size
+    /// (`Row[{Style[…, 16], …}]`) stands taller than the font the label as
+    /// a whole is set in. Regression: the band above the plot was sized
+    /// for the default title font, so the larger glyphs were cut off at
+    /// the top edge of the picture.
+    #[test]
+    fn plot_label_row_of_sized_parts_stays_inside_the_picture() {
+      for size in [16, 24, 40] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, Frame -> True, AspectRatio -> 1, \
+           ImageSize -> {{400, 400}}, PlotLabel -> \
+           Row[{{Style[\"first: \", {size}], Style[1.5, {size}]}}]]"
+        ));
+        let (baseline, drawn) = label_baseline_and_size(&svg, "first");
+        assert!(
+          baseline >= drawn * 0.85,
+          "a {size}-point label needs its ascent above the baseline, \
+           got baseline {baseline} for glyphs of {drawn}: {svg}"
+        );
+      }
+    }
+
+    /// A `Row` label sits exactly where the same text does as one
+    /// `Style[…, size]`: both are a single line of that size.
+    #[test]
+    fn plot_label_row_of_sized_parts_sits_like_a_styled_label() {
+      let row = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         PlotLabel -> Row[{Style[\"ab\", 20], Style[\"cd\", 20]}]]",
+      );
+      let whole = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, PlotLabel -> Style[\"abcd\", 20]]",
+      );
+      let (row_baseline, row_size) = label_baseline_and_size(&row, "ab");
+      let (whole_baseline, whole_size) =
+        label_baseline_and_size(&whole, "abcd");
+      assert_eq!(row_size, whole_size);
+      assert!(
+        (row_baseline - whole_baseline).abs() < 1.0,
+        "baselines differ: {row_baseline} against {whole_baseline}"
+      );
+    }
+
+    /// A label of sized parts that is wider than the picture shrinks as a
+    /// whole. Regression: only the label's own font shrank, which the
+    /// parts with a size of their own ignored, so they ran off both edges.
+    #[test]
+    fn wide_plot_label_row_of_sized_parts_shrinks_to_fit() {
+      let part = "a rather long piece of a label ";
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, ImageSize -> 300, PlotLabel -> \
+         Row[{{Style[\"{part}\", 18], Style[\"{part}\", 18]}}]]"
+      ));
+      let (_, drawn) = label_baseline_and_size(&svg, "rather");
+      let width: f64 = svg
+        .split_once("viewBox=\"0 0 ")
+        .and_then(|(_, r)| r.split_once(' '))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("the viewBox width");
+      let scale = width / 300.0;
+      assert!(
+        drawn < 18.0 * scale * 0.75,
+        "the parts must shrink below 18 points, got {}: {svg}",
+        drawn / scale
+      );
+      let chars = (2 * part.len()) as f64;
+      assert!(
+        chars * drawn * 0.45 <= width,
+        "{chars} characters of {drawn} units must fit in {width}"
+      );
+    }
+
     /// Regression: a `Spacer[n]` between differently-styled `Row` parts
     /// (a plain string and a `Subscript`, say) used to become its own
     /// trailing `<tspan style="letter-spacing:…">` — which real SVG
