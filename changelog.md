@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `Pane[content, {w, h}, Scrollbars -> True]` keeps content larger than
+    its box at its own size behind scrollbars taken out of the box, instead
+    of ignoring the option and cutting the content off; `Automatic` draws
+    a bar only on an axis that overflows and `{horizontal, vertical}` sets
+    the two apart. Woxi Studio scrolls such a `Manipulate` body for real.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

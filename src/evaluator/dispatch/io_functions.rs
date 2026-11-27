@@ -7941,21 +7941,51 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
   None
 }
 
-/// The `{width, height}` of a `Pane[content, {w, h}]` or
-/// `Pane[content, ImageSize -> {w, h}]` call.
-/// Whether a `Pane` states `ImageSizeAction -> "ShrinkToFit"`: content
-/// larger than the box is scaled down to fit it instead of being clipped.
-pub(crate) fn pane_shrinks_to_fit(options: &[Expr]) -> bool {
-  options.iter().any(|opt| {
-    matches!(
-      opt,
-      Expr::Rule { pattern, replacement }
-        if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSizeAction")
-          && matches!(&**replacement, Expr::String(s) if s == "ShrinkToFit")
-    )
-  })
+/// What a `Pane` does with content larger than its box: `Scrollbars -> …`
+/// keeps it at its own size behind scrollbars, `ImageSizeAction ->
+/// "ShrinkToFit"` scales it down to fit, and otherwise it is clipped.
+pub(crate) fn pane_overflow(
+  options: &[Expr],
+) -> crate::functions::graphics::PaneOverflow {
+  use crate::functions::graphics::{PaneOverflow, ScrollbarMode};
+  let option = |name: &str| {
+    options.iter().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == name) => {
+        Some(&**replacement)
+      }
+      _ => None,
+    })
+  };
+  let mode = |e: &Expr| match e {
+    Expr::Identifier(n) if n == "True" => ScrollbarMode::Always,
+    Expr::Identifier(n) if n == "Automatic" => ScrollbarMode::WhenNeeded,
+    _ => ScrollbarMode::Never,
+  };
+  // `Scrollbars -> {horizontal, vertical}` sets the two bars apart.
+  let (horizontal, vertical) = match option("Scrollbars") {
+    Some(Expr::List(bars)) if bars.len() == 2 => {
+      (mode(&bars[0]), mode(&bars[1]))
+    }
+    Some(both) => (mode(both), mode(both)),
+    None => (ScrollbarMode::Never, ScrollbarMode::Never),
+  };
+  if horizontal != ScrollbarMode::Never || vertical != ScrollbarMode::Never {
+    return PaneOverflow::Scroll {
+      horizontal,
+      vertical,
+    };
+  }
+  match option("ImageSizeAction") {
+    Some(Expr::String(s)) if s == "ShrinkToFit" => PaneOverflow::ShrinkToFit,
+    _ => PaneOverflow::Clip,
+  }
 }
 
+/// The `{width, height}` of a `Pane[content, {w, h}]` or
+/// `Pane[content, ImageSize -> {w, h}]` call.
 pub(crate) fn pane_fixed_size(args: &[Expr]) -> Option<Vec<Expr>> {
   let pair = |e: &Expr| match e {
     Expr::List(size) if size.len() == 2 => Some(size.to_vec()),
@@ -8275,45 +8305,46 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
           _ => None,
         });
       // A grid wider than the pane squeezes its automatically sized
-      // pictures to fit.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            let w = pane_size_component(&size[0])?;
-            crate::functions::graphics::fit_grid_to_pane_width(
-              &args[0],
-              w,
-              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
-            )
-          }
-          _ => None,
-        });
+      // pictures to fit. Behind scrollbars the content keeps its own size.
+      let squeeze_size = pane_size.as_ref().filter(|_| {
+        !matches!(
+          pane_overflow(&args[1..]),
+          crate::functions::graphics::PaneOverflow::Scroll { .. }
+        )
+      });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_grid_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       // An automatically sized tree wider than the pane is squeezed to fit.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            let w = pane_size_component(&size[0])?;
-            crate::functions::graphics::fit_tree_to_pane_width(
-              &args[0],
-              w,
-              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
-            )
-          }
-          _ => None,
-        });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => {
+          let w = pane_size_component(&size[0])?;
+          crate::functions::graphics::fit_tree_to_pane_width(
+            &args[0],
+            w,
+            &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+          )
+        }
+        _ => None,
+      });
       // A plot with `ImageSize -> Full | Scaled[s]` sizes itself from the
       // pane.
-      let wrapped =
-        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
-          ("Pane", Some(size)) => {
-            crate::functions::graphics::size_plot_to_pane(
-              &args[0],
-              pane_size_component(&size[0])?,
-              pane_size_component(&size[1])?,
-            )
-          }
-          _ => None,
-        });
+      let wrapped = wrapped.or_else(|| match (name.as_str(), squeeze_size) {
+        ("Pane", Some(size)) => crate::functions::graphics::size_plot_to_pane(
+          &args[0],
+          pane_size_component(&size[0])?,
+          pane_size_component(&size[1])?,
+        ),
+        _ => None,
+      });
       // A width alone also breaks the text cells of a grid inside the pane
       // (a long list next to pictures) into lines that fit it.
       if name == "Pane"
@@ -8346,7 +8377,7 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
             h,
             pane_alignment(&args[1..]),
             false,
-            pane_shrinks_to_fit(&args[1..]),
+            pane_overflow(&args[1..]),
           );
         }
         return inner_svg;
@@ -8379,7 +8410,7 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
                 crate::functions::graphics::pane_picture_is_auto_sized(
                   wrapped.as_ref().unwrap_or(&args[0]),
                 ),
-                pane_shrinks_to_fit(&args[1..]),
+                pane_overflow(&args[1..]),
               )
             }
             _ => inner_svg,

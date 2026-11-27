@@ -47871,6 +47871,186 @@ pub(crate) fn size_plot_to_pane(
   show_ast(&args).ok()
 }
 
+/// When one scrollbar of a `Pane` is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScrollbarMode {
+  /// `False`: never.
+  Never,
+  /// `True`: always, with a thumb only while the content overflows.
+  Always,
+  /// `Automatic`: only while the content overflows.
+  WhenNeeded,
+}
+
+/// What a fixed-size `Pane` does with content larger than its box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaneOverflow {
+  /// Cut it off at the edges (the default).
+  Clip,
+  /// `ImageSizeAction -> "ShrinkToFit"`: scale it down to the box.
+  ShrinkToFit,
+  /// `Scrollbars -> …`: keep it at its own size behind scrollbars.
+  Scroll {
+    horizontal: ScrollbarMode,
+    vertical: ScrollbarMode,
+  },
+}
+
+/// Thickness of a `Pane` scrollbar, which is taken out of the Pane's box.
+pub(crate) const PANE_SCROLLBAR_SIZE: f64 = 15.0;
+
+/// Marks the root of a scrolling `Pane` picture; the value is the size of
+/// the content behind the viewport.
+const SCROLL_PANE_ATTR: &str = "data-woxi-scroll-content";
+/// Opens the group holding the scrolling content.
+const SCROLL_CONTENT_OPEN: &str = "<g class=\"woxi-scroll-content\"";
+/// Opens the group holding the scrollbars, right after the content.
+const SCROLLBARS_OPEN: &str = "\n</g>\n</g>\n<g class=\"woxi-scrollbars\">";
+
+/// A `Pane[content, {width, height}, Scrollbars -> …]` picture: the content
+/// keeps its own size behind a viewport, with the scrollbars drawn inside
+/// the Pane's box (scrolled to the top left). `None` when no scrollbar is
+/// to be drawn, so the Pane is laid out like one without the option.
+#[allow(clippy::too_many_arguments)]
+fn scroll_svg_in_pane_box(
+  svg: &str,
+  natural_w: f64,
+  natural_h: f64,
+  width: f64,
+  height: f64,
+  align: Option<(f64, f64)>,
+  horizontal: ScrollbarMode,
+  vertical: ScrollbarMode,
+) -> Option<String> {
+  let bar = PANE_SCROLLBAR_SIZE;
+  // A bar that only shows when needed can itself make the other one
+  // needed, by taking its thickness out of the viewport.
+  let shown = |mode: ScrollbarMode, content: f64, room: f64| match mode {
+    ScrollbarMode::Never => false,
+    ScrollbarMode::Always => true,
+    ScrollbarMode::WhenNeeded => content > room,
+  };
+  let mut show_h = shown(horizontal, natural_w, width);
+  let mut show_v = shown(vertical, natural_h, height);
+  for _ in 0..2 {
+    let view_w = if show_v { width - bar } else { width };
+    let view_h = if show_h { height - bar } else { height };
+    show_h = shown(horizontal, natural_w, view_w);
+    show_v = shown(vertical, natural_h, view_h);
+  }
+  if !show_h && !show_v {
+    return None;
+  }
+  let view_w = if show_v { width - bar } else { width };
+  let view_h = if show_h { height - bar } else { height };
+  if view_w <= 0.0 || view_h <= 0.0 {
+    return None;
+  }
+  // The alignment applies along an axis the content fits in; an
+  // overflowing axis starts scrolled to the Pane's origin.
+  let align = align.unwrap_or((0.0, 0.0));
+  let x = ((view_w - natural_w) * align.0).max(0.0);
+  let y = ((view_h - natural_h) * align.1).max(0.0);
+  let inner = strip_svg_wrapper(svg);
+  let clip_id = format!("paneScroll_{width:.0}x{height:.0}");
+  let mut bars = String::new();
+  let track = "fill=\"#fafafa\" stroke=\"#e4e4e4\" stroke-width=\"1\"";
+  let thumb = "fill=\"#c2c2c2\"";
+  // The thumb covers the visible share of the content.
+  let thumb_len = |content: f64, view: f64| {
+    (content > view).then(|| (view * view / content).max(bar))
+  };
+  if show_h {
+    bars.push_str(&format!(
+      "\n<rect x=\"0.5\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" {track}/>",
+      view_h + 0.5,
+      view_w - 1.0,
+      bar - 1.0
+    ));
+    if let Some(len) = thumb_len(natural_w, view_w) {
+      bars.push_str(&format!(
+        "\n<rect x=\"1.0\" y=\"{:.1}\" width=\"{:.1}\" height=\"7.0\" rx=\"3.5\" {thumb}/>",
+        view_h + 4.0,
+        len - 2.0
+      ));
+    }
+  }
+  if show_v {
+    bars.push_str(&format!(
+      "\n<rect x=\"{:.1}\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" {track}/>",
+      view_w + 0.5,
+      bar - 1.0,
+      view_h - 1.0
+    ));
+    if let Some(len) = thumb_len(natural_h, view_h) {
+      bars.push_str(&format!(
+        "\n<rect x=\"{:.1}\" y=\"1.0\" width=\"7.0\" height=\"{:.1}\" rx=\"3.5\" {thumb}/>",
+        view_w + 4.0,
+        len - 2.0
+      ));
+    }
+  }
+  let content_w = natural_w + x;
+  let content_h = natural_h + y;
+  Some(format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" {SCROLL_PANE_ATTR}=\"{content_w:.1} {content_h:.1}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{view_w:.0}\" height=\"{view_h:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{SCROLL_CONTENT_OPEN} transform=\"translate({x:.1} {y:.1})\">\n{inner}{SCROLLBARS_OPEN}{bars}\n</g>\n</svg>"
+  ))
+}
+
+/// The parts of a scrolling `Pane` picture an interactive viewer needs to
+/// scroll it for real: the viewport and the whole content as its own SVG.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScrollPane {
+  /// Width of the Pane's box, scrollbars included.
+  pub width: f64,
+  /// Height of the Pane's box, scrollbars included.
+  pub height: f64,
+  /// Whether the Pane has a horizontal scrollbar.
+  pub horizontal: bool,
+  /// Whether the Pane has a vertical scrollbar.
+  pub vertical: bool,
+  /// The unclipped content, at its own size.
+  pub content_svg: String,
+}
+
+/// Split the picture of a `Pane[…, Scrollbars -> …]` into its viewport and
+/// content. `None` for any other picture.
+pub fn scroll_pane_parts(svg: &str) -> Option<ScrollPane> {
+  let root_start = svg.find("<svg")?;
+  let root_end = root_start + svg[root_start..].find('>')?;
+  let root = &svg[root_start..root_end];
+  let attr = format!("{SCROLL_PANE_ATTR}=\"");
+  let value_start = root.find(&attr)? + attr.len();
+  let value = &root[value_start..];
+  let mut size = value[..value.find('"')?]
+    .split(' ')
+    .map(|n| n.parse::<f64>().ok());
+  let (content_w, content_h) = (size.next()??, size.next()??);
+  let (width, height) = parse_svg_wh(svg);
+  let content_start = root_end + svg[root_end..].find(SCROLL_CONTENT_OPEN)?;
+  let content_end = svg.rfind(SCROLLBARS_OPEN)?;
+  // The viewport is the clip rectangle; a bar takes the rest of its axis.
+  let clip = &svg[root_end..content_start];
+  let clip_attr = |name: &str| {
+    let key = format!(" {name}=\"");
+    let start = clip.rfind(&key)? + key.len();
+    clip[start..start + clip[start..].find('"')?]
+      .parse::<f64>()
+      .ok()
+  };
+  let (view_w, view_h) = (clip_attr("width")?, clip_attr("height")?);
+  Some(ScrollPane {
+    width,
+    height,
+    horizontal: view_h < height,
+    vertical: view_w < width,
+    content_svg: format!(
+      "<svg width=\"{content_w:.0}\" height=\"{content_h:.0}\" viewBox=\"0 0 {content_w:.1} {content_h:.1}\" xmlns=\"http://www.w3.org/2000/svg\">\n{}\n</g>\n</svg>",
+      &svg[content_start..content_end]
+    ),
+  })
+}
+
 /// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
 /// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
 /// content — with no scrollbar in a static export, content past the
@@ -47883,9 +48063,20 @@ pub(crate) fn clip_svg_to_pane_box(
   height: f64,
   align: Option<(f64, f64)>,
   auto_sized: bool,
-  shrink_to_fit: bool,
+  overflow: PaneOverflow,
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
+  if let PaneOverflow::Scroll {
+    horizontal,
+    vertical,
+  } = overflow
+    && let Some(scrolling) = scroll_svg_in_pane_box(
+      svg, natural_w, natural_h, width, height, align, horizontal, vertical,
+    )
+  {
+    return scrolling;
+  }
+  let shrink_to_fit = overflow == PaneOverflow::ShrinkToFit;
   if natural_w <= width && natural_h <= height {
     return place_in_pane_box(svg, natural_w, natural_h, width, height, align);
   }

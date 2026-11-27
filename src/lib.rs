@@ -24,6 +24,7 @@ pub mod wasm;
 /// face) never shows through.
 pub use evaluator::dispatch::io_functions::with_default_text_family;
 pub use expr_list::ExprList;
+pub use functions::graphics::{ScrollPane, scroll_pane_parts};
 
 pub use woxi_parser::{Rule, WolframParser};
 
@@ -5721,14 +5722,18 @@ fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
     .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
-  let expr = pane_box
+  // Behind scrollbars the content keeps its own size instead.
+  let squeeze_box = pane_box.filter(|(_, _, _, overflow)| {
+    !matches!(overflow, functions::graphics::PaneOverflow::Scroll { .. })
+  });
+  let expr = squeeze_box
     .and_then(|(w, _, _, _)| {
       functions::graphics::fit_grid_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // An automatically sized tree wider than the box is squeezed to its width
   // rather than clipped.
-  let expr = pane_box
+  let expr = squeeze_box
     .and_then(|(w, _, _, _)| {
       functions::graphics::fit_tree_to_pane_width(&expr, w, &measured_width)
     })
@@ -5871,7 +5876,12 @@ fn unwrap_tooltips(mut expr: syntax::Expr) -> syntax::Expr {
 /// other Pane shape.
 fn pane_fixed_size(
   expr: &syntax::Expr,
-) -> Option<(f64, f64, Option<(f64, f64)>, bool)> {
+) -> Option<(
+  f64,
+  f64,
+  Option<(f64, f64)>,
+  functions::graphics::PaneOverflow,
+)> {
   let mut current = expr;
   loop {
     let syntax::Expr::FunctionCall { name, args } = current else {
@@ -5894,7 +5904,7 @@ fn pane_fixed_size(
           w,
           h,
           evaluator::dispatch::io_functions::pane_alignment(&args[1..]),
-          evaluator::dispatch::io_functions::pane_shrinks_to_fit(&args[1..]),
+          evaluator::dispatch::io_functions::pane_overflow(&args[1..]),
         ));
       }
       _ => return None,
