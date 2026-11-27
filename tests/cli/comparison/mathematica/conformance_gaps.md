@@ -11437,17 +11437,19 @@ wolframscript.
 `FiniteGroupData[{"CrystallographicPointGroup", n}, property]` answers
 `"Name"`, `"StandardName"`, `"Order"`, `"Elements"`, `"CrystalSystem"`,
 `"CrystalForm"`, `"PointGroupType"`, `"MultiplicationTable"` and
-`"CayleyGraph"`; every other group and property stays unevaluated.
-Unlike the other entries here, parts of this one could **not be checked
-against wolframscript** (none was available) and rest on the reference page
-and on a rendered D6h table:
+`"CayleyGraph"`; every other group and property stays unevaluated
+(`FiniteGroupData[]` lists 399 groups in wolframscript, and
+`FiniteGroupData["Properties"]` 82 properties, which Woxi lists too).
+Checked against wolframscript 15.0 for all 32 groups: `"Name"`,
+`"StandardName"`, `"Order"`, `"CrystalSystem"`, `"CrystalForm"` and
+`"PointGroupType"` agree. What differs:
 
-- `"MultiplicationTable"` matches Wolfram's for D6h (group 27). The other
-  tables follow the same layout (rotations, then the reflected coset, then
-  both times the inversion; lexicographic permutations of four points for
-  T and O), which gives a valid table of the right group but possibly with
-  the elements in a different order than Wolfram's.
-- `"CayleyGraph"` uses Woxi's own choice of generators and vertex layout.
+- `"MultiplicationTable"` agrees for 25 of the 32 groups. For S6 (17),
+  D3d (20) and the five cubic groups (28 to 32) Woxi's table is a valid
+  table of the right group with the elements in a different order than
+  Wolfram's.
+- `"CayleyGraph"` uses Woxi's own choice of generators and vertex layout
+  (not compared).
 - `"ElementNames"` is `Missing["NotAvailable"]`; Wolfram names the symmetry
   operations.
 - The typeset notations (`"Notation"`, `"Schoenflies"`, `"HermannMauguin"`,
