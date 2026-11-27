@@ -26,6 +26,7 @@ mod interpreter_tests {
   mod element_data;
   mod entity;
   mod example_data;
+  mod finite_group_data;
   mod geometry;
   mod graph_theory;
   mod isotope_data;

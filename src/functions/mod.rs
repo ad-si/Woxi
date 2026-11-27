@@ -60,6 +60,7 @@ pub mod expr_form;
 pub mod fem2d;
 pub mod field_plot;
 pub mod financial_ast;
+pub mod finite_group_data;
 pub mod function_range_ast;
 pub mod gabor;
 pub mod gauges;

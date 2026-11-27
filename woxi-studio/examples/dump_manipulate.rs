@@ -23,6 +23,10 @@
 //! Set `PRESS_BUTTONS=1` to press every control-panel button in turn, or
 //! `PRESS_BUTTONS="Solve,Reset"` to press only the buttons with those labels;
 //! the variables are dumped after each press.
+//! Set `REFRESH_TICKS=40` alongside `PRESS_BUTTONS` to then fire the app's
+//! timer that many times, re-running a body that keeps itself going; the
+//! variables (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-refresh.svg`) are dumped afterwards.
 
 use std::path::PathBuf;
 
@@ -193,7 +197,19 @@ fn main() {
         } else {
           mark.to_string()
         };
+        // Where the control sits relative to the one before it: on the
+        // same panel line, or stacked below it within one item of a line.
+        let mark = if state.stacks_under_previous_control(i) {
+          format!("{mark} [stacks under previous]")
+        } else if state.joins_previous_control(i) {
+          format!("{mark} [joins previous line]")
+        } else {
+          mark
+        };
         println!("  {c:?}{mark}");
+        if state.joins_previous_control(i) {
+          println!("    joins the previous control's line");
+        }
         // Only a control placed apart from the rest of the panel says so.
         let side = state.placement_of(i);
         if side != state.control_placement {
@@ -306,10 +322,11 @@ fn main() {
         let render = woxi::with_scoped_globals(&bindings, || {
           woxi::interpret_with_stdout(&state.display_code(&state.body))
         });
-        // Lay the output out in the `ContentSize` area, as the Studio does.
+        // Lay the output out in the `ContentSize` area (or at the width of
+        // the text pane it is), as the Studio does.
         let render = render.map(|res| {
-          state
-            .content_width
+          manipulate::text_pane_width(&res)
+            .or(state.content_width)
             .and_then(|w| manipulate::flow_to_content_width(&res, w))
             .unwrap_or(res)
         });
@@ -401,6 +418,35 @@ fn main() {
           );
           for (n, v) in &st.state {
             println!("  {n} = {v}");
+          }
+          if let Some(k) = std::env::var("REFRESH_TICKS")
+            .ok()
+            .and_then(|t| t.parse::<usize>().ok())
+          {
+            println!("wants_tick={}", st.wants_tick());
+            let started = std::time::Instant::now();
+            for _ in 0..k {
+              if st.wants_tick() {
+                st.tick();
+              }
+            }
+            println!(
+              "after {k} refresh ticks ({:.2?}): wants_tick={} error={:?}",
+              started.elapsed(),
+              st.wants_tick(),
+              st.error
+            );
+            for (n, v) in &st.state {
+              println!("  {n} = {v}");
+            }
+            if let Some(dir) = &svg_out_dir
+              && let Some(handle) = &st.graphics_handle
+              && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+            {
+              let out = dir.join(format!("widget-{widget_count}-refresh.svg"));
+              std::fs::write(&out, bytes).expect("write svg");
+              println!("wrote {}", out.display());
+            }
           }
         }
       }
