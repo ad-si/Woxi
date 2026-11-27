@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- Woxi Studio keeps re-running a `Manipulate` body that rewrites a
+    variable named in its `TrackedSymbols` (a simulation stepping itself
+    with `tick += del` behind a "run" button), where it stopped after a
+    single step.
 - A `Point` whose center lies on the edge of a clipped plot range (a
     marker at the end of a plotted domain, say) is drawn as a whole disk
     like in Wolfram instead of being cut in half at the frame.
