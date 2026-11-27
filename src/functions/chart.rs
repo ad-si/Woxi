@@ -645,23 +645,22 @@ impl StyledLabel {
       .unwrap_or(0)
   }
 
-  /// The width of the label's widest line at `size` points (see
-  /// [`Self::max_line_width_em`]).
+  /// The width of this label's widest line at `size` points, measured
+  /// with the proportional glyph widths a graphic's text is set in (bold
+  /// text setting wider), rather than a fixed width per character. A fixed
+  /// gap (a `Spacer` in a `Row`) keeps its width whatever the size.
   pub(crate) fn max_line_width(&self, size: f64) -> f64 {
-    self.max_line_width_em() * size
-  }
-
-  /// The width of this label's widest line in ems of its font size,
-  /// measured with the proportional glyph widths a graphic's text is set
-  /// in (bold text setting wider), rather than a fixed width per character.
-  pub(crate) fn max_line_width_em(&self) -> f64 {
+    use crate::functions::plot_padding::{
+      BOLD_WIDTH_SCALE, spacer_gaps_points, text_width,
+    };
     std::iter::once(self.svg())
       .chain(self.extra_lines.iter().cloned())
       .map(|line| {
-        let width = crate::functions::plot_padding::text_width(&line, 1.0);
+        let width = text_width(&line, size);
         // Markup that is bold itself already measures wider.
         if self.bold && !line.contains("font-weight=\"bold\"") {
-          width * crate::functions::plot_padding::BOLD_WIDTH_SCALE
+          let gaps = spacer_gaps_points(&line);
+          (width - gaps) * BOLD_WIDTH_SCALE + gaps
         } else {
           width
         }
@@ -671,8 +670,8 @@ impl StyledLabel {
 }
 
 /// Multiply the absolute lengths in SVG markup — `font-size="N"`, the
-/// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
-/// `Spacer` next to other Row content becomes — by `scale`, leaving
+/// `letter-spacing="N"` a `Spacer` becomes, and the `dx="N"` shift of an
+/// overlaid layer — by `scale`, leaving
 /// relative ones (`70%`, `1.2em`) as they are.
 pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
@@ -681,7 +680,7 @@ pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   let mut out = markup.to_string();
   for (attr, terminator, unit) in [
     ("font-size=\"", '"', ""),
-    ("letter-spacing:", 'p', "px"),
+    ("letter-spacing=\"", '"', ""),
     ("dx=\"", '"', ""),
   ] {
     out = scale_lengths_after(&out, attr, terminator, unit, scale);
@@ -1035,7 +1034,17 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
   // bold in Wolfram, while the color and size still reach through. A
   // `Style` inside the `Text` applies as written.
   if let Some(inner) = text_wrapper_content(expr) {
-    return parse_styled_label(inner);
+    let mut label = parse_styled_label(inner)?;
+    // The text itself is not set in `TraditionalForm`: a one-letter
+    // symbol in the string's box code stays upright.
+    if let Expr::String(text) = inner
+      && !text.contains('\n')
+    {
+      label.markup = Some(
+        crate::functions::graphics::text_style_box_string_to_svg(text),
+      );
+    }
+    return Some(label);
   }
   // A stacked title whose lines hold pictures cannot be set as lines of
   // text; it is typeset whole, with any `Framed` box around it.
@@ -1127,10 +1136,14 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
     let mut restyled: Vec<Expr> = vec![inner.clone()];
     restyled.extend(args[1..].iter().cloned());
     let outer = call("Style", restyled);
-    let inner_label = parse_styled_label(inner)?;
+    let inner_label = parse_styled_label(&args[0])?;
     let mut label = parse_styled_label(&outer)?;
     label.bold = inner_label.bold;
     label.italic = inner_label.italic;
+    // A string's own text markup is upright (see the `Text` case above).
+    if matches!(inner, Expr::String(_)) && inner_label.markup.is_some() {
+      label.markup = inner_label.markup;
+    }
     return Some(label);
   }
   // `Style[Grid[…]/Column[…], …]` — the stacking still applies with the

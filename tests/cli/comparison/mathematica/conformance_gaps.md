@@ -342,6 +342,18 @@ canonical order of their boxes less the numeric coefficient, which
 reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
 `Sin[x] + Sin[2 x]`) are unverified.
 
+### TraditionalForm sets Greek-letter factors of a product first
+
+Known only from the stored output of a Demonstration (no `wolframscript`
+run): with `\[Alpha]`, `\[Beta]` and the other symbols undefined,
+`TraditionalForm[P V \[Beta] Subscript[c, v]/Subscript[c, p]]` is drawn as
+`β P V c_v / c_p`, `T V \[Alpha]/Subscript[c, p]` as `α T V / c_p`, and
+`P \[Beta] Subscript[c, v]/(T \[Alpha])` as `β P c_v / (α T)` — the Greek
+letters lead and the subscripted `c` stays last. Woxi sets the first as
+`c_v P V β / c_p`: it keeps the canonical order of the plain symbols and
+orders `Subscript[c, v]` as its base `c` (ahead of `P`). The rule behind
+Wolfram's order is not established.
+
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
@@ -9683,10 +9695,9 @@ Found comparing the graphics-tests renders (2026-11):
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
     (WL 100 x 17).
   - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],
-    PlotRange -> 10, ImageSize -> 300]` is 300 x 297 (WL 300 x 300): WL
-    keeps the plot's `PlotRangePadding` under the explicit range, so the
-    end tick labels need no padding; with `PlotRange -> {{-1, 3}, {0, 1}}`
-    297 → 94 (WL 88).
+    PlotRange -> {{-1, 3}, {0, 1}}, ImageSize -> 300]` is 300 x 90 (WL
+    300 x 88). With `PlotRange -> 10` it is 300 x 300 like WL: the plot's
+    `PlotRangePadding` is kept under the explicit range.
   - `GraphicsGrid` of two `Rectangle[{0, 0}, {2, 1}]` is 600 x 171 (WL
     165), of two `Rectangle[{0, 0}, {1, 4}]` 226 wide (WL 225).
 - 3D picture size: Graphics3D and the Plot3D-family renderers now follow
@@ -11546,6 +11557,10 @@ wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
   - `TranslationTransform[…][Line[…]]` re-nests the point list.
   - `ImageResize` uses nearest-neighbor when it enlarges a 1×2 image.
   - `Normal[GraphicsComplex[…, Text["a", 3]]]` loses the coordinate.
+- **`ListPlay` automatic play range**: the procedure behind
+  `PlayRange -> Automatic` is internal to WL; Woxi leaves outliers out with
+  the automatic `PlotRange` procedure, so the samples of a signal that has
+  outliers may be scaled differently than in wolframscript.
 - **Plot internals**: a further ~110 structural plot assertions differ:
   GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
   sampling counts, and where directives sit (see the existing plot-internals

@@ -1304,16 +1304,19 @@ fn field_frame_layout(
   } else {
     0.5
   };
-  let mut bottom = if has(0) {
-    FRAME_X_LABEL_ROOM * scale
-  } else {
-    1.5
+  // A label carrying its own size (`Style[8, 14]`) takes the room of a
+  // label at that size.
+  let x_label_room = |i: usize| {
+    edges[i]
+      .labels
+      .iter()
+      .filter_map(|(_, l)| crate::functions::plot_padding::markup_font_size(l))
+      .map(|pt| pt / FRAME_TICK_FONT)
+      .fold(scale, f64::max)
+      * FRAME_X_LABEL_ROOM
   };
-  let mut top = if has(2) {
-    FRAME_X_LABEL_ROOM * scale
-  } else {
-    0.5
-  };
+  let mut bottom = if has(0) { x_label_room(0) } else { 1.5 };
+  let mut top = if has(2) { x_label_room(2) } else { 0.5 };
   let mut right = if has(3) {
     edges[3].widest_label(font) + FRAME_TICK_LABEL_GAP
   } else {
@@ -1528,14 +1531,21 @@ fn push_field_frame(
     _ => "",
   };
   let mut text = |x: f64, y: f64, anchor: &str, label: &str| {
+    // The sizes a label sets itself (`Style[8, 14]`) are in points.
+    let label = crate::functions::plot::sized_tick_label(label, sf);
     out.push_str(&format!(
       "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{label_fill}\">{label}</text>\n"
     ));
   };
+  // A label set at its own size hangs that much lower below its edge.
+  let own_scale = |label: &str| {
+    crate::functions::plot_padding::markup_font_size(label)
+      .map_or(scale, |pt| pt / FRAME_TICK_FONT)
+  };
   for (v, label) in &bottom.labels {
     text(
       xf(*v),
-      fy + fh + FRAME_X_LABEL_BASELINE * scale * sf,
+      fy + fh + FRAME_X_LABEL_BASELINE * own_scale(label) * sf,
       "middle",
       label,
     );
@@ -1548,11 +1558,20 @@ fn push_field_frame(
       label,
     );
   }
+  let own_font = |label: &str| {
+    crate::functions::plot_padding::markup_font_size(label)
+      .map_or(font, |pt| pt * sf)
+  };
   for (v, label) in &left.labels {
-    text(fx - gap, yf(*v) + 0.35 * font, "end", label);
+    text(fx - gap, yf(*v) + 0.35 * own_font(label), "end", label);
   }
   for (v, label) in &right.labels {
-    text(fx + fw + gap, yf(*v) + 0.35 * font, "start", label);
+    text(
+      fx + fw + gap,
+      yf(*v) + 0.35 * own_font(label),
+      "start",
+      label,
+    );
   }
   svg.push_str(&out);
 }

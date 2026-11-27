@@ -13077,6 +13077,14 @@ mod plot3d {
       assert!(raised < plain + 6.0, "{plain} vs {raised}: {svg}");
     }
 
+    /// The markup of a `gap`-point `Spacer` in a `Row` label.
+    fn spacer_gap(gap: &str) -> String {
+      format!(
+        "<tspan font-size=\"1%\" letter-spacing=\"{gap}\">{}</tspan>",
+        '\u{00A0}'
+      )
+    }
+
     // Regression: a `Spacer` before a part with its own spans (an italic
     // letter, a superscript) wrapped the whole part in one `<tspan dx>`;
     // resvg then raised every character before the nested superscript.
@@ -13086,16 +13094,75 @@ mod plot3d {
         "Grid[{{Row[{\"Na\", Spacer[8], Row[{\"2\", Style[\"s\", Italic], \
          Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
       );
-      assert!(svg.contains("<tspan dx=\"8.00\">2</tspan>"), "{svg}");
-      // A part that starts with a span takes the gap on that span.
+      assert!(
+        svg.contains(&format!("Na{}2<", spacer_gap("8.00"))),
+        "{svg}"
+      );
+      // A part that starts with a span keeps that span to itself.
       let svg = displayed_svg(
         "Grid[{{Row[{\"Na\", Spacer[8], Row[{Style[\"s\", Italic], \
          Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
       );
       assert!(
-        svg.contains("<tspan dx=\"8.00\" font-style=\"italic\">s</tspan>"),
+        svg.contains(&format!(
+          "{}<tspan font-style=\"italic\">s</tspan>",
+          spacer_gap("8.00")
+        )),
         "{svg}"
       );
+    }
+
+    // Regression: the `Spacer`s of a centered `Row` label were `dx` shifts,
+    // which resvg leaves out of the `text-anchor` placement, so the label
+    // sat right of the plot's center by half its spacers and was cut off at
+    // the picture's edge. A gap is a tracked-out run of its own instead,
+    // part of the line's advance in every renderer.
+    #[test]
+    fn row_spacer_gap_in_a_centered_label_is_not_a_dx_shift() {
+      for label in [
+        "Row[{Style[\"one\", Blue], Spacer[14], Style[\"two\", Red]}]",
+        "Column[{Row[{\"one\", Spacer[14], \"two\"}]}, Alignment -> Center]",
+        "Row[{Spacer[14], \"one\", Spacer[3], Spacer[4], \"two\"}]",
+      ] {
+        let svg =
+          export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"));
+        let line = svg
+          .lines()
+          .find(|l| l.contains("one") && l.contains("two"))
+          .unwrap_or_else(|| panic!("{svg}"));
+        assert!(line.contains("text-anchor=\"middle\""), "{line}");
+        assert!(line.contains("letter-spacing="), "{line}");
+        assert!(!line.contains("dx="), "{line}");
+      }
+      // Adjacent spacers add up to one gap, in the plot's user units (ten
+      // to the point).
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"one\", Spacer[3], \
+         Spacer[4], \"two\"}]]",
+      );
+      assert!(
+        svg.contains(&format!("one{}two", spacer_gap("70"))),
+        "{svg}"
+      );
+    }
+
+    // A wider `Spacer` widens the measured line by exactly its points, so
+    // whatever is laid out around the label makes room for the gap.
+    #[test]
+    fn row_spacer_gap_counts_toward_the_width_of_a_label() {
+      let width = |gap: u32| {
+        let svg = displayed_svg(&format!(
+          "Grid[{{{{Row[{{\"left\", Spacer[{gap}], \"right\"}}]}}, \
+           {{Graphics[Circle[], ImageSize -> 50]}}}}]"
+        ));
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|v| v.parse::<f64>().ok())
+          .unwrap_or_else(|| panic!("{svg}"))
+      };
+      assert!((width(100) - width(40) - 60.0).abs() < 1.5);
     }
 
     /// The `y` of each nested `<svg>` picture in a grid's SVG, in order.
@@ -17006,14 +17073,14 @@ mod plot3d {
         "a 16-point run must stay legible beside a {outer}-unit label, \
          got {styled}: {label}"
       );
-      // `Spacer[25]` is 25 points of gap, carried as a `dx` on the run
-      // that follows it (not `letter-spacing` on a trailing tspan of its
-      // own — real SVG renderers, including the one Woxi Studio uses,
-      // drop letter-spacing after a tspan's last character, which made
-      // the gap invisible). It scales with the picture rather than with
-      // whatever font size it lands next to.
+      // `Spacer[25]` is 25 points of gap: a no-break space of its own,
+      // tracked out to the gap's width and set before the run that follows
+      // it (a gap after the label's last character would be dropped by
+      // real SVG renderers, including the one Woxi Studio uses). It scales
+      // with the picture rather than with whatever font size it lands
+      // next to.
       let spacing: f64 = label
-        .split_once("dx=\"")
+        .split_once("letter-spacing=\"")
         .and_then(|(_, r)| r.split_once('"'))
         .and_then(|(v, _)| v.parse().ok())
         .expect("the spacer gap");
@@ -17118,14 +17185,14 @@ mod plot3d {
     }
 
     /// Regression: a `Spacer[n]` between differently-styled `Row` parts
-    /// (a plain string and a `Subscript`, say) used to become its own
-    /// trailing `<tspan style="letter-spacing:…">` — which real SVG
+    /// (a plain string and a `Subscript`, say) used to become a trailing
+    /// `<tspan style="letter-spacing:…"> </tspan>` whose blank real SVG
     /// renderers, including the one Woxi Studio rasterizes plots with,
-    /// silently drop because it is the last character of that tspan. The
-    /// gap must survive as a `dx` on the *next* run instead, so the text
-    /// on either side of the spacer doesn't visually run together (found
-    /// via a downloaded Wolfram Demonstrations Project notebook whose
-    /// `PlotLabel` glued "...C" straight onto "Ea1=145..." with no gap).
+    /// collapse away. The gap must survive as a tracked-out no-break space
+    /// between the two runs, so the text on either side of the spacer
+    /// doesn't visually run together (found via a downloaded Wolfram
+    /// Demonstrations Project notebook whose `PlotLabel` glued "...C"
+    /// straight onto "Ea1=145..." with no gap).
     #[test]
     fn plot_label_spacer_next_to_subscript_leaves_a_visible_gap() {
       let svg = export_svg(
@@ -17137,13 +17204,15 @@ mod plot3d {
         .find(|t| t.contains("Ea"))
         .expect("the plot label");
       assert!(
-        !label.contains("letter-spacing"),
-        "the gap must not be a trailing letter-spacing tspan, which \
-         renderers drop: {label}"
+        !label.contains("letter-spacing:") && !label.contains("> </tspan>"),
+        "the gap must not hang on a collapsible blank: {label}"
       );
+      let gap = label
+        .find("letter-spacing=\"")
+        .expect("the gap is a tracked-out run");
       assert!(
-        label.contains("dx=\""),
-        "the gap must be a dx on the run after the spacer: {label}"
+        label[gap..].contains("\u{00A0}</tspan>Ea"),
+        "the gap must sit between the two runs: {label}"
       );
     }
 
@@ -19636,7 +19705,11 @@ mod plot3d {
       };
       let scale = view_width / width;
       assert!(scale > 1.0, "{svg}");
-      let gap = format!("<tspan dx=\"{:.0}\">b</tspan>", 30.0 * scale);
+      let gap = format!(
+        "letter-spacing=\"{:.0}\">{}</tspan>b",
+        30.0 * scale,
+        '\u{00A0}'
+      );
       let size = format!("font-size=\"{:.0}\"", 12.0 * scale);
       assert!(svg.contains(&gap), "{gap} missing in {svg}");
       assert!(svg.contains(&size), "{size} missing in {svg}");
@@ -66063,11 +66136,11 @@ mod grid_text_in_graphics {
       (num(" width"), num(" height"))
     };
     // A symmetric range gives a square drawing area, however lopsided the
-    // curve is. (wolframscript: 300 x 300 and 300 x 88 — it keeps the
-    // plot's `PlotRangePadding` under the explicit range, so the tick
-    // labels at its ends need no padding; see conformance_gaps.md.)
-    assert_eq!(size("10"), (300, 297));
-    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 94));
+    // curve is: the plot's `PlotRangePadding` is kept under the explicit
+    // range, so the tick labels at its ends need no padding.
+    // (wolframscript: 300 x 300 and 300 x 88; see conformance_gaps.md.)
+    assert_eq!(size("10"), (300, 300));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 90));
   }
 
   #[test]
@@ -82795,6 +82868,40 @@ mod show_filled_points_and_stacked_labels {
     assert_eq!(lines("All"), (3, 4));
     assert_eq!(lines("{False, False}"), (0, 0));
     assert_eq!(lines("{None, None}"), lines("None"));
+  }
+
+  /// A cell of a graphics layout that is not a picture (a caption, a
+  /// `Column` of a picture over a sentence) is an inset of the one picture
+  /// the layout makes, so it is lettered in the proportional face of a
+  /// graphic's labels, not the monospace face of an output cell.
+  #[test]
+  fn graphics_layout_text_cells_use_label_face() {
+    clear_state();
+    for code in [
+      "GraphicsGrid[{{\"caption\", Graphics[Disk[]]}}]",
+      "GraphicsRow[{\"caption\", Graphics[Disk[]]}]",
+      "GraphicsColumn[{{1, 2}, Graphics[Disk[]]}]",
+      "GraphicsGrid[{{Graphics[Disk[]], Column[{Graphics[Circle[], \
+       ImageSize -> 50], Style[Row[{\"r = \", 1.25}], 12], x^2}]}}]",
+      "g = Graphics[Disk[]]; GraphicsRow[{g, Column[{g, \"caption\"}]}]",
+    ] {
+      let svg = export_svg(code);
+      assert!(svg.contains("<text"), "{code}: {svg}");
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+    }
+  }
+
+  /// A `FontFamily` a text cell of a graphics layout sets itself wins over
+  /// the layout's label face, and an explicit font size is kept.
+  #[test]
+  fn graphics_layout_text_cell_keeps_own_font() {
+    clear_state();
+    let svg = export_svg(
+      "GraphicsGrid[{{Style[\"m\", 12, FontFamily -> \"Courier\"], \
+       Graphics[Disk[]]}}]",
+    );
+    assert!(svg.contains("font-family=\"Courier"), "{svg}");
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
   }
 }
 

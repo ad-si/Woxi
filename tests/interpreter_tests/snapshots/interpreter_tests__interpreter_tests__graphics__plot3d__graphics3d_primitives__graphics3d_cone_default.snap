@@ -307,13 +307,13 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <linearGradient id="s412a6999ad" gradientUnits="userSpaceOnUse" x1="209.2" y1="253.4" x2="223.7" y2="251.2"><stop stop-color="#d2d4ee"/><stop offset="1" stop-color="#d3dbf6"/></linearGradient>
 <polygon points="189.7,77.8 189.2,77.9 222.4,341.6 222.9,341.5 237.1,337.5 237.6,337.4 190.2,77.7" fill="url(#s412a6999ad)" stroke="url(#s412a6999ad)" stroke-width="0.5"/>
 <line x1="237.1" y1="337.5" x2="250.3" y2="332.2" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
-<line x1="222.9" y1="341.5" x2="237.1" y2="337.5" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <linearGradient id="s9a2b78904f" gradientUnits="userSpaceOnUse" x1="158.8" y1="252.1" x2="173.5" y2="254.1"><stop stop-color="#c49cab"/><stop offset="1" stop-color="#c8a9bb"/></linearGradient>
 <polygon points="189.7,77.8 189.2,77.7 146.7,339.0 147.2,339.1 161.7,342.6 162.2,342.6 190.2,77.9" fill="url(#s9a2b78904f)" stroke="url(#s9a2b78904f)" stroke-width="0.5"/>
 <line x1="133.6" y1="334.2" x2="147.2" y2="339.1" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <linearGradient id="s8c47704166" gradientUnits="userSpaceOnUse" x1="199.0" y1="255.2" x2="214.1" y2="253.7"><stop stop-color="#d0cbe5"/><stop offset="1" stop-color="#d2d4ee"/></linearGradient>
 <polygon points="189.7,77.8 189.2,77.8 207.4,344.1 207.9,344.1 222.9,341.5 223.4,341.4 190.2,77.7" fill="url(#s8c47704166)" stroke="url(#s8c47704166)" stroke-width="0.5"/>
 <line x1="196.9" y1="160.4" x2="210.8" y2="164.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="222.9" y1="341.5" x2="237.1" y2="337.5" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <linearGradient id="sde43c3a4e4" gradientUnits="userSpaceOnUse" x1="168.5" y1="254.4" x2="183.8" y2="255.6"><stop stop-color="#c8a9bb"/><stop offset="1" stop-color="#cbb5cb"/></linearGradient>
 <polygon points="189.7,77.8 189.2,77.7 161.2,342.5 161.7,342.6 176.9,344.6 177.4,344.6 190.2,77.8" fill="url(#sde43c3a4e4)" stroke="url(#sde43c3a4e4)" stroke-width="0.5"/>
 <line x1="169.8" y1="152.0" x2="183.3" y2="156.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
