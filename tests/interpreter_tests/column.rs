@@ -1669,6 +1669,114 @@ mod typeset_row_items_in_text_face {
     }
   }
 
+  /// A list among a text `Row`'s items is written out in braces on the
+  /// same line, so the row still stacks at the pitch of a line of text
+  /// rather than being set apart like a picture.
+  #[test]
+  fn one_line_text_rows_holding_a_list_stack_like_text_lines() {
+    clear_state();
+    for wrap in ["", "Text@"] {
+      let rows = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{Row[{{"Set ", {{"A", "B"}}}}], Row[{{"Set ", {{1, {{x}}}}}}], Row[{{"Set ", {{}}}}]}}], "SVG"]"#
+      ))
+      .unwrap();
+      let lines = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{"Set {{A, B}}", "Set {{1, {{x}}}}", "Set {{}}"}}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(root_height(&rows), root_height(&lines), "{wrap}: {rows}");
+    }
+  }
+
+  /// The x positions of the `<text>` elements holding exactly `label`,
+  /// with the offsets of the nested `<svg>` boxes they sit in added up.
+  fn text_left_edges(svg: &str, label: &str) -> Vec<f64> {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      tag.find(&key).map_or(0.0, |at| {
+        let start = at + key.len();
+        let end = start + tag[start..].find('"').unwrap();
+        tag[start..end].parse().unwrap()
+      })
+    };
+    let mut offsets: Vec<f64> = Vec::new();
+    let mut found = Vec::new();
+    let mut rest = svg;
+    while let Some(open) = rest.find('<') {
+      let close = open + rest[open..].find('>').unwrap();
+      let tag = &rest[open..=close];
+      if tag.starts_with("</svg") {
+        offsets.pop();
+      } else if tag.starts_with("<svg") {
+        offsets.push(attr(tag, "x"));
+      } else if tag.starts_with("<text")
+        && rest[close + 1..].starts_with(&format!("{label}<"))
+      {
+        found.push(offsets.iter().sum::<f64>() + attr(tag, "x"));
+      }
+      rest = &rest[close + 1..];
+    }
+    found
+  }
+
+  /// A `Column` of text nested in another one starts its lines where the
+  /// lines beside it start: it used to be indented by the outer column's
+  /// text margin on top of its own, once per level of nesting.
+  #[test]
+  fn nested_text_column_lines_are_flush_with_their_neighbors() {
+    clear_state();
+    for wrap in ["", "Text@"] {
+      let svg = interpret(&format!(
+        r#"ExportString[{wrap}Column[{{"top", Column[{{"mid", Column[{{"deep", "deeper"}}]}}], "end"}}], "SVG"]"#
+      ))
+      .unwrap();
+      let edge = text_left_edges(&svg, "top");
+      assert_eq!(edge.len(), 1, "{svg}");
+      for label in ["mid", "deep", "deeper", "end"] {
+        assert_eq!(text_left_edges(&svg, label), edge, "{wrap}{label}: {svg}");
+      }
+    }
+  }
+
+  /// Nesting a `Column` of text lines neither widens nor heightens the
+  /// column around it: the lines keep their pitch, with no picture gap
+  /// between two nested columns.
+  #[test]
+  fn nested_text_columns_stack_like_their_lines() {
+    clear_state();
+    let dims = |code: &str| {
+      let svg = interpret(&format!(r#"ExportString[{code}, "SVG"]"#)).unwrap();
+      let width = svg.find("width=\"").unwrap() + "width=\"".len();
+      let end = width + svg[width..].find('"').unwrap();
+      (svg[width..end].parse::<f64>().unwrap(), root_height(&svg))
+    };
+    for wrap in ["", "Text@"] {
+      assert_eq!(
+        dims(&format!(
+          r#"{wrap}Column[{{Column[{{"one", "two"}}], Column[{{"three", "four"}}]}}]"#
+        )),
+        dims(&format!(
+          r#"{wrap}Column[{{"one", "two", "three", "four"}}]"#
+        )),
+        "{wrap}"
+      );
+    }
+  }
+
+  /// A right-aligned nested `Column` of text ends where the lines beside
+  /// it end.
+  #[test]
+  fn nested_right_aligned_text_column_fills_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"x", Column[{"p", "q"}, Right], "y"}, Right], "SVG"]"#,
+    )
+    .unwrap();
+    let outer = text_left_edges(&svg, "x");
+    let inner = text_left_edges(&svg, "p");
+    assert!((outer[0] - inner[0]).abs() < 0.5, "{svg}");
+  }
+
   /// A text `Row` under a picture sits as close to it as a line of text
   /// does, with no picture gap in between.
   #[test]

@@ -45,5 +45,5 @@ next data point between nodes:
 
 ```scrut
 $ wo 'f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}, InterpolationOrder -> 0]; {f[0.5], f[1], f[1.5]}'
-{1., 1, 4.}
+{1, 1, 4}
 ```

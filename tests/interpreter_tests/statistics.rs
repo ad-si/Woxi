@@ -12914,11 +12914,80 @@ mod arma_correlation_functions {
       .unwrap(),
       "{1, 35/52, 35/104}"
     );
-    // A symbolic lag or symbolic coefficients stay unevaluated.
+    // A symbolic lag takes the closed form γ(h)/γ(0).
     assert_eq!(
       interpret("CorrelationFunction[ARProcess[{1/2}, 1], h]").unwrap(),
-      "CorrelationFunction[ARProcess[{1/2}, 1], h]"
+      "2^(-Abs[h])"
     );
+  }
+
+  // At symbolic lags and times every ARMA-family head takes the AR(1),
+  // MA(1) and ARMA(1, 1) closed forms, and the correlation is γ/γ(0).
+  #[test]
+  fn arma_family_functions_at_symbolic_lags() {
+    let cases = [
+      (
+        "CovarianceFunction[ARProcess[{1/2}, 1], h]",
+        "2^(2 - Abs[h])/3",
+      ),
+      (
+        "CovarianceFunction[ARProcess[{a}, v], h]",
+        "(a^Abs[h]*v)/(1 - a^2)",
+      ),
+      (
+        "CovarianceFunction[ARProcess[c, {a}, v], h]",
+        "(a^Abs[h]*v)/(1 - a^2)",
+      ),
+      (
+        "CovarianceFunction[ARProcess[{0.5}, 1], h]",
+        "1.3333333333333333*0.5^Abs[h]",
+      ),
+      (
+        "CovarianceFunction[MAProcess[{b}, v], h]",
+        "Piecewise[{{b*v, Abs[h] == 1}, {(1 + b^2)*v, Abs[h] == 0}}, 0]",
+      ),
+      (
+        "CovarianceFunction[ARMAProcess[{}, {b}, v], h]",
+        "Piecewise[{{b*v, Abs[h] == 1}, {(1 + b^2)*v, Abs[h] == 0}}, 0]",
+      ),
+      (
+        "CovarianceFunction[ARProcess[{1/2}, 1], s, t]",
+        "2^(2 - Abs[s - t])/3",
+      ),
+      ("CorrelationFunction[ARProcess[{a}, v], h]", "a^Abs[h]"),
+      (
+        "CorrelationFunction[ARProcess[{-1/2}, 1], h]",
+        "(-1/2)^Abs[h]",
+      ),
+      (
+        "CorrelationFunction[ARMAProcess[{a}, {}, v], h]",
+        "a^Abs[h]",
+      ),
+      (
+        "CorrelationFunction[MAProcess[{1/2}, 3], h]",
+        "(4*Piecewise[{{3/2, Abs[h] == 1}, {15/4, Abs[h] == 0}}, 0])/15",
+      ),
+      (
+        "CorrelationFunction[ARMAProcess[{1/2}, {1/3}, 2], h]",
+        "(27*Piecewise[{{(35*2^(2 - Abs[h]))/27, Abs[h] > 0}}, 104/27])/104",
+      ),
+      (
+        "CorrelationFunction[ARMAProcess[{a}, {}, v], s, t]",
+        "a^Abs[s - t]",
+      ),
+      (
+        "CorrelationFunction[ARProcess[{1/2}, 1], s, 2]",
+        "2^(-Abs[-2 + s])",
+      ),
+      // A non-integer numeric lag stays unevaluated.
+      (
+        "CorrelationFunction[ARProcess[{1/2}, 1], 1/2]",
+        "CorrelationFunction[ARProcess[{1/2}, 1], 1/2]",
+      ),
+    ];
+    for (code, expected) in cases {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
   }
 
   #[test]

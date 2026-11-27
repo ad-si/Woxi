@@ -3170,28 +3170,126 @@ fn script_template(name: &str, parts: Vec<Expr>) -> Expr {
   )
 }
 
-/// The boxes of an operand of `Infix` (`infix`) or `Prefix`, bracketed when
-/// it prints with an operator of its own: a sum or a rule in both, a
-/// product only after a prefix operator (`f@(a b)`, but `a b + c`). Calls,
-/// powers and atoms stay bare.
-fn operator_form_operand_box(operand: &Expr, infix: bool) -> Expr {
-  let boxes = expr_to_box_form(operand);
-  let operator_row = match &boxes {
-    Expr::FunctionCall { name, args } if name == "RowBox" => !matches!(
-      args.first(),
-      Some(Expr::List(items))
-        if matches!(items.get(1), Some(Expr::String(s)) if s == "[")
-    ),
-    _ => false,
-  };
-  let product = matches!(
-    canonical_operator_call(operand),
-    Expr::FunctionCall { ref name, .. } if name == "Times"
-  );
-  if operator_row && !(infix && product) {
-    paren_box(boxes)
+/// The box of an operator token of a display wrapper: an operator the
+/// FrontEnd recognizes is its bare text (`+`, `&&`), any other string a
+/// quoted literal (`"foo"`), anything else its own boxes.
+fn operator_form_token_box(
+  op: &Expr,
+  position: crate::syntax::OperatorPosition,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  match op {
+    Expr::String(s)
+      if crate::syntax::box_operator_token(s, position).is_some() =>
+    {
+      str_expr(s)
+    }
+    other => boxes(other),
+  }
+}
+
+/// The box of an operand of a display wrapper, bracketed when it is an
+/// operator row binding no tighter than the wrapper's operator token
+/// (`precedence`): `(a + b)*c`, `a b + c`, `f@(a!)`. A script, fraction or
+/// root is a unit of its own and never bracketed.
+fn operator_form_operand_box(
+  operand: &Expr,
+  precedence: f64,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  let operand = canonical_operator_call(operand);
+  let boxed = boxes(&operand);
+  if boxed_operand_bracketed(&operand, &boxed, precedence) {
+    paren_box(boxed)
   } else {
-    boxes
+    boxed
+  }
+}
+
+fn boxed_operand_bracketed(
+  operand: &Expr,
+  boxed: &Expr,
+  precedence: f64,
+) -> bool {
+  matches!(boxed, Expr::FunctionCall { name, .. } if name == "RowBox")
+    && crate::syntax::operator_display_precedence(operand)
+      .is_some_and(|p| p <= precedence)
+}
+
+/// Whether the operand of a display wrapper is bracketed next to an operator
+/// token of `precedence` (see `operator_form_operand_box`), for renderers
+/// that lay the row out as text (TeX).
+pub(crate) fn operator_form_operand_bracketed(
+  operand: &Expr,
+  precedence: f64,
+) -> bool {
+  let operand = canonical_operator_call(operand);
+  boxed_operand_bracketed(&operand, &expr_to_box_form(&operand), precedence)
+}
+
+/// The row of an `Infix` layout, its operands and operator boxed by
+/// `boxes` (StandardForm or TraditionalForm).
+fn infix_row(
+  layout: &crate::syntax::InfixLayout,
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  use crate::syntax::{InfixOperator, OperatorPosition};
+  let (separator, precedence) = match &layout.operator {
+    InfixOperator::Head(head) => (
+      vec![
+        str_expr(" "),
+        str_expr("~"),
+        str_expr(head),
+        str_expr("~"),
+        str_expr(" "),
+      ],
+      crate::syntax::INFIX_DEFAULT_PRECEDENCE as f64,
+    ),
+    InfixOperator::Given(op) => (
+      vec![operator_form_token_box(op, OperatorPosition::Infix, boxes)],
+      crate::syntax::box_operator_token_precedence(op, OperatorPosition::Infix),
+    ),
+  };
+  let mut row = Vec::new();
+  for (i, operand) in layout.operands.iter().enumerate() {
+    if i > 0 {
+      row.extend(separator.iter().cloned());
+    }
+    row.push(operator_form_operand_box(operand, precedence, boxes));
+  }
+  row_box(row)
+}
+
+/// The row of `Prefix[f[x]]` (`f@x`) or `Postfix[f[x]]` (`x//f`), or with an
+/// operator in place of the head, `!x`, `x!`.
+fn prefix_postfix_row(
+  name: &str,
+  args: &[Expr],
+  boxes: &dyn Fn(&Expr) -> Expr,
+) -> Expr {
+  use crate::syntax::OperatorPosition;
+  let Some((head, operand, op)) = crate::syntax::prefix_postfix_parts(args)
+  else {
+    unreachable!("guarded by the caller")
+  };
+  let position = if name == "Prefix" {
+    OperatorPosition::Prefix
+  } else {
+    OperatorPosition::Postfix
+  };
+  let default_op = if name == "Prefix" { "@" } else { "//" };
+  let token = op.cloned().unwrap_or_else(|| str_expr(default_op));
+  let precedence =
+    crate::syntax::box_operator_token_precedence(&token, position);
+  let operand = operator_form_operand_box(operand, precedence, boxes);
+  let token = operator_form_token_box(&token, position, boxes);
+  match (position, op) {
+    (OperatorPosition::Prefix, Some(_)) => row_box(vec![token, operand]),
+    (OperatorPosition::Prefix, None) => {
+      row_box(vec![str_expr(head), token, operand])
+    }
+    (_, Some(_)) => row_box(vec![operand, token]),
+    (_, None) => row_box(vec![operand, token, str_expr(head)]),
   }
 }
 
@@ -3530,27 +3628,57 @@ fn needs_paren_as_power_base(base: &Expr) -> bool {
       if name == "Rational" && args.len() == 2)
 }
 
-/// Whether `expr` is a one-argument `Conjugate`, `Transpose` or
-/// `ConjugateTranspose`, which StandardForm sets as a superscript mark.
+/// Whether `expr` is a `Transpose` or `ConjugateTranspose` of one or two
+/// arguments, which StandardForm sets through a superscript template.
 fn is_postfix_marked_call(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
-    if args.len() == 1
-      && matches!(name.as_str(), "Conjugate" | "Transpose" | "ConjugateTranspose"))
+    if (1..=2).contains(&args.len())
+      && matches!(name.as_str(), "Transpose" | "ConjugateTranspose"))
 }
 
-/// Whether `expr` already sets with a superscript (a power or a postfix
-/// mark), so it is bracketed before taking another postfix mark.
-fn is_superscripted_call(expr: &Expr) -> bool {
-  is_postfix_marked_call(expr)
-    || matches!(expr, Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2)
-    || matches!(
-      expr,
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        ..
-      }
-    )
+/// The box of the operand of a postfix superscript template (`mᵀ`, `m†`,
+/// `z*`): bracketed unless it boxes as an atom, a square root or a call or
+/// part (`f[a]ᵀ`, `a〚1〛ᵀ`, `{a, b}ᵀ`) — a sum, product, power, script or
+/// another template is, `(a + b)ᵀ`, `(a²)ᵀ`, `(a₁)ᵀ`.
+fn postfix_template_operand(operand: &Expr) -> Expr {
+  let boxed = expr_to_box_form(&canonical_operator_call(operand));
+  let bare = match &boxed {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, .. } if name == "SqrtBox" => true,
+    Expr::FunctionCall { name, args } if name == "RowBox" => matches!(
+      args.first(),
+      Some(Expr::List(items))
+        if matches!(items.get(1), Some(Expr::String(s)) if s == "[" || s == "\u{301A}")
+          || matches!(items.first(), Some(Expr::String(s)) if s == "{")
+    ),
+    _ => false,
+  };
+  if bare { boxed } else { paren_box(boxed) }
+}
+
+/// `TemplateBox[{operand, …}, "Transpose", SyntaxForm -> SuperscriptBox]`:
+/// the FrontEnd's postfix template for `Transpose`, `ConjugateTranspose`
+/// (and, in TraditionalForm, `Conjugate`). A second argument (the
+/// permutation) uses the `"Transpose2"` template.
+pub(crate) fn postfix_template(name: &str, args: &[Expr]) -> Expr {
+  let mut parts = vec![postfix_template_operand(&args[0])];
+  parts.extend(args[1..].iter().map(expr_to_box_form));
+  let tag = if args.len() == 2 {
+    format!("{name}2")
+  } else {
+    name.to_string()
+  };
+  call(
+    "TemplateBox",
+    vec![
+      Expr::List(parts.into()),
+      str_expr(&tag),
+      crate::helpers::rule_expr(
+        Expr::Identifier("SyntaxForm".to_string()),
+        Expr::Identifier("SuperscriptBox".to_string()),
+      ),
+    ],
+  )
 }
 
 /// The infix symbol StandardForm sets between the arguments of a logical,
@@ -3561,6 +3689,7 @@ fn infix_operator_symbol(head: &str) -> Option<&'static str> {
     "Or" => "||",
     "StringJoin" => "<>",
     "Alternatives" => "|",
+    "Dot" => ".",
     _ => return None,
   })
 }
@@ -3573,6 +3702,7 @@ fn box_operator_precedence(head: &str) -> Option<u16> {
     "Not" => 230,
     "Plus" => 310,
     "Times" => 400,
+    "Dot" => 490,
     "StringJoin" => 600,
     _ => return None,
   })
@@ -5055,39 +5185,37 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // The base is parenthesized when it's additive, a product or a
       // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
       // unambiguously instead of 1+x² looking like 1 + x².
+      // So is a base that sets with a superscript of its own (`(a^b)^c`,
+      // `(f')^2`) or a postfix operator (`(a!)^2`).
       let base = canonical_operator_call(&args[0]);
-      let base_box =
-        if needs_paren_as_power_base(&base) || is_postfix_marked_call(&base) {
-          paren_box(expr_to_box_form(&base))
-        } else {
-          expr_to_box_form(&base)
-        };
+      let boxed = expr_to_box_form(&base);
+      let superscripted = matches!(&boxed, Expr::FunctionCall { name, .. }
+        if name == "SuperscriptBox");
+      let factorial = matches!(&base, Expr::FunctionCall { name, args }
+        if (name == "Factorial" || name == "Factorial2") && args.len() == 1);
+      // An infix operator expression (`a . b`, `a && b`) too.
+      let infix = matches!(&base, Expr::FunctionCall { name, args }
+        if args.len() >= 2 && infix_operator_symbol(name).is_some());
+      let base_box = if needs_paren_as_power_base(&base)
+        || is_postfix_marked_call(&base)
+        || superscripted
+        || factorial
+        || infix
+      {
+        paren_box(boxed)
+      } else {
+        boxed
+      };
       let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
     }
-    // The conjugate, transpose and Hermitian adjoint are postfix marks in
-    // StandardForm too: `z*`, `mᵀ` (`\[Transpose]`) and `m†`
-    // (`\[ConjugateTranspose]`). A base that is
-    // an operator expression is bracketed, `(a + b)ᵀ`, `(a²)ᵀ`.
-    Expr::FunctionCall { name, args }
-      if matches!(
-        name.as_str(),
-        "Conjugate" | "Transpose" | "ConjugateTranspose"
-      ) && args.len() == 1 =>
-    {
-      let mark = match name.as_str() {
-        "Conjugate" => "*",
-        "Transpose" => "\u{F3C7}",
-        _ => "\u{F3C9}",
-      };
-      let base = canonical_operator_call(&args[0]);
-      let base_box =
-        if needs_paren_as_power_base(&base) || is_superscripted_call(&base) {
-          paren_box(expr_to_box_form(&base))
-        } else {
-          expr_to_box_form(&base)
-        };
-      call("SuperscriptBox", vec![base_box, str_expr(mark)])
+    // The transpose and Hermitian adjoint are postfix marks in StandardForm:
+    // `mᵀ` and `m†`, through the FrontEnd's superscript template
+    // (`TemplateBox[{m}, "Transpose", SyntaxForm -> SuperscriptBox]`). A
+    // `Conjugate` keeps its function form here; only TraditionalForm marks
+    // it `z*`.
+    Expr::FunctionCall { name, args } if is_postfix_marked_call(expr) => {
+      postfix_template(name, args)
     }
     Expr::FunctionCall { name, args }
       if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>
@@ -5098,79 +5226,28 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
       )
     }
-    // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
-    // expressions (an operator expression other than a product bracketed),
-    // a string operator contributing its text; `Infix[f[a, b]]` puts
-    // `~f~` between them. Like `Prefix` (`f@x`) and `Postfix` (`x//f`), the
-    // row is an `InterpretationBox` that reads back as the wrapper. With a
-    // precedence or grouping the wrapper boxes as a plain call.
+    // `Infix[{a, b}, "+"]` is the row `a + b` and `Infix[f[a, b]]` the row
+    // `a ~f~ b`, as an `InterpretationBox` that reads back as the wrapper,
+    // like `Prefix` (`f@x`) and `Postfix` (`x//f`). An operand binding no
+    // tighter than the operator is bracketed (see
+    // `operator_form_row`). With a precedence or grouping the wrapper boxes
+    // as a plain call.
     Expr::FunctionCall { name, args }
       if name == "Infix"
         && args.len() <= 2
-        && crate::syntax::infix_display_items(args).is_some() =>
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
     {
-      let operands: &[Expr] = match &args[0] {
-        Expr::List(items) => items,
-        Expr::FunctionCall { args: items, .. } => items,
-        _ => unreachable!("guarded by infix_display_items"),
-      };
-      let separator: Vec<Expr> = match (&args.get(1), &args[0]) {
-        (Some(Expr::String(s)), _) => vec![str_expr(s)],
-        (Some(op), _) => vec![expr_to_box_form(op)],
-        (None, Expr::FunctionCall { name: head, .. }) => vec![
-          str_expr(" "),
-          str_expr("~"),
-          str_expr(head),
-          str_expr("~"),
-          str_expr(" "),
-        ],
-        (None, _) => unreachable!("guarded by infix_display_items"),
-      };
-      let mut row = Vec::new();
-      for (i, operand) in operands.iter().enumerate() {
-        if i > 0 {
-          row.extend(separator.iter().cloned());
-        }
-        row.push(operator_form_operand_box(operand, true));
-      }
-      interpretation_box_of(row_box(row), expr)
+      interpretation_box_of(infix_row(&layout, &expr_to_box_form), expr)
     }
     Expr::FunctionCall { name, args }
       if (name == "Prefix" || name == "Postfix")
-        && (1..=2).contains(&args.len())
-        && matches!(&args[0], Expr::FunctionCall { args: inner, .. }
-          if inner.len() == 1) =>
+        && args.len() <= 2
+        && crate::syntax::prefix_postfix_parts(args).is_some() =>
     {
-      let Expr::FunctionCall {
-        name: head,
-        args: inner,
-      } = &args[0]
-      else {
-        unreachable!("guarded by the match arm")
-      };
-      let prefix = name == "Prefix";
-      let op = match args.get(1) {
-        Some(Expr::String(s)) => str_expr(s),
-        Some(other) => expr_to_box_form(other),
-        None if prefix => str_expr("@"),
-        None => str_expr("//"),
-      };
-      let row = if prefix {
-        let operand = operator_form_operand_box(&inner[0], false);
-        if args.len() == 2 {
-          vec![op, operand]
-        } else {
-          vec![str_expr(head), op, operand]
-        }
-      } else {
-        let operand = expr_to_box_form(&inner[0]);
-        if args.len() == 2 {
-          vec![operand, op]
-        } else {
-          vec![operand, op, str_expr(head)]
-        }
-      };
-      interpretation_box_of(row_box(row), expr)
+      interpretation_box_of(
+        prefix_postfix_row(name, args, &expr_to_box_form),
+        expr,
+      )
     }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):
@@ -5431,11 +5508,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         ],
       )
     }
-    // HoldForm[expr] → just the content
+    // `HoldForm[expr]` draws as its content but marks the box tree with a
+    // `TagBox` naming it, as the TraditionalForm boxes do.
     Expr::FunctionCall { name, args }
       if name == "HoldForm" && args.len() == 1 =>
     {
-      expr_to_box_form(&args[0])
+      call(
+        "TagBox",
+        vec![expr_to_box_form(&args[0]), id_expr("HoldForm")],
+      )
     }
     // `PolynomialForm[p, opts]` sets `p` in standard order unless
     // `TraditionalOrder -> True` asks for the descending one, tagged with
@@ -5727,6 +5808,28 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         if args.len() == 1 {
           parts.push(box_subexpr_via_user_rules(&args[0]));
         } else {
+          let mut inner = Vec::new();
+          for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+              inner.push(str_expr(","));
+            }
+            inner.push(box_subexpr_via_user_rules(arg));
+          }
+          parts.push(row_box(inner));
+        }
+      }
+      parts.push(str_expr("]"));
+      row_box(parts)
+    }
+    // A call with a compound head, `f[a][b]`, boxes its head like any
+    // other expression (bracketed when it is an operator expression,
+    // `(a + b)[c]`), followed by the bracketed arguments.
+    Expr::CurriedCall { func, args } => {
+      let mut parts = vec![postfix_template_operand(func), str_expr("[")];
+      match args.as_slice() {
+        [] => {}
+        [arg] => parts.push(box_subexpr_via_user_rules(arg)),
+        args => {
           let mut inner = Vec::new();
           for (i, arg) in args.iter().enumerate() {
             if i > 0 {
@@ -8390,7 +8493,9 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "PlusMinus" => "\u{00B1}",
     "MinusPlus" => "\u{2213}",
     "Congruent" => "\u{2261}",
-    _ => return None,
+    // An operator-only head (`RightArrow`, `Equilibrium`, `CupCap`, …) is
+    // written with its own character: `a → b`.
+    _ => return crate::syntax::inert_infix_char(head),
   })
 }
 
@@ -8935,10 +9040,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
     }
-    // `Infix[{a, b}, "+"]` lays its operands out with the operator between
-    // them, each item displayed (a string operator contributes its text).
-    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
-      tf_row(items.iter().map(tf_display).collect())
+    // `Infix`, `Prefix` and `Postfix` lay out as in StandardForm, their
+    // parts in TraditionalForm boxes.
+    "Infix"
+      if args.len() <= 2
+        && let Some(layout) = crate::syntax::infix_layout(args) =>
+    {
+      interpretation_box_of(infix_row(&layout, &tf), &call(name, args.to_vec()))
+    }
+    "Prefix" | "Postfix"
+      if args.len() <= 2
+        && crate::syntax::prefix_postfix_parts(args).is_some() =>
+    {
+      interpretation_box_of(
+        prefix_postfix_row(name, args, &tf),
+        &call(name, args.to_vec()),
+      )
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
@@ -9123,15 +9240,31 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         None => bars,
       }
     }
-    // The conjugate, transpose and Hermitian adjoint are postfix marks:
-    // `z*`, `Aᵀ` (an upright `\[Transpose]`), `A†`.
-    "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
-      let mark = match name {
-        "Conjugate" => "*",
-        "Transpose" => "\u{F3C7}",
-        _ => "\u{2020}",
+    // The conjugate, transpose and Hermitian adjoint are postfix marks,
+    // `z*`, `Aᵀ`, `A†`, set through the FrontEnd's superscript template:
+    // `TemplateBox[{z}, "Conjugate", SyntaxForm -> SuperscriptBox]`. A
+    // transpose with a permutation uses the `"Transpose2"` template.
+    "Conjugate" | "Transpose" | "ConjugateTranspose"
+      if args.len() == 1 || (args.len() == 2 && name != "Conjugate") =>
+    {
+      let mut parts = vec![tf_script_base(&args[0])];
+      parts.extend(args[1..].iter().map(tf));
+      let tag = if args.len() == 2 {
+        format!("{name}2")
+      } else {
+        name.to_string()
       };
-      tf_box("SuperscriptBox", vec![tf_script_base(&args[0]), tf_string(mark)])
+      tf_box(
+        "TemplateBox",
+        vec![
+          Expr::List(parts.into()),
+          tf_string(&tag),
+          crate::helpers::rule_expr(
+            Expr::Identifier("SyntaxForm".to_string()),
+            Expr::Identifier("SuperscriptBox".to_string()),
+          ),
+        ],
+      )
     }
     _ if args.len() >= 2 && tf_infix_glyph(name).is_some() => {
       tf_infix(name, args)
