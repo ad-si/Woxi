@@ -7328,6 +7328,10 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
     // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
     // notebook typesets it from.
+    // `Defer[expr]` is typeset as `expr` alone, exactly like `HoldForm`.
+    Expr::FunctionCall { name, args } if name == "Defer" && args.len() == 1 => {
+      graphics_text_content(&call1("HoldForm", args[0].clone()))
+    }
     Expr::FunctionCall { name, args } if name == "HoldForm" && args.len() == 1 => {
       match &args[0] {
         held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
@@ -10646,6 +10650,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       .cloned()
       .collect();
     rewritten[0] = call("Style", styled);
+    return parse_text(&rewritten, style, prims);
+  }
+  // `Defer` in a label is displayed exactly as `HoldForm`.
+  if let Some(label) = args.first().and_then(defers_as_held) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = label;
     return parse_text(&rewritten, style, prims);
   }
   // A `StringForm` label with a matrix among its values is typeset as the
@@ -19532,7 +19542,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
     if let Some((name, replacement)) = option_name_value(&opt) {
-      let replacement = &*replacement;
+      // `Defer` in a label is displayed exactly as `HoldForm`.
+      let held = is_label_option(name)
+        .then(|| defers_as_held(&replacement))
+        .flatten();
+      let replacement = held.as_ref().unwrap_or(&*replacement);
       match name {
         "ImageSize" => {
           explicit_size = true;
@@ -26196,6 +26210,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&graphics_text_content(expr))
         }
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
+        // `Defer[expr]` is typeset as `expr` alone, exactly like `HoldForm`.
+        "Defer" if args.len() == 1 => {
+          expr_to_svg_markup(&call1("HoldForm", args[0].clone()))
+        }
 
         // `Factorial[n]` / `Factorial2[n]` typeset postfix (`n!`, `n!!`),
         // with the operand parenthesized exactly where the box form does.
@@ -27029,7 +27047,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
       "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
-      "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      "HoldForm" | "Defer" if args.len() == 1 => {
+        estimate_display_width(&args[0])
+      }
       "Factorial" | "Factorial2" if args.len() == 1 => {
         let bang = if name == "Factorial" { 1.0 } else { 2.0 };
         let parens = if factorial_operand_parenthesized(expr) {
@@ -33961,6 +33981,33 @@ pub(crate) fn style_forms_as_style(expr: &Expr) -> Option<Expr> {
     "StyleForm",
   )
   .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
+}
+
+/// The options whose value is a label typeset on the graphic.
+pub(crate) fn is_label_option(name: &str) -> bool {
+  matches!(name, "PlotLabel" | "AxesLabel" | "FrameLabel")
+}
+
+/// `expr` with every `Defer[e]` respelled as the `HoldForm[e]` it is
+/// displayed as, or `None` when it holds none. The front end typesets both
+/// as `e` alone, so a label runs this once and no layout path needs its own
+/// `Defer` case.
+pub(crate) fn defers_as_held(expr: &Expr) -> Option<Expr> {
+  fn respell(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Defer" && args.len() == 1 =>
+      {
+        Some(call1(
+          "HoldForm",
+          crate::functions::string_ast::map_expr_tree(&args[0], &respell),
+        ))
+      }
+      _ => None,
+    }
+  }
+  crate::functions::math_ast::numeric_utils::expr_contains_head(expr, "Defer")
+    .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
 }
 
 /// Heads that a `Manipulate` argument may carry while still being a static

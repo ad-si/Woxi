@@ -18474,6 +18474,11 @@ pub(crate) fn apply_common_plot_option(
   // `StyleForm` in a label is displayed exactly as `Style`.
   let evaluated = crate::functions::graphics::style_forms_as_style(&evaluated)
     .unwrap_or(evaluated);
+  // `Defer` in a label is displayed exactly as `HoldForm`.
+  let evaluated = crate::functions::graphics::is_label_option(name)
+    .then(|| crate::functions::graphics::defers_as_held(&evaluated))
+    .flatten()
+    .unwrap_or(evaluated);
   let replacement = &evaluated;
   match name {
     "ImageSize" => {
