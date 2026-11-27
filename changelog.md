@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A `Slider`, `Manipulator` or `Animator` laid out in a `Grid`, `Row` or
+    `Column` is drawn as a slider instead of its source text, at its
+    `ImageSize`. Inside a `Manipulate` body in Woxi Studio it is live:
+    pressing or dragging along the track writes the `Dynamic` variable, and
+    an `Animator`'s play button sweeps it at its `AnimationRate`.
 - The subscript of a stacked fraction (`Subscript[a/b, z]`) hangs at the
     fraction's foot, level with the denominator, instead of beside its
     rule.

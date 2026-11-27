@@ -8881,7 +8881,7 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Manipulator" && !args.is_empty() =>
     {
-      crate::functions::graphics::manipulator_svg(args)
+      crate::functions::graphics::slider_control_svg(name, args)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
     Expr::FunctionCall { name, args }
