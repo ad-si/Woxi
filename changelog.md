@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- An unboxed `Graphics3D` of fixed width and height whose contents are a
+    sheet with barely any depth (thinner than a hundredth of its longest
+    side) keeps the margins of its padded box, as with the box drawn,
+    instead of being stretched until it touches all four edges.
 - A `Trigger` control in Woxi Studio sweeps downward when its end lies
     below its start (`{u, 0, -10, -1, Trigger}`) instead of jumping to the
     end, a step written in terms of another control (`0.035 speed`) follows

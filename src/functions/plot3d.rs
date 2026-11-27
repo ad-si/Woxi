@@ -15900,6 +15900,10 @@ fn primitives_extent(prims: &[Primitive3D]) -> [(f64, f64); 3] {
 /// fit, while one with `ImagePadding -> 20` fills the padded region.
 const AUTO_PADDED_SPHERE_SPAN: f64 = 1.1;
 
+/// An unboxed scene whose shortest side is below this share of its longest
+/// one is a thin sheet, framed by its padded box (see `thin_sheet`).
+const THIN_SHEET_MAX_SIDE_RATIO: f64 = 0.01;
+
 /// Longest-to-shortest side ratio up to which an invisible box counts as
 /// compact and is sphere-framed in a picture of fixed size (see its use in
 /// `graphics3d_ast`). Wolfram's snapshots put the limit between a
@@ -17638,9 +17642,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|&r| range_is_flat(r))
     .count()
     >= 2;
+  // A sheet with barely any depth (thinner than a hundredth of its longest
+  // side, but not flat) that is not made of round solids alone keeps the
+  // padded box, as it does in a picture given only a width: Wolfram's
+  // snapshots of a Demonstration's unboxed sheet of polygons folded by a
+  // thousandth of a radian (a 4.3 × 4 × 0.0025 box at
+  // `ImageSize -> {500, 300}`, and an 8.7 × 8 × 0.005 one) draw it
+  // 455 × 274 px, 12 px from the left edge and 8 px below the top one, as
+  // the box outline gives, where the contents alone would touch all four
+  // edges. Thicker contents (a 5 × 3 × 0.5 stack of cuboids) keep the fit
+  // to themselves, and so does an explicit `SphericalRegion -> False`.
+  let thin_sheet = {
+    let sides = contents_extent.map(|(lo, hi)| hi - lo);
+    let longest = sides.into_iter().fold(0.0, f64::max);
+    let shortest = sides.into_iter().fold(f64::INFINITY, f64::min);
+    !round_solids_only
+      && !flat_contents
+      && !spherical_region_off
+      && shortest < THIN_SHEET_MAX_SIDE_RATIO * longest
+  };
   let fit_contents = unboxed_automatic
     && !fit_contents_box
     && !line_contents
+    && !thin_sheet
     && (explicit_height || round_solids_only);
   if fit_contents_box {
     px_min = px_min.min(contents_box.0);

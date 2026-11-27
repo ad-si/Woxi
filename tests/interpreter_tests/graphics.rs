@@ -16081,6 +16081,39 @@ mod plot3d {
       }
     }
 
+    /// An unboxed sheet of polygons with barely any depth keeps the margins
+    /// of its padded box in a picture of fixed width and height, like the
+    /// same scene with the box drawn. Wolfram's
+    /// snapshots of a barely folded sheet of polygons (a 4.3 × 4 × 0.0025
+    /// box) at `ImageSize -> {500, 300}` draw it 455 × 274 px. Woxi fitted
+    /// the sheet itself to the frame, so it touched all four edges.
+    #[test]
+    fn an_unboxed_sheet_with_depth_keeps_its_box_margins_when_pinned() {
+      let sheet = |rise: f64, opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[Table[Polygon[{{{{i, 0, 0}}, {{i + 1, 0, {rise}}},            {{i + 1.3, 4, {rise}}}, {{i + 0.3, 4, 0}}}}], {{i, 0, 3}}],            ImageSize -> {{500, 300}}{opts}]"
+        ))
+      };
+      for rise in [0.001, 0.01, 0.03] {
+        let unboxed = sheet(rise, ", Boxed -> False");
+        let boxed = sheet(rise, "");
+        assert_eq!(unboxed, boxed, "rise = {rise}");
+        assert!(
+          (440.0..480.0).contains(&unboxed.0) && unboxed.1 < 285.0,
+          "rise = {rise}: got {unboxed:?}"
+        );
+        // The same picture inside a `Manipulate` frame.
+        assert_eq!(
+          woxi::with_manipulate_frame(|| sheet(rise, ", Boxed -> False")),
+          unboxed,
+          "rise = {rise}"
+        );
+        // `SphericalRegion -> False` still asks for the fit to the frame.
+        let fitted = sheet(rise, ", Boxed -> False, SphericalRegion -> False");
+        assert!(fitted.0 > 490.0, "rise = {rise}: got {fitted:?}");
+      }
+    }
+
     /// A cylinder's round cap is drawn as a smooth circle, not a visible
     /// polygon: seen from above, its outline covers more than 99.5 % of the
     /// circle around it. Wolfram's snapshots show smooth rims even on a
