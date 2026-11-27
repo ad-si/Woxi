@@ -33424,6 +33424,19 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
   }
 }
 
+/// Whether an annotation lays out an `ActionMenu[label, {item :> action,
+/// …}]` among its items. The menu's own arguments are not searched: a menu
+/// named inside an item's held action is not laid out.
+fn annotation_contains_action_menu(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "ActionMenu" || args.iter().any(annotation_contains_action_menu)
+    }
+    Expr::List(items) => items.iter().any(annotation_contains_action_menu),
+    _ => false,
+  }
+}
+
 /// Whether a static annotation row (`Row[{"drag ", disk}]`) evaluates to
 /// a layout holding a picture, e.g. through a symbol bound to a
 /// `Graphics`, rather than to plain text.
@@ -40714,9 +40727,9 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   else {
     return svg;
   };
-  let Some(close) = svg.rfind("</svg>") else {
+  if !svg.contains("</svg>") {
     return svg;
-  };
+  }
   let mut out = String::with_capacity(svg.len() + 256);
   out.push_str(&svg[..open_end]);
   if let Some(bg) = background {
@@ -40726,18 +40739,201 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
       bg.opacity_attr()
     ));
   }
-  out.push_str(&svg[open_end..close]);
+  out.push_str(&svg[open_end..]);
   if enabled {
-    out.push_str(&button_hit_rect(
-      &crate::syntax::expr_to_source_form(&button_args[1]),
-      vb_x,
-      vb_y,
-      vb_w,
-      vb_h,
-    ));
+    with_hit_region(out, &crate::syntax::expr_to_source_form(&button_args[1]))
+  } else {
+    out
   }
+}
+
+/// Cover the whole of the picture `svg` with an invisible rectangle that
+/// runs `action` (Wolfram source) when a live widget presses it (see
+/// [`BUTTON_HIT_ID_PREFIX`]). A picture without a `viewBox` is left as is.
+fn with_hit_region(svg: String, action: &str) -> String {
+  let Some(dims) = parse_svg_dimensions(&svg) else {
+    return svg;
+  };
+  let vb: Vec<f64> = dims
+    .view_box
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+    return svg;
+  };
+  let Some(close) = svg.rfind("</svg>") else {
+    return svg;
+  };
+  let mut out = String::with_capacity(svg.len() + 256);
+  out.push_str(&svg[..close]);
+  out.push_str(&button_hit_rect(action, vb_x, vb_y, vb_w, vb_h));
   out.push_str(&svg[close..]);
   out
+}
+
+/// Name stem of the hidden variable holding which element a `FlipView`
+/// without an index of its own is flipped to inside a `Manipulate` (see
+/// [`bind_flip_view_indices`]).
+const FLIP_VIEW_INDEX_STEM: &str = "flipViewIndex$";
+
+/// The element a `FlipView[{e1, e2, …}]`, `FlipView[list, i]` or
+/// `FlipView[list, Dynamic[i]]` shows: the first one, or the `i`-th, counted
+/// cyclically. With a `Dynamic[i]` index the element is returned as a
+/// picture carrying a hit region whose action flips to the next element, so
+/// a live widget advances the view on a click, the way the FrontEnd does.
+/// `None` unless the first argument is a non-empty list.
+pub(crate) fn flip_view_shown(args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(items)) = args.first() else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let n = items.len() as i128;
+  let (index, target) = match args.get(1) {
+    Some(Expr::Integer(i)) => (*i, None),
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      match evaluate_expr_to_expr(&dargs[0]) {
+        Ok(Expr::Integer(i)) => (i, Some(&dargs[0])),
+        _ => (1, None),
+      }
+    }
+    _ => (1, None),
+  };
+  let shown = items[(index - 1).rem_euclid(n) as usize].clone();
+  let Some(target) = target else {
+    return Some(shown);
+  };
+  let target = crate::syntax::expr_to_source_form(target);
+  let action = format!("{target} = Mod[{target}, {n}] + 1");
+  let svg = match &shown {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    other => crate::evaluator::expr_to_svg(&resolve_display_item(other)),
+  };
+  if svg.is_empty() {
+    return Some(shown);
+  }
+  let svg = with_hit_region(svg, &action);
+  Some(match &shown {
+    Expr::Graphics {
+      is_3d,
+      source,
+      head,
+      structure,
+      ..
+    } => Expr::Graphics {
+      svg,
+      is_3d: *is_3d,
+      source: source.clone(),
+      head: head.clone(),
+      structure: structure.clone(),
+    },
+    _ => Expr::Graphics {
+      svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    },
+  })
+}
+
+/// Give every `FlipView[list]` / `FlipView[list, i]` in a `Manipulate` body
+/// a `Dynamic` index of its own: the view has to remember which element it
+/// is flipped to across re-renders, so the index becomes a hidden state
+/// variable (pushed onto `state` with its start value) that a click on the
+/// view advances. A view that already names its `Dynamic[i]` is left alone.
+fn bind_flip_view_indices(
+  expr: &Expr,
+  state: &mut Vec<(String, String)>,
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "FlipView"
+        && matches!(args.len(), 1 | 2)
+        && !matches!(
+          args.get(1),
+          Some(Expr::FunctionCall { name: d, .. }) if d == "Dynamic"
+        ) =>
+    {
+      let start = match args.get(1) {
+        Some(Expr::Integer(i)) => *i,
+        _ => 1,
+      };
+      let var = format!("{FLIP_VIEW_INDEX_STEM}{}", state.len() + 1);
+      state.push((var.clone(), start.to_string()));
+      call(
+        "FlipView",
+        vec![
+          bind_flip_view_indices(&args[0], state),
+          call("Dynamic", vec![id_expr(&var)]),
+        ],
+      )
+    }
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
+        .iter()
+        .map(|a| bind_flip_view_indices(a, state))
+        .collect(),
+    ),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| bind_flip_view_indices(it, state))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| bind_flip_view_indices(it, state))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// Attempt to extract a `ManipulateSpec` from a `FlipView[{e1, …, en}]` or
+/// `FlipView[{e1, …, en}, i]` expression: a widget with no controls that
+/// shows one element and flips to the next on a click, i.e. a `Manipulate`
+/// whose body is the view. A view bound to its own `Dynamic[i]` flips that
+/// variable instead and is not a widget of its own. Returns `None` for
+/// anything else.
+pub fn extract_flip_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "FlipView"
+        && matches!(args.first(), Some(Expr::List(l)) if !l.is_empty())
+        && !matches!(
+          args.get(1),
+          Some(Expr::FunctionCall { name: d, .. }) if d == "Dynamic"
+        ) =>
+    {
+      // The index lives in a hidden (`ControlType -> None`) variable.
+      let var = format!("{FLIP_VIEW_INDEX_STEM}1");
+      let start = match args.get(1) {
+        Some(Expr::Integer(i)) => *i,
+        _ => 1,
+      };
+      let view = call(
+        "FlipView",
+        vec![args[0].clone(), call("Dynamic", vec![id_expr(&var)])],
+      );
+      let hidden = Expr::List(
+        vec![
+          Expr::List(vec![id_expr(&var), Expr::Integer(start)].into()),
+          rule_expr(id_expr("ControlType"), id_expr("None")),
+        ]
+        .into(),
+      );
+      extract_manipulate_spec(&call("Manipulate", vec![view, hidden]))
+    }
+    _ => None,
+  }
 }
 
 /// Prefix of the `id` on the invisible rectangle that marks a `ClickPane`
@@ -42947,6 +43143,17 @@ fn resolve_display_item_content(expr: &Expr) -> (Expr, bool) {
       // `SlideView[{s1, s2, …}]` starts on its first slide.
       Some(("SlideView", Expr::List(slides))) if !slides.is_empty() => {
         current = slides[0].clone();
+      }
+      // `FlipView[{e1, e2, …}, i]` shows the element it is flipped to.
+      Some(("FlipView", _)) => {
+        let shown = match &current {
+          Expr::FunctionCall { args, .. } => flip_view_shown(args),
+          _ => None,
+        };
+        match shown {
+          Some(shown) => current = shown,
+          None => break,
+        }
       }
       _ => break,
     }
@@ -50808,6 +51015,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // inside the rendered output they would only be an inert picture.
     let mut body_displays = Vec::new();
     let body_expr = extract_body_togglerbars(&unwrapped, &mut body_displays);
+    // A `FlipView` in the body keeps the element it is flipped to in a
+    // hidden state variable.
+    let body_expr =
+      bind_flip_view_indices(&body_expr, &mut dynamic_module_state);
     let body_code = crate::syntax::expr_to_source_form(&body_expr);
     body_expr_kept = Some(body_expr);
     (
@@ -51355,7 +51566,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
-          && !annotation_contains_dynamic(spec) =>
+          && !annotation_contains_dynamic(spec)
+          && !annotation_contains_action_menu(spec) =>
       {
         let label_runs = manipulate_label_runs(spec, false);
         controls.push(ManipulateControl::Heading {
@@ -51372,9 +51584,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
       // Like a static heading, it is a row of the control panel at the
       // place it holds among the control specs.
+      //
+      // An annotation laying out an `ActionMenu[…]` (a `Column` of a
+      // caption and its menus) is live in the same way: the menus are
+      // pressable, so it is laid out as a display, not as heading text
+      // quoting the menus' source.
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
-          && annotation_contains_dynamic(spec) =>
+          && (annotation_contains_dynamic(spec)
+            || annotation_contains_action_menu(spec)) =>
       {
         panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(spec));
@@ -69816,6 +70034,130 @@ mod manipulate_control_placement_tests {
     assert_eq!(names, vec!["r", "grid"]);
     assert_eq!(spec.displays.len(), 1, "{:?}", spec.displays);
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
+  }
+
+  /// A caption column holding `ActionMenu`s is a live display in its place
+  /// among the controls, not a heading quoting the menus. A column of plain
+  /// captions, and one that only names a menu inside a held action, stay
+  /// headings.
+  #[test]
+  fn annotation_column_with_action_menus_is_a_panel_display() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{m, x}, {x, 0, 1}, \
+       Column[{Style[\"pick\", Bold], \
+         Item[ActionMenu[\"mode\", {\"a\" :> (m = 1), \"b\" :> (m = 2)}]]}], \
+       Column[{\"plain\", Style[\"captions\", Italic]}], \
+       {{m, 1}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.displays.len(), 1, "{:?}", spec.displays);
+    assert!(spec.displays[0].starts_with("Column[{Style[\"pick\", Bold]"));
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+    let headings: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Heading { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(headings, vec!["plain\ncaptions"]);
+  }
+
+  /// Each `FlipView` in a Manipulate body without a `Dynamic` index of its
+  /// own gets a hidden state variable starting on the element it names; a
+  /// view that already has one is left alone.
+  #[test]
+  fn body_flip_views_get_hidden_index_variables() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{FlipView[{a, b}], FlipView[{c, d, e}, 3], \
+       FlipView[{f, g}, Dynamic[k]]}, {x, 0, 1}, \
+       {{k, 1}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec.body_code,
+      "{FlipView[{a, b}, Dynamic[flipViewIndex$1]], \
+       FlipView[{c, d, e}, Dynamic[flipViewIndex$2]], \
+       FlipView[{f, g}, Dynamic[k]]}"
+    );
+    let value = |name: &str| {
+      spec
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(value("flipViewIndex$1"), Some("1"));
+    assert_eq!(value("flipViewIndex$2"), Some("3"));
+    assert_eq!(value("k"), Some("1"));
+  }
+
+  /// A `FlipView` on its own is a control-less widget around a hidden
+  /// index; one bound to a `Dynamic` variable, or without a list of
+  /// elements, is not.
+  #[test]
+  fn flip_view_spec_extraction() {
+    let parse = |code: &str| crate::parse_to_expr(code).expect("parse");
+    let spec = extract_flip_view_spec(&parse("FlipView[{a, b, c}, 2]"))
+      .expect("extract spec");
+    assert!(spec.controls.is_empty());
+    assert_eq!(
+      spec.body_code,
+      "FlipView[{a, b, c}, Dynamic[flipViewIndex$1]]"
+    );
+    assert_eq!(
+      spec.state,
+      vec![("flipViewIndex$1".to_string(), "2".to_string())]
+    );
+    assert!(
+      extract_flip_view_spec(&parse("FlipView[{a, b}, Dynamic[k]]")).is_none()
+    );
+    assert!(extract_flip_view_spec(&parse("FlipView[{}]")).is_none());
+    assert!(extract_flip_view_spec(&parse("FlipView[a]")).is_none());
+    assert!(extract_flip_view_spec(&parse("SlideView[{a, b}]")).is_none());
+  }
+
+  /// `FlipView[list, i]` shows its `i`-th element, counted cyclically, and
+  /// the first one without an index. With a `Dynamic[i]` index the element
+  /// becomes a picture whose hit region flips on to the next one.
+  #[test]
+  fn flip_view_shows_the_element_it_is_flipped_to() {
+    let args = |code: &str| -> Vec<Expr> {
+      match &crate::parse_to_expr(code).expect("parse") {
+        Expr::FunctionCall { args, .. } => args.to_vec(),
+        other => panic!("expected a call, got {other:?}"),
+      }
+    };
+    let shown = |code: &str| {
+      flip_view_shown(&args(code)).map(|e| crate::syntax::expr_to_string(&e))
+    };
+    assert_eq!(shown("FlipView[{a, b, c}]").as_deref(), Some("a"));
+    assert_eq!(shown("FlipView[{a, b, c}, 3]").as_deref(), Some("c"));
+    assert_eq!(shown("FlipView[{a, b, c}, 5]").as_deref(), Some("b"));
+    assert_eq!(shown("FlipView[{a, b, c}, 0]").as_deref(), Some("c"));
+    assert_eq!(shown("FlipView[{}]"), None);
+    assert_eq!(shown("FlipView[a]"), None);
+    // `2` stands in for a variable holding 2.
+    match &flip_view_shown(&args("FlipView[{\"p\", \"q\", \"r\"}, Dynamic[2]]"))
+    {
+      Some(Expr::Graphics { svg, .. }) => {
+        assert!(svg.contains(">q<"), "{svg}");
+        let id = svg
+          .split(BUTTON_HIT_ID_PREFIX)
+          .nth(1)
+          .and_then(|rest| rest.split('"').next())
+          .expect("a hit region");
+        assert_eq!(
+          button_action_from_hit_id(&format!("{BUTTON_HIT_ID_PREFIX}{id}"))
+            .as_deref(),
+          Some("2 = Mod[2, 3] + 1")
+        );
+      }
+      other => panic!("expected a picture, got {other:?}"),
+    }
   }
 
   /// A bar declared after every other control closes the panel.

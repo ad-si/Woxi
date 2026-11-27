@@ -11160,6 +11160,134 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
+  /// A control-panel `Column` of a caption and `ActionMenu`s is laid out as
+  /// live menus. Regression: the whole column was typeset as one heading
+  /// quoting each menu's source (`ActionMenu[mode, {…}]`), so no menu could
+  /// be opened.
+  #[test]
+  fn action_menus_in_a_caption_column_stay_live() {
+    use woxi::functions::graphics::DisplayNode;
+    let code = "Manipulate[      {mode, depth, x},       Column[{Style[\"settings\", Bold],         Item[ActionMenu[\"mode\", {\"a\" :> (mode = 1), \"b\" :> (mode = 2)}]],         Item[ActionMenu[\"depth\", {\"shallow\" :> (depth = 3),           \"deep\" :> (depth = 9)}]]}],       {x, 0, 1},       {{mode, 1}, ControlType -> None}, {{depth, 3}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, manipulate::ControlState::Heading { .. })),
+      "the column must not be flattened into heading text"
+    );
+    fn menus(node: &DisplayNode, out: &mut Vec<(String, Vec<String>)>) {
+      match node {
+        DisplayNode::ActionMenu { label, items } => out.push((
+          display_node_plain_text(label),
+          items.iter().map(|(_, action)| action.clone()).collect(),
+        )),
+        DisplayNode::Column(items) | DisplayNode::Row(items) => {
+          items.iter().for_each(|n| menus(n, out))
+        }
+        DisplayNode::Panel(inner) => menus(inner, out),
+        _ => {}
+      }
+    }
+    let mut found = Vec::new();
+    state
+      .display_trees
+      .iter()
+      .for_each(|t| menus(t, &mut found));
+    assert_eq!(
+      found,
+      vec![
+        (
+          "mode".to_string(),
+          vec!["mode = 1".to_string(), "mode = 2".to_string()]
+        ),
+        (
+          "depth".to_string(),
+          vec!["depth = 3".to_string(), "depth = 9".to_string()]
+        ),
+      ]
+    );
+    state.apply_button_action(&found[1].1[1]);
+    state.apply_button_action(&found[0].1[1]);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(state.text_output.as_deref(), Some("{2, 9, 0}"));
+  }
+
+  /// A `FlipView[{e1, e2, …}]` in a Manipulate body shows one element and
+  /// flips to the next on a click, wrapping around, and stays on that
+  /// element when a control re-renders the body. Regression: it was typeset
+  /// as its source (`FlipView[{-Graphics-, -Graphics-}]`).
+  #[test]
+  fn flip_view_in_a_manipulate_body_flips_on_click() {
+    let code = "Manipulate[      Column[{x, FlipView[{Graphics[Disk[]], Graphics[Circle[]],         Graphics[Rectangle[]]}]}], {x, 0, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    let shapes = |state: &manipulate::ManipulateState| {
+      let svg = state.current_svg().expect("the body draws a picture");
+      assert!(!svg.contains("FlipView"), "source text leaked: {svg}");
+      // Every hit region is an (invisible) `<rect>` too.
+      (
+        svg.matches("<ellipse").count() + svg.matches("<circle").count(),
+        svg.matches("<rect").count() - svg.matches("woxi-btn-").count(),
+      )
+    };
+    let index = |state: &manipulate::ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n.starts_with("flipViewIndex$"))
+        .map(|(_, v)| v.clone())
+    };
+    assert_eq!(index(&state).as_deref(), Some("1"));
+    let first = shapes(&state);
+    assert_eq!(state.button_regions.len(), 1);
+    let flip = state.button_regions[0].action.clone();
+
+    state.apply_button_action(&flip);
+    assert_eq!(index(&state).as_deref(), Some("2"));
+    // Moving a control re-renders the body without flipping back.
+    state.slide_continuous(0, 0.5);
+    assert_eq!(index(&state).as_deref(), Some("2"));
+
+    state.apply_button_action(&flip);
+    assert_eq!(index(&state).as_deref(), Some("3"));
+    let third = shapes(&state);
+    assert_ne!(first, third, "the third element must replace the first");
+
+    state.apply_button_action(&flip);
+    assert_eq!(index(&state).as_deref(), Some("1"));
+    assert_eq!(shapes(&state), first);
+  }
+
+  /// A `FlipView` evaluated on its own is a widget of its own: it starts on
+  /// the element its second argument names and flips on a click.
+  #[test]
+  fn standalone_flip_view_is_a_click_to_flip_widget() {
+    let expr =
+      woxi::parse_to_expr("FlipView[{\"one\", \"two\", \"three\"}, 2]")
+        .expect("parse");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a FlipView must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    assert!(state.controls.is_empty());
+    let shown = |state: &manipulate::ManipulateState| {
+      let svg = state.current_svg().expect("the view draws a picture");
+      ["one", "two", "three"]
+        .into_iter()
+        .filter(|w| svg.contains(&format!(">{w}<")))
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(shown(&state), vec!["two"]);
+    let flip = state.button_regions[0].action.clone();
+    state.apply_button_action(&flip);
+    assert_eq!(shown(&state), vec!["three"]);
+    state.apply_button_action(&flip);
+    assert_eq!(shown(&state), vec!["one"]);
+  }
+
   /// A `Toggler[Dynamic[var], {value -> label, …}]` written inside a
   /// `Dynamic` display row (not a formal control spec) is a button showing
   /// the label of the value `var` holds; pressing it moves `var` on to the

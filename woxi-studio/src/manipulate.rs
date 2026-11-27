@@ -14,9 +14,9 @@ pub use woxi::functions::graphics::{
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
-  extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
-  extract_locator_pane_spec, extract_manipulate_spec, extract_slide_view_spec,
-  read_manipulate_state,
+  extract_click_pane_spec, extract_control_spec, extract_flip_view_spec,
+  extract_list_animate_spec, extract_locator_pane_spec,
+  extract_manipulate_spec, extract_slide_view_spec, read_manipulate_state,
 };
 use woxi::syntax::Expr;
 
@@ -1623,6 +1623,7 @@ impl ManipulateState {
       .or_else(|| extract_control_spec(expr))
       .or_else(|| extract_list_animate_spec(expr))
       .or_else(|| extract_slide_view_spec(expr))
+      .or_else(|| extract_flip_view_spec(expr))
       .or_else(|| extract_animator_spec(expr))
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;

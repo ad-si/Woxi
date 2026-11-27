@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `FlipView[{e1, e2, …}, i]` shows the element it is flipped to in Woxi
+    Studio and the Playground instead of its source text, and a click on it
+    in Woxi Studio flips to the next element, on its own or inside a
+    `Manipulate` body.
+- A `Manipulate` control-panel `Column` or `Row` of captions and
+    `ActionMenu`s lays the menus out live instead of quoting their source
+    as a heading.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
