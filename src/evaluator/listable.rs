@@ -411,6 +411,16 @@ pub fn thread_listable(
 
   let Some(len) = list_len else { return Ok(None) };
 
+  // Two machine-complex numbers combine directly, without a dispatch per
+  // element (see `fast_machine_complex_binop`).
+  let machine_op = match (name, args.len()) {
+    ("Plus", 2) => Some(crate::syntax::BinaryOperator::Plus),
+    ("Times", 2) => Some(crate::syntax::BinaryOperator::Times),
+    ("Power", 2) => Some(crate::syntax::BinaryOperator::Power),
+    _ => None,
+  }
+  .filter(|_| !crate::evaluator::core_eval::has_user_rules(name));
+
   // Thread element-wise
   let mut results = Vec::with_capacity(len);
   for i in 0..len {
@@ -424,6 +434,13 @@ pub fn thread_listable(
         }
       })
       .collect();
+    if let (Some(op), [l, r]) = (machine_op, threaded_args.as_slice())
+      && let Some(value) =
+        crate::functions::math_ast::fast_machine_complex_binop(op, l, r)
+    {
+      results.push(value);
+      continue;
+    }
     results.push(evaluate_function_call_ast(name, &threaded_args)?);
   }
   let product = Expr::List(results.into());
