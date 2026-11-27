@@ -379,8 +379,7 @@ mod row_visual_mode {
   fn row_blank_line_takes_string_line_pitch() {
     clear_state();
     let height = |code: &str| -> f64 {
-      let result = interpret_with_stdout(code).unwrap();
-      let svg = result.graphics.unwrap();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
       svg
         .split("height=\"")
         .nth(1)
@@ -389,12 +388,18 @@ mod row_visual_mode {
         .unwrap()
     };
     for size in [10, 14, 15, 20, 31] {
-      // A trailing break adds one line at the string's pitch.
-      let string = height(&format!("Style[\"a\\nb\", {size}]"));
+      // A trailing or leading break adds one line at the string's pitch.
+      let one = height(&format!("Style[Row[{{\"a\", \"b\"}}], {size}]"));
       let trailing = height(&format!("Style[Row[{{\"a\", \"\\n\"}}], {size}]"));
       let leading = height(&format!("Style[Row[{{\"\\n\", \"a\"}}], {size}]"));
-      assert_eq!(trailing, string, "size {size}");
-      assert_eq!(leading, string, "size {size}");
+      assert_eq!(trailing - one, size as f64, "size {size}");
+      assert_eq!(leading, trailing, "size {size}");
+      // At the sizes where a line is not held to the minimum row height,
+      // the broken row is exactly as tall as the two-line string.
+      if size >= 14 {
+        let string = height(&format!("Style[\"a\\nb\", {size}]"));
+        assert_eq!(trailing, string, "size {size}");
+      }
       // Each further blank line adds the font size again.
       let two = height(&format!("Row[{{Style[\"a\\n\", {size}], \"b\"}}]"));
       let three =

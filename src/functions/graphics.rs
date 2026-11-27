@@ -46890,6 +46890,11 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         Some(text) => {
           for (k, seg) in text.split('\n').enumerate() {
             if k > 0 {
+              // The first line, when blank, is set like the text whose
+              // break ends it.
+              if lines.len() == 1 {
+                blanks[0] = blank_line(item);
+              }
               lines.push(Vec::new());
               blanks.push(blank_line(item));
             }
