@@ -3631,9 +3631,9 @@ fn field_plot_structure(
   fn name_of(o: &Expr) -> Option<&str> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
   }
-  // A contour plot's content is a single `GraphicsComplex`, which Wolfram
-  // stores as the graphic's first argument itself (not in a list), so
-  // `First[First[plot]]` is the point table.
+  // A lone `GraphicsComplex` (a `ListContourPlot`'s content) is the
+  // graphic's first argument itself, not in a list, so `First[First[plot]]`
+  // is the point table.
   let content = match <[Expr; 1]>::try_from(items) {
     Ok([complex]) if matches!(&complex, Expr::FunctionCall { name, .. } if name == "GraphicsComplex") => {
       complex
@@ -4428,8 +4428,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     contour_style_directives(args, 3),
     mesh_items.into_iter().collect(),
   );
+  // `ContourPlot` lists its `GraphicsComplex` with an empty group after it:
+  // `First[plot]` is `{GraphicsComplex[…], {}}`.
   let structure = field_plot_structure(
-    vec![contour_graphics_complex(&structure_items)],
+    vec![
+      contour_graphics_complex(&structure_items),
+      Expr::List(Vec::new().into()),
+    ],
     args,
     (x_min, x_max),
     (y_min, y_max),
@@ -4945,7 +4950,13 @@ fn contour_plot_equations(
   let structure = call(
     "Graphics",
     vec![
-      contour_graphics_complex(&structure_items),
+      Expr::List(
+        vec![
+          contour_graphics_complex(&structure_items),
+          Expr::List(Vec::new().into()),
+        ]
+        .into(),
+      ),
       Expr::List(structure_options.into()),
     ],
   );
@@ -4967,6 +4978,7 @@ fn contour_plot_equations(
     legends: Vec::new(),
     legend_positions: Vec::new(),
     settles_all_range: false,
+    axes_layout: crate::syntax::AxesLayout::Plot,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {

@@ -25,6 +25,61 @@ thread_local! {
     pub static ENTITY_STORES: crate::epoch::EpochCell<Vec<Vec<(String, EntityTypeData)>>> = const { crate::epoch::EpochCell::new(Vec::new()) };
 }
 
+/// Display labels of entities, as `(type, name) -> (label, type description)`.
+///
+/// A notebook stores an entity as the FrontEnd's icon
+/// `TemplateBox[{"\"Mars\"", RowBox[…], "\"Entity[…]\"", "\"planet\""},
+/// "Entity"]`, which carries the name the entity is displayed under. That
+/// name is kept here so the entity is still typeset by it once the cell's
+/// source has been reduced to the plain `Entity[…]` expression — including
+/// for an entity type Woxi has no data for.
+///
+/// The labels are display metadata read while a notebook is parsed, which
+/// may happen on another thread than the evaluation that typesets them, so
+/// the table is shared by the whole process.
+static ENTITY_LABELS: std::sync::LazyLock<
+  std::sync::Mutex<
+    std::collections::HashMap<(String, String), (String, String)>,
+  >,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Remember the `label` (and the `description` of its type) that
+/// `Entity[type_name, entity_name]` is displayed under.
+pub fn register_entity_label(
+  type_name: &str,
+  entity_name: &str,
+  label: &str,
+  description: &str,
+) {
+  if let Ok(mut labels) = ENTITY_LABELS.lock() {
+    labels.insert(
+      (type_name.to_string(), entity_name.to_string()),
+      (label.to_string(), description.to_string()),
+    );
+  }
+}
+
+/// The `(label, type description)` a notebook displayed `entity` under, if
+/// it is an `Entity["type", "name"]` some parsed notebook showed as an icon.
+pub fn entity_label(entity: &Expr) -> Option<(String, String)> {
+  let Expr::FunctionCall { name, args } = entity else {
+    return None;
+  };
+  if name != "Entity" || args.len() != 2 {
+    return None;
+  }
+  let (Expr::String(type_name), Expr::String(entity_name)) =
+    (&args[0], &args[1])
+  else {
+    return None;
+  };
+  ENTITY_LABELS
+    .lock()
+    .ok()?
+    .get(&(type_name.clone(), entity_name.clone()))
+    .cloned()
+}
+
 /// Parse an EntityStore expression and return the internal representation.
 /// Valid forms:
 ///   EntityStore[{type1 -> <|...|>, type2 -> <|...|>, ...}]

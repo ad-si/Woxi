@@ -1124,3 +1124,77 @@ mod interpreter_scalar_tests {
     assert_eq!(interpret(r#"Interpreter["Integer"][42]"#).unwrap(), "42");
   }
 }
+
+mod entity_display_name_tests {
+  use super::*;
+  use woxi::functions::entity_ast::register_entity_label;
+
+  #[test]
+  fn named_entity_typesets_as_its_icon() {
+    clear_state();
+    register_entity_label(
+      "TeaBlend",
+      "SmokyBreakfast",
+      "smoky breakfast",
+      "tea blend",
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[ToBoxes[Entity["TeaBlend", "SmokyBreakfast"]], InputForm]"#
+      )
+      .unwrap(),
+      r#"TemplateBox[{"\"smoky breakfast\"", RowBox[{"Entity", "[", RowBox[{"\"TeaBlend\"", ",", "\"SmokyBreakfast\""}], "]"}], "\"Entity[\\\"TeaBlend\\\", \\\"SmokyBreakfast\\\"]\"", "\"tea blend\""}, "Entity"]"#
+    );
+  }
+
+  #[test]
+  fn unnamed_entity_keeps_its_source_boxes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[ToBoxes[Entity["TeaBlend", "NoSuchBlend"]], InputForm]"#
+      )
+      .unwrap(),
+      r#"RowBox[{"Entity", "[", RowBox[{"\"TeaBlend\"", ",", "\"NoSuchBlend\""}], "]"}]"#
+    );
+  }
+
+  #[test]
+  fn entity_output_form_is_unchanged_by_a_display_name() {
+    clear_state();
+    register_entity_label("TeaBlend", "MintyGreen", "minty green", "tea blend");
+    assert_eq!(
+      interpret(r#"{Entity["TeaBlend", "MintyGreen"]}"#).unwrap(),
+      "{Entity[TeaBlend, MintyGreen]}"
+    );
+  }
+
+  #[test]
+  fn entity_icon_draws_the_name_in_a_rounded_frame() {
+    clear_state();
+    register_entity_label(
+      "TeaBlend",
+      "RoastedOolong",
+      "roasted oolong",
+      "tea blend",
+    );
+    let svg = interpret(
+      r#"ExportString[{Entity["TeaBlend", "RoastedOolong"], 2}, "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">roasted oolong<"), "{svg}");
+    assert!(!svg.contains(">Entity<"), "{svg}");
+    assert!(svg.contains(r#"rx="4.0""#), "{svg}");
+  }
+
+  #[test]
+  fn framed_box_line_of_a_column_draws_its_frame() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{DisplayForm[RowBox[{"{", FrameBox["a"], ","}]], DisplayForm[RowBox[{"b", "}"}]]}, Left], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<rect"), "the frame must be drawn: {svg}");
+    assert!(!svg.contains("[a]"), "{svg}");
+  }
+}
