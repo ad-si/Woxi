@@ -27152,21 +27152,20 @@ fn parametric_plot3d_curve_ast(
     // hairline a bare `Line` in `Graphics3D` gets.
     let (r, g, b) = crate::functions::plot::PLOT_COLORS
       [group_idx % crate::functions::plot::PLOT_COLORS.len()];
-    let base_style = call(
-      "Directive",
+    let palette_color = call(
+      "RGBColor",
       vec![
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ],
-        ),
-        call1("AbsoluteThickness", Expr::Integer(2)),
+        Expr::Real(f64::from(r) / 255.0),
+        Expr::Real(f64::from(g) / 255.0),
+        Expr::Real(f64::from(b) / 255.0),
       ],
     );
-    prim_items.push(base_style);
+    let thickness = call1("AbsoluteThickness", Expr::Integer(2));
+    prim_items.push(if color_function.is_none() {
+      call("Directive", vec![palette_color.clone(), thickness])
+    } else {
+      call1("Directive", thickness)
+    });
     // A curve drawn as a tube ends in a flat cut, not in the hemisphere a
     // bare `Tube` gets: Wolfram's snapshot of a helix plotted with
     // `PlotStyle -> {Tube[r]}` shows the disk closing its upper end. A
@@ -27205,16 +27204,16 @@ fn parametric_plot3d_curve_ast(
         if color_function.is_some() {
           // One colored segment per step, joined to the previous vertex.
           if let Some((px, py, pz, pt)) = prev {
-            if let Some(col) = segment_color(
+            let col = segment_color(
               [
                 f64::midpoint(px, x),
                 f64::midpoint(py, y),
                 f64::midpoint(pz, z),
               ],
               f64::midpoint(pt, t),
-            ) {
-              prim_items.push(call1("Directive", col));
-            }
+            )
+            .unwrap_or_else(|| palette_color.clone());
+            prim_items.push(call1("Directive", col));
             prim_items.push(call1(
               "Line",
               Expr::List(
