@@ -193,6 +193,15 @@ fn main() {
         } else {
           mark.to_string()
         };
+        // Where the control sits relative to the one before it: on the
+        // same panel line, or stacked below it within one item of a line.
+        let mark = if state.stacks_under_previous_control(i) {
+          format!("{mark} [stacks under previous]")
+        } else if state.joins_previous_control(i) {
+          format!("{mark} [joins previous line]")
+        } else {
+          mark
+        };
         println!("  {c:?}{mark}");
         // Only a control placed apart from the rest of the panel says so.
         let side = state.placement_of(i);
