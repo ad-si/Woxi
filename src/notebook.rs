@@ -4229,6 +4229,7 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
         let cleaned = strip_uniquification_suffix(&strip_saved_contexts(
           &inner.replace("\\\n", ""),
         ));
+        let cleaned = rebuild_saved_images(&cleaned);
         let cleaned = cleaned.trim();
         if !cleaned.is_empty() && cleaned != "None" {
           return Some(cleaned.to_string());
@@ -4238,6 +4239,47 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
     search_from = after_kw;
   }
   None
+}
+
+/// Saved code with each image it holds rebuilt into an evaluable
+/// `Image[…]`. The FrontEnd writes an image inside a saved definition (a
+/// `Texture[image]` of a saved surface, say) in its typeset shape, only
+/// with the `Graphics` head in place of `GraphicsBox`:
+/// `Graphics[TagBox[RasterBox[…], BoxForm`ImageTag[…]], …]`. Evaluated as
+/// written that is a graphic of unknown boxes, not the picture.
+fn rebuild_saved_images(code: &str) -> String {
+  const OPENING: &str = "Graphics[";
+  let mut out = String::with_capacity(code.len());
+  let mut rest = code;
+  while let Some(at) = rest.find(OPENING) {
+    let after = &rest[at + OPENING.len()..];
+    let preceded_by_name_char = rest[..at]
+      .chars()
+      .next_back()
+      .is_some_and(|c| c.is_alphanumeric() || c == '$' || c == '`');
+    let image = (!preceded_by_name_char
+      && after.trim_start().starts_with("TagBox["))
+    .then(|| find_matching_bracket(after).ok())
+    .flatten()
+    .and_then(|(args, tail)| {
+      let image =
+        extract_image_from_boxes(split_top_level_commas(args).first()?)?;
+      Some((image, tail))
+    });
+    match image {
+      Some((image, tail)) => {
+        out.push_str(&rest[..at]);
+        out.push_str(&image);
+        rest = tail;
+      }
+      None => {
+        out.push_str(&rest[..at + OPENING.len()]);
+        rest = after;
+      }
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// The distinct symbol names Wolfram qualified with `` $CellContext` `` in a
@@ -9584,6 +9626,30 @@ yf4GL4DwC5VA4w
       SynchronousInitialization->True]";
     let init = extract_saved_initialization(dump).unwrap();
     assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone = True");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_rebuilds_images() {
+    let dump = "DynamicModuleBox[{}, x, Initialization :> ({$CellContext`skin = \
+      Texture[Graphics[TagBox[RasterBox[{{{255, 0, 0}, {0, 255, 0}}}, \
+      {{0, 1}, {2, 0}}, {0, 255}, ColorFunction -> RGBColor], \
+      BoxForm`ImageTag[\"Byte\", ColorSpace -> \"RGB\", Interleaving -> True], \
+      Selectable -> False], DefaultBaseStyle -> \"ImageGraphics\", \
+      ImageSizeRaw -> {2, 1}, PlotRange -> {{0, 2}, {0, 1}}]], \
+      $CellContext`plain = Graphics[Disk[]], \
+      $CellContext`MyGraphics[TagBox[1, 2]]}; Null)]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert!(
+      init.contains(
+        "skin = Texture[Image[{{{255, 0, 0}, {0, 255, 0}}}, \"Byte\", \
+         ColorSpace -> \"RGB\", Interleaving -> True]]"
+      ),
+      "{init}"
+    );
+    assert!(!init.contains("RasterBox"), "{init}");
+    // Ordinary graphics and other heads ending in `Graphics` stay.
+    assert!(init.contains("plain = Graphics[Disk[]]"), "{init}");
+    assert!(init.contains("MyGraphics[TagBox[1, 2]]"), "{init}");
   }
 
   #[test]

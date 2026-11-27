@@ -411,6 +411,76 @@ mod graphics {
       assert_eq!(tiles("{{0, 0}, {2, 0}, {2, 3}, {0, 3}}"), 6);
     }
 
+    // `VertexNormals` only change how a textured face is lit; its image
+    // is still drawn, on a polygon of its own and on one of a
+    // `GraphicsComplex` (the shape a saved textured surface has).
+    #[test]
+    fn textured_polygon3d_with_vertex_normals_keeps_its_texture() {
+      let image = "Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]";
+      let points = "{{0, 0, 0}, {1, 0, 0}, {1, 1, 0.5}, {0, 1, 0.5}}";
+      let coords = "{{0, 0}, {1, 0}, {1, 1}, {0, 1}}";
+      let normals = "{{0, -1, 2}, {0, -1, 2}, {0, -1, 2}, {0, -1, 2}}";
+      let draws_image = |primitives: &str| {
+        let svg = interpret(&format!(
+          "ExportString[Graphics3D[{primitives}], \"SVG\"]"
+        ))
+        .unwrap();
+        svg.contains("<image")
+      };
+      for options in [
+        format!("VertexTextureCoordinates -> {coords}"),
+        format!(
+          "VertexNormals -> {normals}, VertexTextureCoordinates -> {coords}"
+        ),
+        format!(
+          "VertexTextureCoordinates -> {coords}, VertexNormals -> {normals}"
+        ),
+      ] {
+        assert!(
+          draws_image(&format!(
+            "{{Texture[{image}], Polygon[{points}, {options}]}}"
+          )),
+          "polygon with {options}"
+        );
+        assert!(
+          draws_image(&format!(
+            "GraphicsComplex[{points}, {{EdgeForm[], Texture[{image}], \
+             GraphicsGroup[{{Polygon[{{{{1, 2, 3}}, {{1, 3, 4}}}}]}}]}}, {options}]"
+          )),
+          "complex with {options}"
+        );
+      }
+    }
+
+    // A facet whose texture coordinates share one line of the image has
+    // no image area to show: it takes the image's color there instead of
+    // falling back to the plain surface color.
+    #[test]
+    fn textured_polygon3d_with_collinear_coordinates_takes_the_image_color() {
+      let svg = interpret(
+        "ExportString[Graphics3D[{Texture[Image[{{{1, 0, 0}, {1, 0, 0}}, \
+         {{1, 0, 0}, {1, 0, 0}}}]], Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 1}}, \
+         VertexTextureCoordinates -> {{0.2, 0.5}, {0.5, 0.5}, {0.8, 0.5}}]}, \
+         Lighting -> {{\"Ambient\", White}}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+    }
+
+    // A concave planar polygon is not split as a fan from its first
+    // corner, yet each of its triangles still shows the image.
+    #[test]
+    fn textured_concave_polygon3d_keeps_its_texture() {
+      let svg = interpret(
+        "ExportString[Graphics3D[{Texture[Image[{{{1, 0, 0}, {0, 1, 0}}, \
+         {{0, 0, 1}, {1, 1, 0}}}]], Polygon[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, \
+         {1, 0.5, 0}, {0, 2, 0}}, VertexTextureCoordinates -> {{0, 0}, {1, 0}, \
+         {1, 1}, {0.5, 0.25}, {0, 1}}]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(svg.matches("<use ").count(), 3, "{svg}");
+    }
+
     #[test]
     fn graphics3d_with_texture_directive() {
       assert_eq!(
