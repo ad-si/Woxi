@@ -71477,7 +71477,7 @@ mod generalized_bar_chart {
 
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
   /// base (the star raised as a script), not the `SuperStar[d]` expression
-  /// the box reads back as.
+  /// the box reads back as. The one-letter base is an italic symbol.
   #[test]
   fn text_label_with_star_superscript_box() {
     let svg = export_svg(
@@ -71486,7 +71486,8 @@ mod generalized_bar_chart {
     assert!(!svg.contains("SuperStar"), "{svg}");
     assert!(
       svg.contains(
-        "d<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
+        "<tspan font-style=\"italic\">d</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
          <tspan baseline-shift=\"sub\" font-size=\"70%\">hkl</tspan>"
       ),
       "{svg}"
