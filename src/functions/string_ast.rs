@@ -10069,7 +10069,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       if (1..=2).contains(&args.len())
         && matches!(
           args.get(1),
-          None | Some(Expr::Integer(1..)) | Some(Expr::List(_))
+          None | Some(Expr::Integer(1..) | Expr::List(_))
         ) =>
     {
       match exponent_form_parts(name, &args[0], args.get(1)) {
@@ -18991,7 +18991,7 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
     return None;
   }
   let spec = positional.get(1).copied();
-  if !matches!(spec, None | Some(Expr::Integer(_)) | Some(Expr::List(_))) {
+  if !matches!(spec, None | Some(Expr::Integer(_) | Expr::List(_))) {
     return None;
   }
   let n = match spec {
