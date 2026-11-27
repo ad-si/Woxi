@@ -4134,8 +4134,10 @@ fn keep_panel_box(
   graphics_result(panel)
 }
 
-/// Whether `expr` is a `Column[…]` or a `Grid[…]`, possibly under
-/// `Style[…, directives]` wrappers.
+/// Whether `expr` is a `Column[…]` or a `Grid[…]`, or a `Row[…]` that sets
+/// such layouts or pictures side by side (`Row[{Grid[…], Graphics[…]}]`),
+/// possibly under `Style[…, directives]` wrappers. A `Row` of plain text
+/// is no layout: it stays the line of text it is.
 fn is_text_layout(expr: &syntax::Expr) -> bool {
   let mut current = expr;
   while let syntax::Expr::FunctionCall { name, args } = current
@@ -4144,11 +4146,19 @@ fn is_text_layout(expr: &syntax::Expr) -> bool {
   {
     current = &args[0];
   }
-  matches!(
-    current,
+  match current {
     syntax::Expr::FunctionCall { name, .. }
-      if name == "Column" || name == "Grid"
-  )
+      if name == "Column" || name == "Grid" =>
+    {
+      true
+    }
+    syntax::Expr::FunctionCall { name, args } if name == "Row" => {
+      holds_layout_graphic(current)
+        || matches!(args.first(), Some(syntax::Expr::List(items))
+          if items.iter().any(is_text_layout))
+    }
+    _ => false,
+  }
 }
 
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
