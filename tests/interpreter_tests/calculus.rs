@@ -12020,14 +12020,17 @@ mod ndsolve {
   fn interpolating_function_values_on_grid_of_vector_solution() {
     // A vector-valued NDSolve solution has one row of components per grid
     // point; the context-qualified name (as a notebook that loaded the
-    // package via `Get` spells it) resolves to the same function.
+    // package spells it) resolves to the same function. Both accessors are
+    // qualified so a `Global` symbol of the same name cannot shadow them.
     assert_eq!(
       interpret(
-        "f = NDSolve[{X'[t] == -X[t], X[0] == {1., 2., 3.}}, X, {t, 0, 1}]\
+        "Needs[\"DifferentialEquations`InterpolatingFunctionAnatomy`\"]; \
+         f = NDSolve[{X'[t] == -X[t], X[0] == {1., 2., 3.}}, X, {t, 0, 1}]\
            [[1, 1, 2]]; \
          v = DifferentialEquations`InterpolatingFunctionAnatomy`\
          InterpolatingFunctionValuesOnGrid[f]; \
-         {Length[v] == Length[InterpolatingFunctionGrid[f]], \
+         {Length[v] == Length[DifferentialEquations`\
+         InterpolatingFunctionAnatomy`InterpolatingFunctionGrid[f]], \
           Dimensions[v][[2]], First[v], MatrixQ[v, NumericQ]}"
       )
       .unwrap(),

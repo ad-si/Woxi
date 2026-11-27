@@ -1343,6 +1343,10 @@ pub struct ManipulateState {
   /// Names of the controls drawn on the same line as the control before
   /// them (see `ManipulateSpec::row_joined_controls`).
   row_joined_controls: Vec<String>,
+  /// Names of the controls stacked below the control before them inside
+  /// one item of a panel line (see
+  /// `ManipulateSpec::column_stacked_controls`).
+  column_stacked_controls: Vec<String>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -1610,6 +1614,22 @@ impl ManipulateState {
         })
   }
 
+  /// Whether the control at `ctrl_idx` sits directly below the control
+  /// before it inside one item of a panel line, because a
+  /// `Row[{Column[{Control[…], Control[…]}], Control[…]}]` argument stacks
+  /// them in a column with the row's other controls beside it.
+  pub fn stacks_under_previous_control(&self, ctrl_idx: usize) -> bool {
+    ctrl_idx > 0
+      && self
+        .controls
+        .get(ctrl_idx)
+        .map(|c| c.name())
+        .is_some_and(|name| {
+          !name.is_empty()
+            && self.column_stacked_controls.iter().any(|n| n == name)
+        })
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1726,6 +1746,7 @@ impl ManipulateState {
       content_width: spec.content_width,
       content_height: spec.content_height,
       row_joined_controls: spec.row_joined_controls,
+      column_stacked_controls: spec.column_stacked_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       animation_rate: spec.animation_rate,
@@ -4780,6 +4801,60 @@ mod tests {
     );
   }
 
+  /// A `Row[{Column[{Control[…], …}], Control[…], Button[…]}]` argument
+  /// keeps its column of controls as one block of the panel line: the
+  /// column's later controls stack below its first, and the control and
+  /// button written after the column sit beside it. Regression: the column
+  /// was flattened, so every control took a line of its own and only the
+  /// button stayed beside the last one.
+  #[test]
+  fn column_of_controls_in_a_row_stacks_beside_the_rows_other_controls() {
+    let code = r#"Manipulate[
+      {a, b, c, flag, seed},
+      {{seed, 1}, ControlType -> None},
+      Row[{Spacer[30],
+        Column[{
+          Control@{{a, 2, "a"}, 1, 3, 1, SetterBar},
+          Control@{{b, 2, "b"}, 1, 3, 1, SetterBar},
+          Control@{{c, 2, "c"}, 1, 3, 1, SetterBar},
+        }, Alignment -> Right],
+        Spacer[30],
+        Control@{{flag, False, "flag"}, {True, False}},
+        Spacer[30],
+        Button["again", seed = seed + 1; flag = False]}],
+      {d, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    let layout: Vec<(String, bool, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Button { label, .. } => format!("button {label}"),
+          other => other.name().to_string(),
+        };
+        (
+          key,
+          state.joins_previous_control(i),
+          state.stacks_under_previous_control(i),
+        )
+      })
+      .collect();
+    let expected: Vec<(String, bool, bool)> = vec![
+      ("a".into(), false, false),
+      ("b".into(), false, true),
+      ("c".into(), false, true),
+      ("flag".into(), true, false),
+      ("button again".into(), true, false),
+      ("d".into(), false, false),
+    ];
+    assert_eq!(layout, expected);
+  }
+
   /// Controls sharing one `Row[{Control[…], Spacer[…], Control[…]}]`
   /// argument keep that grouping in the Studio's control state, so a setter
   /// bar and the 2D slider beside it are drawn on one line, while the next
@@ -6946,6 +7021,39 @@ mod tests {
     state.reevaluate();
     assert!(state.label_svg("a").is_some());
     assert_eq!(state.label_svgs.iter().filter(|(n, _)| n == "a").count(), 1);
+  }
+
+  /// A checkbox captioned with an arrow set over two letters (a vector
+  /// from one point to another) draws the caption as a typeset icon, the
+  /// arrow above its base, instead of spelling the arrow out after the
+  /// letters as `PQ^(⟶)`. A caption that reads as one line stays text.
+  #[test]
+  fn stacked_overscript_caption_renders_as_label_icon() {
+    let code = "Manipulate[{p, q}, \
+      {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+      {{q, False, \"draw Q\"}, {True, False}}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let icon = state.label_svg("p").expect("a typeset icon for p");
+    assert!(
+      icon.width > 30.0 && icon.height > 12.0,
+      "{}x{}",
+      icon.width,
+      icon.height
+    );
+    let ControlState::Discrete { label, .. } = &state.controls[0] else {
+      panic!("expected a discrete control: {:?}", state.controls[0]);
+    };
+    assert!(!label.contains("^("), "label: {label:?}");
+    assert!(state.label_svg("q").is_none());
+    let ControlState::Discrete { label, .. } = &state.controls[1] else {
+      panic!("expected a discrete control: {:?}", state.controls[1]);
+    };
+    assert_eq!(label, "draw Q");
+    // Toggling the checkbox keeps the icon.
+    state.reevaluate();
+    assert!(state.label_svg("p").is_some());
   }
 
   #[test]

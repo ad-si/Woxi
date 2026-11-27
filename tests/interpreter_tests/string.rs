@@ -16696,12 +16696,15 @@ mod output_form_power_base_parens {
       "     2\n(2 n)"
     );
     assert_eq!(
-      interpret("ToString[HoldForm[(a!)^2]]").unwrap(),
-      "    2\n(a!)"
-    );
-    assert_eq!(
       interpret("ToString[HoldForm[(a && b)^2]]").unwrap(),
       "        2\n(a && b)"
+    );
+    // A postfix factorial binds tighter than the power and stays bare,
+    // unlike in its StandardForm boxes.
+    assert_eq!(interpret("ToString[HoldForm[(a!)^2]]").unwrap(), "  2\na!");
+    assert_eq!(
+      interpret("ToString[HoldForm[(a!!)^b]]").unwrap(),
+      "   b\na!!"
     );
     assert_eq!(
       interpret("ToString[1 + (a b)^c]").unwrap(),

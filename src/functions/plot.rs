@@ -9312,6 +9312,22 @@ pub(crate) fn explicit_options(args: &[Expr]) -> Vec<Expr> {
     .collect()
 }
 
+/// The one style every curve of a single held function takes when that
+/// function yields several curves (`Plot[Table[…], …]`): the `PlotStyle`
+/// list combined as for a single series, in the first palette color unless
+/// the style names one.
+fn shared_style_for_one_function(styles: &[SeriesStyle]) -> Vec<SeriesStyle> {
+  let mut shared = collapse_style_for_single_series(styles)
+    .into_iter()
+    .next()
+    .unwrap_or_default();
+  if shared.color.is_none() {
+    let (r, g, b) = PLOT_COLORS_RGB[0];
+    shared.color = Some(WoxiColor::new(r, g, b));
+  }
+  vec![shared]
+}
+
 /// With a single series a `PlotStyle` list is one combined style, not a
 /// per-series cycle: `ListPlot[pts, PlotStyle -> {PointSize[.02], Red}]`
 /// draws one red series, not a `PointSize` series and a `Red` series. A list
@@ -17283,6 +17299,10 @@ pub(crate) fn parse_explicit_tick_entries(
         // before it is read as text.
         let label_expr =
           evaluate_expr_to_expr(&pair[1]).unwrap_or_else(|_| pair[1].clone());
+        // `StyleForm` is displayed exactly as `Style`.
+        let label_expr =
+          crate::functions::graphics::style_forms_as_style(&label_expr)
+            .unwrap_or(label_expr);
         // An expression the plain-text label reader has no reading for
         // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
         // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
@@ -18366,6 +18386,9 @@ pub(crate) fn apply_common_plot_option(
   // here, so every option below reads the value it stands for.
   let evaluated =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  // `StyleForm` in a label is displayed exactly as `Style`.
+  let evaluated = crate::functions::graphics::style_forms_as_style(&evaluated)
+    .unwrap_or(evaluated);
   let replacement = &evaluated;
   match name {
     "ImageSize" => {
@@ -19503,6 +19526,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     body
   };
 
+  // A held body that is not written as a list is one function to `Plot`,
+  // even when it turns out to yield several curves (`Plot[Table[…], …]`,
+  // or a symbol assigned a list): all of its curves then share one style
+  // instead of cycling through the palette or the `PlotStyle` list. Writing
+  // `Evaluate[…]` around it is what gives each curve its own.
+  let body_is_one_function = !matches!(
+    peel_curve_wrappers(body, &mut CurveWrappers::default()),
+    Expr::List(_)
+  );
+
   let resolved_storage;
   let body: &Expr = if expr_mentions_var(body, &var_name) {
     body
@@ -19760,6 +19793,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_points.len() == 1 {
     plot_opts.plot_style =
       collapse_style_for_single_series(&plot_opts.plot_style);
+  } else if body_is_one_function {
+    plot_opts.plot_style = shared_style_for_one_function(&plot_opts.plot_style);
   }
 
   // The automatic y range clips outliers off the drawn curves — unless
