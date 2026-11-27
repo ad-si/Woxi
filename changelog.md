@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A plot title that is a `Row` broken into several lines by its strings
+    (`PlotLabel -> Row[{"first line.\nratio ", a/b, "."}]`) stacks a
+    fraction, radical or over-/underscript standing in one of its lines
+    instead of flattening it to `a/b`, and sets that fraction at the
+    reduced size of math inside running text.
 - Arithmetic on arrays of machine-complex numbers is several times
     faster: products, quotients, `Log[b, z]` and `b^z` of the elements are
     taken directly (a zero real or imaginary part included), and a

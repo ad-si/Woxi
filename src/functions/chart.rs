@@ -409,7 +409,7 @@ pub(crate) enum LabelSegment {
 /// the numbers in the row — into text and picture segments. `None` unless the
 /// row holds at least one picture.
 fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
-  if crate::functions::graphics::expr_to_svg_markup_lines(expr).len() == 1
+  if crate::functions::graphics::label_sets_one_picture(expr)
     // Set in the picture's text face, like the titles of plain text.
     && let Some(svg) =
       crate::functions::graphics::structured_legend_label_svg(expr)
