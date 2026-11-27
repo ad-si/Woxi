@@ -5287,14 +5287,20 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "{svg}");
     }
 
-    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma,
-    /// not as the literal `TildeTilde[…]`/`Sum[…]` source.
+    /// A held `a ≈ Sum[…]` label reads as an approximation with a sigma
+    /// over a stacked quotient, not as the literal `TildeTilde[…]`/`Sum[…]`
+    /// source.
     #[test]
     fn text_approximation_of_a_sum() {
       let svg = export_svg(
         "Grid[{{Style[HoldForm[a \\[TildeTilde] Sum[1/k, {k, 1, n}]], \"TraditionalForm\"]}}]",
       );
-      assert!(svg.contains("a \u{2248} \u{2211}"), "{svg}");
+      for glyph in ["a", "\u{2248}", "\u{2211}"] {
+        assert!(svg.contains(&format!(">{glyph}</text>")), "{glyph}: {svg}");
+      }
+      // The quotient is stacked on a fraction bar.
+      assert!(svg.contains("<line "), "{svg}");
+      assert!(!svg.contains("1/k"), "{svg}");
       assert!(!svg.contains("TildeTilde"), "{svg}");
       assert!(!svg.contains("Sum["), "{svg}");
     }
