@@ -16872,18 +16872,35 @@ fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
         && args.len() == 2 =>
     {
       let superscript = name == "SuperscriptBox";
-      let script = flatten_label_runs(&traditional_box_runs(&args[1])?);
-      if script.is_empty()
-        || !script
-          .chars()
-          .all(|c| unicode_script_char(c, superscript).is_some())
-        // A letter subscript is lowered by the label renderer instead:
-        // the Unicode subscript letters are missing from most fonts.
-        || (!superscript && script.chars().any(char::is_alphabetic))
-      {
+      let script_runs = traditional_box_runs(&args[1])?;
+      let script = flatten_label_runs(&script_runs);
+      if script.is_empty() {
         return None;
       }
       let mut runs = traditional_box_runs(&args[0])?;
+      if !script
+        .chars()
+        .all(|c| unicode_script_char(c, superscript).is_some())
+        // The Unicode subscript letters are missing from most fonts.
+        || (!superscript && script.chars().any(char::is_alphabetic))
+      {
+        // No script glyphs to spell it with (`a` sub `m`, `x` to the `n`):
+        // each run of the script is wrapped in the markers the SVG writer
+        // lowers or raises, keeping its own slant, so the base stays an
+        // italic one-letter symbol like the base of `x₀` does.
+        let (open, close) = if superscript {
+          (SUPERSCRIPT_START, SUPERSCRIPT_END)
+        } else {
+          (SUBSCRIPT_START, SUBSCRIPT_END)
+        };
+        runs.extend(script_runs.into_iter().filter(|r| !r.text.is_empty()).map(
+          |r| LabelRun {
+            text: format!("{open}{}{close}", r.text),
+            ..r
+          },
+        ));
+        return Some(runs);
+      }
       runs.push(plain(&to_unicode_script(&script, superscript)));
       Some(runs)
     }
@@ -69648,6 +69665,40 @@ Italic], \" = \", 3}]]], \"SVG\"]",
 baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
       ),
       "{svg}"
+    );
+  }
+
+  /// A `Text` string whose box notation carries a letter script
+  /// (`"f(\!\(\*SubscriptBox[\(a\), \(m\)]\))"`) sets its one-letter
+  /// symbols in italics, base and script alike, the way a digit script
+  /// (`x₀`) already italicized its base. Longer names and the plain text
+  /// around the box stay upright.
+  #[test]
+  fn letter_script_in_text_box_string_keeps_italic_symbols() {
+    let text_markup = |label: &str| -> String {
+      let svg = crate::interpret(&format!(
+        "ExportString[Graphics[Text[{label}]], \"SVG\"]"
+      ))
+      .unwrap();
+      let start = svg.find("<text").unwrap();
+      let open_end = start + svg[start..].find('>').unwrap() + 1;
+      let end = svg.find("</text>").unwrap();
+      svg[open_end..end].to_string()
+    };
+    assert_eq!(
+      text_markup(r#""f(\!\(\*SubscriptBox[\(a\), \(m\)]\))""#),
+      "f(<tspan font-style=\"italic\">a</tspan><tspan font-style=\"italic\" \
+baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
+    );
+    assert_eq!(
+      text_markup(r#""\!\(\*SubscriptBox[\(v\), \(max\)]\)""#),
+      "<tspan font-style=\"italic\">v</tspan>\
+<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan>"
+    );
+    assert_eq!(
+      text_markup(r#""\!\(\*SuperscriptBox[\(x\), \(*\)]\)""#),
+      "<tspan font-style=\"italic\">x</tspan>\
+<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>"
     );
   }
 
