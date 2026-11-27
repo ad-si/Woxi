@@ -455,6 +455,12 @@ enum Message {
   ManipulateAnimationTick(std::time::Instant),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
+  /// A Trigger's step button was pressed: (cell, control, along the sweep).
+  ManipulateTriggerStep(usize, usize, bool),
+  /// A Trigger's reset button was pressed: (cell, control).
+  ManipulateTriggerReset(usize, usize),
+  /// A Trigger's direction button was pressed: (cell, control).
+  ManipulateTriggerFlip(usize, usize),
   /// A `Button[…]` control row was pressed; run its action code.
   /// (cell_idx, ctrl_idx)
   ManipulateButtonPressed(usize, usize),
@@ -2256,6 +2262,35 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.toggle_play();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerStep(cell_idx, ctrl_idx, forward) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && state.step_trigger(ctrl_idx, forward)
+        {
+          state.reevaluate();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerReset(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && state.reset_trigger(ctrl_idx)
+        {
+          state.reevaluate();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerFlip(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.flip_trigger_direction(ctrl_idx);
         }
         Task::none()
       }
@@ -5617,26 +5652,58 @@ fn render_manipulate_widget<'a>(
         label,
         label_runs,
         current,
+        elements,
+        backward,
         ..
       } => {
         // A Trigger control: its own play/pause toggle plus a live readout
-        // of the swept variable (Wolfram's TriggerButton/PauseButton pair).
+        // of the swept variable (Wolfram's TriggerButton/PauseButton pair),
+        // or the buttons its `AppearanceElements` ask for, in that order.
+        use woxi::functions::graphics::TriggerElement;
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
-        let symbol = if state.playing { "❚❚" } else { "▶" };
-        let play_btn =
+        let trigger_button = |symbol: &'static str, message: Message| {
           button(text(symbol).size(11))
             .padding([3, 10])
-            .on_press(if enabled {
-              Message::ManipulateTogglePlay(cell_idx)
-            } else {
-              Message::Noop
-            });
+            .on_press(if enabled { message } else { Message::Noop })
+        };
+        let play_symbol = if state.playing { "❚❚" } else { "▶" };
+        let mut buttons = Row::new().spacing(2).align_y(Center);
+        if elements.is_empty() {
+          buttons = buttons.push(trigger_button(
+            play_symbol,
+            Message::ManipulateTogglePlay(cell_idx),
+          ));
+        }
+        for element in elements {
+          buttons = buttons.push(match element {
+            TriggerElement::StepLeft => trigger_button(
+              "−",
+              Message::ManipulateTriggerStep(cell_idx, ctrl_idx, false),
+            ),
+            TriggerElement::StepRight => trigger_button(
+              "+",
+              Message::ManipulateTriggerStep(cell_idx, ctrl_idx, true),
+            ),
+            TriggerElement::PlayPause => trigger_button(
+              play_symbol,
+              Message::ManipulateTogglePlay(cell_idx),
+            ),
+            TriggerElement::Direction => trigger_button(
+              if *backward { "←" } else { "→" },
+              Message::ManipulateTriggerFlip(cell_idx, ctrl_idx),
+            ),
+            TriggerElement::Reset => trigger_button(
+              "⏮",
+              Message::ManipulateTriggerReset(cell_idx, ctrl_idx),
+            ),
+          });
+        }
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
           .width(iced::Length::Fixed(72.0));
-        let control_row = row![label_widget, play_btn, value_widget]
+        let control_row = row![label_widget, buttons, value_widget]
           .align_y(Center)
           .spacing(8);
         controls_col = controls_col.push(control_row);

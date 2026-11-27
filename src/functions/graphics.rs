@@ -49098,6 +49098,68 @@ pub enum TriggerRepetitions {
   Variable(String),
 }
 
+/// A button of a `Trigger` control's `AppearanceElements`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerElement {
+  /// `"StepLeftButton"`: one step against the sweep.
+  StepLeft,
+  /// `"StepRightButton"`: one step along the sweep.
+  StepRight,
+  /// `"PlayPauseButton"` (also the separate play and pause buttons).
+  PlayPause,
+  /// `"DirectionButton"`: turn the running direction around.
+  Direction,
+  /// `"ResetButton"`: back to the start of the sweep.
+  Reset,
+}
+
+/// The buttons a `Trigger` control spec asks for with `AppearanceElements`
+/// (one name or a list of names), in the order given. Empty when the
+/// option is absent or names none of them, which leaves the default look.
+fn trigger_appearance_elements(items: &[Expr]) -> Vec<TriggerElement> {
+  let element = |e: &Expr| match e {
+    Expr::String(s) => match s.as_str() {
+      "StepLeftButton" => Some(TriggerElement::StepLeft),
+      "StepRightButton" => Some(TriggerElement::StepRight),
+      "PlayPauseButton" | "PlayButton" | "PauseButton" | "TriggerButton" => {
+        Some(TriggerElement::PlayPause)
+      }
+      "DirectionButton" => Some(TriggerElement::Direction),
+      "ResetButton" | "ResetPlayButton" => Some(TriggerElement::Reset),
+      _ => None,
+    },
+    _ => None,
+  };
+  let mut out = Vec::new();
+  for it in items {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AppearanceElements")
+    {
+      continue;
+    }
+    let found: Vec<TriggerElement> = match replacement.as_ref() {
+      Expr::List(elems) => elems.iter().filter_map(element).collect(),
+      other => element(other).into_iter().collect(),
+    };
+    for e in found {
+      if !out.contains(&e) {
+        out.push(e);
+      }
+    }
+  }
+  out
+}
+
 /// Whether a control spec's `AppearanceElements` option (one name or a
 /// list of names) includes the `"PlayPauseButton"`.
 fn control_spec_has_play_pause_button(items: &[Expr]) -> bool {
@@ -49387,6 +49449,9 @@ pub enum ManipulateControl {
     /// the trigger stops by itself. `None` (the default, `Infinity`) loops
     /// forever.
     repetitions: Option<TriggerRepetitions>,
+    /// The buttons `AppearanceElements` asks for, in order (empty for the
+    /// default look).
+    elements: Vec<TriggerElement>,
     label: String,
     label_runs: Vec<LabelRun>,
   },
@@ -57347,11 +57412,14 @@ fn dynamic_step_code(spec: &Expr) -> Option<String> {
   let (stripped, found) = manipulate_bound_expr_deep(step);
   // A step naming another control's variable (`{{time, 0}, 0, tMax, step,
   // Trigger}` with a speed setter for `step`) only resolves through the
-  // live bindings, so it follows that control too.
+  // live bindings, so it follows that control too. Those bindings are
+  // not always installed when this runs (as for a `Control[…]` laid out in
+  // a `Row`), so a step that is no number by itself counts as following
+  // them.
   let follows_binding = !found
     && crate::functions::math_ast::try_eval_to_f64_with_infinity(&stripped)
       .is_none()
-    && matches!(eval_manipulate_bound(step), Some((_, true)));
+    && !matches!(eval_manipulate_bound(step), Some((_, false)));
   (found || follows_binding)
     .then(|| crate::syntax::expr_to_source_form(&stripped))
 }
@@ -61870,6 +61938,7 @@ fn parse_manipulate_control(
         initial,
         running,
         repetitions,
+        elements: trigger_appearance_elements(items),
         label,
         label_runs,
       },
@@ -64378,6 +64447,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         initial,
         running,
         repetitions,
+        elements: _,
         label,
         label_runs,
       } => {

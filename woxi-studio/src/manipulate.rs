@@ -247,6 +247,15 @@ pub enum ControlState {
     repetitions: Option<woxi::functions::graphics::TriggerRepetitions>,
     /// Sweeps finished since the last press of play.
     completed: u32,
+    /// The sweep runs downward, from `max` to `min` (`{u, 0, -10, -1,
+    /// Trigger}`, or an end that another control moved below the start).
+    descending: bool,
+    /// The buttons `AppearanceElements` asks for, in order (empty for the
+    /// default play/pause toggle).
+    elements: Vec<woxi::functions::graphics::TriggerElement>,
+    /// The direction button turned the animation around: it runs against
+    /// the sweep until the button is pressed again.
+    backward: bool,
   },
   /// A `Button[label, action]` row. Pressing it runs `action` (InputForm)
   /// against the live bindings — e.g. `time = 0; {U, V} = {Uinit, Vinit}`
@@ -2607,14 +2616,16 @@ impl ManipulateState {
       for (i, c) in self.controls.iter_mut().enumerate() {
         if let ControlState::Trigger {
           min,
+          max,
           current,
           completed,
           repetitions: Some(_),
+          descending,
           ..
         } = c
         {
           *completed = 0;
-          *current = *min;
+          *current = if *descending { *max } else { *min };
           restarted.push(i);
         }
       }
@@ -2705,17 +2716,26 @@ impl ManipulateState {
         step,
         current,
         completed,
+        descending,
+        backward,
         ..
       } => {
-        let mut v = *current + rate_increment.unwrap_or(*step);
-        if max.is_finite() && v > *max + *step * 1e-6 {
+        // A descending sweep runs from `max` down to `min`, and the
+        // direction button turns either kind around.
+        let (start, end, sign) = if *descending != *backward {
+          (*max, *min, -1.0)
+        } else {
+          (*min, *max, 1.0)
+        };
+        let mut v = *current + sign * rate_increment.unwrap_or(*step);
+        if end.is_finite() && sign * (v - end) > *step * 1e-6 {
           *completed += 1;
           if limit.is_some_and(|n| *completed >= n) {
             // The last requested sweep is done: rest on the final frame.
-            v = *max;
+            v = end;
             finished = true;
           } else {
-            v = *min;
+            v = start;
           }
         }
         *current = v;
@@ -2727,6 +2747,72 @@ impl ManipulateState {
       self.playing = false;
     }
     self.reevaluate();
+  }
+
+  /// Move the Trigger at `ctrl_idx` one step along its sweep (`forward`) or
+  /// against it, wrapping around at either end — its step buttons. Returns
+  /// `true` if the control is a Trigger.
+  pub fn step_trigger(&mut self, ctrl_idx: usize, forward: bool) -> bool {
+    let Some(ControlState::Trigger {
+      min,
+      max,
+      step,
+      current,
+      descending,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    let up = *descending != forward;
+    let mut v = if up {
+      *current + *step
+    } else {
+      *current - *step
+    };
+    let eps = *step * 1e-6;
+    if up && max.is_finite() && v > *max + eps {
+      v = *min;
+    } else if !up && min.is_finite() && v < *min - eps {
+      v = if max.is_finite() { *max } else { *min };
+    }
+    *current = v;
+    self.sync_named_siblings(ctrl_idx);
+    true
+  }
+
+  /// Put the Trigger at `ctrl_idx` back on the start of its sweep and stop
+  /// the animation — its reset button. Returns `true` if the control is a
+  /// Trigger.
+  pub fn reset_trigger(&mut self, ctrl_idx: usize) -> bool {
+    let Some(ControlState::Trigger {
+      min,
+      max,
+      current,
+      completed,
+      descending,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *current = if *descending { *max } else { *min };
+    *completed = 0;
+    self.playing = false;
+    self.sync_named_siblings(ctrl_idx);
+    true
+  }
+
+  /// Turn around the direction the Trigger at `ctrl_idx` animates in — its
+  /// direction button. Returns `true` if the control is a Trigger.
+  pub fn flip_trigger_direction(&mut self, ctrl_idx: usize) -> bool {
+    let Some(ControlState::Trigger { backward, .. }) =
+      self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *backward = !*backward;
+    true
   }
 
   /// Re-run the body with the current control bindings and update the
@@ -3298,28 +3384,40 @@ impl ManipulateState {
       let is_trigger = self.controls.iter().any(
         |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
       );
-      let (min, max, current) = match self.controls.iter_mut().find(|c| {
-        matches!(
-          c,
-          ControlState::Continuous { name: n, .. }
-          | ControlState::Trigger { name: n, .. } if n == name
-        )
-      }) {
-        Some(ControlState::Continuous {
-          min, max, current, ..
-        })
-        | Some(ControlState::Trigger {
-          min, max, current, ..
-        }) => (min, max, current),
-        _ => continue,
-      };
+      let mut no_direction = false;
+      let (min, max, current, descending) =
+        match self.controls.iter_mut().find(|c| {
+          matches!(
+            c,
+            ControlState::Continuous { name: n, .. }
+            | ControlState::Trigger { name: n, .. } if n == name
+          )
+        }) {
+          Some(ControlState::Continuous {
+            min, max, current, ..
+          }) => (min, max, current, &mut no_direction),
+          Some(ControlState::Trigger {
+            min,
+            max,
+            current,
+            descending,
+            ..
+          }) => (min, max, current, descending),
+          _ => continue,
+        };
       let was_inside = *min <= *current && *current <= *max;
+      // The bounds are resolved as the spec gives them: start first, then
+      // end. A Trigger sweeping downward keeps them the other way round.
+      if *descending {
+        std::mem::swap(min, max);
+      }
       if let Some(v) = new_min {
         *min = *v;
       }
       if let Some(v) = new_max {
         *max = *v;
       }
+      *descending = is_trigger && *max < *min;
       if *max < *min {
         std::mem::swap(min, max);
       }
@@ -3750,17 +3848,21 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label,
         label_runs,
         repetitions,
+        elements,
         ..
       } => ControlState::Trigger {
         name: name.clone(),
         label: label.clone(),
         label_runs: label_runs.clone(),
-        min: *min,
-        max: *max,
-        step: *step,
+        min: min.min(*max),
+        max: min.max(*max),
+        step: step.abs(),
         current: *initial,
         repetitions: repetitions.clone(),
         completed: 0,
+        descending: *max < *min,
+        elements: elements.clone(),
+        backward: false,
       },
       ManipulateControl::Button {
         label,
@@ -9884,6 +9986,158 @@ mod tests {
     assert!(state.select_discrete(speed_idx, "fast"));
     state.reevaluate();
     assert_eq!(trigger_step(&state), Some(0.1));
+  }
+
+  /// A Trigger whose end and step are products with another control's
+  /// variable (a speed slider) follows that slider, and sweeps downward
+  /// from its start once the slider makes the end smaller than the start.
+  /// Regression: the step stayed at its initial size, and a downward sweep
+  /// jumped to the far end on the first tick.
+  #[test]
+  fn trigger_sweep_follows_signed_speed_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{angle, speed},
+        Row[{Control[{{speed, 1, \"speed\"}, -2, 2, 0.5}],
+          Control[{{angle, 0, \"run\"}, 0, 10*Sign[speed], 0.25*speed,
+            Trigger, DisplayAllSteps -> True}]}],
+        TrackedSymbols :> {speed, angle}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let trigger = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "angle" => Some((*min, *max, *step, *current)),
+        _ => None,
+      })
+    };
+    let speed_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "speed")
+      .unwrap();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.25, 0.0)));
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.25, 0.25)));
+    assert!(state.slide_continuous(speed_idx, 2.0));
+    state.reevaluate();
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((0.0, 10.0, 0.5, 0.75)));
+    // A negative speed turns the sweep around: it runs from 0 down to -10.
+    assert!(state.slide_continuous(speed_idx, -2.0));
+    state.reevaluate();
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, 0.0)));
+    state.advance_animation();
+    state.advance_animation();
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, -1.0)));
+    // Past the end it starts over from the start of the sweep.
+    for _ in 0..19 {
+      state.advance_animation();
+    }
+    assert_eq!(trigger(&state), Some((-10.0, 0.0, 0.5, 0.0)));
+  }
+
+  /// A Trigger whose `AppearanceElements` name step, reset and direction
+  /// buttons offers them: a step moves one increment either way and wraps
+  /// at the ends, the direction button turns the animation around, and
+  /// reset returns to the start and stops playing.
+  #[test]
+  fn trigger_appearance_elements_step_reset_and_turn_around() {
+    use woxi::functions::graphics::TriggerElement;
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[u, {{u, 0}, 0, 4, 1, Trigger, AppearanceElements -> \
+        {\"StepLeftButton\", \"StepRightButton\", \"PlayPauseButton\", \
+         \"DirectionButton\", \"ResetButton\"}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let Some(ControlState::Trigger { elements, .. }) = state.controls.first()
+    else {
+      panic!("expected a Trigger row, got {:?}", state.controls);
+    };
+    assert_eq!(
+      elements,
+      &[
+        TriggerElement::StepLeft,
+        TriggerElement::StepRight,
+        TriggerElement::PlayPause,
+        TriggerElement::Direction,
+        TriggerElement::Reset,
+      ]
+    );
+    let current = |s: &ManipulateState| match &s.controls[0] {
+      ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger row, got {other:?}"),
+    };
+    assert!(state.step_trigger(0, true));
+    assert!(state.step_trigger(0, true));
+    assert_eq!(current(&state), 2.0);
+    assert!(state.step_trigger(0, false));
+    assert_eq!(current(&state), 1.0);
+    // Stepping left past the start wraps to the end, and back again.
+    state.step_trigger(0, false);
+    state.step_trigger(0, false);
+    assert_eq!(current(&state), 4.0);
+    state.step_trigger(0, true);
+    assert_eq!(current(&state), 0.0);
+    // Turned around, the animation runs from the end toward the start.
+    assert!(state.flip_trigger_direction(0));
+    state.advance_animation();
+    assert_eq!(current(&state), 4.0);
+    state.advance_animation();
+    assert_eq!(current(&state), 3.0);
+    state.flip_trigger_direction(0);
+    state.advance_animation();
+    assert_eq!(current(&state), 4.0);
+    state.toggle_play();
+    assert!(state.playing);
+    assert!(state.reset_trigger(0));
+    assert_eq!(current(&state), 0.0);
+    assert!(!state.playing, "reset stops the animation");
+    // A Trigger without the option keeps its default look.
+    let plain = woxi::interpret_to_expr("Manipulate[u, {u, 0, 4, 1, Trigger}]")
+      .expect("parse Manipulate expr");
+    let plain =
+      ManipulateState::from_expr(&plain).expect("build Manipulate widget");
+    assert!(matches!(
+      plain.controls.first(),
+      Some(ControlState::Trigger { elements, .. }) if elements.is_empty()
+    ));
+  }
+
+  /// A Trigger whose end lies below its start sweeps downward from the
+  /// start. Regression: it jumped to the end and stayed in place.
+  #[test]
+  fn trigger_with_descending_range_sweeps_downward() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[u, {u, 0, -3, -1, ControlType -> Trigger}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger { current, .. } => Some(*current),
+        _ => None,
+      })
+    };
+    let mut seen = vec![current(&state)];
+    for _ in 0..4 {
+      state.advance_animation();
+      seen.push(current(&state));
+    }
+    let expected: Vec<Option<f64>> =
+      [0.0, -1.0, -2.0, -3.0, 0.0].into_iter().map(Some).collect();
+    assert_eq!(seen, expected);
   }
 
   /// A Trigger whose initial value lies outside its sweep rests on that
