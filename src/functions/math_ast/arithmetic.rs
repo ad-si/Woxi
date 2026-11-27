@@ -2668,9 +2668,24 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   } else {
     // Group by string representation of base
     let mut index: BTreeMap<String, usize> = BTreeMap::new();
-    for (term, (c, base)) in terms.iter().zip(decomposed) {
+    // A term with a data factor is keyed apart from every term without
+    // one, so when it is the only such term of the sum (`c - f[t]`, `f` an
+    // InterpolatingFunction) it has nothing to be grouped with and its
+    // table is not even hashed.
+    let holds_data: Vec<bool> = decomposed
+      .iter()
+      .map(|(_, base)| product_factors(base).iter().any(is_data_factor))
+      .collect();
+    let data_terms = holds_data.iter().filter(|d| **d).count();
+    for ((term, (c, base)), holds_data) in
+      terms.iter().zip(decomposed).zip(holds_data)
+    {
       let factors = product_factors(base);
-      let key = if factors.iter().any(|f| data_factor_hash(f).is_some()) {
+      let key = if !holds_data {
+        expr_to_string(&term_base_expr(base))
+      } else if data_terms == 1 {
+        "\u{F8FF}".to_string()
+      } else {
         // A factor carrying a large table (an InterpolatingFunction's
         // data, say) is keyed by its structure: printing it for every
         // term was most of the cost of the sum.
@@ -2682,8 +2697,6 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           })
           .collect::<Vec<_>>()
           .join("\u{1}")
-      } else {
-        expr_to_string(&term_base_expr(base))
       };
       let found = index.get(&key).copied();
       let idx = add_term(found, c, base, term);
@@ -2851,46 +2864,89 @@ fn prints_injectively(e: &Expr) -> bool {
   }
 }
 
+/// Walk a factor built only from atoms, lists and calls — whose printed
+/// forms are equal exactly when the factors are structurally equal —
+/// counting its `leaves` and, given a hasher, hashing its structure.
+/// `false` as soon as anything else is met.
+fn data_factor_walk(
+  e: &Expr,
+  h: &mut Option<std::collections::hash_map::DefaultHasher>,
+  leaves: &mut usize,
+) -> bool {
+  use std::hash::Hash;
+  *leaves += 1;
+  match e {
+    Expr::Integer(n) => {
+      if let Some(h) = h {
+        (0u8, n).hash(h);
+      }
+    }
+    Expr::Real(x) => {
+      // -0. prints as 0.
+      let x = if *x == 0.0 { 0.0 } else { *x };
+      if let Some(h) = h {
+        (1u8, x.to_bits()).hash(h);
+      }
+    }
+    Expr::Identifier(s) => {
+      if let Some(h) = h {
+        (2u8, s).hash(h);
+      }
+    }
+    Expr::Constant(s) => {
+      if let Some(h) = h {
+        (3u8, s).hash(h);
+      }
+    }
+    Expr::String(s) => {
+      if let Some(h) = h {
+        (4u8, s).hash(h);
+      }
+    }
+    Expr::List(items) => {
+      if let Some(h) = h {
+        (5u8, items.len()).hash(h);
+      }
+      return items.iter().all(|i| data_factor_walk(i, h, leaves));
+    }
+    Expr::FunctionCall { name, args } => {
+      if let Some(h) = h {
+        (6u8, name, args.len()).hash(h);
+      }
+      return args.iter().all(|a| data_factor_walk(a, h, leaves));
+    }
+    Expr::CurriedCall { func, args } => {
+      if let Some(h) = h {
+        (7u8, args.len()).hash(h);
+      }
+      return data_factor_walk(func, h, leaves)
+        && args.iter().all(|a| data_factor_walk(a, h, leaves));
+    }
+    _ => return false,
+  }
+  true
+}
+
+/// The least number of leaves that makes a factor a "large" one, keyed by
+/// its structure rather than by its printed form.
+const DATA_FACTOR_LEAVES: usize = 100;
+
+/// Whether `e` is a large factor built only from atoms, lists and calls
+/// (see [`data_factor_hash`]), told without hashing it.
+fn is_data_factor(e: &Expr) -> bool {
+  let mut leaves = 0;
+  data_factor_walk(e, &mut None, &mut leaves) && leaves > DATA_FACTOR_LEAVES
+}
+
 /// For a large factor built only from atoms, lists and calls — whose
 /// printed forms are equal exactly when the factors are structurally equal
 /// — a hash of its structure; `None` for small or other factors.
 fn data_factor_hash(e: &Expr) -> Option<u64> {
-  use std::hash::{Hash, Hasher};
-  fn go(
-    e: &Expr,
-    h: &mut std::collections::hash_map::DefaultHasher,
-    leaves: &mut usize,
-  ) -> bool {
-    *leaves += 1;
-    match e {
-      Expr::Integer(n) => (0u8, n).hash(h),
-      Expr::Real(x) => {
-        // -0. prints as 0.
-        let x = if *x == 0.0 { 0.0 } else { *x };
-        (1u8, x.to_bits()).hash(h);
-      }
-      Expr::Identifier(s) => (2u8, s).hash(h),
-      Expr::Constant(s) => (3u8, s).hash(h),
-      Expr::String(s) => (4u8, s).hash(h),
-      Expr::List(items) => {
-        (5u8, items.len()).hash(h);
-        return items.iter().all(|i| go(i, h, leaves));
-      }
-      Expr::FunctionCall { name, args } => {
-        (6u8, name, args.len()).hash(h);
-        return args.iter().all(|a| go(a, h, leaves));
-      }
-      Expr::CurriedCall { func, args } => {
-        (7u8, args.len()).hash(h);
-        return go(func, h, leaves) && args.iter().all(|a| go(a, h, leaves));
-      }
-      _ => return false,
-    }
-    true
-  }
-  let mut h = std::collections::hash_map::DefaultHasher::new();
+  use std::hash::Hasher;
+  let mut h = Some(std::collections::hash_map::DefaultHasher::new());
   let mut leaves = 0;
-  (go(e, &mut h, &mut leaves) && leaves > 100).then(|| h.finish())
+  (data_factor_walk(e, &mut h, &mut leaves) && leaves > DATA_FACTOR_LEAVES)
+    .then(|| h.map_or(0, |h| h.finish()))
 }
 
 /// A hash of a factor list consistent with `factors_equal`.
@@ -11031,6 +11087,14 @@ fn absorb_coefficient_into_power(
 }
 
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Two machine-complex numbers (the elements of a complex matrix product)
+  // multiply directly.
+  if let [l, r] = args
+    && let Some(product) =
+      super::fast_machine_complex_binop(BinaryOperator::Times, l, r)
+  {
+    return Ok(product);
+  }
   if let Some(image) = image_arithmetic(args, |a, b| a * b) {
     return Ok(image);
   }
@@ -13810,6 +13874,13 @@ fn real_over_exact_quotient(x: f64, b: &Expr) -> Option<f64> {
 }
 
 pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // A machine-complex divisor (the elements of a complex matrix quotient)
+  // divides directly.
+  if let Some(quotient) =
+    super::fast_machine_complex_binop(BinaryOperator::Divide, a, b)
+  {
+    return Ok(quotient);
+  }
   // 0 / expr → 0 (Real if either operand is Real, else Integer).
   let b_is_zero =
     matches!(b, Expr::Integer(0)) || matches!(b, Expr::Real(z) if *z == 0.0);
@@ -14594,7 +14665,12 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// `log z = ln|z| + i arg(z)` (`z` nonzero). A part that is rounding noise
 /// next to the result's size comes back as `0.`; the threshold is relative,
 /// so `z^(-1/3)` of a huge `z` keeps its tiny parts.
-fn machine_complex_powf(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+pub(crate) fn machine_complex_powf(
+  a: f64,
+  b: f64,
+  c: f64,
+  d: f64,
+) -> (f64, f64) {
   let ln_abs = a.hypot(b).ln();
   let arg_z = b.atan2(a);
   let re_exp = c * ln_abs - d * arg_z;
@@ -14813,6 +14889,13 @@ fn bigfloat_imaginary_coefficient(e: &Expr) -> Option<&Expr> {
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // A machine-complex power (`2^m` or `m^2` over a complex matrix) is taken
+  // directly.
+  if let Some(power) =
+    super::fast_machine_complex_binop(BinaryOperator::Power, base, exp)
+  {
+    return Ok(power);
+  }
   // An arbitrary-precision imaginary base `c I` to an integer power is
   // `c^n I^n`, its precision that of the real power:
   // `(0.5`30 I)^2` is `-0.25`29.699`.

@@ -455,6 +455,12 @@ enum Message {
   ManipulateAnimationTick(std::time::Instant),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
+  /// A Trigger's step button was pressed: (cell, control, along the sweep).
+  ManipulateTriggerStep(usize, usize, bool),
+  /// A Trigger's reset button was pressed: (cell, control).
+  ManipulateTriggerReset(usize, usize),
+  /// A Trigger's direction button was pressed: (cell, control).
+  ManipulateTriggerFlip(usize, usize),
   /// A `Button[…]` control row was pressed; run its action code.
   /// (cell_idx, ctrl_idx)
   ManipulateButtonPressed(usize, usize),
@@ -2256,6 +2262,35 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.toggle_play();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerStep(cell_idx, ctrl_idx, forward) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && state.step_trigger(ctrl_idx, forward)
+        {
+          state.reevaluate();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerReset(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && state.reset_trigger(ctrl_idx)
+        {
+          state.reevaluate();
+        }
+        Task::none()
+      }
+
+      Message::ManipulateTriggerFlip(cell_idx, ctrl_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.flip_trigger_direction(ctrl_idx);
         }
         Task::none()
       }
@@ -4850,7 +4885,22 @@ fn render_manipulate_widget<'a>(
   let mut line: Vec<Element<'a, Message>> = Vec::new();
   let mut line_outer: Option<Column<'a, Message>> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
-    close_line_item(&mut controls_col, &mut line_outer, &mut line);
+    // A control stacked below the one before it (a `Column` of controls
+    // inside a `Row`, see `ManipulateState::stacks_under_previous_control`)
+    // is drawn into that control's still-open line item instead of
+    // starting an item or a line of its own.
+    let stacks = line_outer.is_some()
+      && state.stacks_under_previous_control(ctrl_idx)
+      && state
+        .control_is_visible
+        .get(ctrl_idx)
+        .copied()
+        .unwrap_or(true)
+      && placement_slot(state.placement_of(ctrl_idx)) == current_slot
+      && panel_trees_at(ctrl_idx).next().is_none();
+    if !stacks {
+      close_line_item(&mut controls_col, &mut line_outer, &mut line);
+    }
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
@@ -4873,18 +4923,20 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     let slot = placement_slot(state.placement_of(ctrl_idx));
-    let joins_line = !line.is_empty()
-      && slot == current_slot
-      && state.joins_previous_control(ctrl_idx);
-    if !joins_line {
-      flush_control_line(&mut controls_col, &mut line);
+    if !stacks {
+      let joins_line = !line.is_empty()
+        && slot == current_slot
+        && state.joins_previous_control(ctrl_idx);
+      if !joins_line {
+        flush_control_line(&mut controls_col, &mut line);
+      }
+      switch_slot(&mut controls_col, &mut current_slot, slot);
+      side_used[slot] = true;
+      line_outer = Some(std::mem::replace(
+        &mut controls_col,
+        Column::new().spacing(6).width(Fill),
+      ));
     }
-    switch_slot(&mut controls_col, &mut current_slot, slot);
-    side_used[slot] = true;
-    line_outer = Some(std::mem::replace(
-      &mut controls_col,
-      Column::new().spacing(6).width(Fill),
-    ));
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -5617,26 +5669,58 @@ fn render_manipulate_widget<'a>(
         label,
         label_runs,
         current,
+        elements,
+        backward,
         ..
       } => {
         // A Trigger control: its own play/pause toggle plus a live readout
-        // of the swept variable (Wolfram's TriggerButton/PauseButton pair).
+        // of the swept variable (Wolfram's TriggerButton/PauseButton pair),
+        // or the buttons its `AppearanceElements` ask for, in that order.
+        use woxi::functions::graphics::TriggerElement;
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
-        let symbol = if state.playing { "❚❚" } else { "▶" };
-        let play_btn =
+        let trigger_button = |symbol: &'static str, message: Message| {
           button(text(symbol).size(11))
             .padding([3, 10])
-            .on_press(if enabled {
-              Message::ManipulateTogglePlay(cell_idx)
-            } else {
-              Message::Noop
-            });
+            .on_press(if enabled { message } else { Message::Noop })
+        };
+        let play_symbol = if state.playing { "❚❚" } else { "▶" };
+        let mut buttons = Row::new().spacing(2).align_y(Center);
+        if elements.is_empty() {
+          buttons = buttons.push(trigger_button(
+            play_symbol,
+            Message::ManipulateTogglePlay(cell_idx),
+          ));
+        }
+        for element in elements {
+          buttons = buttons.push(match element {
+            TriggerElement::StepLeft => trigger_button(
+              "−",
+              Message::ManipulateTriggerStep(cell_idx, ctrl_idx, false),
+            ),
+            TriggerElement::StepRight => trigger_button(
+              "+",
+              Message::ManipulateTriggerStep(cell_idx, ctrl_idx, true),
+            ),
+            TriggerElement::PlayPause => trigger_button(
+              play_symbol,
+              Message::ManipulateTogglePlay(cell_idx),
+            ),
+            TriggerElement::Direction => trigger_button(
+              if *backward { "←" } else { "→" },
+              Message::ManipulateTriggerFlip(cell_idx, ctrl_idx),
+            ),
+            TriggerElement::Reset => trigger_button(
+              "⏮",
+              Message::ManipulateTriggerReset(cell_idx, ctrl_idx),
+            ),
+          });
+        }
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
           .width(iced::Length::Fixed(72.0));
-        let control_row = row![label_widget, play_btn, value_widget]
+        let control_row = row![label_widget, buttons, value_widget]
           .align_y(Center)
           .spacing(8);
         controls_col = controls_col.push(control_row);
@@ -5702,7 +5786,9 @@ fn render_manipulate_widget<'a>(
         } else {
           rich_text(spans).size(12).into()
         };
-        controls_col = controls_col.push(heading);
+        // Sharing a line with controls, the text takes only the room it
+        // needs instead of an equal share of the line.
+        controls_col = controls_col.push(heading).width(iced::Length::Shrink);
       }
       manipulate::ControlState::Divider => {
         // A `Delimiter` argument: a horizontal separator between control
@@ -5859,6 +5945,11 @@ fn render_manipulate_widget<'a>(
           .on_release(Message::ManipulateMouseReleased(cell_idx))
           .into()
       };
+    // A `Pane[…, Scrollbars -> …]` body scrolls inside its box.
+    let picture = match state.scroll_viewport {
+      Some(viewport) => scroll_pane_element(picture, viewport),
+      None => picture,
+    };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref handle) = state.typeset_handle {
     // A textual result is shown typeset, as an ordinary output cell shows
@@ -6456,6 +6547,44 @@ fn render_display_node<'a>(
   }
 }
 
+/// Thickness of a scrolling `Pane`'s scrollbar, which the FrontEnd takes
+/// out of the pane's box.
+const PANE_SCROLLBAR_WIDTH: f32 = 11.0;
+const PANE_SCROLLBAR_MARGIN: f32 = 2.0;
+
+/// The scrollbars a scrolling `Pane` shows: one per direction it scrolls
+/// in, embedded in the pane's box rather than floating over its content.
+fn scroll_pane_direction(
+  viewport: manipulate::ScrollViewport,
+) -> scrollable::Direction {
+  let bar = scrollable::Scrollbar::new()
+    .width(PANE_SCROLLBAR_WIDTH)
+    .scroller_width(PANE_SCROLLBAR_WIDTH)
+    .margin(PANE_SCROLLBAR_MARGIN)
+    .spacing(0);
+  match (viewport.horizontal, viewport.vertical) {
+    (true, false) => scrollable::Direction::Horizontal(bar),
+    (false, true) => scrollable::Direction::Vertical(bar),
+    _ => scrollable::Direction::Both {
+      vertical: bar,
+      horizontal: bar,
+    },
+  }
+}
+
+/// Show the whole content of a `Pane[…, Scrollbars -> …]` inside the pane's
+/// fixed box, scrolled by its scrollbars (or the wheel).
+fn scroll_pane_element<'a>(
+  content: Element<'a, Message>,
+  viewport: manipulate::ScrollViewport,
+) -> Element<'a, Message> {
+  scrollable(content)
+    .width(iced::Length::Fixed(viewport.width))
+    .height(iced::Length::Fixed(viewport.height))
+    .direction(scroll_pane_direction(viewport))
+    .into()
+}
+
 /// Build a clickable hyperlink button: blue label, transparent
 /// background, opens `uri` in the default browser on press. Stale
 /// state dims the button to match other output widgets.
@@ -6648,22 +6777,30 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   let s = format_manipulate_number(v);
   if is_real && v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
     format!("{s}.")
+  } else if let Some((mantissa, power)) = s.split_once('×')
+    && is_real
+    && !mantissa.contains('.')
+  {
+    // A whole mantissa keeps the dot too: `7.×10⁻⁶`.
+    format!("{mantissa}.×{power}")
   } else {
     s
   }
 }
 
-/// The slider readout, showing the exact initial value (`π/2`) while the
-/// slider still sits on it, as Wolfram does, and the decimal otherwise.
+/// The slider readout, showing the exact initial value (`π/2`, or `3` on a
+/// slider stepped by a machine real) while the slider still sits on it, as
+/// Wolfram does, and the decimal otherwise.
 fn slider_value_text(
   current: f64,
   is_real: bool,
   exact_value: Option<f64>,
 ) -> String {
+  let on_exact = exact_value == Some(current);
   exact_value
-    .filter(|v| *v == current)
+    .filter(|_| on_exact)
     .and_then(woxi::functions::graphics::format_exact_slider_label)
-    .unwrap_or_else(|| format_slider_value(current, is_real))
+    .unwrap_or_else(|| format_slider_value(current, is_real && !on_exact))
 }
 
 fn format_manipulate_number(v: f64) -> String {
@@ -6673,6 +6810,9 @@ fn format_manipulate_number(v: f64) -> String {
   if v.fract() == 0.0 && v.abs() < 1e15 {
     return group_integer_digits(&format!("{}", v as i64));
   }
+  if v.abs() < 0.01 {
+    return format_small_manipulate_number(v);
+  }
   let s = format!("{:.3}", v);
   // Trim trailing zeros and a lone decimal point.
   let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -6681,6 +6821,33 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     group_integer_digits(trimmed)
   }
+}
+
+/// A readout for a nonzero value too small for three decimals to show
+/// (`0.0000065` would read `0`): four significant digits, written out down
+/// to Wolfram's scientific-notation threshold (`0.00123`) and as a power of
+/// ten below it (`6.5×10⁻⁶`).
+fn format_small_manipulate_number(v: f64) -> String {
+  // Let the formatter round, so `9.99996e-6` carries into `1×10⁻⁵`.
+  let sci = format!("{v:.3e}");
+  let Some((mantissa, exponent)) = sci.split_once('e') else {
+    return sci;
+  };
+  let exponent: i32 = exponent.parse().unwrap_or(0);
+  let trim = |s: &str| {
+    if s.contains('.') {
+      s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+      s.to_string()
+    }
+  };
+  if exponent >= -5 {
+    let decimals = (3 - exponent).max(0) as usize;
+    return trim(&format!("{v:.decimals$}"));
+  }
+  let power = woxi::notebook::superscript_unicode(&exponent.to_string())
+    .unwrap_or_else(|| format!("^{exponent}"));
+  format!("{}×10{power}", trim(mantissa))
 }
 
 /// Split the integer part of a formatted number into blocks of three
@@ -9487,6 +9654,28 @@ mod tests {
   }
 
   #[test]
+  fn slider_value_readout_keeps_small_values_visible() {
+    use super::{format_manipulate_number, format_slider_value};
+    // Below the scientific-notation threshold: a power of ten.
+    assert_eq!(format_slider_value(6.5e-6, true), "6.5×10⁻⁶");
+    assert_eq!(format_slider_value(7.1023e-6, true), "7.102×10⁻⁶");
+    assert_eq!(format_slider_value(-2.5e-12, true), "-2.5×10⁻¹²");
+    assert_eq!(format_slider_value(7e-6, true), "7.×10⁻⁶");
+    assert_eq!(format_slider_value(7e-6, false), "7×10⁻⁶");
+    // Rounding carries into the next power.
+    assert_eq!(format_manipulate_number(9.99996e-6), "0.00001");
+    assert_eq!(format_manipulate_number(9.99996e-7), "1×10⁻⁶");
+    // Small, but still written out, with four significant digits.
+    assert_eq!(format_manipulate_number(0.00001), "0.00001");
+    assert_eq!(format_manipulate_number(0.000123456), "0.0001235");
+    assert_eq!(format_manipulate_number(0.00712), "0.00712");
+    assert_eq!(format_manipulate_number(-0.007), "-0.007");
+    // Larger values keep their three decimals; zero stays zero.
+    assert_eq!(format_manipulate_number(0.0125), "0.013");
+    assert_eq!(format_manipulate_number(0.0), "0");
+  }
+
+  #[test]
   fn slider_value_text_shows_exact_initial_value() {
     use super::slider_value_text;
     use std::f64::consts::PI;
@@ -9504,6 +9693,13 @@ mod tests {
     assert_eq!(slider_value_text(5.0, false, Some(5.0)), "5");
     // Once moved off it (or with no exact initial value) the decimal shows.
     assert_eq!(slider_value_text(2.0, true, Some(PI / 2.0)), "2.");
+    // A whole-number initial value stays exact on a real-stepped slider
+    // until the slider leaves it.
+    assert_eq!(slider_value_text(3.0, true, Some(3.0)), "3");
+    assert_eq!(slider_value_text(0.0, true, Some(0.0)), "0");
+    assert_eq!(slider_value_text(-4.0, true, Some(-4.0)), "-4");
+    assert_eq!(slider_value_text(3.0, true, None), "3.");
+    assert_eq!(slider_value_text(4.0, true, Some(3.0)), "4.");
     assert_eq!(slider_value_text(PI / 2.0, true, None), "1.571");
   }
 

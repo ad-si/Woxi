@@ -1038,7 +1038,8 @@ fn apply_multiaxis(
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
           (lo.min(p.y - p.dy.0), hi.max(p.y + p.dy.1))
         });
-      let extent = list_axis_extent(lo, hi, ListAxis::Y, false, false, false);
+      let extent =
+        list_axis_extent(lo, hi, lo, ListAxis::Y, false, false, false);
       pad_list_axis(extent, ListAxis::Y, false)
     })
     .collect();
@@ -2107,9 +2108,15 @@ enum ListAxis {
 /// single value `v` spans `0..2 v` (`-1..1` for 0). `whole` (`PlotRange ->
 /// All` on the x axis) reaches out to 0 neither way:
 /// `ListPlot[{1, …, 10}, PlotRange -> All]` runs from `1 - 9/48`.
+///
+/// `min..max` already covers a numeric `AxesOrigin`; `data_min` is the low
+/// end of the data alone. The lowering sets the axis off from the data, so
+/// it is measured from `data_min` and goes no farther than an origin that
+/// already lies below it.
 fn list_axis_extent(
   min: f64,
   max: f64,
+  data_min: f64,
   axis: ListAxis,
   from_zero: bool,
   no_zero: bool,
@@ -2155,7 +2162,7 @@ fn list_axis_extent(
     if min <= ratio * max {
       (0.0, max)
     } else {
-      (min - (max - min) * reach, max)
+      (min.min(data_min - (max - data_min) * reach), max)
     }
   } else if max < 0.0 && -max <= ratio * -min {
     (min, 0.0)
@@ -2213,8 +2220,8 @@ fn list_plot_ranges(
       crate::functions::plot::list_value_extent(values, keep_outliers)
         .unwrap_or((f64::INFINITY, f64::NEG_INFINITY));
     match origin {
-      Some(o) if lo <= hi => (lo.min(o), hi.max(o)),
-      _ => (lo, hi),
+      Some(o) if lo <= hi => (lo.min(o), hi.max(o), lo),
+      _ => (lo, hi, lo),
     }
   };
   // A scaled axis without a place for 0 (log, reciprocal) keeps its
@@ -2222,9 +2229,9 @@ fn list_plot_ranges(
   let no_zero =
     |s: &Option<Scaling>| s.as_ref().is_some_and(|s| s.zero().is_none());
   let (nx, ny) = (no_zero(&scaling.0), no_zero(&scaling.1));
-  let (x_min, x_max) =
+  let (x_min, x_max, x_data_min) =
     bounds(|p| p.0, request.keep_outliers.0 || nx, opts.axes_origin.0);
-  let (y_min, y_max) =
+  let (y_min, y_max, y_data_min) =
     bounds(|p| p.1, request.keep_outliers.1 || ny, opts.axes_origin.1);
   // A date axis spans just the dates (WL's DateListPlot and a ListPlot of a
   // TimeSeries).
@@ -2234,13 +2241,15 @@ fn list_plot_ranges(
     list_axis_extent(
       x_min,
       x_max,
+      x_data_min,
       ListAxis::X,
       implicit_x && !nx,
       nx,
       request.keep_outliers.0,
     )
   };
-  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny, false);
+  let y =
+    list_axis_extent(y_min, y_max, y_data_min, ListAxis::Y, false, ny, false);
   if !explicit_x {
     opts.axes_origin_low.0 = Some(x.0);
   }
