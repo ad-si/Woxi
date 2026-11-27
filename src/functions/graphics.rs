@@ -27993,7 +27993,8 @@ pub fn traditional_label(e: &Expr) -> String {
     }
     // An unstyled script (`Subscript[x, n + 1]`) keeps the shifted-tspan
     // shape a text label can hold, with its base and scripts each typeset
-    // in `TraditionalForm`: italic letters and the sum ordered `n + 1`.
+    // in `TraditionalForm`: italic letters. A subscript keeps the order its
+    // sum has (`1+n`), while an exponent is reordered like any expression.
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Subscript" | "Superscript")
         && args.len() >= 2
@@ -28011,8 +28012,20 @@ pub fn traditional_label(e: &Expr) -> String {
             .unwrap_or(label)
         }
       };
-      let shift = if name == "Subscript" { "sub" } else { "super" };
-      let scripts: Vec<String> = args[1..].iter().map(part).collect();
+      let subscript = name == "Subscript";
+      let shift = if subscript { "sub" } else { "super" };
+      let scripts: Vec<String> = args[1..]
+        .iter()
+        .map(|p| match p {
+          Expr::FunctionCall { name, .. } if subscript && name == "Plus" => {
+            part(&Expr::FunctionCall {
+              name: "HoldForm".into(),
+              args: vec![p.clone()].into(),
+            })
+          }
+          _ => part(p),
+        })
+        .collect();
       format!(
         "{STYLED_LABEL_MARKER}{}<tspan baseline-shift=\"{shift}\" \
          font-size=\"70%\">{}</tspan>",

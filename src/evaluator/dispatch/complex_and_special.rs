@@ -9413,6 +9413,16 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_indexed_call(letter, fixed_sup, n_vars, args)
     }
     "Subscript" if args.len() >= 2 => {
+      // An index keeps the order its sums and products have (`x₁₊ₖ` for
+      // `Subscript[x, k + 1]`); only its letters and function names are set
+      // traditionally.
+      struct Reset(bool);
+      impl Drop for Reset {
+        fn drop(&mut self) {
+          TF_HELD.set(self.0);
+        }
+      }
+      let _reset = Reset(TF_HELD.replace(true));
       let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();
       tf_box("SubscriptBox", vec![tf(&args[0]), sub])
     }
