@@ -10909,6 +10909,35 @@ mod plot3d {
       assert!(svg.contains(",0,0)\""));
     }
 
+    /// A table wider than its fixed-size `Pane` wraps the text of its
+    /// widest column (plain strings and `Row`s of styled text alike)
+    /// instead of being cut off at the pane's right edge.
+    #[test]
+    fn pane_wraps_text_of_table_wider_than_pane() {
+      clear_state();
+      let pane = |width: i32| {
+        interpret(&format!(
+          "ExportString[Pane[Text@Grid[{{{{\"quantity\", \"amount\"}}, \
+           {{Row[{{Style[\"q\", Italic], \" transferred charge (C per mol)\"}}], 1.5}}, \
+           {{\"a long plain label that will not fit\", 2}}}}, Frame -> All], \
+           ImageSize -> {{{width}, 200}}], \"SVG\"]"
+        ))
+        .unwrap()
+      };
+      let narrow = pane(200);
+      assert!(narrow.contains("width=\"200\""), "{narrow}");
+      assert!(!narrow.contains("label that will not fit"), "{narrow}");
+      assert!(!narrow.contains("charge (C per mol)"), "{narrow}");
+      assert!(narrow.contains("mol)"), "{narrow}");
+      // A pane the table fits in leaves its lines whole.
+      let wide = pane(600);
+      assert!(
+        wide.contains("a long plain label that will not fit"),
+        "{wide}"
+      );
+      assert!(wide.contains("charge (C per mol)"), "{wide}");
+    }
+
     /// A `ColorFunction` whose value is not a color (its body names the
     /// plot variable, which the function's own parameters do not bind)
     /// leaves the curve in its default palette color, at every sample,
