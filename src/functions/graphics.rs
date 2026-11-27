@@ -11712,9 +11712,19 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
       (name == key).then(|| value.into_owned())
     })
   };
-  let color_function = option("ColorFunction").filter(
-    |f| !matches!(f, Expr::Identifier(n) if n == "Automatic" || n == "None"),
-  );
+  // A scheme given by name (`ColorFunction -> "Rainbow"`) stands for
+  // `ColorData["Rainbow"]`, which also clips values beyond its range.
+  let color_function = option("ColorFunction")
+    .filter(
+      |f| !matches!(f, Expr::Identifier(n) if n == "Automatic" || n == "None"),
+    )
+    .map(|f| match f {
+      Expr::String(_) => {
+        let scheme = call("ColorData", vec![f]);
+        evaluate_expr_to_expr(&scheme).unwrap_or(scheme)
+      }
+      other => other,
+    });
   let cf_scaling = !matches!(
     option("ColorFunctionScaling").as_ref(),
     Some(Expr::Identifier(n)) if n == "False"
