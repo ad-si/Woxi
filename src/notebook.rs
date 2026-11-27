@@ -1097,8 +1097,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // The script and `Mod` templates stand for the call they typeset:
     // `TemplateBox[{"x", "3"}, "Superscript"]` is `Superscript[x, 3]`.
     // Its options (`SyntaxForm -> SuperscriptBox`) follow the name.
+    // So do the postfix templates: `TemplateBox[{"m"}, "Transpose"]` is
+    // `Transpose[m]`, `"Transpose2"` the transpose with a permutation.
     let name = args[1].trim().trim_matches('"');
-    if matches!(name, "Superscript" | "Subscript" | "Subsuperscript" | "Mod") {
+    let name = match name {
+      "Transpose2" => "Transpose",
+      "ConjugateTranspose2" => "ConjugateTranspose",
+      other => other,
+    };
+    if matches!(
+      name,
+      "Superscript"
+        | "Subscript"
+        | "Subsuperscript"
+        | "Mod"
+        | "Transpose"
+        | "ConjugateTranspose"
+        | "Conjugate"
+    ) {
       let items = args[0].trim();
       let items = match items.strip_prefix("List[") {
         Some(rest) => format!("{{{}}}", rest.strip_suffix(']').unwrap_or(rest)),
