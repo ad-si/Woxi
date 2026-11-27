@@ -2,6 +2,9 @@
 
 # Unreleased
 
+- A `Point` whose center lies on the edge of a clipped plot range (a
+    marker at the end of a plotted domain, say) is drawn as a whole disk
+    like in Wolfram instead of being cut in half at the frame.
 - A `Graphics` title is set in `TraditionalForm` like a `Plot` title:
     `PlotLabel -> Row[{Log[n], " (base ", 10, ")"}]` reads `log(n) (base 10)`
     and `PlotLabel -> Sin[x]` reads `sin(x)`, where both printed their input

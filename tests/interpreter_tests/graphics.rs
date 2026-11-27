@@ -311,6 +311,64 @@ mod graphics {
     /// Regression: data far outside the plot range (a diverging iteration)
     /// was written out as pixel coordinates of 1e15 and more, which
     /// overflowed Woxi Studio's SVG renderer.
+    /// The markup of the clipped groups of `svg`, and of the unclipped
+    /// ones between them.
+    fn clipped_and_whole(svg: &str) -> (String, String) {
+      let body = &svg[svg.find("<g clip-path").unwrap()..];
+      let (mut clipped, mut whole) = (String::new(), String::new());
+      let mut in_clip = false;
+      for line in body.lines() {
+        if line.starts_with("<g clip-path") {
+          in_clip = true;
+        } else if line == "<g>" {
+          in_clip = false;
+        } else if in_clip {
+          clipped.push_str(line);
+        } else {
+          whole.push_str(line);
+        }
+      }
+      (clipped, whole)
+    }
+
+    /// A point whose center lies on the edge of the plot range is drawn as
+    /// a whole disk, not cut in half by the clipping of the plot.
+    #[test]
+    fn points_on_the_plot_range_edge_are_drawn_whole() {
+      let svg = export_svg(
+        "Show[Plot[x, {x, 0, 1}], Graphics[{PointSize[0.05], Red, \
+         Point[{{1, 1}, {0.5, 0.5}, {0, 0}}]}], \
+         PlotRange -> {{0, 1}, {0, 1}}]",
+      );
+      let (clipped, whole) = clipped_and_whole(&svg);
+      assert_eq!(clipped.matches("<circle").count(), 1, "{svg}");
+      assert_eq!(whole.matches("<circle").count(), 2, "{svg}");
+    }
+
+    /// A lone `Point` on the edge is drawn whole too, while one centered
+    /// past the range stays clipped.
+    #[test]
+    fn single_point_on_the_plot_range_edge_is_drawn_whole() {
+      let svg = export_svg(
+        "Graphics[{PointSize[0.1], Point[{2, 1}], Point[{2.05, 1}], \
+         Point[{1, 1}]}, PlotRange -> {{0, 2}, {0, 2}}, \
+         PlotRangeClipping -> True]",
+      );
+      let (clipped, whole) = clipped_and_whole(&svg);
+      assert_eq!(clipped.matches("<circle").count(), 2, "{svg}");
+      assert_eq!(whole.matches("<circle").count(), 1, "{svg}");
+    }
+
+    /// Points well inside the range stay in the one clipped group.
+    #[test]
+    fn interior_points_leave_the_clipped_group_alone() {
+      let svg = export_svg(
+        "Graphics[{Point[{{1, 1}, {0.5, 1.5}}]}, \
+         PlotRange -> {{0, 2}, {0, 2}}, PlotRangeClipping -> True]",
+      );
+      assert_eq!(svg.matches("<g clip-path").count(), 1, "{svg}");
+    }
+
     #[test]
     fn primitives_far_outside_the_plot_range_stay_near_the_picture() {
       let svg = export_svg(
