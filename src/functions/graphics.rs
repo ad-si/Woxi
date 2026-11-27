@@ -41564,7 +41564,7 @@ fn own_image_dims(item: &Expr) -> Option<(f64, f64)> {
 fn with_fixed_image_size_in_cell(item: &Expr, w: i128, h: i128) -> Expr {
   match item {
     Expr::CompoundExpr(steps) if !steps.is_empty() => {
-      let mut steps: Vec<Expr> = steps.to_vec();
+      let mut steps: Vec<Expr> = steps.clone();
       let last = steps.len() - 1;
       steps[last] = with_fixed_image_size_in_cell(&steps[last], w, h);
       Expr::CompoundExpr(steps)
