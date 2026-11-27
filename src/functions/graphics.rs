@@ -27411,6 +27411,25 @@ pub(crate) fn with_label_greek_italics<R>(f: impl FnOnce() -> R) -> R {
   f()
 }
 
+/// The markup of a string set as plain text rather than in
+/// `TraditionalForm` — the content of a label's `Text["…"]` wrapper: the
+/// box code in it is typeset (`"\!\(\*SubscriptBox[\(A\), \(1\)]\)"`
+/// is an A with a subscript), but a single-letter symbol stays upright.
+pub(crate) fn text_style_box_string_to_svg(s: &str) -> String {
+  struct Restore(bool, bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      LABEL_GREEK_ITALICS.with(|c| c.set(self.0));
+      SINGLE_LETTER_ITALICS.with(|c| c.set(self.1));
+    }
+  }
+  let _restore = Restore(
+    LABEL_GREEK_ITALICS.with(|c| c.replace(false)),
+    SINGLE_LETTER_ITALICS.with(|c| c.replace(false)),
+  );
+  box_string_to_svg(s)
+}
+
 /// Whether `c` is a lowercase Greek letter (including the variant forms
 /// `ϑ`, `ϕ`, `ϖ`, `ϰ`, `ϱ` and `ϵ`). `π` is excluded: it reads as the
 /// constant `Pi`, which is set upright.
@@ -62150,6 +62169,71 @@ fn marked_subscript_box_runs(
   ])
 }
 
+/// Whether `text` is one parenthesized group: it opens with a parenthesis
+/// that closes only at its end (`(0)`, `(a (b))`, but not `(a) (b)`).
+fn is_parenthesized_group(text: &str) -> bool {
+  if !(text.starts_with('(') && text.ends_with(')')) {
+    return false;
+  }
+  let mut depth = 0i32;
+  let last = text.chars().count() - 1;
+  for (i, c) in text.chars().enumerate() {
+    match c {
+      '(' => depth += 1,
+      ')' => depth -= 1,
+      _ => {}
+    }
+    if depth == 0 && i < last {
+      return false;
+    }
+  }
+  depth == 0
+}
+
+/// Label runs for a `SuperscriptBox` / `SubscriptBox` whose script is
+/// written inside parentheses (`SuperscriptBox["E", RowBox[{"(", "0",
+/// ")"}]]`): the same runs as the script with its parentheses kept as
+/// text. None for any other box.
+fn parenthesized_script_box_runs(
+  segment: &str,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  // Read from the segment's text: parsing it as an expression would
+  // already drop the parentheses.
+  let (head, args) = [
+    ("Superscript", "SuperscriptBox"),
+    ("Subscript", "SubscriptBox"),
+  ]
+  .iter()
+  .find_map(|(head, box_head)| {
+    Some((
+      *head,
+      crate::notebook::positional_box_args(box_head, segment)?,
+    ))
+  })?;
+  let [base_source, script_source] = args.as_slice() else {
+    return None;
+  };
+  let script = crate::notebook::render_boxes_text(script_source);
+  let script = script.trim();
+  if !is_parenthesized_group(script) {
+    return None;
+  }
+  // The base names a glyph, as in the general case below: `E` is the
+  // letter, not the constant.
+  let base = crate::notebook::box_source_to_expression(base_source)
+    .or_else(|| Some(base_source.clone()))
+    .map(|code| quote_box_constant_names(&code))
+    .and_then(|code| crate::parse_to_expr(&code).ok())
+    .unwrap_or_else(|| {
+      Expr::String(crate::notebook::render_boxes_text(base_source))
+    });
+  Some(manipulate_label_runs(
+    &call(head, vec![base, Expr::String(script.to_string())]),
+    italic,
+  ))
+}
+
 /// Label runs for a `SubscriptBox` whose base is a plain atom and whose
 /// script is a text atom of spaced words (`SubscriptBox[y, "1 max"]`): the
 /// same runs as `Subscript[y, "1 max"]`. None for any other box.
@@ -62304,6 +62388,14 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // is lowered by the SVG writer, not flattened to `f_(3 db)`.
     if let Some(sub_runs) = marked_subscript_box_runs(&seg.text, italic) {
       runs.extend(sub_runs);
+      continue;
+    }
+    // A script written inside parentheses (`E^(0)`, a perturbation order)
+    // shows them: read back as source they would only group the script and
+    // vanish.
+    if let Some(script_runs) = parenthesized_script_box_runs(&seg.text, italic)
+    {
+      runs.extend(script_runs);
       continue;
     }
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)

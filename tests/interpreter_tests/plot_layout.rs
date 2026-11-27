@@ -2025,6 +2025,148 @@ mod show_framed_plot_axes {
   }
 }
 
+mod explicit_axis_ticks {
+  use super::*;
+
+  /// The `<line>`s of a plot as `(x1, y1, x2, y2)`.
+  fn lines(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .filter_map(|tag| {
+        let num = |key: &str| -> Option<f64> {
+          tag
+            .split(&format!("{key}=\""))
+            .nth(1)?
+            .split('"')
+            .next()?
+            .parse()
+            .ok()
+        };
+        Some((num("x1")?, num("y1")?, num("x2")?, num("y2")?))
+      })
+      .collect()
+  }
+
+  /// The opening tag and content of the `<text>` holding `needle`.
+  fn text_with<'a>(svg: &'a str, needle: &str) -> (&'a str, &'a str) {
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|tag| tag.split_once('>'))
+      .map(|(open, rest)| (open, rest.split("</text>").next().unwrap()))
+      .find(|(_, content)| content.contains(needle))
+      .unwrap_or_else(|| panic!("no text holding {needle:?}"))
+  }
+
+  /// `{pos, label, {0, 0}}` labels the axis without drawing a tick mark —
+  /// the way an axis caption is written into a tick list. Regression: the
+  /// length of a tick on an unframed axis was ignored, so the caption got a
+  /// mark like every numbered tick.
+  #[test]
+  fn zero_length_tick_draws_its_label_without_a_mark() {
+    let plot =
+      |ticks: &str| svg_of(&format!("Plot[x, {{x, 0, 10}}, Ticks -> {ticks}]"));
+    let marked = plot("{{2, {5, \"a\"}}, {4, {6, \"b\"}}}");
+    for unmarked in [
+      plot("{{2, {5, \"a\", {0, 0}}}, {4, {6, \"b\", {0, 0}}}}"),
+      plot("{{2, {5, \"a\", 0}}, {4, {6, \"b\", 0}}}"),
+    ] {
+      assert_eq!(lines(&unmarked).len() + 2, lines(&marked).len());
+      assert!(unmarked.contains(">a</text>") && unmarked.contains(">b</text>"));
+    }
+  }
+
+  /// `{pos, label, {plen, mlen}}` reaches `plen` of the plot width into the
+  /// plot and `mlen` out of it.
+  #[test]
+  fn tick_length_pair_reaches_into_and_out_of_the_plot() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 10}, Ticks -> {{2, {5, \"a\", {0.1, 0.05}}}, \
+       {4, {6, \"b\", {0.1, 0.05}}}}]",
+    );
+    let all = lines(&svg);
+    let longest = |vertical: bool| {
+      all
+        .iter()
+        .copied()
+        .filter(|l| (l.0 == l.2) == vertical)
+        .max_by(|a, b| {
+          let len = |l: &(f64, f64, f64, f64)| (l.2 - l.0).hypot(l.3 - l.1);
+          len(a).total_cmp(&len(b))
+        })
+        .unwrap()
+    };
+    // The axes are the longest lines.
+    let (x_axis, y_axis) = (longest(false), longest(true));
+    let width = x_axis.2 - x_axis.0;
+    let x_mark = all
+      .iter()
+      .find(|l| l.0 == l.2 && l.1 > x_axis.1 && l.3 < x_axis.1)
+      .expect("an x tick mark crossing its axis");
+    assert!((x_mark.1 - x_axis.1 - 0.05 * width).abs() < 1.0);
+    assert!((x_axis.1 - x_mark.3 - 0.1 * width).abs() < 1.0);
+    let y_mark = all
+      .iter()
+      .find(|l| **l != x_axis && l.1 == l.3 && l.0 < y_axis.0 && l.2 > y_axis.0)
+      .expect("a y tick mark crossing its axis");
+    assert!((y_axis.0 - y_mark.0 - 0.05 * width).abs() < 1.0);
+    assert!((y_mark.2 - y_axis.0 - 0.1 * width).abs() < 1.0);
+  }
+
+  /// A tick label that starts with a line break is set one line below the
+  /// other labels of its axis.
+  #[test]
+  fn tick_label_with_a_line_break_runs_over_two_lines() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 10}, \
+       Ticks -> {{2, {5, Row[{\"\\n\", Style[\"V\", Italic]}]}}, Automatic}]",
+    );
+    let (_, content) = text_with(&svg, ">V<");
+    let lines: Vec<&str> = content.split("<tspan x=").skip(1).collect();
+    assert_eq!(lines.len(), 2, "{content}");
+    assert!(lines[0].contains("dy=\"0.0\""));
+    assert!(!lines[1].contains("dy=\"0.0\"") && lines[1].contains(">V<"));
+  }
+
+  /// Blanks padding a tick label keep their width, so they push a
+  /// right-aligned label away from its axis.
+  #[test]
+  fn blanks_padding_a_tick_label_are_kept() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 10}, \
+       Ticks -> {Automatic, {{4, \"plain\"}, {6, \"padded   \"}}}]",
+    );
+    assert!(
+      text_with(&svg, "padded")
+        .0
+        .contains("xml:space=\"preserve\"")
+    );
+    assert!(!text_with(&svg, "plain").0.contains("xml:space"));
+  }
+
+  /// A plot label wrapped in `Text` is plain text: a letter in its box
+  /// code stays upright, while the bare string is set in TraditionalForm
+  /// with the letter in italics.
+  #[test]
+  fn text_plot_label_keeps_box_code_letters_upright() {
+    let label = r#""of \!\(\*SubscriptBox[\(A\), \(1\)]\) used""#;
+    let title = |wrapped: &str| {
+      let svg =
+        svg_of(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {wrapped}]"));
+      text_with(&svg, "used").1.to_string()
+    };
+    let sub = "<tspan baseline-shift=\"sub\" font-size=\"70%\">1</tspan>";
+    assert_eq!(
+      title(label),
+      format!("of <tspan font-style=\"italic\">A</tspan>{sub} used")
+    );
+    let upright = format!("of A{sub} used");
+    assert_eq!(title(&format!("Text[{label}]")), upright);
+    assert_eq!(title(&format!("Style[Text[{label}], Red]")), upright);
+  }
+}
+
 /// `Defer[expr]` in a label is typeset as `expr` alone, like `HoldForm`:
 /// the wrapper only keeps the content unevaluated and is never drawn.
 mod defer_labels {
