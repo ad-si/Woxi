@@ -83345,3 +83345,34 @@ mod traditional_form_plot_labels {
     assert!(svg.contains(">n vs x</text>"), "{svg}");
   }
 }
+
+/// A script in a graphics `Text` is never set below the front end's minimum
+/// script size of 9 points: at the default 10-point label size it is drawn
+/// at 90 % of its base (it used to shrink to 7 points, visibly smaller than
+/// the front end's), whether the label is an expression or a string of
+/// inline boxes. Larger text keeps the 70 % step.
+#[test]
+fn text_scripts_are_held_at_the_minimum_script_size() {
+  let svg = export_svg(
+    "Graphics[{Text[\"\\!\\(\\*SubscriptBox[\\(F\\), \\(net\\)]\\)\", {0, 0}], \
+     Text[Subscript[\"N\", \"D\"], {1, 0}], \
+     Text[Style[Subscript[\"M\", \"k\"], 12], {2, 0}], \
+     Text[Style[Subscript[\"P\", \"q\"], 20], {3, 0}]}]",
+  );
+  assert!(
+    svg.contains("<tspan baseline-shift=\"sub\" font-size=\"90%\">net</tspan>"),
+    "the inline box subscript: {svg}"
+  );
+  assert!(
+    svg.contains(">N<tspan baseline-shift=\"sub\" font-size=\"90%\">D</tspan><"),
+    "the 10-point subscript: {svg}"
+  );
+  assert!(
+    svg.contains(">M<tspan baseline-shift=\"sub\" font-size=\"75%\">k</tspan><"),
+    "the 12-point subscript: {svg}"
+  );
+  assert!(
+    svg.contains(">P<tspan baseline-shift=\"sub\" font-size=\"70%\">q</tspan><"),
+    "the 20-point subscript: {svg}"
+  );
+}
