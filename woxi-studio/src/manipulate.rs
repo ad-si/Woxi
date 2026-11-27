@@ -1266,6 +1266,8 @@ pub struct ManipulateState {
   /// it just before that control so the specs keep their declared order.
   /// See `ManipulateSpec::panel_displays`.
   pub panel_displays: Vec<(usize, usize)>,
+  /// See `ManipulateSpec::control_pictures`.
+  pub control_pictures: Vec<usize>,
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
@@ -1752,6 +1754,7 @@ impl ManipulateState {
       state: spec.state,
       displays: spec.displays,
       panel_displays: spec.panel_displays,
+      control_pictures: spec.control_pictures,
       display_trees: Vec::new(),
       graphics_handle: None,
       scroll_viewport: None,
@@ -11444,6 +11447,43 @@ mod mapped_layout_tests {
     state.slider2d_change(idx, 0, -1.0);
     state.slider2d_change(idx, 1, 2.0);
     assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
+  }
+
+  /// A control function drawing `LocatorPane[Dynamic[pts], picture]` shows
+  /// its picture in the panel, on the control's own side of the output, and
+  /// the picture follows the points as they move.
+  #[test]
+  fn locator_pane_control_function_shows_its_picture_and_follows_the_points() {
+    let code = r#"Manipulate[Total[pts],
+      {{a, 1}, 0, 2},
+      {{pts, {{1, 1}, {2, 3}}, ""}, {0, 0}, {4, 4},
+       LocatorPane[Dynamic[pts],
+         Dynamic@Graphics[{Line[pts]}, PlotRange -> {{0, 4}, {0, 4}}],
+         Appearance -> None] &,
+       ControlPlacement -> Left}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let pts = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "pts")
+      .expect("pts control");
+    assert_eq!(state.panel_displays, vec![(0, pts)]);
+    assert_eq!(state.control_pictures, vec![0]);
+    assert_eq!(state.placement_of(pts), ControlPlacement::Left);
+    let picture = |state: &ManipulateState| match &state.display_trees[0] {
+      DisplayNode::Static { svg: Some(svg), .. } => svg.clone(),
+      other => panic!("expected a picture, got {other:?}"),
+    };
+    let before = picture(&state);
+    assert!(before.contains("<polyline") || before.contains("<line"));
+    let ControlState::Locator { points, .. } = &mut state.controls[pts] else {
+      panic!("expected a Locator, got {:?}", state.controls[pts]);
+    };
+    points[1] = (3.5, 0.5);
+    state.reevaluate();
+    assert_ne!(picture(&state), before);
   }
 
   /// Points dragged over a `LocatorPane` whose range is `{{0, 0}, {n - 1,

@@ -51463,6 +51463,13 @@ pub struct ManipulateSpec {
   /// last one when the index equals `controls.len()`), keeping the order
   /// in which Wolfram lists the specs. Every other display trails the panel.
   pub panel_displays: Vec<(usize, usize)>,
+  /// Indices into `displays` of the pictures a custom control function
+  /// draws for its own control: `{{pts, init}, {xmin, ymin}, {xmax, ymax},
+  /// LocatorPane[Dynamic[pts], picture] &}` shows `picture` where the
+  /// control stands, with the points on it. Each is also listed in
+  /// [`Self::panel_displays`] at its control's index and sits on that
+  /// control's side of the output (`ControlPlacement -> Left`).
+  pub control_pictures: Vec<usize>,
   /// Initialization code from `Initialization :> …`. Runs once before the
   /// first evaluation of the body so that helper definitions (e.g.
   /// `d[t_] := …`) are in scope. `None` when the Manipulate has no
@@ -52752,6 +52759,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // stripped from the body once the loop finishes, same treatment as
   // `promoted_popups` above.
   let mut locator_reset_vars: Vec<String> = Vec::new();
+  // Pictures drawn by custom `LocatorPane` control functions (see
+  // `ManipulateSpec::control_pictures`).
+  let mut control_pictures: Vec<usize> = Vec::new();
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -53613,6 +53623,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             explicitly_initialized.insert(c.name().to_string());
           }
         }
+        // A custom control function drawing `LocatorPane[Dynamic[var],
+        // picture, …]` shows that picture in the panel; the points on it
+        // are the control's own, so it follows them like any live display.
+        if matches!(c, ManipulateControl::Locator { .. })
+          && let Expr::List(items) = &spec
+          && let Some(pane) = custom_locator_pane_options(items)
+          && pane.len() >= 2
+        {
+          control_pictures.push(displays.len());
+          panel_displays.push((displays.len(), controls.len()));
+          displays.push(crate::syntax::expr_to_source_form(&call(
+            "LocatorPane",
+            pane,
+          )));
+        }
         controls.push(c);
       }
       ParsedControl::ListElement {
@@ -54335,6 +54360,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state,
     displays,
     panel_displays,
+    control_pictures,
     initialization,
     control_enabled,
     control_visible,
@@ -60069,6 +60095,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -60159,6 +60186,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -60262,6 +60290,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -60535,6 +60564,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -60607,6 +60637,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -60688,6 +60719,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     state: Vec::new(),
     displays: Vec::new(),
     panel_displays: Vec::new(),
+    control_pictures: Vec::new(),
     initialization: None,
     control_enabled,
     control_visible: Vec::new(),
@@ -71900,6 +71932,43 @@ mod manipulate_control_placement_tests {
       "the layout template must not become a third, blank-labeled control: {:?}",
       spec.controls
     );
+  }
+
+  /// A control function that draws `LocatorPane[Dynamic[pts], picture, …]`
+  /// for its own variable shows that picture where the control stands, so
+  /// it is kept as a display of the panel at the control's place, besides
+  /// the draggable points themselves.
+  #[test]
+  fn locator_pane_control_function_keeps_its_picture() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Total[pts], {{a, 1}, 0, 2},        {{pts, {{1, 1}, {2, 3}}, \"\"}, {0, 0}, {4, 4},         LocatorPane[Dynamic[pts], Dynamic@Graphics[{Line[pts]},         PlotRange -> {{0, 4}, {0, 4}}], Appearance -> None] &,         ControlPlacement -> Left}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec
+        .controls
+        .iter()
+        .map(ManipulateControl::name)
+        .collect::<Vec<_>>(),
+      vec!["a", "pts"]
+    );
+    assert_eq!(spec.displays.len(), 1, "{:?}", spec.displays);
+    assert!(
+      spec.displays[0].starts_with("LocatorPane[Dynamic[pts], "),
+      "{:?}",
+      spec.displays
+    );
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+    assert_eq!(spec.control_pictures, vec![0]);
+    // A plain Locator control draws no picture of its own.
+    let expr = crate::parse_to_expr(
+      "Manipulate[Graphics[Line[pts], PlotRange -> 4],        {{pts, {{1, 1}, {2, 3}}}, {0, 0}, {4, 4}, Locator}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert!(spec.displays.is_empty(), "{:?}", spec.displays);
+    assert!(spec.control_pictures.is_empty());
   }
 
   /// A `ControlType -> TogglerBar` spec is drawn as a display, but it is

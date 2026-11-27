@@ -28071,7 +28071,24 @@ fn resolve_parametric_triples_raw(
     other => {
       let resolved =
         crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
+      // A body whose value depends on the variables being numbers
+      // (`{x[u], y[v]} /. Thread[{u, v} -> f[t]]`, with `f[t]` a point only
+      // at a numeric `t`) evaluates to something else symbolically; it is
+      // read off at each sample like any other opaque body.
+      let probe: Vec<(&str, f64)> = shadow_vars
+        .iter()
+        .enumerate()
+        .map(|(i, var)| (*var, 0.37 + 0.24 * i as f64))
+        .collect();
+      let agrees = crate::functions::plot::symbolic_body_agrees_at(
+        other, &resolved, &probe,
+      );
       match unwrap_singleton_list(&resolved) {
+        Expr::List(_) if !agrees => Ok(ungrouped(vec![(
+          part_of(other, 1),
+          part_of(other, 2),
+          part_of(other, 3),
+        )])),
         // A symbolic list that is no curve can still be one once the
         // variables are numbers (a `Piecewise` of points, whose `Part`s and
         // `Flatten` only make sense for a chosen piece): read the body off

@@ -4853,7 +4853,7 @@ fn render_manipulate_widget<'a>(
       .panel_displays
       .iter()
       .filter(move |(_, at)| *at == slot)
-      .filter_map(|(d, _)| state.display_trees.get(*d))
+      .filter_map(|(d, _)| Some((*d, state.display_trees.get(*d)?)))
   };
   // One panel column per side of the output (see `placement_slot`). Most
   // widgets put every row on the widget-level `ControlPlacement` side, but a
@@ -4907,8 +4907,15 @@ fn render_manipulate_widget<'a>(
     // Each such display starts a line of its own; the control after it may
     // join that line (a live caption written in one `Row` with the control,
     // see `ManipulateState::joins_previous_control`).
-    for tree in panel_trees_at(ctrl_idx) {
+    for (d, tree) in panel_trees_at(ctrl_idx) {
       flush_control_line(&mut controls_col, &mut line);
+      // The picture a control function draws for its own control stands on
+      // that control's side of the output.
+      if state.control_pictures.contains(&d) {
+        let slot = placement_slot(state.placement_of(ctrl_idx));
+        switch_slot(&mut controls_col, &mut current_slot, slot);
+        side_used[slot] = true;
+      }
       line.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
