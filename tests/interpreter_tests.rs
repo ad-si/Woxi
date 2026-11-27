@@ -5677,6 +5677,53 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_held_standard_boxes_are_tagged() {
+    // Regression: StandardForm boxes of `HoldForm[…]` dropped the
+    // `TagBox[…, HoldForm]` that marks them, at any depth.
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[a]]").unwrap(),
+      "TagBox[a, HoldForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[1 + 2]]").unwrap(),
+      "TagBox[RowBox[{1, +, 2}], HoldForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[f[HoldForm[x]]]").unwrap(),
+      "RowBox[{f, [, TagBox[x, HoldForm], ]}]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[a + b]^2]").unwrap(),
+      "SuperscriptBox[RowBox[{(, TagBox[RowBox[{a, +, b}], HoldForm], )}], 2]"
+    );
+  }
+
+  #[test]
+  fn test_power_base_with_its_own_script_is_parenthesized() {
+    // Regression: a power base that sets with a superscript of its own or
+    // a postfix operator lost its brackets in StandardForm boxes.
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[(a!)^2]").unwrap(),
+      "SuperscriptBox[RowBox[{(, RowBox[{a, !}], )}], 2]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[(a!!)^2]]").unwrap(),
+      "TagBox[SuperscriptBox[RowBox[{(, RowBox[{a, !!}], )}], 2], HoldForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[HoldForm[(a^b)^c]]").unwrap(),
+      "TagBox[SuperscriptBox[RowBox[{(, SuperscriptBox[a, b], )}], c], HoldForm]"
+    );
+    // A call delimits itself.
+    assert_eq!(
+      interpret("ToBoxes[f[x]^2]").unwrap(),
+      "SuperscriptBox[RowBox[{f, [, x, ]}], 2]"
+    );
+  }
+
+  #[test]
   fn test_invisible_standard_boxes_hide_contents() {
     // Regression: only TraditionalForm boxed `Invisible[…]`; in StandardForm
     // (also as a factor of a held product) it was written out as the call
@@ -5688,7 +5735,7 @@ mod interpreter_tests {
     );
     assert_eq!(
       interpret("ToBoxes[HoldForm[Evaluate[y Invisible[x]]]]").unwrap(),
-      "RowBox[{y,  , StyleBox[x, ShowContents -> False, StripOnInput -> False]}]"
+      "TagBox[RowBox[{y,  , StyleBox[x, ShowContents -> False, StripOnInput -> False]}], HoldForm]"
     );
     let svg = interpret(
       "ExportString[Text[Style[Row[{HoldForm[Evaluate[y Invisible[\"\"]]], \" + \", z}], 18]], \"SVG\"]",
@@ -5709,7 +5756,7 @@ mod interpreter_tests {
     for form in ["HoldForm[Evaluate[1/4]]^2", "HoldForm[1/4]^2"] {
       assert_eq!(
         interpret(&format!("ToBoxes[{form}]")).unwrap(),
-        "SuperscriptBox[RowBox[{(, FractionBox[1, 4], )}], 2]"
+        "SuperscriptBox[RowBox[{(, TagBox[FractionBox[1, 4], HoldForm], )}], 2]"
       );
       assert_eq!(
         interpret(&format!("ToBoxes[{form}, TraditionalForm]")).unwrap(),

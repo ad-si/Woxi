@@ -344,6 +344,13 @@ fn same_plain_data(a: &Expr, b: &Expr) -> Option<bool> {
     (Expr::Real(x), Expr::Real(y)) => {
       Some(x == y || (x.is_nan() && y.is_nan()) || same_q_real_bigfloat(a, b))
     }
+    // Symbols without a context mark are the same exactly when their
+    // names are (a context-qualified name can print like a bare one).
+    (Expr::Identifier(x), Expr::Identifier(y))
+      if !x.contains('`') && !y.contains('`') =>
+    {
+      Some(x == y)
+    }
     (Expr::String(x), Expr::String(y)) => Some(x == y),
     // Differently spelled atoms of these kinds never print alike.
     (

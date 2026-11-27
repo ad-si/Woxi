@@ -10205,8 +10205,61 @@ mod unicode_operators {
 
   #[test]
   fn rule_arrow() {
-    assert_eq!(interpret("{1, 2, 3} /. x_ → x^2").unwrap(), "{1, 4, 9}");
-    assert_eq!(interpret("a → b").unwrap(), "a -> b");
+    assert_eq!(
+      interpret("{1, 2, 3} /. x_Integer \\[Rule] x^2").unwrap(),
+      "{1, 4, 9}"
+    );
+    assert_eq!(interpret("a \\[Rule] b").unwrap(), "a -> b");
+    assert_eq!(interpret("a \u{F522} b").unwrap(), "a -> b");
+    // The named rule arrows work right after `/.`, like `->` and `:>`.
+    assert_eq!(interpret("{x, 2} /. x \\[Rule] 3").unwrap(), "{3, 2}");
+    assert_eq!(
+      interpret("{1, 2} /. n_Integer \\[RuleDelayed] n + 1").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("{x, 2} /. x \\[Rule] 3 /. 2 -> 5").unwrap(),
+      "{3, 5}"
+    );
+  }
+
+  /// `\[RightArrow]` (U+2192) is not the rule arrow `\[Rule]` (U+F522): it
+  /// is the inert infix operator `RightArrow`, flat like `LeftArrow` and
+  /// binding tighter than a rule but looser than `+` and `==`.
+  #[test]
+  fn right_arrow_is_an_inert_infix_operator() {
+    for (input, expected) in [
+      ("a \\[RightArrow] b", "Hold[RightArrow[a, b]]"),
+      ("a \u{2192} b", "Hold[RightArrow[a, b]]"),
+      (
+        "a \\[RightArrow] b \\[RightArrow] c",
+        "Hold[RightArrow[a, b, c]]",
+      ),
+      ("a -> b \\[RightArrow] c", "Hold[Rule[a, RightArrow[b, c]]]"),
+      ("a \\[RightArrow] b + c", "Hold[RightArrow[a, Plus[b, c]]]"),
+      (
+        "f[Style[\"N\", Italic] \\[RightArrow] x]",
+        "Hold[f[RightArrow[Style[\"N\", Italic], x]]]",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[Hold[{input}]]]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+    assert_eq!(interpret("a \\[RightArrow] b").unwrap(), "a \u{2192} b");
+    assert_eq!(interpret("Head[a \\[RightArrow] b]").unwrap(), "RightArrow");
+  }
+
+  /// A delayed entry keeps its `:>` when another entry of the association
+  /// is spelled with a named rule arrow.
+  #[test]
+  fn association_with_mixed_rule_arrows_keeps_delayed_entries() {
+    assert_eq!(
+      interpret("<|a \\[Rule] 1, b :> 2|>").unwrap(),
+      "<|a -> 1, b :> 2|>"
+    );
   }
 
   #[test]
@@ -10218,7 +10271,10 @@ mod unicode_operators {
 
   #[test]
   fn rule_in_association() {
-    assert_eq!(interpret("<|\"a\" → 1, \"b\" → 2|>[\"a\"]").unwrap(), "1");
+    assert_eq!(
+      interpret("<|\"a\" \u{F522} 1, \"b\" \\[Rule] 2|>[\"a\"]").unwrap(),
+      "1"
+    );
   }
 
   #[test]

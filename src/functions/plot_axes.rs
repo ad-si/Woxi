@@ -38,6 +38,23 @@ pub(crate) fn crossing_label_blocked(overrun: f64) -> bool {
   overrun > CROSSING_LABEL_CLEARANCE
 }
 
+/// Whether the tick at `t` counts as the one at the axes crossing, where
+/// the other axis sits at `crossing`.
+///
+/// The automatic crossing of an all-positive plot is the lowest point of
+/// its curve rather than the round tick next to it — a curve decaying
+/// towards zero puts the axis at `0.00025`, say, with the `0.0` tick a
+/// fraction of a point below. That tick is drawn on the axis for all
+/// practical purposes, so anything within a hundredth of a major step of
+/// the crossing is treated as sitting at it.
+pub(crate) fn tick_at_crossing(
+  t: f64,
+  crossing: f64,
+  step: Option<f64>,
+) -> bool {
+  (t - crossing).abs() < step.unwrap_or(1.0) * 1e-2
+}
+
 /// How one axis maps data values onto its length.
 #[derive(Clone, Copy)]
 pub(crate) struct AxisScale {

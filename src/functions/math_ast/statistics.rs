@@ -7487,6 +7487,16 @@ pub fn biweight_midvariance_ast(
 /// CorrelationFunction[proc, t1, t2] closed forms (Cov normalized by the
 /// slice standard deviations), in wolframscript's display shapes.
 pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
+  // A weakly stationary ARMA-family process correlates by the lag alone.
+  if extract_arma_params(proc).is_some() {
+    let result = match (t1, t2) {
+      (Expr::Integer(s), Expr::Integer(t)) => {
+        arma_family_correlation(proc, t - s)
+      }
+      _ => arma_symbolic_correlation(proc, t1, t2),
+    };
+    return result.and_then(Result::ok);
+  }
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
@@ -7739,15 +7749,32 @@ fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
 
 fn arma_covariance(proc: &Expr, s: &Expr, t: &Expr) -> Option<Expr> {
   let (ar, ma, sigma2) = extract_arma_params(proc)?;
-  // The symbolic closed forms below are in `ARMAProcess`'s own shapes.
-  if !matches!(proc, Expr::FunctionCall { name, .. } if name == "ARMAProcess") {
+  // An `ARProcess`/`MAProcess` at integer times is evaluated lag by lag;
+  // the symbolic closed forms below are in `ARMAProcess`'s own shapes, and
+  // serve every head at symbolic times.
+  let integer_times = matches!((s, t), (Expr::Integer(_), Expr::Integer(_)));
+  if integer_times
+    && !matches!(proc, Expr::FunctionCall { name, .. } if name == "ARMAProcess")
+  {
     return arma_covariance_at_lag(&ar, &ma, &sigma2, s, t);
   }
+  arma_covariance_closed_form(&ar, &ma, &sigma2, s, t)
+    .or_else(|| arma_covariance_at_lag(&ar, &ma, &sigma2, s, t))
+}
+
+/// The symbolic autocovariance of an AR(1), MA(1) or ARMA(1, 1) process.
+fn arma_covariance_closed_form(
+  ar: &[Expr],
+  ma: &[Expr],
+  sigma2: &Expr,
+  s: &Expr,
+  t: &Expr,
+) -> Option<Expr> {
   match (ar.len(), ma.len()) {
-    (1, 0) => Some(cov_ar1(&ar[0], &sigma2, s, t)),
-    (0, 1) => Some(cov_ma1(&ma[0], &sigma2, s, t)),
-    (1, 1) => Some(cov_arma11(&ar[0], &ma[0], &sigma2, s, t)),
-    _ => arma_covariance_at_lag(&ar, &ma, &sigma2, s, t),
+    (1, 0) => Some(cov_ar1(&ar[0], sigma2, s, t)),
+    (0, 1) => Some(cov_ma1(&ma[0], sigma2, s, t)),
+    (1, 1) => Some(cov_arma11(&ar[0], &ma[0], sigma2, s, t)),
+    _ => None,
   }
 }
 
@@ -8924,6 +8951,23 @@ fn arma_family_correlation(
   Some(crate::evaluator::evaluate_expr_to_expr(&div2(gh, g0)))
 }
 
+/// `CorrelationFunction[proc, s, t]` of an ARMA-family process at symbolic
+/// times (`CorrelationFunction[proc, h]` is the times `h` and 0): the
+/// closed-form autocovariance γ(s, t) over γ(0), for the process shapes
+/// `arma_covariance_closed_form` covers.
+fn arma_symbolic_correlation(
+  proc: &Expr,
+  s: &Expr,
+  t: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (ar, ma, sigma2) = extract_arma_params(proc)?;
+  let zero = Expr::Integer(0);
+  let gh = arma_covariance_closed_form(&ar, &ma, &sigma2, s, t)?;
+  let g0 = arma_covariance_closed_form(&ar, &ma, &sigma2, &zero, &zero)?;
+  let g0 = crate::evaluator::evaluate_expr_to_expr(&g0).ok()?;
+  Some(crate::evaluator::evaluate_expr_to_expr(&div2(gh, g0)))
+}
+
 /// PartialCorrelationFunction[data, h] / PartialCorrelationFunction[proc, h]
 /// — the partial autocorrelation at lag h ≥ 1: the last coefficient φ(h, h)
 /// of the best linear predictor of order h, found from the autocorrelations
@@ -9040,6 +9084,14 @@ pub fn correlation_function_ast(
   }
   let k = match &args[1] {
     Expr::Integer(k) => *k,
+    // At a symbolic lag, an ARMA-family process with a closed-form
+    // autocovariance correlates as γ(h)/γ(0).
+    h if !crate::functions::predicate_ast::is_numeric_q(h) => {
+      return match arma_symbolic_correlation(&args[0], h, &Expr::Integer(0)) {
+        Some(rho) => rho,
+        None => Ok(uneval()),
+      };
+    }
     _ => return Ok(uneval()),
   };
   // CorrelationFunction[proc, h] of an ARMA-family process: γ(h)/γ(0).
