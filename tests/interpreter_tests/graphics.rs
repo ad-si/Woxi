@@ -44995,7 +44995,12 @@ mod grid_frame_and_background {
     for (label, shown) in [
       (r#"c \!\(\*SubscriptBox[\(S\), \(\)]\) g"#, "c S g"),
       (r#"c \!\(\*SuperscriptBox[\(S\), \(\)]\) g"#, "c S g"),
-      (r#"c \!\(\*SubscriptBox[\(S\), \(2\)]\) g"#, "c S₂ g"),
+      // The one-letter symbol of a filled slot's base is set in
+      // TraditionalForm, italic.
+      (
+        r#"c \!\(\*SubscriptBox[\(S\), \(2\)]\) g"#,
+        r#"c <tspan font-style="italic">S</tspan>₂ g"#,
+      ),
       (r#"C\!\(\*SubscriptBox[\(\), \(2\)]\)=9"#, "C₂=9"),
     ] {
       let svg = export_svg(&format!(r#"Graphics[Text["{label}", {{0, 0}}]]"#));

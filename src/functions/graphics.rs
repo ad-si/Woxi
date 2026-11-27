@@ -72793,7 +72793,7 @@ mod manipulate_button_enabled_tests {
         "w".to_string()
       ]
     );
-    assert!(spec.column_stacked_controls.is_empty());
+    assert_eq!(spec.column_stacked_controls, Vec::<String>::new());
   }
 
   /// A `Column[{Control[…], …}]` item of a `Row` is one block of the line:

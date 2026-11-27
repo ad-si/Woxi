@@ -232,7 +232,7 @@ mod solids {
           )
         };
         let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
-        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
         let radius = (x1 - x0).max(y1 - y0) / 2.0;
         let dist =
           |p: &(f64, f64)| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt();
