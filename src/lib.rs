@@ -3669,6 +3669,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   if depth == 0 {
     set_last_result_expr(unwrap_top_level_return(&result_expr).clone());
   }
+  // A `Dynamic` under a form wrapper shows its current value in that form
+  // (visual hosts only — the CLI keeps the symbolic echo).
+  let result_expr = if is_visual_mode() {
+    release_form_dynamics_in_layout(&result_expr)
+  } else {
+    result_expr
+  };
   // If the result is an Image, render it as a PNG <img> tag
   let result_expr = render_image_if_needed(result_expr);
   // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
@@ -5364,11 +5371,19 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
   }
 }
 
-/// Whether `expr` is a `Dynamic[…]`, possibly inside `Text[…]` wrappers.
+/// Whether `expr` is a `Dynamic[…]`, possibly inside `Text[…]` and form
+/// (`TraditionalForm`, `StandardForm`) wrappers.
 fn is_dynamic_under_text(expr: &syntax::Expr) -> bool {
   match expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Text" && args.len() == 1 =>
+    {
+      is_dynamic_under_text(&args[0])
+    }
+    // A form wrapper only says how the value is typeset.
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+        && args.len() == 1 =>
     {
       is_dynamic_under_text(&args[0])
     }
@@ -5379,7 +5394,89 @@ fn is_dynamic_under_text(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// `expr` with the `Dynamic[…]` under its form wrappers
+/// (`TraditionalForm[Dynamic[x]]`, `Text[TraditionalForm[Dynamic[x]]]`,
+/// `Style[TraditionalForm[Dynamic[x]], 16]`) replaced by its current value, so the value is typeset in that form
+/// rather than the `Dynamic[…]` source. `None` unless a `TraditionalForm`
+/// or `StandardForm` wraps the `Dynamic`: a bare or `Text`-wrapped one is
+/// released by the passes that draw it.
+fn release_dynamic_under_form(expr: &syntax::Expr) -> Option<syntax::Expr> {
+  fn release(expr: &syntax::Expr, in_form: bool) -> Option<syntax::Expr> {
+    let syntax::Expr::FunctionCall { name, args } = expr else {
+      return None;
+    };
+    let is_form = matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+      && args.len() == 1;
+    // A `Style` keeps its directives around the released value.
+    if is_form
+      || (name == "Text" && args.len() == 1)
+      || (name == "Style" && !args.is_empty())
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = release(&args[0], in_form || is_form)?;
+      return Some(syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      });
+    }
+    (in_form && name == "Dynamic" && !args.is_empty())
+      .then(|| functions::graphics::dynamic_current_value(expr))
+  }
+  if !is_visual_mode() {
+    return None;
+  }
+  release(expr, false)
+}
+
+/// `expr` with every form-wrapped `Dynamic` among the items of its layout
+/// released (see `release_dynamic_under_form`), so whichever pass draws
+/// the layout typesets the values. Only display layouts are entered: the
+/// held body of a `Manipulate` or a `Button`'s action is left as written.
+fn release_form_dynamics_in_layout(expr: &syntax::Expr) -> syntax::Expr {
+  if let Some(released) = release_dynamic_under_form(expr) {
+    return released;
+  }
+  match expr {
+    syntax::Expr::List(items) => syntax::Expr::List(
+      items
+        .iter()
+        .map(release_form_dynamics_in_layout)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Panel"
+          | "Framed"
+          | "Column"
+          | "Row"
+          | "Grid"
+          | "Pane"
+          | "Item"
+          | "Style"
+          | "Text"
+          | "Labeled"
+          | "Deploy"
+      ) =>
+    {
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(release_form_dynamics_in_layout)
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  if let Some(released) = release_dynamic_under_form(expr) {
+    return render_inline_display_wrapper(&released);
+  }
   // A `Text[…]` item of a layout sets its math one script level down, as
   // the same `Text` does on its own (see `render_visual_display_pipeline`).
   if matches!(expr, syntax::Expr::FunctionCall { name, args }
@@ -5482,8 +5579,10 @@ fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
     && matches!(name.as_str(), "Panel" | "Framed")
     && args.first().is_some_and(is_dynamic_under_text)
   {
-    let mut new_args = args.to_vec();
-    new_args[0] = render_inline_display_wrapper(&args[0]);
+    // The box's `BaseStyle` sets the value as it is drawn.
+    let mut new_args = functions::graphics::frame_base_styled_args(args)
+      .unwrap_or_else(|| args.to_vec());
+    new_args[0] = render_inline_display_wrapper(&new_args[0]);
     // A value that is itself a `Dynamic` is drawn as it stands rather
     // than released over and over.
     if !is_dynamic_under_text(&new_args[0]) {
