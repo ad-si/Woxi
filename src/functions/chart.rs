@@ -253,12 +253,40 @@ fn numeric_value_expr(v: f64) -> Expr {
 /// A graphic's `FormatType` is `TraditionalForm`, so each item of a
 /// `Row`/`Column`/`Grid` label is typeset in it: `x == 5` reads `x = 5`,
 /// `1 + n` reads `n + 1` and `Mod[a, m]` reads `a mod m`.
+///
+/// So is a label that is one mathematical expression, on its own or under
+/// `Style`/`Text` wrappers: `Style[Fibonacci[n], 16]` reads `Fₙ` and
+/// `Style[Log[n], 16]` reads `log(n)`.
 fn traditional_label_layout(expr: &Expr) -> Expr {
   if crate::functions::graphics::is_traditional_layout(expr) {
-    crate::functions::graphics::traditionalize_layout_items(expr)
-  } else {
-    expr.clone()
+    return crate::functions::graphics::traditionalize_layout_items(expr);
   }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || (name == "Text" && args.len() == 1))
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = traditional_label_layout(&args[0]);
+      call(name, new_args)
+    }
+    Expr::FunctionCall { name, .. } if name == "TraditionalForm" => {
+      expr.clone()
+    }
+    _ if crate::functions::graphics::is_traditional_math_label(expr) => {
+      call("TraditionalForm", vec![expr.clone()])
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// A plot title's expression with its mathematical parts wrapped in
+/// `TraditionalForm`, the `FormatType` of every graphic: the items of a
+/// `Row`/`Column`/`Grid`, a lone mathematical expression and any sum, each
+/// under whatever `Style`/`Text` wrappers the title carries. Strings,
+/// numbers and the layout itself stay as written.
+pub(crate) fn traditional_plot_label(expr: &Expr) -> Expr {
+  traditional_sums(&traditional_label_layout(expr))
 }
 
 /// Typeset a label expression into its first line plus the lines after it.
@@ -1221,9 +1249,8 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let (markup, rest) = markup_and_extra_lines(&traditional_sums(
-            &traditional_label_layout(other),
-          ));
+          let (markup, rest) =
+            markup_and_extra_lines(&traditional_plot_label(other));
           extra_lines = rest;
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
@@ -1274,9 +1301,7 @@ fn parse_styled_label_impl(expr: &Expr) -> Option<StyledLabel> {
           }
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
-          None => markup_and_extra_lines(&traditional_sums(
-            &traditional_label_layout(other),
-          )),
+          None => markup_and_extra_lines(&traditional_plot_label(other)),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
       let mut extra_lines = extra_lines;

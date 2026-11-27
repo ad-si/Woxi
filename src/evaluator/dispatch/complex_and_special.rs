@@ -6233,6 +6233,58 @@ pub(crate) fn tf_known_func(name: &str) -> Option<&'static str> {
     .map(|(_, display)| *display)
 }
 
+/// Whether TraditionalForm writes the call `expr` of a built-in function in
+/// a notation of its own that sets on one line of text — rows and scripts,
+/// as in pₙ for `Prime[n]`, ⌊x⌋ for `Floor[x]` and J₂(x) for
+/// `BesselJ[2, x]` — rather than as its head applied to the arguments in
+/// brackets (`Hue[n]`). An operator-only head (`RightArrow`) and a notation
+/// that stacks its parts (`Binomial[n, k]`) are no such call.
+pub(crate) fn tf_has_inline_notation(expr: &Expr) -> bool {
+  fn sets_on_one_line(boxes: &Expr) -> bool {
+    match boxes {
+      Expr::String(_) => true,
+      Expr::List(items) => items.iter().all(sets_on_one_line),
+      Expr::FunctionCall { name, args } => {
+        matches!(
+          name.as_str(),
+          "RowBox" | "SubscriptBox" | "SuperscriptBox" | "SubsuperscriptBox"
+        ) && args.iter().all(sets_on_one_line)
+          // The FrontEnd's postfix-mark templates (z*, mᵀ, m†).
+          || name == "TemplateBox"
+            && matches!(
+              args.get(1),
+              Some(Expr::String(t) | Expr::Identifier(t))
+                if matches!(
+                  t.as_str(),
+                  "Conjugate" | "Transpose" | "ConjugateTranspose"
+                )
+            )
+            && args.first().is_some_and(sets_on_one_line)
+      }
+      _ => false,
+    }
+  }
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  if args.is_empty()
+    || !crate::evaluator::functions::is_builtin_symbol(name)
+    || crate::syntax::inert_infix_char(name).is_some()
+  {
+    return false;
+  }
+  let boxes = tf(expr);
+  let applies_head = matches!(&boxes, Expr::FunctionCall { name: row, args: row_args }
+  if row == "RowBox"
+    && matches!(row_args.first(), Some(Expr::List(items))
+      if matches!(
+        (items.first(), items.get(1)),
+        (Some(Expr::String(head)), Some(Expr::String(open)))
+          if head == name && (open == "[" || open == "(")
+      )));
+  !applies_head && sets_on_one_line(&boxes)
+}
+
 /// Read TraditionalForm boxes back into the StandardForm boxes of the same
 /// expression — what wolframscript does with a `FormBox[…, TraditionalForm]`
 /// escape: a symbol applied in round brackets, `RowBox[{"f", "(", "t",

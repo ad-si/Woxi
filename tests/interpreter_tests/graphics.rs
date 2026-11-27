@@ -16295,7 +16295,10 @@ mod plot3d {
       let svg =
         export_svg("Graphics[Disk[], PlotLabel -> Row[{\"P = \", Q^2}]]");
       assert!(!has_fraction_bar(&svg), "{svg}");
-      assert!(svg.contains(">P = Q<tspan"), "{svg}");
+      assert!(
+        svg.contains(">P = <tspan font-style=\"italic\">Q</tspan><tspan"),
+        "{svg}"
+      );
     }
 
     /// A `Row` title whose strings break it into several lines still
@@ -33185,26 +33188,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// A `Plus` term with a negative coefficient joins with `-` and drops the
-    /// sign, so a polynomial label reads `-5 - 5 x - 5 x^2`, not
-    /// `-5 + -5 x + -5 x^2`. Wolfram's boxes join the same way.
+    /// sign, so a polynomial label reads `-5 x^2 - 5 x - 5`, not
+    /// `-5 x^2 + -5 x + -5`. Wolfram's boxes join the same way. The title is
+    /// set in `TraditionalForm`, so the sum runs from its highest power down.
     #[test]
     fn negative_coefficients_join_with_a_minus() {
       let label = |expr: &str| -> String {
         let svg = export_svg(&format!(
           "RegionPlot[y > x, {{x, -2, 2}}, {{y, -2, 2}}, PlotLabel -> {expr}]"
         ));
-        svg
+        let markup = svg
           .split("xml:space=\"preserve\">")
           .nth(1)
           .and_then(|t| t.split("</text>").next())
-          .unwrap_or_default()
-          .to_string()
+          .unwrap_or_default();
+        // The text alone, without the italics of its letters.
+        markup
+          .replace("<tspan font-style=\"italic\">", "")
+          .replace("</tspan>", "")
+          .replace('\u{2009}', " ")
       };
-      assert_eq!(label("-5 x - 5"), "-5 - 5 x");
-      assert_eq!(label("a - 2.5 b"), "a - 2.5 b");
-      assert_eq!(label("a - b"), "a - b");
+      assert_eq!(label("-5 x - 5"), "-5 x-5");
+      assert_eq!(label("-5 x^2 - 5 x - 5").matches('+').count(), 0);
+      assert_eq!(label("a - 2.5 b"), "a-2.5 b");
+      assert_eq!(label("a - b"), "a-b");
       // A positive term still joins with `+`.
-      assert_eq!(label("a + 3 b"), "a + 3 b");
+      assert_eq!(label("a + 3 b"), "a+3 b");
     }
 
     /// The plotting heads hold their arguments, so a body that names part of
@@ -70646,13 +70655,27 @@ mod generalized_bar_chart {
     let mark = |m: &str| {
       format!("<tspan baseline-shift=\"super\" font-size=\"70%\">{m}</tspan>")
     };
+    // The title is set in `TraditionalForm`: the function is applied in
+    // round brackets and one-letter symbols are italic.
+    let it = |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
     let svg = export_svg("Graphics[{}, PlotLabel -> f[Transpose[m]]]");
-    assert!(svg.contains(&format!("f[m{}]", mark("T"))), "{svg}");
+    assert!(
+      svg.contains(&format!("{}({}{})", it("f"), it("m"), mark("T"))),
+      "{svg}"
+    );
     let svg = export_svg(
       "Graphics[{}, PlotLabel -> g[ConjugateTranspose[a + b], Conjugate[z]]]",
     );
     assert!(
-      svg.contains(&format!("g[(a + b){}, Conjugate[z]]", mark("\u{2020}"))),
+      svg.contains(&format!(
+        "{}(({}+{}){}, {}{})",
+        it("g"),
+        it("a"),
+        it("b"),
+        mark("\u{2020}"),
+        it("z"),
+        mark("*")
+      )),
       "{svg}"
     );
     // The permuting two-argument form is an ordinary function call.
@@ -81855,5 +81878,149 @@ mod axes_style_3d {
     let mixed = plot(", AxesStyle -> 18, TicksStyle -> 7");
     assert!(mixed.contains("font-size=\"7\""), "{mixed}");
     assert!(mixed.contains("font-size=\"18\""), "{mixed}");
+  }
+}
+
+/// A graphic's `FormatType` is `TraditionalForm`, for a `Graphics` title
+/// just as for a `Plot` one.
+mod traditional_form_plot_labels {
+  use super::*;
+
+  const ITALIC_N: &str = "<tspan font-style=\"italic\">n</tspan>";
+
+  fn graphics_label(label: &str) -> String {
+    export_svg(&format!("Graphics[{{Disk[]}}, PlotLabel -> {label}]"))
+  }
+
+  fn plot_label(label: &str) -> String {
+    export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"))
+  }
+
+  fn indexed(letter: &str) -> String {
+    format!(
+      "<tspan font-style=\"italic\">{letter}</tspan><tspan \
+       baseline-shift=\"sub\" font-size=\"70%\">{ITALIC_N}</tspan>"
+    )
+  }
+
+  /// A function application titling a `Graphics` reads in traditional
+  /// notation (`sin(x)`, `log(n)`), not as its input form.
+  #[test]
+  fn graphics_title_sets_function_applications_traditionally() {
+    let svg = graphics_label("Log[n]");
+    assert!(svg.contains(&format!(">log({ITALIC_N})</text>")), "{svg}");
+    assert!(!svg.contains("Log["), "{svg}");
+    let svg = graphics_label("Sin[x]");
+    assert!(
+      svg.contains(">sin(<tspan font-style=\"italic\">x</tspan>)</text>"),
+      "{svg}"
+    );
+  }
+
+  /// The items of a `Row` title are each typeset traditionally, under any
+  /// `Style` wrapped around the row, while its strings and numbers stay as
+  /// written.
+  #[test]
+  fn graphics_row_title_typesets_its_items() {
+    for (item, shown) in [
+      ("Log[n]", format!("log({ITALIC_N})")),
+      ("Prime[n]", indexed("p")),
+      ("Fibonacci[n]", indexed("F")),
+      ("n!", format!("{ITALIC_N}!")),
+      (
+        "2^n",
+        format!(
+          "2<tspan baseline-shift=\"super\" font-size=\"70%\">{ITALIC_N}</tspan>"
+        ),
+      ),
+    ] {
+      for label in [
+        format!("Row[{{{item}, \"  (base \", 13, \")\"}}]"),
+        format!("Style[Row[{{{item}, \"  (base \", 13, \")\"}}], 16]"),
+      ] {
+        let svg = graphics_label(&label);
+        assert!(
+          svg.contains(&format!("{shown}  (base 13)")),
+          "{label}: {svg}"
+        );
+      }
+    }
+    let svg = graphics_label("Style[Row[{Prime[n], \" a\"}], 16]");
+    assert!(svg.contains("<tspan font-size=\"16\">"), "{svg}");
+  }
+
+  /// A built-in with a notation of its own is written in it when it stands
+  /// alone as a title, with or without a `Style`: `Prime[n]` is pₙ,
+  /// `Fibonacci[n]` Fₙ, `Floor[x]` ⌊x⌋ and `BesselJ[2, x]` J₂(x).
+  #[test]
+  fn lone_title_uses_the_notation_of_its_head() {
+    for label_of in [graphics_label as fn(&str) -> String, plot_label] {
+      for (label, shown) in [
+        ("Prime[n]", indexed("p")),
+        ("Fibonacci[n]", indexed("F")),
+        ("Style[Prime[n], 16]", indexed("p")),
+        ("Style[Fibonacci[n], 16]", indexed("F")),
+        (
+          "Floor[x]",
+          "⌊<tspan font-style=\"italic\">x</tspan>⌋".to_string(),
+        ),
+        (
+          "BesselJ[2, x]",
+          "<tspan font-style=\"italic\">J</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">2</tspan>(<tspan \
+           font-style=\"italic\">x</tspan>)"
+            .to_string(),
+        ),
+      ] {
+        let svg = label_of(label);
+        assert!(svg.contains(&shown), "{label}: {svg}");
+      }
+    }
+  }
+
+  /// A number in a number-display form and a stored box are typeset as
+  /// they are when they sit among a row's items, in a `Plot` title as in a
+  /// `Graphics` one. Regression: the `Plot` title broke the exponent onto a
+  /// line of its own and printed the box as its source.
+  #[test]
+  fn row_title_keeps_number_forms_and_boxes() {
+    for label_of in [graphics_label as fn(&str) -> String, plot_label] {
+      let svg = label_of(
+        "Row[{\"E = \", NumberForm[-2., {5, 4}, \
+         ExponentFunction -> (# &)]}]",
+      );
+      assert!(
+        svg.contains(
+          "E = -2.0000 × 10<tspan baseline-shift=\"super\" \
+           font-size=\"70%\">0</tspan>"
+        ),
+        "{svg}"
+      );
+      let svg = label_of("Row[{1, UnderscriptBox[\"1\", \"_\"], 1}]");
+      assert!(!svg.contains("UnderscriptBox"), "{svg}");
+      assert!(svg.contains("text-decoration=\"underline\""), "{svg}");
+    }
+  }
+
+  /// So are the labels of a frame's edges.
+  #[test]
+  fn frame_label_uses_the_notation_of_its_head() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, \
+       FrameLabel -> {Prime[n], Fibonacci[n]}]",
+    );
+    assert!(svg.contains(&indexed("p")), "{svg}");
+    assert!(svg.contains(&indexed("F")), "{svg}");
+    assert!(!svg.contains("Prime("), "{svg}");
+  }
+
+  /// A built-in that TraditionalForm writes as its head in square brackets
+  /// keeps that form, and a string title is never typeset as mathematics.
+  #[test]
+  fn titles_without_a_notation_stay_as_written() {
+    let svg = graphics_label("Hue[x]");
+    assert!(svg.contains(">Hue[x]</text>"), "{svg}");
+    let svg = graphics_label("\"n vs x\"");
+    assert!(svg.contains(">n vs x</text>"), "{svg}");
   }
 }

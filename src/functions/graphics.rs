@@ -19351,8 +19351,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other => {
               // Set in `TraditionalForm`, so a lone lowercase Greek letter
               // in its text is italic.
-              let lines =
-                with_label_greek_italics(|| expr_to_svg_markup_lines(other));
+              let lines = with_label_greek_italics(|| {
+                expr_to_svg_markup_lines(
+                  &crate::functions::chart::traditional_plot_label(other),
+                )
+              });
               if lines.iter().any(|l| !l.is_empty()) {
                 if lines.len() > 1 {
                   plot_label_alignment =
@@ -29032,7 +29035,7 @@ fn row_holds_math_item(e: &Expr) -> bool {
 /// explicit `TraditionalForm`. Strings, numbers and layout, styling or
 /// number-format wrappers (`Row`, `Style`, `NumberForm`, …) keep the plain
 /// label text.
-fn is_traditional_math_label(e: &Expr) -> bool {
+pub(crate) fn is_traditional_math_label(e: &Expr) -> bool {
   fn part_ok(e: &Expr) -> bool {
     matches!(
       e,
@@ -29101,7 +29104,10 @@ fn is_traditional_math_label(e: &Expr) -> bool {
             name,
           )
           .is_some()
-          || !crate::evaluator::functions::is_builtin_symbol(name);
+          || !crate::evaluator::functions::is_builtin_symbol(name)
+          // A built-in with a notation of its own: `Prime[n]` is pₙ,
+          // `Fibonacci[n]` Fₙ, `Floor[x]` ⌊x⌋, `BesselJ[2, x]` J₂(x).
+          || crate::evaluator::dispatch::complex_and_special::tf_has_inline_notation(e);
         math_head && args.iter().all(part_ok)
       }
       _ => false,
@@ -42843,6 +42849,30 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     // A `Spacer` is a gap in the layout, not an expression to typeset.
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "TraditionalForm" | "Spacer") =>
+    {
+      expr.clone()
+    }
+    // A stored box (`UnderscriptBox["1", "_"]`) is typeset already.
+    Expr::FunctionCall { name, args }
+      if name.ends_with("Box") && !args.is_empty() =>
+    {
+      expr.clone()
+    }
+    // A number shown in a number-display form reads the same in every
+    // notation; the form alone decides its digits, signs and exponent.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+          | "AccountingForm"
+          | "PaddedForm"
+          | "DecimalForm"
+      ) && matches!(
+        args.first(),
+        Some(Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      ) =>
     {
       expr.clone()
     }

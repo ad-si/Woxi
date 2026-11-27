@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- A `Graphics` title is set in `TraditionalForm` like a `Plot` title:
+    `PlotLabel -> Row[{Log[n], " (base ", 10, ")"}]` reads `log(n) (base 10)`
+    and `PlotLabel -> Sin[x]` reads `sin(x)`, where both printed their input
+    form. A built-in with a notation of its own is written in it as a
+    title, frame or axes label (`Prime[n]` is pₙ, `Fibonacci[n]` Fₙ,
+    `Floor[x]` ⌊x⌋, `BesselJ[2, x]` J₂(x)), also under a `Style`. A number
+    in a `NumberForm` with an `ExponentFunction` and a stored box keep
+    their typesetting among the items of a `Row` title.
 - `Show[Histogram[…], …]` keeps the histogram's range padding and axes:
     the bars start a little inside the vertical axis as on the histogram
     alone, and with `AxesOrigin -> {0, 0}` the crossing is no longer
