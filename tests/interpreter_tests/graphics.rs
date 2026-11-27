@@ -26429,8 +26429,90 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            Filling -> Axis]], Polygon[p_, _] :> p, Infinity]"
         )
         .unwrap(),
-        "{{{0., 1.}, {0.5, 0.}, {0., 0.}}, {{0.5, 0.}, {1., -1.}, {1., 0.}}, \
-         {{1., -1.}, {2., 0.}, {1., 0.}}, {{3., 0.}, {4., 2.}, {4., 0.}}}"
+        "{{{0., 1.}, {0., 0.}, {0.5, 0.}}, {{0.5, 0.}, {1., -1.}, {1., 0.}}, \
+         {{1., 0.}, {1., -1.}, {2., 0.}}, {{3., 0.}, {4., 0.}, {4., 2.}}}"
+      );
+    }
+
+    /// The corners of a fill piece run counterclockwise: down to the level
+    /// and back up above it (`{p0, b0, b1, p1}`), from the level down to
+    /// the curve and back below it (`{b0, p0, p1, b1}`).
+    #[test]
+    fn show_color_function_filling_corner_order() {
+      let fill = |data: &str, filling: &str| {
+        interpret(&format!(
+          "Cases[Show[Graphics[Point[{{0, 0}}]], ListLinePlot[{data}, \
+           ColorFunction -> (Hue[#] &), ColorFunctionScaling -> False, \
+           Filling -> {filling}]], Polygon[p_, _] :> p, Infinity]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(
+        fill("{{0, 1}, {1, 2}, {2, 1}}", "Axis"),
+        "{{{0., 1.}, {0., 0.}, {1., 0.}, {1., 2.}}, \
+         {{1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
+      );
+      assert_eq!(
+        fill("{{0, -1}, {1, -2}, {2, -1}}", "Axis"),
+        "{{{0., 0.}, {0., -1.}, {1., -2.}, {1., 0.}}, \
+         {{1., 0.}, {1., -2.}, {2., -1.}, {2., 0.}}}"
+      );
+      // A level between the values splits each step in two triangles.
+      assert_eq!(
+        fill("{{0, 1}, {1, 2}, {2, 1}}", "1.5"),
+        "{{{0., 1.5}, {0., 1.}, {0.5, 1.5}}, {{0.5, 1.5}, {1., 1.5}, {1., 2.}}, \
+         {{1., 2.}, {1., 1.5}, {1.5, 1.5}}, {{1.5, 1.5}, {2., 1.}, {2., 1.5}}}"
+      );
+      // The triangles come before the quadrilaterals.
+      assert_eq!(
+        fill("{{0, 1}, {1, 1}, {2, -1}, {3, -1}}", "Axis"),
+        "{{{1., 1.}, {1., 0.}, {1.5, 0.}}, {{1.5, 0.}, {2., -1.}, {2., 0.}}, \
+         {{0., 1.}, {0., 0.}, {1., 0.}, {1., 1.}}, \
+         {{2., 0.}, {2., -1.}, {3., -1.}, {3., 0.}}}"
+      );
+    }
+
+    /// `Filling -> Bottom` and `Top` reach the plot's own range, not the
+    /// padded one it is drawn in.
+    #[test]
+    fn show_color_function_filling_to_bottom_and_top() {
+      let fill = |filling: &str| {
+        interpret(&format!(
+          "Cases[Show[Graphics[Point[{{0, 0}}]], ListLinePlot[{{{{0, 1}}, \
+           {{1, 2}}, {{2, 1}}}}, ColorFunction -> (Hue[#] &), \
+           ColorFunctionScaling -> False, Filling -> {filling}]], \
+           Polygon[p_, _] :> p, Infinity]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(
+        fill("Bottom"),
+        "{{{0., 1.}, {0., 0.}, {1., 0.}, {1., 2.}}, \
+         {{1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
+      );
+      assert_eq!(
+        fill("Top"),
+        "{{{0., 2.}, {0., 1.}, {1., 2.}}, {{1., 2.}, {2., 1.}, {2., 2.}}}"
+      );
+    }
+
+    /// The pieces of a longer curve, as a set: Wolfram lists them in an
+    /// order of its own.
+    #[test]
+    fn show_color_function_filling_pieces_of_a_longer_curve() {
+      assert_eq!(
+        interpret(
+          "Sort[Cases[Show[Graphics[Point[{0, 0}]], ListLinePlot[\
+           {3, 1, -2, 4}, ColorFunction -> (Hue[#] &), \
+           ColorFunctionScaling -> False, Filling -> Axis]], \
+           Polygon[p_, _] :> p, Infinity]]"
+        )
+        .unwrap(),
+        "{{{2., 1.}, {2., 0.}, {2.3333333333333335, 0.}}, \
+         {{2.3333333333333335, 0.}, {3., -2.}, {3., 0.}}, \
+         {{3., 0.}, {3., -2.}, {3.3333333333333335, 0.}}, \
+         {{3.3333333333333335, 0.}, {4., 0.}, {4., 4.}}, \
+         {{1., 3.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
       );
     }
 

@@ -31514,6 +31514,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           fill_prims.push(call1("Polygon", Expr::List(coords.into())));
         }
         let ref_y = level_ref_y.unwrap_or(0.0);
+        // A colored fill reaches `Bottom` or `Top` at the plot's own range,
+        // short of the `PlotRangePadding` margin.
+        let tinted_ref_y = if sd.is_scatter {
+          None
+        } else {
+          fill.filling.reference_y(source_clip_y.0, source_clip_y.1)
+        }
+        .unwrap_or(ref_y);
         // With a `ColorFunction` and no explicit `FillingStyle` (unset or
         // `Automatic`), the fill takes the curve's colors at full
         // strength, as on the plot drawn alone (WL paints the fill
@@ -31545,12 +31553,22 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
             };
             segments
               .iter()
-              .map(|seg| color_function_fill_polygons(seg, ref_y, &color_at))
+              .map(|seg| {
+                color_function_fill_polygons(seg, tinted_ref_y, &color_at)
+              })
               .collect::<Option<Vec<Vec<Expr>>>>()
           });
         if let Some(polygons) = tinted {
           let mut tinted_prims = vec![call1("Opacity", Expr::Real(1.0))];
-          tinted_prims.extend(polygons.into_iter().flatten());
+          // The triangles (the pieces touching the level) come before the
+          // quadrilaterals, as in Wolfram's fill. Each kind follows the
+          // curve here; Wolfram's order within a kind is its own.
+          let (triangles, quadrilaterals): (Vec<Expr>, Vec<Expr>) = polygons
+            .into_iter()
+            .flatten()
+            .partition(is_triangle_polygon);
+          tinted_prims.extend(triangles);
+          tinted_prims.extend(quadrilaterals);
           fill_layer.push(Expr::List(tinted_prims.into()));
           continue;
         }
@@ -31758,7 +31776,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
 /// shaded through the colors `color_at` gives the curve's vertices: one
 /// piece per step of the curve, each colored down to the level like the
 /// curve above (or below) it. A step crossing the level is split there
-/// into its two triangles, and one ending on it is a single triangle. `None` when a vertex has no color.
+/// into its two triangles, and one ending on it is a single triangle.
+/// `None` when a vertex has no color.
+///
+/// The corners run counterclockwise, as Wolfram lists them: from the
+/// curve's start down to the level, along it and back up for a piece above
+/// the level (`{p0, b0, b1, p1}`), from the level down to the curve, along
+/// it and back up for one below (`{b0, p0, p1, b1}`), with a corner lying
+/// on the level listed once.
 fn color_function_fill_polygons(
   seg: &[(f64, f64)],
   ref_y: f64,
@@ -31766,47 +31791,66 @@ fn color_function_fill_polygons(
 ) -> Option<Vec<Expr>> {
   let point =
     |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-  let polygon = |corners: Vec<(f64, f64)>, colors: Vec<Expr>| {
-    call(
-      "Polygon",
-      vec![
-        Expr::List(corners.into_iter().map(point).collect::<Vec<_>>().into()),
-        rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
-      ],
-    )
-  };
+  // The piece between the curve from `a` to `b` and the level, `above`
+  // telling which side of the level it lies on.
+  let piece =
+    |a: (f64, f64), b: (f64, f64), above: bool| -> Option<Option<Expr>> {
+      let (base_a, base_b) = ((a.0, ref_y), (b.0, ref_y));
+      let ring = if above {
+        [a, base_a, base_b, b]
+      } else {
+        [base_a, a, b, base_b]
+      };
+      let mut corners: Vec<(f64, f64)> = Vec::with_capacity(4);
+      for corner in ring {
+        if corners.last() != Some(&corner) {
+          corners.push(corner);
+        }
+      }
+      if corners.len() > 1 && corners.first() == corners.last() {
+        corners.pop();
+      }
+      if corners.len() < 3 {
+        // A step along the level encloses nothing.
+        return Some(None);
+      }
+      // A corner on the level takes the color of the curve above it.
+      let colors = corners
+        .iter()
+        .map(|&(x, _)| color_at(if x == a.0 { a } else { b }))
+        .collect::<Option<Vec<Expr>>>()?;
+      Some(Some(call(
+        "Polygon",
+        vec![
+          Expr::List(corners.into_iter().map(point).collect::<Vec<_>>().into()),
+          rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
+        ],
+      )))
+    };
   let mut polygons = Vec::new();
   for step in seg.windows(2) {
     let (a, b) = (step[0], step[1]);
-    let (ca, cb) = (color_at(a)?, color_at(b)?);
     if (a.1 - ref_y) * (b.1 - ref_y) < 0.0 {
       let t = (ref_y - a.1) / (b.1 - a.1);
       let crossing = (a.0 + t * (b.0 - a.0), ref_y);
-      let cc = color_at(crossing)?;
-      polygons.push(polygon(
-        vec![a, crossing, (a.0, ref_y)],
-        vec![ca.clone(), cc.clone(), ca],
-      ));
-      polygons.push(polygon(
-        vec![crossing, b, (b.0, ref_y)],
-        vec![cc, cb.clone(), cb],
-      ));
-    } else if a.1 == ref_y && b.1 == ref_y {
-      // A step along the level encloses nothing.
-    } else if a.1 == ref_y {
-      polygons
-        .push(polygon(vec![a, b, (b.0, ref_y)], vec![ca, cb.clone(), cb]));
-    } else if b.1 == ref_y {
-      polygons
-        .push(polygon(vec![a, b, (a.0, ref_y)], vec![ca.clone(), cb, ca]));
+      polygons.extend(piece(a, crossing, a.1 > ref_y)?);
+      polygons.extend(piece(crossing, b, b.1 > ref_y)?);
     } else {
-      polygons.push(polygon(
-        vec![a, b, (b.0, ref_y), (a.0, ref_y)],
-        vec![ca.clone(), cb.clone(), cb, ca],
-      ));
+      let above = a.1 > ref_y || b.1 > ref_y;
+      polygons.extend(piece(a, b, above)?);
     }
   }
   Some(polygons)
+}
+
+/// Whether a fill polygon is a triangle.
+fn is_triangle_polygon(polygon: &Expr) -> bool {
+  matches!(
+    polygon,
+    Expr::FunctionCall { name, args }
+      if name == "Polygon"
+        && matches!(args.first(), Some(Expr::List(corners)) if corners.len() == 3)
+  )
 }
 
 /// Draw the `PlotMarkers` glyph `marker` at each finite point of `points`:
