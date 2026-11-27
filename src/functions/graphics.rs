@@ -6475,24 +6475,16 @@ pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
 /// `base` size.
 /// `markup` moved right by `gap` points (a `Spacer` before it in a `Row`).
 ///
-/// Only the first run of characters carries the `dx`: wrapping the whole
-/// markup in one `<tspan dx>` would nest its own spans (a superscript, an
-/// italic letter) inside it, and resvg then raises every character of the
-/// wrapper that precedes a nested `baseline-shift` — `[He]2s²` would draw
-/// its `s` as part of the superscript.
+/// The gap is a run of its own: a no-break space set vanishingly small and
+/// tracked out to `gap` points ([`SPACER_GAP_OPEN`]). A `dx` shift would
+/// space the text the same way, but resvg leaves `dx` out of the
+/// `text-anchor` placement, so a centered `Row[{a, Spacer[n], b}]` would sit
+/// right of its center by half its spacers and run off the picture's edge.
+/// Being a sibling of the runs around it, the gap also never wraps their own
+/// spans (a superscript, an italic letter).
 fn markup_with_leading_gap(markup: &str, gap: f64) -> String {
-  let lead = markup.find('<').unwrap_or(markup.len());
-  if lead > 0 {
-    let (text, rest) = markup.split_at(lead);
-    return format!("<tspan dx=\"{gap:.2}\">{text}</tspan>{rest}");
-  }
-  if let Some(rest) = markup.strip_prefix("<tspan")
-    && rest.starts_with([' ', '>'])
-    && !rest[..rest.find('>').unwrap_or(rest.len())].contains(" dx=")
-  {
-    return format!("<tspan dx=\"{gap:.2}\"{rest}");
-  }
-  format!("<tspan dx=\"{gap:.2}\">{markup}</tspan>")
+  use crate::functions::plot_padding::{SPACER_GAP_CLOSE, SPACER_GAP_OPEN};
+  format!("{SPACER_GAP_OPEN}{gap:.2}{SPACER_GAP_CLOSE}{markup}")
 }
 
 /// How far a `baseline-shift="super"`/`"sub"` script moves off the
@@ -26445,13 +26437,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // appears — among a `Row`'s items as readily as as its separator.
         // The width is absolute, not relative to the font: `Spacer[25]`
         // is the same gap next to 8-point text as next to 30-point text.
-        // With no following element to carry a `dx` (see the `Row` case
-        // below), the best this lone-item fallback can do is the
-        // letter-spacing trick — real renderers keep it for a non-final
-        // character, just not a trailing one.
+        // On its own it is the same tracked-out run it is among the items
+        // of a `Row` (see [`markup_with_leading_gap`]).
         "Spacer" => {
           let pts = args.first().and_then(expr_to_f64).unwrap_or(1.0);
-          format!("<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>")
+          markup_with_leading_gap("", pts)
         }
 
         // Framed[content, …] / Highlighted[content, …] set inline text —
@@ -26577,12 +26567,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
-        // as the separator — is carried as a `dx` on the *next* rendered
-        // part rather than printed as its own trailing tspan: SVG
-        // renderers (including the one Woxi Studio rasterizes with)
-        // don't apply `letter-spacing` after the last character of a
-        // tspan, so a gap placed there is silently dropped. `dx` on the
-        // following content has no such last-character special case.
+        // as the separator — is set before the *next* rendered part (see
+        // [`markup_with_leading_gap`]), adjacent gaps adding up to one.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
             // A second argument that is an option (`ImageMargins -> 1`)
@@ -28531,16 +28517,23 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
 pub(crate) fn fit_title_font(lines: &[String], base: f64, width: f64) -> f64 {
   // Each glyph counts with its own advance: a run of spaces (a title
   // padded to line its letters up with the picture) is far narrower than
-  // as many letters.
-  let widest = lines
+  // as many letters. A fixed gap (a `Spacer` in a `Row`) does not shrink
+  // with the font: it comes off the room the letters have.
+  use crate::functions::plot_padding::{
+    line_width_em, spacer_gaps_points, text_width,
+  };
+  lines
     .iter()
-    .map(|l| crate::functions::plot_padding::text_width(l, 1.0))
-    .fold(0.0, f64::max);
-  if widest <= 0.0 {
-    base
-  } else {
-    base.min(((width - 8.0) / widest).max(9.0))
-  }
+    .flat_map(|l| l.split('\n'))
+    .filter_map(|line| {
+      // The bold widening is part of `text_width`, so the letters' share
+      // of a one-point line is what is left without its gaps.
+      let gaps = spacer_gaps_points(line);
+      let letters = text_width(line, 1.0) - gaps;
+      (line_width_em(line) > 0.0 && letters > 0.0)
+        .then(|| ((width - 8.0 - gaps) / letters).max(9.0))
+    })
+    .fold(base, f64::min)
 }
 
 /// A `PlotLabel` that is drawn as a picture rather than a line of text — a
@@ -29768,7 +29761,7 @@ fn script_needs_typesetting(script: &Expr) -> bool {
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
 /// `scale` times its point size (the plot renderers draw at
 /// `RESOLUTION_SCALE`): the explicit `font-size`s a `Style[label, size]`
-/// carries are in points, as are the `dx` gaps and `letter-spacing` a
+/// carries are in points, as are the `dx` shifts and the `letter-spacing` a
 /// `Spacer[n]` becomes, so they all scale along with the base font the
 /// label's `<text>` element gets.
 pub fn box_string_to_svg_scaled(s: &str, scale: f64) -> String {

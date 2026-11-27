@@ -645,23 +645,22 @@ impl StyledLabel {
       .unwrap_or(0)
   }
 
-  /// The width of the label's widest line at `size` points (see
-  /// [`Self::max_line_width_em`]).
+  /// The width of this label's widest line at `size` points, measured
+  /// with the proportional glyph widths a graphic's text is set in (bold
+  /// text setting wider), rather than a fixed width per character. A fixed
+  /// gap (a `Spacer` in a `Row`) keeps its width whatever the size.
   pub(crate) fn max_line_width(&self, size: f64) -> f64 {
-    self.max_line_width_em() * size
-  }
-
-  /// The width of this label's widest line in ems of its font size,
-  /// measured with the proportional glyph widths a graphic's text is set
-  /// in (bold text setting wider), rather than a fixed width per character.
-  pub(crate) fn max_line_width_em(&self) -> f64 {
+    use crate::functions::plot_padding::{
+      BOLD_WIDTH_SCALE, spacer_gaps_points, text_width,
+    };
     std::iter::once(self.svg())
       .chain(self.extra_lines.iter().cloned())
       .map(|line| {
-        let width = crate::functions::plot_padding::text_width(&line, 1.0);
+        let width = text_width(&line, size);
         // Markup that is bold itself already measures wider.
         if self.bold && !line.contains("font-weight=\"bold\"") {
-          width * crate::functions::plot_padding::BOLD_WIDTH_SCALE
+          let gaps = spacer_gaps_points(&line);
+          (width - gaps) * BOLD_WIDTH_SCALE + gaps
         } else {
           width
         }
@@ -671,8 +670,8 @@ impl StyledLabel {
 }
 
 /// Multiply the absolute lengths in SVG markup — `font-size="N"`, the
-/// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
-/// `Spacer` next to other Row content becomes — by `scale`, leaving
+/// `letter-spacing="N"` a `Spacer` becomes, and the `dx="N"` shift of an
+/// overlaid layer — by `scale`, leaving
 /// relative ones (`70%`, `1.2em`) as they are.
 pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
@@ -681,7 +680,7 @@ pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   let mut out = markup.to_string();
   for (attr, terminator, unit) in [
     ("font-size=\"", '"', ""),
-    ("letter-spacing:", 'p', "px"),
+    ("letter-spacing=\"", '"', ""),
     ("dx=\"", '"', ""),
   ] {
     out = scale_lengths_after(&out, attr, terminator, unit, scale);

@@ -1295,10 +1295,10 @@ fn render_item(
             // proportional glyph widths), and the frame's `FrameMargins`
             // already keep the lines off the border.
             let (block_w, inset) = if is_framed {
-              let width_em = styled
+              let width = styled
                 .as_ref()
-                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
-              (width_em * font_size, 0.0)
+                .map_or(0.0, |label| label.max_line_width(font_size));
+              (width, 0.0)
             } else {
               let chars = styled
                 .as_ref()
@@ -1351,8 +1351,7 @@ fn render_item(
           if is_framed {
             let text_w = styled
               .as_ref()
-              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
-              * font_size;
+              .map_or(0.0, |label| label.max_line_width(font_size));
             // `Framed` leaves its `FrameMargins` (5 points a side unless
             // set) between the text and the border.
             let (m_left, m_right, m_bottom, m_top) =
