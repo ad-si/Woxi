@@ -8156,7 +8156,7 @@ mod make_boxes {
     assert_eq!(
       interpret("ToString[ScientificForm[{12345.6, 0.00098765}, {4, 1}]]")
         .unwrap(),
-      "          4            -4\n{1.2 \u{00d7} 10 , 9.9 \u{00d7} 10  }"
+      "         4          -4\n{1.2 \u{00d7} 10 , 9.9 \u{00d7} 10  }"
     );
   }
 
@@ -8165,7 +8165,7 @@ mod make_boxes {
   fn to_string_engineering_form_digits_right_of_point() {
     assert_eq!(
       interpret("ToString[EngineeringForm[12345.678, {6, 1}]]").unwrap(),
-      "          3\n12.3 \u{00d7} 10"
+      "         3\n12.3 \u{00d7} 10"
     );
   }
 
