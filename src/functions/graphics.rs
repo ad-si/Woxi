@@ -46941,16 +46941,42 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     .collect();
   if args.len() == 1 && flow_items.iter().any(|i| newline_text(i).is_some()) {
     let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
-    // The blank each line shows when nothing follows its break: set like
-    // the text that broke the line, so it is as tall as a line of it.
-    let mut blanks: Vec<Expr> = vec![str_expr(" ")];
+    // The blank each line shows when nothing follows its break: as tall
+    // as the pitch a multi-line string of the breaking text advances at
+    // (its font size), so `Row[{"a", "\n"}]` is as tall as `"a\n"` rather
+    // than two fully padded lines.
+    // Under an explicit `LineSpacing` every line is centered on a band of
+    // that pitch instead, so a blank there is set like the text itself.
+    let explicit_pitch = flow_items.iter().find_map(line_spacing_pitch);
+    let blank_line = |item: &Expr| {
+      if explicit_pitch.is_some() {
+        return call1("Row", Expr::List(vec![with_text(item, " ")].into()));
+      }
+      let size = extract_cell_style(item).font_size.unwrap_or(14.0);
+      let h = size.ceil();
+      Expr::Graphics {
+        svg: format!(
+          "<svg width=\"1\" height=\"{h}\" viewBox=\"0 0 1 {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n</svg>"
+        ),
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      }
+    };
+    let mut blanks: Vec<Expr> = vec![blank_line(&str_expr(" "))];
     for item in &flow_items {
       match newline_text(item) {
         Some(text) => {
           for (k, seg) in text.split('\n').enumerate() {
             if k > 0 {
+              // The first line, when blank, is set like the text whose
+              // break ends it.
+              if lines.len() == 1 {
+                blanks[0] = blank_line(item);
+              }
               lines.push(Vec::new());
-              blanks.push(with_text(item, " "));
+              blanks.push(blank_line(item));
             }
             if !seg.is_empty() {
               lines.last_mut().unwrap().push(with_text(item, seg));
@@ -46965,8 +46991,11 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       .zip(blanks)
       .map(|(line, blank)| {
         // A blank line still takes one line of height.
-        let line = if line.is_empty() { vec![blank] } else { line };
-        call1("Row", Expr::List(line.into()))
+        if line.is_empty() {
+          blank
+        } else {
+          call1("Row", Expr::List(line.into()))
+        }
       })
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
@@ -46985,7 +47014,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         _ => "Center",
       },
     );
-    return match flow_items.iter().find_map(line_spacing_pitch) {
+    return match explicit_pitch {
       Some(pitch) => lines_at_pitch_svg(&rows, align, pitch),
       None => stacked_boxes_svg(rows, align),
     };
