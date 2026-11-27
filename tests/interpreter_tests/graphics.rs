@@ -6943,6 +6943,52 @@ mod graphics {
       );
     }
 
+    /// A `Cuboid` reaching past an explicit `PlotRange` is cut off at the
+    /// box, like every other solid: it covers what the part of it inside
+    /// the range covers, and one wholly outside the range is not drawn.
+    #[test]
+    fn graphics3d_cuboid_is_cut_off_at_the_plot_range() {
+      // The bounding box of everything filled in the picture.
+      let extent = |solid: &str| -> Option<[f64; 4]> {
+        let svg = export_svg(&format!(
+          "Graphics3D[{solid}, PlotRange -> {{{{-1, 1}}, {{0, 1}}, {{0, 1}}}},            Boxed -> False]"
+        ));
+        let mut ext: Option<[f64; 4]> = None;
+        for l in svg.lines().filter(|l| l.starts_with("<polygon ")) {
+          let points = l.split("points=\"").nth(1).unwrap();
+          for pair in points[..points.find('"').unwrap()].split(' ') {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            let e = ext.get_or_insert([x, y, x, y]);
+            *e = [e[0].min(x), e[1].min(y), e[2].max(x), e[3].max(y)];
+          }
+        }
+        ext
+      };
+      let inside = extent("Cuboid[{-1, 0, 0}, {1, 1, 1}]").unwrap();
+      for solid in [
+        // Sticking out on the side away from the viewer, on the side
+        // toward the viewer, on both, and along two axes at once.
+        "Cuboid[{-3, 0, 0}, {1, 1, 1}]",
+        "Cuboid[{-1, 0, 0}, {4, 1, 1}]",
+        "Cuboid[{-3, 0, 0}, {4, 1, 1}]",
+        "Cuboid[{-3, -2, 0}, {1, 1, 1}]",
+        // The corners may come in either order.
+        "Cuboid[{1, 1, 1}, {-3, 0, 0}]",
+      ] {
+        let cut = extent(solid).unwrap_or_else(|| panic!("{solid}"));
+        for (a, b) in cut.iter().zip(inside) {
+          assert!((a - b).abs() < 1.0, "{solid}: {cut:?} vs {inside:?}");
+        }
+      }
+      assert_eq!(extent("Cuboid[{2, 0, 0}, {3, 1, 1}]"), None);
+      // Other solids of the scene are left alone.
+      assert!(
+        extent("{Cuboid[{2, 0, 0}, {3, 1, 1}], Cuboid[{0, 0, 0}, {1, 1, 1}]}")
+          .is_some()
+      );
+    }
+
     /// Automatic 3D box ticks step by the smallest of 1, 2 and 5 × 10^k
     /// that leaves fewer than five intervals: a 10-wide axis by 5 (whole
     /// labels, no 2.5 steps), a 2-wide axis by 0.5.
