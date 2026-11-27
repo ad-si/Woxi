@@ -4243,7 +4243,8 @@ mod interpreter_tests {
   #[test]
   fn test_graphics_text_lowers_subscript_without_unicode_form() {
     // Unicode has no subscript capital N, so `F_N` used to draw as a flat
-    // "FN". The subscript is now lowered with a `<tspan>` instead.
+    // "FN". The subscript is now lowered with a `<tspan>` instead; the
+    // one-letter symbols of the box are italic, as with a digit script.
     clear_state();
     let svg = interpret(
       "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(F\\), \\(N\\)]\\) cos\", {0, 0}]], \"SVG\"]",
@@ -4251,7 +4252,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "F<tspan baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
+        "<tspan font-style=\"italic\">F</tspan><tspan \
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
       ),
       "expected lowered N in SVG, got: {svg}"
     );
@@ -4271,7 +4273,8 @@ mod interpreter_tests {
       .unwrap();
       assert!(
         svg.contains(&format!(
-          ">l<tspan baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
+          "><tspan font-style=\"italic\">l</tspan><tspan \
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
         )),
         "{letter}: {svg}"
       );
@@ -4282,7 +4285,10 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>"),
+      svg.contains(
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" \
+font-size=\"70%\">i</tspan>"
+      ),
       "{svg}"
     );
     assert!(!svg.contains('ᵢ'), "{svg}");
@@ -4342,12 +4348,17 @@ mod interpreter_tests {
     let raised = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
     for (code, base, script) in [
       (
+        // A one-letter symbol in box code is italic.
         "Text[\"\\!\\(\\*SuperscriptBox[\\(θ\\), \\(*\\)]\\)\", {0, 0}]",
-        "θ",
+        "<tspan font-style=\"italic\">θ</tspan>",
         "*",
       ),
       ("Text[Superscript[\"θ\", \"*\"], {0, 0}]", "θ", "*"),
-      ("Text[Superscript[e, \"j k L\"], {0, 0}]", "e", "j k L"),
+      (
+        "Text[Superscript[e, \"j k L\"], {0, 0}]",
+        "<tspan font-style=\"italic\">e</tspan>",
+        "j k L",
+      ),
     ] {
       clear_state();
       let svg =

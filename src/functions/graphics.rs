@@ -16893,12 +16893,15 @@ fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
         } else {
           (SUBSCRIPT_START, SUBSCRIPT_END)
         };
-        runs.extend(script_runs.into_iter().filter(|r| !r.text.is_empty()).map(
-          |r| LabelRun {
-            text: format!("{open}{}{close}", r.text),
-            ..r
-          },
-        ));
+        runs.extend(
+          script_runs
+            .into_iter()
+            .filter(|r| !r.text.is_empty())
+            .map(|r| LabelRun {
+              text: format!("{open}{}{close}", r.text),
+              ..r
+            }),
+        );
         return Some(runs);
       }
       runs.push(plain(&to_unicode_script(&script, superscript)));
