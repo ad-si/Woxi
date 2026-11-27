@@ -22467,6 +22467,10 @@ thread_local! {
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while typesetting the content of a `StyleBox[…, LimitsPositioning
+  /// -> False]`: its large operators keep their limits stacked under and
+  /// over the sign even where they would otherwise be set inline.
+  static BOX_STACKED_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
   /// Set while typesetting the text of a quoted string box (and any inline
   /// `\!\(\*…\)` boxes it carries) or a `StyleBox[…, FontSlant -> Plain]`:
   /// a string is literal text, so its single letters are not math variables
@@ -23444,6 +23448,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // they stacked under and over a display-size sign.
       "UnderscriptBox"
         if args.len() >= 2
+          && !BOX_STACKED_LIMITS.get()
           && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
             || BOX_INLINE_LIMITS.get())
           && matches!(&args[0], Expr::String(s) if s == "lim") =>
@@ -23455,6 +23460,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderscriptBox" | "UnderoverscriptBox"
         if args.len() >= 2
+          && !BOX_STACKED_LIMITS.get()
           && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
             || BOX_INLINE_LIMITS.get())
           && matches!(&args[0], Expr::String(s) if large_operator_scale(s).is_some()) =>
@@ -23589,6 +23595,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut upright = false;
         let mut opacity: Option<f64> = None;
         let mut font_family: Option<String> = None;
+        let mut stacked_limits = BOX_STACKED_LIMITS.get();
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -23664,10 +23671,19 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
                 show_contents =
                   !matches!(val, Expr::Identifier(v) if v == "False");
               }
+              // `LimitsPositioning -> False` keeps the limits of the large
+              // operators inside stacked; any other setting lets the
+              // surroundings decide again.
+              "LimitsPositioning" => {
+                stacked_limits =
+                  matches!(val, Expr::Identifier(v) if v == "False");
+              }
               _ => {}
             }
           }
         }
+        let previous_stacked_limits =
+          BOX_STACKED_LIMITS.replace(stacked_limits);
         let layout_content = || match font_family.as_deref() {
           Some(ff) => with_box_font_family(Some(ff), || {
             layout_box(&args[0], effective_font_size)
@@ -23679,6 +23695,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         } else {
           layout_content()
         };
+        BOX_STACKED_LIMITS.set(previous_stacked_limits);
         if !show_contents {
           return BoxLayout {
             elements: String::new(),
@@ -25260,50 +25277,65 @@ pub(crate) fn shallow_for_display(expr: &Expr, spec: Option<&Expr>) -> Expr {
 }
 
 /// The display preprocessing every typeset label goes through: a number
-/// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`])
-/// and the `"TraditionalForm"` style name turned into its form wrapper
-/// (see [`style_form_name_as_wrapper`]), and any `StyleForm` respelled as
-/// the `Style` it is displayed as (see [`style_forms_as_style`]) — a label
-/// typeset on its own, such as a tick label, passes no display entry point
-/// that would have respelled it. `None` when none applies.
+/// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`]),
+/// and any `StyleForm` respelled as the `Style` it is displayed as and the
+/// `"TraditionalForm"` style name turned into its form wrapper (see
+/// [`style_forms_as_style`]) — a label typeset on its own, such as a tick
+/// label, passes no display entry point that would have respelled it.
+/// `None` when none applies.
 fn normalize_display_style(expr: &Expr) -> Option<Expr> {
-  style_forms_as_style(expr)
-    .or_else(|| hoist_style_out_of_number_form(expr))
-    .or_else(|| style_form_name_as_wrapper(expr))
+  style_forms_as_style(expr).or_else(|| hoist_style_out_of_number_form(expr))
 }
 
-/// `Style[expr, …, "TraditionalForm", …]` names the TraditionalForm style,
-/// which sets `expr` in traditional notation (`P(X | A)` for `P[X | A]`):
-/// it typesets as `Style[TraditionalForm[expr], …]` with the other
-/// directives kept. `None` for anything else.
+/// `Style[expr, …, "TraditionalForm", …]` names the TraditionalForm style
+/// (as `FormatType -> TraditionalForm` selects it), which sets `expr` in
+/// traditional notation (`P(X | A)` for `P[X | A]`): it typesets as
+/// `Style[TraditionalForm[expr], LimitsPositioning -> False, …]` with the
+/// other directives kept. The style sets the expression's own boxes, whose
+/// large operators keep their limits stacked wherever they stand; only a
+/// `TraditionalForm[…]` wrapper lets a layout set them inline. A string is
+/// literal text in either notation and only loses the directive. `None`
+/// for anything else.
 fn style_form_name_as_wrapper(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
-  if !is_style_wrapper(name) || args.len() < 2 {
+  if !is_style_wrapper(name)
+    || args.len() < 2
+    || !args[1..].iter().any(is_traditional_form_directive)
+  {
     return None;
   }
-  let is_form =
-    |a: &Expr| matches!(a, Expr::String(s) if s == "TraditionalForm");
-  if !args[1..].iter().any(is_form) {
-    return None;
-  }
-  let body = match &args[0] {
-    Expr::String(_) => args[0].clone(),
-    Expr::FunctionCall { name: n, .. } if n == "TraditionalForm" => {
-      args[0].clone()
+  let rest = args[1..]
+    .iter()
+    .filter(|a| !is_traditional_form_directive(a))
+    .cloned();
+  let mut styled = match &args[0] {
+    Expr::String(_) => vec![args[0].clone()],
+    body => {
+      let form = match body {
+        Expr::FunctionCall { name: n, args: a }
+          if n == "TraditionalForm" && a.len() == 1 =>
+        {
+          body.clone()
+        }
+        other => call1("TraditionalForm", other.clone()),
+      };
+      vec![
+        form,
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("LimitsPositioning".to_string())),
+          replacement: Box::new(Expr::Identifier("False".to_string())),
+        },
+      ]
     }
-    other => call1("TraditionalForm", other.clone()),
   };
-  let rest: Vec<Expr> =
-    args[1..].iter().filter(|a| !is_form(a)).cloned().collect();
-  if rest.is_empty() {
-    return Some(body);
-  }
-  let mut styled = vec![body];
   styled.extend(rest);
+  if styled.len() == 1 {
+    return styled.pop();
+  }
   Some(Expr::FunctionCall {
-    name: name.clone(),
+    name: "Style".to_string(),
     args: styled.into(),
   })
 }
@@ -34176,31 +34208,90 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
   name == "Style" || name == "StyleForm"
 }
 
-/// `expr` with every `StyleForm[…]` respelled as the `Style[…]` it is
-/// displayed as, or `None` when it holds none. The display entry points
-/// run this once so that no layout path needs its own `StyleForm` case.
+/// Whether a `Style` directive selects traditional typesetting: the named
+/// style `"TraditionalForm"`, or `FormatType -> TraditionalForm`.
+fn is_traditional_form_directive(directive: &Expr) -> bool {
+  let is_form =
+    |e: &Expr| matches!(e, Expr::Identifier(f) if f == "TraditionalForm");
+  match directive {
+    Expr::String(s) => s == "TraditionalForm",
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(o) if o == "FormatType")
+        && is_form(replacement)
+    }
+    Expr::FunctionCall { name, args } => {
+      name == "Rule"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(o) if o == "FormatType")
+        && is_form(&args[1])
+    }
+    _ => false,
+  }
+}
+
+/// Whether `expr` is a style wrapper the display paths do not handle as
+/// spelled: a `StyleForm`, or a `Style` carrying a directive that selects
+/// traditional typesetting.
+fn is_respelled_style(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if !args.is_empty()
+      && (name == "StyleForm"
+        || (name == "Style"
+          && args[1..].iter().any(is_traditional_form_directive))))
+}
+
+/// Whether `expr` holds a style wrapper for [`style_forms_as_style`] to
+/// respell, at any depth.
+fn holds_respelled_style(expr: &Expr) -> bool {
+  let go = holds_respelled_style;
+  is_respelled_style(expr)
+    || match expr {
+      Expr::FunctionCall { args, .. } => args.iter().any(go),
+      Expr::List(items) => items.iter().any(go),
+      Expr::BinaryOp { left, right, .. } => go(left) || go(right),
+      Expr::UnaryOp { operand, .. } => go(operand),
+      Expr::CurriedCall { func, args } => go(func) || args.iter().any(go),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => go(pattern) || go(replacement),
+      _ => false,
+    }
+}
+
+/// `expr` with every style wrapper respelled as the form it is displayed
+/// as, or `None` when it holds none to respell: a `StyleForm[…]` becomes
+/// the `Style[…]` it is an older spelling of, and a `Style` whose
+/// directives select traditional typesetting becomes a `Style` of
+/// `TraditionalForm[…]` (see [`style_form_name_as_wrapper`]). The display
+/// entry points run this once so that no layout path needs its own case
+/// for either.
 pub(crate) fn style_forms_as_style(expr: &Expr) -> Option<Expr> {
   fn respell(e: &Expr) -> Option<Expr> {
-    match e {
-      Expr::FunctionCall { name, args }
-        if name == "StyleForm" && !args.is_empty() =>
-      {
-        Some(Expr::FunctionCall {
-          name: "Style".to_string(),
-          args: args
-            .iter()
-            .map(|a| crate::functions::string_ast::map_expr_tree(a, &respell))
-            .collect(),
-        })
-      }
-      _ => None,
+    let Expr::FunctionCall { args, .. } = e else {
+      return None;
+    };
+    if !is_respelled_style(e) {
+      return None;
     }
+    let styled = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: args
+        .iter()
+        .map(|a| crate::functions::string_ast::map_expr_tree(a, &respell))
+        .collect(),
+    };
+    Some(style_form_name_as_wrapper(&styled).unwrap_or(styled))
   }
-  crate::functions::math_ast::numeric_utils::expr_contains_head(
-    expr,
-    "StyleForm",
-  )
-  .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
+  holds_respelled_style(expr)
+    .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
 }
 
 /// The options whose value is a label typeset on the graphic.
