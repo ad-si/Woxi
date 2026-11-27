@@ -9111,7 +9111,26 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .iter()
         .map(|item| Expr::List(vec![tf_display(item)].into()))
         .collect();
-      tf_box("GridBox", vec![Expr::List(rows.into())])
+      // A column sets its items flush left unless its alignment
+      // (`Column[{…}, Center]`, `Alignment -> Right`) says otherwise.
+      use crate::functions::graphics::ColumnAlignment;
+      let side = match crate::functions::graphics::column_alignment(args)
+        .unwrap_or(ColumnAlignment::Left)
+      {
+        ColumnAlignment::Left => Some("Left"),
+        ColumnAlignment::Right => Some("Right"),
+        ColumnAlignment::Center => None,
+      };
+      let mut grid = vec![Expr::List(rows.into())];
+      if let Some(side) = side {
+        grid.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("ColumnAlignments".into())),
+          replacement: Box::new(Expr::List(
+            vec![Expr::Identifier(side.into())].into(),
+          )),
+        });
+      }
+      tf_box("GridBox", grid)
     }
     // In box text a `Grid` is the FrontEnd's tagged grid box, as in
     // StandardForm, its items boxed as expressions, so the text reads back

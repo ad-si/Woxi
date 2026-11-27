@@ -32868,6 +32868,80 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("bottom"), "missing second line in:\n{svg}");
     }
 
+    /// The x offset (inside the label picture) of the group holding the
+    /// text item `item`.
+    fn label_item_x(svg: &str, item: &str) -> f64 {
+      let end = svg
+        .find(&format!(">{item}</text>"))
+        .unwrap_or_else(|| panic!("missing {item} in:\n{svg}"));
+      let head = &svg[..end];
+      let start = head.rfind("translate(").expect("item group") + 10;
+      head[start..]
+        .split(',')
+        .next()
+        .and_then(|x| x.parse().ok())
+        .expect("x offset")
+    }
+
+    /// Regression: `Column`s standing side by side in a `PlotLabel` — a
+    /// caption over each value — ran line `i` of every column together
+    /// into one centered line, so a caption drifted off its value. Each
+    /// column keeps its own flush-left items, in the title's size, whether
+    /// or not a `Style` wraps the columns, in `Plot` and in `Graphics`.
+    #[test]
+    fn plot_label_row_of_columns_keeps_each_column_flush_left() {
+      for label in [
+        "Row[{Column[{\"a\", \"wwwwww\"}], \"   \", Column[{\"mmmmmm\", \"b\"}]}]",
+        "Row[{Style[Column[{\"a\", \"wwwwww\"}], Red], \"   \", \
+         Style[Column[{\"mmmmmm\", \"b\"}], Blue]}]",
+      ] {
+        for plot in [
+          format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"),
+          format!("Graphics[{{Circle[]}}, PlotLabel -> {label}]"),
+        ] {
+          let svg = export_svg(&plot);
+          assert_eq!(
+            label_item_x(&svg, "a"),
+            label_item_x(&svg, "wwwwww"),
+            "first column not flush left for {plot}"
+          );
+          assert_eq!(
+            label_item_x(&svg, "mmmmmm"),
+            label_item_x(&svg, "b"),
+            "second column not flush left for {plot}"
+          );
+          assert!(
+            svg.contains("font-size=\"12.0\" stroke=\"none\" xml:space=\"preserve\">wwwwww<"),
+            "label not in the title size for {plot}:\n{svg}"
+          );
+        }
+      }
+    }
+
+    /// A column's own alignment places its items inside a side-by-side
+    /// label: `Center` centers the narrow item, `Right` sets it flush right.
+    #[test]
+    fn plot_label_row_of_columns_honors_column_alignment() {
+      let offset = |alignment: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Circle[]}}, PlotLabel -> \
+           Row[{{Column[{{\"a\", \"wwwwww\"}}{alignment}], \" \", Column[{{1, 2}}]}}]]"
+        ));
+        label_item_x(&svg, "a") - label_item_x(&svg, "wwwwww")
+      };
+      let (left, center, right) = (
+        offset(""),
+        offset(", Center"),
+        offset(", Alignment -> Right"),
+      );
+      assert_eq!(left, 0.0);
+      assert!(center > 1.0, "centered item not moved in: {center}");
+      assert!(
+        (right - 2.0 * center).abs() < 0.2,
+        "right-aligned item at {right}, centered at {center}"
+      );
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]

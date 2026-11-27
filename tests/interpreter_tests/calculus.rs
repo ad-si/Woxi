@@ -24349,6 +24349,55 @@ mod parametric_ndsolve {
       "{0.8, 2.}"
     );
   }
+
+  /// Regression: the functions `ParametricNDSolve` returns for the unknowns
+  /// of one system each integrated the whole system again, so reading all
+  /// the unknowns at one set of parameter values cost one solve apiece.
+  /// They share a single solve per set of values (`g` counts them), and
+  /// each still picks out its own unknown.
+  #[test]
+  fn unknowns_of_one_system_share_a_solve() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "count = 0; g[a_?NumericQ] := (count++; a); \
+         pf = ParametricNDSolve[{y'[t] == -g[a] y[t], y[0] == 1, \
+           z'[t] == y[t], z[0] == 0}, {y, z}, {t, 0, 1}, {a}]; \
+         {py, pz} = {y, z} /. pf; \
+         first = Round[10000 {py[2.][0.5], pz[2.][0.5], py[2.][1.]}]; \
+         once = count; \
+         next = Round[10000 {py[3.][0.5], pz[3.][0.5]}]; \
+         {once, count, first, next}"
+      )
+      .unwrap(),
+      "{1, 2, {3679, 3161, 1353}, {2231, 2590}}"
+    );
+  }
+}
+
+mod sums_over_interpolation_data {
+  use super::*;
+
+  /// A term carrying an `InterpolatingFunction`'s table is grouped by its
+  /// structure, not by its printed form — and when it is the only such
+  /// term of a sum it is not keyed at all. Like terms still collect, and
+  /// the sum still evaluates once its variable is given.
+  #[test]
+  fn terms_holding_a_solution_collect_and_evaluate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = y /. First[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 2}]]; \
+         g = f[t]; \
+         {g + g === 2 g, g - g, Head[0.3 - g], Head[g + 2 f[u]], \
+          Length[g + 2 f[u] + g], \
+          Round[1000 ((0.3 - g + 2 g) /. t -> 1.)], \
+          Round[1000 ((1 - g)^2 /. t -> 0.5)]}"
+      )
+      .unwrap(),
+      "{True, 0, Plus, Plus, 2, 668, 155}"
+    );
+  }
 }
 
 mod integrate_polynomial_over_sqrt_quadratic {

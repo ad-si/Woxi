@@ -23488,14 +23488,19 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // 1 adds 0.4 em to a 0.93 em line, a row pitch of 1.33 em.
           let gap_x = font_size * 0.8;
           let gap_y = font_size * 0.28;
-          // `ColumnAlignments -> {Left}` (Piecewise's cases) left-aligns the
-          // columns; they are centered otherwise.
-          let left_aligned = args[1..].iter().any(|o| {
-            matches!(o, Expr::Rule { pattern, replacement }
-              if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ColumnAlignments")
-                && matches!(replacement.as_ref(), Expr::List(a)
-                  if matches!(a.first(), Some(Expr::Identifier(l)) if l == "Left")))
-          });
+          // `ColumnAlignments -> {Left}` (Piecewise's cases, a `Column`)
+          // sets the columns flush left and `{Right}` flush right; they
+          // are centered otherwise.
+          let aligned = |side: &str| {
+            args[1..].iter().any(|o| {
+              matches!(o, Expr::Rule { pattern, replacement }
+                if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ColumnAlignments")
+                  && matches!(replacement.as_ref(), Expr::List(a)
+                    if matches!(a.first(), Some(Expr::Identifier(l)) if l == side)))
+            })
+          };
+          let left_aligned = aligned("Left");
+          let right_aligned = aligned("Right");
           let laid_out: Vec<Vec<BoxLayout>> = rows
             .iter()
             .map(|row| {
@@ -23551,6 +23556,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               let col_w = *col_widths.get(ci).unwrap_or(&0.0);
               let dx = if left_aligned {
                 0.0
+              } else if right_aligned {
+                col_w - cell.width
               } else {
                 (col_w - cell.width) / 2.0
               };
@@ -28264,6 +28271,44 @@ pub(crate) fn plot_label_picture_svg(
     .or_else(|| plot_label_grid_svg(expr))
     .or_else(|| plot_label_structured_svg(expr))
     .or_else(|| plot_label_inline_frame_svg(expr))
+    .or_else(|| plot_label_column_row_svg(expr))
+}
+
+/// A `PlotLabel` that is a `Row` setting `Column`s side by side —
+/// `Row[{Style[Column[{"a", 1.5}], Red], "  ", Column[{"total", 20}]}]`, a
+/// caption over each value — typeset as a picture, so every column keeps
+/// its own width and its `Alignment` (`Left` by default) and the columns
+/// stand next to each other, instead of line `i` of every column being run
+/// together into one centered line of text. A `Style` around the row or
+/// around a column styles what it wraps.
+pub(crate) fn plot_label_column_row_svg(
+  expr: &Expr,
+) -> Option<(String, f64, f64)> {
+  let Expr::FunctionCall { name, args } = peel_style_wrapper(expr) else {
+    return None;
+  };
+  if name != "Row" {
+    return None;
+  }
+  let Some(Expr::List(parts)) = args.first() else {
+    return None;
+  };
+  let stacks = |part: &Expr| {
+    matches!(peel_style_wrapper(part), Expr::FunctionCall { name, args }
+      if name == "Column"
+        && matches!(args.first(), Some(Expr::List(items)) if items.len() > 1))
+  };
+  // A row that also holds a `Grid`/`TableForm` block or a `Null` part
+  // stays a block of text lines (see `expr_to_svg_markup_lines`).
+  let other_block = |part: &Expr| {
+    matches!(part, Expr::Identifier(n) if n == "Null")
+      || matches!(peel_style_wrapper(part), Expr::FunctionCall { name, .. }
+        if name == "Grid" || name == "TableForm")
+  };
+  if !parts.iter().any(stacks) || parts.iter().any(other_block) {
+    return None;
+  }
+  inline_frame_layout(expr)
 }
 
 /// A `PlotLabel` running text with `Framed` boxes inside it — `Row[{"walk
