@@ -4697,20 +4697,20 @@ mod image_advanced {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[ImageData[GradientFilter[Image[{{0., 0., 0., 1., 1., 1., 1.}}], 2, \
-         Method -> \"ShenCastan\"]], 0.0001]"
+        "Round[10000 ImageData[GradientFilter[Image[{{0., 0., 0., 1., 1., 1., 1.}}], 2, \
+         Method -> \"ShenCastan\"]]]"
       )
       .unwrap(),
-      "{{0., 0.106, 0.394, 0.394, 0.106, 0., 0.}}"
+      "{{0, 1060, 3940, 3940, 1060, 0, 0}}"
     );
     // The middle of a ramp of slope 1/10, away from the padded border.
     assert_eq!(
       interpret(
-        "Round[ImageData[GradientFilter[Image[Table[x/10., {y, 7}, {x, 7}]], 2, \
-         Method -> \"ShenCastan\"]][[4, 3 ;; 5]], 0.0001]"
+        "Round[10000 ImageData[GradientFilter[Image[Table[x/10., {y, 7}, {x, 7}]], 2, \
+         Method -> \"ShenCastan\"]][[4, 3 ;; 5]]]"
       )
       .unwrap(),
-      "{0.1, 0.1, 0.1}"
+      "{1000, 1000, 1000}"
     );
     assert_eq!(
       interpret(
