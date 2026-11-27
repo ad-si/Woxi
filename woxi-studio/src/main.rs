@@ -5719,7 +5719,9 @@ fn render_manipulate_widget<'a>(
         } else {
           rich_text(spans).size(12).into()
         };
-        controls_col = controls_col.push(heading);
+        // Sharing a line with controls, the text takes only the room it
+        // needs instead of an equal share of the line.
+        controls_col = controls_col.push(heading).width(iced::Length::Shrink);
       }
       manipulate::ControlState::Divider => {
         // A `Delimiter` argument: a horizontal separator between control

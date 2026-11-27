@@ -203,6 +203,9 @@ fn main() {
           mark
         };
         println!("  {c:?}{mark}");
+        if state.joins_previous_control(i) {
+          println!("    joins the previous control's line");
+        }
         // Only a control placed apart from the rest of the panel says so.
         let side = state.placement_of(i);
         if side != state.control_placement {
