@@ -37,7 +37,7 @@ struct PointGroup {
   schoenflies: &'static str,
   crystal_system: &'static str,
   crystal_form: &'static str,
-  point_group_type: &'static [&'static str],
+  symmetry_types: &'static [&'static str],
   core: Core,
   /// Whether the group is the direct product of `core` with a group of
   /// order two.
@@ -48,7 +48,7 @@ const fn pg(
   schoenflies: &'static str,
   crystal_system: &'static str,
   crystal_form: &'static str,
-  point_group_type: &'static [&'static str],
+  symmetry_types: &'static [&'static str],
   core: Core,
   doubled: bool,
 ) -> PointGroup {
@@ -56,7 +56,7 @@ const fn pg(
     schoenflies,
     crystal_system,
     crystal_form,
-    point_group_type,
+    symmetry_types,
     core,
     doubled,
   }
@@ -277,7 +277,7 @@ fn property(
     "CrystalForm" => Expr::String(group.crystal_form.to_string()),
     "PointGroupType" => Expr::List(
       group
-        .point_group_type
+        .symmetry_types
         .iter()
         .map(|t| Expr::String(t.to_string()))
         .collect::<Vec<_>>()
