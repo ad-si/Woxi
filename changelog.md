@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- An exponent that holds a stacked fraction (`TraditionalForm[Exp[-(t/c)^m]]`)
+    is raised clear of its base's baseline instead of hanging below the
+    line, and a `Row` sets such a formula on the line of the text beside
+    it — and is only as tall as the formula needs — rather than centering
+    it as a whole.
+- Math inside a `Text[…]` stops shrinking after the first script level:
+    the exponent of a term in a fraction and the subscript of an exponent
+    are as large as a first-level script instead of ever smaller.
 - An unboxed `Graphics3D` of fixed width and height whose contents are a
     sheet with barely any depth (thinner than a hundredth of its longest
     side) keeps the margins of its padded box, as with the box drawn,
