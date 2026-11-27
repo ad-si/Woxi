@@ -10053,14 +10053,14 @@ mod plot3d {
     // Regression: a subscripted label whose script has letters lost its
     // `TraditionalForm` typesetting: `Subscript[x, n + 1]` was drawn with an
     // upright x. Base and script are typeset like any expression label,
-    // with italic letters. The sum in a subscript keeps the order it has
-    // (`1+n`, which is what Wolfram draws), unlike a sum in an exponent or
-    // a label of its own, which reads `n+1`.
+    // with italic letters and the sum ordered `n+1`, in a subscript as in
+    // an exponent or a label of its own (wolframscript rasterizes the
+    // label exactly like the held `n + 1`).
     #[test]
     fn subscript_axes_labels_typeset_their_parts_in_traditional_form() {
       let expected = "<tspan font-style=\"italic\">x</tspan>\
         <tspan baseline-shift=\"sub\" font-size=\"70%\">\
-        1+<tspan font-style=\"italic\">n</tspan></tspan>";
+        <tspan font-style=\"italic\">n</tspan>+1</tspan>";
       for code in [
         "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
          AxesLabel -> {Subscript[x, n + 1], None, None}]",
@@ -10073,7 +10073,7 @@ mod plot3d {
         assert!(svg.contains(expected), "{code}: {svg}");
         assert!(!svg.contains("1 + n"), "{code}: {svg}");
       }
-      // An exponent and a bare sum are still ordered traditionally.
+      // So are an exponent and a bare sum.
       let svg = export_svg(
         "Plot[t, {t, 0, 1}, AxesLabel -> {Superscript[x, n + 1], n + 1}]",
       );
@@ -10092,8 +10092,20 @@ mod plot3d {
       assert_eq!(
         interpret("ToBoxes[Subscript[x, n + 1] + n + 1, TraditionalForm]")
           .unwrap(),
-        "FormBox[RowBox[{SubscriptBox[x, RowBox[{1, +, n}]], +, n, +, 1}], \
+        "FormBox[RowBox[{SubscriptBox[x, RowBox[{n, +, 1}]], +, n, +, 1}], \
          TraditionalForm]"
+      );
+      assert_eq!(
+        interpret(
+          "ToBoxes[Superscript[x, n + 1] + Subsuperscript[a, 1 + k, 2 + b^2] \
+           + Overscript[q, 1 + r], TraditionalForm]"
+        )
+        .unwrap(),
+        "FormBox[RowBox[{TemplateBox[{a, RowBox[{k, +, 1}], \
+         RowBox[{SuperscriptBox[b, 2], +, 2}]}, Subsuperscript, \
+         SyntaxForm -> SubsuperscriptBox], +, TemplateBox[{x, \
+         RowBox[{n, +, 1}]}, Superscript, SyntaxForm -> SuperscriptBox], +, \
+         OverscriptBox[q, RowBox[{r, +, 1}]]}], TraditionalForm]"
       );
       // A styled script keeps its own styling.
       let svg = export_svg(
@@ -16407,7 +16419,7 @@ mod plot3d {
     /// A `Row` plot label typesets its items in TraditionalForm, as a
     /// graphic's `FormatType` asks: `==` is `=`, a sum puts its constant
     /// last, `Mod` is the infix `mod`, and relations and arrows are spaced.
-    /// The sum inside a subscript keeps its own order (`1+n`).
+    /// The sum inside a subscript is ordered the same way (`n+1`).
     #[test]
     fn plot_label_row_items_are_traditional_form() {
       let svg = export_svg(
@@ -16417,7 +16429,7 @@ mod plot3d {
       assert!(svg.contains("</tspan> = 5 "), "{svg}");
       assert!(
         svg.contains(
-          ">1+<tspan font-style=\"italic\">n</tspan></tspan> \u{2192} ("
+          "<tspan font-style=\"italic\">n</tspan>+1</tspan> \u{2192} ("
         ),
         "{svg}"
       );
@@ -26429,8 +26441,90 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            Filling -> Axis]], Polygon[p_, _] :> p, Infinity]"
         )
         .unwrap(),
-        "{{{0., 1.}, {0.5, 0.}, {0., 0.}}, {{0.5, 0.}, {1., -1.}, {1., 0.}}, \
-         {{1., -1.}, {2., 0.}, {1., 0.}}, {{3., 0.}, {4., 2.}, {4., 0.}}}"
+        "{{{0., 1.}, {0., 0.}, {0.5, 0.}}, {{0.5, 0.}, {1., -1.}, {1., 0.}}, \
+         {{1., 0.}, {1., -1.}, {2., 0.}}, {{3., 0.}, {4., 0.}, {4., 2.}}}"
+      );
+    }
+
+    /// The corners of a fill piece run counterclockwise: down to the level
+    /// and back up above it (`{p0, b0, b1, p1}`), from the level down to
+    /// the curve and back below it (`{b0, p0, p1, b1}`).
+    #[test]
+    fn show_color_function_filling_corner_order() {
+      let fill = |data: &str, filling: &str| {
+        interpret(&format!(
+          "Cases[Show[Graphics[Point[{{0, 0}}]], ListLinePlot[{data}, \
+           ColorFunction -> (Hue[#] &), ColorFunctionScaling -> False, \
+           Filling -> {filling}]], Polygon[p_, _] :> p, Infinity]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(
+        fill("{{0, 1}, {1, 2}, {2, 1}}", "Axis"),
+        "{{{0., 1.}, {0., 0.}, {1., 0.}, {1., 2.}}, \
+         {{1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
+      );
+      assert_eq!(
+        fill("{{0, -1}, {1, -2}, {2, -1}}", "Axis"),
+        "{{{0., 0.}, {0., -1.}, {1., -2.}, {1., 0.}}, \
+         {{1., 0.}, {1., -2.}, {2., -1.}, {2., 0.}}}"
+      );
+      // A level between the values splits each step in two triangles.
+      assert_eq!(
+        fill("{{0, 1}, {1, 2}, {2, 1}}", "1.5"),
+        "{{{0., 1.5}, {0., 1.}, {0.5, 1.5}}, {{0.5, 1.5}, {1., 1.5}, {1., 2.}}, \
+         {{1., 2.}, {1., 1.5}, {1.5, 1.5}}, {{1.5, 1.5}, {2., 1.}, {2., 1.5}}}"
+      );
+      // The triangles come before the quadrilaterals.
+      assert_eq!(
+        fill("{{0, 1}, {1, 1}, {2, -1}, {3, -1}}", "Axis"),
+        "{{{1., 1.}, {1., 0.}, {1.5, 0.}}, {{1.5, 0.}, {2., -1.}, {2., 0.}}, \
+         {{0., 1.}, {0., 0.}, {1., 0.}, {1., 1.}}, \
+         {{2., 0.}, {2., -1.}, {3., -1.}, {3., 0.}}}"
+      );
+    }
+
+    /// `Filling -> Bottom` and `Top` reach the plot's own range, not the
+    /// padded one it is drawn in.
+    #[test]
+    fn show_color_function_filling_to_bottom_and_top() {
+      let fill = |filling: &str| {
+        interpret(&format!(
+          "Cases[Show[Graphics[Point[{{0, 0}}]], ListLinePlot[{{{{0, 1}}, \
+           {{1, 2}}, {{2, 1}}}}, ColorFunction -> (Hue[#] &), \
+           ColorFunctionScaling -> False, Filling -> {filling}]], \
+           Polygon[p_, _] :> p, Infinity]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(
+        fill("Bottom"),
+        "{{{0., 1.}, {0., 0.}, {1., 0.}, {1., 2.}}, \
+         {{1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
+      );
+      assert_eq!(
+        fill("Top"),
+        "{{{0., 2.}, {0., 1.}, {1., 2.}}, {{1., 2.}, {2., 1.}, {2., 2.}}}"
+      );
+    }
+
+    /// The pieces of a longer curve, as a set: Wolfram lists them in an
+    /// order of its own.
+    #[test]
+    fn show_color_function_filling_pieces_of_a_longer_curve() {
+      assert_eq!(
+        interpret(
+          "Sort[Cases[Show[Graphics[Point[{0, 0}]], ListLinePlot[\
+           {3, 1, -2, 4}, ColorFunction -> (Hue[#] &), \
+           ColorFunctionScaling -> False, Filling -> Axis]], \
+           Polygon[p_, _] :> p, Infinity]]"
+        )
+        .unwrap(),
+        "{{{2., 1.}, {2., 0.}, {2.3333333333333335, 0.}}, \
+         {{2.3333333333333335, 0.}, {3., -2.}, {3., 0.}}, \
+         {{3., 0.}, {3., -2.}, {3.3333333333333335, 0.}}, \
+         {{3.3333333333333335, 0.}, {4., 0.}, {4., 4.}}, \
+         {{1., 3.}, {1., 0.}, {2., 0.}, {2., 1.}}}"
       );
     }
 
@@ -71383,7 +71477,7 @@ mod generalized_bar_chart {
 
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
   /// base (the star raised as a script), not the `SuperStar[d]` expression
-  /// the box reads back as.
+  /// the box reads back as. The one-letter base is an italic symbol.
   #[test]
   fn text_label_with_star_superscript_box() {
     let svg = export_svg(
@@ -71392,7 +71486,8 @@ mod generalized_bar_chart {
     assert!(!svg.contains("SuperStar"), "{svg}");
     assert!(
       svg.contains(
-        "d<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
+        "<tspan font-style=\"italic\">d</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
          <tspan baseline-shift=\"sub\" font-size=\"70%\">hkl</tspan>"
       ),
       "{svg}"
@@ -73315,6 +73410,59 @@ mod plot_content_regressions {
     assert_eq!(pieces("Plot[If[x < 1, x, 2 - x], {x, 0, 2}]"), 1);
     assert_eq!(
       pieces("Plot[Which[x < 1, 1, True, 2], {x, 0, 3}, Exclusions -> None]"),
+      1
+    );
+  }
+
+  /// A jump much smaller than the change of a steep branch beside it is
+  /// still found: the boundaries the conditions name are tested directly
+  /// instead of relying on the bisection, which follows the larger change.
+  #[test]
+  fn small_conditional_jumps_beside_steep_branches_are_excluded() {
+    let pieces = |code: &str| {
+      clear_state();
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 4/5 - 4 (x - 1)], {x, -8, 16}]"),
+      2
+    );
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}]"),
+      2
+    );
+    // Chained conditions behind a user function, one jump of the two small.
+    assert_eq!(
+      pieces(
+        "ramp[x_] := If[-5 <= x <= 1, 2 - x, If[1 < x <= 3, 9/10 - 4 (x - 1), 0]]; \
+         Plot[ramp[x], {x, -5, 5}]"
+      ),
+      3
+    );
+    assert_eq!(
+      pieces(
+        "Plot[Piecewise[{{2 - x, x <= 1}, {9/10 - 4 (x - 1), x > 1}}], {x, -5, 5}]"
+      ),
+      2
+    );
+    // A boundary the curve is continuous at, or outside the domain, adds
+    // no break; neither does `Exclusions -> None`.
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 1 - 4 (x - 1)], {x, -5, 5}]"),
+      1
+    );
+    assert_eq!(
+      pieces("Plot[If[x <= 7, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}]"),
+      1
+    );
+    assert_eq!(
+      pieces(
+        "Plot[If[x <= 1, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}, \
+         Exclusions -> None]"
+      ),
       1
     );
   }

@@ -7328,6 +7328,10 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
     // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
     // notebook typesets it from.
+    // `Defer[expr]` is typeset as `expr` alone, exactly like `HoldForm`.
+    Expr::FunctionCall { name, args } if name == "Defer" && args.len() == 1 => {
+      graphics_text_content(&call1("HoldForm", args[0].clone()))
+    }
     Expr::FunctionCall { name, args } if name == "HoldForm" && args.len() == 1 => {
       match &args[0] {
         held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
@@ -10646,6 +10650,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       .cloned()
       .collect();
     rewritten[0] = call("Style", styled);
+    return parse_text(&rewritten, style, prims);
+  }
+  // `Defer` in a label is displayed exactly as `HoldForm`.
+  if let Some(label) = args.first().and_then(defers_as_held) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = label;
     return parse_text(&rewritten, style, prims);
   }
   // A `StringForm` label with a matrix among its values is typeset as the
@@ -16872,18 +16882,38 @@ fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
         && args.len() == 2 =>
     {
       let superscript = name == "SuperscriptBox";
-      let script = flatten_label_runs(&traditional_box_runs(&args[1])?);
-      if script.is_empty()
-        || !script
-          .chars()
-          .all(|c| unicode_script_char(c, superscript).is_some())
-        // A letter subscript is lowered by the label renderer instead:
-        // the Unicode subscript letters are missing from most fonts.
-        || (!superscript && script.chars().any(char::is_alphabetic))
-      {
+      let script_runs = traditional_box_runs(&args[1])?;
+      let script = flatten_label_runs(&script_runs);
+      if script.is_empty() {
         return None;
       }
       let mut runs = traditional_box_runs(&args[0])?;
+      if !script
+        .chars()
+        .all(|c| unicode_script_char(c, superscript).is_some())
+        // The Unicode subscript letters are missing from most fonts.
+        || (!superscript && script.chars().any(char::is_alphabetic))
+      {
+        // No script glyphs to spell it with (`a` sub `m`, `x` to the `n`):
+        // each run of the script is wrapped in the markers the SVG writer
+        // lowers or raises, keeping its own slant, so the base stays an
+        // italic one-letter symbol like the base of `x₀` does.
+        let (open, close) = if superscript {
+          (SUPERSCRIPT_START, SUPERSCRIPT_END)
+        } else {
+          (SUBSCRIPT_START, SUBSCRIPT_END)
+        };
+        runs.extend(
+          script_runs
+            .into_iter()
+            .filter(|r| !r.text.is_empty())
+            .map(|r| LabelRun {
+              text: format!("{open}{}{close}", r.text),
+              ..r
+            }),
+        );
+        return Some(runs);
+      }
       runs.push(plain(&to_unicode_script(&script, superscript)));
       Some(runs)
     }
@@ -19532,7 +19562,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
     if let Some((name, replacement)) = option_name_value(&opt) {
-      let replacement = &*replacement;
+      // `Defer` in a label is displayed exactly as `HoldForm`.
+      let held = is_label_option(name)
+        .then(|| defers_as_held(&replacement))
+        .flatten();
+      let replacement = held.as_ref().unwrap_or(&*replacement);
       match name {
         "ImageSize" => {
           explicit_size = true;
@@ -26196,6 +26230,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&graphics_text_content(expr))
         }
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
+        // `Defer[expr]` is typeset as `expr` alone, exactly like `HoldForm`.
+        "Defer" if args.len() == 1 => {
+          expr_to_svg_markup(&call1("HoldForm", args[0].clone()))
+        }
 
         // `Factorial[n]` / `Factorial2[n]` typeset postfix (`n!`, `n!!`),
         // with the operand parenthesized exactly where the box form does.
@@ -27029,7 +27067,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
       "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
-      "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      "HoldForm" | "Defer" if args.len() == 1 => {
+        estimate_display_width(&args[0])
+      }
       "Factorial" | "Factorial2" if args.len() == 1 => {
         let bang = if name == "Factorial" { 1.0 } else { 2.0 };
         let parens = if factorial_operand_parenthesized(expr) {
@@ -28401,8 +28441,9 @@ pub fn traditional_label(e: &Expr) -> String {
     }
     // An unstyled script (`Subscript[x, n + 1]`) keeps the shifted-tspan
     // shape a text label can hold, with its base and scripts each typeset
-    // in `TraditionalForm`: italic letters. A subscript keeps the order its
-    // sum has (`1+n`), while an exponent is reordered like any expression.
+    // in `TraditionalForm`: italic letters and the sum ordered `n + 1`, in
+    // a subscript as in an exponent (wolframscript rasterizes
+    // `PlotLabel -> Subscript[x, n + 1]` exactly like the held `n + 1`).
     Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Subscript" | "Superscript")
         && args.len() >= 2
@@ -28420,20 +28461,8 @@ pub fn traditional_label(e: &Expr) -> String {
             .unwrap_or(label)
         }
       };
-      let subscript = name == "Subscript";
-      let shift = if subscript { "sub" } else { "super" };
-      let scripts: Vec<String> = args[1..]
-        .iter()
-        .map(|p| match p {
-          Expr::FunctionCall { name, .. } if subscript && name == "Plus" => {
-            part(&Expr::FunctionCall {
-              name: "HoldForm".into(),
-              args: vec![p.clone()].into(),
-            })
-          }
-          _ => part(p),
-        })
-        .collect();
+      let shift = if name == "Subscript" { "sub" } else { "super" };
+      let scripts: Vec<String> = args[1..].iter().map(part).collect();
       format!(
         "{STYLED_LABEL_MARKER}{}<tspan baseline-shift=\"{shift}\" \
          font-size=\"70%\">{}</tspan>",
@@ -31514,6 +31543,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           fill_prims.push(call1("Polygon", Expr::List(coords.into())));
         }
         let ref_y = level_ref_y.unwrap_or(0.0);
+        // A colored fill reaches `Bottom` or `Top` at the plot's own range,
+        // short of the `PlotRangePadding` margin.
+        let tinted_ref_y = if sd.is_scatter {
+          None
+        } else {
+          fill.filling.reference_y(source_clip_y.0, source_clip_y.1)
+        }
+        .unwrap_or(ref_y);
         // With a `ColorFunction` and no explicit `FillingStyle` (unset or
         // `Automatic`), the fill takes the curve's colors at full
         // strength, as on the plot drawn alone (WL paints the fill
@@ -31545,12 +31582,22 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
             };
             segments
               .iter()
-              .map(|seg| color_function_fill_polygons(seg, ref_y, &color_at))
+              .map(|seg| {
+                color_function_fill_polygons(seg, tinted_ref_y, &color_at)
+              })
               .collect::<Option<Vec<Vec<Expr>>>>()
           });
         if let Some(polygons) = tinted {
           let mut tinted_prims = vec![call1("Opacity", Expr::Real(1.0))];
-          tinted_prims.extend(polygons.into_iter().flatten());
+          // The triangles (the pieces touching the level) come before the
+          // quadrilaterals, as in Wolfram's fill. Each kind follows the
+          // curve here; Wolfram's order within a kind is its own.
+          let (triangles, quadrilaterals): (Vec<Expr>, Vec<Expr>) = polygons
+            .into_iter()
+            .flatten()
+            .partition(is_triangle_polygon);
+          tinted_prims.extend(triangles);
+          tinted_prims.extend(quadrilaterals);
           fill_layer.push(Expr::List(tinted_prims.into()));
           continue;
         }
@@ -31758,7 +31805,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
 /// shaded through the colors `color_at` gives the curve's vertices: one
 /// piece per step of the curve, each colored down to the level like the
 /// curve above (or below) it. A step crossing the level is split there
-/// into its two triangles, and one ending on it is a single triangle. `None` when a vertex has no color.
+/// into its two triangles, and one ending on it is a single triangle.
+/// `None` when a vertex has no color.
+///
+/// The corners run counterclockwise, as Wolfram lists them: from the
+/// curve's start down to the level, along it and back up for a piece above
+/// the level (`{p0, b0, b1, p1}`), from the level down to the curve, along
+/// it and back up for one below (`{b0, p0, p1, b1}`), with a corner lying
+/// on the level listed once.
 fn color_function_fill_polygons(
   seg: &[(f64, f64)],
   ref_y: f64,
@@ -31766,47 +31820,66 @@ fn color_function_fill_polygons(
 ) -> Option<Vec<Expr>> {
   let point =
     |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-  let polygon = |corners: Vec<(f64, f64)>, colors: Vec<Expr>| {
-    call(
-      "Polygon",
-      vec![
-        Expr::List(corners.into_iter().map(point).collect::<Vec<_>>().into()),
-        rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
-      ],
-    )
-  };
+  // The piece between the curve from `a` to `b` and the level, `above`
+  // telling which side of the level it lies on.
+  let piece =
+    |a: (f64, f64), b: (f64, f64), above: bool| -> Option<Option<Expr>> {
+      let (base_a, base_b) = ((a.0, ref_y), (b.0, ref_y));
+      let ring = if above {
+        [a, base_a, base_b, b]
+      } else {
+        [base_a, a, b, base_b]
+      };
+      let mut corners: Vec<(f64, f64)> = Vec::with_capacity(4);
+      for corner in ring {
+        if corners.last() != Some(&corner) {
+          corners.push(corner);
+        }
+      }
+      if corners.len() > 1 && corners.first() == corners.last() {
+        corners.pop();
+      }
+      if corners.len() < 3 {
+        // A step along the level encloses nothing.
+        return Some(None);
+      }
+      // A corner on the level takes the color of the curve above it.
+      let colors = corners
+        .iter()
+        .map(|&(x, _)| color_at(if x == a.0 { a } else { b }))
+        .collect::<Option<Vec<Expr>>>()?;
+      Some(Some(call(
+        "Polygon",
+        vec![
+          Expr::List(corners.into_iter().map(point).collect::<Vec<_>>().into()),
+          rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
+        ],
+      )))
+    };
   let mut polygons = Vec::new();
   for step in seg.windows(2) {
     let (a, b) = (step[0], step[1]);
-    let (ca, cb) = (color_at(a)?, color_at(b)?);
     if (a.1 - ref_y) * (b.1 - ref_y) < 0.0 {
       let t = (ref_y - a.1) / (b.1 - a.1);
       let crossing = (a.0 + t * (b.0 - a.0), ref_y);
-      let cc = color_at(crossing)?;
-      polygons.push(polygon(
-        vec![a, crossing, (a.0, ref_y)],
-        vec![ca.clone(), cc.clone(), ca],
-      ));
-      polygons.push(polygon(
-        vec![crossing, b, (b.0, ref_y)],
-        vec![cc, cb.clone(), cb],
-      ));
-    } else if a.1 == ref_y && b.1 == ref_y {
-      // A step along the level encloses nothing.
-    } else if a.1 == ref_y {
-      polygons
-        .push(polygon(vec![a, b, (b.0, ref_y)], vec![ca, cb.clone(), cb]));
-    } else if b.1 == ref_y {
-      polygons
-        .push(polygon(vec![a, b, (a.0, ref_y)], vec![ca.clone(), cb, ca]));
+      polygons.extend(piece(a, crossing, a.1 > ref_y)?);
+      polygons.extend(piece(crossing, b, b.1 > ref_y)?);
     } else {
-      polygons.push(polygon(
-        vec![a, b, (b.0, ref_y), (a.0, ref_y)],
-        vec![ca.clone(), cb.clone(), cb, ca],
-      ));
+      let above = a.1 > ref_y || b.1 > ref_y;
+      polygons.extend(piece(a, b, above)?);
     }
   }
   Some(polygons)
+}
+
+/// Whether a fill polygon is a triangle.
+fn is_triangle_polygon(polygon: &Expr) -> bool {
+  matches!(
+    polygon,
+    Expr::FunctionCall { name, args }
+      if name == "Polygon"
+        && matches!(args.first(), Some(Expr::List(corners)) if corners.len() == 3)
+  )
 }
 
 /// Draw the `PlotMarkers` glyph `marker` at each finite point of `points`:
@@ -33961,6 +34034,33 @@ pub(crate) fn style_forms_as_style(expr: &Expr) -> Option<Expr> {
     "StyleForm",
   )
   .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
+}
+
+/// The options whose value is a label typeset on the graphic.
+pub(crate) fn is_label_option(name: &str) -> bool {
+  matches!(name, "PlotLabel" | "AxesLabel" | "FrameLabel")
+}
+
+/// `expr` with every `Defer[e]` respelled as the `HoldForm[e]` it is
+/// displayed as, or `None` when it holds none. The front end typesets both
+/// as `e` alone, so a label runs this once and no layout path needs its own
+/// `Defer` case.
+pub(crate) fn defers_as_held(expr: &Expr) -> Option<Expr> {
+  fn respell(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Defer" && args.len() == 1 =>
+      {
+        Some(call1(
+          "HoldForm",
+          crate::functions::string_ast::map_expr_tree(&args[0], &respell),
+        ))
+      }
+      _ => None,
+    }
+  }
+  crate::functions::math_ast::numeric_utils::expr_contains_head(expr, "Defer")
+    .then(|| crate::functions::string_ast::map_expr_tree(expr, &respell))
 }
 
 /// Heads that a `Manipulate` argument may carry while still being a static
@@ -46678,6 +46778,73 @@ pub(crate) fn base_style_pushed_args(
   }
 }
 
+/// The arguments of a `Panel`/`Framed` with its `BaseStyle -> directives`
+/// option taken out and the content set in those directives, the way an
+/// enclosing `Style[content, directives]` sets it. `None` when the box has
+/// no `BaseStyle`.
+pub(crate) fn frame_base_styled_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let (content, opts) = args.split_first()?;
+  let base = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "BaseStyle")
+    .map(|(_, v)| v.clone())?;
+  let directives: Vec<Expr> = match &base {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  let content = if directives.is_empty() {
+    content.clone()
+  } else {
+    let mut styled = vec![content.clone()];
+    styled.extend(directives);
+    call("Style", styled)
+  };
+  Some(
+    std::iter::once(content)
+      .chain(
+        opts
+          .iter()
+          .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+          .cloned(),
+      )
+      .collect(),
+  )
+}
+
+/// Where an explicit `Alignment -> h | {h, v}` option among `opts` places
+/// a box's content, as fractions from the left and from the top (0.5
+/// centers). An axis the option leaves out (or sets to `Automatic`) is
+/// `None`.
+fn frame_content_alignment(opts: &[Expr]) -> (Option<f64>, Option<f64>) {
+  let h_of = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Left" => Some(0.0),
+    Expr::Identifier(s) if s == "Center" => Some(0.5),
+    Expr::Identifier(s) if s == "Right" => Some(1.0),
+    // A number runs from -1 (left) to 1 (right).
+    other => expr_to_f64(other).map(|v| f64::midpoint(v, 1.0).clamp(0.0, 1.0)),
+  };
+  let v_of = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Top" => Some(0.0),
+    Expr::Identifier(s) if s == "Center" => Some(0.5),
+    Expr::Identifier(s) if s == "Bottom" => Some(1.0),
+    // A number runs from -1 (bottom) to 1 (top).
+    other => expr_to_f64(other).map(|v| ((1.0 - v) / 2.0).clamp(0.0, 1.0)),
+  };
+  match opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "Alignment")
+    .map(|(_, v)| v)
+  {
+    Some(Expr::List(pair)) if pair.len() == 2 => {
+      (h_of(&pair[0]), v_of(&pair[1]))
+    }
+    Some(single) => (h_of(single), None),
+    None => (None, None),
+  }
+}
+
 /// A `Row` separator as the front end sets it: a string separator is
 /// inserted as a raw token, so a relation such as `"="` gets the operator
 /// spacing on both sides (`Row[{a, 2}, "="]` reads `a = 2`). A `Style` around
@@ -46861,16 +47028,42 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     .collect();
   if args.len() == 1 && flow_items.iter().any(|i| newline_text(i).is_some()) {
     let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
-    // The blank each line shows when nothing follows its break: set like
-    // the text that broke the line, so it is as tall as a line of it.
-    let mut blanks: Vec<Expr> = vec![str_expr(" ")];
+    // The blank each line shows when nothing follows its break: as tall
+    // as the pitch a multi-line string of the breaking text advances at
+    // (its font size), so `Row[{"a", "\n"}]` is as tall as `"a\n"` rather
+    // than two fully padded lines.
+    // Under an explicit `LineSpacing` every line is centered on a band of
+    // that pitch instead, so a blank there is set like the text itself.
+    let explicit_pitch = flow_items.iter().find_map(line_spacing_pitch);
+    let blank_line = |item: &Expr| {
+      if explicit_pitch.is_some() {
+        return call1("Row", Expr::List(vec![with_text(item, " ")].into()));
+      }
+      let size = extract_cell_style(item).font_size.unwrap_or(14.0);
+      let h = size.ceil();
+      Expr::Graphics {
+        svg: format!(
+          "<svg width=\"1\" height=\"{h}\" viewBox=\"0 0 1 {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n</svg>"
+        ),
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      }
+    };
+    let mut blanks: Vec<Expr> = vec![blank_line(&str_expr(" "))];
     for item in &flow_items {
       match newline_text(item) {
         Some(text) => {
           for (k, seg) in text.split('\n').enumerate() {
             if k > 0 {
+              // The first line, when blank, is set like the text whose
+              // break ends it.
+              if lines.len() == 1 {
+                blanks[0] = blank_line(item);
+              }
               lines.push(Vec::new());
-              blanks.push(with_text(item, " "));
+              blanks.push(blank_line(item));
             }
             if !seg.is_empty() {
               lines.last_mut().unwrap().push(with_text(item, seg));
@@ -46885,8 +47078,11 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       .zip(blanks)
       .map(|(line, blank)| {
         // A blank line still takes one line of height.
-        let line = if line.is_empty() { vec![blank] } else { line };
-        call1("Row", Expr::List(line.into()))
+        if line.is_empty() {
+          blank
+        } else {
+          call1("Row", Expr::List(line.into()))
+        }
       })
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
@@ -46905,7 +47101,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         _ => "Center",
       },
     );
-    return match flow_items.iter().find_map(line_spacing_pitch) {
+    return match explicit_pitch {
       Some(pitch) => lines_at_pitch_svg(&rows, align, pitch),
       None => stacked_boxes_svg(rows, align),
     };
@@ -47761,6 +47957,10 @@ fn framed_box_to_svg(
   // `Framed[expr, {Background -> c, FrameStyle -> s}]` takes its options
   // as one list just as well as spelled out flat.
   let args = &splice_option_lists(args)[..];
+  // `BaseStyle -> directives` sets the content the way a `Style` does.
+  if let Some(styled) = frame_base_styled_args(args) {
+    return framed_box_to_svg(&styled, default_background);
+  }
 
   let content = &args[0];
 
@@ -48052,7 +48252,15 @@ fn framed_box_to_svg(
   } else {
     (child_svg, content_w, content_h)
   };
-  let (x, y) = (left, top);
+  // An explicit `Alignment` places the content in the room an `ImageSize`
+  // larger than it leaves inside the margins.
+  let (frame_align_x, frame_align_y) = frame_content_alignment(&args[1..]);
+  let x = left
+    + (total_w - left - right - content_w).max(0.0)
+      * frame_align_x.unwrap_or(0.0);
+  let y = top
+    + (total_h - top - bottom - content_h).max(0.0)
+      * frame_align_y.unwrap_or(0.0);
   Some(format!(
     "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border}/>\n<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>\n</svg>",
     half = stroke_width / 2.0,
@@ -69648,6 +69856,40 @@ Italic], \" = \", 3}]]], \"SVG\"]",
 baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
       ),
       "{svg}"
+    );
+  }
+
+  /// A `Text` string whose box notation carries a letter script
+  /// (`"f(\!\(\*SubscriptBox[\(a\), \(m\)]\))"`) sets its one-letter
+  /// symbols in italics, base and script alike, the way a digit script
+  /// (`x₀`) already italicized its base. Longer names and the plain text
+  /// around the box stay upright.
+  #[test]
+  fn letter_script_in_text_box_string_keeps_italic_symbols() {
+    let text_markup = |label: &str| -> String {
+      let svg = crate::interpret(&format!(
+        "ExportString[Graphics[Text[{label}]], \"SVG\"]"
+      ))
+      .unwrap();
+      let start = svg.find("<text").unwrap();
+      let open_end = start + svg[start..].find('>').unwrap() + 1;
+      let end = svg.find("</text>").unwrap();
+      svg[open_end..end].to_string()
+    };
+    assert_eq!(
+      text_markup(r#""f(\!\(\*SubscriptBox[\(a\), \(m\)]\))""#),
+      "f(<tspan font-style=\"italic\">a</tspan><tspan font-style=\"italic\" \
+baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
+    );
+    assert_eq!(
+      text_markup(r#""\!\(\*SubscriptBox[\(v\), \(max\)]\)""#),
+      "<tspan font-style=\"italic\">v</tspan>\
+<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan>"
+    );
+    assert_eq!(
+      text_markup(r#""\!\(\*SuperscriptBox[\(x\), \(*\)]\)""#),
+      "<tspan font-style=\"italic\">x</tspan>\
+<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>"
     );
   }
 

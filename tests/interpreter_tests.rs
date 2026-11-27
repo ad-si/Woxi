@@ -657,6 +657,150 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_traditional_form_of_dynamic_typesets_value_in_visual_mode() {
+    // Regression: a `Dynamic` under a form wrapper stayed held, so Woxi
+    // Studio showed the `Dynamic[…]` source instead of the typeset value.
+    clear_state();
+    // On its own the form is typeset by the host from the result text.
+    for (live, fixed) in [
+      (
+        "TraditionalForm[Dynamic[p && !q]]",
+        "TraditionalForm[p && !q]",
+      ),
+      (
+        "Style[TraditionalForm[Dynamic[p && !q]], 16]",
+        "Style[TraditionalForm[p && !q], 16]",
+      ),
+    ] {
+      assert_eq!(
+        interpret_with_stdout(live).unwrap().result,
+        interpret_with_stdout(fixed).unwrap().result,
+        "{live}"
+      );
+    }
+    for code in [
+      "Text[TraditionalForm[Dynamic[p && !q]]]",
+      "Column[{Text[TraditionalForm[Dynamic[p && !q]]]}]",
+      "Panel[Text[TraditionalForm[Dynamic[p && !q]]]]",
+      "Row[{\"f = \", Panel[TraditionalForm[Dynamic[p && !q]]]}]",
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      let svg = r
+        .graphics
+        .unwrap_or_else(|| panic!("{code} must be drawn, got {}", r.result));
+      assert!(!svg.contains("Dynamic"), "{code}: {svg}");
+      assert!(svg.contains('∧') && svg.contains('¬'), "{code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_traditional_form_of_dynamic_reads_current_value_in_visual_mode() {
+    clear_state();
+    interpret_with_stdout("k = 41").unwrap();
+    let r =
+      interpret_with_stdout("Text[TraditionalForm[Dynamic[k + 1]]]").unwrap();
+    let svg = r.graphics.expect("the value must be drawn");
+    assert!(svg.contains(">42<"), "{svg}");
+  }
+
+  #[test]
+  fn test_traditional_form_of_dynamic_stays_symbolic_in_cli_mode() {
+    clear_state();
+    assert_eq!(
+      interpret("TraditionalForm[Dynamic[1 + 1]]").unwrap(),
+      "TraditionalForm[Dynamic[1 + 1]]"
+    );
+  }
+
+  /// The `x`/`y` of the first nested `<svg>` (the content) of a box.
+  fn framed_content_origin(svg: &str) -> (f64, f64) {
+    let inner = &svg[svg[1..].find("<svg").expect("nested content") + 1..];
+    let attr = |key: &str| -> f64 {
+      let start = inner.find(key).expect(key) + key.len();
+      let end = start + inner[start..].find('"').unwrap();
+      inner[start..end].parse().unwrap()
+    };
+    (attr(" x=\""), attr(" y=\""))
+  }
+
+  #[test]
+  fn test_panel_alignment_places_content_in_image_size() {
+    // Regression: `Alignment` was ignored, so the content of a box larger
+    // than it always sat in the top-left corner.
+    clear_state();
+    let origin = |opts: &str| {
+      let svg = interpret(&format!(
+        "ExportString[Panel[\"abc\", ImageSize -> {{380, 100}}{opts}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(
+        svg.starts_with("<svg width=\"380\" height=\"100\""),
+        "{svg}"
+      );
+      framed_content_origin(&svg)
+    };
+    let (x0, y0) = origin("");
+    let (xc, yc) = origin(", Alignment -> {Center, Center}");
+    let (xr, yb) = origin(", Alignment -> {Right, Bottom}");
+    let (xh, yh) = origin(", Alignment -> Center");
+    let (xl, yt) = origin(", Alignment -> {Left, Top}");
+    assert!(x0 < xc && xc < xr, "{x0} {xc} {xr}");
+    assert!(y0 < yc && yc < yb, "{y0} {yc} {yb}");
+    // Centered: equal room on both sides.
+    assert!((xc - x0 - (xr - xc)).abs() < 0.2, "{x0} {xc} {xr}");
+    assert!((yc - y0 - (yb - yc)).abs() < 0.2, "{y0} {yc} {yb}");
+    // A single value aligns horizontally only.
+    assert_eq!((xh, yh), (xc, y0));
+    assert_eq!((xl, yt), (x0, y0));
+  }
+
+  #[test]
+  fn test_framed_alignment_places_content_in_image_size() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Framed[\"abc\", ImageSize -> {200, 80}, \
+       Alignment -> {Right, Bottom}], \"SVG\"]",
+    )
+    .unwrap();
+    let (x, y) = framed_content_origin(&svg);
+    assert!(x > 100.0 && y > 40.0, "{x} {y}");
+  }
+
+  #[test]
+  fn test_panel_base_style_sets_content_font_size() {
+    // Regression: a `Panel`'s `BaseStyle` was dropped.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Panel[\"abc\", BaseStyle -> {FontSize -> 20}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"20"), "{svg}");
+    let plain = interpret("ExportString[Panel[\"abc\"], \"SVG\"]").unwrap();
+    assert!(!plain.contains("font-size=\"20"), "{plain}");
+  }
+
+  #[test]
+  fn test_panel_base_style_reaches_dynamic_value_in_visual_mode() {
+    clear_state();
+    let draw = |opts: &str| {
+      let r = interpret_with_stdout(&format!(
+        "Panel[Text[TraditionalForm[Dynamic[p && q]]]{opts}]"
+      ))
+      .unwrap();
+      r.graphics.expect("the panel must be drawn")
+    };
+    let width = |svg: &str| -> f64 {
+      let start = svg.find("width=\"").unwrap() + 7;
+      let end = start + svg[start..].find('"').unwrap();
+      svg[start..end].parse().unwrap()
+    };
+    let plain = draw("");
+    let large = draw(", BaseStyle -> {FontSize -> 28}");
+    assert!(!large.contains("Dynamic"), "{large}");
+    assert!(width(&large) > width(&plain), "{large}");
+  }
+
+  #[test]
   fn test_percent_in_cli_mode_collapses_to_out_zero() {
     // `interpret` (CLI / wolframscript-equivalent path) must not consume
     // the visual-mode history. `%` collapses to `Out[0]` exactly as
@@ -4243,7 +4387,8 @@ mod interpreter_tests {
   #[test]
   fn test_graphics_text_lowers_subscript_without_unicode_form() {
     // Unicode has no subscript capital N, so `F_N` used to draw as a flat
-    // "FN". The subscript is now lowered with a `<tspan>` instead.
+    // "FN". The subscript is now lowered with a `<tspan>` instead; the
+    // one-letter symbols of the box are italic, as with a digit script.
     clear_state();
     let svg = interpret(
       "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(F\\), \\(N\\)]\\) cos\", {0, 0}]], \"SVG\"]",
@@ -4251,7 +4396,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "F<tspan baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
+        "<tspan font-style=\"italic\">F</tspan><tspan \
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
       ),
       "expected lowered N in SVG, got: {svg}"
     );
@@ -4271,7 +4417,8 @@ mod interpreter_tests {
       .unwrap();
       assert!(
         svg.contains(&format!(
-          ">l<tspan baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
+          "><tspan font-style=\"italic\">l</tspan><tspan \
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
         )),
         "{letter}: {svg}"
       );
@@ -4282,7 +4429,10 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>"),
+      svg.contains(
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" \
+font-size=\"70%\">i</tspan>"
+      ),
       "{svg}"
     );
     assert!(!svg.contains('ᵢ'), "{svg}");
@@ -4342,12 +4492,17 @@ mod interpreter_tests {
     let raised = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
     for (code, base, script) in [
       (
+        // A one-letter symbol in box code is italic.
         "Text[\"\\!\\(\\*SuperscriptBox[\\(θ\\), \\(*\\)]\\)\", {0, 0}]",
-        "θ",
+        "<tspan font-style=\"italic\">θ</tspan>",
         "*",
       ),
       ("Text[Superscript[\"θ\", \"*\"], {0, 0}]", "θ", "*"),
-      ("Text[Superscript[e, \"j k L\"], {0, 0}]", "e", "j k L"),
+      (
+        "Text[Superscript[e, \"j k L\"], {0, 0}]",
+        "<tspan font-style=\"italic\">e</tspan>",
+        "j k L",
+      ),
     ] {
       clear_state();
       let svg =

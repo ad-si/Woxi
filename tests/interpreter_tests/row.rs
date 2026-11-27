@@ -371,6 +371,43 @@ mod row_visual_mode {
     assert!(styled > one * 1.5, "one = {one}, styled = {styled}");
   }
 
+  /// A blank line of a broken row (a line holding nothing but its break)
+  /// is as tall as the pitch a multi-line string advances at — the font
+  /// size of the text that broke the line — not a fully padded text line,
+  /// so a column of such rows fits the box it was sized for.
+  #[test]
+  fn row_blank_line_takes_string_line_pitch() {
+    clear_state();
+    let height = |code: &str| -> f64 {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    for size in [10, 14, 15, 20, 31] {
+      // A trailing or leading break adds one line at the string's pitch.
+      let one = height(&format!("Style[Row[{{\"a\", \"b\"}}], {size}]"));
+      let trailing = height(&format!("Style[Row[{{\"a\", \"\\n\"}}], {size}]"));
+      let leading = height(&format!("Style[Row[{{\"\\n\", \"a\"}}], {size}]"));
+      assert_eq!(trailing - one, size as f64, "size {size}");
+      assert_eq!(leading, trailing, "size {size}");
+      // At the sizes where a line is not held to the minimum row height,
+      // the broken row is exactly as tall as the two-line string.
+      if size >= 14 {
+        let string = height(&format!("Style[\"a\\nb\", {size}]"));
+        assert_eq!(trailing, string, "size {size}");
+      }
+      // Each further blank line adds the font size again.
+      let two = height(&format!("Row[{{Style[\"a\\n\", {size}], \"b\"}}]"));
+      let three =
+        height(&format!("Row[{{Style[\"a\\n\\n\", {size}], \"b\"}}]"));
+      assert_eq!(three - two, size as f64, "size {size}");
+    }
+  }
+
   /// The lines a `\n` breaks a row into are centered on the block, the way
   /// a multi-line label over a plot (`Labeled[plot, Row[{"title\nMSE = ",
   /// mse}], Top]`) centers its short last line.
