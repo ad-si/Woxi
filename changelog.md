@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- Woxi Studio keeps re-running a `Manipulate` body that rewrites a
+    variable named in its `TrackedSymbols` (a simulation stepping itself
+    with `tick += del` behind a "run" button), where it stopped after a
+    single step.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve

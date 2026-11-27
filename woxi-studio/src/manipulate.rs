@@ -3117,8 +3117,16 @@ impl ManipulateState {
     let mut moved_tracked_control = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        // A body that rewrites a variable its explicit `TrackedSymbols`
+        // names (a simulation ending each step with `tick += del`) is run
+        // again by the front end, until a pass leaves the variable alone.
+        let explicitly_tracked = self
+          .tracked_symbols
+          .as_ref()
+          .is_some_and(|t| t.iter().any(|n| *n == name));
         if slot.1 != value
-          && (self.module_locals.contains(&name)
+          && (explicitly_tracked
+            || self.module_locals.contains(&name)
             || self.dynamic_feedback_vars.contains(&name))
         {
           self.self_refreshing = true;
@@ -11341,6 +11349,51 @@ mod repeated_option_tests {
     state.reevaluate();
     assert!(!state.wants_tick());
     assert_eq!(state.text_output.as_deref(), Some("3"));
+  }
+
+  /// A body that bumps a hidden variable its `TrackedSymbols` names runs
+  /// again on the app's timer, the way the front end re-runs it: a
+  /// simulation stepping itself with `tick += del` keeps going until a
+  /// pass leaves `tick` alone, and a variable outside `TrackedSymbols`
+  /// never keeps it going.
+  #[test]
+  fn a_body_bumping_its_tracked_symbol_keeps_running() {
+    let code = r#"Manipulate[
+      tick;
+      If[mode == "go", steps = steps + 1; tick += del];
+      If[mode == "once", steps = steps + 1];
+      steps,
+      Button["go", mode = "go"; tick += del],
+      Button["once", mode = "once"; tick += del],
+      Button["halt", mode = "idle"; tick += del],
+      {{mode, "idle"}, None}, {{steps, 0}, None},
+      {{tick, 0}, None}, {{del, $MachineEpsilon}, None},
+      TrackedSymbols :> {tick}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("0"));
+    assert!(!state.wants_tick(), "an idle simulation needs no timer");
+
+    state.apply_button_action(r#"mode = "once"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("1"));
+    assert!(
+      !state.wants_tick(),
+      "a step that only rewrites an untracked variable runs once"
+    );
+
+    state.apply_button_action(r#"mode = "go"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("2"));
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    state.tick();
+    state.tick();
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+    assert!(state.wants_tick());
+
+    state.apply_button_action(r#"mode = "idle"; tick += del"#);
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+    assert!(!state.wants_tick(), "a halted simulation needs no timer");
   }
 
   /// A `DynamicModule` whose body is a statement sequence ending in a

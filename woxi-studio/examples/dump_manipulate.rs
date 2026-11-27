@@ -23,6 +23,10 @@
 //! Set `PRESS_BUTTONS=1` to press every control-panel button in turn, or
 //! `PRESS_BUTTONS="Solve,Reset"` to press only the buttons with those labels;
 //! the variables are dumped after each press.
+//! Set `REFRESH_TICKS=40` alongside `PRESS_BUTTONS` to then fire the app's
+//! timer that many times, re-running a body that keeps itself going; the
+//! variables (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-refresh.svg`) are dumped afterwards.
 
 use std::path::PathBuf;
 
@@ -401,6 +405,35 @@ fn main() {
           );
           for (n, v) in &st.state {
             println!("  {n} = {v}");
+          }
+          if let Some(k) = std::env::var("REFRESH_TICKS")
+            .ok()
+            .and_then(|t| t.parse::<usize>().ok())
+          {
+            println!("wants_tick={}", st.wants_tick());
+            let started = std::time::Instant::now();
+            for _ in 0..k {
+              if st.wants_tick() {
+                st.tick();
+              }
+            }
+            println!(
+              "after {k} refresh ticks ({:.2?}): wants_tick={} error={:?}",
+              started.elapsed(),
+              st.wants_tick(),
+              st.error
+            );
+            for (n, v) in &st.state {
+              println!("  {n} = {v}");
+            }
+            if let Some(dir) = &svg_out_dir
+              && let Some(handle) = &st.graphics_handle
+              && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+            {
+              let out = dir.join(format!("widget-{widget_count}-refresh.svg"));
+              std::fs::write(&out, bytes).expect("write svg");
+              println!("wrote {}", out.display());
+            }
           }
         }
       }
