@@ -26547,9 +26547,9 @@ mod solve_substitution_of_symbols {
       .unwrap(),
       "1"
     );
-    // No real solution: complex angles, none over the reals. `Cos[x]` is
-    // exactly 59/32 and `Cos[y]` exactly -23/16, so the scale is 10^5:
-    // at 10^4 both land on a half and round by floating-point noise.
+    // No real solution: complex angles, none over the reals. Cos[x] is
+    // exactly 59/32 and Cos[y] -23/16, so the scale avoids a rounding tie
+    // (`Round[18437.5]`) that floating-point noise would decide.
     assert_eq!(
       interpret(
         "Union[Round[10^5 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
