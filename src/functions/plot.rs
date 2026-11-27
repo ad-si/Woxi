@@ -16976,6 +16976,18 @@ pub(crate) fn closed_range(range: Option<(f64, f64)>) -> Option<(f64, f64)> {
   range.filter(|(lo, hi)| !lo.is_nan() && !hi.is_nan())
 }
 
+/// An explicit `PlotRange` side whose two ends coincide (`{0, 0}`) spans
+/// nothing; the Wolfram Language shows one unit on either side of that
+/// value instead (verified against a FrontEnd-saved raster of a plot
+/// whose computed `{-max, max}` range collapsed to `{0, 0}`).
+pub(crate) fn widen_degenerate_range((lo, hi): (f64, f64)) -> (f64, f64) {
+  if lo == hi && lo.is_finite() {
+    (lo - 1.0, hi + 1.0)
+  } else {
+    (lo, hi)
+  }
+}
+
 /// Parse a PlotRange option value into (x_range, y_range) overrides.
 ///
 /// Supported forms:
@@ -17030,11 +17042,13 @@ pub(crate) fn parse_plot_range(
       // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
       // exactly like `{-3, 3}` (verified against a FrontEnd-saved raster
       // of the oscilloscope Demonstration, which uses the reversed form).
-      Some(if a.is_nan() || b.is_nan() || a <= b {
-        (a, b)
-      } else {
-        (b, a)
-      })
+      Some(widen_degenerate_range(
+        if a.is_nan() || b.is_nan() || a <= b {
+          (a, b)
+        } else {
+          (b, a)
+        },
+      ))
     } else {
       None
     }

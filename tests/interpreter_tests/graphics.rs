@@ -7992,6 +7992,34 @@ mod graphics {
       assert_eq!(normal, x_reversed);
     }
 
+    /// Regression: an explicit range whose ends coincide (`{0, 0}`, e.g.
+    /// from a computed `{-max, max}` with `max == 0`) left the picture
+    /// without axes and with the marks pushed to its edge. The Wolfram
+    /// Language shows one unit on either side of that value.
+    #[test]
+    fn plot_range_degenerate_bounds_widen_by_one() {
+      for (degenerate, widened) in [
+        (
+          "ListPlot[{{1, 0}, {2, 0}}, PlotRange -> {{0, 5}, {0, 0}}]",
+          "ListPlot[{{1, 0}, {2, 0}}, PlotRange -> {{0, 5}, {-1, 1}}]",
+        ),
+        (
+          "ListPlot[{{1, 2}, {2, 2}}, PlotRange -> {{3, 3}, {0, 4}}]",
+          "ListPlot[{{1, 2}, {2, 2}}, PlotRange -> {{2, 4}, {0, 4}}]",
+        ),
+        (
+          "Plot[x, {x, 0, 5}, PlotRange -> {2.5, 2.5}]",
+          "Plot[x, {x, 0, 5}, PlotRange -> {1.5, 3.5}]",
+        ),
+        (
+          "Graphics[Point[{1, 0}], Axes -> True, PlotRange -> {{0, 5}, {0, 0}}]",
+          "Graphics[Point[{1, 0}], Axes -> True, PlotRange -> {{0, 5}, {-1, 1}}]",
+        ),
+      ] {
+        assert_eq!(export_svg(degenerate), export_svg(widened), "{degenerate}");
+      }
+    }
+
     #[test]
     fn background() {
       insta::assert_snapshot!(export_svg(

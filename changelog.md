@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `InverseZTransform` inverts a rational function with machine-number
+    coefficients through its numeric poles
+    (`InverseZTransform[(0.7 z)/(z - 1.5), z, n]`), with poles at the
+    origin as `DiscreteDelta` delays; it used to stay unevaluated.
+- An explicit `PlotRange` side whose two ends coincide (`{0, 0}`) shows
+    one unit on either side of that value, as in Wolfram, instead of an
+    empty picture without axes.
 - Woxi Studio: a `Column[{Control[…], Control[…]}]` written inside a
     `Row[{…}]` of a `Manipulate`'s control layout is drawn as one block of
     that line, with the row's other controls and buttons beside the column
