@@ -4451,16 +4451,7 @@ fn generate_svg(
       _ => None,
     })
     .unwrap_or([None, None, None]);
-  let (label_face, tick_faces) = axes_text_faces(options);
-  let (tick_colors, tick_sizes) = ticks_style_option_3d(options);
-  let look = AxesLook {
-    tick_colors,
-    tick_sizes,
-    label_size: label_font_size(options),
-    label_face,
-    tick_faces,
-    ..AxesLook::default()
-  };
+  let look = AxesLook::from_options(options);
   // The frame is fitted to the axes exactly as they are drawn below — the
   // same ticks and label size — so wide or large tick labels stay inside.
   let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
@@ -5674,9 +5665,13 @@ fn draw_axes_on_box_with_ticks(
     }
     // `TicksStyle` recolors this axis's tick marks and their labels, and
     // a font size in it resizes the labels (over any `LabelStyle` size).
-    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
-    let tick_font_size =
-      look.tick_sizes[ai].map_or(tick_font_size, |s| s.round() as i32);
+    // `AxesStyle` restyles the whole axis (line, label, ticks) first.
+    let axis_color = look.axis_colors[ai].as_deref().unwrap_or(&axis_color);
+    let font_size = look.axis_sizes[ai].map_or(font_size, |s| s.round() as i32);
+    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(axis_color);
+    let tick_font_size = look.tick_sizes[ai]
+      .or(look.axis_sizes[ai])
+      .map_or(tick_font_size, |s| s.round() as i32);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -5769,7 +5764,7 @@ fn draw_axes_on_box_with_ticks(
         };
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{content}</text>\n",
-          font_face_attrs(look.label_face),
+          font_face_attrs(look.label_faces[ai]),
         ));
         for (i, line) in lines.iter().enumerate() {
           let line_y = ly - block_shift + i as f64 * pitch;
@@ -5901,9 +5896,15 @@ pub(crate) struct AxesLook {
   pub tick_sizes: [Option<f64>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
-  /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
-  /// `LabelStyle`).
-  pub label_face: (bool, bool),
+  /// The color `AxesStyle` gives each axis: its line and label, and its
+  /// tick marks and tick labels unless `TicksStyle` recolors them.
+  pub axis_colors: [Option<String>; 3],
+  /// The font size `AxesStyle` gives each axis's label and tick labels
+  /// (over any `LabelStyle` size).
+  pub axis_sizes: [Option<f64>; 3],
+  /// The `(bold, italic)` face of each axis's label (`BaseStyle`,
+  /// `LabelStyle`, then `AxesStyle`).
+  pub label_faces: [(bool, bool); 3],
   /// The `(bold, italic)` face of each axis's tick labels: the label face,
   /// overridden by `TicksStyle` (`TicksStyle -> Plain` keeps them upright
   /// under `BaseStyle -> Italic`).
@@ -5917,9 +5918,68 @@ impl Default for AxesLook {
       tick_colors: [None, None, None],
       tick_sizes: [None, None, None],
       label_size: None,
-      label_face: (false, false),
+      axis_colors: [None, None, None],
+      axis_sizes: [None, None, None],
+      label_faces: [(false, false); 3],
       tick_faces: [(false, false); 3],
     }
+  }
+}
+
+impl AxesLook {
+  /// The look the text and axis style options among `opts` give
+  /// (`BaseStyle`, `LabelStyle`, `AxesStyle`, `TicksStyle`), with every
+  /// axis shown.
+  fn from_options(opts: &[Expr]) -> Self {
+    let (label_faces, tick_faces) = axes_text_faces(opts);
+    let (tick_colors, tick_sizes) = ticks_style_option_3d(opts);
+    let axes = axis_style_specs_3d(opts, "AxesStyle");
+    let color = |e: &Expr| {
+      crate::functions::plot::parse_style_directives(e)
+        .and_then(|style| style.color)
+        .map(super::graphics::Color::to_svg_rgb)
+    };
+    let size = |e: &Expr| {
+      crate::functions::plot::LabelStyleSpec::parse(e)
+        .and_then(|spec| spec.font_size)
+    };
+    AxesLook {
+      tick_colors,
+      tick_sizes,
+      label_size: label_font_size(opts),
+      axis_colors: axes.each_ref().map(|s| s.as_ref().and_then(color)),
+      axis_sizes: axes.each_ref().map(|s| s.as_ref().and_then(size)),
+      label_faces,
+      tick_faces,
+      ..AxesLook::default()
+    }
+  }
+}
+
+/// The value of the per-axis style option `key` (`AxesStyle`,
+/// `TicksStyle`) among `opts`, dealt out to the three axes:
+/// `{sx, sy, sz}` styles each axis on its own, any other value all three
+/// alike. The last setting of the option wins.
+fn axis_style_specs_3d(opts: &[Expr], key: &str) -> [Option<Expr>; 3] {
+  let value = opts.iter().rev().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  });
+  match &value {
+    Some(Expr::List(items)) if items.len() == 3 => {
+      [0, 1, 2].map(|i| Some(items[i].clone()))
+    }
+    _ => [value.clone(), value.clone(), value],
   }
 }
 
@@ -5960,11 +6020,11 @@ fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
   face
 }
 
-/// The `(bold, italic)` faces of a 3D box's axis labels and of each axis's
-/// tick labels: `BaseStyle` and then `LabelStyle` style all of that text,
-/// and `TicksStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles just
-/// the tick labels.
-fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
+/// The `(bold, italic)` faces of each axis label of a 3D box and of each
+/// axis's tick labels: `BaseStyle` and then `LabelStyle` style all of that
+/// text, `AxesStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles an
+/// axis's label and tick labels, and `TicksStyle` just the tick labels.
+fn axes_text_faces(opts: &[Expr]) -> ([(bool, bool); 3], [(bool, bool); 3]) {
   let apply = |face: (bool, bool), spec: &Expr| {
     let (bold, italic) = font_face_overrides(spec);
     (bold.unwrap_or(face.0), italic.unwrap_or(face.1))
@@ -5991,16 +6051,13 @@ fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
       label = apply(label, &spec);
     }
   }
-  let ticks = match option("TicksStyle") {
-    Some(Expr::List(ref items)) if items.len() == 3 => [
-      apply(label, &items[0]),
-      apply(label, &items[1]),
-      apply(label, &items[2]),
-    ],
-    Some(spec) => [apply(label, &spec); 3],
-    None => [label; 3],
+  let restyle = |faces: [(bool, bool); 3], key: &str| {
+    let specs = axis_style_specs_3d(opts, key);
+    [0, 1, 2]
+      .map(|i| specs[i].as_ref().map_or(faces[i], |s| apply(faces[i], s)))
   };
-  (label, ticks)
+  let labels = restyle([label; 3], "AxesStyle");
+  (labels, restyle(labels, "TicksStyle"))
 }
 
 /// The SVG attributes for a `(bold, italic)` text face (empty for plain).
@@ -10781,9 +10838,13 @@ fn tessellate_for_transform(
     Primitive3D::Sphere { center, radius, .. } => {
       Some(tessellate_sphere(center, *radius, (18, 36)))
     }
-    Primitive3D::Cylinder { p1, p2, radius, .. } => {
-      Some(tessellate_cylinder(p1, p2, *radius, MAX_SIDE_SUBDIVISIONS))
-    }
+    Primitive3D::Cylinder { p1, p2, radius, .. } => Some(tessellate_cylinder(
+      p1,
+      p2,
+      *radius,
+      MAX_SIDE_SUBDIVISIONS,
+      CYLINDER_SIDES,
+    )),
     Primitive3D::Cone { p1, p2, radius, .. } => {
       Some(tessellate_cone(p1, p2, *radius))
     }
@@ -12089,12 +12150,14 @@ fn collect_3d_primitives_styled(
           // Without a radius of the `Tube`'s own, a radius list written as
           // the curve's second argument (`Tube[BSplineCurve[pts, {r1, …}]]`)
           // sets the radii the same way.
+          let is_option = |a: &Expr| {
+            matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          };
           let control_radii = |inner: &[Expr]| -> Option<Vec<f64>> {
-            let spec = args.get(1).or_else(|| {
-              inner.get(1).filter(|a| {
-                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-              })
-            })?;
+            let spec = args
+              .get(1)
+              .filter(|a| !is_option(a))
+              .or_else(|| inner.get(1).filter(|a| !is_option(a)))?;
             let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
             let Expr::List(items) = &spec else {
               return None;
@@ -12148,16 +12211,23 @@ fn collect_3d_primitives_styled(
           };
           // Likewise a single radius written as the curve's second argument
           // (`Tube[BSplineCurve[pts, r]]`) is the tube's radius.
-          let radius_spec = args.get(1).or_else(|| match &args[0] {
-            Expr::FunctionCall { name, args: inner }
-              if name == "BSplineCurve" =>
-            {
-              inner.get(1).filter(|a| {
-                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-              })
-            }
-            _ => None,
-          });
+          let radius_spec =
+            args
+              .get(1)
+              .filter(|a| !is_option(a))
+              .or_else(|| match &args[0] {
+                Expr::FunctionCall { name, args: inner }
+                  if name == "BSplineCurve" =>
+                {
+                  inner.get(1).filter(|a| !is_option(a))
+                }
+                _ => None,
+              });
+          // `VertexColors -> {c1, c2, …}` gives each point of the curve a
+          // color, blended along the tube between them.
+          let palette = complex_vertex_colors(&args[1..]);
+          let color_alpha = palette.as_ref().and_then(|p| p.1).unwrap_or(1.0);
+          let vertex_colors = palette.map(|p| p.0);
           for pts in curves {
             let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
               rs
@@ -12210,6 +12280,18 @@ fn collect_3d_primitives_styled(
                 .fold(0.0f64, f64::max);
               vec![extent / 100.0; pts.len()]
             };
+            // A tube with a color per point is cut finely enough for the
+            // colors to blend along it.
+            let colors = vertex_colors
+              .as_ref()
+              .filter(|c| c.len() == pts.len() && !from_spline);
+            let (pts, radii, colors) = match colors {
+              Some(colors) => {
+                let (p, r, c) = subdivide_colored_tube(&pts, &radii, colors);
+                (p, r, Some(c))
+              }
+              None => (pts, radii, None),
+            };
             let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
             // At a sharp corner of a polyline Wolfram ends one rounded run
             // and starts the next, so the two overlap in a rounded elbow; a
@@ -12228,7 +12310,22 @@ fn collect_3d_primitives_styled(
                 style.caps,
                 budget,
               );
-              if !tris.is_empty() {
+              if let Some(colors) = &colors {
+                for (color, band) in
+                  tube_color_bands(tris, &pts[from..=to], &colors[from..=to])
+                {
+                  let mut band_style = style.clone();
+                  band_style.without_face_form();
+                  band_style.opacity *= color_alpha;
+                  band_style.color = Some(color);
+                  prims.push(Primitive3D::Surface3D {
+                    tris: band,
+                    style: band_style,
+                    smooth: true,
+                    outlined: false,
+                  });
+                }
+              } else if !tris.is_empty() {
                 prims.push(Primitive3D::Surface3D {
                   tris,
                   style: style.clone(),
@@ -14232,6 +14329,40 @@ fn cylinder_max_subdivisions(
   by_size.min(by_count)
 }
 
+/// The fewest facets a `Cylinder` is ever drawn with around its axis.
+const MIN_CYLINDER_SIDES: usize = 12;
+
+/// The radius, as a fraction of the span of the scene's cylinders, from
+/// which a `Cylinder` of a crowded scene gets all `CYLINDER_SIDES` facets.
+const FULL_DETAIL_CYLINDER_RADIUS: f64 = 0.25;
+
+/// How many facets a `Cylinder` gets around its axis. The facets only have
+/// to keep its end circles and silhouette round at picture size, and an
+/// n-gon strays from its circle by `radius * (1 - cos(pi / n))`, so the
+/// count that keeps that error constant grows with the square root of the
+/// radius. As with `cylinder_max_subdivisions`, a lone or modestly sized
+/// Cylinder keeps the full count; only a crowd of relatively thin ones is
+/// throttled. Regression: a lattice of 80 rods, each a few pixels wide, was
+/// cut into 48 facets per rod — 0.5 pixel slivers that made every frame of
+/// its Manipulate a 32 MB SVG.
+fn cylinder_sides(
+  radius: f64,
+  scene_extent: f64,
+  cylinder_count: usize,
+) -> usize {
+  if cylinder_count <= 8 || scene_extent.is_nan() || scene_extent <= 0.0 {
+    return CYLINDER_SIDES;
+  }
+  let rel = radius.abs() / scene_extent;
+  if rel.is_nan() || rel >= FULL_DETAIL_CYLINDER_RADIUS {
+    return CYLINDER_SIDES;
+  }
+  let sides =
+    CYLINDER_SIDES as f64 * (rel / FULL_DETAIL_CYLINDER_RADIUS).sqrt();
+  // A multiple of four keeps facets at the quarter points of the circle.
+  ((sides / 4.0).ceil() as usize * 4).clamp(MIN_CYLINDER_SIDES, CYLINDER_SIDES)
+}
+
 /// Total longitudinal rings shared by all `Cylinder`s of a crowded scene.
 const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
@@ -14559,8 +14690,9 @@ fn tessellate_cylinder(
   p2: &Point3D,
   radius: f64,
   max_subdivisions: usize,
+  sides: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let n = CYLINDER_SIDES;
+  let n = sides;
   let pi = std::f64::consts::PI;
   // Axis vector
   let dx = p2.x - p1.x;
@@ -14693,6 +14825,102 @@ fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
     runs.push((start, pts.len() - 1));
   }
   runs
+}
+
+/// How many pieces each segment of a `VertexColors` tube is cut into, each
+/// drawn in one color of the blend.
+const TUBE_COLOR_STEPS: usize = 12;
+
+/// Cut every segment of a `VertexColors` tube into `TUBE_COLOR_STEPS`
+/// pieces, carrying the radii and the per-point colors (unit-range RGB)
+/// linearly along it, so that the colors blend in fine steps.
+fn subdivide_colored_tube(
+  points: &[Point3D],
+  radii: &[f64],
+  colors: &[(f64, f64, f64)],
+) -> (Vec<Point3D>, Vec<f64>, Vec<(f64, f64, f64)>) {
+  let (mut pts, mut rs, mut cs) = (vec![], vec![], vec![]);
+  for i in 0..points.len().saturating_sub(1) {
+    let (a, b) = (points[i], points[i + 1]);
+    for k in 0..TUBE_COLOR_STEPS {
+      let f = k as f64 / TUBE_COLOR_STEPS as f64;
+      let mix = |x: f64, y: f64| x * (1.0 - f) + y * f;
+      pts.push(Point3D {
+        x: mix(a.x, b.x),
+        y: mix(a.y, b.y),
+        z: mix(a.z, b.z),
+      });
+      rs.push(mix(radii[i], radii[i + 1]));
+      cs.push((
+        mix(colors[i].0, colors[i + 1].0),
+        mix(colors[i].1, colors[i + 1].1),
+        mix(colors[i].2, colors[i + 1].2),
+      ));
+    }
+  }
+  if let (Some(p), Some(r), Some(c)) =
+    (points.last(), radii.last(), colors.last())
+  {
+    pts.push(*p);
+    rs.push(*r);
+    cs.push(*c);
+  }
+  (pts, rs, cs)
+}
+
+/// Split the facets of a tube along `points` into one band per segment,
+/// each in the mean of the `colors` (unit-range RGB, one per point) at the
+/// segment's two ends, the way a `VertexColors` line is drawn. The caps
+/// take the color of the segment they close.
+fn tube_color_bands(
+  tris: Vec<(Point3D, Point3D, Point3D)>,
+  points: &[Point3D],
+  colors: &[(f64, f64, f64)],
+) -> Vec<((u8, u8, u8), Vec<(Point3D, Point3D, Point3D)>)> {
+  if points.len() < 2 || colors.len() != points.len() {
+    return vec![];
+  }
+  // Where along the polyline (segment index plus the fraction of the way
+  // through that segment) the point of it nearest to `p` lies.
+  let position = |p: &Point3D| -> f64 {
+    let mut best = (f64::INFINITY, 0.0);
+    for (i, w) in points.windows(2).enumerate() {
+      let d = [w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z];
+      let rel = [p.x - w[0].x, p.y - w[0].y, p.z - w[0].z];
+      let len2 = v_dot(d, d);
+      let t = if len2 > 0.0 {
+        (v_dot(rel, d) / len2).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      let off = [rel[0] - t * d[0], rel[1] - t * d[1], rel[2] - t * d[2]];
+      let dist2 = v_dot(off, off);
+      if dist2 < best.0 {
+        best = (dist2, i as f64 + t);
+      }
+    }
+    best.1
+  };
+  let mut bands: std::collections::BTreeMap<usize, Vec<_>> =
+    std::collections::BTreeMap::new();
+  for tri in tris {
+    // The middle of the stretch of tube the facet spans, so that the two
+    // triangles of one quad of the mesh always land in the same band.
+    let at = [position(&tri.0), position(&tri.1), position(&tri.2)];
+    let lo = at.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = at.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let band = (f64::midpoint(lo, hi) as usize).min(points.len() - 2);
+    bands.entry(band).or_default().push(tri);
+  }
+  let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  bands
+    .into_iter()
+    .map(|(i, tris)| {
+      let (a, b) = (colors[i], colors[i + 1]);
+      let mean = |x: f64, y: f64| q(f64::midpoint(x, y));
+      ((mean(a.0, b.0), mean(a.1, b.1), mean(a.2, b.2)), tris)
+    })
+    .collect()
 }
 
 fn tessellate_tube(
@@ -15785,13 +16013,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_view_point = false;
   let mut orthographic = false;
   let mut show_axes = false;
-  let (label_face, tick_faces) = axes_text_faces(&args[1..]);
-  let mut axes_look = AxesLook {
-    label_size: label_font_size(&args[1..]),
-    label_face,
-    tick_faces,
-    ..AxesLook::default()
-  };
+  let mut axes_look = AxesLook::from_options(&args[1..]);
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -16014,10 +16236,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
         }
-        "TicksStyle" => {
-          (axes_look.tick_colors, axes_look.tick_sizes) =
-            parse_ticks_style_3d(replacement);
-        }
         _ => {}
       }
     }
@@ -16157,8 +16375,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let setback_bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
   apply_arrow_setbacks_3d(&mut prims, &setback_bounds);
 
-  // An explicit `PlotRange` cuts off whatever of a line lies outside it.
-  if let Some(bounds) = plot_range {
+  // An explicit `PlotRange` cuts off whatever lies outside the box it
+  // displays: the range widened by its `PlotRangePadding`. A label set just
+  // past the surface of a `ParametricPlot3D` (whose automatic range is
+  // padded) is therefore still drawn when `Show` inherits that plot's range.
+  if let Some(bounds) =
+    plot_range.map(|raw| displayed_box_3d(raw, explicit_axes, range_padding))
+  {
     for prim in &mut prims {
       if let Primitive3D::Line3D { segments, .. } = prim {
         *segments = segments
@@ -16618,10 +16841,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let max_subdiv =
             cylinder_max_subdivisions(*radius, cyl_extent, cyl_count)
               .min(cylinder_scene_ring_cap(len, cyl_extent));
-          let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv);
+          let sides = cylinder_sides(*radius, cyl_extent, cyl_count);
+          let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv, sides);
           if style.edges {
             let steps = cylinder_side_steps(len, *radius, max_subdiv);
-            holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
+            holed_boundaries = cylinder_edge_flags(steps, sides);
           }
           (tris, style)
         }
@@ -17270,8 +17494,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !flat_contents
     && (contents_box.3 - contents_box.2) * f64::from(svg_width)
       >= (contents_box.1 - contents_box.0) * f64::from(svg_height);
+  // Contents extending along one axis only (a straight line parallel to
+  // it, or a single point) keep the box around the ranges Wolfram makes up
+  // for the other two axes: a Demonstration's unboxed line of length 22
+  // along the y axis at `ImageSize -> {350, 350}` spans 257 × 280 of the
+  // frame, centered, as its padded 2 × 22 × 2 box does, rather than running
+  // from corner to corner. Contents lying in a plane keep the fit to
+  // themselves (a planar net of dots reaches the picture's edges).
+  let line_contents = contents_extent
+    .into_iter()
+    .filter(|&r| range_is_flat(r))
+    .count()
+    >= 2;
   let fit_contents = unboxed_automatic
     && !fit_contents_box
+    && !line_contents
     && (explicit_height || round_solids_only);
   if fit_contents_box {
     px_min = px_min.min(contents_box.0);
@@ -30143,5 +30380,32 @@ mod triangle_intersection_tests {
     let (dn, df) = depths_at_shared_point(&near, &pn, &far, &pf, &camera)
       .expect("the facets cross on screen");
     assert!(dn < df, "{dn} vs {df}");
+  }
+}
+
+#[cfg(test)]
+mod cylinder_sides_tests {
+  use super::*;
+
+  /// A crowd of cylinders gets facets around the axis in proportion to
+  /// the square root of each one's share of the scene; a few cylinders,
+  /// or wide ones, keep the full count.
+  #[test]
+  fn cylinder_sides_follow_the_relative_radius() {
+    assert_eq!(cylinder_sides(0.01, 1.0, 8), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.01, 0.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.25, 1.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(3.0, 1.0, 100), CYLINDER_SIDES);
+    assert_eq!(cylinder_sides(0.001, 1.0, 100), MIN_CYLINDER_SIDES);
+    // A quarter of the full-detail radius: half the facets.
+    assert_eq!(cylinder_sides(0.0625, 1.0, 100), CYLINDER_SIDES / 2);
+    assert_eq!(cylinder_sides(-0.0625, 1.0, 100), CYLINDER_SIDES / 2);
+    let mut last = 0;
+    for k in 1..=100 {
+      let sides = cylinder_sides(k as f64 / 400.0, 1.0, 9);
+      assert!(sides >= last && sides.is_multiple_of(4), "{k}: {sides}");
+      assert!((MIN_CYLINDER_SIDES..=CYLINDER_SIDES).contains(&sides));
+      last = sides;
+    }
   }
 }

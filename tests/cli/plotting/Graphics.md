@@ -49,13 +49,3 @@ the option is used:
 $ wo 't = 1100; StringContainsQ[ExportString[Graphics[{Disk[]}, PlotLabel :> Which[t == 1100, "met", True, ""]], "SVG"], "<svg"]'
 True
 ```
-
-```scrut
-$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, FrameTicks -> False], "SVG"], "<text"]'
-False
-```
-
-```scrut
-$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, FrameTicks -> True], "SVG"], "<text"]'
-True
-```

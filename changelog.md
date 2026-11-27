@@ -11,6 +11,69 @@
 - An empty script slot in a string's box code
     (`"\!\(\*SubscriptBox[\(S\), \(\)]\)"`) typesets as nothing in a
     graphic's `Text` instead of `Null`.
+- `Style[expr, {Red, Bold, …}]` and `Style[expr, Directive[…]]` keep their
+    color, weight, size and background inside a `Framed` that sits in a
+    typeset label (a `PlotLabel` written as a `Row`), and `Background` on a
+    `Style` directly inside `Framed` or `Panel` is painted behind the text.
+- Graph drawing: a `"LinearEmbedding"` arc rises a quarter of its
+    endpoints' distance (its control point half of it, which the picture
+    makes room for) instead of half; `EdgeStyle -> {edge -> {d1, d2}}`
+    applies a list of directives to its edge instead of ignoring it; a
+    `VertexShape` picture is as large as `VertexSize` says; and two edges
+    leading away from one vertex are drawn as a tree with that root on top
+    instead of a horizontal path.
+- `Infix`, `Prefix` and `Postfix` print as the call in the script-mode
+    display and `Print`, like wolframscript, and are laid out only by
+    `ToString` (and in boxes). There an operand binding no tighter than
+    the wrapper's precedence is bracketed (`(a + b) ~f~ (c d)`,
+    `f@ (a!)`), `Infix[f[a, b]]` reads `a ~f~ b`, a bare list uses
+    `~List~`, a list of operators is shown between each pair, and a call
+    with fewer than two operands, a precedence that is not a machine
+    integer (`Infix::intm`) or an invalid grouping (`Infix::group`) keeps
+    its function form. In boxes the operands are bracketed by the
+    operator's own precedence (`a b + c` but `(a b)*c`), an operator the
+    FrontEnd does not know is a quoted string, and TraditionalForm boxes
+    read back as the wrapper too.
+- `ToBoxes[a . b]` is the infix row `a . b` (bracketed as a power base)
+    and a call with a compound head (`f[a][b]`, `(a + b)[c]`) boxes as a
+    row instead of a string. `Transpose[m, perm]` of something that is not
+    an array stays unevaluated without a `Transpose::tperm` message.
+- `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
+    tube instead of drawing it in the plain color, each color given as a
+    color or a list of directives, and an option right after the curve
+    (`Tube[pts, VertexColors -> …]`) is no longer read as a radius of zero.
+- `\[RightArrow]` (`→`, U+2192) is the inert infix operator `RightArrow`
+    like in Wolfram, no longer a spelling of the rule arrow: `a → b` is
+    `RightArrow[a, b]`. `\[Rule]` and `\[RuleDelayed]` are accepted
+    right after `/.` (`expr /. x \[Rule] 3` was a parse error), and
+    `<|a \[Rule] 1, b :> 2|>` keeps its delayed entry.
+- Heads that only stand for an operator character (`RightArrow`,
+    `Equilibrium`, `CupCap`, …) are written infix in `TraditionalForm`
+    boxes and in the labels and legends of a graphic, where they read
+    `RightArrow(a, b)`.
+- `Show` draws each plot's `PlotLegends -> Placed[labels, pos]` legend at
+    its own position instead of stacking every entry at the first plot's.
+- `ArrayPlot` keeps its automatic margin between the cells and the frame
+    even on all sides under an explicit `AspectRatio`.
+- Woxi Studio gives an immediate assignment or rule in a `Manipulate`
+    body that mentions a control its own pattern variables
+    (`f[t_] = g[n, t]` is `f[t$_] = g[n, t$]`, as the lexically scoped
+    controls make it in Wolfram), so a value the global `t` holds — a loop
+    counter, say — no longer leaks into the definition.
+- `AxesStyle` styles the axes of 3D plots and `Graphics3D`: a color, a
+    font size, `Bold` or `Italic` reach the axis line, its label, its tick
+    marks and its tick labels (`TicksStyle` still overrides the ticks), and
+    `{sx, sy, sz}` styles the three axes separately.
+- `RotationTransform` and `RotationMatrix` by a machine-real angle about
+    a 3D axis, and a `TransformationFunction` of machine reals applied to
+    points, are computed in machine arithmetic instead of through the
+    symbolic formula: a loop of a few thousand rotations (a turtle drawing
+    a branching structure) took over a minute and now takes seconds.
+- An unboxed `Graphics3D` of fixed width and height whose contents run
+    along one axis only (a straight line parallel to it) is fitted with
+    the ranges made up for the other two axes, so the line is drawn
+    centered and clear of the frame as in Wolfram's pictures, instead of
+    from corner to corner.
 - Expanding and summing large expressions in undefined functions
     (`Expand[g[a, b] sum]`, `-sum`, `Sum[…]` over sums of products like
     `4 g[a, b] g[c, d]`) is faster and takes less memory: the terms are
@@ -21,9 +84,25 @@
     `Sum` or `Block` over a symbol without definitions no longer makes every
     large stored value evaluate anew.
 - `ListContourPlot` keeps a lone spike in the data from stretching its
-    automatic contour levels (the outlier fence `ContourPlot` already
-    applied), and interpolates an array linearly over a triangulation of
-    its nodes instead of bilinearly over each cell.
+    automatic contour levels, clipping the value range where a `ListPlot`
+    of the same values clips its y range, and interpolates an array
+    linearly over a triangulation of its nodes instead of bilinearly over
+    each cell.
+- `ContourPlot`, `DensityPlot` and the vector and stream plots report the
+    x/y `PlotRange` axis by axis as Wolfram does: the domain as written by
+    default (`{{0, 3}, {0, 3}}`, not `{{0., 3.}, {0., 3.}}`), `All` kept,
+    and an explicit range numericized.
+- `ToBoxes[HoldForm[expr]]` wraps the boxes in `TagBox[…, HoldForm]`, and
+    the boxes of a power put brackets around a base like `a!`, `a^b` or
+    `f'`; the 2D OutputForm keeps a factorial base bare (`a!` under the
+    exponent).
+- `CovarianceFunction` and `CorrelationFunction` of an `ARProcess`,
+    `MAProcess` or `ARMAProcess` take their closed forms at a symbolic lag
+    (`CorrelationFunction[ARProcess[{a}, v], h]` is `a^Abs[h]`), and
+    `CorrelationFunction[proc, s, t]` of these processes evaluates.
+- A `ListPlot` with `Filling` keeps its stems in its own primitives
+    (`Cases[plot, _Line, Infinity]`), not only when layered with `Show`,
+    drawn at `Opacity[0.3]` as in its picture.
 - Contour plots split a saddle cell along the same diagonal for the
     shaded bands and the contour lines, which could previously join
     opposite pairs of corners and run lines through a band.
@@ -37,6 +116,14 @@
     `GraphicsGrid` overlaps the cells at an even pitch instead of butting
     them together, and `ImageSize -> {w, h}` is the exact size of a
     `GraphicsRow` and `GraphicsColumn` too, the cells centered in it.
+- A `Line` running far outside an explicit `PlotRange` (a hyperbola from
+    `ParametricPlot` sampled next to its pole, combined under `Show`) is
+    cut near the picture instead of being written to the SVG with
+    coordinates billions of pixels away; Woxi Studio drew such a picture
+    blank.
+- A `Manipulate` control label padded with a spacer
+    (`"name" Spacer[12]`) shows its text in Woxi Studio instead of
+    `name*Spacer[12]`.
 - `ContourPlot` draws every curve of a list that mixes equations with
     plain expressions (`{f == c, {g, h}}`, each expression as its zero
     contour) and of an entry that only evaluates to a list (a `Which`
@@ -77,10 +164,13 @@
     (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
     keeps the explicit intervals of the others; the whole range was
     dropped, so the scene filled its frame.
-- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
-    stays unevaluated is typeset in StandardForm as a postfix superscript
-    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
-    notebook output and picture labels, instead of the spelled-out head.
+- An unevaluated `Transpose` and `ConjugateTranspose` is typeset as a
+    postfix superscript mark (`mᵀ`, `m†`, an operator operand bracketed)
+    through the FrontEnd's template, `TemplateBox[{m}, "Transpose",
+    SyntaxForm -> SuperscriptBox]` (`"Transpose2"` with a permutation), in
+    `ToBoxes`, notebook output and picture labels, instead of the
+    spelled-out head. `Conjugate` takes the `z*` template in
+    TraditionalForm only, like in Wolfram.
 - `ParametricPlot` applies a `ColorFunction` that declares four
     parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
     region; the curve was drawn black.
@@ -130,9 +220,9 @@
     first of a repeated option of the graphic (`Axes -> False`).
 - `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
     plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
-    `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
-    `ContourPlot` holds its `GraphicsComplex` as the graphic's first argument,
-    so `plot[[1, 1]]` is the point table.
+    `Cases[FullForm[plot], …]`) instead of treating it as an atom.
+- A `ContourPlot`'s first part is `{GraphicsComplex[…], {}}` like in
+    Wolfram, so `plot[[1, 1, 1]]` is the point table.
 - A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
     way to draw a ground plane) is filled instead of drawn as a bare
     outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes

@@ -1424,6 +1424,13 @@ function main() {
   // while Wolfram's companion-matrix eigenvalues introduce machine-epsilon
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
+    // WL's integer-lag autocovariance of an ARMA-family process contradicts
+    // its own symbolic closed form at that lag; Woxi gives the textbook
+    // value. See "CovarianceFunction of a concrete ARMA(1, 1) past lag 1"
+    // in conformance_gaps.md.
+    "Table[CorrelationFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]",
+    "Table[CorrelationFunction[ARMAProcess[{1/2}, {1/3}, 2], h], {h, 0, 2}]",
+    "CovarianceFunction[ARProcess[{1/2}, 1], 2]",
     // Repeated machine roots that wolframscript leaves scattered by its own
     // eigenvalue rounding, and Woxi merges; see
     // "High-multiplicity roots of a machine-coefficient polynomial" in

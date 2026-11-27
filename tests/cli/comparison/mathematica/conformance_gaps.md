@@ -493,6 +493,26 @@ not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
 &&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
 operands themselves are parenthesized by precedence).
 
+### StandardForm boxes: `==` and derivatives
+
+```sh
+wolframscript -code 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "\[Equal]", "b"}]
+woxi eval 'ToString[ToBoxes[a == b], InputForm, CharacterEncoding -> "ASCII"]'
+# RowBox[{"a", "==", "b"}]
+wolframscript -code 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", TagBox[RowBox[{"(", "3", ")"}], Derivative], MultilineFunction -> None]
+woxi eval 'ToString[ToBoxes[Derivative[3][f]], InputForm]'
+# SuperscriptBox["f", "′′′"]
+```
+
+WL boxes `Equal` with the private-use `\[Equal]` (U+F431) and a derivative
+with `MultilineFunction -> None`, its order of three or more as a
+`TagBox[…, Derivative]` around `(n)`. Woxi writes `==` and leaves out the
+option, because its box renderers read a two-argument `SuperscriptBox` and
+have no glyph for `\[Equal]` yet. The same difference shows up in an
+operand of `Infix` or `Prefix` boxes.
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -1878,6 +1898,21 @@ about 8 digits only: WL's 1.2819544533776392*^8 against Woxi's
 1.2819544632769972*^8 for `ARMAProcess[{1.997…, -0.997…}, {0.268…}, 1]`,
 whose exact value is 1.28195445098…*^8.
 
+The same goes for an `ARProcess`/`MAProcess` at an integer lag, where WL's
+values contradict its own symbolic form at that lag:
+
+```sh
+wolframscript -code 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 7/6, 7/12, 5/12}
+wolframscript -code 'CovarianceFunction[ARProcess[{1/2}, 1], h]'   # 2^(2 - Abs[h])/3
+woxi eval 'Table[CovarianceFunction[ARProcess[{1/2}, 1], h], {h, 0, 3}]'
+# {4/3, 2/3, 1/3, 1/6}
+```
+
+Woxi gives `γ(h) = a^|h| v/(1 - a^2)` at every lag. `CorrelationFunction`
+(WL `{1, 7/8, 7/16, 5/16}` against Woxi's `{1, 1/2, 1/4, 1/8}`, also with
+the times given as `CorrelationFunction[proc, s, t]`) follows from it.
+
 ### Guard digits of small arbitrary-precision numbers
 
 WL shows the decimal digits of its binary value, which is rounded to whole
@@ -2184,6 +2219,20 @@ equilibria of the restricted three-body problem (where the published output
 of a Demonstration shows `Last` picking the point between the masses); the
 complete wolframscript order of that list, and of other radical systems,
 has **not been verified**.
+
+### `NSolve` of a system in the cosines and sines of several unknowns
+
+```sh
+woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
+# {{x -> 1.696…, y -> 2.418…}, {x -> -1.696…, y -> -2.418…}}
+```
+
+Woxi lists the principal angles of every solution, descending by the first
+unknown. The published snapshots of a Demonstration show that Wolfram also
+returns a finite list of numbers here, but with some angles shifted by a
+multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
+period it picks and the complete order of the list have **not been
+verified**.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -6247,6 +6296,13 @@ snapshot of a box 1.6 times as tall as it is deep does pin down one
 exception: the x axis, along the front face, stays on the bottom front edge
 although the top back one is nearer the viewer; Woxi follows that.)
 
+Another Demonstration's snapshots, of a `Plot3D` with the default
+`BoxRatios` (`{1, 1, 0.4}`) and `ViewPoint`, `AxesLabel` set and
+`ImageSize -> {450, 350}`, also put the y axis on the upper-left box edge,
+where Woxi takes the lower-right one. Both upper-left cases give an explicit
+`{width, height}` image size, so the choice may depend on the picture's
+shape on screen rather than on the box alone; that is still unconfirmed.
+
 ### Direction of 3D tick marks
 
 Wolfram draws a 3D tick mark in the scene along one of the two other
@@ -8230,6 +8286,19 @@ proportions differ from wolframscript. Named edge shapes other than
 `"DiamondLine"`, `"FilledArcArrow"`) still fall back to the plain edge.
 `GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
 `"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
+
+### Large graphs keep the small-graph vertex style
+
+```sh
+woxi eval 'ExportString[Graph[Range[1000], Table[i <-> i + 1, {i, 999}], GraphLayout -> "LinearEmbedding"], "SVG"]'
+```
+
+Wolfram draws the vertices of a graph with very many vertices (around a
+thousand; the exact threshold is not established) as points of a fixed
+size in a darker blue, so they stay visible however small the layout's
+units come out. Woxi sizes them from the layout's extent like any other
+graph's, where they all but vanish. Not verified against wolframscript
+beyond published pictures.
 
 ## Colorize
 
@@ -11279,6 +11348,25 @@ unevaluated, so the plot samples the compiled function numerically and
 returns a `Graphics3D`. The unit test
 `compiled_vector_argument_iteration_is_not_run_symbolically` is in
 `EXACT_EXPR_SKIP`.
+
+### StandardForm boxes of operator-only heads
+
+`ToBoxes[RightArrow[a, b]]` is `RowBox[{"a", "\[RightArrow]", "b"}]` in
+Wolfram, and likewise for the other heads that only stand for an operator
+character (`LeftArrow`, `Equilibrium`, `CupCap`, `Element`, `Subset`, …).
+Woxi writes the call's source, `RowBox[{RightArrow, [, RowBox[{a, ,, b}],
+]}]`. `ToBoxes[…, TraditionalForm]`, the displayed output and the labels of a
+graphic are infix. Not yet checked against wolframscript.
+
+### Automatic `ArrayPlot` margin under an explicit `AspectRatio`
+
+Woxi keeps the automatic margin between the cells and the frame the same
+length on every side when `AspectRatio` stretches the cells (1/48 of the
+longer side across, 1/50 down, as without the option). That is measured from
+a picture Wolfram stored for a 240 x 40 array at `AspectRatio -> 0.7`, where
+both margins are about 11 pixels; the `PlotRangePadding` that
+`AbsoluteOptions` reports for such a plot is not yet checked against
+wolframscript.
 
 ## Unit-test conformance batch (2026-11-25)
 

@@ -4,7 +4,7 @@ Lists the built-in `ChartElementFunction` names a chart function accepts.
 
 ```scrut
 $ wo 'ChartElementData["DistributionChart"]'
-{Density, DensityQuantile, FadingQuantile, GlassQuantile, HistogramDensity, LineDensity, PointDensity, Quantile, SmoothDensity}
+{Density, DensityQuantile, DistributionRectangle, FadingQuantile, GlassQuantile, HistogramDensity, LineDensity, PointDensity, Quantile, SmoothDensity}
 ```
 
 `"HistogramDensity"` draws each dataset's histogram turned on its side

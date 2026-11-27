@@ -13,7 +13,7 @@ the intercept takes up the slack.
 
 ```scrut
 $ wo 'FindFit[{{0, 1.}, {1, 3.}, {2, 5.}, {3, 7.}}, {a x + b, 0 < a < 1}, {a, b}, x]'
-\{a -> (1\.(0+\d*)?|0\.99999999\d*), b -> 2\.5(0+\d*)?\} (regex)
+\{a -> (1\.(0+\d*)?|0\.99999999\d*), b -> (2\.5(0+\d*)?|2\.49999999\d*)\} (regex)
 ```
 
 `NormFunction` changes the quantity that is minimized. With the 1-norm

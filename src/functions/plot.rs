@@ -4115,7 +4115,7 @@ pub(crate) enum LegendMarkerKind {
 }
 
 /// Position for plot legends
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) enum LegendPosition {
   #[default]
   Right,
@@ -4230,6 +4230,10 @@ pub(crate) struct PlotOptions {
   pub legend_series: Vec<usize>,
   /// Position of the legend (Right, Top, Bottom)
   pub legend_position: LegendPosition,
+  /// The position of each `plot_legends` entry, when the entries do not
+  /// all share `legend_position`: a `Show` of plots whose legends are
+  /// `Placed` differently draws each plot's entries at its own position.
+  pub legend_positions: Vec<LegendPosition>,
   /// The marker shape of an explicit `LineLegend` / `SwatchLegend` /
   /// `PointLegend` legend.
   pub legend_marker_kind: LegendMarkerKind,
@@ -4673,6 +4677,7 @@ impl Default for PlotOptions {
       plot_legends: Vec::new(),
       legend_series: Vec::new(),
       legend_position: LegendPosition::default(),
+      legend_positions: Vec::new(),
       legend_marker_kind: LegendMarkerKind::default(),
       legend_colors: Vec::new(),
       legend_automatic: false,
@@ -9264,6 +9269,7 @@ pub(crate) fn build_plot_source(
     settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
     legends: Vec::new(),
+    legend_positions: Vec::new(),
   }
 }
 
@@ -9304,6 +9310,22 @@ pub(crate) fn explicit_options(args: &[Expr]) -> Vec<Expr> {
       _ => None,
     })
     .collect()
+}
+
+/// The one style every curve of a single held function takes when that
+/// function yields several curves (`Plot[Table[…], …]`): the `PlotStyle`
+/// list combined as for a single series, in the first palette color unless
+/// the style names one.
+fn shared_style_for_one_function(styles: &[SeriesStyle]) -> Vec<SeriesStyle> {
+  let mut shared = collapse_style_for_single_series(styles)
+    .into_iter()
+    .next()
+    .unwrap_or_default();
+  if shared.color.is_none() {
+    let (r, g, b) = PLOT_COLORS_RGB[0];
+    shared.color = Some(WoxiColor::new(r, g, b));
+  }
+  vec![shared]
 }
 
 /// With a single series a `PlotStyle` list is one combined style, not a
@@ -9815,13 +9837,30 @@ fn merged_plot_source_options(
           .count(),
       )
     };
-    let (series, labels): (Vec<usize>, Vec<String>) = source
+    let kept: Vec<(usize, usize)> = source
       .legends
       .iter()
-      .filter_map(|(si, label)| Some((drawn_index(*si)?, label.clone())))
-      .unzip();
-    opts.plot_legends = labels;
-    opts.legend_series = series;
+      .enumerate()
+      .filter_map(|(entry, (si, _))| Some((entry, drawn_index(*si)?)))
+      .collect();
+    opts.plot_legends = kept
+      .iter()
+      .map(|(entry, _)| source.legends[*entry].1.clone())
+      .collect();
+    opts.legend_series = kept.iter().map(|(_, si)| *si).collect();
+    // Each plot's entries stay where that plot `Placed` them.
+    let positions: Vec<LegendPosition> = kept
+      .iter()
+      .filter_map(|(entry, _)| source.legend_positions.get(*entry).copied())
+      .collect();
+    if positions.len() == kept.len()
+      && let Some(first) = positions.first()
+    {
+      opts.legend_position = *first;
+      if positions.iter().any(|p| p != first) {
+        opts.legend_positions = positions;
+      }
+    }
   }
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
@@ -9959,6 +9998,18 @@ pub(crate) fn render_merged_plot_source(
   // The curves stop at the pinned range, leaving the padding empty.
   if padding.is_some() && pinned_y.is_some() {
     opts.curve_clip_y = pinned_y;
+  }
+  // The merged plot keeps the unpadded range of the plots shown (an axis
+  // `Show` pins with a `PlotRange` is unpadded as given), so its frame
+  // leaves out an axis lying on the end of that range, as each plot does
+  // on its own.
+  if opts.unpadded_range.is_none()
+    && let Some((ux, uy)) = source.plot_range
+  {
+    opts.unpadded_range = Some((
+      fill_range(overrides.x, source.x_range).unwrap_or(ux),
+      pinned_y.unwrap_or(uy),
+    ));
   }
 
   if drawn.iter().any(|s| !s.labels.is_empty()) {
@@ -13443,6 +13494,39 @@ fn inject_legend(
   if opts.plot_legends.is_empty() {
     return;
   }
+  // Entries placed at different positions form one legend per position.
+  if opts.legend_positions.len() == opts.plot_legends.len() {
+    let mut places: Vec<LegendPosition> = Vec::new();
+    for position in &opts.legend_positions {
+      if !places.contains(position) {
+        places.push(*position);
+      }
+    }
+    if places.len() > 1 {
+      for place in places {
+        let entries: Vec<usize> = (0..opts.plot_legends.len())
+          .filter(|i| opts.legend_positions[*i] == place)
+          .collect();
+        let mut group = opts.clone();
+        group.legend_position = place;
+        group.legend_positions = Vec::new();
+        group.plot_legends = entries
+          .iter()
+          .map(|i| opts.plot_legends[*i].clone())
+          .collect();
+        group.legend_series = entries
+          .iter()
+          .map(|i| opts.legend_series.get(*i).copied().unwrap_or(*i))
+          .collect();
+        group.legend_colors = entries
+          .iter()
+          .map(|i| opts.legend_colors.get(*i).copied().flatten())
+          .collect();
+        inject_legend(buf, &group, plot_area);
+      }
+      return;
+    }
+  }
 
   let sf = RESOLUTION_SCALE as f64;
   // Legend labels are black (the title color in dark mode), not the gray
@@ -14032,6 +14116,7 @@ pub(crate) fn histogram_plot_source(
     settles_all_range: false,
     aspect_ratio: None,
     legends: Vec::new(),
+    legend_positions: Vec::new(),
   })
 }
 
@@ -19441,6 +19526,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     body
   };
 
+  // A held body that is not written as a list is one function to `Plot`,
+  // even when it turns out to yield several curves (`Plot[Table[…], …]`,
+  // or a symbol assigned a list): all of its curves then share one style
+  // instead of cycling through the palette or the `PlotStyle` list. Writing
+  // `Evaluate[…]` around it is what gives each curve its own.
+  let body_is_one_function = !matches!(
+    peel_curve_wrappers(body, &mut CurveWrappers::default()),
+    Expr::List(_)
+  );
+
   let resolved_storage;
   let body: &Expr = if expr_mentions_var(body, &var_name) {
     body
@@ -19698,6 +19793,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_points.len() == 1 {
     plot_opts.plot_style =
       collapse_style_for_single_series(&plot_opts.plot_style);
+  } else if body_is_one_function {
+    plot_opts.plot_style = shared_style_for_one_function(&plot_opts.plot_style);
   }
 
   // The automatic y range clips outliers off the drawn curves — unless
