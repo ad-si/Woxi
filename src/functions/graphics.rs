@@ -31004,6 +31004,46 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           fill_prims.push(call1("Polygon", Expr::List(coords.into())));
         }
         let ref_y = level_ref_y.unwrap_or(0.0);
+        // With a `ColorFunction` and no explicit `FillingStyle` (unset or
+        // `Automatic`), the fill takes the curve's colors at full
+        // strength, as on the plot drawn alone (WL paints the fill
+        // polygons with opaque `VertexColors`).
+        let tinted = sd
+          .color_function
+          .as_ref()
+          .filter(|_| {
+            between.is_none() && fill.color.is_none() && fill.opacity.is_none()
+          })
+          .and_then(|c| {
+            let color_at = |p: (f64, f64)| {
+              crate::functions::plot::color_function_rgb(
+                &c.function,
+                c.scaling,
+                data_point(p),
+                c.ranges,
+              )
+              .map(|(r, g, b)| {
+                call(
+                  "RGBColor",
+                  vec![
+                    Expr::Real(f64::from(r) / 255.0),
+                    Expr::Real(f64::from(g) / 255.0),
+                    Expr::Real(f64::from(b) / 255.0),
+                  ],
+                )
+              })
+            };
+            segments
+              .iter()
+              .map(|seg| color_function_fill_polygons(seg, ref_y, &color_at))
+              .collect::<Option<Vec<Vec<Expr>>>>()
+          });
+        if let Some(polygons) = tinted {
+          let mut tinted_prims = vec![call1("Opacity", Expr::Real(1.0))];
+          tinted_prims.extend(polygons.into_iter().flatten());
+          fill_layer.push(Expr::List(tinted_prims.into()));
+          continue;
+        }
         for seg in &segments {
           if seg.len() < 2 {
             continue;
@@ -31202,6 +31242,61 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   }
   fill_layer.extend(series_prims);
   fill_layer
+}
+
+/// The area between the curve `seg` and the level `ref_y`, as polygons
+/// shaded through the colors `color_at` gives the curve's vertices: one
+/// piece per step of the curve, each colored down to the level like the
+/// curve above (or below) it. A step crossing the level is split there
+/// into its two triangles, and one ending on it is a single triangle. `None` when a vertex has no color.
+fn color_function_fill_polygons(
+  seg: &[(f64, f64)],
+  ref_y: f64,
+  color_at: &dyn Fn((f64, f64)) -> Option<Expr>,
+) -> Option<Vec<Expr>> {
+  let point =
+    |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let polygon = |corners: Vec<(f64, f64)>, colors: Vec<Expr>| {
+    call(
+      "Polygon",
+      vec![
+        Expr::List(corners.into_iter().map(point).collect::<Vec<_>>().into()),
+        rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
+      ],
+    )
+  };
+  let mut polygons = Vec::new();
+  for step in seg.windows(2) {
+    let (a, b) = (step[0], step[1]);
+    let (ca, cb) = (color_at(a)?, color_at(b)?);
+    if (a.1 - ref_y) * (b.1 - ref_y) < 0.0 {
+      let t = (ref_y - a.1) / (b.1 - a.1);
+      let crossing = (a.0 + t * (b.0 - a.0), ref_y);
+      let cc = color_at(crossing)?;
+      polygons.push(polygon(
+        vec![a, crossing, (a.0, ref_y)],
+        vec![ca.clone(), cc.clone(), ca],
+      ));
+      polygons.push(polygon(
+        vec![crossing, b, (b.0, ref_y)],
+        vec![cc, cb.clone(), cb],
+      ));
+    } else if a.1 == ref_y && b.1 == ref_y {
+      // A step along the level encloses nothing.
+    } else if a.1 == ref_y {
+      polygons
+        .push(polygon(vec![a, b, (b.0, ref_y)], vec![ca, cb.clone(), cb]));
+    } else if b.1 == ref_y {
+      polygons
+        .push(polygon(vec![a, b, (a.0, ref_y)], vec![ca.clone(), cb, ca]));
+    } else {
+      polygons.push(polygon(
+        vec![a, b, (b.0, ref_y), (a.0, ref_y)],
+        vec![ca.clone(), cb.clone(), cb, ca],
+      ));
+    }
+  }
+  Some(polygons)
 }
 
 /// Draw the `PlotMarkers` glyph `marker` at each finite point of `points`:
