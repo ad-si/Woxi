@@ -6815,6 +6815,7 @@ fn generate_svg_with_options(
   // An `ImagePadding` with automatic sides fixes the sides it gives; the
   // others keep the room the decorations need, so the padding is whole
   // from here on.
+  let partly_automatic = opts.image_padding_sides.is_some();
   let partly_padded;
   let opts = match (opts.image_padding_sides, &auto_padding) {
     (Some([left, right, bottom, top]), Some(auto)) => {
@@ -6896,8 +6897,17 @@ fn generate_svg_with_options(
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h =
         plot_w * ar + (pad_bottom + pad_top + title_room) * sf;
-      svg_height =
-        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+      // Automatic sides are fractions of a point: the height is rounded
+      // up to a whole point, as it is for a plot padded automatically all
+      // around, so the plotting area keeps the full width between the
+      // sides given.
+      let target_h = target_render_h / sf;
+      let whole_h = if partly_automatic {
+        (target_h - 1e-9).ceil()
+      } else {
+        target_h.round()
+      };
+      svg_height = (whole_h as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
     }
   }
