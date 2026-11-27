@@ -4061,6 +4061,17 @@ fn keep_fixed_pane_box(
   let syntax::Expr::Graphics { svg, .. } = &rendered else {
     return rendered;
   };
+  // A table wider than its pane wraps the text of its widest column, as
+  // far as that text gives way, rather than being cut off at the right.
+  let overflow = functions::graphics::parse_svg_wh(svg).0 - w;
+  if overflow > 0.5
+    && shrink == functions::graphics::PaneOverflow::Clip
+    && let Some(narrower) =
+      functions::graphics::grid_wrapped_to_pane_width(source, overflow)
+  {
+    remove_captured_graphics(svg);
+    return render_grid_if_needed(narrower);
+  }
   // The boxed picture replaces the bare table the cell would show.
   remove_captured_graphics(svg);
   graphics_result(functions::graphics::clip_svg_to_pane_box(

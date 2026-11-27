@@ -11092,6 +11092,61 @@ mod plot3d {
       assert!(svg.contains(",0,0)\""));
     }
 
+    /// A table wider than its fixed-size `Pane` wraps the text of its
+    /// widest column (plain strings and `Row`s of styled text alike)
+    /// instead of being cut off at the pane's right edge.
+    #[test]
+    fn pane_wraps_text_of_table_wider_than_pane() {
+      clear_state();
+      let pane = |width: i32| {
+        interpret(&format!(
+          "ExportString[Pane[Text@Grid[{{{{\"quantity\", \"amount\"}}, \
+           {{Row[{{Style[\"q\", Italic], \" transferred charge (C per mol)\"}}], 1.5}}, \
+           {{\"a long plain label that will not fit\", 2}}}}, Frame -> All], \
+           ImageSize -> {{{width}, 200}}], \"SVG\"]"
+        ))
+        .unwrap()
+      };
+      let narrow = pane(200);
+      assert!(narrow.contains("width=\"200\""), "{narrow}");
+      assert!(!narrow.contains("label that will not fit"), "{narrow}");
+      assert!(!narrow.contains("charge (C per mol)"), "{narrow}");
+      assert!(narrow.contains("mol)"), "{narrow}");
+      // A pane the table fits in leaves its lines whole.
+      let wide = pane(600);
+      assert!(
+        wide.contains("a long plain label that will not fit"),
+        "{wide}"
+      );
+      assert!(wide.contains("charge (C per mol)"), "{wide}");
+    }
+
+    /// A `ColorFunction` whose value is not a color (its body names the
+    /// plot variable, which the function's own parameters do not bind)
+    /// leaves the curve in its default palette color, at every sample,
+    /// instead of drawing it black.
+    #[test]
+    fn parametric_curve_keeps_default_color_for_non_color_function() {
+      clear_state();
+      let plot = "ParametricPlot3D[{Cos[t], Sin[t], Sin[3 t]}, {t, 0, 2 Pi}, \
+                  PlotStyle -> {Thick}, ColorFunctionScaling -> False, \
+                  ColorFunction -> Function[{x, y, z}, \
+                  ColorData[\"BlueGreenYellow\"][0.5 + 0.5 Sin[3 t]]]]";
+      let result = interpret(&format!(
+        "DeleteDuplicates[Cases[{plot}[[1]], _RGBColor, Infinity]] == \
+         DeleteDuplicates[Cases[ParametricPlot3D[{{Cos[t], Sin[t], Sin[3 t]}}, \
+         {{t, 0, 2 Pi}}][[1]], _RGBColor, Infinity]]"
+      ))
+      .unwrap();
+      assert_eq!(result, "True");
+      let result =
+        interpret(&format!("FreeQ[{plot}, _ColorDataFunction | _Sin]"))
+          .unwrap();
+      assert_eq!(result, "True");
+      let svg = interpret(&format!("ExportString[{plot}, \"SVG\"]")).unwrap();
+      assert!(!svg.contains("stroke=\"black\""), "{svg}");
+    }
+
     /// Regression: `ColorFunction` on a `ParametricPlot3D` curve was dropped,
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.

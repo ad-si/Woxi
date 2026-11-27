@@ -8363,6 +8363,26 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // A table wider than the pane, each cell of which fits, wraps the
+      // text of its widest column.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            let w = pane_size_component(&size[0])?;
+            let natural =
+              crate::functions::graphics::parse_svg_wh(&expr_to_svg(&args[0]))
+                .0;
+            (natural > w + 0.5)
+              .then(|| {
+                crate::functions::graphics::grid_wrapped_to_pane_width(
+                  &args[0],
+                  natural - w,
+                )
+              })
+              .flatten()
+          }
+          _ => None,
+        });
       // A grid wider than the pane squeezes its automatically sized
       // pictures to fit. Behind scrollbars the content keeps its own size.
       let squeeze_size = pane_size.as_ref().filter(|_| {

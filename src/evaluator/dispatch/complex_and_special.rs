@@ -4044,24 +4044,14 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
 /// these forms leave symbolic, so the caller renders the literal function call.
 fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   use crate::functions::string_ast;
-  // Default precision (n) for a missing second argument is 6 significant
-  // figures; an explicit integer second argument overrides it.
-  let precision = |arg: Option<&Expr>| -> Option<i64> {
-    match arg {
-      None => Some(6),
-      Some(Expr::Integer(n)) => Some(*n as i64),
-      _ => None,
-    }
-  };
   // Decompose a single numeric value into its (mantissa, exponent) parts for
   // the requested form. Shared by the scalar and list (threaded) paths.
   let parts_for = |val: &Expr| -> Option<(String, Option<i64>)> {
     Some(match name {
-      "ScientificForm" if args.len() == 1 || args.len() == 2 => {
-        string_ast::scientific_form_parts(val, precision(args.get(1))?)?
-      }
-      "EngineeringForm" if args.len() == 1 || args.len() == 2 => {
-        string_ast::engineering_form_parts(val, precision(args.get(1))?)?
+      "ScientificForm" | "EngineeringForm"
+        if args.len() == 1 || args.len() == 2 =>
+      {
+        string_ast::exponent_form_parts(name, val, args.get(1))?
       }
       "NumberForm" if args.len() == 1 => string_ast::number_form_parts(val, 6)?,
       "NumberForm" if args.len() == 2 => match &args[1] {
