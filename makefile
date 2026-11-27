@@ -8,6 +8,15 @@ else
 DEV_NULL = /dev/null
 endif
 
+# `cargo install` warns ("default toolchain implicitly overridden … by rustup
+# toolchain file") whenever rust-toolchain.toml picked the toolchain, because
+# for a registry crate that file has nothing to do with the crate being
+# installed. Naming the pinned channel explicitly (`cargo +stable install`)
+# states the intent and silences it. Where the file is absent (the Docker
+# image excludes it and pins its own release) plain `cargo install` is used.
+RUST_CHANNEL := $(shell sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml 2>$(DEV_NULL))
+CARGO_INSTALL := cargo $(if $(RUST_CHANNEL),+$(RUST_CHANNEL) )install
+
 .PHONY: help
 help: makefile
 	@tail -n +4 makefile | grep ".PHONY"
@@ -108,7 +117,7 @@ test-slow:
 .PHONY: test-cli
 test-cli: install-cli
 	@if ! command -v scrut &> /dev/null; \
-		then cargo install scrut; \
+		then $(CARGO_INSTALL) scrut; \
 		fi
 	scrut test tests/cli
 
@@ -116,7 +125,7 @@ test-cli: install-cli
 .PHONY: test-cli-wolframscript
 test-cli-wolframscript: install-cli
 	@if ! command -v scrut &> /dev/null; \
-		then cargo install scrut; \
+		then $(CARGO_INSTALL) scrut; \
 		fi
 	@# Lazily initialized wolframscript subsystems download their data on
 	@# first use and print a progress bar into the testcase's output, which
@@ -257,7 +266,7 @@ fuzz-corpus:
 .PHONY: fuzz-parse
 fuzz-parse: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
-		then cargo install cargo-fuzz; \
+		then $(CARGO_INSTALL) cargo-fuzz; \
 		fi
 	RUSTUP_TOOLCHAIN=nightly cargo fuzz run parse -- \
 		-dict=$(FUZZ_DICT) -timeout=10 -max_len=4096
@@ -265,7 +274,7 @@ fuzz-parse: fuzz-corpus
 .PHONY: fuzz-interpret
 fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
-		then cargo install cargo-fuzz; \
+		then $(CARGO_INSTALL) cargo-fuzz; \
 		fi
 	RUSTUP_TOOLCHAIN=nightly cargo fuzz run interpret -- \
 		-dict=$(FUZZ_DICT) -timeout=1200 -max_len=2048 -rss_limit_mb=8192
@@ -317,7 +326,7 @@ lint:
 
 .PHONY: install-cli
 install-cli:
-	cargo install --path .
+	$(CARGO_INSTALL) --path .
 
 
 .PHONY: install
@@ -329,7 +338,7 @@ install: install-cli
 
 .PHONY: install-debug
 install-debug:
-	cargo install --debug --path .
+	$(CARGO_INSTALL) --debug --path .
 
 
 # Build Woxi Studio and assemble it as a macOS .app bundle. The bundle's
@@ -385,7 +394,7 @@ XDG_DATA_HOME ?= $(HOME)/.local/share
 
 .PHONY: install-linux-desktop
 install-linux-desktop:
-	cargo install --path woxi-studio
+	$(CARGO_INSTALL) --path woxi-studio
 	install -Dm644 woxi-studio/linux/woxi-studio.desktop \
 		"$(XDG_DATA_HOME)/applications/woxi-studio.desktop"
 	install -Dm644 images/favicon.png \

@@ -6,6 +6,29 @@
     color, weight, size and background inside a `Framed` that sits in a
     typeset label (a `PlotLabel` written as a `Row`), and `Background` on a
     `Style` directly inside `Framed` or `Panel` is painted behind the text.
+- Graph drawing: a `"LinearEmbedding"` arc rises a quarter of its
+    endpoints' distance (its control point half of it, which the picture
+    makes room for) instead of half; `EdgeStyle -> {edge -> {d1, d2}}`
+    applies a list of directives to its edge instead of ignoring it; a
+    `VertexShape` picture is as large as `VertexSize` says; and two edges
+    leading away from one vertex are drawn as a tree with that root on top
+    instead of a horizontal path.
+- `Infix`, `Prefix` and `Postfix` print as the call in the script-mode
+    display and `Print`, like wolframscript, and are laid out only by
+    `ToString` (and in boxes). There an operand binding no tighter than
+    the wrapper's precedence is bracketed (`(a + b) ~f~ (c d)`,
+    `f@ (a!)`), `Infix[f[a, b]]` reads `a ~f~ b`, a bare list uses
+    `~List~`, a list of operators is shown between each pair, and a call
+    with fewer than two operands, a precedence that is not a machine
+    integer (`Infix::intm`) or an invalid grouping (`Infix::group`) keeps
+    its function form. In boxes the operands are bracketed by the
+    operator's own precedence (`a b + c` but `(a b)*c`), an operator the
+    FrontEnd does not know is a quoted string, and TraditionalForm boxes
+    read back as the wrapper too.
+- `ToBoxes[a . b]` is the infix row `a . b` (bracketed as a power base)
+    and a call with a compound head (`f[a][b]`, `(a + b)[c]`) boxes as a
+    row instead of a string. `Transpose[m, perm]` of something that is not
+    an array stays unevaluated without a `Transpose::tperm` message.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
@@ -132,10 +155,13 @@
     (`{{-25, 25}, {0, 0}, {-25, 25}}`) frames that axis by the contents and
     keeps the explicit intervals of the others; the whole range was
     dropped, so the scene filled its frame.
-- A one-argument `Transpose`, `ConjugateTranspose` and `Conjugate` that
-    stays unevaluated is typeset in StandardForm as a postfix superscript
-    mark (`mᵀ`, `m†`, `z*`, an operator operand bracketed) in `ToBoxes`,
-    notebook output and picture labels, instead of the spelled-out head.
+- An unevaluated `Transpose` and `ConjugateTranspose` is typeset as a
+    postfix superscript mark (`mᵀ`, `m†`, an operator operand bracketed)
+    through the FrontEnd's template, `TemplateBox[{m}, "Transpose",
+    SyntaxForm -> SuperscriptBox]` (`"Transpose2"` with a permutation), in
+    `ToBoxes`, notebook output and picture labels, instead of the
+    spelled-out head. `Conjugate` takes the `z*` template in
+    TraditionalForm only, like in Wolfram.
 - `ParametricPlot` applies a `ColorFunction` that declares four
     parameters (`Function[{x, y, u, v}, …]`) to a curve as well as a
     region; the curve was drawn black.
@@ -185,9 +211,9 @@
     first of a repeated option of the graphic (`Axes -> False`).
 - `Cases`, `Position`, `Count`, `Level`, `FreeQ` and `MemberQ` look inside a
     plot that is nested in another expression (`Cases[{plot}, _Line, Infinity]`,
-    `Cases[FullForm[plot], …]`) instead of treating it as an atom, and a
-    `ContourPlot` holds its `GraphicsComplex` as the graphic's first argument,
-    so `plot[[1, 1]]` is the point table.
+    `Cases[FullForm[plot], …]`) instead of treating it as an atom.
+- A `ContourPlot`'s first part is `{GraphicsComplex[…], {}}` like in
+    Wolfram, so `plot[[1, 1, 1]]` is the point table.
 - A `Cuboid` of zero thickness (`Cuboid[{0, 0, 0}, {4, 2, 0}]`, a common
     way to draw a ground plane) is filled instead of drawn as a bare
     outline. Under `FaceForm[front, back]` the outside of a `Cuboid` takes

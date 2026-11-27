@@ -4289,7 +4289,12 @@ mod interpreter_tests {
       "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(X\\), \\(3\\)]\\)\", {0, 0}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">X₃<"), "expected X₃ in SVG, got: {svg}");
+    // The one-letter symbol of the box code is a math variable, set in
+    // italics like the rest of a graphic's `TraditionalForm` text.
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">X</tspan>₃<"),
+      "expected X₃ in SVG, got: {svg}"
+    );
     assert!(
       !svg.contains("SubscriptBox"),
       "raw box source leaked into SVG: {svg}"
@@ -4301,7 +4306,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_super.contains(">x²<"),
+      svg_super.contains("<tspan font-style=\"italic\">x</tspan>²<"),
       "expected x² in SVG, got: {svg_super}"
     );
 
@@ -4313,7 +4318,7 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg_row.contains(">dX₆<"),
+      svg_row.contains(">d<tspan font-style=\"italic\">X</tspan>₆<"),
       "expected dX₆ in SVG, got: {svg_row}"
     );
   }
@@ -5504,6 +5509,45 @@ mod interpreter_tests {
       }
     }
     assert_eq!(icons, ["r", "s", "t"]);
+  }
+
+  #[test]
+  fn test_manipulate_stacked_script_captions_typeset_as_icons() {
+    // A caption whose inline boxes set a mark over (or under) a base that
+    // no combining accent draws — a long arrow over the two letters of a
+    // vector, a word under a symbol — is stacked, so it travels as caption
+    // code and renders an icon with no text runs. An accent with a
+    // combining form over a single letter, and a plain string, stay text.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{p, q, r, s, t}, \
+       {{p, False, \"draw \\!\\(\\*OverscriptBox[\\(PQ\\), \\(\\[LongRightArrow]\\)]\\)\"}, {True, False}}, \
+       {{q, 0, \"\\!\\(\\*UnderscriptBox[\\(m\\), \\(low\\)]\\)\"}, 0, 1}, \
+       {{r, 0, \"\\!\\(\\*OverscriptBox[\\(PQ\\), \\(^\\)]\\)\"}, 0, 1}, \
+       {{s, 0, \"\\!\\(\\*OverscriptBox[\\(u\\), \\(^\\)]\\) hat\"}, 0, 1}, \
+       {{t, 0, \"plain\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      let svg = svg.unwrap_or_else(|| panic!("no icon for {name}: {code}"));
+      assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+      assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+      icons.push(name.as_str());
+    }
+    assert_eq!(icons, ["p", "q", "r"]);
+    // The arrow is drawn above the base, not after it on the same line.
+    let (_, code) = &spec.dynamic_labels[0];
+    let (_, svg) =
+      woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+    let svg = svg.unwrap();
+    assert!(svg.contains("<path"), "the arrow is drawn: {svg}");
+    assert!(svg.contains(">PQ<"), "the base is its own text: {svg}");
+    assert!(!svg.contains("^("), "no spelled-out superscript: {svg}");
   }
 
   #[test]
