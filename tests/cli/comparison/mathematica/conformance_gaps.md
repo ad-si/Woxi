@@ -7345,6 +7345,14 @@ internal hash order. Woxi keeps input order.
   its own deterministic force layout. Its native Wolfram cube orientation
   is independent of `SeedRandom`; both systems use the same default
   `ViewPoint -> {1.3, -2.4, 2}`.
+- **Disconnected graphs under a named embedding**: `"RadialEmbedding"`
+  (`GraphPlot`'s `"RadialDrawing"`) and the spring embeddings lay out each
+  component on its own (a path along a horizontal line, drawn from the
+  right) and stack the padded bounding boxes in left-aligned columns. WL
+  bends the paths of a spring embedding slightly and may put two short
+  components side by side below a wide one. `"LinearEmbedding"` and
+  `"CircularEmbedding"` still put all vertices on one line or circle, where
+  WL's `GraphPlot` draws one line or circle per component.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
