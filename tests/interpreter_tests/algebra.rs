@@ -26547,14 +26547,17 @@ mod solve_substitution_of_symbols {
       .unwrap(),
       "1"
     );
-    // No real solution: complex angles, none over the reals.
+    // No real solution: complex angles, none over the reals. Rounded at
+    // 10^2, where no component sits on a half (`Cos[x]` is 1.84375 and
+    // `Cos[y]` is -1.4375, so 10^4 would round a tie that the last bit of
+    // the platform's arithmetic decides).
     assert_eq!(
       interpret(
-        "Union[Round[10^4 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
+        "Union[Round[10^2 {Cos[x], Sin[x], Cos[y], Sin[y]} /. \
          NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]]"
       )
       .unwrap(),
-      "{{18437, -15490*I, -14375, -10327*I}, {18437, 15490*I, -14375, 10327*I}}"
+      "{{184, -155*I, -144, -103*I}, {184, 155*I, -144, 103*I}}"
     );
     let count = interpret(
       "Length[NSolve[{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, \
