@@ -12,11 +12,12 @@ $ wo 'Head[ContourPlot[Sin[x] Sin[y], {x, -3, 3}, {y, -3, 3}, Contours -> {-0.5,
 Graphics
 ```
 
-The contours live in a `GraphicsComplex`, the first part of the result:
+The contours live in a `GraphicsComplex`, the first element of the
+primitive list that is the first part of the result:
 
 ```scrut
-$ wo 'Head[First[ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]]]'
-GraphicsComplex
+$ wo 'Head /@ First[ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]]'
+{GraphicsComplex, List}
 ```
 
 ### Options
