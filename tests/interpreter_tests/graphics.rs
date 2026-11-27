@@ -73319,6 +73319,59 @@ mod plot_content_regressions {
     );
   }
 
+  /// A jump much smaller than the change of a steep branch beside it is
+  /// still found: the boundaries the conditions name are tested directly
+  /// instead of relying on the bisection, which follows the larger change.
+  #[test]
+  fn small_conditional_jumps_beside_steep_branches_are_excluded() {
+    let pieces = |code: &str| {
+      clear_state();
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 4/5 - 4 (x - 1)], {x, -8, 16}]"),
+      2
+    );
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}]"),
+      2
+    );
+    // Chained conditions behind a user function, one jump of the two small.
+    assert_eq!(
+      pieces(
+        "ramp[x_] := If[-5 <= x <= 1, 2 - x, If[1 < x <= 3, 9/10 - 4 (x - 1), 0]]; \
+         Plot[ramp[x], {x, -5, 5}]"
+      ),
+      3
+    );
+    assert_eq!(
+      pieces(
+        "Plot[Piecewise[{{2 - x, x <= 1}, {9/10 - 4 (x - 1), x > 1}}], {x, -5, 5}]"
+      ),
+      2
+    );
+    // A boundary the curve is continuous at, or outside the domain, adds
+    // no break; neither does `Exclusions -> None`.
+    assert_eq!(
+      pieces("Plot[If[x <= 1, 2 - x, 1 - 4 (x - 1)], {x, -5, 5}]"),
+      1
+    );
+    assert_eq!(
+      pieces("Plot[If[x <= 7, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}]"),
+      1
+    );
+    assert_eq!(
+      pieces(
+        "Plot[If[x <= 1, 2 - x, 9/10 - 4 (x - 1)], {x, -5, 5}, \
+         Exclusions -> None]"
+      ),
+      1
+    );
+  }
+
   /// A conditional whose branches run through an `InterpolatingFunction`
   /// (an NDSolve solution) is drawn joined across its jumps, as Wolfram's
   /// symbolic jump detection gives up on it; a plain conditional plotted
