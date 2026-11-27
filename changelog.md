@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `FlipView[{e1, e2, …}, i]` shows the element it is flipped to in Woxi
+    Studio and the Playground instead of its source text, and a click on it
+    in Woxi Studio flips to the next element, on its own or inside a
+    `Manipulate` body.
+- A `Manipulate` control-panel `Column` or `Row` of captions and
+    `ActionMenu`s lays the menus out live instead of quoting their source
+    as a heading.
 - An exponent that holds a stacked fraction (`TraditionalForm[Exp[-(t/c)^m]]`)
     is raised clear of its base's baseline instead of hanging below the
     line, and a `Row` sets such a formula on the line of the text beside

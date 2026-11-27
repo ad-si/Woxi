@@ -5533,6 +5533,7 @@ fn render_inline_display_wrapper_impl(expr: &syntax::Expr) -> syntax::Expr {
     render_dynamic_if_needed(expr)
   };
   let expr = render_event_handler_if_needed(expr);
+  let expr = render_flip_view_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
   let expr = render_tabular_if_needed(expr);
@@ -5638,6 +5639,26 @@ pub(crate) fn render_event_handler_if_needed(
           functions::graphics::with_mouse_events_marker(svg.clone(), &events),
         ),
         _ => rendered,
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// In visual (notebook) display mode, `FlipView[{e1, e2, …}, i]` displays
+/// the element it is flipped to, drawn like any other result. A view whose
+/// index is a `Dynamic[i]` carries the click region that flips it on (see
+/// `functions::graphics::flip_view_shown`). Script/CLI mode keeps the
+/// symbolic `FlipView[…]` echo to match wolframscript.
+fn render_flip_view_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if !is_visual_mode() {
+    return expr;
+  }
+  match &expr {
+    syntax::Expr::FunctionCall { name, args } if name == "FlipView" => {
+      match functions::graphics::flip_view_shown(args) {
+        Some(shown) => render_visual_display_pipeline(&shown),
+        None => expr,
       }
     }
     _ => expr,
@@ -5819,6 +5840,7 @@ fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_labeled_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
   let expr = render_event_handler_if_needed(expr);
+  let expr = render_flip_view_if_needed(expr);
   let expr = render_graphics_fc_if_needed(expr);
   let expr = render_color_if_needed(expr);
   let expr = render_tableform_if_needed(expr);

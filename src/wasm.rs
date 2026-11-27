@@ -409,6 +409,7 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
     .or_else(|| g::extract_control_spec(&expr))
     .or_else(|| g::extract_list_animate_spec(&expr))
     .or_else(|| g::extract_slide_view_spec(&expr))
+    .or_else(|| g::extract_flip_view_spec(&expr))
     .or_else(|| g::extract_animator_spec(&expr))
     .or_else(|| g::extract_locator_pane_spec(&expr))
     .or_else(|| g::extract_click_pane_spec(&expr))?;
