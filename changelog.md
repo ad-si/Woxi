@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Style[expr, {Red, Bold, …}]` and `Style[expr, Directive[…]]` keep their
+    color, weight, size and background inside a `Framed` that sits in a
+    typeset label (a `PlotLabel` written as a `Row`), and `Background` on a
+    `Style` directly inside `Framed` or `Panel` is painted behind the text.
 - Graph drawing: a `"LinearEmbedding"` arc rises a quarter of its
     endpoints' distance (its control point half of it, which the picture
     makes room for) instead of half; `EdgeStyle -> {edge -> {d1, d2}}`

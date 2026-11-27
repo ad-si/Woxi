@@ -23179,8 +23179,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
         // internally; recognize it here the same way rather than requiring
-        // callers to normalize every directive to `Rule` form first.
-        for opt in &args[1..] {
+        // callers to normalize every directive to `Rule` form first. A list
+        // (or `Directive`) of directives — `Style[expr, {Red, Bold}]` — is
+        // the same as its members written out one by one.
+        for opt in splice_directives(&args[1..]) {
           let (key, val) = match opt {
             Expr::Rule {
               pattern,
@@ -46893,9 +46895,21 @@ fn framed_box_to_svg(
       );
     // A `FontFamily` (or a named style's face) sets the text atoms in that
     // family, measured with its own glyph advances.
-    let layout = with_box_font_family(style.font_family.as_deref(), || {
+    let mut layout = with_box_font_family(style.font_family.as_deref(), || {
       layout_box(&crate::strip_number_precision_markers(&boxes), size)
     });
+    // `Background -> color` on the `Style` paints the text's own box, inside
+    // the frame's margins.
+    if let Some(bg) = style.background {
+      layout.elements = format!(
+        "<rect x=\"0\" y=\"0\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{} stroke=\"none\"/>{}",
+        layout.width,
+        layout.height,
+        bg.to_svg_rgb(),
+        bg.opacity_attr(),
+        layout.elements,
+      );
+    }
     let fill = style
       .color
       .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
