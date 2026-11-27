@@ -24311,6 +24311,31 @@ mod parametric_ndsolve {
   }
 }
 
+mod sums_over_interpolation_data {
+  use super::*;
+
+  /// A term carrying an `InterpolatingFunction`'s table is grouped by its
+  /// structure, not by its printed form — and when it is the only such
+  /// term of a sum it is not keyed at all. Like terms still collect, and
+  /// the sum still evaluates once its variable is given.
+  #[test]
+  fn terms_holding_a_solution_collect_and_evaluate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = y /. First[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 2}]]; \
+         g = f[t]; \
+         {g + g === 2 g, g - g, Head[0.3 - g], Head[g + 2 f[u]], \
+          Length[g + 2 f[u] + g], \
+          Round[1000 ((0.3 - g + 2 g) /. t -> 1.)], \
+          Round[1000 ((1 - g)^2 /. t -> 0.5)]}"
+      )
+      .unwrap(),
+      "{True, 0, Plus, Plus, 2, 668, 155}"
+    );
+  }
+}
+
 mod integrate_polynomial_over_sqrt_quadratic {
   use super::*;
 

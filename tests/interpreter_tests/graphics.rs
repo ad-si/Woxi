@@ -32374,8 +32374,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         ));
         label_item_x(&svg, "a") - label_item_x(&svg, "wwwwww")
       };
-      let (left, center, right) =
-        (offset(""), offset(", Center"), offset(", Alignment -> Right"));
+      let (left, center, right) = (
+        offset(""),
+        offset(", Center"),
+        offset(", Alignment -> Right"),
+      );
       assert_eq!(left, 0.0);
       assert!(center > 1.0, "centered item not moved in: {center}");
       assert!(
