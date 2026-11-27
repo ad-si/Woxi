@@ -3554,23 +3554,35 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       }
       // Log[base, z] of a machine-complex z (the elements of a complex
-      // matrix) with a positive machine-size base: `Log[z]` times the
-      // machine reciprocal of `Log[base]`, as the canonical quotient below
-      // evaluates, without building it.
-      if let Some(base) = match &args[0] {
-        Expr::Real(b) if *b > 0.0 && *b != 1.0 && b.is_finite() => Some(*b),
-        Expr::Integer(n) if *n >= 2 && *n < (1i128 << 53) => Some(*n as f64),
-        _ => None,
-      } && let Some((x, y)) =
-        crate::functions::math_ast::machine_complex_shape(&args[1])
+      // matrix) with a positive integer or machine base, or a machine-complex
+      // base: Wolfram's primitive divides the two complex logarithms by the
+      // textbook formula `(a + b I)/(c + d I) = ((a c + b d) + (b c - a d) I)
+      // /(c^2 + d^2)`, without the reciprocal the canonical quotient below
+      // multiplies by, so the last digit differs from `Log[z]/Log[base]`
+      // (`Log[2, 1. + 2. I]` ends in ...088, the quotient in ...086).
+      let base_log = match &args[0] {
+        Expr::Real(b) if *b > 0.0 && *b != 1.0 && b.is_finite() => {
+          Some((b.ln(), 0.0))
+        }
+        Expr::Integer(n) if *n >= 2 && *n < (1i128 << 53) => {
+          Some(((*n as f64).ln(), 0.0))
+        }
+        other => crate::functions::math_ast::machine_complex_shape(other)
+          .filter(|(c, d)| c.is_finite() && d.is_finite() && *d != 0.0)
+          .map(|(c, d)| (c.hypot(d).ln(), d.atan2(c))),
+      };
+      if let Some((c, d)) = base_log
+        && let Some((x, y)) =
+          crate::functions::math_ast::machine_complex_shape(&args[1])
         && x.is_finite()
         && y.is_finite()
         && !(y == 0.0 && y.is_sign_negative())
       {
-        let reciprocal = 1.0 / base.ln();
-        let re = x.hypot(y).ln() * reciprocal;
-        let im = y.atan2(x) * reciprocal;
-        if re != 0.0 && re.is_finite() && reciprocal.is_finite() {
+        let (a, b) = (x.hypot(y).ln(), y.atan2(x));
+        let norm = c * c + d * d;
+        let re = (a * c + b * d) / norm;
+        let im = (b * c - a * d) / norm;
+        if re != 0.0 && re.is_finite() && im.is_finite() {
           return Ok(crate::functions::math_ast::machine_complex_result(
             re, im,
           ));

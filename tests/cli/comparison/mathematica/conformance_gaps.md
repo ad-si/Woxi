@@ -2228,11 +2228,53 @@ woxi eval 'NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]'
 ```
 
 Woxi lists the principal angles of every solution, descending by the first
-unknown. The published snapshots of a Demonstration show that Wolfram also
-returns a finite list of numbers here, but with some angles shifted by a
-multiple of 2 Pi (`x -> -7.979…` for the second solution above); which
-period it picks and the complete order of the list have **not been
-verified**.
+unknown. wolframscript 15.0 lists a sample of period-shifted instances of
+its own choosing instead, 16 for the system above:
+
+```sh
+wolframscript -code 'Round[10^4 {x, y} /. NSolve[{Cos[x] == 1 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}, {x, y}]]'
+# {{-45871, -38643}, {-79793, -24189}, {16961, -38643}, {-79793, 38643}, {79793, -38643}, {-79793, 101475}, … 16 in all}
+```
+
+With `S1 = (1.696, 2.419)` and `S2 = -S1` the principal solutions, the list
+alternates `S1 + 2 Pi (c, -1)` for `c = -1, …, 6` with `S2 + 2 Pi (-1, c)`
+for `c = 0, …, 7`. No rule that covers other systems was found:
+
+- `{Cos[x] + Cos[y] == z, Sin[x] == Sin[y], z == 1}` alternates
+  `T1 + 2 Pi (-k, k)` with `T2 + 2 Pi (-k - 1, k)` for `k = 0, …, 7`.
+- `{Cos[x] == 4 + 1.5 Cos[y], Sin[x] == 1.5 Sin[y]}` (complex angles)
+  alternates `U1 + 2 Pi (k, k)` with `U2 + 2 Pi (k, k)`.
+- Independent equations multiply: `{Cos[x] == 1/2, Sin[y] == 1/2}` gives
+  16 x 16 = 256 solutions.
+- A double solution is listed once, without shifted copies
+  (`{Cos[x] == 5/2 + 3/2 Cos[y], Sin[x] == 3/2 Sin[y]}` gives the single
+  `{x -> 0., y -> -Pi}`; Woxi gives `y -> Pi`).
+- With the domain `Reals` the first system gives 80 solutions.
+- A system that is not polynomial in the cosines and sines
+  (`{x + Cos[x] == Cos[y], Sin[x] == Sin[y]}`) stays unevaluated in Woxi;
+  wolframscript returns 16 of its infinitely many complex solutions (and
+  misses the real one at `x = -1.0299`).
+
+The unit tests compare the cosines and sines of the angles found, which
+both systems agree on.
+
+### `NSolve` of one periodic equation: 16 instances instead of a parametrization
+
+```sh
+wolframscript -code 'NSolve[Sin[x] == 0.3, x]'
+# {{x -> 0.304693}, {x -> 2.8369}, {x -> -3.44629}, {x -> 6.58788}, {x -> -5.97849}, … 16 in all}
+woxi eval 'NSolve[Sin[x] == 0.3, x]'
+# {{x -> ConditionalExpression[0.304… + 6.283… C[1], Element[C[1], Integers]]}, {x -> ConditionalExpression[2.836… + 6.283… C[1], …]}}
+```
+
+wolframscript 15.0 no longer answers with `N[Solve[…]]` here. For a real
+sine it lists `(-1)^n t + n Pi` (`t` the principal solution) for
+`n = 0, 1, -1, 2, -2, …, 8`; a cosine equation lists `Pi/2` minus those of
+the matching sine; `Sin[x] == 2` lists `Pi/2 - 2 Pi k + 1.317 I` for
+`k = 0, …, 15` (one of the two branches only); `Exp[x] == 2` lists
+`Log[2] + 2 Pi I k` for `k = 0, …, 15`; a double root (`Sin[x] == 1`) is
+listed once; and `Tan[x] == 2` still gives the `ConditionalExpression`.
+Woxi keeps the parametrized form for all of them.
 
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
@@ -7347,12 +7389,26 @@ internal hash order. Woxi keeps input order.
   `ViewPoint -> {1.3, -2.4, 2}`.
 - **Disconnected graphs under a named embedding**: `"RadialEmbedding"`
   (`GraphPlot`'s `"RadialDrawing"`) and the spring embeddings lay out each
-  component on its own (a path along a horizontal line, drawn from the
-  right) and stack the padded bounding boxes in left-aligned columns. WL
-  bends the paths of a spring embedding slightly and may put two short
-  components side by side below a wide one. `"LinearEmbedding"` and
+  component on its own and stack the padded bounding boxes in left-aligned
+  columns, from the origin downward. For the radial embedding the
+  coordinates match wolframscript on trees (paths from the end that comes
+  first, a single edge from the right, the largest component on top;
+  `GraphPlot` reports the same coordinates as `GraphEmbedding`). For the
+  spring embeddings they do not: WL bends the paths slightly, starts them
+  at either end, orders the components differently (an edge above a
+  three-vertex path, a four-vertex path above both) and may put two short
+  components side by side below a wide one; Woxi draws straight paths from
+  the right, the largest component on top. `"LinearEmbedding"` and
   `"CircularEmbedding"` still put all vertices on one line or circle, where
   WL's `GraphPlot` draws one line or circle per component.
+- **Root of a radial embedding with several centers**: a radial drawing is
+  scaled so the root mean square of its edge lengths is 1 (verified on
+  trees, a triangle and graphs with cycles). Its root is the graph's
+  center; when several vertices have the smallest eccentricity Woxi takes
+  the first, while WL takes vertex 2 for the cycle
+  `{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}` (also with a pendant `1 -> 5`) but
+  vertex 1 for the triangle. The rule is **not decoded**, so such drawings
+  can come out mirrored or rooted elsewhere.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
@@ -8671,17 +8727,34 @@ give `PolyhedronData::notent`, so notebooks that offer them in a menu
 
 `Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are compared
 against wolframscript below. `Method -> "ShenCastan"` (also of
-`GradientFilter`) and a non-zero `"StraightEdges"` are computed but have not
-been compared against wolframscript, whose kernels and line selection are
-not documented:
+`GradientFilter`) is compared too: the kernel is `ShenCastanMatrix`'s, the
+two-sided exponential `Erfc[Sqrt[2]]^(Abs[k]/r)` cut off at `Round[r]` (as
+every gradient method, `GaussianFilter` and `Blur` cut theirs), with a
+derivative scaled so a unit ramp has slope 1. What still differs:
 
-- `"ShenCastan"` takes the gradient of the two-sided exponential
-  `Exp[-Abs[k]/(r/2)]` cut off at `Ceiling[r]`, scaled so a unit ramp has
-  slope 1, and thins it as the other methods do.
+- **Ties on an ideal step.** Both pixels next to a step between two flat
+  areas respond alike, and Woxi keeps both. wolframscript's response
+  carries rounding noise (about 1e-8 times the intensity, visible in
+  `ImageData[GradientFilter[…]]` of a constant area), which decides the
+  tie: for a range of 2 it keeps only the pixel on the bright side, for 1
+  both, for 3 one or both depending on the method and on whether the edge
+  runs along rows or columns.
+
+  ```sh
+  wolframscript -code 'ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], 2, .1]][[3]]'
+  # {0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}
+  woxi eval 'ImageData[EdgeDetect[Image[Table[If[x > 6, 1., 0.], {y, 5}, {x, 12}]], 2, .1]][[3]]'
+  # {0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0}
+  ```
 - `"StraightEdges" -> s` votes each edge pixel into a Hough accumulator
   (one degree by one pixel) along its own edge direction and keeps the
   pixels on lines with at least the fraction `s` of the strongest line's
-  votes.
+  votes. The ends agree with wolframscript (0 keeps everything, 1 the
+  strongest line, numbers outside 0 to 1 count as the nearer end), but the
+  selection in between is Woxi's own: on a 40 x 40 disk-and-half-plane
+  image `s = 0.2` keeps 108 pixels in wolframscript and 80 in Woxi.
+  (`"StraightEdges" -> Automatic` crashes the wolframscript 15.0 kernel on
+  that image.)
 
 With an explicit threshold `t` the result matches wolframscript pixel for
 pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
@@ -11406,17 +11479,19 @@ wolframscript.
 `FiniteGroupData[{"CrystallographicPointGroup", n}, property]` answers
 `"Name"`, `"StandardName"`, `"Order"`, `"Elements"`, `"CrystalSystem"`,
 `"CrystalForm"`, `"PointGroupType"`, `"MultiplicationTable"` and
-`"CayleyGraph"`; every other group and property stays unevaluated.
-Unlike the other entries here, parts of this one could **not be checked
-against wolframscript** (none was available) and rest on the reference page
-and on a rendered D6h table:
+`"CayleyGraph"`; every other group and property stays unevaluated
+(`FiniteGroupData[]` lists 399 groups in wolframscript, and
+`FiniteGroupData["Properties"]` 82 properties, which Woxi lists too).
+Checked against wolframscript 15.0 for all 32 groups: `"Name"`,
+`"StandardName"`, `"Order"`, `"CrystalSystem"`, `"CrystalForm"` and
+`"PointGroupType"` agree. What differs:
 
-- `"MultiplicationTable"` matches Wolfram's for D6h (group 27). The other
-  tables follow the same layout (rotations, then the reflected coset, then
-  both times the inversion; lexicographic permutations of four points for
-  T and O), which gives a valid table of the right group but possibly with
-  the elements in a different order than Wolfram's.
-- `"CayleyGraph"` uses Woxi's own choice of generators and vertex layout.
+- `"MultiplicationTable"` agrees for 25 of the 32 groups. For S6 (17),
+  D3d (20) and the five cubic groups (28 to 32) Woxi's table is a valid
+  table of the right group with the elements in a different order than
+  Wolfram's.
+- `"CayleyGraph"` uses Woxi's own choice of generators and vertex layout
+  (not compared).
 - `"ElementNames"` is `Missing["NotAvailable"]`; Wolfram names the symmetry
   operations.
 - The typeset notations (`"Notation"`, `"Schoenflies"`, `"HermannMauguin"`,
@@ -11475,3 +11550,33 @@ wolframscript 15.0. The affected unit tests are in `EXACT_EXPR_SKIP`, or in
   GraphicsComplex vs list wrappers, option lists, `BarLegend` structure,
   sampling counts, and where directives sit (see the existing plot-internals
   notes above).
+
+
+## Unit-test conformance batch (2026-11-27)
+
+Divergences that surfaced in a `make test-unit-wolframscript` run against
+wolframscript 15.0 and were left open. The unit tests assert what both
+systems agree on. (The `NSolve`, `EdgeDetect`, `FiniteGroupData` and
+radial-embedding items of that run are recorded in their own sections
+above.)
+
+- **`InverseZTransform` with machine coefficients**: wolframscript writes
+  the result as the exact one with its numbers made inexact,
+  `15.*(-1.)^m*4.^(-1. - 1.*m)*(1. - 1.*UnitStep[-1.*m]) - 0.25*UnitStep[-1.*m]`
+  for `InverseZTransform[-(0.25 + 1/z)/(1 + 0.25/z), z, m]`, where Woxi
+  gives `3.75*(-0.25)^m - 4.*DiscreteDelta[m]`. The values agree for
+  `m >= 0`; for negative `m` wolframscript's form gives `-0.25`, Woxi's 0.
+- **`ParametricNDSolve` evaluates a parameter-dependent coefficient once
+  per solve**; wolframscript evaluates it at every step (74 calls where
+  Woxi makes 1), which only a coefficient with side effects can tell.
+- **Order of the pieces of a colored fill**: `Filling` under a
+  `ColorFunction` curve is cut into one polygon per step (two triangles
+  where a step crosses the level), with the corners in wolframscript's
+  order and its triangles listed before its quadrilaterals. Within each
+  kind Woxi follows the curve; wolframscript's order is its own
+  (`ListLinePlot[{3, 1, -2, 4}, …, Filling -> Axis]` lists the triangle
+  right of each crossing before the one left of it, and
+  `{{0, 4}, {1, -1}, {3, 2}, {4, -6}, {6, -1}, {7, 5}}` with
+  `Filling -> Top` lists the first quadrilateral last). wolframscript also
+  keeps the fill in a `GraphicsComplex` with the colors as the color
+  function returns them (`Hue[1.]`), where Woxi stores `RGBColor`s.

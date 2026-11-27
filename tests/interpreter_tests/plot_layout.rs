@@ -2166,3 +2166,44 @@ mod explicit_axis_ticks {
     assert_eq!(title(&format!("Style[Text[{label}], Red]")), upright);
   }
 }
+
+/// `Defer[expr]` in a label is typeset as `expr` alone, like `HoldForm`:
+/// the wrapper only keeps the content unevaluated and is never drawn.
+mod defer_labels {
+  use super::svg_of;
+
+  #[test]
+  fn axes_labels_drop_the_defer_wrapper() {
+    let svg =
+      svg_of("Plot[t^2, {t, 0, 1}, AxesLabel -> {Defer[u], Defer[w^2]}]");
+    assert!(!svg.contains("Defer"), "Defer wrapper was drawn");
+    assert!(svg.contains(">u</text>"), "missing the x axis label");
+    assert!(svg.contains(">w²</text>"), "missing the y axis label");
+  }
+
+  #[test]
+  fn deferred_label_matches_the_held_one() {
+    for body in ["u", "1 + 1", "a/b", "v = w + 2", "Sin[q]^2"] {
+      let deferred = svg_of(&format!(
+        "Plot[t, {{t, 0, 1}}, Frame -> True, PlotLabel -> Defer[{body}], \
+         FrameLabel -> {{Defer[{body}], Defer[{body}]}}]"
+      ));
+      let held = svg_of(&format!(
+        "Plot[t, {{t, 0, 1}}, Frame -> True, PlotLabel -> HoldForm[{body}], \
+         FrameLabel -> {{HoldForm[{body}], HoldForm[{body}]}}]"
+      ));
+      assert_eq!(deferred, held, "label {body}");
+    }
+  }
+
+  #[test]
+  fn graphics_text_drops_the_defer_wrapper() {
+    for body in ["u + 1", "2 + 2", "v = w + 2"] {
+      let deferred =
+        svg_of(&format!("Graphics[Text[Defer[{body}], {{0, 0}}]]"));
+      let held = svg_of(&format!("Graphics[Text[HoldForm[{body}], {{0, 0}}]]"));
+      assert!(!deferred.contains("Defer"), "Defer wrapper was drawn");
+      assert_eq!(deferred, held, "text {body}");
+    }
+  }
+}

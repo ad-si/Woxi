@@ -4761,8 +4761,10 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     straight_edges = match replacement.as_ref() {
       Expr::Identifier(a) if a == "Automatic" => 0.0,
+      // Any number is a fraction: one outside 0 to 1 counts as the
+      // nearer end.
       other => match crate::functions::math_ast::try_eval_to_f64(other) {
-        Some(v) if (0.0..=1.0).contains(&v) => v,
+        Some(v) if !v.is_nan() => v.clamp(0.0, 1.0),
         _ => return Ok(unevaluated("EdgeDetect", all_args)),
       },
     };
@@ -6858,13 +6860,15 @@ pub fn gradient_filter_ast(
 
   // Image input (and any other radius spec): use the Bessel-based
   // discrete-Gaussian gradient. Parse radius / sigma.
-  let (radius, sigma) = match &args[1] {
-    Expr::Integer(n) if *n >= 1 => (*n as usize, (*n as f64) / 2.0),
-    Expr::Real(f) if *f >= 1.0 => (f.floor() as usize, *f / 2.0),
+  // The range `r` reaches `Round[r]` pixels (halves upward), with a scale
+  // of `r/2` unless one is given.
+  let (range, sigma) = match &args[1] {
+    Expr::Integer(n) if *n >= 1 => (*n as f64, (*n as f64) / 2.0),
+    Expr::Real(f) if *f > 0.0 && f.is_finite() => (*f, *f / 2.0),
     Expr::List(items) if items.len() == 2 => {
-      let r_int = match &items[0] {
-        Expr::Integer(n) if *n >= 1 => *n as usize,
-        Expr::Real(f) if *f >= 1.0 => f.floor() as usize,
+      let range = match &items[0] {
+        Expr::Integer(n) if *n >= 1 => *n as f64,
+        Expr::Real(f) if *f > 0.0 && f.is_finite() => *f,
         _ => return Ok(unevaluated()),
       };
       let sigma = match &items[1] {
@@ -6872,7 +6876,7 @@ pub fn gradient_filter_ast(
         Expr::Real(f) if *f > 0.0 => *f,
         _ => return Ok(unevaluated()),
       };
-      (r_int, sigma)
+      (range, sigma)
     }
     _ => return Ok(unevaluated()),
   };
@@ -6905,22 +6909,7 @@ pub fn gradient_filter_ast(
     let mut out: Vec<f64> = vec![0.0; data.len()];
     for c_idx in 0..ch {
       let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
-      let kernels = match method {
-        GradientMethod::Sobel => {
-          // The Sobel kernel's half-width is the radius rounded up.
-          let r = match &args[1] {
-            Expr::Real(f) => f.ceil() as usize,
-            _ => radius,
-          };
-          GradientKernels::sobel(r)
-        }
-        GradientMethod::ShenCastan => {
-          GradientKernels::shen_castan(GaussianAxis { radius, sigma })
-        }
-        GradientMethod::Gaussian => {
-          GradientKernels::gaussian(GaussianAxis { radius, sigma })
-        }
-      };
+      let kernels = GradientKernels::for_range(method, range, sigma);
       let (dx, dy) = plane_gradient(&plane, w, h, &kernels, &kernels);
       for i in 0..w * h {
         out[i * ch + c_idx] = dx[i].hypot(dy[i]);
@@ -7035,37 +7024,52 @@ struct GradientKernels {
 }
 
 impl GradientKernels {
-  /// The kernels of `method` for a range of `radius` pixels: a half-width
-  /// of `Ceiling[radius]` and, where the method has one, a scale of
-  /// `radius/2`.
+  /// The kernels of `method` for a range of `radius` pixels, with the scale
+  /// `radius/2` where the method has one.
   fn for_radius(method: GradientMethod, radius: f64) -> Self {
+    Self::for_range(method, radius, radius / 2.0)
+  }
+
+  /// The kernels of `method` reaching `Round[range]` pixels (a half rounds
+  /// up, so a range below 1/2 leaves no gradient at all), with the scale
+  /// `sigma` where the method has one.
+  fn for_range(method: GradientMethod, range: f64, sigma: f64) -> Self {
+    let half_width = kernel_half_width(range);
+    if half_width == 0 {
+      return GradientKernels {
+        smooth: vec![1.0],
+        derivative: vec![0.0],
+      };
+    }
     match method {
-      GradientMethod::Sobel => Self::sobel(radius.ceil().max(1.0) as usize),
-      GradientMethod::ShenCastan => {
-        Self::shen_castan(gaussian_axis_from_radius(radius))
-      }
-      GradientMethod::Gaussian => {
-        Self::gaussian(gaussian_axis_from_radius(radius))
-      }
+      GradientMethod::Sobel => Self::sobel(half_width),
+      GradientMethod::ShenCastan => Self::shen_castan(half_width, range, sigma),
+      GradientMethod::Gaussian => Self::gaussian(GaussianAxis {
+        radius: half_width,
+        sigma,
+      }),
     }
   }
 
-  /// `Method -> "ShenCastan"`: the two-sided exponential
-  /// `Exp[-Abs[k]/sigma]` cut off at the half-width, and its derivative
-  /// `-Sign[k] Exp[-Abs[k]/sigma]`. The first sums to 1; the second is
-  /// scaled so a unit ramp has slope 1.
-  fn shen_castan(axis: GaussianAxis) -> Self {
-    let radius = axis.radius as i64;
-    let weight = |k: i64| {
-      if axis.sigma > 0.0 {
-        (-(k.abs() as f64) / axis.sigma).exp()
-      } else if k == 0 {
-        1.0
-      } else {
-        0.0
-      }
+  /// `Method -> "ShenCastan"`: the two-sided exponential `q^Abs[k]` cut
+  /// off at the half-width, and its derivative `-Sign[k] q^Abs[k]`, as
+  /// `ShenCastanMatrix` gives them. The decay `q = Erfc[Sqrt[2]]^(1/(2
+  /// sigma))` leaves, at twice the scale, the weight a Gaussian has beyond
+  /// two standard deviations. The derivative is scaled so a unit ramp has
+  /// slope 1. The exponential is divided by its sum up to the *range*,
+  /// `(1 + q - 2 q^(range + 1))/(1 - q)`, which is the sum of the kernel
+  /// (so it sums to 1) only when the range is a whole number.
+  fn shen_castan(half_width: usize, range: f64, sigma: f64) -> Self {
+    // Log[Erfc[Sqrt[2]]]
+    const LOG_TAIL: f64 = -3.090037153122087;
+    let radius = half_width as i64;
+    let q = if sigma > 0.0 {
+      (LOG_TAIL / (2.0 * sigma)).exp()
+    } else {
+      0.0
     };
-    let total: f64 = (-radius..=radius).map(weight).sum();
+    let weight = |k: i64| q.powi(k.unsigned_abs() as i32);
+    let total = (1.0 + q - 2.0 * q.powf(range + 1.0)) / (1.0 - q);
     let smooth = (-radius..=radius).map(|k| weight(k) / total).collect();
     let slope: f64 =
       (-radius..=radius).map(|k| k.abs() as f64 * weight(k)).sum();
@@ -7117,6 +7121,16 @@ impl GradientKernels {
   }
 }
 
+/// The half-width of the kernel a filter range of `range` pixels names:
+/// `Round[range]`, a half rounding up.
+fn kernel_half_width(range: f64) -> usize {
+  if range.is_finite() && range > 0.0 {
+    (range + 0.5).floor() as usize
+  } else {
+    0
+  }
+}
+
 /// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The
 /// denominator normalizes the kernel so that applying it to a unit
 /// ramp (`{0, 1, 2, …}`) recovers slope 1 — wolframscript uses the
@@ -7159,6 +7173,15 @@ pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
   let axis = match expr_to_f64_opt(&args[1]) {
+    // The range is a whole number of pixels.
+    Some(r) if r > 0.0 && r.fract() != 0.0 => {
+      crate::emit_message(&format!(
+        "LaplacianFilter::bdrad: {} is not a valid neighborhood range \
+         specification.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated());
+    }
     Some(r) if r >= 1.0 => gaussian_axis_from_radius(r),
     _ => return Ok(unevaluated()),
   };
@@ -8284,14 +8307,19 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("GaussianFilter", args));
   }
   // Parse the radius specification from the second argument. A plain
-  // number `r` gives a kernel of half-width `Ceiling[r]` and standard
-  // deviation `r/2`; the pair `{r, sigma}` sets the deviation
-  // explicitly. Any other list shape is left for a caller to make sense
-  // of, so it echoes rather than reporting a radius that may be valid.
+  // number `r` (exact ones such as `5/2` included) gives a kernel of
+  // half-width `Round[r]` and standard deviation `r/2`; the pair
+  // `{r, sigma}` sets the deviation explicitly. Any other list shape is
+  // left for a caller to make sense of, so it echoes rather than reporting
+  // a radius that may be valid.
+  let number = |e: &Expr| {
+    expr_to_f64_opt(e).or_else(|| {
+      crate::functions::math_ast::try_eval_to_f64(e).filter(|v| v.is_finite())
+    })
+  };
   let axis = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
-      let (Some(radius), Some(sigma)) =
-        (expr_to_f64_opt(&items[0]), expr_to_f64_opt(&items[1]))
+      let (Some(radius), Some(sigma)) = (number(&items[0]), number(&items[1]))
       else {
         return Ok(unevaluated("GaussianFilter", args));
       };
@@ -8299,11 +8327,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("GaussianFilter", args));
       }
       GaussianAxis {
-        radius: if radius <= 0.0 {
-          0
-        } else {
-          radius.ceil() as usize
-        },
+        radius: kernel_half_width(radius),
         sigma,
       }
     }
@@ -8311,7 +8335,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("GaussianFilter", args));
     }
     other => {
-      if let Some(radius) = expr_to_f64_opt(other) {
+      if let Some(radius) = number(other) {
         gaussian_axis_from_radius(radius)
       } else {
         crate::emit_message(&format!(
@@ -8422,18 +8446,19 @@ struct GaussianAxis {
 }
 
 /// Turn a `Blur`/`GaussianFilter` pixel radius into the kernel it names:
-/// half-width `Ceiling[r]` and standard deviation `r/2`, as
-/// wolframscript does. A radius of zero or less filters with nothing,
+/// half-width `Round[r]` (a half rounding up) and standard deviation
+/// `r/2`, as wolframscript does. A radius below 1/2 filters with nothing,
 /// leaving the image untouched.
 fn gaussian_axis_from_radius(radius: f64) -> GaussianAxis {
-  if radius <= 0.0 {
+  let half_width = kernel_half_width(radius);
+  if half_width == 0 {
     return GaussianAxis {
       radius: 0,
       sigma: 0.0,
     };
   }
   GaussianAxis {
-    radius: radius.ceil() as usize,
+    radius: half_width,
     sigma: radius / 2.0,
   }
 }

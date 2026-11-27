@@ -1587,7 +1587,74 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
       }
     }
   }
+  // The bisection follows the larger change, which a steep stretch beside a
+  // small jump leads astray. The boundaries the conditions of the body name
+  // outright are therefore tested one by one as well.
+  let (Some(&(x_lo, _)), Some(&(x_hi, _))) = (points.first(), points.last())
+  else {
+    return jumps;
+  };
+  let mut boundaries = Vec::new();
+  condition_boundaries(
+    &eval_body_var_symbolic(body, var),
+    var,
+    &mut boundaries,
+  );
+  let near = |x: f64, c: f64| (x - c).abs() <= 1e-9 * c.abs().max(1.0);
+  for c in boundaries {
+    if !(c > x_lo && c < x_hi) || jumps.iter().any(|&x| near(x, c)) {
+      continue;
+    }
+    let delta = 1e-9 * c.abs().max(1.0);
+    let side =
+      |x: f64| evaluate_at_point(body, var, x).filter(|v| v.is_finite());
+    if let (Some(left), Some(right)) = (side(c - delta), side(c + delta))
+      && (right - left).abs() > tolerance
+    {
+      jumps.push(c);
+    }
+  }
+  jumps.sort_by(f64::total_cmp);
   jumps
+}
+
+/// Collect the numbers the plot variable `var` is compared with anywhere in
+/// `e` (`x <= 2`, `0 < x <= 3`, `Less[x, 1]`, …): the places where a
+/// conditional switches from one branch to another.
+fn condition_boundaries(e: &Expr, var: &str, out: &mut Vec<f64>) {
+  let operands: Option<&[Expr]> = match e {
+    Expr::Comparison { operands, .. } => Some(operands),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Less"
+          | "LessEqual"
+          | "Greater"
+          | "GreaterEqual"
+          | "Equal"
+          | "Unequal"
+          | "Inequality"
+      ) =>
+    {
+      Some(args)
+    }
+    _ => None,
+  };
+  if let Some(operands) = operands
+    && operands
+      .iter()
+      .any(|o| matches!(o, Expr::Identifier(n) if n == var))
+  {
+    out.extend(
+      operands
+        .iter()
+        .filter_map(try_eval_to_f64)
+        .filter(|c| c.is_finite()),
+    );
+  }
+  for child in crate::syntax::expr_children(e) {
+    condition_boundaries(child, var, out);
+  }
 }
 
 /// A `PlotRange -> {ymin, ymax}` pair limiting the y axis only: two numbers,
@@ -18502,6 +18569,11 @@ pub(crate) fn apply_common_plot_option(
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
   // `StyleForm` in a label is displayed exactly as `Style`.
   let evaluated = crate::functions::graphics::style_forms_as_style(&evaluated)
+    .unwrap_or(evaluated);
+  // `Defer` in a label is displayed exactly as `HoldForm`.
+  let evaluated = crate::functions::graphics::is_label_option(name)
+    .then(|| crate::functions::graphics::defers_as_held(&evaluated))
+    .flatten()
     .unwrap_or(evaluated);
   let replacement = &evaluated;
   match name {

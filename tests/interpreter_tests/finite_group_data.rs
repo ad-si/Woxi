@@ -31,10 +31,70 @@ mod finite_group_data_tests {
       point_group(11, "StandardName"),
       "{CrystallographicPointGroup, 11}"
     );
+  }
+
+  /// The family is no entity or class of its own, and it has 32 groups:
+  /// either is reported and left as it is.
+  #[test]
+  fn family_name_and_index_out_of_range_are_not_entities() {
+    clear_state();
     assert_eq!(
-      interpret(r#"Length[FiniteGroupData["CrystallographicPointGroup"]]"#)
-        .unwrap(),
-      "32"
+      interpret(r#"FiniteGroupData["CrystallographicPointGroup"]"#).unwrap(),
+      "FiniteGroupData[CrystallographicPointGroup]"
+    );
+    assert_eq!(
+      interpret(
+        r#"FiniteGroupData[{"CrystallographicPointGroup", 33}, "Order"]"#
+      )
+      .unwrap(),
+      "FiniteGroupData[{CrystallographicPointGroup, 33}, Order]"
+    );
+    clear_state();
+    interpret(r#"FiniteGroupData[{"CrystallographicPointGroup", 0}]"#).unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FiniteGroupData::notent: {CrystallographicPointGroup, 0} is not a \
+         known entity, class or tag for FiniteGroupData. Use \
+         FiniteGroupData[] for a list of entities."
+      )),
+      "{msgs:?}"
+    );
+  }
+
+  #[test]
+  fn properties_are_listed_and_unknown_ones_reported() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"{Length[#], Take[#, 3], MemberQ[#, "MultiplicationTable"]} &[FiniteGroupData["Properties"]]"#
+      )
+      .unwrap(),
+      "{82, {Abelian, AlternateNames, AlternateStandardNames}, True}"
+    );
+    assert_eq!(
+      interpret(
+        r#"FiniteGroupData[{"CrystallographicPointGroup", 8}, "Properties"] === FiniteGroupData["Properties"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"FiniteGroupData[{"CrystallographicPointGroup", 8}, "Nope"]"#
+      )
+      .unwrap(),
+      "FiniteGroupData[{CrystallographicPointGroup, 8}, Nope]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FiniteGroupData::notprop: Nope is not a known property for \
+         FiniteGroupData. Use FiniteGroupData[\"Properties\"] for a list of \
+         properties."
+      )),
+      "{msgs:?}"
     );
   }
 
