@@ -44,6 +44,18 @@ isosurface without the dark rim wolframscript shows at the box walls. An
 explicit `BoundaryStyle -> style` is kept as `Line` primitives and survives
 `Show`.
 
+### The minimum script size is only honored in a graphics `Text`
+
+The front end never sets a sub- or superscript below 9 points
+(`ScriptMinSize` in its working environment): a script of 10-point text is
+drawn at 9 points, and a script of that script stays at 9 points. Woxi
+holds the scripts of a graphics `Text` primitive to that minimum
+(`Graphics[Text[Subscript["F", "net"], {0, 0}]]` sets `net` at 90 % of
+`F`), but tick labels (`10^5`), plot and axes labels, legends and control
+labels still set every script at 70 % of its base, and a digit script
+folded into a Unicode glyph (`x₂`) keeps that glyph's own size. The widths
+used to place an offset `Text` also still count a script at 70 %.
+
 ### Inline box code in a graphics `Text` is never italic
 
 Inside graphics, Wolfram sets the single-letter symbols of typeset math in

@@ -5486,7 +5486,7 @@ mod graphics {
       );
       assert!(
         svg.contains(
-          "V<tspan baseline-shift=\"sub\" font-size=\"70%\">in</tspan> == 2.\u{00d7}10\u{00b3}</text>"
+          "V<tspan baseline-shift=\"sub\" font-size=\"90%\">in</tspan> == 2.\u{00d7}10\u{00b3}</text>"
         ),
         "{svg}"
       );
@@ -6345,7 +6345,7 @@ mod graphics {
       );
       assert!(
         svg.contains(
-          ">N<tspan baseline-shift=\"sub\" font-size=\"70%\">D</tspan><"
+          ">N<tspan baseline-shift=\"sub\" font-size=\"90%\">D</tspan><"
         ),
         "the subscripted label: {svg}"
       );
@@ -6376,7 +6376,7 @@ mod graphics {
       );
       assert!(
         svg.contains(
-          ">v<tspan baseline-shift=\"sub\" font-size=\"70%\">x</tspan><"
+          ">v<tspan baseline-shift=\"sub\" font-size=\"90%\">x</tspan><"
         ),
         "the v_x label: {svg}"
       );
@@ -6401,24 +6401,24 @@ mod graphics {
       );
       assert!(
         svg.contains(
-          ">SO<tspan baseline-shift=\"sub\" font-size=\"70%\">4</tspan>\
-           <tspan dx=\"-0.5em\" baseline-shift=\"super\" font-size=\"70%\">\
+          ">SO<tspan baseline-shift=\"sub\" font-size=\"100%\">4</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"super\" font-size=\"100%\">\
            2-</tspan><"
         ),
         "the stacked ion label: {svg}"
       );
       assert!(
         svg.contains(
-          ">x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>\
-           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">\
+          ">x<tspan baseline-shift=\"super\" font-size=\"90%\">2</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"90%\">\
            1</tspan> end<"
         ),
         "the stacked digit scripts inside a row: {svg}"
       );
       assert!(
         svg.contains(
-          ">N<tspan baseline-shift=\"super\" font-size=\"70%\">c</tspan>\
-           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">\
+          ">N<tspan baseline-shift=\"super\" font-size=\"90%\">c</tspan>\
+           <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"90%\">\
            ab</tspan><"
         ),
         "the narrower superscript is drawn first: {svg}"
@@ -69204,7 +69204,7 @@ fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
     "Graphics[Text[Subscript[Style[\"d\", Italic], \"b\"], {0, 0}]]",
   );
   assert!(
-    svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">b</tspan>"),
+    svg.contains("<tspan baseline-shift=\"sub\" font-size=\"90%\">b</tspan>"),
     "{svg}"
   );
 }
@@ -71748,8 +71748,8 @@ mod generalized_bar_chart {
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\">d</tspan>\
-         <tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
-         <tspan baseline-shift=\"sub\" font-size=\"70%\">hkl</tspan>"
+         <tspan baseline-shift=\"super\" font-size=\"90%\">*</tspan>\
+         <tspan baseline-shift=\"sub\" font-size=\"90%\">hkl</tspan>"
       ),
       "{svg}"
     );
@@ -76962,7 +76962,7 @@ mod styled_label_scripts {
     assert!(
       svg.contains(
         ">t<tspan font-style=\"italic\" baseline-shift=\"sub\" \
-         font-size=\"70%\">B</tspan></text>"
+         font-size=\"90%\">B</tspan></text>"
       ),
       "{svg}"
     );
@@ -76988,7 +76988,7 @@ mod styled_label_scripts {
       svg.contains(
         "<tspan font-style=\"italic\">c</tspan> \
          <tspan font-style=\"italic\">t</tspan><tspan font-style=\"italic\" \
-         baseline-shift=\"sub\" font-size=\"70%\">A</tspan>"
+         baseline-shift=\"sub\" font-size=\"90%\">A</tspan>"
       ),
       "{svg}"
     );
@@ -77008,7 +77008,7 @@ mod styled_label_scripts {
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\" baseline-shift=\"sub\" \
-         font-size=\"70%\">B</tspan>"
+         font-size=\"90%\">B</tspan>"
       ),
       "{svg}"
     );
@@ -77021,7 +77021,7 @@ mod styled_label_scripts {
     assert!(svg.contains("font-style=\"italic\""), "{svg}");
     assert!(
       svg.contains(
-        ">t<tspan baseline-shift=\"sub\" font-size=\"70%\">B</tspan></text>"
+        ">t<tspan baseline-shift=\"sub\" font-size=\"90%\">B</tspan></text>"
       ),
       "{svg}"
     );
@@ -83364,15 +83364,18 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
     "the inline box subscript: {svg}"
   );
   assert!(
-    svg.contains(">N<tspan baseline-shift=\"sub\" font-size=\"90%\">D</tspan><"),
+    svg
+      .contains(">N<tspan baseline-shift=\"sub\" font-size=\"90%\">D</tspan><"),
     "the 10-point subscript: {svg}"
   );
   assert!(
-    svg.contains(">M<tspan baseline-shift=\"sub\" font-size=\"75%\">k</tspan><"),
+    svg
+      .contains(">M<tspan baseline-shift=\"sub\" font-size=\"75%\">k</tspan><"),
     "the 12-point subscript: {svg}"
   );
   assert!(
-    svg.contains(">P<tspan baseline-shift=\"sub\" font-size=\"70%\">q</tspan><"),
+    svg
+      .contains(">P<tspan baseline-shift=\"sub\" font-size=\"70%\">q</tspan><"),
     "the 20-point subscript: {svg}"
   );
 }

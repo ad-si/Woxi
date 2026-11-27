@@ -70302,7 +70302,7 @@ Italic], \" = \", 3}]]], \"SVG\"]",
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\" \
-baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
+baseline-shift=\"sub\" font-size=\"90%\">eq</tspan> = 3"
       ),
       "{svg}"
     );
@@ -70328,17 +70328,17 @@ baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
     assert_eq!(
       text_markup(r#""f(\!\(\*SubscriptBox[\(a\), \(m\)]\))""#),
       "f(<tspan font-style=\"italic\">a</tspan><tspan font-style=\"italic\" \
-baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
+baseline-shift=\"sub\" font-size=\"90%\">m</tspan>)"
     );
     assert_eq!(
       text_markup(r#""\!\(\*SubscriptBox[\(v\), \(max\)]\)""#),
       "<tspan font-style=\"italic\">v</tspan>\
-<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan>"
+<tspan baseline-shift=\"sub\" font-size=\"90%\">max</tspan>"
     );
     assert_eq!(
       text_markup(r#""\!\(\*SuperscriptBox[\(x\), \(*\)]\)""#),
       "<tspan font-style=\"italic\">x</tspan>\
-<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>"
+<tspan baseline-shift=\"super\" font-size=\"90%\">*</tspan>"
     );
   }
 
@@ -70358,7 +70358,7 @@ baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
       svg.contains(
         "<tspan font-style=\"italic\" fill=\"rgb(255,0,0)\">g</tspan>\
 <tspan font-style=\"italic\" fill=\"rgb(255,0,0)\" baseline-shift=\"sub\" \
-font-size=\"70%\">k</tspan> = 5"
+font-size=\"90%\">k</tspan> = 5"
       ),
       "{svg}"
     );
@@ -74421,8 +74421,12 @@ mod script_min_size_tests {
     let floored = floor_script_sizes(&markup, None);
     assert_eq!(floored.matches("font-size=\"70%\"").count(), 2, "{floored}");
     assert_eq!(floored.matches("font-size=\"90%\"").count(), 2, "{floored}");
-    assert!(floored.contains(">c<tspan baseline-shift=\"sub\" font-size=\"90%\">d<"));
-    assert!(floored.contains(">h<tspan baseline-shift=\"sub\" font-size=\"90%\">i<"));
+    assert!(
+      floored.contains(">c<tspan baseline-shift=\"sub\" font-size=\"90%\">d<")
+    );
+    assert!(
+      floored.contains(">h<tspan baseline-shift=\"sub\" font-size=\"90%\">i<")
+    );
     assert!(floored.contains("<tspan font-size=\"1%\">e</tspan>"));
     let unknown = format!("x{SCRIPT}y</tspan>");
     assert_eq!(floor_script_sizes(&unknown, None), unknown);
