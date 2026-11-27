@@ -8273,6 +8273,19 @@ proportions differ from wolframscript. Named edge shapes other than
 `GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
 `"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
 
+### Large graphs keep the small-graph vertex style
+
+```sh
+woxi eval 'ExportString[Graph[Range[1000], Table[i <-> i + 1, {i, 999}], GraphLayout -> "LinearEmbedding"], "SVG"]'
+```
+
+Wolfram draws the vertices of a graph with very many vertices (around a
+thousand; the exact threshold is not established) as points of a fixed
+size in a darker blue, so they stay visible however small the layout's
+units come out. Woxi sizes them from the layout's extent like any other
+graph's, where they all but vanish. Not verified against wolframscript
+beyond published pictures.
+
 ## Colorize
 
 - `Colorize[m, ImageSize -> …]` ignores `ImageSize` (`Image` carries no
