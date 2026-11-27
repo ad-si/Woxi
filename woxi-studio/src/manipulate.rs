@@ -2762,7 +2762,7 @@ impl ManipulateState {
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
     let before = self.bindings();
-    self.reevaluate_inner(true);
+    self.reevaluate_inner(Self::MAX_SETTLE_PASSES);
     self.settle_inner_dynamics(before);
   }
 
@@ -2797,7 +2797,7 @@ impl ManipulateState {
         break;
       }
       before = after;
-      self.reevaluate_inner(true);
+      self.reevaluate_inner(Self::MAX_SETTLE_PASSES);
     }
   }
 
@@ -2870,15 +2870,22 @@ impl ManipulateState {
     }
   }
 
-  /// The body of [`reevaluate`]. `allow_retry` guards the single re-run
-  /// that a re-resolved choice list can trigger: when the new list drops
-  /// the selected value, the output just rendered was for a value the
-  /// control no longer offers, so it is rendered once more for the value
-  /// the control settled on. The re-run cannot cascade — it resolves the
-  /// same lists against bindings that already satisfy them.
+  /// How many more times a body that keeps moving its own tracked controls
+  /// is run after the first pass, before the frame is drawn as is.
+  const MAX_SETTLE_PASSES: u8 = 3;
+
+  /// The body of [`reevaluate`]. `retries_left` is the budget of re-runs
+  /// left for a body that moves its own tracked controls. While it is
+  /// positive, a re-resolved choice list can also trigger a single re-run:
+  /// when the new list drops the selected value, the output just rendered
+  /// was for a value the control no longer offers, so it is rendered once
+  /// more for the value the control settled on. That re-run cannot
+  /// cascade — it resolves the same lists against bindings that already
+  /// satisfy them.
   ///
   /// [`reevaluate`]: Self::reevaluate
-  fn reevaluate_inner(&mut self, allow_retry: bool) {
+  fn reevaluate_inner(&mut self, retries_left: u8) {
+    let allow_retry = retries_left > 0;
     self.apply_pending_locator_resets();
     let bindings = self.bindings();
     let code = self.body.clone();
@@ -3179,15 +3186,18 @@ impl ManipulateState {
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
-      self.reevaluate_inner(false);
+      self.reevaluate_inner(0);
       return;
     }
     // The front end re-runs a body that changed a variable it tracks, so
     // the frame shows the values the body settled on: everything computed
-    // before the body's own `T = 450` is computed again for 450. A single
-    // extra pass settles a body that pins a control to a fixed value.
-    if allow_retry && moved_tracked_control {
-      self.reevaluate_inner(false);
+    // before the body's own `T = 450` is computed again for 450. One extra
+    // pass settles a body that pins a control to a fixed value; one that
+    // rejects a move in steps (limit the move and flag the bad position,
+    // put the control back, clear the flag) takes a pass per step. The
+    // budget keeps a body that never settles from holding up the frame.
+    if retries_left > 0 && moved_tracked_control {
+      self.reevaluate_inner(retries_left - 1);
       return;
     }
     // A `Dynamic` late in the body may set a module variable an earlier one
@@ -3198,7 +3208,7 @@ impl ManipulateState {
       && self.self_refreshing
       && matches!(&render, Ok(r) if !r.warnings.is_empty())
     {
-      self.reevaluate_inner(false);
+      self.reevaluate_inner(0);
       return;
     }
 
@@ -4027,6 +4037,74 @@ mod tests {
     let t = state.controls.iter().find(|c| c.name() == "t").unwrap();
     assert_eq!(t.current_code(), "7");
     assert_eq!(shown(&state), "107");
+  }
+
+  /// A body that rejects a move over several of its own runs — limit the
+  /// step, flag the bad position and count it, then put the control back,
+  /// then clear the flag — is run until it stops moving its control, as the
+  /// front end re-evaluates a `Dynamic` whose tracked variable changed. The
+  /// frame shows the settled state, and each rejected move is counted.
+  #[test]
+  fn body_rejecting_a_move_in_steps_runs_until_settled() {
+    let code = r#"Manipulate[
+      x = xOld + Clip[x - xOld, {-3, 3}];
+      hit = x > 5;
+      If[!hit, xOld = x; phase = 0,
+        If[phase == 0, count = count + 1; phase = 1, x = xOld]];
+      {x, hit, count},
+      {{x, 2}, 0, 10, 1}, {{xOld, 2}, None}, {{hit, False}, None},
+      {{phase, 0}, None}, {{count, 0}, None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let shown = |s: &ManipulateState| match s.check_render() {
+      Ok(r) => r.result,
+      Err(e) => panic!("render failed: {e}"),
+    };
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "x")
+      .expect("x control");
+    let slide = |state: &mut ManipulateState, to: f64| {
+      state.slide_continuous(idx, to);
+      if state.request_reeval(idx) {
+        state.run_scheduled_reeval();
+      }
+    };
+    assert_eq!(shown(&state), "{2, False, 0}");
+    slide(&mut state, 4.0);
+    assert_eq!(shown(&state), "{4, False, 0}");
+    // Rejected: back at the last good position, flag cleared, counted once.
+    slide(&mut state, 9.0);
+    assert_eq!(shown(&state), "{4, False, 1}");
+    assert_eq!(state.controls[idx].current_code(), "4");
+    // A second rejected move counts again.
+    slide(&mut state, 10.0);
+    assert_eq!(shown(&state), "{4, False, 2}");
+    slide(&mut state, 3.0);
+    assert_eq!(shown(&state), "{3, False, 2}");
+  }
+
+  /// A body that never settles (it moves its own control every run) is
+  /// re-run a bounded number of times per change, not forever.
+  #[test]
+  fn body_that_never_settles_stops_after_bounded_passes() {
+    let code = r#"Manipulate[x = Mod[x + 1, 10]; n = n + 1; {x, n},
+      {x, 0, 10, 1}, {{n, 0}, None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let n = |s: &ManipulateState| -> i64 {
+      let v = &s.state.iter().find(|(name, _)| name == "n").unwrap().1;
+      v.parse().expect("integer n")
+    };
+    let before = n(&state);
+    state.reevaluate();
+    assert_eq!(
+      n(&state) - before,
+      1 + ManipulateState::MAX_SETTLE_PASSES as i64
+    );
   }
 
   /// A Manipulate graphic's labels (`Text[Style["A", 20, "Label"], …]`)
