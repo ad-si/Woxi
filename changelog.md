@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- A `Trigger` control in Woxi Studio sweeps downward when its end lies
+    below its start (`{u, 0, -10, -1, Trigger}`) instead of jumping to the
+    end, a step written in terms of another control (`0.035 speed`) follows
+    that control also when the Trigger is laid out in a `Row`, and the
+    step, reset and direction buttons named in its `AppearanceElements`
+    are drawn and work.
 - `EdgeDetect` and `GradientFilter` take `Method -> "ShenCastan"` (the
     gradient of a two-sided exponential), and
     `EdgeDetect[…, "StraightEdges" -> s]` keeps only the edges on straight
