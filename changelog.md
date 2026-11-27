@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- Woxi Studio: a `Column[{Control[…], Control[…]}]` written inside a
+    `Row[{…}]` of a `Manipulate`'s control layout is drawn as one block of
+    that line, with the row's other controls and buttons beside the column
+    instead of each control taking a line of its own.
 - A `Text[Style[Row[…], …]]` item whose strings hold line breaks flows
     line by line in a `Column` given an alignment, `LineSpacing -> {c, n}`
     sets the pitch of the lines of such a text and `TextAlignment` places
