@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- An unboxed `Graphics3D` of fixed width and height whose contents are a
+    sheet with barely any depth (thinner than a hundredth of its longest
+    side) keeps the margins of its padded box, as with the box drawn,
+    instead of being stretched until it touches all four edges.
 - `Tube[pts, r, VertexColors -> {c1, c2, …}]` blends the colors along the
     tube instead of drawing it in the plain color, each color given as a
     color or a list of directives, and an option right after the curve
