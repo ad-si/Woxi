@@ -81681,6 +81681,69 @@ mod graphics3d_review_ticks_heads_framing {
       assert!((unboxed - boxed).abs() <= 2.0, "{unboxed} vs {boxed}");
     }
   }
+
+  /// Lines, arrows and points drawn with unboxed round solids keep the
+  /// picture framed by its contents: inside the sphere they leave its size
+  /// alone, and reaching out of it they shrink it by just their reach,
+  /// where the box around them would shrink it much further.
+  #[test]
+  fn unboxed_round_solids_with_lines_are_framed_by_their_contents() {
+    clear_state();
+    // The width of the picture and of the sphere drawn in it.
+    let widths = |extra: &str| -> (f64, f64) {
+      let svg = export_svg(&format!(
+        "Graphics3D[{{Sphere[{{0, 0, 0}}, 5]{extra}}}, Boxed -> False, \
+         ImageSize -> 220]"
+      ));
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      let xs: Vec<f64> = svg
+        .split("<polygon points=\"")
+        .skip(1)
+        // The sphere's faces are shaded; an arrowhead is filled flat.
+        .filter(|p| p.split('>').next().unwrap().contains("fill=\"url(#"))
+        .flat_map(|p| {
+          p.split('"')
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .filter_map(|xy| xy.split_once(',')?.0.parse().ok())
+            .collect::<Vec<f64>>()
+        })
+        .collect();
+      let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      (width, hi - lo)
+    };
+    let (width, alone) = widths("");
+    assert!(alone > 0.95 * width, "{alone} of {width}");
+    for inside in [
+      ", Arrow[{{4, 0, 0}, {1, 0, 0}}]",
+      ", Line[{{0, 3, 0}, {0, -3, 2}}]",
+      ", Point[{1, 2, 3}]",
+      ", Arrowheads[0.02], Arrow[{{0, 0, 4}, {0, 0, 1}}], \
+       Line[{{1, 1, 1}, {2, 2, 2}}]",
+    ] {
+      let (_, with) = widths(inside);
+      assert!((with - alone).abs() <= 1.0, "{inside}: {with} vs {alone}");
+    }
+    // Arrows reaching 1.2 radii out to the picture's left and right.
+    let (_, out) = widths(
+      ", Table[Arrow[{4 d, 6 d}], {d, {{0.88, 0.48, 0}, {-0.88, -0.48, 0}}}]",
+    );
+    assert!(out < 0.97 * alone, "{out} vs {alone}");
+    assert!(out > 0.8 * alone, "{out} vs {alone}");
+    // A polygon in the scene brings the box's margins back.
+    let (_, boxed) = widths(", Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]");
+    assert!(boxed < 0.8 * alone, "{boxed} vs {alone}");
+  }
   /// A perspective eye sees past the rim of a sphere off to one side of
   /// the picture. That band faces the eye, so it is lit as the sphere's
   /// front: the rim of the origin sphere toward the picture's center (its

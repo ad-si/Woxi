@@ -17556,15 +17556,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unboxed lone triangle, unit cube or pair of cubes as large as boxed
   // ones) unless the scene is made of round solids alone: an unboxed
   // `Sphere[]` exports 360 × 363 (boxed: 360 × 391) and a cylinder of
-  // radius 1 and height 3 262 × 432 (boxed: 320 × 432).
-  let round_solids_only = !prims.is_empty()
+  // radius 1 and height 3 262 × 432 (boxed: 320 × 432). Lines, arrows and
+  // points drawn alongside the round solids leave that fit in place and
+  // are part of the contents: a Demonstration's two unboxed concentric
+  // spheres with field arrows between them at `ImageSize -> 220` fill the
+  // picture's width in every snapshot, and the arrows sticking out of the
+  // outer sphere in one of them shrink it by just their reach.
+  let is_round_solid = |p: &Primitive3D| {
+    matches!(
+      p,
+      Primitive3D::Sphere { .. }
+        | Primitive3D::Cylinder { .. }
+        | Primitive3D::Cone { .. }
+    )
+  };
+  let round_solids_only = prims.iter().any(is_round_solid)
     && prims.iter().all(|p| {
-      matches!(
-        p,
-        Primitive3D::Sphere { .. }
-          | Primitive3D::Cylinder { .. }
-          | Primitive3D::Cone { .. }
-      )
+      is_round_solid(p)
+        || matches!(
+          p,
+          Primitive3D::Line3D { .. }
+            | Primitive3D::Arrow3D { .. }
+            | Primitive3D::Point3DPrim { .. }
+        )
     });
   // In a picture of fixed width and height, contents with depth whose box
   // is the taller shape for the frame are framed by that box, before
