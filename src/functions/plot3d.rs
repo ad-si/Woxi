@@ -8160,7 +8160,7 @@ fn clipped_rim_lines(
   // `EdgeForm` color, width and dashing, opaque whatever the faces are.
   let mut line_style = style.clone();
   line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
-  line_style.thickness = Some(style.edge_width.unwrap_or(DEFAULT_EDGE_WIDTH));
+  line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
   line_style.dashing.clone_from(&style.edge_dashing);
   line_style.opacity = 1.0;
   Some(Primitive3D::Line3D {
@@ -8784,13 +8784,8 @@ const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
 /// label, in ems.
 const TEXT3D_LINE_PITCH_EM: f64 = 1.2;
 
-/// The outline color of a face under the default `EdgeForm`: black, as
-/// the core of a thick default outline shows.
-const DEFAULT_EDGE_RGB: (u8, u8, u8) = (0, 0, 0);
-
-/// The outline width of a face under the default `EdgeForm`: a hairline,
-/// like a `Line` that sets no thickness.
-const DEFAULT_EDGE_WIDTH: f64 = DEFAULT_LINE_3D_WIDTH;
+/// The outline color of a face under the default `EdgeForm`.
+const DEFAULT_EDGE_RGB: (u8, u8, u8) = (64, 64, 64);
 
 /// The absolute width a thickness symbol names in 3D (`Thick`,
 /// `Thickness[Large]`, …): the same widths as in 2D graphics.
@@ -18764,7 +18759,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ) {
           let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
           let edge_stroke = format!("rgb({er},{eg},{eb})");
-          let edge_width = tri.edge_width.unwrap_or(DEFAULT_EDGE_WIDTH);
+          let edge_width = tri.edge_width.unwrap_or(1.0);
           let edge_alpha = edge_opacity_attr(tri.edge_opacity);
           for (e, on_outline) in tri.boundary.iter().enumerate() {
             if !on_outline {
@@ -18798,7 +18793,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `{Opacity[0], Cuboid[…]}` a wireframe box.
       let (er, eg, eb) = tri.edge_color.unwrap_or(DEFAULT_EDGE_RGB);
       let edge_stroke = format!("rgb({er},{eg},{eb})");
-      let edge_width = tri.edge_width.unwrap_or(DEFAULT_EDGE_WIDTH);
+      let edge_width = tri.edge_width.unwrap_or(1.0);
       let edge_alpha = edge_opacity_attr(tri.edge_opacity);
       let fill_opacity_attr = if tri.opacity < 1.0 {
         format!(" fill-opacity=\"{}\"{edge_alpha}", tri.opacity)

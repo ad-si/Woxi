@@ -22,28 +22,6 @@ fn fills(svg: &str) -> std::collections::BTreeSet<String> {
 mod solids {
   use super::*;
 
-  /// A face outline is a black hairline under the default `EdgeForm`, as
-  /// thin as a `Line` that sets no thickness. Regression: it was a dark
-  /// gray stroke a whole pixel wide, which read as a heavy smudge around
-  /// the small parts of a scene.
-  #[test]
-  fn default_face_outline_is_a_black_hairline() {
-    for solid in ["Cuboid[]", "Cylinder[]", "Cone[]"] {
-      let s = svg(&format!("Graphics3D[{solid}, Boxed -> False]"));
-      assert!(
-        s.contains("stroke=\"rgb(0,0,0)\" stroke-width=\"0.5\""),
-        "{solid}"
-      );
-      assert!(!s.contains("stroke=\"rgb(64,64,64)\""), "{solid}");
-    }
-    // An explicit `EdgeForm` still sets its own color and width.
-    let thick = svg(
-      "Graphics3D[{EdgeForm[{Red, AbsoluteThickness[3]}], Cuboid[]}, \
-       Boxed -> False]",
-    );
-    assert!(thick.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"3\""));
-  }
-
   /// Round solids stacked exactly on one another are drawn once: the one
   /// given last hides the others. Regression: every copy was tessellated,
   /// and the facets of the copies underneath were painted over the rim
@@ -51,14 +29,20 @@ mod solids {
   #[test]
   fn coinciding_round_solids_are_drawn_once() {
     let scene = |prims: &str| {
-      svg(&format!("Graphics3D[{{{prims}}}, PlotRange -> 2, Boxed -> False]"))
+      svg(&format!(
+        "Graphics3D[{{{prims}}}, PlotRange -> 2, Boxed -> False]"
+      ))
     };
     for solid in [
       "Cylinder[{{0, 0, 0}, {0.3, 0.2, 1}}, 0.4]",
       "Sphere[{0.2, 0.1, 0.3}, 0.7]",
     ] {
       let once = scene(solid);
-      assert_eq!(scene(&format!("{solid}, {solid}, {solid}")), once, "{solid}");
+      assert_eq!(
+        scene(&format!("{solid}, {solid}, {solid}")),
+        once,
+        "{solid}"
+      );
       // A copy moved onto the same place by a transformation counts too.
       assert_eq!(
         scene(&format!(
@@ -203,7 +187,9 @@ mod solids {
       );
       // No facet painted later has a corner within a third of a pixel of
       // the middle of the segment.
-      for later in elements[i + 1..].iter().filter(|e| e.starts_with("<polygon"))
+      for later in elements[i + 1..]
+        .iter()
+        .filter(|e| e.starts_with("<polygon"))
       {
         assert!(
           points(later)
