@@ -4395,6 +4395,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
+    // `LabelStyle -> spec` styles the labels: push it onto each one.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && let Some(styled) =
+          functions::graphics::labeled_label_style_pushed(args) =>
+    {
+      match render_grid_if_needed(styled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
@@ -4541,6 +4552,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           Some(svg) => graphics_result(svg),
           None => expr,
         }
+      } else if let Some(flow) =
+        evaluator::dispatch::io_functions::display_box_product_flow(&expr)
+      {
+        // Factors that are not all tables: the product is typeset as the
+        // factors side by side, wrapping at the page width.
+        graphics_result(evaluator::dispatch::io_functions::expr_to_svg(&flow))
       } else {
         expr
       }
@@ -6957,6 +6974,50 @@ fn legended_picture_svg(expr: &syntax::Expr) -> Option<String> {
   (svg.starts_with("<svg") && svg != *plot).then_some(svg)
 }
 
+/// The typeset formula of arithmetic that has a picture among its operands
+/// (`g^2`, `2 g`, `1 + g`, `x g^2`): the picture drawn inline with the
+/// operators, coefficients and exponents around it. `None` for anything
+/// else, and when the picture has no boxes to be typeset from.
+fn picture_formula_svg(expr: &syntax::Expr) -> Option<String> {
+  fn is_picture(expr: &syntax::Expr) -> bool {
+    match expr {
+      syntax::Expr::Graphics { .. } => true,
+      syntax::Expr::FunctionCall { name, args } => {
+        (name == "Graphics" || name == "Graphics3D") && !args.is_empty()
+      }
+      _ => false,
+    }
+  }
+  fn holds_picture(expr: &syntax::Expr) -> bool {
+    let operand = |a: &syntax::Expr| is_picture(a) || holds_picture(a);
+    match expr {
+      syntax::Expr::FunctionCall { name, args } => {
+        matches!(name.as_str(), "Plus" | "Times" | "Power")
+          && args.len() >= 2
+          && args.iter().any(operand)
+      }
+      syntax::Expr::BinaryOp { op, left, right } => {
+        matches!(
+          op,
+          syntax::BinaryOperator::Plus
+            | syntax::BinaryOperator::Minus
+            | syntax::BinaryOperator::Times
+            | syntax::BinaryOperator::Divide
+            | syntax::BinaryOperator::Power
+        ) && (operand(left) || operand(right))
+      }
+      _ => false,
+    }
+  }
+  if !holds_picture(expr) {
+    return None;
+  }
+  let svg = evaluator::expr_to_svg(expr);
+  // A picture set among the boxes is nested in the formula's own SVG; one
+  // that could not be typeset leaves only its `-Graphics-` text.
+  (svg.starts_with("<svg") && svg.matches("<svg").count() >= 2).then_some(svg)
+}
+
 /// The SVG an already-evaluated graphics item carries on itself — from
 /// `Expr::Graphics { svg, .. }`, peeling a `Style[…]` wrapper first. `None`
 /// for the bare `-Graphics-`/`-Image-` text placeholder, which carries no
@@ -7008,6 +7069,14 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if let Some(svg) = legended_picture_svg(inner) {
     clear_captured_graphics();
     capture_graphics(&text_in_view(svg));
+    return expr;
+  }
+
+  // Arithmetic on a picture — `g^2`, `2 g`, `1 + g` — is a formula with the
+  // picture as an operand; the picture alone would drop the rest of it.
+  if let Some(svg) = picture_formula_svg(inner) {
+    clear_captured_graphics();
+    capture_graphics(&svg);
     return expr;
   }
 

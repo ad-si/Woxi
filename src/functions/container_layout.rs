@@ -483,7 +483,7 @@ pub fn with_line_width_limit<R>(width: f64, f: impl FnOnce() -> R) -> R {
 }
 
 /// The widest line a list of pictures may currently take.
-fn max_line_width() -> f64 {
+pub(crate) fn max_line_width() -> f64 {
   LINE_WIDTH_LIMIT
     .with(std::cell::Cell::get)
     .filter(|w| w.is_finite() && *w > 0.0)

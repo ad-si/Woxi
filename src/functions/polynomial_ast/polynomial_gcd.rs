@@ -788,10 +788,25 @@ fn integer_gcd_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
-/// Compute GCD of two integer/rational expressions
+/// Compute GCD of two integer/rational expressions.
+///
+/// Constants that are not rational numbers (`24 - 8*Cos[Pi/8]`, `Sqrt[3]`)
+/// have no content in common: `GCD` leaves them unevaluated, and that inert
+/// `GCD[…]` taken for a coefficient nests into itself with every division
+/// step that follows. Their gcd is 1.
 fn integer_gcd_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  if matches!(a, Expr::Integer(0)) {
+    return Ok(b.clone());
+  }
+  if matches!(b, Expr::Integer(0)) {
+    return Ok(a.clone());
+  }
   let gcd_expr = call("GCD", vec![a.clone(), b.clone()]);
-  crate::evaluator::evaluate_expr_to_expr(&gcd_expr)
+  let gcd = crate::evaluator::evaluate_expr_to_expr(&gcd_expr)?;
+  if matches!(&gcd, Expr::FunctionCall { name, .. } if name == "GCD") {
+    return Ok(Expr::Integer(1));
+  }
+  Ok(gcd)
 }
 
 /// The gcd of `polys` with every radical of a rational number replaced by a

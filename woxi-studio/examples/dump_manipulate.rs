@@ -15,6 +15,10 @@
 //! Set `CLICKS="1.5,2.5;9.5,2.5"` to click the picture's `ClickPane` at
 //! those pane coordinates in turn; the variables (and, with `svg-out-dir`,
 //! the picture as `widget-<n>-click-<k>.svg`) are dumped after each click.
+//! Set `MOUSE="1.5,2.5;9.5,2.5"` to press and release the pointer over the
+//! picture's mouse `EventHandler` at those graphics coordinates in turn; the
+//! variables (and, with `svg-out-dir`, the picture as
+//! `widget-<n>-mouse-<k>.svg`) are dumped after each press.
 //! Set `TICKS=40` to press play and advance the animation that many ticks;
 //! the control values (and, with `svg-out-dir`, the picture as
 //! `widget-<n>-ticks.svg`) are dumped afterwards.
@@ -353,6 +357,9 @@ fn main() {
       if let Ok(clicks) = std::env::var("CLICKS") {
         click_pane(&mut state, &clicks, widget_count, svg_out_dir.as_deref());
       }
+      if let Ok(presses) = std::env::var("MOUSE") {
+        press_mouse(&mut state, &presses, widget_count, svg_out_dir.as_deref());
+      }
       if let Some(ticks) = std::env::var("TICKS")
         .ok()
         .and_then(|t| t.parse::<usize>().ok())
@@ -543,6 +550,51 @@ fn click_pane(
     }
     if let (Some(dir), Some(svg)) = (svg_out_dir, state.current_svg()) {
       let out = dir.join(format!("widget-{widget}-click-{}.svg", k + 1));
+      std::fs::write(&out, svg).expect("write svg");
+      println!("wrote {}", out.display());
+    }
+  }
+}
+
+/// Press and release the pointer over the picture's mouse `EventHandler` at
+/// each `;`-separated `x,y` graphics coordinate of `presses`, dumping the
+/// variables after every press.
+fn press_mouse(
+  state: &mut manipulate::ManipulateState,
+  presses: &str,
+  widget: usize,
+  svg_out_dir: Option<&std::path::Path>,
+) {
+  for (k, press) in presses.split(';').enumerate() {
+    let Some(frame) = state
+      .mouse_region
+      .as_ref()
+      .and_then(|r| r.frames.first().cloned())
+    else {
+      println!("!! no mouse EventHandler with a graphic to press");
+      return;
+    };
+    let Some((gx, gy)) = press.split_once(',').and_then(|(x, y)| {
+      Some((x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?))
+    }) else {
+      continue;
+    };
+    let fx = ((gx - frame.x_min) / (frame.x_max - frame.x_min)) as f32;
+    let fy = ((frame.y_max - gy) / (frame.y_max - frame.y_min)) as f32;
+    state.mouse_moved(frame.x + fx * frame.width, frame.y + fy * frame.height);
+    state.mouse_down();
+    state.mouse_up();
+    println!(
+      "after press {} at {{{gx}, {gy}}}: error={:?}",
+      k + 1,
+      state.error
+    );
+    for (n, v) in &state.state {
+      let snippet: String = v.chars().take(200).collect();
+      println!("  {n} = {snippet}");
+    }
+    if let (Some(dir), Some(svg)) = (svg_out_dir, state.current_svg()) {
+      let out = dir.join(format!("widget-{widget}-mouse-{}.svg", k + 1));
       std::fs::write(&out, svg).expect("write svg");
       println!("wrote {}", out.display());
     }

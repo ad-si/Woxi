@@ -4784,6 +4784,23 @@ fn colored_button_style(
   }
 }
 
+/// The width (px) a horizontal slider's own `ImageSize` gives it (see
+/// `ManipulateState::control_width`), `None` for a slider that fills its
+/// line and for every other kind of control.
+fn fixed_slider_width(
+  state: &manipulate::ManipulateState,
+  ctrl_idx: usize,
+) -> Option<f32> {
+  match state.controls.get(ctrl_idx)? {
+    manipulate::ControlState::Continuous { orientation, .. }
+      if *orientation != manipulate::ControlOrientation::Vertical =>
+    {
+      state.control_width.get(ctrl_idx).copied().flatten()
+    }
+    _ => None,
+  }
+}
+
 /// Finish the column the current control was drawn into (see the `line`
 /// bookkeeping in `render_manipulate_widget`): put the panel column back
 /// into `controls_col` and queue the control's column on the current line.
@@ -4849,6 +4866,23 @@ fn render_manipulate_widget<'a>(
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0)
     .max(max_icon_width)
     .clamp(20.0, 220.0);
+  // Controls sharing a line size their label to that line's own columns
+  // (see `ManipulateState::shared_line_label_chars`), so four controls
+  // written in one `Row` do not each reserve the widest label of the whole
+  // panel. A picture caption keeps the shared column, which already holds
+  // its drawn width.
+  let line_label_chars =
+    state.shared_line_label_chars(manipulate_label_char_count);
+  let label_width_of = |ctrl_idx: usize, name: &str| match line_label_chars
+    .get(ctrl_idx)
+    .copied()
+    .flatten()
+  {
+    Some(chars) if max_icon_width == 0.0 && state.label_svg(name).is_none() => {
+      (chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0)
+    }
+    _ => label_col_width,
+  };
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   // A display standing in for a declared control (a `ControlType ->
@@ -4945,11 +4979,19 @@ fn render_manipulate_widget<'a>(
       }
       switch_slot(&mut controls_col, &mut current_slot, slot);
       side_used[slot] = true;
+      // A slider given a width of its own (`ImageSize -> Tiny`) takes only
+      // the room it needs on its line instead of an equal share of it.
+      let item_width = if fixed_slider_width(state, ctrl_idx).is_some() {
+        iced::Length::Shrink
+      } else {
+        Fill
+      };
       line_outer = Some(std::mem::replace(
         &mut controls_col,
-        Column::new().spacing(6).width(Fill),
+        Column::new().spacing(6).width(item_width),
       ));
     }
+    let label_col_width = label_width_of(ctrl_idx, ctrl.name());
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -5014,6 +5056,8 @@ fn render_manipulate_widget<'a>(
               .width(iced::Length::Fixed(72.0))
               .into(),
           };
+        let slider_width =
+          fixed_slider_width(state, ctrl_idx).map_or(Fill, iced::Length::Fixed);
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5028,8 +5072,9 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s =
-              slider(min..=max, position, on_slide).step(step).width(Fill);
+            let mut s = slider(min..=max, position, on_slide)
+              .step(step)
+              .width(slider_width);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -6127,6 +6172,7 @@ fn display_node_plain_text(
     }
     DisplayNode::Static { text, .. } => text.clone(),
     DisplayNode::Panel(child)
+    | DisplayNode::Backdrop { child, .. }
     | DisplayNode::Toggler { label: child, .. }
     | DisplayNode::Button { label: child, .. }
     | DisplayNode::ActionMenu { label: child, .. } => {
@@ -6325,6 +6371,18 @@ fn render_display_node<'a>(
         .style(container::rounded_box)
         .into()
     }
+    // A bar painted `Background -> color`: the color fills the area right
+    // behind the bar, with no frame or margin of its own.
+    DisplayNode::Backdrop { color, child } => {
+      let (r, g, b) = *color;
+      let plate = iced::Color::from_rgb(r as f32, g as f32, b as f32);
+      container(render_display_node(cell_idx, child))
+        .style(move |_theme| container::Style {
+          background: Some(plate.into()),
+          ..Default::default()
+        })
+        .into()
+    }
     // A table of plain text cells (a `TableForm` readout, with its heading
     // row and column) is laid out column by column, so every column lines
     // up under its heading: text rows share one height, while text widths
@@ -6407,6 +6465,7 @@ fn render_display_node<'a>(
       selected,
       enabled,
       checkbox: true,
+      ..
     } => {
       // One choice of a CheckboxBar: a checkbox followed by its label,
       // toggling the value's membership in the bound list variable.
@@ -6427,6 +6486,7 @@ fn render_display_node<'a>(
       selected,
       enabled,
       checkbox: false,
+      background,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
       // removes its value from the bound list variable. A bar whose
@@ -6434,13 +6494,17 @@ fn render_display_node<'a>(
       // draws in its grayed-out disabled style.
       let selected = *selected;
       let mutation = mutation.clone();
+      let face = *background;
       button(render_display_node(cell_idx, label))
         .padding([2, 6])
         .style(move |theme: &iced::Theme, status| {
-          let mut style = if selected {
-            button::primary(theme, status)
-          } else {
-            button::secondary(theme, status)
+          // A bar's `Background -> color` paints the faces of its
+          // unselected toggles, as it does a setter's; a selected one
+          // keeps the accent so it still reads as selected.
+          let mut style = match face {
+            Some(rgb) if !selected => colored_button_style(rgb, status),
+            _ if selected => button::primary(theme, status),
+            _ => button::secondary(theme, status),
           };
           style.border.radius = 4.0.into();
           style
@@ -20108,7 +20172,9 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         DisplayNode::Toggler {
           mutation, selected, ..
         } => out.push((mutation.clone(), *selected)),
-        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Panel(child) | DisplayNode::Backdrop { child, .. } => {
+          walk(child, out)
+        }
         DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
@@ -20151,7 +20217,9 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     fn walk(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
       match node {
         DisplayNode::Popup { .. } => out.push(node.clone()),
-        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Panel(child) | DisplayNode::Backdrop { child, .. } => {
+          walk(child, out)
+        }
         DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
@@ -36819,6 +36887,50 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Ou
     assert_eq!(
       state.text_output, None,
       "a picture result must not also carry a text fallback"
+    );
+  }
+
+  /// A `Manipulate` body whose result is a caption written right after a
+  /// `Pane[Column[…]]` of panels with buttons and a picture, with nothing
+  /// between the two — an implicit product of display boxes
+  /// (independently written, not copied from any specific Demonstration).
+  /// Regression: the product fell through to the text renderer, showing
+  /// one long line of source instead of the laid-out panel, and the
+  /// buttons inside it could not be pressed.
+  #[test]
+  fn manipulate_body_product_of_caption_and_pane_renders_as_picture() {
+    let code = r#"Manipulate[
+      Text[Style["caption " <> ToString[k], 12]]
+      Pane[Column[{
+        Panel[Text[Row[{"v = ",
+          Table[With[{j = j},
+            Button[Dynamic[v[[j]]], v[[j]] = v[[j]] + k]], {j, 2}]}]],
+          Background -> LightRed],
+        Grid[{{Panel[Text["note"], "Title", Appearance -> Frameless],
+          Graphics[{Red, Disk[{0, 0}, k]}, ImageSize -> 80]}}]
+      }]],
+      {k, 1, 3, 1},
+      {{v, {1, 2}}, None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a product of display boxes must build a ManipulateState");
+    state.reevaluate();
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert!(
+      state.graphics_handle.is_some(),
+      "a caption next to a pane must render as one picture, not fall back \
+       to text"
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
+    );
+    assert_eq!(
+      state.button_regions.len(),
+      2,
+      "both buttons in the panel must be pressable"
     );
   }
 

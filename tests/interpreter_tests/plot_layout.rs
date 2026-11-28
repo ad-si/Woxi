@@ -2495,3 +2495,34 @@ mod framed_axes_labels {
     assert_eq!(drawing_offset(&plain), drawing_offset(&labeled));
   }
 }
+
+/// A body evaluated ahead of sampling (`Plot[Evaluate[…], …]`) is sampled
+/// by the compiled evaluator, which used to drop every sample that passes
+/// through a complex intermediate. A product of two complex values can be
+/// real again — `Sqrt[t - Pi] Sqrt[1/(t - Pi)]` is `-1. + 0. I` below `Pi`,
+/// a differentiable sign — and Wolfram draws such a curve over the whole
+/// range.
+#[test]
+fn evaluated_body_with_cancelling_complex_factors_is_drawn() {
+  // Whether the leftmost drawn sample lies below `bound`.
+  let starts_below = |body: &str, bound: &str| -> bool {
+    interpret(&format!(
+      "Min[Cases[Plot[{body}, {{t, 0, 6}}], Line[p_] :> p[[All, 1]], \
+       Infinity]] < {bound}"
+    ))
+    .unwrap()
+      == "True"
+  };
+  for body in [
+    "Evaluate[{Sqrt[t - Pi] Sqrt[1/(t - Pi)] Sin[t]}]",
+    "Evaluate[Sqrt[2 + Sqrt[t - Pi] Sqrt[1/(t - Pi)] Sin[t]]]",
+    "Evaluate[Sqrt[t - Pi]^2 Sin[t] + 1/(t + 1)]",
+  ] {
+    assert!(
+      starts_below(body, "0.01"),
+      "{body} must be drawn from t = 0"
+    );
+  }
+  // A value that really is complex is still left out.
+  assert!(!starts_below("Evaluate[Sqrt[t - 3] + Sin[t]]", "2.99"));
+}
