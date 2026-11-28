@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- The outline of a `Graphics3D` face that runs behind a narrow solid (the
+    far edge of a long floor `Polygon` with a `Cuboid` standing on its
+    middle) no longer shows through that solid when other faces lie
+    behind the edge elsewhere: a long outline edge is placed in the draw
+    order stretch by stretch instead of from a few samples along it.
 - A curve leaving a `PlotRange` that only `Show` pins
     (`Show[ParametricPlot[…], PlotRange -> {{-1, 1}, {-1, 1}}]`) runs on
     through the padding to the edge of the picture on every side, instead
