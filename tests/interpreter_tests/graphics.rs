@@ -82968,6 +82968,46 @@ mod reversed_3d_plot_ranges {
       "True"
     );
   }
+
+  // A `Graphics3D` box written upper end first (`{8, -8}`) used to be
+  // dropped, so the scene was fitted to its contents and drifted off the
+  // center of the stated box whenever those were lopsided.
+  fn scene_svg(plot_range: &str) -> String {
+    clear_state();
+    interpret(&format!(
+      "ExportString[Graphics3D[{{Cylinder[{{{{0, -3, 0}}, {{0, -1, 0}}}}, 0.4], \
+       Sphere[{{0, 0, 0}}, 0.5]}}, Boxed -> False, SphericalRegion -> True, \
+       ViewPoint -> {{10, -10, 7}}, PlotRange -> {plot_range}], \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn graphics3d_orders_a_reversed_box() {
+    let ordered = scene_svg("{{-4, 4}, {-4, 4}, {-2, 2}}");
+    assert_eq!(scene_svg("{{4, -4}, {-4, 4}, {-2, 2}}"), ordered);
+    assert_eq!(scene_svg("{{4, -4}, {4, -4}, {2, -2}}"), ordered);
+    assert_eq!(scene_svg("4 {{1, -1}, {-1, 1}, {-0.5, 0.5}}"), ordered);
+    assert_ne!(scene_svg("Automatic"), ordered);
+  }
+
+  #[test]
+  fn graphics3d_orders_a_reversed_partial_box() {
+    assert_eq!(
+      scene_svg("{{4, -4}, All, Automatic}"),
+      scene_svg("{{-4, 4}, All, Automatic}")
+    );
+    assert_ne!(
+      scene_svg("{{4, -4}, All, Automatic}"),
+      scene_svg("Automatic")
+    );
+  }
+
+  #[test]
+  fn graphics3d_orders_a_reversed_vertical_range() {
+    assert_eq!(scene_svg("{2, -2}"), scene_svg("{-2, 2}"));
+    assert_ne!(scene_svg("{2, -2}"), scene_svg("Automatic"));
+  }
 }
 
 // An unboxed 3D scene at a fixed width and height is fitted to the frame by

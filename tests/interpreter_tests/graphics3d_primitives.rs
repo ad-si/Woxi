@@ -1395,8 +1395,11 @@ mod plot_range_clipping {
       scene("Automatic"),
       "the explicit intervals of the other axes must still frame the scene"
     );
-    // A reversed interval is still not a frame at all.
-    assert_eq!(scene("{{-5, 5}, {1, 0}, {-5, 5}}"), scene("Automatic"));
+    // A reversed interval spans what the ordered one does.
+    assert_eq!(
+      scene("{{-5, 5}, {1, 0}, {-5, 5}}"),
+      scene("{{-5, 5}, {0, 1}, {-5, 5}}")
+    );
   }
 
   // `PlotRange -> {…, {0, 1}}` cuts the unit sphere down to its upper

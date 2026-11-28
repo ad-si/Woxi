@@ -16797,7 +16797,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
-            && hi > lo
+            .and_then(|(lo, hi)| ordered_interval(lo, hi))
           {
             partial_range = Some([None, None, Some((lo, hi))]);
           } else if let Some(ranges) = parse_partial_axis_ranges(&value) {
@@ -19790,6 +19790,17 @@ fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   Some((lo, hi))
 }
 
+/// The interval a `PlotRange` pair `{a, b}` spans, lower end first. A pair
+/// written upper end first (`{8, -8}`) spans the same interval, as it does
+/// in 2D; one of no extent (or with a NaN end) frames nothing.
+fn ordered_interval(a: f64, b: f64) -> Option<(f64, f64)> {
+  match a.partial_cmp(&b)? {
+    std::cmp::Ordering::Less => Some((a, b)),
+    std::cmp::Ordering::Greater => Some((b, a)),
+    std::cmp::Ordering::Equal => None,
+  }
+}
+
 /// `PlotRange -> {{x0, x1}, All, Automatic}`: an explicit interval for some
 /// axes, the extent of the contents (`All`, `Automatic`, `Full`) for the
 /// rest. `None` unless at least one axis gets an interval.
@@ -19811,12 +19822,12 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
       Expr::List(pair) if pair.len() == 2 => {
         let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
         let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-        match hi.partial_cmp(&lo) {
-          Some(std::cmp::Ordering::Greater) => Some((lo, hi)),
+        match ordered_interval(lo, hi) {
+          Some(interval) => Some(interval),
           // An interval of no extent cannot frame anything, so that axis
           // falls back to the automatic range while the others stay fixed.
-          Some(std::cmp::Ordering::Equal) => None,
-          _ => return None,
+          None if lo == hi => None,
+          None => return None,
         }
       }
       _ => return None,
@@ -19844,11 +19855,7 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
     }
     let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
     let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-    // A reversed or degenerate interval (or a NaN bound) is not a frame.
-    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
-      return None;
-    }
-    ranges[i] = (lo, hi);
+    ranges[i] = ordered_interval(lo, hi)?;
   }
   Some(ranges)
 }
