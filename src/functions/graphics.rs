@@ -16285,6 +16285,7 @@ fn graphics_decorations(
   title_lines: usize,
   title_font: f64,
   label_font: f64,
+  axes_label_font: f64,
   tick_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
@@ -16329,7 +16330,7 @@ fn graphics_decorations(
   let measure = |markup: &str| {
     axes_label_picture_size(markup).unwrap_or_else(|| {
       let size = crate::functions::plot_padding::markup_font_size(markup)
-        .unwrap_or(label_font);
+        .unwrap_or(axes_label_font);
       // A multi-line label (`"arrival time\nof A"`) is as wide as its
       // widest line and as tall as its stacked lines.
       let lines = text_label_lines(markup);
@@ -16427,6 +16428,18 @@ fn graphics_decorations(
           }
         }
       }
+    }
+    // Axes drawn inside the frame carry no tick labels, but their
+    // `AxesLabel`s still stand past the ends of the axes, beyond the frame.
+    if let Some((x, y)) = axes_label {
+      d.origin = (
+        frac_x(axis_x_data).clamp(0.0, 1.0),
+        frac_y(axis_y_data).clamp(0.0, 1.0),
+      );
+      d.axes_labels = (
+        (axes.0 && !x.is_empty()).then(|| measure(x)),
+        (axes.1 && !y.is_empty()).then(|| measure(y)),
+      );
     }
   } else if axes.0 || axes.1 {
     d.axes = axes;
@@ -21228,9 +21241,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .flatten()
     .filter_map(|l| markup_max_font_size(l))
     .fold(label_font.size.unwrap_or(TITLE_FONT), f64::max);
+  // Under the frame of a plot an axis is drawn only where it runs strictly
+  // inside the plot's unpadded range.
+  let drawn_axes = match plot_interior.filter(|_| frame) {
+    Some((ix, iy)) => {
+      let crossing = |origin: Option<f64>, lo: f64, hi: f64| {
+        origin.unwrap_or(if lo <= 0.0 && 0.0 <= hi { 0.0 } else { lo })
+      };
+      (
+        axes.0
+          && strictly_inside(crossing(axes_origin.1, bb.y_min, bb.y_max), iy),
+        axes.1
+          && strictly_inside(crossing(axes_origin.0, bb.x_min, bb.x_max), ix),
+      )
+    }
+    None => axes,
+  };
   let decorations = graphics_decorations(
     &bb,
-    axes,
+    drawn_axes,
     axes_origin,
     (&ticks_x, &ticks_y),
     frame.then_some((&frame_tick_modes, &frame_tick_lists)),
@@ -21244,6 +21273,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       axes_label_font
     },
+    axes_label_font,
     tick_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
@@ -21793,22 +21823,6 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   // Wolfram paints axes after the primitives with a thin default stroke.
-  // Under the frame of a plot an axis is drawn only where it runs strictly
-  // inside the plot's unpadded range.
-  let drawn_axes = match plot_interior.filter(|_| frame) {
-    Some((ix, iy)) => {
-      let crossing = |origin: Option<f64>, lo: f64, hi: f64| {
-        origin.unwrap_or(if lo <= 0.0 && 0.0 <= hi { 0.0 } else { lo })
-      };
-      (
-        axes.0
-          && strictly_inside(crossing(axes_origin.1, bb.y_min, bb.y_max), iy),
-        axes.1
-          && strictly_inside(crossing(axes_origin.0, bb.x_min, bb.x_max), ix),
-      )
-    }
-    None => axes,
-  };
   render_axes(
     &mut svg,
     drawn_axes,
@@ -75759,6 +75773,7 @@ mod review_layout_tests {
       None,
       0,
       TITLE_FONT,
+      LABEL_FONT,
       LABEL_FONT,
       TICK_FONT,
     );

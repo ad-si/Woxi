@@ -8442,6 +8442,14 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
+      // `Pane[content, BaseStyle -> directives]` sets its content in those
+      // directives, the way a `Framed` or `Panel` with a `BaseStyle` does.
+      if name == "Pane"
+        && let Some(styled) =
+          crate::functions::graphics::frame_base_styled_args(args)
+      {
+        return expr_to_svg(&call("Pane", styled));
+      }
       let pane_size = pane_fixed_size(args);
       // A fixed `{width, height}` Pane is a layout box of its own: an
       // automatically sized picture in it is laid out against the box (and

@@ -844,11 +844,13 @@ impl Decorations {
         along_x(&mut reach, b);
         reach(B, TICK_LABEL_GAP + b.height - oy);
       }
-      if let Some((lw, lh)) = self.axes_labels.0 {
-        reach(R, AXES_LABEL_GAP_X + lw);
-        reach(T, lh / 2.0 - (h - oy));
-        reach(B, lh / 2.0 - oy);
-      }
+    }
+    // An axes label stands past the end of its axis, whether or not the
+    // axis carries tick labels (inside a frame it does not).
+    if let Some((lw, lh)) = self.axes_labels.0 {
+      reach(R, AXES_LABEL_GAP_X + lw);
+      reach(T, lh / 2.0 - (h - oy));
+      reach(B, lh / 2.0 - oy);
     }
     if self.axes.1 {
       // The x axis runs `ox` left of the crossing.
@@ -861,11 +863,11 @@ impl Decorations {
         along_y(&mut reach, b);
         reach(L, TICK_LABEL_GAP + b.width - ox);
       }
-      if let Some((lw, lh)) = self.axes_labels.1 {
-        reach(T, AXES_LABEL_GAP_Y + lh);
-        reach(L, lw / 2.0 - ox);
-        reach(R, lw / 2.0 - (w - ox));
-      }
+    }
+    if let Some((lw, lh)) = self.axes_labels.1 {
+      reach(T, AXES_LABEL_GAP_Y + lh);
+      reach(L, lw / 2.0 - ox);
+      reach(R, lw / 2.0 - (w - ox));
     }
     e
   }

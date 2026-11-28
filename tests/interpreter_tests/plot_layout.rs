@@ -2417,6 +2417,85 @@ mod defer_labels {
   }
 }
 
+mod framed_axes_labels {
+  use super::*;
+
+  /// The `x`/`y` of the `<text>` that draws `label`.
+  fn label_position(svg: &str, label: &str) -> (f64, f64) {
+    let end = svg
+      .find(&format!(">{label}</text>"))
+      .unwrap_or_else(|| panic!("label {label} is not drawn"));
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let attr = |name: &str| -> f64 {
+      let key = format!(" {name}=\"");
+      let from = tag.find(&key).unwrap() + key.len();
+      tag[from..from + tag[from..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    (attr("x"), attr("y"))
+  }
+
+  /// The translation of the group the drawing sits in.
+  fn drawing_offset(svg: &str) -> (f64, f64) {
+    let key = "<g transform=\"translate(";
+    let from = svg.find(key).expect("drawing group") + key.len();
+    let inner = &svg[from..from + svg[from..].find(')').unwrap()];
+    let mut parts = inner
+      .split([',', ' '])
+      .filter(|p| !p.is_empty())
+      .map(|p| p.parse::<f64>().unwrap());
+    (parts.next().unwrap(), parts.next().unwrap())
+  }
+
+  #[test]
+  fn axes_labels_of_a_framed_graphic_stay_inside_the_image() {
+    for size in [200, 300, 480] {
+      let svg = svg_of(&format!(
+        "Graphics[Point[{{0, 0}}], Axes -> True, Frame -> True, \
+         AxesLabel -> {{\"abscissa\", \"ordinate\"}}, PlotRange -> 1, \
+         ImageSize -> {size}]"
+      ));
+      let (width, _) = svg_size(&svg);
+      let (dx, dy) = drawing_offset(&svg);
+      // The x label starts past the frame and has to end inside the image:
+      // it is at least four characters of the label font wide.
+      let (x, _) = label_position(&svg, "abscissa");
+      assert!(
+        dx + x + 30.0 < width,
+        "x label at {} overflows the {width} wide image",
+        dx + x
+      );
+      // The y label stands above the frame, below the image's top edge.
+      let (_, y) = label_position(&svg, "ordinate");
+      assert!(dy + y > 8.0, "y label at {} is cut off", dy + y);
+    }
+  }
+
+  #[test]
+  fn a_framed_graphic_without_axes_labels_keeps_its_padding() {
+    let plain =
+      svg_of("Graphics[Point[{0, 0}], Frame -> True, PlotRange -> 1]");
+    let with_axes = svg_of(
+      "Graphics[Point[{0, 0}], Axes -> True, Frame -> True, PlotRange -> 1]",
+    );
+    assert_eq!(svg_size(&plain), svg_size(&with_axes));
+    assert_eq!(drawing_offset(&plain), drawing_offset(&with_axes));
+  }
+
+  #[test]
+  fn axes_labels_without_axes_reserve_no_room() {
+    let plain =
+      svg_of("Graphics[Point[{0, 0}], Frame -> True, PlotRange -> 1]");
+    let labeled = svg_of(
+      "Graphics[Point[{0, 0}], Frame -> True, AxesLabel -> {\"abscissa\", \
+       \"ordinate\"}, PlotRange -> 1]",
+    );
+    assert_eq!(svg_size(&plain), svg_size(&labeled));
+    assert_eq!(drawing_offset(&plain), drawing_offset(&labeled));
+  }
+}
+
 /// A body evaluated ahead of sampling (`Plot[Evaluate[…], …]`) is sampled
 /// by the compiled evaluator, which used to drop every sample that passes
 /// through a complex intermediate. A product of two complex values can be
