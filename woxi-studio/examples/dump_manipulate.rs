@@ -226,8 +226,10 @@ fn main() {
             && let iced::advanced::svg::Data::Bytes(bytes) = icon.handle.data()
           {
             std::fs::create_dir_all(dir).expect("create svg out dir");
-            let out = dir
-              .join(format!("widget-{widget_count}-control-{}-label.svg", i + 1));
+            let out = dir.join(format!(
+              "widget-{widget_count}-control-{}-label.svg",
+              i + 1
+            ));
             std::fs::write(&out, bytes).expect("write svg");
             println!("    wrote {}", out.display());
           }

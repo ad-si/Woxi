@@ -84464,7 +84464,8 @@ fn frame_label_pane_wraps_to_its_width() {
        FrameLabel -> {{{label}, \"y\"}}]"
     ))
   };
-  let wrapped = plot(r#"Pane["share of \"yes\" votes at the first stage", 100]"#);
+  let wrapped =
+    plot(r#"Pane["share of \"yes\" votes at the first stage", 100]"#);
   assert!(!wrapped.contains("Pane["), "{wrapped}");
   assert!(!wrapped.contains("&amp;quot;"), "{wrapped}");
   assert!(

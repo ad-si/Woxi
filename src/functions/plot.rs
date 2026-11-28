@@ -17406,8 +17406,7 @@ fn frame_label_entry(e: &Expr) -> String {
   // wide; a styled one is finished markup and keeps its lines.
   match crate::functions::chart::pane_label_width(e) {
     Some(width)
-      if !text
-        .starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) =>
+      if !text.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) =>
     {
       text
         .split('\n')
@@ -17415,8 +17414,7 @@ fn frame_label_entry(e: &Expr) -> String {
           // The measure reads `<` and `&` as markup, so a line holding
           // either is left whole.
           if line.contains(['<', '&'])
-            || plot_padding::text_width(line, plot_padding::LABEL_FONT)
-              <= width
+            || plot_padding::text_width(line, plot_padding::LABEL_FONT) <= width
           {
             vec![line.to_string()]
           } else {

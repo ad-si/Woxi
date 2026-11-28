@@ -7683,8 +7683,7 @@ mod tests {
         "Manipulate[t, {{{{t, 0, Dynamic[Labeled[Graphics[{{Orange, Disk[]}}, \
          ImageSize -> {{40, 40}}], {label}]]}}, 0, 1}}]"
       );
-      let expr =
-        woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
       let state =
         ManipulateState::from_expr(&expr).expect("build Manipulate widget");
       let icon = state.label_svg("t").expect("an icon for the caption");

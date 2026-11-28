@@ -60968,8 +60968,7 @@ fn caption_in_panel_face(caption: &Expr) -> Expr {
       Expr::List(items.iter().map(caption_in_panel_face).collect())
     }
     Expr::FunctionCall { name, args }
-      if !args.is_empty()
-        && !(name == "Style" && sets_family(&args[1..]))
+      if !(args.is_empty() || name == "Style" && sets_family(&args[1..]))
         && matches!(
           name.as_str(),
           "Labeled"
