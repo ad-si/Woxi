@@ -83915,3 +83915,24 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
     "the 20-point subscript: {svg}"
   );
 }
+
+/// A `Text` centered on the border of an explicit `PlotRange` is cut off at
+/// the picture's edge, as in Wolfram: it is not dragged back inside, which
+/// would set it on top of its neighbor in a table of labels.
+#[test]
+fn text_centered_on_the_plot_range_border_is_cut_off_there() {
+  let svg = export_svg(
+    "Graphics[{Text[28, {140, 0}], Text[30, {150, 0}]}, \
+     PlotRange -> {{-4, 150}, {-4, 130}}, ImageSize -> {530, 470}]",
+  );
+  let xs: Vec<f64> = svg
+    .split("<text x=\"")
+    .skip(1)
+    .filter_map(|rest| rest.split('"').next()?.parse().ok())
+    .collect();
+  assert_eq!(xs.len(), 2, "{svg}");
+  // Ten units are 34 pt apart; the label on the border keeps (almost) all
+  // of that distance and ends half outside the 530 pt wide picture.
+  assert!(xs[1] - xs[0] > 33.0, "{xs:?}");
+  assert!(xs[1] > 528.0, "{xs:?}");
+}

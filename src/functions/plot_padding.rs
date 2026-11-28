@@ -561,18 +561,28 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
     if w <= 0.0 || w - lead > width {
       continue;
     }
-    let (anchor, left) = if tag.contains("text-anchor=\"end\"") {
-      (2, x - w)
-    } else if tag.contains("text-anchor=\"middle\"") {
-      (1, x - w / 2.0)
-    } else {
-      (0, x)
-    };
-    let ink_left = left + lead;
+    // The width the label has in the face the layout was made in.
+    let layout_w = text_width(content, size).min(w);
+    let (anchor, left, layout_left) =
+      if tag.contains("text-anchor=\"end\"") {
+        (2, x - w, x - layout_w)
+      } else if tag.contains("text-anchor=\"middle\"") {
+        (1, x - w / 2.0, x - layout_w / 2.0)
+      } else {
+        (0, x, x)
+      };
+    // A label the layout itself lets run past the edge (a `Text` centered
+    // on the border of an explicit `PlotRange`) is cut off there in Wolfram
+    // too: it keeps that overhang and only gives back what the wider
+    // exported glyphs add to it.
+    let over_left = (-layout_left).max(0.0);
+    let over_right = (layout_left + layout_w - width).max(0.0);
+    let ink_left = left + lead + over_left;
+    let right = left + w - over_right;
     let shift = if ink_left < 0.0 {
       -ink_left
-    } else if left + w > width {
-      (width - (left + w)).max(-ink_left)
+    } else if right > width {
+      (width - right).max(-ink_left)
     } else {
       0.0
     };
@@ -1315,11 +1325,23 @@ mod tests {
                0.10</text></svg>";
     let out = keep_text_in_view(svg);
     assert_eq!(out.matches("x=\"20.6\"").count(), 2, "{out}");
-    // A centered label overhanging the right edge moves left.
-    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"398\" y=\"9\" \
+    // A centered label that fits in Arial (16.68 pt wide) but overhangs the
+    // right edge in the wider exported face moves left.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"391.6\" y=\"9\" \
                text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
     let out = keep_text_in_view(svg);
     assert!(out.contains("x=\"391.5\""), "{out}");
+    // One centered on the edge itself is cut off there in Wolfram as well:
+    // it keeps Arial's overhang and only gives back the extra width.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"400\" y=\"9\" \
+               text-anchor=\"middle\" font-size=\"10\">100</text><text \
+               x=\"0\" y=\"9\" text-anchor=\"middle\" font-size=\"10\">\
+               100</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert!(out.contains("x=\"399.8\""), "{out}");
+    // On the left the blank before the first glyph's ink covers the extra
+    // width, so that label stays where it is.
+    assert!(out.contains("x=\"0\""), "{out}");
     // A label anchored off the canvas (a `Text` placed outside an explicit
     // `PlotRange`) stays out of view instead of being pinned to the edge.
     let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"-114\" y=\"9\" \
