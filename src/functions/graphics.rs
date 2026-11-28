@@ -8737,9 +8737,14 @@ fn animator_slider_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 /// Width in pixels of a slider drawn inside a picture: its `ImageSize`
-/// (a number, the width of a `{w, h}` pair, or a named size), else
-/// `default`.
+/// (see [`slider_image_width`]), else `default`.
 fn picture_slider_width(options: &[Expr], default: f64) -> f64 {
+  slider_image_width(options).unwrap_or(default)
+}
+
+/// Width in pixels a slider's `ImageSize` option asks for: a number, the
+/// width of a `{w, h}` pair, or a named size. `None` without a usable one.
+fn slider_image_width(options: &[Expr]) -> Option<f64> {
   let size = options.iter().find_map(|o| match option_kv(o) {
     Some(("ImageSize", value)) => evaluate_expr_to_expr(value).ok(),
     _ => None,
@@ -8756,9 +8761,7 @@ fn picture_slider_width(options: &[Expr], default: f64) -> f64 {
     Some(other) => expr_to_f64(other),
     None => None,
   };
-  width
-    .filter(|w| w.is_finite() && *w >= 20.0)
-    .unwrap_or(default)
+  width.filter(|w| w.is_finite() && *w >= 20.0)
 }
 
 /// A `Slider`/`Manipulator`/`Animator[value, {min, max, step}, opts…]`
@@ -52523,6 +52526,12 @@ pub struct ManipulateSpec {
   /// change (see [`manipulate_eval_background`]). A static color is kept
   /// here too; controls without the option do not appear.
   pub control_backgrounds: Vec<(String, String)>,
+  /// Per-control slider widths in pixels, as `(control name, width)`:
+  /// `{{w, 1, "width"}, 0, 2, ImageSize -> Tiny}` draws a short slider
+  /// instead of one stretched over the panel, which is what lets a `Row`
+  /// of several such controls fit on one line. Only specs whose
+  /// `ImageSize` names a width appear (see [`slider_image_width`]).
+  pub control_image_widths: Vec<(String, f64)>,
   /// Per-control `ControlPlacement -> Top | Bottom | Left | Right`, as
   /// `(control name, side)`: `{{n, 3, "sides"}, {3, 4, 5}, ControlPlacement
   /// -> Left}` moves just that control beside the output while the rest of
@@ -53573,6 +53582,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut control_backgrounds: Vec<(String, String)> = inner
     .as_ref()
     .map_or_default(|i| i.control_backgrounds.clone());
+  let mut control_image_widths: Vec<(String, f64)> = inner
+    .as_ref()
+    .map_or_default(|i| i.control_image_widths.clone());
   let mut control_placements: Vec<(String, ControlPlacement)> = inner
     .as_ref()
     .map_or_default(|i| i.control_placements.clone());
@@ -54609,6 +54621,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           control_backgrounds.push((c.name().to_string(), code));
         }
+        if let Expr::List(items) = &spec
+          && !c.name().is_empty()
+          && let Some(width) = slider_image_width(items)
+        {
+          control_image_widths.retain(|(n, _)| n != c.name());
+          control_image_widths.push((c.name().to_string(), width));
+        }
         if let Some(side) = per_control_placement(&spec) {
           control_placements.push((c.name().to_string(), side));
         }
@@ -55370,6 +55389,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values,
     dynamic_labels,
     control_backgrounds,
+    control_image_widths,
     control_placements,
     successive_placements,
     row_joined_controls,
@@ -61105,6 +61125,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61196,6 +61217,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61300,6 +61322,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61574,6 +61597,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61647,6 +61671,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61729,6 +61754,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
