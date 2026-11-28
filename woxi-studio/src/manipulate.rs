@@ -2804,6 +2804,7 @@ impl ManipulateState {
   /// machine) would set `overflow` once at build time and then keep
   /// `current_code`/rendering preferring that same stale value forever —
   /// every later click on the row's own buttons would appear to do nothing.
+  #[cfg(test)]
   pub fn select_discrete(
     &mut self,
     ctrl_idx: usize,
@@ -13551,5 +13552,47 @@ mod picture_slider_tests {
     assert!(state.wants_tick());
     state.tick();
     assert_eq!(variable(&state, "k"), "1");
+  }
+}
+
+#[cfg(test)]
+mod picture_power_tests {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (mazes drawn on the
+  /// nets of solids). Its body is two picture expressions written one after
+  /// the other, which multiplies them: in the 3D view both are the same
+  /// `Graphics3D`, so the output is that picture squared — one picture with
+  /// a raised 2 — where the 2D view shows two different pictures in a row.
+  /// The 3D product used to stay two pictures side by side.
+  #[test]
+  fn equal_3d_pictures_multiplied_show_one_picture_squared() {
+    let code = "Manipulate[\
+       If[flat, Graphics[{Disk[{0, 0}, r]}, ImageSize -> 60], \
+         Graphics3D[{Sphere[{0, 0, 0}, r]}, ImageSize -> 60]] \
+       If[flat, Graphics[{Circle[{0, 0}, r]}, ImageSize -> 60], \
+         Graphics3D[{Sphere[{0, 0, 0}, r]}, ImageSize -> 60]], \
+       {{flat, False}, {True, False}}, {{r, 1}, 1, 2}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let squared = state.current_svg().expect("a picture").to_string();
+    let (width, _) = woxi::functions::graphics::parse_svg_wh(&squared);
+    assert!(width < 100.0, "one picture, not two in a row: {width}");
+    assert!(squared.contains(">2</text>"), "no raised 2");
+
+    // Two different pictures still sit side by side, with no exponent.
+    if let ControlState::Discrete { current_index, .. } = &mut state.controls[0]
+    {
+      *current_index = 0;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    let row = state.current_svg().expect("a picture").to_string();
+    let (width, _) = woxi::functions::graphics::parse_svg_wh(&row);
+    assert!(width > 110.0, "two pictures in a row: {width}");
+    assert!(!row.contains(">2</text>"));
   }
 }

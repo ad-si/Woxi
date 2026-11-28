@@ -4742,3 +4742,65 @@ mod parametric_plot_range_all {
     );
   }
 }
+
+mod products {
+  use super::*;
+
+  /// Equal factors of a product collect into a power whatever they are,
+  /// a rendered 3D picture included. Regression: `g g` stayed
+  /// `Times[g, g]` for a `Graphics3D` while a `Graphics` gave `g^2`.
+  #[test]
+  fn equal_pictures_collect_into_a_power() {
+    for g in [
+      "Graphics3D[{Sphere[]}]",
+      "Graphics3D[{Cuboid[]}, Boxed -> False]",
+      "Graphics[{Disk[]}]",
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!(
+          "g = {g}; {{Head[g g], (g g)[[2]], (g g g)[[2]], \
+           (g^2 g)[[2]], g/g, Head[g g^-2], (g g^-3)[[2]]}}"
+        ))
+        .unwrap(),
+        "{Power, 2, 3, 3, 1, Power, -2}",
+        "{g}"
+      );
+    }
+  }
+
+  #[test]
+  fn equal_pictures_collect_beside_other_factors() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[{Sphere[]}]; h = Graphics3D[{Cuboid[]}]; \
+         {Length[g h g], Length[x g g], Head[g h], Length[2 g g]}"
+      )
+      .unwrap(),
+      "{2, 2, Times, 2}"
+    );
+    assert_eq!(
+      interpret("g = Graphics3D[{Sphere[]}]; g g").unwrap(),
+      "(-Graphics3D-)^2"
+    );
+  }
+
+  /// A rendered picture has the boxes of the call it was drawn from.
+  #[test]
+  fn a_rendered_picture_keeps_its_boxes() {
+    clear_state();
+    assert_eq!(
+      interpret("g = Graphics3D[{Sphere[]}, ImageSize -> 50]; ToBoxes[g]")
+        .unwrap(),
+      "Graphics3DBox[{SphereBox[{0, 0, 0}]}, ImageSize -> 50]"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[{Sphere[]}]; ToBoxes[g] === ToBoxes[Graphics3D[{Sphere[]}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

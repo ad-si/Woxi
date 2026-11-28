@@ -7029,3 +7029,79 @@ mod embedded_font_tests {
     }
   }
 }
+
+mod picture_arithmetic {
+  /// The picture a visual host shows for `code`.
+  fn shown(code: &str) -> String {
+    woxi::clear_state();
+    woxi::interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("a picture")
+  }
+
+  /// A power of a picture is shown as the picture with its raised
+  /// exponent. Regression: the host was handed the bare picture, so `g^2`
+  /// looked exactly like `g`.
+  #[test]
+  fn a_squared_picture_keeps_its_exponent() {
+    for g in [
+      "Graphics[{Disk[]}, ImageSize -> 50]",
+      "Graphics3D[{Sphere[]}, ImageSize -> 50]",
+    ] {
+      let plain = shown(&format!("g = {g}; g"));
+      let squared = shown(&format!("g = {g}; g g"));
+      assert_ne!(plain, squared, "{g}: the exponent is dropped");
+      assert!(squared.contains(">2</text>"), "{g}: no raised 2");
+      assert!(
+        squared.matches("<svg").count() >= 2,
+        "{g}: the picture is not drawn inline"
+      );
+    }
+  }
+
+  /// The picture inside the formula is drawn as it is on its own: the
+  /// stroke the formula gives its glyphs does not outline the background
+  /// of a 3D scene.
+  #[test]
+  fn a_picture_in_a_formula_does_not_inherit_the_text_stroke() {
+    let squared = shown("g = Graphics3D[{Sphere[]}, ImageSize -> 50]; g g");
+    let picture = squared.find("<svg x=").expect("the inline picture");
+    let group = squared[..picture].rfind("<g ").expect("its group");
+    assert_eq!(
+      &squared[group..picture],
+      r#"<g fill="black" stroke="none">"#
+    );
+  }
+
+  /// Any other arithmetic on a picture keeps its operands as well.
+  #[test]
+  fn a_sum_and_a_multiple_of_a_picture_keep_their_numbers() {
+    for g in [
+      "Graphics[{Disk[]}, ImageSize -> 50]",
+      "Graphics3D[{Sphere[]}, ImageSize -> 50]",
+    ] {
+      for (code, number) in [("g + 7", "7"), ("3 g", "3"), ("x g^5", "5")] {
+        let picture = shown(&format!("g = {g}; {code}"));
+        assert!(
+          picture.contains(&format!(">{number}</text>")),
+          "{g}: `{code}` lost its {number}"
+        );
+        assert!(picture.matches("<svg").count() >= 2, "{g}: `{code}`");
+      }
+    }
+  }
+
+  /// A picture on its own, and a product of different pictures (set side
+  /// by side), are unaffected.
+  #[test]
+  fn a_lone_picture_and_a_row_of_pictures_stay_pictures() {
+    let lone = shown("Graphics3D[{Sphere[]}, ImageSize -> 50]");
+    assert!(!lone.contains("<text"));
+    let row = shown(
+      "Graphics3D[{Sphere[]}, ImageSize -> 50] \
+       Graphics3D[{Cuboid[]}, ImageSize -> 50]",
+    );
+    assert!(!row.contains("<text"));
+  }
+}

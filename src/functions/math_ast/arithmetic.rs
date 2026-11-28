@@ -10039,6 +10039,9 @@ fn combine_like_bases_depth(
       // A machine real too: `2. 2.^x` is `2.^(1 + x)`.
       Expr::Real(_) => true,
       Expr::FunctionCall { .. } => true,
+      // A rendered picture is a base like any other expression:
+      // `g g` is `g^2` for a `Graphics3D` as it is for a `Graphics`.
+      Expr::Graphics { .. } => true,
       // A power base too: `Sqrt[E^x] Sqrt[E^x]` is `E^x`.
       Expr::BinaryOp {
         op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Power,

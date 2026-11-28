@@ -5724,6 +5724,17 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       };
       call(box_head, args.iter().map(to_graphics_boxes).collect())
     }
+    // A rendered picture that remembers the call it was drawn from has
+    // that call's boxes, so it typesets as the picture among other boxes
+    // (`g^2` draws `g` with a raised 2).
+    Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } if matches!(structure.as_ref(), Expr::FunctionCall { name, args }
+      if (name == "Graphics" || name == "Graphics3D") && !args.is_empty()) =>
+    {
+      expr_to_box_form(structure)
+    }
     Expr::Graphics { is_3d, .. } => {
       let box_head = if *is_3d {
         "Graphics3DBox"
