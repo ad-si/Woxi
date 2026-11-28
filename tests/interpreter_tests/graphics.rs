@@ -26102,6 +26102,75 @@ Graphics[{Text[\"hi\", {0.2, 0.2}]}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
       assert!(svg.contains("<polyline"), "curve missing: {svg}");
     }
 
+    // Regression: a `PlotRange` naming only the y range leaves the x range
+    // to the sampled points. A plot without any numeric sample has no point
+    // to span, so its x range collapses onto 0 and is drawn as -1..1 — not
+    // as the iterator domain, which only the default `Full` x range keeps.
+    #[test]
+    fn empty_plot_with_y_only_plot_range_spans_unit_x_range() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "PlotRange[Plot[undefinedF[x], {x, 0, 12}, PlotRange -> {-250, 100}]]"
+        )
+        .unwrap(),
+        "{{-1., 1.}, {-250., 100.}}"
+      );
+      assert_eq!(
+        interpret(
+          "PlotRange[Plot[undefinedF[x], {x, 3, 7}, PlotRange -> All]]"
+        )
+        .unwrap(),
+        "{{-1., 1.}, {0., 1.}}"
+      );
+      // The default range and an explicit x range are kept as given.
+      assert_eq!(
+        interpret("PlotRange[Plot[undefinedF[x], {x, 0, 12}]]").unwrap(),
+        "{{0., 12.}, {0., 1.}}"
+      );
+      assert_eq!(
+        interpret(
+          "PlotRange[Plot[undefinedF[x], {x, 0, 12}, \
+           PlotRange -> {{2, 5}, {-3, 3}}]]"
+        )
+        .unwrap(),
+        "{{2., 5.}, {-3., 3.}}"
+      );
+    }
+
+    // Regression: `Show` keeps the `PlotRange` of its first plot even when
+    // that plot drew no curve, so the curves after it are cut off at that
+    // range instead of widening the picture to their own.
+    #[test]
+    fn show_keeps_plot_range_of_leading_empty_plot() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "PlotRange[Show[Plot[undefinedF[x], {x, 0, 12}, \
+           PlotRange -> {-250, 100}], Plot[x, {x, 0, 12}]]]"
+        )
+        .unwrap(),
+        "{{-1., 1.}, {-250., 100.}}"
+      );
+      assert_eq!(
+        interpret(
+          "PlotRange[Show[Table[Plot[If[n > 0, n x, undefinedF[x]], \
+           {x, 0, 12}, PlotRange -> {{0, 4}, {-5, 5}}], {n, {0, 2, 3}}]]]"
+        )
+        .unwrap(),
+        "{{0., 4.}, {-5., 5.}}"
+      );
+      // A curve first keeps its own range, whatever comes empty after it.
+      assert_eq!(
+        interpret(
+          "PlotRange[Show[Plot[x, {x, 0, 12}, PlotRange -> {{0, 12}, {-250, 100}}], \
+           Plot[undefinedF[x], {x, 0, 12}, PlotRange -> {-250, 100}]]]"
+        )
+        .unwrap(),
+        "{{0., 12.}, {-250., 100.}}"
+      );
+    }
+
     // Regression: a curve-to-curve `Filling -> {i -> {{j}, style}}` must
     // survive `Show` merging the plot with other graphics, drawn as a
     // polygon between the two curves in the requested color.

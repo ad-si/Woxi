@@ -33707,9 +33707,17 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .unwrap_or((false, false));
-    let first_plot = plot_sources
-      .iter()
-      .find(|ps| !any_curves || !ps.series.is_empty());
+    // That first plot may be one without a curve: the `PlotRange` it was
+    // given stands all the same, whatever the curves after it reach. Left
+    // to itself, a plot without a curve settled on no range to keep.
+    let first_plot = plot_sources.iter().find(|ps| {
+      !any_curves
+        || !ps.series.is_empty()
+        || ps
+          .options
+          .iter()
+          .any(|o| matches!(option_name_value(o), Some(("PlotRange", _))))
+    });
     // A list plot already settled its `All` into numbers, which `Show`
     // keeps like any other range of the first plot.
     // An `All` given to `Show` itself is no range of the first plot: it
