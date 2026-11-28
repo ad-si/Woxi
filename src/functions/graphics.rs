@@ -72700,7 +72700,7 @@ mod manipulate_display_number_form_tests {
   fn dynamic_fraction_caption_is_typeset_stacked() {
     let bindings = vec![("d".to_string(), "x".to_string())];
     match build_manipulate_display("Dynamic[(d + 1)/2]", &bindings) {
-      DisplayNode::Static { svg: Some(_), text } => assert!(text.is_empty()),
+      DisplayNode::Static { svg: Some(_), text } => assert_eq!(text, ""),
       other => panic!("expected a typeset node, got {other:?}"),
     }
   }
