@@ -245,6 +245,40 @@ mod solids {
     }
   }
 
+  /// A field that vanishes on a face of the box is all but level beside
+  /// it, so linear interpolation put every crossing of an edge leaving the
+  /// face on the face itself: the surface grew a fringe of triangles lying
+  /// in the box's faces, far from the true surface.
+  #[test]
+  fn contour_plot3d_vertices_lie_on_the_surface() {
+    for (plot, residual) in [
+      (
+        "ContourPlot3D[x (y - 3 x^2) == 0, {x, 10^-6, 1}, {y, -0.9, 1}, \
+          {z, 0, 1}, PlotPoints -> 5]",
+        "#[[2]] - 3 #[[1]]^2",
+      ),
+      (
+        "ContourPlot3D[Sin[x] Sin[z] (y - Sin[x]^2 - z/4), \
+          {x, 10^-6, Pi - 10^-6}, {y, -0.4, 1.9}, {z, 10^-6, 3}, \
+          PlotPoints -> 6]",
+        "#[[2]] - Sin[#[[1]]]^2 - #[[3]]/4",
+      ),
+      (
+        "ContourPlot3D[x^3 + y^3 + z^3, {x, -1, 1.1}, {y, -1, 1.2}, \
+          {z, -1, 1.3}, Contours -> {0.5}, PlotPoints -> 5]",
+        "#[[1]]^3 + #[[2]]^3 + #[[3]]^3 - 0.5",
+      ),
+    ] {
+      clear_state();
+      let worst = interpret(&format!(
+        "Max[Abs[{residual}] & /@ First[Cases[{plot}, \
+          GraphicsComplex[p_, __] :> p, Infinity]]] < 0.01"
+      ))
+      .unwrap();
+      assert_eq!(worst, "True", "{plot}");
+    }
+  }
+
   #[test]
   fn scaled_polygon_coordinates_use_the_scene_bounds() {
     assert_eq!(

@@ -20,8 +20,8 @@ use crate::functions::field_plot::{
 };
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot3d::{
-  Point3D, evaluate_scalar_3d, march_cube, parse_iterator_generic,
-  reset_scalar_3d_cache,
+  EdgeCrossings, Point3D, evaluate_scalar_3d, march_cube,
+  parse_iterator_generic, reset_scalar_3d_cache,
 };
 use crate::syntax::{ComparisonOp, Expr};
 
@@ -413,6 +413,8 @@ fn implicit_facets(
     })
     .collect();
   let f_at = |i: usize, j: usize, k: usize| field[(i * n + j) * n + k];
+  let surface_field = |p: Point3D| vol.value(g, [p.x, p.y, p.z]);
+  let crossings = EdgeCrossings::new(&surface_field);
   let mut triangles: Vec<[Point3D; 3]> = Vec::new();
   for i in 0..n - 1 {
     for j in 0..n - 1 {
@@ -439,7 +441,9 @@ fn implicit_facets(
             z: p[2],
           }
         });
-        march_cube(&corners, &vals, 0.0, &mut |tri| triangles.push(tri));
+        march_cube(&corners, &vals, 0.0, Some(&crossings), &mut |tri| {
+          triangles.push(tri);
+        });
       }
     }
   }
