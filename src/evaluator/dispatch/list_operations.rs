@@ -1747,10 +1747,32 @@ fn evaluate_rebuilt_head(
   evaluate_expr_to_expr(&result)
 }
 
+/// A structural operation on an expression with a general head
+/// (`RotateLeft[f[a, b]]`, `Accumulate[a - b]`) rearranges that head's
+/// arguments, and the rebuilt expression is evaluated like any other:
+/// `RotateLeft[BinCounts[x, {0, 3}]]` is `BinCounts[{0, 3}, x]` evaluated,
+/// and `Accumulate[a - b]` is `2 a - b`. Lists and held heads stay as built.
+fn evaluate_rebuilt(
+  subject: &Expr,
+  result: Expr,
+) -> Result<Expr, InterpreterError> {
+  let (
+    Expr::FunctionCall { name: before, .. },
+    Expr::FunctionCall { name: after, .. },
+  ) = (subject, &result)
+  else {
+    return Ok(result);
+  };
+  if before != after || expr_to_string(subject) == expr_to_string(&result) {
+    return Ok(result);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
 /// The list a `NumericArray[data, type]` holds, for the operations that
 /// report on the array rather than on the wrapper — `Dimensions`,
 /// `ArrayDepth`, `Normal`. Returns None for anything else.
-fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
+pub(crate) fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
   match expr {
     Expr::FunctionCall { name, args }
       if name == "NumericArray"
@@ -2081,6 +2103,13 @@ pub fn dispatch_list_operations(
   }
 
   match name {
+    // Map does not traverse a NumericArray: `Map::bnadis`, unevaluated.
+    "Map" if args.len() >= 2 && numeric_array_payload(&args[1]).is_some() => {
+      crate::emit_message(
+        "Map::bnadis: The function Map does not currently support traversal of NumericArray objects. Consider using Normal to convert NumericArray objects to normal expressions before calling Map.",
+      );
+      return Some(Ok(unevaluated("Map", args)));
+    }
     "Map" | "ParallelMap" if args.len() == 2 => {
       return Some(list_helpers_ast::map_ast(&args[0], &args[1]));
     }
@@ -4436,7 +4465,10 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::power_range_ast(args));
     }
     "Accumulate" if args.len() == 1 => {
-      return Some(list_helpers_ast::accumulate_ast(&args[0]));
+      return Some(
+        list_helpers_ast::accumulate_ast(&args[0])
+          .and_then(|r| evaluate_rebuilt(&args[0], r)),
+      );
     }
     "AnglePath" => {
       return Some(list_helpers_ast::angle_path_ast(args));
@@ -4834,7 +4866,10 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::riffle_unified_ast(args));
     }
     "RotateLeft" | "RotateRight" if args.len() == 1 || args.len() == 2 => {
-      return Some(list_helpers_ast::rotate_unified_ast(name, args));
+      return Some(
+        list_helpers_ast::rotate_unified_ast(name, args)
+          .and_then(|r| evaluate_rebuilt(&args[0], r)),
+      );
     }
     "PadLeft" | "PadRight" if !args.is_empty() && args.len() <= 4 => {
       return Some(list_helpers_ast::pad_ast(name, args));

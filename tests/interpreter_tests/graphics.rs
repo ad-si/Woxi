@@ -83915,3 +83915,70 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
     "the 20-point subscript: {svg}"
   );
 }
+
+mod numeric_array_plot_data {
+  use woxi::interpret_with_stdout;
+
+  // The plots of array data draw a NumericArray as the array it holds.
+  #[test]
+  fn array_plots_draw_a_numeric_array() {
+    for plot in [
+      "ArrayPlot",
+      "MatrixPlot",
+      "ReliefPlot",
+      "ListPlot3D",
+      "ListDensityPlot",
+      "ListContourPlot",
+      "ListLinePlot",
+    ] {
+      let code = format!(
+        "na = NumericArray[{{{{1, 2, 3}}, {{4, 9, 6}}, {{7, 5, 8}}}}, \"UnsignedInteger8\"]; \
+         ExportString[{plot}[na], \"SVG\"] === ExportString[{plot}[Normal[na]], \"SVG\"]"
+      );
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "True", "{plot}");
+      assert!(r.warnings.is_empty(), "{plot}: {:?}", r.warnings);
+    }
+    // Also what a structural operation gives back, and with options.
+    let r = interpret_with_stdout(
+      "na = NumericArray[{{1, 2, 3}, {4, 9, 6}, {7, 5, 8}}, \"UnsignedInteger8\"]; \
+       {Head[ListPlot3D[Reverse[na], Mesh -> None]], \
+        Head[ArrayPlot[Take[na, 2], ColorFunction -> GrayLevel]], \
+        Head[ListPlot[na[[1]]]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{Graphics3D, Graphics, Graphics}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // A PlotRange that names no range is General::prng, and the plot is
+  // drawn with its automatic range.
+  #[test]
+  fn invalid_plot_range_message() {
+    for plot in ["ListPlot", "ListLinePlot"] {
+      let r = interpret_with_stdout(&format!(
+        "Head[{plot}[{{1, 2, 3}}, PlotRange -> {{0, 1.01 f[x]}}]]"
+      ))
+      .unwrap();
+      assert_eq!(r.result, "Graphics", "{plot}");
+      assert_eq!(
+        r.warnings,
+        vec![
+          "General::prng: Value of option PlotRange -> {0, 1.01*f[x]} is not \
+           All, Full, Automatic, a positive machine number, or an appropriate \
+           list of range specifications."
+        ],
+        "{plot}"
+      );
+    }
+    for range in ["All", "{0, 5}", "{{0, All}, {Automatic, Pi}}", "{Full, 7}"]
+    {
+      let r = interpret_with_stdout(&format!(
+        "Head[ListPlot[{{1, 2, 3}}, PlotRange -> {range}]]"
+      ))
+      .unwrap();
+      assert_eq!(r.result, "Graphics", "{range}");
+      assert!(r.warnings.is_empty(), "{range}: {:?}", r.warnings);
+    }
+  }
+}

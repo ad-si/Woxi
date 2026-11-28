@@ -1233,6 +1233,59 @@ mod bin_counts {
     );
   }
 
+  // A bin width may be any exact number.
+  #[test]
+  fn bin_counts_exact_width() {
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3}, 1/2]").unwrap(),
+      "{0, 1, 0, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4}, Sqrt[2]]").unwrap(),
+      interpret("BinCounts[{1, 2, 3, 4}, N[Sqrt[2]]]").unwrap()
+    );
+  }
+
+  // What is no bin specification is BinCounts::bins; a zero width divides
+  // by zero before it is refused.
+  #[test]
+  fn bin_counts_invalid_specification_messages() {
+    use woxi::interpret_with_stdout;
+    for (code, expected, messages) in [
+      (
+        "BinCounts[{1, 2, 3}, x]",
+        "BinCounts[{1, 2, 3}, x]",
+        vec![
+          "BinCounts::bins: The bin specification x is invalid for the given data.",
+        ],
+      ),
+      (
+        "BinCounts[{1, 2, 3}, NumericArray[{4, 5}, \"UnsignedInteger8\"]]",
+        "BinCounts[{1, 2, 3}, NumericArray[<2>, UnsignedInteger8]]",
+        vec![
+          "BinCounts::bins: The bin specification NumericArray[<2>, UnsignedInteger8] is invalid for the given data.",
+        ],
+      ),
+      (
+        "BinCounts[{0, 256, 1}, 0]",
+        "BinCounts[{0, 256, 1}, 0]",
+        vec![
+          "Infinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
+          "BinCounts::step: The bin step size 0 is expected to be positive.",
+        ],
+      ),
+      (
+        "BinCounts[{1, 2, 3}, -1]",
+        "BinCounts[{1, 2, 3}, -1]",
+        vec!["BinCounts::step: The bin step size -1 is expected to be positive."],
+      ),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, expected, "{code}");
+      assert_eq!(r.warnings, messages, "{code}");
+    }
+  }
+
   #[test]
   fn bin_counts_explicit_bins() {
     assert_eq!(

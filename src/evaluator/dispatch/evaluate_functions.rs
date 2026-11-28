@@ -1268,6 +1268,41 @@ fn numeric_array_list_operation(
   Some(Ok(result))
 }
 
+/// The plots of array data draw a `NumericArray[data, type]` as the array
+/// it holds (`ArrayPlot[na]`, `ListPlot3D[Reverse[na]]`), where Woxi's
+/// renderers expect the list itself. `None` when the data of `name` is not
+/// a NumericArray.
+fn numeric_array_plot(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  const ARRAY_PLOTS: &[&str] = &[
+    "ArrayPlot",
+    "MatrixPlot",
+    "ReliefPlot",
+    "ListPlot",
+    "ListLinePlot",
+    "ListPlot3D",
+    "ListDensityPlot",
+    "ListContourPlot",
+  ];
+  if !ARRAY_PLOTS.contains(&name) {
+    return None;
+  }
+  let Some(Expr::FunctionCall { name: head, args: na }) = args.first() else {
+    return None;
+  };
+  if head != "NumericArray"
+    || !(na.len() == 1 || na.len() == 2)
+    || !matches!(&na[0], Expr::List(_))
+  {
+    return None;
+  }
+  let mut dense = args.to_vec();
+  dense[0] = na[0].clone();
+  Some(evaluate_function_call_ast(name, &dense))
+}
+
 /// The rules defined for `name`, as a copy the caller can keep while
 /// evaluating (which may redefine them). Every call of a user-defined
 /// function asks for them, so the copy is made once per change to the
@@ -1357,6 +1392,9 @@ fn evaluate_function_call_ast_inner(
   }
 
   if let Some(result) = numeric_array_list_operation(name, args) {
+    return result;
+  }
+  if let Some(result) = numeric_array_plot(name, args) {
     return result;
   }
 

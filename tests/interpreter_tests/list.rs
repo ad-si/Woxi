@@ -27180,3 +27180,114 @@ fn rebuilt_non_list_heads_are_evaluated() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+mod numeric_array_refusals {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  // Map does not traverse a NumericArray: Map::bnadis, call unevaluated.
+  #[test]
+  fn map_refuses_a_numeric_array() {
+    for (code, expected) in [
+      (
+        "Map[f, NumericArray[{{1, 2}, {3, 4}}, \"UnsignedInteger8\"], {2}]",
+        "Map[f, NumericArray[<2,2>, UnsignedInteger8], {2}]",
+      ),
+      ("Head[f /@ NumericArray[{1, 2, 3}, \"Integer16\"]]", "Map"),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, expected, "{code}");
+      assert!(
+        r.warnings.iter().any(|w| w
+          == "Map::bnadis: The function Map does not currently support \
+              traversal of NumericArray objects. Consider using Normal to \
+              convert NumericArray objects to normal expressions before \
+              calling Map."),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+    assert_eq!(
+      interpret("f /@ Normal[NumericArray[{1, 2, 3}, \"Integer16\"]]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+  }
+
+  // A list is not threaded against a NumericArray.
+  #[test]
+  fn a_list_is_not_threaded_against_a_numeric_array() {
+    for (code, expected) in [
+      (
+        "{0, 256, 1} + NumericArray[{{1, 2}, {3, 4}}, \"UnsignedInteger8\"]",
+        "{0, 256, 1} + NumericArray[<2,2>, UnsignedInteger8]",
+      ),
+      (
+        "{0., 2.5} + NumericArray[{7, 8, 9}, \"Integer32\"]",
+        "{0., 2.5} + NumericArray[<3>, Integer32]",
+      ),
+      (
+        "NumericArray[{7, 8, 9}, \"Integer32\"] {2, 3}",
+        "{2, 3}*NumericArray[<3>, Integer32]",
+      ),
+      (
+        "SetAttributes[g, Listable]; g[{1, 2}, NumericArray[{7, 8}, \"Integer32\"]]",
+        "g[{1, 2}, NumericArray[<2>, Integer32]]",
+      ),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, expected, "{code}");
+      assert!(r.warnings.is_empty(), "{code}: {:?}", r.warnings);
+    }
+  }
+}
+
+mod rebuilt_heads_are_evaluated {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  // Rotating or accumulating the arguments of a general head gives an
+  // expression that is evaluated like any other.
+  #[test]
+  fn rotate_and_accumulate() {
+    for (code, expected) in [
+      ("Accumulate[a - b]", "2*a - b"),
+      ("Accumulate[f[a, b, c]]", "f[a, a + b, a + b + c]"),
+      (
+        "h[u_List, v_] := hit; {RotateLeft[h[x, {0, 3}]], RotateRight[h[x, {0, 3}]], RotateRight[h[x, {0, 3}], 3]}",
+        "{hit, hit, hit}",
+      ),
+      ("RotateLeft[Hold[1 + 1, 2]]", "Hold[2, 1 + 1]"),
+      ("RotateLeft[f[1, 2, 3], 2]", "f[3, 1, 2]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  // A rotated BinCounts call is evaluated again, so its new arguments are
+  // checked.
+  #[test]
+  fn rotated_call_reports_its_own_messages() {
+    let r = interpret_with_stdout("RotateLeft[BinCounts[x, {0, 4, 1}]]").unwrap();
+    assert_eq!(r.result, "BinCounts[{0, 4, 1}, x]");
+    assert!(
+      r.warnings.iter().any(|w| w
+        == "BinCounts::bins: The bin specification x is invalid for the \
+            given data."),
+      "{:?}",
+      r.warnings
+    );
+  }
+
+  // Rational and Complex numbers are atoms.
+  #[test]
+  fn rotating_an_atom() {
+    for code in ["RotateLeft[1/2]", "RotateRight[3 + 4 I]"] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains("::normal: Nonatomic")),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+  }
+}

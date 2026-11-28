@@ -295,6 +295,18 @@ pub fn is_builtin_orderless(name: &str) -> bool {
     .contains(crate::evaluator::attributes::Attributes::Orderless)
 }
 
+/// Whether an argument is a `NumericArray[data, type]`. A list is not
+/// threaded against one: wolframscript leaves `{0, 256, 1} + na` as it is,
+/// rather than adding the whole array to each element.
+pub fn has_numeric_array(args: &[Expr]) -> bool {
+  args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, args: na }
+      if name == "NumericArray"
+        && (na.len() == 1 || na.len() == 2)
+        && matches!(&na[0], Expr::List(_)))
+  })
+}
+
 /// Thread a Listable function over list arguments.
 /// Returns Some(result) if threading was applied, None otherwise.
 pub fn thread_listable(
@@ -314,6 +326,10 @@ pub fn thread_listable(
     if !matches!(name, "Plus" | "Times" | "Power") {
       return map_over_lone_sparse_array(name, args);
     }
+    return Ok(None);
+  }
+
+  if has_numeric_array(args) {
     return Ok(None);
   }
 

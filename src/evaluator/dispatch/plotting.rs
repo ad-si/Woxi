@@ -40,6 +40,44 @@ fn lpn_for_non_list(
   }
 }
 
+/// `General::prng` for a `PlotRange` that names no range — a limit that is
+/// neither a number nor `All`, `Full` or `Automatic`
+/// (`PlotRange -> {0, 1.01 max}` with `max` unset). The plot is then drawn
+/// with its automatic range.
+fn invalid_plot_range_message(args: &[Expr]) {
+  fn names_a_range(value: &Expr) -> bool {
+    match value {
+      Expr::Identifier(s) => {
+        matches!(s.as_str(), "All" | "Full" | "Automatic" | "Infinity")
+      }
+      Expr::List(items) => items.iter().all(names_a_range),
+      Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => true,
+      Expr::UnaryOp { operand, .. } => names_a_range(operand),
+      other => crate::functions::math_ast::try_eval_to_f64(other).is_some(),
+    }
+  }
+  // The first setting of an option is the one in effect.
+  let Some(value) = args.iter().skip(1).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) else {
+    return;
+  };
+  let value = crate::evaluator::evaluate_expr_to_expr(value)
+    .unwrap_or_else(|_| value.clone());
+  if !names_a_range(&value) {
+    crate::emit_message(&format!(
+      "General::prng: Value of option PlotRange -> {} is not All, Full, Automatic, a positive machine number, or an appropriate list of range specifications.",
+      expr_to_string(&value)
+    ));
+  }
+}
+
 /// Data that is no list at all for an array plot: `head::arrayerr`
 /// (issued outside the plot's own `Quiet`) and the call left unevaluated.
 /// `more` extends the message for heads that also take a list of arrays.
@@ -895,6 +933,7 @@ pub fn dispatch_plotting(
       // Data that is no list (once every data form ListPlot accepts has been
       // tried) leaves the call unevaluated with ListPlot::lpn, as in
       // wolframscript.
+      invalid_plot_range_message(args);
       Some(lpn_for_non_list(
         name,
         args,
@@ -918,6 +957,7 @@ pub fn dispatch_plotting(
       // return the call unevaluated. wolframscript on
       // `ListLinePlot[list]` prints the message and leaves the
       // expression symbolic.
+      invalid_plot_range_message(args);
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
         // A TimeSeries / TemporalData, an Association or labeled
         // `data -> labels` is a valid (non-List) data source, and so is a display wrapper
