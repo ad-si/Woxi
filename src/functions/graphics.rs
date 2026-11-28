@@ -18979,8 +18979,24 @@ fn render_primitive(
           } else {
             " xml:space=\"preserve\""
           };
+        // A label that Wolfram's own metrics let run past the picture's
+        // side is cut off there; the mark tells the pass that keeps labels
+        // in view (`plot_padding::keep_text_in_view`) to leave it so.
+        let layout_w = crate::functions::plot_padding::text_width(text, fs);
+        let layout_left = match anchor_attr {
+          "end" => sx - layout_w,
+          "middle" => sx - layout_w / 2.0,
+          _ => sx,
+        };
+        let cut_attr = if rotate_attr.is_empty()
+          && (layout_left < 0.0 || layout_left + layout_w > svg_w)
+        {
+          crate::functions::plot_padding::CUT_OFF_ATTR
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}{cut_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
