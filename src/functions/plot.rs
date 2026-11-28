@@ -10426,22 +10426,9 @@ fn scatter_overlay_primitives(
   }
   // A `PlotMarkers` series draws its glyph at every point instead of a dot.
   if let Some(marker) = &series.marker {
-    let mut styled = vec![Expr::String(marker.glyph.clone())];
-    if let Some((r, g, b)) = marker.color {
-      styled.push(call(
-        "RGBColor",
-        vec![
-          Expr::Real(r as f64 / 255.0),
-          Expr::Real(g as f64 / 255.0),
-          Expr::Real(b as f64 / 255.0),
-        ],
-      ));
-    }
-    styled.push(Expr::Real(marker.size));
-    let content = call("Style", styled);
-    for &(x, y) in &finite {
-      prims.push(call("Text", vec![content.clone(), point((x, y))]));
-    }
+    crate::functions::graphics::push_marker_primitives(
+      &mut prims, marker, &finite,
+    );
     if series.opacity.is_some() {
       prims.push(call1("Opacity", Expr::Real(1.0)));
     }
@@ -15812,6 +15799,37 @@ fn automatic_marker_shape(
     "▽" => (poly(&[(0.0, -3.46), (-3.95, 3.39), (3.95, 3.39)]), false),
     _ => return None,
   })
+}
+
+/// The outline of a marker that is drawn as a shape of its own rather than
+/// as a font glyph — an automatic one (`PlotMarkers -> Automatic`) or an
+/// open one (`PlotMarkers -> "OpenMarkers"`) — in the form
+/// [`glyph_marker_outline`] gives a text glyph's: points around the data
+/// point (y down) and the stroke width of an outlined shape. The last
+/// value is whether the outline is filled white. `None` for any other
+/// marker.
+pub(crate) fn shaped_marker_outline(
+  marker: &PlotMarker,
+) -> Option<(GlyphOutline, Option<f64>, bool)> {
+  let flip = |pts: Vec<(f64, f64)>| {
+    GlyphOutline::Polygon(pts.into_iter().map(|(x, y)| (x, -y)).collect())
+  };
+  if marker.automatic {
+    let (shape, filled) = automatic_marker_shape(&marker.glyph, marker.size)?;
+    let outline = match shape {
+      MarkerShape::Circle(r) => GlyphOutline::Circle { r, cy: 0.0 },
+      MarkerShape::Polygon(pts) => flip(pts),
+    };
+    return Some((outline, (!filled).then_some(2.0), false));
+  }
+  if marker.open {
+    let outline = match open_marker_outline(&marker.glyph) {
+      Some(pts) => flip(pts),
+      None => GlyphOutline::Circle { r: 3.0, cy: 0.0 },
+    };
+    return Some((outline, Some(1.5), true));
+  }
+  None
 }
 
 /// The outline of a geometric text glyph marker (`PlotMarkers -> "●"`) as

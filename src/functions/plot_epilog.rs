@@ -383,15 +383,29 @@ fn point2(expr: &Expr) -> Option<(f64, f64)> {
   None
 }
 
+/// A vertex or center: `{x, y}`, or `Offset[{dx, dy}, pos]` — `pos` moved
+/// by `{dx, dy}` printer's points — in data coordinates.
+fn vertex2(expr: &Expr, area: &PlotArea) -> Option<(f64, f64)> {
+  point2(expr).or_else(|| match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Offset" && args.len() == 2 =>
+    {
+      anchor2(expr, area)
+    }
+    _ => None,
+  })
+}
+
 /// Collect the polyline(s) described by a `Line`/`Arrow`/`Polygon` argument:
 /// either a single list of points or a list of point lists.
-fn collect_point_lists(arg: &Expr) -> Vec<Vec<(f64, f64)>> {
+fn collect_point_lists(arg: &Expr, area: &PlotArea) -> Vec<Vec<(f64, f64)>> {
   let items = match arg {
     Expr::List(items) if !items.is_empty() => items,
     _ => return Vec::new(),
   };
-  if point2(&items[0]).is_some() {
-    let pts: Vec<(f64, f64)> = items.iter().filter_map(point2).collect();
+  if vertex2(&items[0], area).is_some() {
+    let pts: Vec<(f64, f64)> =
+      items.iter().filter_map(|p| vertex2(p, area)).collect();
     if pts.len() >= 2 {
       vec![pts]
     } else {
@@ -400,7 +414,7 @@ fn collect_point_lists(arg: &Expr) -> Vec<Vec<(f64, f64)>> {
   } else {
     items
       .iter()
-      .flat_map(collect_point_lists)
+      .flat_map(|sub| collect_point_lists(sub, area))
       .collect::<Vec<_>>()
   }
 }
@@ -858,7 +872,7 @@ fn render_item(
         }
       }
       "Line" if !args.is_empty() => {
-        for pts in collect_point_lists(&args[0]) {
+        for pts in collect_point_lists(&args[0], area) {
           out.push_str(&format!(
             "<polyline fill=\"none\" {} stroke-linecap=\"round\" \
              stroke-linejoin=\"round\" points=\"{}\"/>\n",
@@ -996,7 +1010,7 @@ fn render_item(
         ));
       }
       "Polygon" if !args.is_empty() => {
-        for pts in collect_point_lists(&args[0]) {
+        for pts in collect_point_lists(&args[0], area) {
           out.push_str(&format!(
             "<polygon {} points=\"{}\"/>\n",
             style.shape_attrs(area),
@@ -1729,7 +1743,7 @@ fn render_circle_like(
   area: &PlotArea,
   out: &mut String,
 ) {
-  let (cx, cy) = match args.first().and_then(point2) {
+  let (cx, cy) = match args.first().and_then(|c| vertex2(c, area)) {
     Some(c) => c,
     None if args.is_empty() => (0.0, 0.0),
     None => return,

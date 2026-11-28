@@ -26989,19 +26989,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
       .graphics
       .expect("the body must produce a graphic")
     };
-    // Every occurrence of a marker glyph is one drawn data point: the
-    // notebook's labels use none of them.
-    let glyphs = |svg: &str, glyph: &str| svg.matches(glyph).count();
+    // A diamond marker is drawn as the shape itself rather than as text,
+    // like the plot drawn alone: one four-cornered polygon per data point,
+    // filled with the marker's color.
+    let diamonds = |svg: &str, rgb: (u8, u8, u8)| {
+      let (r, g, b) = rgb;
+      let paints = [
+        format!("fill=\"rgb({r},{g},{b})\""),
+        format!("fill=\"#{r:02X}{g:02X}{b:02X}\""),
+      ];
+      svg
+        .split("<polygon")
+        .skip(1)
+        .filter_map(|tag| tag.split('>').next())
+        .filter(|tag| paints.iter().any(|p| tag.contains(p.as_str())))
+        .filter(|tag| {
+          tag.split("points=\"").nth(1).is_some_and(|pts| {
+            pts
+              .split('"')
+              .next()
+              .unwrap_or("")
+              .split_whitespace()
+              .count()
+              == 4
+          })
+        })
+        .count()
+    };
 
     // The pressure diagram marks the 9 measured points of the MEK-toluene
     // mixture plus the two pure-component ends, on both the liquid and the
     // vapor branch, with red and blue diamonds.
     let pressure = render(2, 1);
-    assert_eq!(glyphs(&pressure, "\u{25c6}"), 22, "{pressure}");
+    assert!(!pressure.contains('\u{25c6}'), "{pressure}");
+    assert_eq!(diamonds(&pressure, (255, 0, 0)), 11, "{pressure}");
+    assert_eq!(diamonds(&pressure, (0, 0, 255)), 11, "{pressure}");
     // The x-y diagram of the chloroform mixture marks its 11 points in
     // green over the computed curve.
     let xy = render(3, 2);
-    assert_eq!(glyphs(&xy, "\u{25c6}"), 11, "{xy}");
+    assert_eq!(diamonds(&xy, (0, 255, 0)), 11, "{xy}");
     // The consistency test draws one filled red and one open blue circle
     // per point, inside the green +/-0.1 band the Epilog draws. The circle
     // glyphs are drawn as true circles rather than as text.
