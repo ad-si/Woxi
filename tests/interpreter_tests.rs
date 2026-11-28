@@ -6555,11 +6555,10 @@ font-size=\"90%\">i</tspan>"
     // wider than the frame is drawn again at the frame's width instead of
     // being scaled down, so its text keeps its size.
     fn nested_svg(svg: &str) -> (f64, f64) {
-      let tag = svg
-        .match_indices("<svg ")
-        .nth(1)
-        .map(|(at, _)| &svg[at..at + svg[at..].find('>').unwrap()])
-        .unwrap_or_else(|| panic!("no nested <svg> label: {svg}"));
+      let tag = svg.match_indices("<svg ").nth(1).map_or_else(
+        || panic!("no nested <svg> label: {svg}"),
+        |(at, _)| &svg[at..at + svg[at..].find('>').unwrap()],
+      );
       let attr = |name: &str| {
         let from = tag.find(name).unwrap() + name.len();
         tag[from..].split('"').next().unwrap().to_string()
