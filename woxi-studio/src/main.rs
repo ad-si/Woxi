@@ -12192,10 +12192,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .collect();
     assert_eq!(ys.len(), 3, "{svg}");
     assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
-    // The label's subscript is shifted within one `tspan`.
+    // The label's subscript is shifted within one `tspan`, at the 9-point
+    // minimum script size of the 10-point graphics text.
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">r</tspan>"
       ),
       "{svg}"
     );
