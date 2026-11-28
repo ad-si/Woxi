@@ -5519,11 +5519,17 @@ mod tests {
         r#"Pane[Grid[{{"top"}, {Pane[Grid[{{1, 2}}, Frame -> All]]}, {"bottom"}}], ImageSize -> {240, 350}]"#,
       )
       .expect("interpret should succeed");
+      // The picture is the whole table in the pane's box, not the nested
+      // table that was measured on the way.
+      let svg = result.graphics.expect("the table is drawn");
       assert!(
-        result.graphics.is_none(),
-        "a measured cell is not the output: {:?}",
-        result.graphics
+        svg.starts_with(r#"<svg width="240" height="350""#),
+        "{svg:.200}"
       );
+      for label in [">top<", ">1<", ">2<", ">bottom<"] {
+        assert!(svg.contains(label), "{label} missing: {svg}");
+      }
+      assert_eq!(svg.matches(">1<").count(), 1, "{svg}");
     }
 
     /// Math shown as `Text` is set one script level down, so a fraction in
@@ -5559,19 +5565,29 @@ mod tests {
       assert!(svg.contains(r#"font-size="36.0""#), "{svg}");
     }
 
-    /// A layout of plain text is left to the text renderer — composing it
-    /// as a picture would be a regression, not an improvement.
+    /// A table of plain text in a fixed-size pane is drawn like the bare
+    /// `Grid` is — as the table, in the pane's whole box — rather than
+    /// printed as its source. It goes through the table renderer, not the
+    /// pass that composes a pane of pictures.
     #[test]
-    fn a_pane_without_pictures_is_not_composed() {
+    fn a_pane_of_a_text_table_is_drawn_as_the_table() {
       let result = woxi::interpret_with_stdout(
         r#"Pane[Grid[{{1, 2}, {3, 4}}], {200, 100}]"#,
       )
       .expect("interpret should succeed");
+      let svg = result.graphics.expect("the table is drawn");
       assert!(
-        result.graphics.is_none(),
-        "a text-only layout composes no picture: {:?}",
-        result.graphics
+        svg.starts_with(r#"<svg width="200" height="100""#),
+        "{svg:.200}"
       );
+      let bare = woxi::interpret_with_stdout("Grid[{{1, 2}, {3, 4}}]")
+        .expect("interpret should succeed")
+        .graphics
+        .expect("the bare table is drawn");
+      for line in bare.lines().filter(|l| l.starts_with("<text")) {
+        let label = &line[line.rfind("\">").unwrap()..];
+        assert!(svg.contains(label), "{label} missing: {svg}");
+      }
     }
 
     /// `Panel[Text[Grid[…]]]` draws the table inside the panel's gray box,

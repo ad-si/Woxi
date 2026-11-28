@@ -5855,7 +5855,8 @@ fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
   // A table of pictures in a fixed-size pane (`Pane[Grid[{{graphic, …}}],
   // {w, h}]`) is drawn the way the pane lays it out — fitted to and placed
   // in the pane's whole box — rather than stripped to the bare table and
-  // drawn at its own size. A pane around a plain data table stays textual.
+  // drawn at its own size. A pane around a plain data table is drawn by
+  // the table pass further down, once the pane is peeled off.
   if pane_box.is_some()
     && let syntax::Expr::FunctionCall { name, args } = expr
     && name == "Pane"
@@ -5956,6 +5957,18 @@ fn render_visual_display_pipeline_impl(expr: &syntax::Expr) -> syntax::Expr {
     ));
   }
   let expr = render_image_if_needed(expr);
+  // A table the wrapper held (`Pane[Grid[…], {w, h}]`) only becomes the
+  // top-level `Grid` now that the wrapper is gone, after the top-level
+  // table pass has already run: it is drawn like a bare `Grid`, and then
+  // takes up the pane's box like any other picture.
+  let expr = match &expr {
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Grid" | "TextGrid") =>
+    {
+      render_grid_if_needed(expr)
+    }
+    _ => expr,
+  };
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
