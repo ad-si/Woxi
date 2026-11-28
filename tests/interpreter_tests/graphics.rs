@@ -43603,6 +43603,92 @@ mod graphics_grid {
     );
   }
 
+  /// In a `GraphicsColumn` with an `ImageSize`, a picture that sets a
+  /// width of its own keeps its proportion to the unsized pictures (which
+  /// count as 360 wide), and the widest spans 1/1.1 of the column.
+  #[test]
+  fn graphics_column_keeps_own_width_proportions() {
+    for (own, total) in [(200.0, 400.0), (120.0, 400.0), (180.0, 550.0)] {
+      let svg = export_svg(&format!(
+        "GraphicsColumn[{{Plot[Sin[x], {{x, 0, Pi}}, ImageSize -> {own}], \
+         Plot[Cos[x], {{x, 0, Pi}}]}}, ImageSize -> {{{total}, {total}}}]"
+      ));
+      assert_eq!(picture_size(&svg), (total, total), "{svg}");
+      let cells = layout_cells(&svg);
+      assert_eq!(cells.len(), 2, "{svg}");
+      let wide = total / 1.1;
+      assert!((cells[1][2] - wide).abs() <= 1.0, "{own}/{total}: {svg}");
+      assert!(
+        (cells[0][2] - wide * own / 360.0).abs() <= 1.0,
+        "{own}/{total}: {svg}"
+      );
+      // Both are centered across the column.
+      for cell in &cells {
+        assert!(
+          (cell[0] + cell[2] / 2.0 - total / 2.0).abs() <= 1.0,
+          "{own}/{total}: {svg}"
+        );
+      }
+    }
+  }
+
+  /// The first of several `ImageSize` options of a picture is the one in
+  /// effect for its width in a `GraphicsColumn`.
+  #[test]
+  fn graphics_column_own_width_is_first_image_size() {
+    let svg = export_svg(
+      "GraphicsColumn[{Plot[Sin[x], {x, 0, Pi}, ImageSize -> 180, \
+       ImageSize -> {400, 400}], Plot[Cos[x], {x, 0, Pi}]}, \
+       ImageSize -> {400, 400}]",
+    );
+    let cells = layout_cells(&svg);
+    assert_eq!(cells.len(), 2, "{svg}");
+    assert!(
+      (cells[0][2] - 400.0 / 1.1 / 2.0).abs() <= 1.0,
+      "first ImageSize wins: {svg}"
+    );
+  }
+
+  /// Pictures of one common width fill the column as before.
+  #[test]
+  fn graphics_column_equal_own_widths_fill_column() {
+    let svg = export_svg(
+      "GraphicsColumn[{Plot[Sin[x], {x, 0, Pi}, ImageSize -> 200], \
+       Plot[Cos[x], {x, 0, Pi}, ImageSize -> 200]}, ImageSize -> 300]",
+    );
+    let cells = layout_cells(&svg);
+    assert_eq!(cells.len(), 2, "{svg}");
+    assert!((cells[0][2] - 300.0).abs() <= 1.0, "{svg}");
+    assert!((cells[1][2] - 300.0).abs() <= 1.0, "{svg}");
+  }
+
+  /// `GraphicsColumn[list, alignment, spacing]` takes the spacing as its
+  /// third argument, just like `Spacings -> spacing`.
+  #[test]
+  fn graphics_column_positional_spacing() {
+    for spacing in ["-90", "-40", "30"] {
+      let positional = export_svg(&format!(
+        "GraphicsColumn[{{Graphics[Circle[]], Graphics[Disk[]]}}, Center, \
+         {spacing}]"
+      ));
+      let option = export_svg(&format!(
+        "GraphicsColumn[{{Graphics[Circle[]], Graphics[Disk[]]}}, \
+         Spacings -> {spacing}]"
+      ));
+      assert_eq!(
+        layout_cells(&positional),
+        layout_cells(&option),
+        "spacing {spacing}"
+      );
+    }
+    let default =
+      export_svg("GraphicsColumn[{Graphics[Circle[]], Graphics[Disk[]]}]");
+    let overlapped = export_svg(
+      "GraphicsColumn[{Graphics[Circle[]], Graphics[Disk[]]}, Center, -90]",
+    );
+    assert_ne!(layout_cells(&default), layout_cells(&overlapped));
+  }
+
   /// `ImageSize -> {w, h}` is the size of the whole `GraphicsRow` or
   /// `GraphicsColumn`, with the cells centered in the spare room.
   #[test]

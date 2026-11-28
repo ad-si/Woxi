@@ -41054,6 +41054,9 @@ struct LayoutOptions {
   frame_color: Option<Color>,
   /// What an `ImageSize -> {w, h}` means for the size of the layout.
   image_size_fit: ImageSizeFit,
+  /// The share of an explicit `ImageSize` width the cells and their gaps
+  /// span (1 unless the layout keeps a margin beside them).
+  width_share: f64,
 }
 
 /// How a layout treats an explicit `ImageSize -> {w, h}`.
@@ -41270,6 +41273,7 @@ fn compute_grid_layout(
         row_align: opts.row_align.clone(),
         frame_color: opts.frame_color,
         image_size_fit: opts.image_size_fit,
+        width_share: opts.width_share,
       };
       &opts_owned
     } else {
@@ -41432,7 +41436,7 @@ fn compute_grid_layout(
       } else {
         cols - 1.0
       };
-      let cells_w = (target_w - gaps * fixed_gap).max(1.0);
+      let cells_w = (target_w * opts.width_share - gaps * fixed_gap).max(1.0);
       cells_w / (max_nat_row_w * (1.0 + scaled_gap * gaps / cols))
     }
   };
@@ -41817,6 +41821,7 @@ fn default_layout_options() -> LayoutOptions {
     row_align: Vec::new(),
     frame_color: None,
     image_size_fit: ImageSizeFit::Within,
+    width_share: 1.0,
   }
 }
 
@@ -43515,7 +43520,8 @@ fn own_image_width(item: &Expr) -> Option<f64> {
   if !is_graphics_producing_head(name) {
     return None;
   }
-  let size = args.iter().rev().find_map(|a| match a {
+  // The first of several `ImageSize` options is the one in effect.
+  let size = args.iter().find_map(|a| match a {
     Expr::Rule {
       pattern,
       replacement,
@@ -43558,7 +43564,23 @@ fn finish_graphics_row(svgs: Vec<String>, opts: &LayoutOptions) -> Expr {
 /// GraphicsColumn[{g1, g2, ...}] or GraphicsColumn[{g1, g2, ...}, opts...]
 /// Arranges graphics vertically in a single column.
 pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let opts = parse_graphics_layout_options(&args[1..]);
+  // `GraphicsColumn[list, alignment, spacing]`: the spacing may be given
+  // as the third argument instead of as `Spacings -> spacing`.
+  let positional_spacing = match args.get(1..3) {
+    Some([alignment, spacing])
+      if !matches!(alignment, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        && !matches!(spacing, Expr::Rule { .. } | Expr::RuleDelayed { .. }) =>
+    {
+      Some(rule_expr(id_expr("Spacings"), spacing.clone()))
+    }
+    _ => None,
+  };
+  let option_args: Vec<Expr> = args[1..]
+    .iter()
+    .cloned()
+    .chain(positional_spacing)
+    .collect();
+  let mut opts = parse_graphics_layout_options(&option_args);
 
   // A column has one cell per row, so each cell takes the full column
   // width. Re-render at DEFAULT_WIDTH (or the explicit ImageSize) so
@@ -43570,7 +43592,19 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     let (per_cell_w, per_cell_h) = layout_cell_size(&opts, 1, items.len(), 1);
-    render_items_at_size(items, per_cell_w, per_cell_h, false)
+    match own_width_column_widths(items, &opts) {
+      Some(widths) => {
+        opts.width_share = GRAPHICS_COLUMN_OWN_WIDTH_SHARE;
+        items
+          .iter()
+          .zip(&widths)
+          .flat_map(|(item, w)| {
+            render_items_at_size(std::slice::from_ref(item), *w, None, false)
+          })
+          .collect()
+      }
+      None => render_items_at_size(items, per_cell_w, per_cell_h, false),
+    }
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -43601,6 +43635,49 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     )),
   }
+}
+
+/// The share of a `GraphicsColumn`'s `ImageSize` width its widest picture
+/// spans when the pictures differ in width (read off a front end snapshot:
+/// an unsized plot is 363.6 points wide in a 400 point column).
+const GRAPHICS_COLUMN_OWN_WIDTH_SHARE: f64 = 1.0 / 1.1;
+
+/// The widths the pictures of a `GraphicsColumn` with an `ImageSize` are
+/// drawn at when some of them set an `ImageSize` width of their own and
+/// they are not all equally wide; `None` for any other column.
+///
+/// Wolfram lays such a column out in the units of those sizes, a picture
+/// without one counting as the default width, and then scales the column
+/// as a whole so that its widest picture spans
+/// `GRAPHICS_COLUMN_OWN_WIDTH_SHARE` of the `ImageSize`. A plot of
+/// `ImageSize -> 200` above an unsized one therefore stays 200/360 as wide
+/// as its neighbor instead of being stretched to the column width.
+fn own_width_column_widths(
+  items: &[Expr],
+  opts: &LayoutOptions,
+) -> Option<Vec<i128>> {
+  let target_w = opts.target_width?;
+  if opts.frame != FrameSetting::None || opts.aspect_full {
+    return None;
+  }
+  let own: Vec<Option<f64>> = items.iter().map(own_image_width).collect();
+  let natural: Vec<f64> = own
+    .iter()
+    .map(|w| w.unwrap_or(DEFAULT_WIDTH as f64))
+    .collect();
+  let widest = natural.iter().copied().fold(0.0, f64::max);
+  if own.iter().all(Option::is_none)
+    || natural.iter().all(|w| (w - widest).abs() < 1e-9)
+  {
+    return None;
+  }
+  let scale = target_w * GRAPHICS_COLUMN_OWN_WIDTH_SHARE / widest;
+  Some(
+    natural
+      .iter()
+      .map(|w| ((w * scale).round() as i128).max(1))
+      .collect(),
+  )
 }
 
 /// The composed picture of `Overlay[{expr1, expr2, ...}]` (optionally
