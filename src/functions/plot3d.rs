@@ -566,7 +566,9 @@ fn line_draw_slots(
 }
 
 /// Where each outline edge `segs[k]` of a face goes in the draw order of
-/// `tris`, as `line_draw_slots` places a line piece, but never after the
+/// `tris`, as the pieces it is drawn in (one, unless a face hides only
+/// part of an edge that other faces lift past it). A piece is placed as
+/// `line_draw_slots` places a line piece, but never after the
 /// first face that covers the edge and lies in front of it. An edge ending
 /// in a corner of a solid touches the faces meeting there; one of them
 /// drawn late must not lift a hidden edge over a face that hides it.
@@ -582,13 +584,130 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
   halo: f64,
-) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None, halo)
+) -> Vec<Vec<OutlinePiece>> {
+  let clamp = |(slot, first_front): (usize, usize), owner: usize| {
+    slot.min(first_front).max(owner + 1)
+  };
+  let whole: Vec<usize> =
+    line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None, halo)
+      .into_iter()
+      .zip(owners)
+      .map(|(bounds, &owner)| clamp(bounds, owner))
+      .collect();
+  // The few samples along an edge miss a face narrower than the gaps
+  // between them: the far edge of a long floor, lifted over the faces
+  // behind it, was painted across the box standing on its middle. A long
+  // edge is therefore looked at stretch by stretch.
+  let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
+  for &(x, y) in tris.iter().flat_map(|t| &t.projected) {
+    lo = (lo.0.min(x), lo.1.min(y));
+    hi = (hi.0.max(x), hi.1.max(y));
+  }
+  let stretch = (hi.0 - lo.0).max(hi.1 - lo.1) / OUTLINE_STRETCHES_ACROSS;
+  let lerp = |seg: &[Point3D; 2], t: f64| Point3D {
+    x: seg[0].x + t * (seg[1].x - seg[0].x),
+    y: seg[0].y + t * (seg[1].y - seg[0].y),
+    z: seg[0].z + t * (seg[1].z - seg[0].z),
+  };
+  // The stretches of every long edge, in one list: `spans[k]` is the range
+  // of them that edge `k` was cut into (empty for a short edge).
+  let mut stretch_segs: Vec<[Point3D; 2]> = Vec::new();
+  let mut stretch_owners: Vec<usize> = Vec::new();
+  let mut spans: Vec<std::ops::Range<usize>> = Vec::with_capacity(segs.len());
+  for (seg, &owner) in segs.iter().zip(owners) {
+    let (a, b) = (project(seg[0], camera), project(seg[1], camera));
+    let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+    let count = if stretch > 0.0 && stretch.is_finite() && len.is_finite() {
+      ((len / stretch).ceil() as usize).min(MAX_OUTLINE_STRETCHES)
+    } else {
+      1
+    };
+    let start = stretch_segs.len();
+    if count > 1 {
+      for i in 0..count {
+        let (from, to) =
+          (i as f64 / count as f64, (i + 1) as f64 / count as f64);
+        stretch_segs.push([lerp(seg, from), lerp(seg, to)]);
+        stretch_owners.push(owner);
+      }
+    }
+    spans.push(start..stretch_segs.len());
+  }
+  let stretch_bounds = if stretch_segs.is_empty() {
+    Vec::new()
+  } else {
+    line_draw_bounds(
+      verts,
+      tris,
+      &stretch_segs,
+      &[],
+      camera,
+      Some(&stretch_owners),
+      None,
+      // A face beside a stretch lifts it only when no face covering the
+      // stretch itself caps that, and a stretch next to the rim of a face
+      // hiding the rest of the edge has none: the reach of the fills is
+      // left to the placement of the whole edge.
+      0.0,
+    )
+  };
+  spans
     .into_iter()
-    .zip(owners)
-    .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
+    .enumerate()
+    .map(|(k, span)| {
+      let entire = |slot| {
+        vec![OutlinePiece {
+          from: 0.0,
+          to: 1.0,
+          slot,
+        }]
+      };
+      if span.is_empty() {
+        return entire(whole[k]);
+      }
+      let bounds = &stretch_bounds[span];
+      let slots: Vec<usize> =
+        bounds.iter().map(|&b| clamp(b, owners[k])).collect();
+      // Drawn in one piece, the edge has to come after every face a
+      // stretch of it lies in front of, and before every face hiding one.
+      let lifted = slots.iter().copied().fold(whole[k], usize::max);
+      if bounds.iter().all(|&(_, first_front)| lifted <= first_front) {
+        return entire(lifted);
+      }
+      let count = slots.len() as f64;
+      let mut pieces: Vec<OutlinePiece> = Vec::new();
+      for (i, &slot) in slots.iter().enumerate() {
+        let to = (i + 1) as f64 / count;
+        match pieces.last_mut() {
+          Some(last) if last.slot == slot => last.to = to,
+          _ => pieces.push(OutlinePiece {
+            from: i as f64 / count,
+            to,
+            slot,
+          }),
+        }
+      }
+      pieces
+    })
     .collect()
 }
+
+/// A stretch of a face's outline edge, from fraction `from` to fraction
+/// `to` of its length, drawn just before the face at index `slot` of the
+/// draw order.
+#[derive(Debug, Clone, PartialEq)]
+struct OutlinePiece {
+  from: f64,
+  to: f64,
+  slot: usize,
+}
+
+/// How many stretches an outline edge as long as the picture is looked at
+/// in: a face hiding less of the edge than one of them may be missed.
+const OUTLINE_STRETCHES_ACROSS: f64 = 32.0;
+
+/// Most stretches one outline edge is cut into.
+const MAX_OUTLINE_STRETCHES: usize = 64;
 
 /// Which outline edges of the faces `verts` (edge `e` of face `k` at
 /// `3 * k + e`) may show over the faces drawn after their own. On a closed
@@ -18970,13 +19089,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &camera,
       OUTLINE_HALO_PX / scale.abs().max(1e-300),
     );
-    let outline_slot = |pos: usize, e: usize| {
+    // The pieces edge `e` of face `pos` is drawn in: none when the edge
+    // was not placed, which leaves it right after its face.
+    let outline_pieces = |pos: usize, e: usize| -> &[OutlinePiece] {
       outline_index
         .get(pos * 3 + e)
         .and_then(|&i| outline_slots.get(i))
-        .copied()
-        .unwrap_or(0)
-        .max(pos + 1)
+        .map_or(&[], Vec::as_slice)
     };
     let mut pending_outlines: std::collections::BinaryHeap<
       std::cmp::Reverse<(usize, usize, String)>,
@@ -19177,24 +19296,55 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(move |e| (pos + gi, e, corners[e], corners[(e + 1) % 3]))
         });
         for (k, e, a, b) in outlines {
-          // An edge two faces share is drawn by both; running each from
-          // the same end keeps a dash pattern in step.
-          let (mut a, mut b) = (a, b);
-          if (b.0, b.1) < (a.0, a.1) {
-            std::mem::swap(&mut a, &mut b);
-          }
-          let ((ax, ay), (bx, by)) = (a, b);
           let dash =
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
           let cap = outline_edge_cap(tri.edge_dashing.as_ref());
-          pending_outlines.push(std::cmp::Reverse((
-            outline_slot(k, e),
-            outline_seq,
-            format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
-            ),
-          )));
-          outline_seq += 1;
+          let pieces = outline_pieces(k, e);
+          // A dash pattern runs along the whole edge, and the round caps of
+          // a translucent line's pieces would show where they overlap, so
+          // such an edge stays in one piece, placed as its last stretch.
+          let whole = pieces.len() < 2
+            || tri.edge_dashing.is_some()
+            || tri.edge_opacity < 1.0;
+          let mut stretches: Vec<(usize, (f64, f64), (f64, f64))> = Vec::new();
+          if whole {
+            let slot = pieces.iter().map(|p| p.slot).max().unwrap_or(0);
+            stretches.push((slot, a, b));
+          } else {
+            let v = &triangle_vertices[k];
+            let (p, q) = (v[e], v[(e + 1) % 3]);
+            let at = |t: f64| {
+              let (px, py) = project(
+                Point3D {
+                  x: p.x + t * (q.x - p.x),
+                  y: p.y + t * (q.y - p.y),
+                  z: p.z + t * (q.z - p.z),
+                },
+                &camera,
+              );
+              to_svg(px, py)
+            };
+            for piece in pieces {
+              stretches.push((piece.slot, at(piece.from), at(piece.to)));
+            }
+          }
+          for (slot, a, b) in stretches {
+            // An edge two faces share is drawn by both; running each from
+            // the same end keeps a dash pattern in step.
+            let (mut a, mut b) = (a, b);
+            if (b.0, b.1) < (a.0, a.1) {
+              std::mem::swap(&mut a, &mut b);
+            }
+            let ((ax, ay), (bx, by)) = (a, b);
+            pending_outlines.push(std::cmp::Reverse((
+              slot.max(k + 1),
+              outline_seq,
+              format!(
+                "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
+              ),
+            )));
+            outline_seq += 1;
+          }
         }
       }
     }
@@ -30411,6 +30561,77 @@ mod painter_order_tests {
     // Refining every pair orders the two specks as well.
     let all = depth_order_edges(&verts, &projected, &opacities, &camera, false);
     assert_eq!(all[1], vec![2]);
+  }
+
+  /// The far edge of a floor runs behind a narrow roof and, elsewhere, in
+  /// front of a face drawn after that roof. Drawn in one piece it would
+  /// either cross the roof or be painted over by the later face, so it is
+  /// cut: the stretch under the roof goes before the roof, the stretch in
+  /// front of the later face after it.
+  #[test]
+  fn outline_edge_partly_hidden_by_a_narrow_face_is_drawn_in_pieces() {
+    // Looking straight down the z axis: screen position is (x, y), and a
+    // larger z is nearer.
+    let camera = Camera {
+      azimuth: 0.0,
+      elevation: std::f64::consts::FRAC_PI_2,
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let floor = [p(-10.0, 0.0, 0.0), p(10.0, 0.0, 0.0), p(0.0, -10.0, 0.0)];
+    // Covers the edge between x = 1.25 and x = 1.75 only, which none of
+    // the few samples taken along the whole edge falls into.
+    let roof = [p(1.0, -1.0, 1.0), p(2.0, -1.0, 1.0), p(1.5, 1.0, 1.0)];
+    let below = [p(4.0, 0.0, -1.0), p(6.0, 0.0, -1.0), p(5.0, 2.0, -1.0)];
+    let edge = [floor[0], floor[1]];
+    let slots_of = |verts: Vec<[Point3D; 3]>| {
+      let tris: Vec<Triangle> =
+        verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+      outline_draw_slots(&verts, &tris, &[edge], &[0], &camera, 0.0).remove(0)
+    };
+
+    let pieces = slots_of(vec![floor, roof, below]);
+    assert!(pieces.len() > 1, "the edge is cut: {pieces:?}");
+    assert_eq!(pieces.first().map(|p| p.from), Some(0.0));
+    assert_eq!(pieces.last().map(|p| p.to), Some(1.0));
+    for pair in pieces.windows(2) {
+      assert_eq!(pair[0].to, pair[1].from, "the pieces join up");
+    }
+    // Fractions of the edge at x = 1.5 (under the roof) and x = 5 (over
+    // the face below).
+    let slot_at = |t: f64| {
+      pieces
+        .iter()
+        .find(|p| p.from <= t && t <= p.to)
+        .map(|p| p.slot)
+    };
+    assert_eq!(slot_at(0.575), Some(1), "before the roof that hides it");
+    assert_eq!(slot_at(0.75), Some(3), "after the face it lies in front of");
+
+    // Without the roof nothing hides the edge: it stays whole, after the
+    // face it lies in front of.
+    let whole = slots_of(vec![floor, below]);
+    assert_eq!(
+      whole,
+      vec![OutlinePiece {
+        from: 0.0,
+        to: 1.0,
+        slot: 2
+      }]
+    );
+
+    // A roof with nothing lifting the edge past it leaves it whole too,
+    // right after its own face, where the roof paints over it.
+    let hidden = slots_of(vec![floor, roof]);
+    assert_eq!(
+      hidden,
+      vec![OutlinePiece {
+        from: 0.0,
+        to: 1.0,
+        slot: 1
+      }]
+    );
   }
 
   /// Three bars that each lie over the next where they cross (A over B,

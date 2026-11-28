@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- The outline of a `Graphics3D` face that runs behind a narrow solid (the
+    far edge of a long floor `Polygon` with a `Cuboid` standing on its
+    middle) no longer shows through that solid when other faces lie
+    behind the edge elsewhere: a long outline edge is placed in the draw
+    order stretch by stretch instead of from a few samples along it.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that
