@@ -36695,20 +36695,21 @@ fn row_vertical_alignments(
 
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
+    _ if alignment_char(expr).is_some() => "decimal",
     Expr::Identifier(val) => match val.as_str() {
       "Left" => "start",
       "Right" => "end",
       _ => "middle",
     },
-    _ if alignment_char(expr).is_some() => "decimal",
     _ => "middle",
   }
 }
 
 /// The character a one-character string alignment (`"."`, `":"`, …) lines
-/// a column's entries up on.
+/// a column's entries up on; `Decimal` is the decimal point.
 fn alignment_char(expr: &Expr) -> Option<char> {
   match expr {
+    Expr::Identifier(name) if name == "Decimal" => Some('.'),
     Expr::String(s) => {
       let mut chars = s.chars();
       match (chars.next(), chars.next()) {
@@ -36739,6 +36740,17 @@ fn split_decimal_str(s: &str, ch: char) -> (f64, f64) {
 /// fraction or scientific-notation form containing SVG markup), in which case
 /// the caller falls back to centering.
 fn decimal_split_width(cell: &Expr, ch: char) -> Option<(f64, f64)> {
+  // A `Style[number, color…]` wrapper colors the number without changing
+  // where its decimal point is. (Any other directive may change the glyph
+  // widths, so such a cell keeps the centered fallback.)
+  let mut cell = cell;
+  while let Expr::FunctionCall { name, args } = cell
+    && name == "Style"
+    && !args.is_empty()
+    && args[1..].iter().all(|d| parse_color(d).is_some())
+  {
+    cell = &args[0];
+  }
   let s = expr_to_svg_markup(cell);
   if s.contains('<') {
     return None;
@@ -38450,7 +38462,7 @@ fn grid_svg_styled_internal_reporting(
           _ => {}
         },
         "Alignment" => match replacement.as_ref() {
-          spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+          spec if alignment_char(spec).is_some() => {
             alignment_h = "decimal";
             align_char = char_of(spec);
           }
@@ -38471,9 +38483,58 @@ fn grid_svg_styled_internal_reporting(
             if let Some(row_spec) = items.get(1) {
               row_valigns = row_vertical_alignments(row_spec, rows.len());
             }
+            // Alignment -> {cols, rows, {{i, j} -> align, …}}: the third
+            // part places individual items (or blocks of them); an
+            // `Item`'s own alignment, noted first, still wins.
+            let item_rules: Vec<&Expr> = match items.get(2) {
+              Some(Expr::List(rules)) => rules.iter().collect(),
+              Some(rule) => vec![rule],
+              None => Vec::new(),
+            };
+            for rule in item_rules {
+              let Expr::Rule {
+                pattern,
+                replacement: align,
+              } = rule
+              else {
+                continue;
+              };
+              let Some(((r0, r1), (c0, c1))) = grid_rule_block(pattern) else {
+                continue;
+              };
+              let (h, v) = match align.as_ref() {
+                Expr::List(pair) => (pair.first(), pair.get(1)),
+                other => (Some(other), None),
+              };
+              // The rule's positions are 1-indexed, the items' 0-indexed.
+              for i in r0 - 1..r1 {
+                for j in c0 - 1..c1 {
+                  // A lone `Top`/`Bottom`/`Baseline` is a vertical value.
+                  match h {
+                    Some(Expr::Identifier(name))
+                      if matches!(
+                        name.as_str(),
+                        "Top" | "Bottom" | "Baseline"
+                      ) =>
+                    {
+                      if let Some(v) = h.and_then(vertical_alignment) {
+                        item_v_aligns.push(((i, j), v));
+                      }
+                    }
+                    Some(h) => {
+                      item_aligns.push(((i, j), alignment_to_anchor(h)));
+                    }
+                    None => {}
+                  }
+                  if let Some(v) = v.and_then(vertical_alignment) {
+                    item_v_aligns.push(((i, j), v));
+                  }
+                }
+              }
+            }
             if let Some(first) = items.first() {
               match first {
-                spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+                spec if alignment_char(spec).is_some() => {
                   alignment_h = "decimal";
                   align_char = char_of(spec);
                 }
