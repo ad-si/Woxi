@@ -8323,63 +8323,6 @@ pub(crate) fn release_dynamics(expr: &Expr) -> Expr {
   }
 }
 
-/// A static `Manipulator[value, {min, max, step}]` slider: a track with the
-/// thumb at the current value, followed by the value when
-/// `Appearance -> "Labeled"`. `None` unless value and range are numeric.
-pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
-  let value = expr_to_f64(&dynamic_current_value(args.first()?))?;
-  let (lo, hi) = match args.get(1) {
-    None => (0.0, 1.0),
-    // A bound may be live (`{1, Dynamic[n], 1}`): it sits at the current
-    // value of its variable.
-    Some(Expr::List(range)) if range.len() >= 2 => (
-      expr_to_f64(&dynamic_current_value(&range[0]))?,
-      expr_to_f64(&dynamic_current_value(&range[1]))?,
-    ),
-    Some(_) => return None,
-  };
-  if hi <= lo {
-    return None;
-  }
-  let labeled = args[1.min(args.len())..].iter().filter_map(option_kv).any(
-    |(k, v)| {
-      k == "Appearance"
-        && matches!(v, Expr::String(s) | Expr::Identifier(s) if s == "Labeled")
-    },
-  );
-  let (track_w, h) = (120.0, 20.0);
-  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
-  let thumb_x = 6.0 + (track_w - 12.0) * fraction;
-  let label = if labeled {
-    graphics_text_content(&Expr::Real(value))
-  } else {
-    String::new()
-  };
-  let label_w = if labeled {
-    label.chars().count() as f64 * 8.4 + 8.0
-  } else {
-    0.0
-  };
-  let w = track_w + label_w;
-  let mut svg = format!(
-    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#E6E6E6\" stroke=\"#BFBFBF\" stroke-width=\"0.5\"/>\n\
-     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#5E9ED6\"/>\n\
-     <circle cx=\"{thumb_x:.1}\" cy=\"10\" r=\"5.5\" fill=\"#FDFDFD\" stroke=\"#7F7F7F\" stroke-width=\"1\"/>\n",
-    track_w - 12.0,
-    thumb_x - 6.0,
-  );
-  if labeled {
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"10\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"12\" fill=\"#333\" dominant-baseline=\"central\">{}</text>\n",
-      track_w + 2.0,
-      svg_escape(&label)
-    ));
-  }
-  svg.push_str("</svg>\n");
-  Some(svg)
-}
-
 /// A static `SetterBar[value, {v1, v2, …}]` (or `{v1 -> label1, …}`): a row
 /// of buttons with the one equal to the current value pressed. `None` unless
 /// the choices are a non-empty list.
@@ -8524,6 +8467,304 @@ fn progress_indicator_svg(args: &[Expr]) -> Option<String> {
     h - 1.0,
     h - 1.0
   ))
+}
+
+/// Prefix of the `id` on the invisible rectangle covering the track of a
+/// `Slider`/`Manipulator`/`Animator[Dynamic[lval], range, …]` drawn inside a
+/// picture; the rest of the id hex-encodes the [`PictureSlider`]. A live
+/// widget (Woxi Studio) maps a press or drag along the rectangle to a
+/// write-back of `lval`.
+pub const SLIDER_HIT_ID_PREFIX: &str = "woxi-sld-";
+
+/// Prefix of the `id` on the invisible rectangle covering the play button
+/// of an `Animator` drawn inside a picture; the rest of the id hex-encodes
+/// the same [`PictureSlider`] as its track. A live widget toggles the sweep
+/// of `lval` when the rectangle is pressed.
+pub const ANIMATOR_PLAY_HIT_ID_PREFIX: &str = "woxi-play-";
+
+/// A slider drawn inside a picture: the lvalue it writes and its range.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PictureSlider {
+  /// Source of the `Dynamic[lval]` target.
+  pub target: String,
+  pub min: f64,
+  pub max: f64,
+  /// Step between positions, or `0` for a continuous slider.
+  pub step: f64,
+  /// An `Animator`'s `AnimationRate`, in units of the variable per second.
+  pub rate: Option<f64>,
+  /// Whether an `Animator` starts out playing (`AnimationRunning`).
+  pub running: bool,
+}
+
+impl PictureSlider {
+  /// `value` moved onto the slider's nearest position.
+  pub fn snap(&self, value: f64) -> f64 {
+    let (lo, hi) = (self.min.min(self.max), self.min.max(self.max));
+    let snapped = if self.step > 0.0 {
+      self.min + ((value - self.min) / self.step).round() * self.step
+    } else {
+      value
+    };
+    snapped.clamp(lo, hi)
+  }
+
+  /// The value at `fraction` (0 at the left end, 1 at the right) of the
+  /// track.
+  pub fn value_at(&self, fraction: f64) -> f64 {
+    self.snap(self.min + fraction.clamp(0.0, 1.0) * (self.max - self.min))
+  }
+
+  /// The assignment storing `value` in the slider's variable. A value on an
+  /// integer grid is written as an integer, as the FrontEnd stores it.
+  pub fn write_back(&self, value: f64) -> String {
+    let on_integer_grid = self.step > 0.0
+      && self.step.fract() == 0.0
+      && self.min.fract() == 0.0
+      && value.fract() == 0.0;
+    if on_integer_grid || value.fract() != 0.0 {
+      format!("{} = {value}", self.target)
+    } else {
+      format!("{} = {value:.1}", self.target)
+    }
+  }
+
+  fn hit_id_hex(&self) -> String {
+    hex_encode(&format!(
+      "{} {} {} {} {}\n{}",
+      self.min,
+      self.max,
+      self.step,
+      self.rate.unwrap_or(0.0),
+      u8::from(self.running),
+      self.target
+    ))
+  }
+
+  fn from_hit_id_hex(hex: &str) -> Option<Self> {
+    let text = decode_hit_id_hex(hex)?;
+    let (numbers, target) = text.split_once('\n')?;
+    let nums: Vec<f64> =
+      numbers.split(' ').filter_map(|v| v.parse().ok()).collect();
+    let [min, max, step, rate, running] = nums[..] else {
+      return None;
+    };
+    Some(Self {
+      target: target.to_string(),
+      min,
+      max,
+      step,
+      rate: (rate > 0.0).then_some(rate),
+      running: running != 0.0,
+    })
+  }
+}
+
+/// Decode the slider of a [`SLIDER_HIT_ID_PREFIX`] id.
+pub fn picture_slider_from_hit_id(id: &str) -> Option<PictureSlider> {
+  PictureSlider::from_hit_id_hex(id.strip_prefix(SLIDER_HIT_ID_PREFIX)?)
+}
+
+/// Decode the slider of an [`ANIMATOR_PLAY_HIT_ID_PREFIX`] id.
+pub fn animator_play_from_hit_id(id: &str) -> Option<PictureSlider> {
+  PictureSlider::from_hit_id_hex(id.strip_prefix(ANIMATOR_PLAY_HIT_ID_PREFIX)?)
+}
+
+/// `Animator[Dynamic[lval], {min, max[, step]}[, step], opts…]` as the
+/// `[Dynamic[lval], range, opts…]` arguments of the slider it draws: a bare
+/// third positional step folds into the range.
+fn animator_slider_args(args: &[Expr]) -> Vec<Expr> {
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  match (&args[1], args.get(2)) {
+    (Expr::List(b), Some(step)) if b.len() == 2 && !is_option(step) => {
+      let range =
+        Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into());
+      let mut out = vec![args[0].clone(), range];
+      out.extend(args[3..].iter().cloned());
+      out
+    }
+    _ => args.to_vec(),
+  }
+}
+
+/// Width in pixels of a slider drawn inside a picture: its `ImageSize`
+/// (a number, the width of a `{w, h}` pair, or a named size), else
+/// `default`.
+fn picture_slider_width(options: &[Expr], default: f64) -> f64 {
+  let size = options.iter().find_map(|o| match option_kv(o) {
+    Some(("ImageSize", value)) => evaluate_expr_to_expr(value).ok(),
+    _ => None,
+  });
+  let width = match &size {
+    Some(Expr::List(dims)) if !dims.is_empty() => expr_to_f64(&dims[0]),
+    Some(Expr::Identifier(name)) => match name.as_str() {
+      "Tiny" => Some(50.0),
+      "Small" => Some(100.0),
+      "Medium" => Some(200.0),
+      "Large" => Some(400.0),
+      _ => None,
+    },
+    Some(other) => expr_to_f64(other),
+    None => None,
+  };
+  width
+    .filter(|w| w.is_finite() && *w >= 20.0)
+    .unwrap_or(default)
+}
+
+/// A `Slider`/`Manipulator`/`Animator[value, {min, max, step}, opts…]`
+/// drawn as a picture: a track with the thumb at the current value,
+/// followed by an `Animator`'s play button and, under `Appearance ->
+/// "Labeled"`, by the value. `None` unless value and range are numeric.
+///
+/// With a `Dynamic[lval]` for the value the slider is live: an invisible
+/// rectangle over the track records the write-back (see
+/// [`SLIDER_HIT_ID_PREFIX`]) so a widget can drag it, and another over an
+/// `Animator`'s play button its sweep (see [`ANIMATOR_PLAY_HIT_ID_PREFIX`]).
+/// A live slider whose variable holds no number yet rests at its minimum,
+/// and a disabled one is drawn dimmed without the regions.
+pub(crate) fn slider_control_svg(name: &str, args: &[Expr]) -> Option<String> {
+  let animator = name == "Animator";
+  let args = if animator && args.len() >= 2 {
+    animator_slider_args(args)
+  } else {
+    args.to_vec()
+  };
+  let live = match args.first()? {
+    Expr::FunctionCall { name, .. } if name == "Dynamic" && args.len() >= 2 => {
+      slider_node(&args, Vec::new(), false, &[])
+    }
+    _ => None,
+  };
+  let (lo, hi) = match args.get(1) {
+    None => (0.0, 1.0),
+    // A bound may be live (`{1, Dynamic[n], 1}`): it sits at the current
+    // value of its variable.
+    Some(Expr::List(range)) if range.len() >= 2 => (
+      expr_to_f64(&dynamic_current_value(&range[0]))?,
+      expr_to_f64(&dynamic_current_value(&range[1]))?,
+    ),
+    Some(_) => return None,
+  };
+  if hi <= lo {
+    return None;
+  }
+  let value = match &live {
+    Some(DisplayNode::Slider { current, .. }) => *current,
+    _ => expr_to_f64(&dynamic_current_value(&args[0]))?,
+  };
+  let options = &args[1.min(args.len())..];
+  let option = |wanted: &str| {
+    options.iter().find_map(|o| match option_kv(o) {
+      Some((key, value)) if key == wanted => Some(value),
+      _ => None,
+    })
+  };
+  let labeled = matches!(
+    option("Appearance"),
+    Some(Expr::String(s) | Expr::Identifier(s)) if s == "Labeled"
+  );
+  let default_w = match name {
+    "Slider" => 200.0,
+    "Animator" => 150.0,
+    _ => 120.0,
+  };
+  let (track_w, h) = (picture_slider_width(options, default_w), 20.0);
+  let (button_gap, button_w) = (6.0, 22.0);
+  let button_x = track_w + button_gap;
+  let label_x = if animator {
+    button_x + button_w
+  } else {
+    track_w
+  };
+  let fraction = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+  let thumb_x = 6.0 + (track_w - 12.0) * fraction;
+  let label = if labeled {
+    graphics_text_content(&Expr::Real(value))
+  } else {
+    String::new()
+  };
+  let label_w = if labeled {
+    label.chars().count() as f64 * 8.4 + 8.0
+  } else {
+    0.0
+  };
+  let w = label_x + label_w;
+  let enabled =
+    !matches!(&live, Some(DisplayNode::Slider { enabled: false, .. }));
+  let opacity = if enabled { "" } else { " opacity=\"0.4\"" };
+  let mut svg = format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <g{opacity}>\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#E6E6E6\" stroke=\"#BFBFBF\" stroke-width=\"0.5\"/>\n\
+     <rect x=\"6\" y=\"8\" width=\"{:.1}\" height=\"4\" rx=\"2\" fill=\"#5E9ED6\"/>\n\
+     <circle cx=\"{thumb_x:.1}\" cy=\"10\" r=\"5.5\" fill=\"#FDFDFD\" stroke=\"#7F7F7F\" stroke-width=\"1\"/>\n",
+    track_w - 12.0,
+    thumb_x - 6.0,
+  );
+  if animator {
+    let (tx, ty) = (button_x + button_w / 2.0, h / 2.0);
+    svg.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"1.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"3\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+       <path d=\"M {:.1} {:.1} L {:.1} {ty:.1} L {:.1} {:.1} Z\" fill=\"#606060\"/>\n",
+      button_x + 0.5,
+      button_w - 1.0,
+      h - 3.0,
+      tx - 3.5,
+      ty - 4.5,
+      tx + 4.5,
+      tx - 3.5,
+      ty + 4.5,
+    ));
+  }
+  if labeled {
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"10\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"12\" fill=\"#333\" dominant-baseline=\"central\">{}</text>\n",
+      label_x + 2.0,
+      svg_escape(&label)
+    ));
+  }
+  svg.push_str("</g>\n");
+  if let Some(DisplayNode::Slider {
+    target,
+    min,
+    max,
+    step,
+    enabled: true,
+    ..
+  }) = live
+  {
+    let rate = option("AnimationRate")
+      .and_then(|r| evaluate_expr_to_expr(r).ok())
+      .and_then(|r| expr_to_f64(&r))
+      .filter(|r| r.is_finite() && *r > 0.0);
+    let running = animator
+      && !matches!(
+        option("AnimationRunning").map(evaluate_expr_to_expr),
+        Some(Ok(Expr::Identifier(ref v))) if v == "False"
+      );
+    let hex = PictureSlider {
+      target,
+      min,
+      max,
+      step,
+      rate,
+      running,
+    }
+    .hit_id_hex();
+    svg.push_str(&format!(
+      "<rect id=\"{SLIDER_HIT_ID_PREFIX}{hex}\" x=\"6\" y=\"0\" width=\"{:.1}\" height=\"{h:.0}\" fill=\"#000\" fill-opacity=\"0.001\"/>\n",
+      track_w - 12.0
+    ));
+    if animator {
+      svg.push_str(&format!(
+        "<rect id=\"{ANIMATOR_PLAY_HIT_ID_PREFIX}{hex}\" x=\"{button_x:.1}\" y=\"0\" width=\"{button_w:.0}\" height=\"{h:.0}\" fill=\"#000\" fill-opacity=\"0.001\"/>\n",
+      ));
+    }
+  }
+  svg.push_str("</svg>\n");
+  Some(svg)
 }
 
 /// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]`/`Labeled[content,
@@ -35643,6 +35884,16 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       button_plate_svg("▶")
     }
+    // A bare `Slider[Dynamic[var], range]` cell (or `Manipulator`/
+    // `Animator`) draws as its track and thumb, with the hit region a live
+    // widget drags.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Slider" | "Manipulator" | "Animator")
+        && args.len() >= 2
+        && slider_control_svg(name, args).is_some() =>
+    {
+      slider_control_svg(name, args)?
+    }
     // A bare `PopupMenu[Dynamic[var], items, …]` cell (a puzzle board's
     // fill-in squares) shows the item `var` currently holds — blank while
     // nothing is chosen — instead of its source text.
@@ -45378,6 +45629,14 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Trigger[Dynamic[var], {from, to}]` control item is drawn as its
       // play button (its sweep needs a live widget).
       "Trigger" if args.len() >= 2 => return Some(button_plate_svg("▶")),
+      // A `Slider[Dynamic[var], range]` (or `Manipulator`/`Animator`) item
+      // draws as its track and thumb, carrying the hit region a live widget
+      // drags, rather than as its source text.
+      "Slider" | "Manipulator" | "Animator" if args.len() >= 2 => {
+        if let Some(svg) = slider_control_svg(name, &args) {
+          return Some(svg);
+        }
+      }
       // Likewise a `PopupMenu[Dynamic[var], items, …]` item shows the choice
       // `var` holds rather than its source text.
       "PopupMenu" if args.len() >= 2 => {
@@ -67541,20 +67800,8 @@ fn display_expr_to_node(
       // slider over that range. A bare third positional step folds into the
       // range; options (rules) only affect playback and appearance.
       "Animator" if args.len() >= 2 => {
-        let range = match (&args[1], args.get(2)) {
-          (Expr::List(b), Some(step))
-            if b.len() == 2
-              && !matches!(
-                step,
-                Expr::Rule { .. } | Expr::RuleDelayed { .. }
-              ) =>
-          {
-            Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
-          }
-          (r, _) => r.clone(),
-        };
         match slider_node(
-          &[args[0].clone(), range],
+          &animator_slider_args(args),
           Vec::new(),
           false,
           bindings,
