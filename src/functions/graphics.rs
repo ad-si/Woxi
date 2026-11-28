@@ -7051,7 +7051,15 @@ pub(crate) fn is_typeset_grid_item(expr: &Expr) -> bool {
   )
 }
 
-/// A notebook shows a list holding typeset matrices or tables
+/// A `Button[label, action, …]`, which is drawn as its button.
+fn is_drawn_button(expr: &Expr) -> bool {
+  matches!(
+    strip_style_wrappers(expr),
+    Expr::FunctionCall { name, args } if name == "Button" && args.len() >= 2
+  )
+}
+
+/// A notebook shows a list holding typeset matrices, tables or buttons
 /// (`{MatrixForm[a], MatrixForm[b]}`) with each item laid out in two
 /// dimensions between the list's braces and commas. Rewrite such a list —
 /// looking through `Text` and `Style` wrappers — as the
@@ -7059,7 +7067,11 @@ pub(crate) fn is_typeset_grid_item(expr: &Expr) -> bool {
 /// `expr` is no such list.
 pub(crate) fn list_with_grids_as_row(expr: &Expr) -> Option<Expr> {
   match expr {
-    Expr::List(items) if items.iter().any(is_typeset_grid_item) => {
+    Expr::List(items)
+      if items
+        .iter()
+        .any(|i| is_typeset_grid_item(i) || is_drawn_button(i)) =>
+    {
       let mut row = Vec::with_capacity(items.len() * 2 + 1);
       row.push(Expr::String("{".to_string()));
       for (i, item) in items.iter().enumerate() {
@@ -7071,6 +7083,37 @@ pub(crate) fn list_with_grids_as_row(expr: &Expr) -> Option<Expr> {
       row.push(Expr::String("}".to_string()));
       Some(Expr::FunctionCall {
         name: "Row".to_string(),
+        args: vec![Expr::List(row.into())].into(),
+      })
+    }
+    // A `Row` item that is such a list is set the same way, its braces,
+    // commas and items joining the row.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(items)
+          if items.iter().any(|i| matches!(i, Expr::List(_))
+            && list_with_grids_as_row(i).is_some())) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut row = Vec::with_capacity(items.len());
+      for item in items {
+        match &list_with_grids_as_row(item) {
+          Some(Expr::FunctionCall { args: inner, .. })
+            if matches!(item, Expr::List(_)) =>
+          {
+            match inner.first() {
+              Some(Expr::List(parts)) => row.extend(parts.iter().cloned()),
+              _ => row.push(item.clone()),
+            }
+          }
+          _ => row.push(item.clone()),
+        }
+      }
+      Some(Expr::FunctionCall {
+        name: name.clone(),
         args: vec![Expr::List(row.into())].into(),
       })
     }
@@ -46086,6 +46129,25 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Button[label, action, …], directives…]` (a button in a
+        // styled row) is still drawn as its button, the directives styling
+        // its label.
+        if let Expr::FunctionCall {
+          name: b,
+          args: b_args,
+        } = &args[0]
+          && b == "Button"
+          && b_args.len() >= 2
+        {
+          let mut button = b_args.to_vec();
+          button[0] = call(
+            "Style",
+            std::iter::once(b_args[0].clone())
+              .chain(args[1..].iter().cloned())
+              .collect(),
+          );
+          return Some(button_cell_svg(&button));
+        }
         // `Style[Text[Style[Column[…], 12]], 14]`: a one-argument `Text`
         // only marks its content as text, so the style goes straight onto
         // that content. Otherwise the wrapper hid the layout below it.
@@ -48920,13 +48982,20 @@ fn framed_box_to_svg(
 
   let content = &args[0];
 
+  // `Appearance -> Frameless` (or `"Frameless"`) leaves the box without
+  // its border and its default fill: only the content and margins remain.
+  let frameless = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
+    k == "Appearance"
+      && matches!(v, Expr::Identifier(a) | Expr::String(a) if a == "Frameless")
+  });
+
   // Optional `Background -> color` option fills the inside of the frame.
   let bg_fill = args[1..]
     .iter()
     .filter_map(option_kv)
     .find(|(k, _)| *k == "Background")
     .and_then(|(_, v)| parse_color(v))
-    .or(default_background)
+    .or(default_background.filter(|_| !frameless))
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
   // `FrameStyle -> None` draws the box without a border; any other style
@@ -48947,7 +49016,8 @@ fn framed_box_to_svg(
     matches!(
       frame_style_opt,
       Some(Expr::Identifier(n)) if n == "None"
-    ) || (is_panel && has_background && frame_style_opt.is_none());
+    ) || (is_panel && has_background && frame_style_opt.is_none())
+      || frameless;
   let frame_style =
     frame_style_opt.and_then(crate::functions::plot::parse_style_directives);
   let (frame_color, stroke_width) = crate::functions::plot::style_stroke(

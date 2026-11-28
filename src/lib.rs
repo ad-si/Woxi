@@ -4541,6 +4541,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           Some(svg) => graphics_result(svg),
           None => expr,
         }
+      } else if let Some(flow) =
+        evaluator::dispatch::io_functions::display_box_product_flow(&expr)
+      {
+        // Factors that are not all tables: the product is typeset as the
+        // factors side by side, wrapping at the page width.
+        graphics_result(evaluator::dispatch::io_functions::expr_to_svg(&flow))
       } else {
         expr
       }
