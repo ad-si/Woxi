@@ -17400,7 +17400,38 @@ fn frame_label_entry(e: &Expr) -> String {
   }
   // A frame label is typeset like an axis label: a mathematical entry
   // (`i`, `Subscript[q, i][t]`) in TraditionalForm italics.
-  crate::functions::graphics::frame_label_text(e).unwrap_or_default()
+  let text =
+    crate::functions::graphics::frame_label_text(e).unwrap_or_default();
+  // `Pane[label, w]` breaks a plain label into lines at most `w` points
+  // wide; a styled one is finished markup and keeps its lines.
+  match crate::functions::chart::pane_label_width(e) {
+    Some(width)
+      if !text
+        .starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) =>
+    {
+      text
+        .split('\n')
+        .flat_map(|line| {
+          // The measure reads `<` and `&` as markup, so a line holding
+          // either is left whole.
+          if line.contains(['<', '&'])
+            || plot_padding::text_width(line, plot_padding::LABEL_FONT)
+              <= width
+          {
+            vec![line.to_string()]
+          } else {
+            plot_padding::wrap_visible_line(
+              line,
+              width,
+              plot_padding::LABEL_FONT,
+            )
+          }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
+    _ => text,
+  }
 }
 
 /// A `FrameLabel` entry that TraditionalForm typesets as a stacked fraction,

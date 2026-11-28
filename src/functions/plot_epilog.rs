@@ -1508,6 +1508,16 @@ fn render_item(
         // anew at that width; a plot is inset transparently.
         let object = crate::evaluator::evaluate_expr_to_expr(&args[0])
           .unwrap_or_else(|_| args[0].clone());
+        // A plain value (a number, a point, a formula) is a label in the
+        // plot's own text style, as in a plain `Graphics`.
+        if args.len() >= 2
+          && crate::functions::graphics::inset_object_is_plain_value(&object)
+        {
+          let text =
+            crate::functions::graphics::inset_text(&object, &args[1], args);
+          render_item(&with_inset_background(text, args), style, area, out);
+          return;
+        }
         // A table or boxed display is set in the plot's own font size.
         let shown =
           crate::functions::graphics::inset_display_in_graphics_font(&object);

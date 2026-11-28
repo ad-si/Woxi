@@ -316,6 +316,19 @@ pub(crate) fn wrap_label_line(
   if line.contains('<') || width <= 0.0 || text_width(line, size) <= width {
     return vec![line.to_string()];
   }
+  wrap_visible_line(line, width, size)
+    .iter()
+    .map(|l| crate::functions::graphics::svg_escape(l))
+    .collect()
+}
+
+/// The visible text of `line` broken into lines at most `width` points wide
+/// at `size` points (see [`wrap_label_line`]), as plain text: no entities.
+pub(crate) fn wrap_visible_line(
+  line: &str,
+  width: f64,
+  size: f64,
+) -> Vec<String> {
   let max_em = width / size;
   let chars = visible_chars(line);
   let mut lines: Vec<String> = Vec::new();
@@ -352,10 +365,7 @@ pub(crate) fn wrap_label_line(
     }
   }
   lines.push(current);
-  lines
-    .iter()
-    .map(|l| crate::functions::graphics::svg_escape(l.trim_end()))
-    .collect()
+  lines.iter().map(|l| l.trim_end().to_string()).collect()
 }
 
 /// Finite LabelingSize uses the front end's Text-style (14 pt) measure.

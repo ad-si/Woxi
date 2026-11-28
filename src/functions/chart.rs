@@ -2198,6 +2198,24 @@ pub(crate) fn label_color(e: &Expr) -> Option<Color> {
   }
 }
 
+/// The width in points of the fixed-width `Pane[content, w]` a label is
+/// (possibly inside `Style`/`Rotate`/`Text` wrappers); `None` for any other
+/// label.
+pub(crate) fn pane_label_width(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Pane" => {
+      crate::evaluator::dispatch::io_functions::pane_width_only(args)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Rotate" | "Text")
+        && !args.is_empty() =>
+    {
+      pane_label_width(&args[0])
+    }
+    _ => None,
+  }
+}
+
 /// A chart label's `text` broken into lines the way a fixed-width
 /// `Pane[content, w]` (possibly inside `Style`/`Rotate` wrappers) lays it
 /// out: wrapped to `w` points at the label's font size.
@@ -2206,21 +2224,7 @@ fn pane_wrapped_label(
   text: String,
   font_size: Option<f64>,
 ) -> String {
-  fn pane_width(e: &Expr) -> Option<f64> {
-    match e {
-      Expr::FunctionCall { name, args } if name == "Pane" => {
-        crate::evaluator::dispatch::io_functions::pane_width_only(args)
-      }
-      Expr::FunctionCall { name, args }
-        if matches!(name.as_str(), "Style" | "Rotate" | "Text")
-          && !args.is_empty() =>
-      {
-        pane_width(&args[0])
-      }
-      _ => None,
-    }
-  }
-  let Some(width) = pane_width(e) else {
+  let Some(width) = pane_label_width(e) else {
     return text;
   };
   let size = font_size.unwrap_or(crate::functions::plot::CHART_LABEL_FONT);

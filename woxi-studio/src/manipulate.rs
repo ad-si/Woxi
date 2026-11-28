@@ -7668,6 +7668,39 @@ mod tests {
     assert!(icon.width > 18.0, "width {}", icon.width);
   }
 
+  /// The words of a picture caption (`Labeled[plot, "two\nlines"]`, a
+  /// `Pane["…", w]` under a picture) are set in the panel's proportional
+  /// face like every other control label, a string of several lines stacked
+  /// line by line. They used to come out in the monospace of a notebook
+  /// output.
+  #[test]
+  fn picture_caption_words_use_the_panel_face() {
+    for label in [
+      r#""first line\nsecond line""#,
+      r#"Pane["words that wrap inside a narrow pane", 80]"#,
+    ] {
+      let code = format!(
+        "Manipulate[t, {{{{t, 0, Dynamic[Labeled[Graphics[{{Orange, Disk[]}}, \
+         ImageSize -> {{40, 40}}], {label}]]}}, 0, 1}}]"
+      );
+      let expr =
+        woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let icon = state.label_svg("t").expect("an icon for the caption");
+      let iced::advanced::svg::Data::Bytes(bytes) = icon.handle.data() else {
+        panic!("the caption icon holds its SVG bytes");
+      };
+      let svg = String::from_utf8_lossy(bytes);
+      assert!(!svg.contains("monospace"), "{label}: {svg}");
+      assert!(svg.matches("<text").count() >= 2, "{label}: {svg}");
+      // Stacked lines, so the icon is taller than its picture and not as
+      // wide as the words on one line would be.
+      assert!(icon.height > 60.0, "{label}: height {}", icon.height);
+      assert!(icon.width < 160.0, "{label}: width {}", icon.width);
+    }
+  }
+
   /// A static annotation row whose picture comes from a symbol bound to a
   /// `Graphics` (`Row[{"pull the ", marker}]`) is drawn as a display in its
   /// place in the panel, not as a heading spelling out the symbol's name.
