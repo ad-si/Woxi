@@ -5896,12 +5896,14 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
 
 The adaptive samplers are not decoded, so these cases are skip-listed.
 
-### `Plot3D` draws clipped parts and jumps without WL's caps and refinement
+### `Plot3D` draws clipped parts and jumps without WL's refinement
 
-- Heights outside the vertical `PlotRange` (explicit, or the automatic range
-  that clips outliers) are flattened onto the box face in the surface's own
-  color; WL cuts the surface at the face and fills the cut with the
-  `ClippingStyle -> Automatic` light gray cap.
+- Heights outside the vertical `PlotRange` are cut off at the box face and
+  capped in the `ClippingStyle` when the plot is drawn, but the symbolic
+  `Graphics3D` the plot returns still holds the surface flattened onto the
+  face, without the cap polygons WL lists (so `Show[Plot3D[…], …]` and
+  `Normal` see no cap). An explicit `ClippingStyle` color is lit like a
+  surface; WL's exact shading of it is not measured.
 - Without adaptive refinement, a jump inside the last grid cell (e.g. a
   `Sum` whose real upper limit crosses an integer at the domain's edge) is
   drawn as one sloped strip across the cell; WL refines it into a near
@@ -6606,7 +6608,8 @@ accepted, but the picture is the same as without it.
   `BaselinePosition`, `FormatType`; `LabelStyle` sets only the color.
 - `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
-  `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
+  `BoundaryStyle`, `PlotPoints`, `PlotTheme`; `ClippingStyle` other than
+  the default `None` under a `PlotRange -> {zmin, zmax}`.
 - `PolarPlot`: `PlotPoints`; `FrameStyle` on a framed polar plot.
 - `DensityPlot`, `RegionPlot`: `FrameStyle`.
 - `Histogram`: `BarOrigin`, `LabelingFunction`; `ColorFunction` only for a

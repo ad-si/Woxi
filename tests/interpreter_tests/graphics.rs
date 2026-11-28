@@ -9853,6 +9853,101 @@ mod plot3d {
   mod options {
     use super::*;
 
+    /// The x positions (as fractions of the plot's width, seen from
+    /// straight above) of the SVG elements of `10 x` over the unit square
+    /// that match `pick`.
+    fn top_view_fractions(options: &str, tag: &str, pick: &str) -> Vec<f64> {
+      let svg = export_svg(&format!(
+        "Plot3D[10 x, {{x, 0, 1}}, {{y, 0, 1}}, Axes -> False, \
+         Boxed -> False, BoundaryStyle -> None, \
+         ViewPoint -> {{0, 0, Infinity}}{options}]"
+      ));
+      let xs = |line: &str| -> Vec<f64> {
+        let coords = if line.starts_with("<polygon") {
+          let points = line.split("points=\"").nth(1).unwrap();
+          points[..points.find('"').unwrap()]
+            .split(' ')
+            .map(|p| p.split_once(',').unwrap().0.to_string())
+            .collect::<Vec<_>>()
+        } else {
+          ["x1=\"", "x2=\""]
+            .iter()
+            .map(|key| {
+              let rest = line.split(key).nth(1).unwrap();
+              rest[..rest.find('"').unwrap()].to_string()
+            })
+            .collect()
+        };
+        coords.iter().map(|x| x.parse().unwrap()).collect()
+      };
+      let all: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .flat_map(xs)
+        .collect();
+      let lo = all.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = all.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      svg
+        .lines()
+        .filter(|l| l.starts_with(tag) && l.contains(pick))
+        .flat_map(xs)
+        .map(|x| (x - lo) / (hi - lo))
+        .collect()
+    }
+
+    /// Where a surface leaves the vertical `PlotRange` it is cut at the
+    /// box face and the cut is filled with the flat light gray of
+    /// `ClippingStyle -> Automatic`: `10 x` over `0..1` is the surface up
+    /// to `x = 0.1` and the cap beyond.
+    #[test]
+    fn plot3d_caps_the_part_past_the_plot_range() {
+      let gray = "fill=\"rgb(204,204,204)\"";
+      let cap = top_view_fractions(", PlotRange -> {0, 1}", "<polygon", gray);
+      assert!(!cap.is_empty(), "the cut must be capped");
+      let lo = cap.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = cap.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      assert!((lo - 0.1).abs() < 0.005, "cap starts at {lo}");
+      assert!((hi - 1.0).abs() < 0.005, "cap ends at {hi}");
+      // A surface inside its range has no cap.
+      assert!(top_view_fractions("", "<polygon", gray).is_empty());
+    }
+
+    /// `ClippingStyle -> None` leaves the cut open, and a color fills it
+    /// with that color instead of the gray.
+    #[test]
+    fn plot3d_clipping_style() {
+      let gray = "fill=\"rgb(204,204,204)\"";
+      let reach = |options: &str| {
+        top_view_fractions(options, "<polygon", "fill=")
+          .iter()
+          .copied()
+          .fold(f64::NEG_INFINITY, f64::max)
+      };
+      let open = ", PlotRange -> {{0, 1}, {0, 1}, {0, 1}}, \
+                  ClippingStyle -> None";
+      assert!(top_view_fractions(open, "<polygon", gray).is_empty());
+      let red = ", PlotRange -> {0, 1}, ClippingStyle -> Red";
+      assert!(top_view_fractions(red, "<polygon", gray).is_empty());
+      assert!((reach(red) - 1.0).abs() < 0.005, "{}", reach(red));
+    }
+
+    /// A mesh function sees the surface only inside the vertical range:
+    /// `Mesh -> 1` with `MeshFunctions -> {#3 &}` on `10 x` cut at height
+    /// 1 draws its one line at height 1/2 (`x = 0.05`), not at the middle
+    /// of the unclipped heights, and none on the cap.
+    #[test]
+    fn plot3d_height_mesh_spans_the_clipped_range() {
+      let mesh = top_view_fractions(
+        ", PlotRange -> {0, 1}, Mesh -> 1, MeshFunctions -> {#3 &}",
+        "<line",
+        "stroke=\"#000000a0\"",
+      );
+      assert!(!mesh.is_empty(), "the mesh line must be drawn");
+      for x in mesh {
+        assert!((x - 0.05).abs() < 0.005, "mesh line at x = {x}");
+      }
+    }
+
     #[test]
     fn image_size_integer() {
       insta::assert_snapshot!(export_svg(
@@ -36644,6 +36739,56 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          ContourShading -> None, Contours -> 1, Mesh -> 4]",
       );
       assert_eq!(count(&default_mesh), count(&plain) + 8, "{default_mesh}");
+    }
+
+    /// A mesh function's third argument is the plotted value, so
+    /// `MeshFunctions -> {#3 &}` draws `Mesh -> n` further level curves of
+    /// the function itself, evenly spaced over its values.
+    #[test]
+    fn contour_plot_mesh_function_takes_the_plotted_value() {
+      let levels = |options: &str| {
+        interpret(&format!(
+          "Union[Cases[Normal[ContourPlot[x + y, {{x, 0, 2}}, {{y, 0, 2}}, \
+           ContourShading -> None, Contours -> {{1.7}}, Mesh -> 3, \
+           MeshFunctions -> {{#3 &}}{options}]], \
+           Line[p_] :> Round[Total[First[p]], 0.001], Infinity]]"
+        ))
+        .unwrap()
+      };
+      // The values run over 0..4: mesh lines at 1, 2 and 3 beside the
+      // contour at 1.7.
+      assert_eq!(levels(""), "{1., 1.7, 2., 3.}");
+      // Over an explicit value range the levels span that range, and no
+      // mesh line is drawn in the part the range cuts off.
+      assert_eq!(levels(", PlotRange -> {0, 2}"), "{0.5, 1., 1.5, 1.7}");
+    }
+
+    /// `PlotRange -> {zmin, zmax}` fixes the values a `ContourPlot` shows:
+    /// the automatic levels are chosen over that range rather than over
+    /// the sampled values, and the bands stop where the function leaves it
+    /// (`ClippingStyle -> None`), as a Demonstration that plots a
+    /// potential with poles between `-h` and `h` relies on.
+    #[test]
+    fn contour_plot_value_plot_range_sets_levels_and_clips() {
+      let plot = "Normal[ContourPlot[x + y, {x, 0, 2}, {y, 0, 2}, \
+                  PlotRange -> {0, 2}]]";
+      assert_eq!(
+        interpret(&format!(
+          "Union[Cases[{plot}, Line[p_] :> Round[10 Total[First[p]]], \
+           Infinity]]"
+        ))
+        .unwrap(),
+        "{2, 4, 6, 8, 10, 12, 14, 16, 18}"
+      );
+      // No band reaches into x + y > 2.
+      assert_eq!(
+        interpret(&format!(
+          "Round[Max[Cases[{plot}, Polygon[p_] :> Max[Total /@ p], \
+           Infinity]], 0.001]"
+        ))
+        .unwrap(),
+        "2."
+      );
     }
 
     /// With a `RegionFunction`, a mesh function's `Mesh -> n` levels are
