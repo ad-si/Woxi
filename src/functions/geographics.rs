@@ -114,6 +114,8 @@ fn fixup_ne_name(ne: &str) -> &str {
     "Bosnia and Herz." => "Bosnia and Herzegovina",
     "Solomon Is." => "Solomon Islands",
     "W. Sahara" => "Western Sahara",
+    "Falkland Is." => "Falkland Islands",
+    "Fr. S. Antarctic Lands" => "French Southern and Antarctic Lands",
     other => other,
   }
 }
@@ -122,13 +124,21 @@ fn fixup_ne_name(ne: &str) -> &str {
 /// the same canonical country as `query`. Returns `None` for unknown names or
 /// non-sovereign territories not in the knowledge base.
 fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
-  // Natural Earth entries outside the sovereign-country list (Antarctica)
-  // are matched by their own name.
+  // Natural Earth entries outside the sovereign-country list (Antarctica,
+  // Greenland, Western Sahara) are matched by their own name, written the
+  // Natural Earth way or as the knowledge base displays it.
   let Some(canon) = crate::functions::country_data::canonical_name(query)
   else {
+    let display = crate::functions::country_data::record_display_name(query)
+      .unwrap_or(query);
     return world_countries()
       .iter()
-      .find(|c| c.name.eq_ignore_ascii_case(query))
+      .find(|c| {
+        [query, display].iter().any(|n| {
+          c.name.eq_ignore_ascii_case(n)
+            || fixup_ne_name(&c.name).eq_ignore_ascii_case(n)
+        })
+      })
       .map(|c| c.polygons.as_slice());
   };
   world_countries().iter().enumerate().find_map(|(i, c)| {
