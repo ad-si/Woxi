@@ -1184,6 +1184,9 @@ function renderManipulate(item) {
           handle.style.bottom = `${fy * 100}%`
           if (ctrl.autoCreate) {
             handle.addEventListener("dblclick", () => {
+              // `LocatorAutoCreate -> {min, max}` keeps at least `min`.
+              if (current[ctrl.name].points.length <= (ctrl.minPoints ?? 0))
+                return
               current[ctrl.name].points.splice(idx, 1)
               rebuildHandles()
               refreshDisplay()
@@ -1225,7 +1228,10 @@ function renderManipulate(item) {
         })
         if (best >= 0 && bestD <= 0.08) {
           dragIndex = best
-        } else if (ctrl.autoCreate) {
+        } else if (
+          ctrl.autoCreate &&
+          pts.length < (ctrl.maxPoints ?? Infinity)
+        ) {
           pts.push([x, y])
           dragIndex = pts.length - 1
           rebuildHandles()

@@ -1573,6 +1573,11 @@ thread_local! {
   /// its line widths and point sizes follow that width, not the box's.
   static RELATIVE_WIDTH: std::cell::Cell<Option<f64>> =
     const { std::cell::Cell::new(None) };
+  /// Whether the picture being drawn has an explicit horizontal
+  /// `PlotRange`. Only then can a `Text` run past the picture's side and be
+  /// cut off there: an automatic range grows to hold its labels.
+  static EXPLICIT_X_RANGE: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
 }
 
 /// The width relative sizes are measured against on a canvas `svg_w` wide.
@@ -6750,6 +6755,27 @@ pub fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
     .or_else(|| row_image_width_points(pane_args))
 }
 
+/// The height in printer's points `Pane[content, {width, height}]` (or its
+/// `ImageSize -> {width, height}` option) gives its box; `None` without a
+/// positive number.
+fn pane_height_points(pane_args: &[Expr]) -> Option<f64> {
+  let size = match pane_args.get(1) {
+    Some(Expr::List(dims)) => Some(dims),
+    _ => {
+      pane_args.iter().skip(1).filter_map(option_kv).find_map(
+        |(k, v)| match v {
+          Expr::List(dims) if k == "ImageSize" => Some(dims),
+          _ => None,
+        },
+      )
+    }
+  }?;
+  size
+    .get(1)
+    .and_then(crate::evaluator::dispatch::io_functions::pane_size_component)
+    .filter(|h| *h > 0.0)
+}
+
 /// The width in printer's points of a `Row[items, …, ImageSize -> w]`
 /// (or `ImageSize -> {w, h}`); `None` without a fixed width.
 fn row_image_width_points(row_args: &[Expr]) -> Option<f64> {
@@ -10735,6 +10761,11 @@ const TEXT_LABEL_PICTURE_MARK: &str = "data-text-label=\"1\"";
 ///
 /// With no `frame_color` (an unframed multi-column `Grid` label) no border is
 /// drawn and the margins default to zero.
+///
+/// `pane_size` is the width and height of a sized `Pane` the frame holds
+/// (`Framed[Pane[content, {w, h}]]`): the frame is drawn around that box
+/// even when the content is smaller or empty, with the content at the
+/// pane's top left.
 fn framed_label_picture(
   content: &Expr,
   text: &str,
@@ -10742,6 +10773,7 @@ fn framed_label_picture(
   frame_color: Option<Color>,
   background: Option<Color>,
   frame_opts: &[Expr],
+  pane_size: (Option<f64>, Option<f64>),
 ) -> (String, f64, f64) {
   use crate::functions::plot_padding::{line_pitch, text_width};
   let fs = style.font_size;
@@ -10895,6 +10927,13 @@ fn framed_label_picture(
     col_w.iter().sum::<f64>() + gap * (ncols.saturating_sub(1)) as f64;
   let pitch = line_pitch(fs);
   let content_h = rows.len().max(1) as f64 * pitch;
+  // A sized `Pane` inside the frame gives the box its room; the content
+  // sits at its left edge unless the label aligns it otherwise.
+  if pane_size.0.is_some_and(|w| w > content_w) && anchor.is_none() {
+    anchor = Some("start");
+  }
+  let content_w = pane_size.0.map_or(content_w, |w| w.max(content_w));
+  let content_h = pane_size.1.map_or(content_h, |h| h.max(content_h));
 
   let default_margin = if frame_color.is_some() { 5.0 } else { 0.0 };
   let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
@@ -11112,6 +11151,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Pane[Style[text, dirs…], w]` sets the styled text in a box `w` points
   // wide: the `Style` inside still sizes and aligns the label, and the
   // text wraps at the box's width once the font size is known.
+  let mut pane_height: Option<f64> = None;
   let mut pane_width: Option<f64> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
     && !sargs.is_empty()
@@ -11123,6 +11163,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     if name == "Pane" {
       if let Some(w) = pane_width_points(sargs) {
         pane_width = Some(pane_width.map_or(w, |p: f64| p.min(w)));
+      }
+      if let Some(h) = pane_height_points(sargs) {
+        pane_height = Some(pane_height.map_or(h, |p: f64| p.min(h)));
       }
       content = &sargs[0];
       continue;
@@ -11539,6 +11582,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       frame_color,
       background,
       frame_opts,
+      (pane_width, pane_height),
     );
     let (svg, w, h) = align_inset_picture(svg, w, h, offset);
     prims.push(Primitive::InsetGraphic {
@@ -18979,8 +19023,25 @@ fn render_primitive(
           } else {
             " xml:space=\"preserve\""
           };
+        // A label that Wolfram's own metrics let run past the picture's
+        // side is cut off there; the mark tells the pass that keeps labels
+        // in view (`plot_padding::keep_text_in_view`) to leave it so.
+        let layout_w = crate::functions::plot_padding::text_width(text, fs);
+        let layout_left = match anchor_attr {
+          "end" => sx - layout_w,
+          "middle" => sx - layout_w / 2.0,
+          _ => sx,
+        };
+        let cut_attr = if EXPLICIT_X_RANGE.with(std::cell::Cell::get)
+          && rotate_attr.is_empty()
+          && (layout_left < 0.0 || layout_left + layout_w > svg_w)
+        {
+          crate::functions::plot_padding::CUT_OFF_ATTR
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}{cut_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -21412,6 +21473,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
   let saved_relative_width = RELATIVE_WIDTH.with(|c| c.replace(drawing_width));
+  let saved_explicit_x_range =
+    EXPLICIT_X_RANGE.with(|c| c.replace(plot_range_x.is_some()));
   let mut prim_index = 0;
   while prim_index < primitives.len() {
     let end = emit_polygon_seam_run(
@@ -21462,6 +21525,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prim_index += 1;
   }
   RELATIVE_WIDTH.with(|c| c.set(saved_relative_width));
+  EXPLICIT_X_RANGE.with(|c| c.set(saved_explicit_x_range));
   svg.push_str("</g>\n");
 
   // Wolfram paints axes after the primitives with a thin default stroke.
@@ -46645,13 +46709,15 @@ fn column_layout_svg(
         Expr::Graphics { svg, .. } => {
           // An automatically sized picture is drawn at the reduced size
           // of the column it sits in, as in a `Column` without options.
-          // Items drawn beforehand (`text_items`) already have their size.
-          let resized = text_items
-            .is_none()
-            .then(|| {
-              crate::functions::container_layout::cell_graphic_svg(&resolved)
-            })
-            .flatten();
+          // Items drawn beforehand (`text_items`) already have their size,
+          // but a 3D scene of fixed size among them is still a cell of the
+          // column: it keeps the outline fit rather than the sphere framing
+          // it would get as a picture of its own.
+          let resized = if text_items.is_none() {
+            crate::functions::container_layout::cell_graphic_svg(&resolved)
+          } else {
+            crate::functions::plot3d::outline_fitted_cell_svg(&resolved)
+          };
           let svg = resized.as_ref().unwrap_or(svg);
           let (w, h) = parse_svg_wh(svg);
           Cell::Svg {
@@ -49565,6 +49631,25 @@ fn wrap_wide_layout_text(
       )
       .map(rebuilt)
     }
+    // The caption of a `Labeled` picture breaks into lines when it alone
+    // is wider than the area; the picture keeps its size.
+    "Labeled"
+      if args.len() >= 2
+        && grid_cell_graphic(&args[0]).is_some()
+        && styled_width(&args[1]) > width + 0.5 =>
+    {
+      let caption = wrap_list_text_in(
+        &args[1],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        true,
+      )?;
+      let mut new_args = args.to_vec();
+      new_args[1] = caption;
+      Some(call(name, new_args))
+    }
     "Grid" => {
       let (opts, mut rows) = grid_rows_of(layout)?;
       // A cell keeps its padding on either side of the text.
@@ -49638,6 +49723,20 @@ fn wrap_list_text(
   traditional: bool,
   cell_width: &dyn Fn(&Expr) -> f64,
 ) -> Option<Expr> {
+  wrap_list_text_in(expr, width, styles, traditional, cell_width, false)
+}
+
+/// [`wrap_list_text`], which with `prose` also breaks a `Row` of running
+/// text holding no list: between the words of its strings, with every
+/// separately styled piece keeping its styling.
+fn wrap_list_text_in(
+  expr: &Expr,
+  width: f64,
+  styles: &[Expr],
+  traditional: bool,
+  cell_width: &dyn Fn(&Expr) -> f64,
+  prose: bool,
+) -> Option<Expr> {
   let rebuilt = |name: &str, args: &[Expr], first: Expr| {
     let mut new_args = vec![first];
     new_args.extend(args[1..].iter().cloned());
@@ -49650,19 +49749,32 @@ fn wrap_list_text(
     Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
-      let content =
-        wrap_list_text(&args[0], width, styles, traditional, cell_width)?;
+      let content = wrap_list_text_in(
+        &args[0],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        prose,
+      )?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      let content =
-        wrap_list_text(&args[0], width, styles, traditional, cell_width)?;
+      let content = wrap_list_text_in(
+        &args[0],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        prose,
+      )?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
-      let content = wrap_list_text(&args[0], width, styles, true, cell_width)?;
+      let content =
+        wrap_list_text_in(&args[0], width, styles, true, cell_width, prose)?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args }
@@ -49670,12 +49782,13 @@ fn wrap_list_text(
     {
       let mut inner_styles = styles.to_vec();
       inner_styles.extend(args[1..].iter().cloned());
-      let content = wrap_list_text(
+      let content = wrap_list_text_in(
         &args[0],
         width,
         &inner_styles,
         traditional,
         cell_width,
+        prose,
       )?;
       Some(rebuilt(name, args, content))
     }
@@ -49690,7 +49803,11 @@ fn wrap_list_text(
       let Expr::List(items) = &args[0] else {
         return None;
       };
-      if !no_graphic(items)
+      if prose {
+        if !items.iter().all(row_piece_is_text) {
+          return None;
+        }
+      } else if !no_graphic(items)
         || !items
           .iter()
           .any(|item| matches!(item, Expr::List(l) if !l.is_empty()))
@@ -49699,7 +49816,11 @@ fn wrap_list_text(
       }
       let mut segments: Vec<Vec<Expr>> = vec![Vec::new()];
       for item in items {
-        list_text_segments(item, traditional, &mut segments);
+        if prose {
+          row_text_segments(item, traditional, &mut segments);
+        } else {
+          list_text_segments(item, traditional, &mut segments);
+        }
       }
       flow_text_segments(segments, width, styles, cell_width)
     }
@@ -49766,6 +49887,92 @@ fn flow_text_segments(
     "Column",
     vec![Expr::List(rows.into()), id_expr("Left")],
   ))
+}
+
+/// Whether `item`, one piece of a `Row`, is typeset text rather than a
+/// picture, looking through the `Style` and `TraditionalForm` around it
+/// (which on their own make a formula a typeset cell).
+fn row_piece_is_text(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args }
+      if (name == "TraditionalForm" && args.len() == 1)
+        || (is_style_wrapper(name) && !args.is_empty()) =>
+    {
+      row_piece_is_text(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.as_slice(), [Expr::List(_)]) =>
+    {
+      matches!(&args[0], Expr::List(pieces)
+        if pieces.iter().all(row_piece_is_text))
+    }
+    _ => grid_cell_graphic(item).is_none(),
+  }
+}
+
+/// Append the boxes of `item`, one piece of a `Row`, to `segments`. Prose
+/// may break after any of its spaces, and a piece styled on its own
+/// (`Style[expr, Blue]`, `TraditionalForm[expr]`, in either nesting) keeps
+/// that styling on every line it is spread over.
+fn row_text_segments(
+  item: &Expr,
+  traditional: bool,
+  segments: &mut Vec<Vec<Expr>>,
+) {
+  match item {
+    Expr::String(s) => {
+      // A word carries the space after it to the end of its line.
+      for word in s.split_inclusive(' ') {
+        if let Some(last) = segments.last_mut() {
+          last.push(str_expr(word));
+        }
+        if word.ends_with(' ') {
+          segments.push(Vec::new());
+        }
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      row_text_segments(&args[0], true, segments);
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let traditional =
+        traditional || args[1..].iter().any(is_traditional_form_directive);
+      let mut styled: Vec<Vec<Expr>> = vec![Vec::new()];
+      row_text_segments(&args[0], traditional, &mut styled);
+      for (i, segment) in styled.into_iter().enumerate() {
+        if i > 0 {
+          segments.push(Vec::new());
+        }
+        if let Some(last) = segments.last_mut() {
+          last.extend(segment.into_iter().map(|piece| {
+            call(
+              "StyleBox",
+              std::iter::once(piece)
+                .chain(args[1..].iter().cloned())
+                .collect(),
+            )
+          }));
+        }
+      }
+    }
+    // A `Row` inside the row continues the line it is on.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && matches!(args.as_slice(), [Expr::List(_)])
+        && row_piece_is_text(item) =>
+    {
+      if let Expr::List(pieces) = &args[0] {
+        for piece in pieces {
+          row_text_segments(piece, traditional, segments);
+        }
+      }
+    }
+    _ => list_text_segments(item, traditional, segments),
+  }
 }
 
 /// Append the boxes of `expr` to `segments`, starting a new segment after
@@ -51647,6 +51854,62 @@ fn trigger_repetitions_from_expr(e: &Expr) -> Option<TriggerRepetitions> {
   }
 }
 
+/// The point-count limits of a locator list whose count is unbounded.
+const UNBOUNDED_POINT_LIMITS: (usize, usize) = (0, usize::MAX);
+
+/// Reads a `LocatorAutoCreate -> value` option: `Some((min, max))` with the
+/// fewest and the most points the list may hold when the value allows adding
+/// and removing points, `None` for any other option or a value that
+/// disables it.
+///
+/// `True`, `Automatic` and `All` leave the count unbounded, `{min, max}`
+/// keeps it within that range, and a bare positive integer caps it.
+fn locator_auto_create_limits(option: &Expr) -> Option<(usize, usize)> {
+  let (Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  }) = option
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
+  {
+    return None;
+  }
+  // A count bound: a non-negative integer, or `Infinity` for "no limit".
+  let bound = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) => usize::try_from(*n).ok(),
+      Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+      Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => {
+        Some(usize::MAX)
+      }
+      _ => None,
+    }
+  };
+  match replacement.as_ref() {
+    Expr::Identifier(s) if s == "True" || s == "Automatic" || s == "All" => {
+      Some(UNBOUNDED_POINT_LIMITS)
+    }
+    Expr::List(bounds) => match bounds.as_slice() {
+      [] => None,
+      [lo, hi] => match (bound(lo), bound(hi)) {
+        (Some(lo), Some(hi)) if lo <= hi => Some((lo, hi)),
+        _ => Some(UNBOUNDED_POINT_LIMITS),
+      },
+      _ => Some(UNBOUNDED_POINT_LIMITS),
+    },
+    Expr::Integer(n) if *n > 0 => {
+      Some((0, usize::try_from(*n).unwrap_or(usize::MAX)))
+    }
+    _ => None,
+  }
+}
+
 /// A single control inside a Manipulate expression.
 ///
 /// Continuous controls correspond to `{u, umin, umax}` or
@@ -51840,6 +52103,10 @@ pub enum ManipulateControl {
     y_min: f64,
     y_max: f64,
     auto_create: bool,
+    /// The fewest and the most points the list may hold while points are
+    /// added and removed (`LocatorAutoCreate -> {min, max}`); `(0,
+    /// usize::MAX)` when the count is unbounded.
+    point_limits: (usize, usize),
     label: String,
     /// Set when the pane drives a *derived* variable: the pane's own
     /// `Dynamic[local, f]` callback (`Function[{val, expr}, var = …]`) turns
@@ -54727,6 +54994,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         y_min,
         y_max,
         auto_create: false,
+        point_limits: UNBOUNDED_POINT_LIMITS,
         label: var.clone(),
         derived: None,
         single: false,
@@ -64257,34 +64525,16 @@ fn parse_manipulate_control(
         .and_then(locator_pane_bounds)
         .unwrap_or(corner_bounds)
     };
-    let auto_create = items
+    let point_limits = items
       .iter()
       .chain(
         custom_locator_pane_options(items)
           .iter()
           .flat_map(|pane| pane.iter().skip(1)),
       )
-      .any(|it| {
-      matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
-            && match replacement.as_ref() {
-              Expr::Identifier(s) => {
-                s == "True" || s == "Automatic" || s == "All"
-              }
-              // `LocatorAutoCreate -> {min, max}` bounds how many points
-              // the user may add; any such range still means "adding is
-              // allowed".
-              Expr::List(bounds) => !bounds.is_empty(),
-              // `LocatorAutoCreate -> n`: a bare positive integer caps how
-              // many locators may be added (0/negative disables it).
-              Expr::Integer(n) => *n > 0,
-              _ => false,
-            }
-      )
-    });
+      .find_map(locator_auto_create_limits);
+    let auto_create = point_limits.is_some();
+    let point_limits = point_limits.unwrap_or(UNBOUNDED_POINT_LIMITS);
     // A pane bound to a local `Dynamic[local, f]` whose callback derives this
     // variable (`DynamicModule[{pts = …}, LocatorPane[Dynamic[pts, f], …]]`):
     // the draggable points are `local`'s, and the variable follows through `f`.
@@ -64306,6 +64556,11 @@ fn parse_manipulate_control(
           )
         })
       });
+      let point_limits = pane
+        .iter()
+        .flat_map(|p| p.iter().skip(1))
+        .find_map(locator_auto_create_limits)
+        .unwrap_or(UNBOUNDED_POINT_LIMITS);
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Locator {
           name,
@@ -64315,6 +64570,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create,
+          point_limits,
           label,
           derived: Some(derived),
           single: false,
@@ -64373,6 +64629,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create,
+          point_limits,
           label,
           derived: None,
           single: false,
@@ -64399,6 +64656,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create: false,
+          point_limits: UNBOUNDED_POINT_LIMITS,
           label,
           derived: None,
           single: true,
@@ -67112,13 +67370,20 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         y_min,
         y_max,
         auto_create,
+        point_limits: (min_points, max_points),
         label,
         ..
       } => {
         let point_parts: Vec<String> =
           points.iter().map(|(x, y)| format!("[{x},{y}]")).collect();
+        // An unbounded count has no `maxPoints`.
+        let max_json = if *max_points == usize::MAX {
+          "null".to_string()
+        } else {
+          max_points.to_string()
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{}}}"#,
+          r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{},"minPoints":{},"maxPoints":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           x_min,
@@ -67127,6 +67392,8 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           y_max,
           point_parts.join(","),
           auto_create,
+          min_points,
+          max_json,
         ));
       }
       ManipulateControl::Trigger {
@@ -71243,6 +71510,68 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!((*x_initial, *y_initial), (0.5, 0.3));
       }
       other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
+  /// `LocatorAutoCreate -> {min, max}` bounds how many points the list may
+  /// hold, `-> n` caps it, and `-> True` leaves it unbounded.
+  #[test]
+  fn locator_auto_create_range_limits_the_point_count() {
+    let limits = |option: &str| {
+      let s = spec(&format!(
+        "Manipulate[pts, {{{{pts, {{{{0, 0}}, {{1, 1}}, {{2, 0}}}}}}, \
+         {{-1, -1}}, {{3, 2}}, Locator, {option}}}]"
+      ));
+      match &s.controls[0] {
+        ManipulateControl::Locator {
+          auto_create,
+          point_limits,
+          ..
+        } => (*auto_create, *point_limits),
+        other => panic!("expected a Locator control, got {other:?}"),
+      }
+    };
+    assert_eq!(limits("LocatorAutoCreate -> {2, 8}"), (true, (2, 8)));
+    assert_eq!(
+      limits("LocatorAutoCreate -> {1, Infinity}"),
+      (true, (1, usize::MAX))
+    );
+    assert_eq!(limits("LocatorAutoCreate -> 5"), (true, (0, 5)));
+    assert_eq!(limits("LocatorAutoCreate -> True"), (true, (0, usize::MAX)));
+    assert_eq!(
+      limits("LocatorAutoCreate -> False"),
+      (false, (0, usize::MAX))
+    );
+    // The limits reach the browser front ends with the control.
+    let json = |option: &str| {
+      manipulate_spec_to_json(&spec(&format!(
+        "Manipulate[pts, {{{{pts, {{{{0, 0}}, {{1, 1}}}}}}, {{-1, -1}}, \
+         {{3, 2}}, Locator, {option}}}]"
+      )))
+    };
+    assert!(
+      json("LocatorAutoCreate -> {2, 8}")
+        .contains(r#""autoCreate":true,"minPoints":2,"maxPoints":8"#)
+    );
+    assert!(
+      json("LocatorAutoCreate -> True")
+        .contains(r#""autoCreate":true,"minPoints":0,"maxPoints":null"#)
+    );
+  }
+
+  /// The pane form of the same option carries its limits too.
+  #[test]
+  fn locator_pane_auto_create_range_limits_the_point_count() {
+    let s = spec(
+      "Manipulate[pts, {{pts, {{0, 0}, {1, 1}, {2, 0}}, \"\"}, {-1, -1}, \
+       {3, 2}, (LocatorPane[Dynamic[pts], Graphics[{}], \
+       LocatorAutoCreate -> {3, 20}] &)}]",
+    );
+    match &s.controls[0] {
+      ManipulateControl::Locator { point_limits, .. } => {
+        assert_eq!(*point_limits, (3, 20));
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
     }
   }
 
