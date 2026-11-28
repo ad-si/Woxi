@@ -1962,6 +1962,85 @@ mod ticks {
     assert!(last_red < hiding_face, "{s}");
   }
 
+  // A long outline edge is placed in the draw order piece by piece.
+  // Regression: it was placed from five samples along its whole length,
+  // so a box hiding the far edge of a wide floor only between two of them
+  // went unnoticed, and a face lying on the floor at one of the samples
+  // (drawn after the box, being nearer) lifted the whole edge over the box.
+  #[test]
+  fn long_outline_edge_stays_hidden_between_its_samples() {
+    let s = svg(
+      "Graphics3D[{{EdgeForm[Red], \
+       Polygon[{{7, -2, 0}, {7, 2, 0}, {-7, 2, 0}, {-7, -2, 0}}]}, \
+       {Blue, EdgeForm[None], \
+       Polygon[{{3.2, -8, 0}, {4, -8, 0}, {4, 2, 0}, {3.2, 2, 0}}]}, \
+       {Green, Cuboid[{1, -2, 0}, {2.8, 2, 0.5}]}}, Boxed -> False]",
+    );
+    let number = |text: &str| text.parse::<f64>().expect("number");
+    let attr = |line: &str, name: &str| {
+      let rest = line
+        .split(&format!(" {name}=\""))
+        .nth(1)
+        .expect("attribute");
+      rest.split('"').next().unwrap().to_string()
+    };
+    // Even-odd test of a point against a polygon.
+    let inside = |poly: &[(f64, f64)], (x, y): (f64, f64)| {
+      let mut odd = false;
+      for (i, &(x1, y1)) in poly.iter().enumerate() {
+        let (x2, y2) = poly[(i + 1) % poly.len()];
+        if (y1 > y) != (y2 > y) && x < x1 + (y - y1) * (x2 - x1) / (y2 - y1) {
+          odd = !odd;
+        }
+      }
+      odd
+    };
+    // The box's faces painted so far, and the floor's edge lines.
+    let mut box_faces: Vec<Vec<(f64, f64)>> = Vec::new();
+    let mut edge_lines = 0;
+    for line in s.lines() {
+      if line.starts_with("<polygon") {
+        let rgb: Vec<f64> = attr(line, "fill")
+          .trim_start_matches("rgb(")
+          .trim_end_matches(')')
+          .split(',')
+          .map(number)
+          .collect();
+        if rgb[1] > rgb[0] + 20.0 && rgb[1] > rgb[2] + 20.0 {
+          box_faces.push(
+            attr(line, "points")
+              .split(' ')
+              .map(|p| {
+                let (x, y) = p.split_once(',').expect("point");
+                (number(x), number(y))
+              })
+              .collect(),
+          );
+        }
+      } else if line.starts_with("<line")
+        && line.contains("stroke=\"rgb(255,0,0)\"")
+      {
+        edge_lines += 1;
+        let [x1, y1, x2, y2] =
+          ["x1", "y1", "x2", "y2"].map(|name| number(&attr(line, name)));
+        for step in 0..=20 {
+          let t = step as f64 / 20.0;
+          let (x, y) = (x1 + t * (x2 - x1), y1 + t * (y2 - y1));
+          // Well inside a face: the box's own corners touch the edge.
+          let covered = box_faces.iter().any(|face| {
+            [(3.0, 0.0), (-3.0, 0.0), (0.0, 3.0), (0.0, -3.0)]
+              .iter()
+              .all(|(dx, dy)| inside(face, (x + dx, y + dy)))
+          });
+          assert!(!covered, "edge drawn over the box at ({x}, {y}): {s}");
+        }
+      }
+    }
+    assert!(!box_faces.is_empty(), "{s}");
+    // The far edge is drawn in several pieces, the others in one or more.
+    assert!(edge_lines > 4, "{s}");
+  }
+
   // The fan triangles of a translucent cap touch the outline on one side
   // only. Stroking them in their own color overlapped the neighbors along
   // the internal cuts and drew dark spokes across the cap; the outline is

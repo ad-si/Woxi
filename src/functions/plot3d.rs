@@ -575,6 +575,10 @@ fn line_draw_slots(
 /// `halo` is how far the fill of a face reaches past its outline on
 /// screen, in projected units: the edge is drawn after the faces that
 /// lie beside it within that reach.
+///
+/// Each edge gets its slot and the latest slot it could be drawn at
+/// instead without showing over a face that hides it: the index of that
+/// first face in front (never before the slot itself).
 fn outline_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
@@ -582,11 +586,14 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
   halo: f64,
-) -> Vec<usize> {
+) -> Vec<(usize, usize)> {
   line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None, halo)
     .into_iter()
     .zip(owners)
-    .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
+    .map(|((slot, first_front), &owner)| {
+      let slot = slot.min(first_front).max(owner + 1);
+      (slot, first_front.max(slot))
+    })
     .collect()
 }
 
@@ -637,6 +644,71 @@ fn front_outline_edges(
     }
   }
   front
+}
+
+/// Longest stretch, in pixels, of a face's outline edge that is placed in
+/// the draw order as one piece. A piece is placed from a few samples along
+/// it (see `line_draw_bounds`), so a face hiding a long edge only between
+/// two of them would be missed and the edge drawn across it: the far edge
+/// of a wide floor showed through the box standing on its middle.
+const OUTLINE_PIECE_PX: f64 = 32.0;
+
+/// Most pieces one outline edge is placed in.
+const MAX_OUTLINE_PIECES: usize = 64;
+
+/// How many pieces the outline edge from `a` to `b` is placed in: one per
+/// `max_piece` of its length on screen (in projected units).
+fn outline_piece_count(
+  a: Point3D,
+  b: Point3D,
+  camera: &Camera,
+  max_piece: f64,
+) -> usize {
+  let (pa, pb) = (project(a, camera), project(b, camera));
+  let len = ((pb.0 - pa.0).powi(2) + (pb.1 - pa.1).powi(2)).sqrt();
+  let pieces = (len / max_piece).ceil();
+  if pieces.is_finite() {
+    (pieces as usize).clamp(1, MAX_OUTLINE_PIECES)
+  } else {
+    1
+  }
+}
+
+/// The point the fraction `t` of the way from `a` to `b`.
+fn point_along(a: Point3D, b: Point3D, t: f64) -> Point3D {
+  Point3D {
+    x: a.x + t * (b.x - a.x),
+    y: a.y + t * (b.y - a.y),
+    z: a.z + t * (b.z - a.z),
+  }
+}
+
+/// Joins the neighboring pieces of an outline edge that can share a slot
+/// in the draw order, so the edge is drawn in as few lines as its
+/// visibility allows. `ranges[i]` is the earliest and the latest slot of
+/// piece `i` (see `outline_draw_slots`). Returns each run as the half-open
+/// piece range `from..to` and its slot: the earliest one all its pieces
+/// allow.
+fn join_outline_pieces(
+  ranges: &[(usize, usize)],
+) -> Vec<(usize, usize, usize)> {
+  let mut runs = Vec::new();
+  let mut from = 0;
+  while from < ranges.len() {
+    let (mut lo, mut hi) = ranges[from];
+    let mut to = from + 1;
+    while let Some(&(next_lo, next_hi)) = ranges.get(to) {
+      if lo.max(next_lo) > hi.min(next_hi) {
+        break;
+      }
+      lo = lo.max(next_lo);
+      hi = hi.min(next_hi);
+      to += 1;
+    }
+    runs.push((from, to, lo));
+    from = to;
+  }
+  runs
 }
 
 /// How far, in pixels, the fill of a face reaches past its outline: the
@@ -18947,8 +19019,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     // Index into `outline_slots` of edge `e` of face `k`, at `3 * k + e`.
     let mut outline_index = vec![usize::MAX; front_outlines.len()];
+    // How many pieces that edge is placed in (see `outline_piece_count`).
+    let mut outline_pieces = vec![0usize; front_outlines.len()];
     let mut outline_segs: Vec<[Point3D; 2]> = Vec::new();
     let mut outline_owners: Vec<usize> = Vec::new();
+    let max_piece = OUTLINE_PIECE_PX / scale.abs().max(1e-300);
     for (k, (v, t)) in triangle_vertices.iter().zip(&all_triangles).enumerate()
     {
       if front_outlines.is_empty() || !separately_stroked(t) {
@@ -18956,9 +19031,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       for e in 0..3 {
         if t.boundary[e] && front_outlines[k * 3 + e] {
+          let (a, b) = (v[e], v[(e + 1) % 3]);
+          // A dashed edge stays whole, so its pattern runs unbroken.
+          let pieces = if t.edge_dashing.is_some() {
+            1
+          } else {
+            outline_piece_count(a, b, &camera, max_piece)
+          };
           outline_index[k * 3 + e] = outline_segs.len();
-          outline_segs.push([v[e], v[(e + 1) % 3]]);
-          outline_owners.push(k);
+          outline_pieces[k * 3 + e] = pieces;
+          for i in 0..pieces {
+            outline_segs.push([
+              point_along(a, b, i as f64 / pieces as f64),
+              point_along(a, b, (i + 1) as f64 / pieces as f64),
+            ]);
+            outline_owners.push(k);
+          }
         }
       }
     }
@@ -18974,8 +19062,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       outline_index
         .get(pos * 3 + e)
         .and_then(|&i| outline_slots.get(i))
-        .copied()
-        .unwrap_or(0)
+        .map_or(0, |&(slot, _)| slot)
         .max(pos + 1)
     };
     let mut pending_outlines: std::collections::BinaryHeap<
@@ -19177,24 +19264,53 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(move |e| (pos + gi, e, corners[e], corners[(e + 1) % 3]))
         });
         for (k, e, a, b) in outlines {
-          // An edge two faces share is drawn by both; running each from
-          // the same end keeps a dash pattern in step.
-          let (mut a, mut b) = (a, b);
-          if (b.0, b.1) < (a.0, a.1) {
-            std::mem::swap(&mut a, &mut b);
-          }
-          let ((ax, ay), (bx, by)) = (a, b);
           let dash =
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
           let cap = outline_edge_cap(tri.edge_dashing.as_ref());
-          pending_outlines.push(std::cmp::Reverse((
-            outline_slot(k, e),
-            outline_seq,
-            format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
-            ),
-          )));
-          outline_seq += 1;
+          // A long edge is placed piece by piece; neighboring pieces
+          // that can share a slot are drawn as one line.
+          let first = outline_index.get(k * 3 + e).copied().unwrap_or(0);
+          let pieces = outline_pieces.get(k * 3 + e).copied().unwrap_or(0);
+          let runs: Vec<(usize, (f64, f64), (f64, f64))> = if pieces > 1 {
+            let on_screen = |p: Point3D| {
+              let (px, py) = project(p, &camera);
+              to_svg(px, py)
+            };
+            join_outline_pieces(&outline_slots[first..first + pieces])
+              .into_iter()
+              .map(|(from, to, slot)| {
+                let start = if from == 0 {
+                  a
+                } else {
+                  on_screen(outline_segs[first + from][0])
+                };
+                let end = if to == pieces {
+                  b
+                } else {
+                  on_screen(outline_segs[first + to - 1][1])
+                };
+                (slot.max(k + 1), start, end)
+              })
+              .collect()
+          } else {
+            vec![(outline_slot(k, e), a, b)]
+          };
+          for (slot, mut a, mut b) in runs {
+            // An edge two faces share is drawn by both; running each
+            // from the same end keeps a dash pattern in step.
+            if (b.0, b.1) < (a.0, a.1) {
+              std::mem::swap(&mut a, &mut b);
+            }
+            let ((ax, ay), (bx, by)) = (a, b);
+            pending_outlines.push(std::cmp::Reverse((
+              slot,
+              outline_seq,
+              format!(
+                "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
+              ),
+            )));
+            outline_seq += 1;
+          }
         }
       }
     }
@@ -30502,6 +30618,68 @@ mod painter_order_tests {
   /// Two triangles that pierce each other cannot be ordered as wholes, so
   /// they are cut along the crossing; afterwards every overlapping pair of
   /// pieces lies wholly on one side of the other.
+  #[test]
+  fn join_outline_pieces_joins_pieces_that_can_share_a_slot() {
+    const FREE: usize = usize::MAX;
+    assert_eq!(join_outline_pieces(&[]), vec![]);
+    assert_eq!(join_outline_pieces(&[(4, FREE)]), vec![(0, 1, 4)]);
+    // Visible pieces are all drawn at the latest of their slots.
+    assert_eq!(
+      join_outline_pieces(&[(4, FREE), (9, FREE), (6, FREE)]),
+      vec![(0, 3, 9)]
+    );
+    // A piece hidden by face 5 cannot wait for slot 9: it splits the edge.
+    assert_eq!(
+      join_outline_pieces(&[(9, FREE), (3, 5), (4, 5), (9, FREE)]),
+      vec![(0, 1, 9), (1, 3, 4), (3, 4, 9)]
+    );
+    // It can wait for an earlier slot than the face hiding it.
+    assert_eq!(
+      join_outline_pieces(&[(5, FREE), (3, 5), (7, FREE)]),
+      vec![(0, 2, 5), (2, 3, 7)]
+    );
+  }
+
+  #[test]
+  fn outline_piece_count_grows_with_the_length_on_screen() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let (a, b) = (p(-0.5, 0.0, 0.0), p(0.5, 0.0, 0.0));
+    let (pa, pb) = (project(a, &camera), project(b, &camera));
+    let len = ((pb.0 - pa.0).powi(2) + (pb.1 - pa.1).powi(2)).sqrt();
+    assert!(len > 0.0);
+    // An edge no longer than a piece stays whole.
+    assert_eq!(outline_piece_count(a, b, &camera, len), 1);
+    assert_eq!(outline_piece_count(a, b, &camera, len * 2.0), 1);
+    assert_eq!(outline_piece_count(a, b, &camera, len / 3.5), 4);
+    // A degenerate edge or piece length never yields zero pieces, nor
+    // more than the cap.
+    assert_eq!(outline_piece_count(a, a, &camera, len), 1);
+    assert_eq!(outline_piece_count(a, a, &camera, 0.0), 1);
+    assert_eq!(
+      outline_piece_count(a, b, &camera, len * 1e-9),
+      MAX_OUTLINE_PIECES
+    );
+  }
+
+  #[test]
+  fn point_along_interpolates_between_the_ends() {
+    let a = Point3D {
+      x: 1.0,
+      y: -2.0,
+      z: 0.0,
+    };
+    let b = Point3D {
+      x: 5.0,
+      y: 2.0,
+      z: 8.0,
+    };
+    let m = point_along(a, b, 0.25);
+    assert_eq!((m.x, m.y, m.z), (2.0, -1.0, 2.0));
+    let end = point_along(a, b, 1.0);
+    assert_eq!((end.x, end.y, end.z), (5.0, 2.0, 8.0));
+  }
+
   #[test]
   fn crossing_triangles_are_split_into_orderable_pieces() {
     let camera = Camera::default();
