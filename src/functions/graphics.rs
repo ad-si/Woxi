@@ -39115,7 +39115,7 @@ fn grid_svg_styled_internal_reporting(
           x_offset + col_w - col_pad_right[j]
         };
         match decimal_split_width(cell, col_char(j)) {
-          Some((_, fw)) if fw == 0.0 => ("end", dot_x),
+          Some((_, 0.0)) => ("end", dot_x),
           Some((iw, _)) => ("start", dot_x - iw * char_width),
           None => ("middle", x_offset + col_w / 2.0),
         }
