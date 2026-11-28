@@ -20115,7 +20115,13 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the empty plot, with its axes and `PlotLabel`, over the requested
   // `PlotRange` (unit height when none is given).
   if !has_finite {
-    let x_display = plot_range_x.unwrap_or((x_min, x_max));
+    // An x range left to the sampled points has no point to span: it
+    // collapses onto 0, which is drawn as the unit range around it, like
+    // any other range without an extent.
+    let x_display = plot_range_x.unwrap_or(match plot_range_x_from_points {
+      Some(_) => (-1.0, 1.0),
+      None => (x_min, x_max),
+    });
     let y_display = fill_range(plot_range_y, (0.0, 1.0)).unwrap_or((0.0, 1.0));
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
