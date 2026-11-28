@@ -57242,6 +57242,41 @@ mod manipulate {
     assert_eq!(names, ["w", "j"]);
   }
 
+  /// A control spec's `ImageSize` names the width of its slider: a named
+  /// size, a number, or the width of a `{w, h}` pair. Specs without a
+  /// usable width are left out, so their sliders keep the default width.
+  #[test]
+  fn control_image_size_option_gives_the_slider_width() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c, d, e, f}, \
+       {{a, 1, \"a\"}, 0, 2, ImageSize -> Tiny}, \
+       {{b, 1}, 0, 2, Slider, ImageSize -> Small}, \
+       Control[{{c, 1}, 0, 2, ImageSize -> Medium}], \
+       {{d, 1}, 0, 2, ImageSize -> Large}, \
+       {{e, 1}, 0, 2, ImageSize -> {75, 20}}, \
+       Row[{Control[{{f, 1}, 0, 2, ImageSize -> 2*45}], Control[{g, 0, 2}]}], \
+       {{h, 1}, 0, 2, ImageSize -> Automatic}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let widths: Vec<(&str, f64)> = spec
+      .control_image_widths
+      .iter()
+      .map(|(name, width)| (name.as_str(), *width))
+      .collect();
+    assert_eq!(
+      widths,
+      vec![
+        ("a", 50.0),
+        ("b", 100.0),
+        ("c", 200.0),
+        ("d", 400.0),
+        ("e", 75.0),
+        ("f", 90.0),
+      ]
+    );
+  }
+
   /// A control spec's `Background -> color` option is kept as live code
   /// (unwrapped from `Dynamic`), so a frontend can paint a `Setter` only
   /// while its condition yields a color; `None` asks for the default face.

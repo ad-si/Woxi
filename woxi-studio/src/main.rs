@@ -4795,6 +4795,23 @@ fn colored_button_style(
   }
 }
 
+/// The width (px) a horizontal slider's own `ImageSize` gives it (see
+/// `ManipulateState::control_width`), `None` for a slider that fills its
+/// line and for every other kind of control.
+fn fixed_slider_width(
+  state: &manipulate::ManipulateState,
+  ctrl_idx: usize,
+) -> Option<f32> {
+  match state.controls.get(ctrl_idx)? {
+    manipulate::ControlState::Continuous { orientation, .. }
+      if *orientation != manipulate::ControlOrientation::Vertical =>
+    {
+      state.control_width.get(ctrl_idx).copied().flatten()
+    }
+    _ => None,
+  }
+}
+
 /// Finish the column the current control was drawn into (see the `line`
 /// bookkeeping in `render_manipulate_widget`): put the panel column back
 /// into `controls_col` and queue the control's column on the current line.
@@ -4860,6 +4877,23 @@ fn render_manipulate_widget<'a>(
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0)
     .max(max_icon_width)
     .clamp(20.0, 220.0);
+  // Controls sharing a line size their label to that line's own columns
+  // (see `ManipulateState::shared_line_label_chars`), so four controls
+  // written in one `Row` do not each reserve the widest label of the whole
+  // panel. A picture caption keeps the shared column, which already holds
+  // its drawn width.
+  let line_label_chars =
+    state.shared_line_label_chars(manipulate_label_char_count);
+  let label_width_of = |ctrl_idx: usize, name: &str| match line_label_chars
+    .get(ctrl_idx)
+    .copied()
+    .flatten()
+  {
+    Some(chars) if max_icon_width == 0.0 && state.label_svg(name).is_none() => {
+      (chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0)
+    }
+    _ => label_col_width,
+  };
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   // A display standing in for a declared control (a `ControlType ->
@@ -4956,11 +4990,19 @@ fn render_manipulate_widget<'a>(
       }
       switch_slot(&mut controls_col, &mut current_slot, slot);
       side_used[slot] = true;
+      // A slider given a width of its own (`ImageSize -> Tiny`) takes only
+      // the room it needs on its line instead of an equal share of it.
+      let item_width = if fixed_slider_width(state, ctrl_idx).is_some() {
+        iced::Length::Shrink
+      } else {
+        Fill
+      };
       line_outer = Some(std::mem::replace(
         &mut controls_col,
-        Column::new().spacing(6).width(Fill),
+        Column::new().spacing(6).width(item_width),
       ));
     }
+    let label_col_width = label_width_of(ctrl_idx, ctrl.name());
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -5025,6 +5067,8 @@ fn render_manipulate_widget<'a>(
               .width(iced::Length::Fixed(72.0))
               .into(),
           };
+        let slider_width =
+          fixed_slider_width(state, ctrl_idx).map_or(Fill, iced::Length::Fixed);
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5039,8 +5083,9 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s =
-              slider(min..=max, position, on_slide).step(step).width(Fill);
+            let mut s = slider(min..=max, position, on_slide)
+              .step(step)
+              .width(slider_width);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -12192,10 +12237,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .collect();
     assert_eq!(ys.len(), 3, "{svg}");
     assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
-    // The label's subscript is shifted within one `tspan`.
+    // The label's subscript is shifted within one `tspan` (at the 9-point
+    // minimum script size, 90 % of the label's 10 points).
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">r</tspan>"
       ),
       "{svg}"
     );

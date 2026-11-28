@@ -1593,6 +1593,10 @@ pub struct ManipulateState {
   /// `Setter` painted `Background -> Dynamic[If[ready, LightGreen, None]]`
   /// turns plain once `ready` is cleared). Parallel to `controls`.
   pub control_face: Vec<Option<(f64, f64, f64)>>,
+  /// The slider width (px) each control's `ImageSize` option asks for,
+  /// parallel to `controls`; `None` lets the slider fill its line. See
+  /// `woxi::functions::graphics::ManipulateSpec::control_image_widths`.
+  pub control_width: Vec<Option<f32>>,
   /// Per-control visibility condition (InputForm code), parallel to
   /// `controls`. A control that belongs to a `PaneSelector` pane is on
   /// screen only while the selector holds that pane's value. `None` means
@@ -1799,6 +1803,58 @@ impl ManipulateState {
         })
   }
 
+  /// The label width, in characters, of each control that shares a line of
+  /// the panel with others (see [`Self::joins_previous_control`]), parallel
+  /// to `controls`; `None` for a control on a line of its own, whose label
+  /// sits in the panel-wide label column instead. `label_chars` measures
+  /// one control's label.
+  ///
+  /// Such a line is laid out like a row of a table: the controls at one
+  /// position of every equally long line share the width of the widest
+  /// label among them, so the rows of a `Grid` of controls keep their
+  /// columns while the labels of a lone `Row[{Control[…], …}]` take just
+  /// the room they need, leaving the rest of the line to the controls.
+  pub fn shared_line_label_chars(
+    &self,
+    label_chars: impl Fn(&ControlState) -> usize,
+  ) -> Vec<Option<usize>> {
+    // Each line as its items, each item as the controls stacked in it.
+    let mut lines: Vec<Vec<Vec<usize>>> = Vec::new();
+    for idx in 0..self.controls.len() {
+      match lines.last_mut() {
+        Some(line) if self.stacks_under_previous_control(idx) => {
+          line.last_mut().expect("a line holds an item").push(idx);
+        }
+        Some(line) if self.joins_previous_control(idx) => line.push(vec![idx]),
+        _ => lines.push(vec![vec![idx]]),
+      }
+    }
+    // The widest label per (items on the line, position on the line).
+    let mut widest: std::collections::HashMap<(usize, usize), usize> =
+      std::collections::HashMap::new();
+    let shared = lines.iter().filter(|line| line.len() > 1);
+    for line in shared.clone() {
+      for (position, item) in line.iter().enumerate() {
+        let chars = item
+          .iter()
+          .map(|idx| label_chars(&self.controls[*idx]))
+          .max()
+          .unwrap_or(0);
+        let slot = widest.entry((line.len(), position)).or_insert(0);
+        *slot = (*slot).max(chars);
+      }
+    }
+    let mut out = vec![None; self.controls.len()];
+    for line in shared {
+      for (position, item) in line.iter().enumerate() {
+        for idx in item {
+          out[*idx] = widest.get(&(line.len(), position)).copied();
+        }
+      }
+    }
+    out
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1847,6 +1903,16 @@ impl ManipulateState {
       })
       .collect();
     let control_face = vec![None; controls.len()];
+    let control_width: Vec<Option<f32>> = controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_image_widths
+          .iter()
+          .find(|(n, _)| !c.name().is_empty() && n == c.name())
+          .map(|(_, width)| *width as f32)
+      })
+      .collect();
     let control_label_code: Vec<Option<String>> = spec
       .controls
       .iter()
@@ -1951,6 +2017,7 @@ impl ManipulateState {
       control_is_enabled,
       control_background,
       control_face,
+      control_width,
       control_visible,
       list_elements: spec.list_elements,
       bookmarks: spec.bookmarks,
@@ -13470,5 +13537,97 @@ mod picture_slider_tests {
     assert!(state.wants_tick());
     state.tick();
     assert_eq!(variable(&state, "k"), "1");
+  }
+}
+
+#[cfg(test)]
+mod slider_image_size_tests {
+  use super::*;
+
+  fn build(code: &str) -> ManipulateState {
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    ManipulateState::from_expr(&expr).expect("build Manipulate widget")
+  }
+
+  fn label_chars(ctrl: &ControlState) -> usize {
+    match ctrl {
+      ControlState::Continuous { label, .. }
+      | ControlState::Discrete { label, .. } => label.chars().count(),
+      _ => 0,
+    }
+  }
+
+  /// A slider spec's `ImageSize` (a named size, a number, or the width of
+  /// a `{w, h}` pair) is the width its slider is drawn at; a spec without
+  /// the option leaves the slider to fill its line. Four controls written
+  /// in one `Row` used to share the line equally, which left such short
+  /// sliders no room at all beside their labels and value readouts.
+  #[test]
+  fn slider_spec_image_size_sets_the_slider_width() {
+    let state = build(
+      r#"Manipulate[{on, w, s, n, m, p},
+        Row[{Control@{{on, True, "enabled"}, {True, False}},
+          Control@{{w, 0.2, "width"}, 0, 1, Slider, ImageSize -> Tiny},
+          Control@{{s, 1, "speed"}, 0, 5, Animator, ImageSize -> Small,
+            AnimationRunning -> False}}],
+        {{n, 3, "count"}, 1, 9, 1, ImageSize -> 120},
+        {{m, 3, "margin"}, 1, 9, 1, ImageSize -> {90, 20}},
+        {{p, 3, "plain"}, 1, 9, 1}]"#,
+    );
+    assert_eq!(state.error, None, "build must not report an error");
+    let widths: Vec<(&str, Option<f32>)> = state
+      .controls
+      .iter()
+      .zip(&state.control_width)
+      .map(|(c, w)| (c.name(), *w))
+      .collect();
+    assert_eq!(
+      widths,
+      vec![
+        ("on", None),
+        ("w", Some(50.0)),
+        ("s", Some(100.0)),
+        ("n", Some(120.0)),
+        ("m", Some(90.0)),
+        ("p", None),
+      ]
+    );
+  }
+
+  /// Controls sharing a line size their labels per position on the line:
+  /// a lone `Row` of controls gives each label just the room it needs,
+  /// the rows of a `Grid` keep their columns, and a control on a line of
+  /// its own stays in the panel-wide label column.
+  #[test]
+  fn shared_line_labels_are_sized_per_line_position() {
+    let state = build(
+      r#"Manipulate[{a, b, c, d, e, f, g, h},
+        Row[{Control@{{a, 1, "first"}, 0, 2},
+          Control@{{b, 1, "b"}, 0, 2},
+          Control@{{c, 1, "third one"}, 0, 2}}],
+        Grid[{{Control@{{d, 1, "d"}, 0, 2}, Control@{{e, 1, "long e"}, 0, 2}},
+          {Control@{{f, 1, "wide f"}, 0, 2}, Control@{{g, 1, "g"}, 0, 2}}}],
+        {{h, 1, "the longest label of all"}, 0, 2}]"#,
+    );
+    assert_eq!(state.error, None, "build must not report an error");
+    let chars: Vec<(&str, Option<usize>)> = state
+      .controls
+      .iter()
+      .zip(state.shared_line_label_chars(label_chars))
+      .map(|(c, n)| (c.name(), n))
+      .collect();
+    assert_eq!(
+      chars,
+      vec![
+        ("a", Some(5)),
+        ("b", Some(1)),
+        ("c", Some(9)),
+        ("d", Some(6)),
+        ("e", Some(6)),
+        ("f", Some(6)),
+        ("g", Some(6)),
+        ("h", None),
+      ]
+    );
   }
 }
