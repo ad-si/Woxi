@@ -12192,13 +12192,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .collect();
     assert_eq!(ys.len(), 3, "{svg}");
     assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
-    // The label's subscript is shifted within one `tspan`.
+    // The label's subscript is shifted within one `tspan`, held at the
+    // minimum script size of 9 points (90 % of the 10-point label).
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">r</tspan>"
       ),
       "{svg}"
     );
+  }
+
+  /// A body that collects the labels of an axis in a loop with `Sow` and
+  /// `Reap`, each a `Text` of a string divided by the loop counter, and
+  /// merges them into a plot with `Show`. Every such quotient is drawn as
+  /// a fraction stacked over a bar (it was the one line `1/2`), and the
+  /// number of labels follows the slider. Independently written, not
+  /// copied from any specific Demonstration.
+  #[test]
+  fn manipulate_sown_string_quotient_labels_are_stacked_fractions() {
+    let code = r#"Manipulate[
+      Show[Plot[Exp[-t], {t, 0, 4}, Ticks -> None],
+        Reap[Do[Sow[Graphics[Text[Style["2"/k, Small, Black],
+          {-0.2, 2/k}]]], {k, 3, m + 2}]][[2, 1]],
+        PlotRange -> {{-0.5, 4}, {0, 1}}],
+      {{m, 2, "m"}, 1, 4, 1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a slider row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let bars = |svg: &str| {
+      svg
+        .split("<line ")
+        .skip(1)
+        .filter(|l| l.contains("stroke=\"currentColor\""))
+        .count()
+    };
+    let svg = state.current_svg().expect("the result is drawn");
+    assert!(!svg.contains(">2/3<") && !svg.contains(">2/4<"), "{svg}");
+    assert_eq!(bars(&svg), 2, "one fraction bar per label: {svg}");
+    assert!(
+      svg.contains(">3</text>") && svg.contains(">4</text>"),
+      "{svg}"
+    );
+    assert!(state.slide_continuous(0, 4.0));
+    state.reevaluate();
+    let svg = state.current_svg().expect("the result is redrawn");
+    assert_eq!(bars(&svg), 4, "one fraction bar per label: {svg}");
+    assert!(svg.contains(">6</text>"), "{svg}");
   }
 
   /// A body that prints an expanded product in a chosen term order — the

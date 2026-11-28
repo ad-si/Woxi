@@ -6668,6 +6668,28 @@ mod graphics {
       assert!(svg.contains(">7<") && svg.contains(">3<"), "{svg}");
     }
 
+    /// Regression: a quotient with a string operand (`"1"/3`, as a loop
+    /// writes its fraction labels) was drawn as the flat text `1/3`, and
+    /// `"a"/b` as `a 1` over `b`, instead of a stacked fraction.
+    #[test]
+    fn string_quotient_text_label_is_a_stacked_fraction() {
+      for (label, num, den) in [
+        ("\"1\"/3", "1", "3"),
+        ("\"a\"/b", "a", "b"),
+        ("Style[\"5\"/n, Small, Black]", "5", "n"),
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(!svg.contains(&format!("{num}/{den}")), "not flat: {svg}");
+        assert!(svg.contains("<line "), "fraction bar: {svg}");
+        assert!(svg.contains(&format!(">{num}<")), "numerator: {svg}");
+        assert!(svg.contains(&format!(">{den}<")), "denominator: {svg}");
+        assert!(!svg.contains("&quot;"), "the string is not quoted: {svg}");
+      }
+      // A product of strings alone has no quotient and stays one line.
+      let svg = export_svg("Graphics[{Text[\"a\" \"b\", {0, 0}]}]");
+      assert!(!svg.contains("<line "), "{svg}");
+    }
+
     /// Regression: a negative rational label in a picture was drawn as
     /// the three text lines of its `OutputForm` (`7` over `-(-)` over
     /// `4`) instead of a minus sign before a stacked fraction.
@@ -66464,18 +66486,25 @@ mod grid_text_in_graphics {
     assert!(italic.contains("font-style=\"italic\""), "{italic}");
   }
 
+  /// A quotient with a string operand is a built-up fraction over a drawn
+  /// bar, as Wolfram typesets it: neither the three text lines of its
+  /// `OutputForm` (with a `---` bar) nor the one line `7/100`.
   #[test]
-  fn text_quotient_with_string_operand_is_one_line() {
+  fn text_quotient_with_string_operand_is_a_stacked_fraction() {
     let svg = interpret(
       r#"ExportString[Graphics[Text[Style[ToString[x]/y, 20], {0, 0}]], "SVG"] /. {x -> 0, y -> 100}"#,
     )
     .unwrap();
     assert!(!svg.contains("---"), "{svg}");
+    assert!(svg.contains("<line "), "{svg}");
     let svg =
       interpret(r#"ExportString[Graphics[Text["7"/100, {0, 0}]], "SVG"]"#)
         .unwrap();
-    assert!(svg.contains(">7/100</text>"), "{svg}");
     assert!(!svg.contains("---"), "{svg}");
+    assert!(!svg.contains("7/100"), "{svg}");
+    let (num, den) = svg.split_once("<line ").expect("a fraction bar");
+    assert!(num.contains(">7</text>"), "{svg}");
+    assert!(den.contains(">100</text>"), "{svg}");
   }
 
   #[test]

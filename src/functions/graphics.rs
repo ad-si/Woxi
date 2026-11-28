@@ -35211,7 +35211,7 @@ pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
     {
-      !has_string_operand(expr) && typesets_fraction_box(expr)
+      typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(items) if items.iter().any(row_item_typesets_fraction))
@@ -35261,7 +35261,7 @@ pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
           | crate::syntax::BinaryOperator::Times
           | crate::syntax::BinaryOperator::Divide
           | crate::syntax::BinaryOperator::Power
-      ) && !has_string_operand(expr) =>
+      ) =>
     {
       box_has_fraction(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
@@ -35364,24 +35364,6 @@ fn typesets_fraction_box(expr: &Expr) -> bool {
     && box_has_fraction(
       &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
     )
-}
-
-/// Whether an arithmetic expression has a bare string among its operands
-/// (`"7"/100`): such a quotient is drawn on one line, as `7/100`.
-fn has_string_operand(expr: &Expr) -> bool {
-  match expr {
-    Expr::String(_) => true,
-    Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
-    {
-      args.iter().any(has_string_operand)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      has_string_operand(left) || has_string_operand(right)
-    }
-    Expr::UnaryOp { operand, .. } => has_string_operand(operand),
-    _ => false,
-  }
 }
 
 /// Whether a label holds inline box notation that hangs limits on a large
