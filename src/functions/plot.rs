@@ -908,13 +908,24 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
 /// Evaluate `body` with `var` bound to `x` as a value (dynamic scoping, as in
 /// `Block[{var = x}, body]`), restoring the previous binding afterwards.
 fn evaluate_with_bound_var(body: &Expr, var: &str, x: f64) -> Option<f64> {
+  evaluate_with_bound_value(body, var, Expr::Real(x))
+    .and_then(|r| try_eval_to_f64_lenient(&r))
+}
+
+/// Evaluate `body` with `var` bound to `value` the way
+/// `Block[{var = value}, body]` does, so that symbols whose stored values
+/// mention `var` (`h = z^2` plotted as `h`) see the sample too. The
+/// previous binding of `var` is restored afterwards.
+pub(crate) fn evaluate_with_bound_value(
+  body: &Expr,
+  var: &str,
+  value: Expr,
+) -> Option<Expr> {
   let saved = crate::ENV.with(|e| {
     e.borrow_mut()
-      .insert(var.to_string(), crate::StoredValue::ExprVal(Expr::Real(x)))
+      .insert(var.to_string(), crate::StoredValue::ExprVal(value))
   });
-  let result = evaluate_expr_to_expr(body)
-    .ok()
-    .and_then(|r| try_eval_to_f64_lenient(&r));
+  let result = evaluate_expr_to_expr(body).ok();
   crate::ENV.with(|e| match saved {
     Some(v) => {
       e.borrow_mut().insert(var.to_string(), v);

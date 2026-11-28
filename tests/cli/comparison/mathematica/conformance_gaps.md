@@ -6414,6 +6414,12 @@ default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (`ComplexPlot`, `ComplexPlot3D`, `ComplexListPlot` and `ComplexRegionPlot`
 are implemented.)
 
+### `PlotLegends` on `ComplexPlot`, `ComplexPlot3D` and `Plot3D`
+
+With `PlotLegends -> Automatic`, WL wraps these plots in
+`Legended[plot, BarLegend[…]]` (head `Legended`); Woxi returns the bare
+`Graphics`/`Graphics3D`, so `Head` and `[[1]]` differ.
+
 ### `GeoGraphics` view and output form
 
 The zoom level and single-point default span are Woxi heuristics and will not

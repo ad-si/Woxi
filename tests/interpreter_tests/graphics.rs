@@ -37248,6 +37248,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod complex_plot {
     use super::*;
 
+    /// Wolfram binds `z` like `Block` does, so a symbol holding `z^2` is
+    /// colored the same as `z^2` itself rather than left blank.
+    #[test]
+    fn complex_plot_of_body_reaching_z_through_a_stored_value() {
+      assert_eq!(
+        export_svg("h = z^2; ComplexPlot[h, {z, -1 - I, 1 + I}]"),
+        export_svg("ComplexPlot[z^2, {z, -1 - I, 1 + I}]")
+      );
+    }
+
     /// `Mod` of a complex function used to stay unevaluated, so every sample
     /// was dropped and the domain coloring came out fully transparent.
     #[test]
@@ -49794,25 +49804,52 @@ mod complex_plot_3d {
   }
 
   #[test]
-  fn unevaluable_special_function_falls_back() {
-    // WeberE and HermiteH[1/2, z] don't reduce numerically for symbolic
-    // complex inputs in Woxi; ComplexPlot3D falls back to an empty
-    // Graphics3D so the caller still gets a -Graphics3D- placeholder.
+  fn unevaluable_function_falls_back() {
+    // A function that never evaluates to a number leaves nothing to draw:
+    // ComplexPlot3D returns an empty 3D plot (the caller still gets a
+    // -Graphics3D- placeholder) instead of failing.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[WeberE[2, z], {z, -2 - 2*I, 2 + 2*I}, \
-         PlotLegends -> Automatic]"
+        "g = ComplexPlot3D[f[z], {z, -1 - I, 1 + I}, \
+         PlotLegends -> Automatic]; \
+         {g, Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{-Graphics3D-, 0}"
     );
+  }
+
+  #[test]
+  fn body_reaching_z_through_a_stored_value_is_plotted() {
+    // Wolfram binds `z` like `Block` does, so a symbol holding `z^2`
+    // plots the same surface as `z^2` itself.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[HermiteH[1/2, z], {z, -1 - I, 1 + I}, \
-         PlotLegends -> Automatic]"
+        "h = z^2; \
+         pts[g_] := Cases[g, GraphicsComplex[p_, ___] :> Round[p, 0.001], \
+         Infinity]; \
+         a = pts[ComplexPlot3D[h, {z, -1 - I, 1 + I}, PlotPoints -> 3, \
+         MaxRecursion -> 0]]; \
+         {Length[a], a === pts[ComplexPlot3D[z^2, {z, -1 - I, 1 + I}, \
+         PlotPoints -> 3, MaxRecursion -> 0]]}"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{1, True}"
+    );
+  }
+
+  #[test]
+  fn special_functions_without_closed_forms_are_plotted() {
+    // WeberE and HermiteH with a non-integer degree evaluate numerically
+    // at complex points, so their surfaces are drawn.
+    assert_eq!(
+      interpret(
+        "Table[Length[Cases[ComplexPlot3D[h, {z, -1 - I, 1 + I}, \
+         PlotPoints -> 5, MaxRecursion -> 0], _GraphicsComplex, \
+         Infinity]] > 0, {h, {WeberE[2, z], HermiteH[1/2, z]}}]"
+      )
+      .unwrap(),
+      "{True, True}"
     );
   }
 }

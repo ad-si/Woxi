@@ -1037,6 +1037,19 @@ pub fn dispatch_plotting(
         times2(id_expr("I"), Expr::Identifier(yv.clone())),
       );
       let body = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
+      // A body that reaches `z` only through a stored value (`h = z^2`
+      // plotted as `h`) is untouched by the substitution, so `z` is also
+      // bound around it, the way Wolfram's `Block` localization does.
+      let body = call(
+        "Block",
+        vec![
+          Expr::List(
+            vec![call("Set", vec![Expr::Identifier(zvar.clone()), xy_expr])]
+              .into(),
+          ),
+          body,
+        ],
+      );
       let modulus = call1("Abs", body);
       // Plot ranges: Re(zmin)..Re(zmax) and Im(zmin)..Im(zmax).
       // Evaluate them to concrete numbers so Plot3D's iterator parser
