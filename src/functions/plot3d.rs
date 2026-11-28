@@ -23225,6 +23225,44 @@ const CONTOUR3D_Z_SCALE: f64 = 1.0;
 const CONTOUR3D_REFINE_DEPTH: usize = 2;
 const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
 
+/// A field's gradient (its change across half the box) below this fraction
+/// of the field's interquartile range over the box is too small for its
+/// direction to say which way the level surface faces.
+const CONTOUR3D_NEGLIGIBLE_GRADIENT: f64 = 1e-2;
+
+/// The normal a corner of an isosurface facet is lit with, from the field's
+/// gradient there (`corner`): the gradient itself; where it is no larger
+/// than `negligible`, the gradient at the middle of the facet (`center`);
+/// where that is negligible too, the zero vector, which stands for the
+/// normal averaged from the facets around the corner. A field with no
+/// value beside the corner leaves the facet's own normal, `face`.
+fn lighting_gradient(
+  corner: Option<[f64; 3]>,
+  center: impl FnOnce() -> Option<[f64; 3]>,
+  negligible: f64,
+  face: [f64; 3],
+) -> [f64; 3] {
+  match corner {
+    None => face,
+    Some(g) if v_len(g) > negligible => g,
+    Some(_) => match center() {
+      Some(g) if v_len(g) > negligible => g,
+      _ => [0.0; 3],
+    },
+  }
+}
+
+/// The interquartile range of the finite `values` (0 when there are none).
+fn interquartile_range(values: impl Iterator<Item = f64>) -> f64 {
+  let mut sorted: Vec<f64> = values.filter(|v| v.is_finite()).collect();
+  if sorted.is_empty() {
+    return 0.0;
+  }
+  sorted.sort_by(f64::total_cmp);
+  let at = |q: f64| sorted[((sorted.len() - 1) as f64 * q).round() as usize];
+  at(0.75) - at(0.25)
+}
+
 /// Whether the sampled `field` hints that a sheet thinner than the grid (a
 /// thin tube or shell around the level) passes through cell `[i, j, k]`,
 /// so tracing the surface on the cell's corners alone would miss it or
@@ -23442,18 +23480,129 @@ pub(crate) fn evaluate_scalar_3d(
   try_eval_to_f64(&result)
 }
 
+/// The field a level surface is traced in, for placing the surface's
+/// vertices on the field's actual crossings of the grid edges instead of
+/// where linear interpolation between the edges' ends puts them.
+///
+/// The two differ where the field is far from linear along an edge. A
+/// field that vanishes on a face of the plot box (`x y z` plotted from just
+/// above `0`) is nearly level there, so interpolation puts every crossing
+/// of an edge leaving that face on the face itself, and the surface grows
+/// a fringe of spurious triangles lying in the box's faces.
+pub(crate) struct EdgeCrossings<'a> {
+  field: &'a dyn Fn(Point3D) -> Option<f64>,
+  /// The crossing found on each edge, keyed by its end points (the end at
+  /// or above the level first): an edge is shared by up to six tetrahedra.
+  found: std::cell::RefCell<std::collections::HashMap<[u64; 6], Point3D>>,
+}
+
+impl<'a> EdgeCrossings<'a> {
+  /// How finely a crossing is located, as a fraction of its edge.
+  const RESOLUTION: f64 = 1.0 / 64.0;
+
+  pub(crate) fn new(field: &'a dyn Fn(Point3D) -> Option<f64>) -> Self {
+    EdgeCrossings {
+      field,
+      found: std::cell::RefCell::new(std::collections::HashMap::new()),
+    }
+  }
+
+  /// Where the field crosses `level` between `high` (value `v_high`, at or
+  /// above the level) and `low` (value `v_low`, below it).
+  fn crossing(
+    &self,
+    high: Point3D,
+    low: Point3D,
+    v_high: f64,
+    v_low: f64,
+    level: f64,
+  ) -> Point3D {
+    let key = [
+      high.x.to_bits(),
+      high.y.to_bits(),
+      high.z.to_bits(),
+      low.x.to_bits(),
+      low.y.to_bits(),
+      low.z.to_bits(),
+    ];
+    if let Some(&p) = self.found.borrow().get(&key) {
+      return p;
+    }
+    let at = |t: f64| Point3D {
+      x: high.x + t * (low.x - high.x),
+      y: high.y + t * (low.y - high.y),
+      z: high.z + t * (low.z - high.z),
+    };
+    // The bracket `[a, b]` around the crossing, as fractions of the edge,
+    // and the field's distance from the level at its two ends.
+    let (mut a, mut b) = (0.0, 1.0);
+    let (mut fa, mut fb) = (v_high - level, v_low - level);
+    let secant = |a: f64, b: f64, fa: f64, fb: f64| {
+      if fa == fb {
+        f64::midpoint(a, b)
+      } else {
+        (a + (b - a) * fa / (fa - fb)).clamp(a, b)
+      }
+    };
+    let linear = secant(a, b, fa, fb);
+    // Narrow the bracket around `t`; `false` where the field has no value.
+    let mut narrow = |t: f64, a: &mut f64, b: &mut f64| -> bool {
+      let Some(v) = (self.field)(at(t)) else {
+        return false;
+      };
+      if v >= level {
+        (*a, fa) = (t, v - level);
+      } else {
+        (*b, fb) = (t, v - level);
+      }
+      true
+    };
+    // A field close to linear along the edge crosses the level right
+    // beside the interpolated point, which two samples confirm.
+    let mut defined = true;
+    for t in [linear - Self::RESOLUTION, linear + Self::RESOLUTION] {
+      if defined && t > a && t < b {
+        defined = narrow(t, &mut a, &mut b);
+      }
+    }
+    // Otherwise the crossing is closed in on by bisection.
+    while defined && b - a > 2.0 * Self::RESOLUTION {
+      defined = narrow(f64::midpoint(a, b), &mut a, &mut b);
+    }
+    let point = at(if defined {
+      secant(a, b, fa, fb)
+    } else {
+      linear
+    });
+    self.found.borrow_mut().insert(key, point);
+    point
+  }
+}
+
 /// The point where the level `level` crosses the segment from `verts[i]`
-/// (value `vals[i]`) to `verts[j]` (value `vals[j]`), by linear
+/// (value `vals[i]`) to `verts[j]` (value `vals[j]`): the field's own
+/// crossing where `crossings` knows the field, else by linear
 /// interpolation.
 fn lerp_crossing(
   verts: &[Point3D; 4],
   vals: &[f64; 4],
   level: f64,
+  crossings: Option<&EdgeCrossings>,
   i: usize,
   j: usize,
 ) -> Point3D {
+  if let Some(crossings) = crossings {
+    let (high, low) = if vals[i] >= level { (i, j) } else { (j, i) };
+    return crossings.crossing(
+      verts[high],
+      verts[low],
+      vals[high],
+      vals[low],
+      level,
+    );
+  }
   let denom = vals[j] - vals[i];
-  let t = if denom.abs() < 1e-12 {
+  let t = if denom == 0.0 {
     0.5
   } else {
     ((level - vals[i]) / denom).clamp(0.0, 1.0)
@@ -23473,6 +23622,7 @@ fn march_tetra(
   verts: [Point3D; 4],
   vals: [f64; 4],
   level: f64,
+  crossings: Option<&EdgeCrossings>,
   emit: &mut impl FnMut([Point3D; 3]),
 ) {
   let inside: Vec<usize> = (0..4).filter(|&i| vals[i] >= level).collect();
@@ -23528,25 +23678,25 @@ fn march_tetra(
   match (inside.len(), outside.len()) {
     (1, 3) => {
       let a = inside[0];
-      let p0 = lerp_crossing(&verts, &vals, level, a, outside[0]);
-      let p1 = lerp_crossing(&verts, &vals, level, a, outside[1]);
-      let p2 = lerp_crossing(&verts, &vals, level, a, outside[2]);
+      let p0 = lerp_crossing(&verts, &vals, level, crossings, a, outside[0]);
+      let p1 = lerp_crossing(&verts, &vals, level, crossings, a, outside[1]);
+      let p2 = lerp_crossing(&verts, &vals, level, crossings, a, outside[2]);
       emit([p0, p1, p2]);
     }
     (3, 1) => {
       let a = outside[0];
-      let p0 = lerp_crossing(&verts, &vals, level, a, inside[0]);
-      let p1 = lerp_crossing(&verts, &vals, level, a, inside[1]);
-      let p2 = lerp_crossing(&verts, &vals, level, a, inside[2]);
+      let p0 = lerp_crossing(&verts, &vals, level, crossings, a, inside[0]);
+      let p1 = lerp_crossing(&verts, &vals, level, crossings, a, inside[1]);
+      let p2 = lerp_crossing(&verts, &vals, level, crossings, a, inside[2]);
       emit([p0, p2, p1]);
     }
     (2, 2) => {
       let (i0, i1) = (inside[0], inside[1]);
       let (o0, o1) = (outside[0], outside[1]);
-      let p00 = lerp_crossing(&verts, &vals, level, i0, o0);
-      let p01 = lerp_crossing(&verts, &vals, level, i0, o1);
-      let p10 = lerp_crossing(&verts, &vals, level, i1, o0);
-      let p11 = lerp_crossing(&verts, &vals, level, i1, o1);
+      let p00 = lerp_crossing(&verts, &vals, level, crossings, i0, o0);
+      let p01 = lerp_crossing(&verts, &vals, level, crossings, i0, o1);
+      let p10 = lerp_crossing(&verts, &vals, level, crossings, i1, o0);
+      let p11 = lerp_crossing(&verts, &vals, level, crossings, i1, o1);
       emit([p00, p01, p11]);
       emit([p00, p11, p10]);
     }
@@ -23558,10 +23708,14 @@ fn march_tetra(
 /// cube, via its 6-tetrahedra decomposition. `corners` and `vals` follow
 /// the standard cube corner order: `{x,y,z}` in `{0,1}` with `x` varying
 /// fastest, i.e. corner `i` has bit 0 = x, bit 1 = y, bit 2 = z.
+/// `crossings` places the vertices on the field's own crossings of the
+/// tetrahedra's edges (see [`EdgeCrossings`]); without it they are
+/// interpolated linearly, as a field known only at the corners must be.
 pub(crate) fn march_cube(
   corners: &[Point3D; 8],
   vals: &[f64; 8],
   level: f64,
+  crossings: Option<&EdgeCrossings>,
   emit: &mut impl FnMut([Point3D; 3]),
 ) {
   for w in 0..6 {
@@ -23571,6 +23725,7 @@ pub(crate) fn march_cube(
       [corners[0], corners[6], corners[c], corners[d]],
       [vals[0], vals[6], vals[c], vals[d]],
       level,
+      crossings,
       emit,
     );
   }
@@ -24229,6 +24384,10 @@ fn contour3d_render(
   let mut world_triangles: Vec<([Point3D; 3], usize)> = Vec::new();
   // The body (surface) each of `world_triangles` was cut from.
   let mut triangle_body: Vec<usize> = Vec::new();
+  // How far each surface's field typically varies over the box (the
+  // interquartile range of its samples): the scale its gradient is
+  // measured against.
+  let mut field_spreads: Vec<f64> = Vec::new();
   // The level each of `world_triangles` lies on, and the range of the
   // sampled values (what a `ColorFunction`'s value argument is scaled
   // over).
@@ -24285,6 +24444,9 @@ fn contour3d_render(
     for v in field.iter().flatten().flatten().filter(|v| v.is_finite()) {
       value_range = (value_range.0.min(*v), value_range.1.max(*v));
     }
+    field_spreads.push(interquartile_range(
+      field.iter().flatten().flatten().copied(),
+    ));
     let style = if styles.is_empty() {
       None
     } else {
@@ -24317,6 +24479,15 @@ fn contour3d_render(
     } else {
       vec![0.0]
     };
+
+    // A function is sampled again along the grid edges its surface
+    // crosses; an array of data is known at the grid points only.
+    let sample_field = |p: Point3D| {
+      body.and_then(|(body, [xvar, yvar, zvar])| {
+        evaluate_scalar_3d(body, xvar, yvar, zvar, p.x, p.y, p.z)
+      })
+    };
+    let crossings = body.map(|_| EdgeCrossings::new(&sample_field));
 
     let triangles_before = world_triangles.len();
     for refine in [false, true] {
@@ -24424,47 +24595,57 @@ fn contour3d_render(
                 ];
 
                 let mut emitted = false;
-                march_cube(&corners_world, &cvals, level, &mut |tri_raw| {
-                  emitted = true;
-                  let pieces = match &region_function {
-                    Some(region) => {
-                      let inside = |p: Point3D| {
-                        crate::functions::field_plot::region_allows(
-                          region, p.x, p.y, p.z,
-                        )
-                      };
-                      let (pieces, cut) =
-                        clip_triangle_to_region(tri_raw, &inside);
-                      region_cuts.extend(cut);
-                      pieces
-                    }
-                    None => vec![tri_raw],
-                  };
-                  for tri_world in pieces {
-                    world_triangles.push((tri_world, theme_idx));
-                    triangle_body.push(surf_idx);
-                    triangle_level.push(level);
-
-                    // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
-                    let wn =
-                      triangle_normal(tri_world[0], tri_world[1], tri_world[2]);
-                    let mut tri = [0usize; 3];
-                    for (slot, p) in tri.iter_mut().zip(&tri_world) {
-                      let key = [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
-                      let idx = *point_index.entry(key).or_insert_with(|| {
-                        points.push([p.x, p.y, p.z]);
-                        normals.push([0.0; 3]);
-                        points.len() - 1
-                      });
-                      for d in 0..3 {
-                        normals[idx][d] += wn[d];
+                march_cube(
+                  &corners_world,
+                  &cvals,
+                  level,
+                  crossings.as_ref(),
+                  &mut |tri_raw| {
+                    emitted = true;
+                    let pieces = match &region_function {
+                      Some(region) => {
+                        let inside = |p: Point3D| {
+                          crate::functions::field_plot::region_allows(
+                            region, p.x, p.y, p.z,
+                          )
+                        };
+                        let (pieces, cut) =
+                          clip_triangle_to_region(tri_raw, &inside);
+                        region_cuts.extend(cut);
+                        pieces
                       }
-                      *slot = idx;
+                      None => vec![tri_raw],
+                    };
+                    for tri_world in pieces {
+                      world_triangles.push((tri_world, theme_idx));
+                      triangle_body.push(surf_idx);
+                      triangle_level.push(level);
+
+                      // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
+                      let wn = triangle_normal(
+                        tri_world[0],
+                        tri_world[1],
+                        tri_world[2],
+                      );
+                      let mut tri = [0usize; 3];
+                      for (slot, p) in tri.iter_mut().zip(&tri_world) {
+                        let key = [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+                        let idx =
+                          *point_index.entry(key).or_insert_with(|| {
+                            points.push([p.x, p.y, p.z]);
+                            normals.push([0.0; 3]);
+                            points.len() - 1
+                          });
+                        for d in 0..3 {
+                          normals[idx][d] += wn[d];
+                        }
+                        *slot = idx;
+                      }
+                      level_triangles.push(tri);
+                      level_world_ids.push(world_triangles.len() - 1);
                     }
-                    level_triangles.push(tri);
-                    level_world_ids.push(world_triangles.len() - 1);
-                  }
-                });
+                  },
+                );
                 if let Some((body, vars)) = body
                   && refine
                   && !emitted
@@ -24713,8 +24894,14 @@ fn contour3d_render(
   // A function's isosurface is lit with its gradient, the exact normal;
   // the boxes' axes are scaled differently, so it is taken in box
   // coordinates.
+  //
+  // Where the gradient all but vanishes against how much the field varies
+  // (on a face of the box the field is zero on, say), its direction is
+  // rounding noise, so the corner is lit with the gradient at the middle
+  // of its facet, or failing that with the normal averaged from the
+  // facets around it (the zero vector).
   let gradient_normal =
-    |i: usize, p: Point3D, face: [f64; 3], _: Point3D| -> [f64; 3] {
+    |i: usize, p: Point3D, face: [f64; 3], center: Point3D| -> [f64; 3] {
       let ContourField::Functions { bodies, vars } = &field_source else {
         return face;
       };
@@ -24725,28 +24912,33 @@ fn contour3d_render(
         span(y_min_p, y_max_p) / 2.0,
         span(z_min_p, z_max_p) / (2.0 * CONTOUR3D_Z_SCALE),
       ];
-      let world = [
-        x_min_p + (p.x + 1.0) * half[0],
-        y_min_p + (p.y + 1.0) * half[1],
-        z_min_p + (p.z + CONTOUR3D_Z_SCALE) * half[2],
-      ];
-      let mut g = [0.0; 3];
-      for d in 0..3 {
-        let h = 1e-4 * half[d];
-        let (mut a, mut b) = (world, world);
-        a[d] -= h;
-        b[d] += h;
-        let at = |q: [f64; 3]| {
-          evaluate_scalar_3d(body, xvar, yvar, zvar, q[0], q[1], q[2])
-        };
-        match (at(a), at(b)) {
-          (Some(fa), Some(fb)) if fa.is_finite() && fb.is_finite() => {
-            g[d] = (fb - fa) / (2.0 * h) * half[d];
+      let gradient = |p: Point3D| -> Option<[f64; 3]> {
+        let world = [
+          x_min_p + (p.x + 1.0) * half[0],
+          y_min_p + (p.y + 1.0) * half[1],
+          z_min_p + (p.z + CONTOUR3D_Z_SCALE) * half[2],
+        ];
+        let mut g = [0.0; 3];
+        for d in 0..3 {
+          let h = 1e-4 * half[d];
+          let (mut a, mut b) = (world, world);
+          a[d] -= h;
+          b[d] += h;
+          let at = |q: [f64; 3]| {
+            evaluate_scalar_3d(body, xvar, yvar, zvar, q[0], q[1], q[2])
+          };
+          match (at(a), at(b)) {
+            (Some(fa), Some(fb)) if fa.is_finite() && fb.is_finite() => {
+              g[d] = (fb - fa) / (2.0 * h) * half[d];
+            }
+            _ => return None,
           }
-          _ => return face,
         }
-      }
-      if g.iter().all(|c| *c == 0.0) { face } else { g }
+        Some(g)
+      };
+      let negligible = CONTOUR3D_NEGLIGIBLE_GRADIENT
+        * field_spreads.get(triangle_body[i]).copied().unwrap_or(0.0);
+      lighting_gradient(gradient(p), || gradient(center), negligible, face)
     };
   let exact: Option<crate::functions::smooth_shading::ExactNormal> =
     matches!(field_source, ContourField::Functions { .. })
@@ -30312,6 +30504,118 @@ mod cuboid_clipping_tests {
 }
 
 #[cfg(test)]
+mod edge_crossing_tests {
+  use super::*;
+
+  fn point(x: f64, y: f64, z: f64) -> Point3D {
+    Point3D { x, y, z }
+  }
+
+  /// A field that is all but level at one end of an edge crosses the level
+  /// far from where linear interpolation between the ends puts it.
+  #[test]
+  fn crossing_follows_the_field_not_the_chord() {
+    for root in [0.2, 0.5, 0.85] {
+      let f = move |p: Point3D| Some(p.x * (p.x * p.x - root * root));
+      let (low, high) = (point(1e-6, 0.3, -2.0), point(1.0, 0.3, -2.0));
+      let crossings = EdgeCrossings::new(&f);
+      let p =
+        crossings.crossing(high, low, f(high).unwrap(), f(low).unwrap(), 0.0);
+      assert!((p.x - root).abs() < 1e-3, "root {root}, found {}", p.x);
+      assert_eq!((p.y, p.z), (0.3, -2.0));
+    }
+  }
+
+  /// A linear field is crossed where interpolation says.
+  #[test]
+  fn linear_field_keeps_the_interpolated_crossing() {
+    let f = |p: Point3D| Some(p.x + 2.0 * p.y - 0.7);
+    let (low, high) = (point(0.0, 0.0, 0.0), point(1.0, 1.0, 0.0));
+    let p = EdgeCrossings::new(&f).crossing(high, low, 2.3, -0.7, 0.0);
+    assert!((p.x - 0.7 / 3.0).abs() < 1e-12);
+    assert!((p.y - 0.7 / 3.0).abs() < 1e-12);
+  }
+
+  /// Where the field has no value between the ends, the crossing falls
+  /// back to interpolation.
+  #[test]
+  fn undefined_field_falls_back_to_interpolation() {
+    let f = |_: Point3D| None;
+    let (low, high) = (point(0.0, 0.0, 0.0), point(4.0, 0.0, 0.0));
+    let p = EdgeCrossings::new(&f).crossing(high, low, 3.0, -1.0, 0.0);
+    assert!((p.x - 1.0).abs() < 1e-12);
+  }
+
+  /// A level other than zero is the one that is crossed.
+  #[test]
+  fn nonzero_level() {
+    let f = |p: Point3D| Some(p.z * p.z * p.z);
+    let (low, high) = (point(0.0, 0.0, 0.0), point(0.0, 0.0, 1.0));
+    let p = EdgeCrossings::new(&f).crossing(high, low, 1.0, 0.0, 0.125);
+    assert!((p.z - 0.5).abs() < 1e-3, "{}", p.z);
+  }
+
+  /// The tetrahedra sharing an edge get the very same vertex on it,
+  /// whichever of its ends they name first.
+  #[test]
+  fn shared_edges_share_their_vertex() {
+    let f = |p: Point3D| Some((3.0 * p.x).sin() * (p.y + 0.5) - 0.2 * p.z);
+    let crossings = EdgeCrossings::new(&f);
+    let verts = [
+      point(0.0, 0.0, 0.0),
+      point(1.0, 0.0, 0.0),
+      point(0.0, 1.0, 0.0),
+      point(0.0, 0.0, 1.0),
+    ];
+    let vals = verts.map(|p| f(p).unwrap());
+    for (i, j) in [(0, 1), (1, 2), (1, 3)] {
+      if (vals[i] >= 0.0) == (vals[j] >= 0.0) {
+        continue;
+      }
+      let a = lerp_crossing(&verts, &vals, 0.0, Some(&crossings), i, j);
+      let b = lerp_crossing(&verts, &vals, 0.0, Some(&crossings), j, i);
+      assert_eq!((a.x, a.y, a.z), (b.x, b.y, b.z));
+    }
+  }
+
+  #[test]
+  fn interquartile_range_of_samples() {
+    assert_eq!(interquartile_range([].into_iter()), 0.0);
+    assert_eq!(
+      interquartile_range([5.0, f64::NAN, 1.0, 3.0, 2.0, 4.0].into_iter()),
+      2.0
+    );
+    // Outliers do not stretch it.
+    assert_eq!(
+      interquartile_range([0.0, 1.0, 2.0, 3.0, 1e30].into_iter()),
+      2.0
+    );
+  }
+
+  #[test]
+  fn negligible_gradients_are_not_lit_with() {
+    let face = [0.0, 0.0, 1.0];
+    let good = [0.0, 3.0, 0.0];
+    let noise = [1e-7, 0.0, 0.0];
+    let unused = || -> Option<[f64; 3]> { panic!("center not needed") };
+    assert_eq!(lighting_gradient(Some(good), unused, 0.01, face), good);
+    assert_eq!(lighting_gradient(None, unused, 0.01, face), face);
+    assert_eq!(
+      lighting_gradient(Some(noise), || Some(good), 0.01, face),
+      good
+    );
+    assert_eq!(
+      lighting_gradient(Some(noise), || Some(noise), 0.01, face),
+      [0.0; 3]
+    );
+    assert_eq!(
+      lighting_gradient(Some(noise), || None, 0.01, face),
+      [0.0; 3]
+    );
+  }
+}
+
+#[cfg(test)]
 mod march_cube_orientation_tests {
   use super::*;
 
@@ -30338,7 +30642,7 @@ mod march_cube_orientation_tests {
           let vals: [f64; 8] = std::array::from_fn(|c| {
             f(corners[c].x, corners[c].y, corners[c].z)
           });
-          march_cube(&corners, &vals, 0.0, &mut |t| {
+          march_cube(&corners, &vals, 0.0, None, &mut |t| {
             let nrm = triangle_normal(t[0], t[1], t[2]);
             let dot = nrm[0] + 2.0 * nrm[1] + 3.0 * nrm[2];
             assert!(dot > 0.0, "triangle faces the low side");
