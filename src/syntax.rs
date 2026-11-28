@@ -639,6 +639,8 @@ fn named_char_to_expr(s: &str) -> Expr {
   match name {
     "Infinity" => return id_expr("Infinity"),
     "ImaginaryI" | "ImaginaryJ" => return id_expr("I"),
+    // `\[SpanFromLeft]` & co. are the `Grid` span symbols themselves.
+    "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth" => return id_expr(name),
     _ => {}
   }
 

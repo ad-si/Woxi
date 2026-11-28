@@ -3699,11 +3699,13 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     | "InvisiblePrefixScriptBase"
     | "InvisiblePostfixScriptBase"
     | "Null"
-    | "SpanFromLeft"
-    | "SpanFromAbove"
-    | "SpanFromBoth"
     | "RawEscape"
     | "RawBackspace" => "",
+    // The `Grid` span markers are symbols, not decoration: dropping them
+    // would turn a merged cell into an empty one.
+    "SpanFromLeft" => "SpanFromLeft",
+    "SpanFromAbove" => "SpanFromAbove",
+    "SpanFromBoth" => "SpanFromBoth",
     // The FrontEnd's own newline (U+F3A3) separates statements in a typeset
     // cell; the reconstructed code needs a plain line break.
     "IndentingNewLine" => "\n",
@@ -10909,6 +10911,19 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
     let boxes = r#"BoxData[{RowBox[{RowBox[{RowBox[{"f", "[", "x_", "]"}], ":=", RowBox[{"x", "+", "1"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"g", "[", "x_", "]"}], ":=", RowBox[{"f", "[", "x", "]"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{"h", "=", "2"}], ";"}]}]"#;
     let src = extract_cell_content(boxes);
     assert_eq!(src, "f[x_]:=x+1;\ng[x_]:=f[x];\nh=2;");
+  }
+
+  #[test]
+  fn boxdata_span_characters_stay_span_symbols() {
+    // A `Grid` row typed as `{"title", \[SpanFromLeft]}` merges its cells.
+    // The span characters are symbols, so reconstructing the source must
+    // keep them rather than leave an empty (`Null`) item behind.
+    let boxes = r#"BoxData[RowBox[{"Grid", "[", RowBox[{"{", RowBox[{RowBox[{"{", RowBox[{"t", ",", "\[SpanFromLeft]"}], "}"}], ",", RowBox[{"{", RowBox[{"a", ",", "\[SpanFromAbove]"}], "}"}], ",", RowBox[{"{", RowBox[{"b", ",", "\[SpanFromBoth]"}], "}"}]}], "}"}], "]"}]]"#;
+    let src = extract_cell_content(boxes);
+    assert_eq!(
+      src,
+      "Grid[{{t,SpanFromLeft},{a,SpanFromAbove},{b,SpanFromBoth}}]"
+    );
   }
 
   #[test]

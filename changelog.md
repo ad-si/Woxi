@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- `Grid` reads `Alignment -> Decimal` (alone or for a column) as lining
+    the numbers up on their decimal points, like the `"."` character
+    alignment, and does so for numbers wrapped in a color `Style` too,
+    instead of centering them.
+- The third part of a `Grid` alignment, `Alignment -> {cols, rows,
+    {{i, j} -> align, …}}`, aligns the single items or blocks of items its
+    rules name.
+- `\[SpanFromLeft]`, `\[SpanFromAbove]` and `\[SpanFromBoth]` are read as
+    the `Grid` span symbols, in source code and in the cells of a notebook,
+    instead of as an empty item, so a merged cell typed that way stays
+    merged.
 - `Det` of a large matrix of exact constants (rotated unit vectors built
     from `Cos[2 Pi k/17]`, say) returns the plain sum of products instead
     of running a simplification pass over it that took several times as
