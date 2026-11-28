@@ -7565,6 +7565,52 @@ mod graphics {
       assert!(bare.contains("clip-path=\"url("), "{bare}");
     }
 
+    // A label running past an automatic plot range spills into an explicit
+    // `ImagePadding` rather than widening the range: the padding is room
+    // set aside around the drawing, so the outline below keeps the whole
+    // 230 x 140 drawing area. Woxi used to grow the range for the label as
+    // if the picture had no margins, shrinking the drawing and shifting
+    // every label of a text panel laid out by coordinates.
+    #[test]
+    fn label_past_automatic_range_spills_into_explicit_image_padding() {
+      let code = |options: &str| {
+        format!(
+          "Graphics[{{Line[{{{{-1, 0}}, {{1, 0}}, {{1, 1}}, {{-1, 1}}, \
+           {{-1, 0}}}}], Text[Style[\"a label reaching past the left \
+           edge\", Bold, 12], {{-0.35, 0.1}}]}}, ImageSize -> {{300, 150}}\
+           {options}]"
+        )
+      };
+      let outline = |svg: &str| {
+        let start = svg.find("<polyline points=\"").expect("outline") + 18;
+        let end = start + svg[start..].find('"').unwrap();
+        svg[start..end].to_string()
+      };
+      let padded = export_svg(&code(", ImagePadding -> {{50, 20}, {10, 0}}"));
+      let plain = export_svg(
+        "Graphics[{Line[{{-1, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, 0}}]}, \
+         ImageSize -> {300, 150}, ImagePadding -> {{50, 20}, {10, 0}}]",
+      );
+      assert_eq!(outline(&padded), outline(&plain), "{padded}");
+
+      // Without the padding there is no margin to spill into, so the range
+      // still grows to hold the label.
+      let bare = export_svg(&code(""));
+      let unlabeled = export_svg(
+        "Graphics[{Line[{{-1, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, 0}}]}, \
+         ImageSize -> {300, 150}]",
+      );
+      assert_ne!(outline(&bare), outline(&unlabeled), "{bare}");
+
+      // A label too wide for the padding as well still widens the range.
+      let narrow = export_svg(&code(", ImagePadding -> {{2, 2}, {2, 2}}"));
+      let narrow_plain = export_svg(
+        "Graphics[{Line[{{-1, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, 0}}]}, \
+         ImageSize -> {300, 150}, ImagePadding -> {{2, 2}, {2, 2}}]",
+      );
+      assert_ne!(outline(&narrow), outline(&narrow_plain), "{narrow}");
+    }
+
     // `PlotRangePadding` was silently ignored (it wasn't parsed at all), so
     // an explicit `PlotRange` always rendered with zero padding around it —
     // found via a Demonstration's logo-shaped `Graphics` that relied on

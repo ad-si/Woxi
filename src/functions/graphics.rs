@@ -20491,13 +20491,28 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some([l, r, _, _]) => (svg_width as f64 - l - r).max(1.0),
     None => svg_width as f64,
   };
+  // An explicit `ImagePadding` is room set aside around the drawing area:
+  // the drawing is fitted into what the padding leaves of the picture, and
+  // a label running past the plot range spills into that padding (Wolfram
+  // keeps the range as the primitives span it) before the range has to
+  // grow for it.
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or_default().map(|m| m.max(0.0));
   let (plot_w, plot_h, slack_x, slack_y) = match aspect_ratio {
     Some(r) if size_names_height => {
-      let (w, h) = (svg_width as f64, svg_height as f64);
+      let (w, h) = (
+        (svg_width as f64 - pad_left - pad_right).max(1.0),
+        (svg_height as f64 - pad_bottom - pad_top).max(1.0),
+      );
       let (pw, ph) = if w * r <= h { (w, w * r) } else { (h / r, h) };
       (pw, ph, (w - pw) / 2.0, (h - ph) / 2.0)
     }
-    _ => (drawing_w, svg_height as f64, 0.0, 0.0),
+    _ => (
+      (drawing_w - pad_left - pad_right).max(1.0),
+      (svg_height as f64 - pad_bottom - pad_top).max(1.0),
+      0.0,
+      0.0,
+    ),
   };
   // Widening the range shrinks the scale, which makes every label take a
   // larger share of the range again: iterate until the range settles (the
@@ -20685,12 +20700,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (half_w, half_h) = (w / 2.0 / kx, h / 2.0 / ky);
       let (room_x, room_y) = (slack_x / kx, slack_y / ky);
       if plot_range_x.is_none() && *w < svg_width as f64 {
-        grown.x_min = grown.x_min.min(x - half_w + room_x);
-        grown.x_max = grown.x_max.max(x + half_w - room_x);
+        grown.x_min = grown.x_min.min(x - half_w + room_x + pad_left / kx);
+        grown.x_max = grown.x_max.max(x + half_w - room_x - pad_right / kx);
       }
       if plot_range_y.is_none() && *h < svg_height as f64 {
-        grown.y_min = grown.y_min.min(y - half_h + room_y);
-        grown.y_max = grown.y_max.max(y + half_h - room_y);
+        grown.y_min = grown.y_min.min(y - half_h + room_y + pad_bottom / ky);
+        grown.y_max = grown.y_max.max(y + half_h - room_y - pad_top / ky);
       }
     }
     for prim in &primitives {
@@ -20738,12 +20753,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && text_overflow.is_none()
         && text_w < svg_width as f64
       {
-        grown.x_min = grown.x_min.min(cx - half_w + room_x);
-        grown.x_max = grown.x_max.max(cx + half_w - room_x);
+        grown.x_min = grown.x_min.min(cx - half_w + room_x + pad_left / kx);
+        grown.x_max = grown.x_max.max(cx + half_w - room_x - pad_right / kx);
       }
       if plot_range_y.is_none() && text_h < svg_height as f64 {
-        grown.y_min = grown.y_min.min(cy - half_h + room_y);
-        grown.y_max = grown.y_max.max(cy + half_h - room_y);
+        grown.y_min = grown.y_min.min(cy - half_h + room_y + pad_bottom / ky);
+        grown.y_max = grown.y_max.max(cy + half_h - room_y - pad_top / ky);
       }
     }
     // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
