@@ -22853,6 +22853,24 @@ mod plot3d {
       assert!(!svg.contains("NumberForm"), "{svg}");
     }
 
+    /// A `Text` label that multiplies a formatted number by a unit string
+    /// is set in TraditionalForm's order of factors — the number first —
+    /// and a unit it is divided by goes after a slash.
+    #[test]
+    fn text_label_sets_a_number_form_before_its_unit() {
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"]}]"#);
+      assert!(svg.contains(">9.1 m<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text["m" NumberForm[0.7712, 2]]}]"#);
+      assert!(svg.contains(">0.77 m<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] x]}]"#);
+      assert!(svg.contains(">9.1 x<"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"/"s"]}]"#);
+      assert!(svg.contains(">9.1 m/s<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text["a"/("s" "t")]}]"#);
+      assert!(svg.contains(">a/(s t)<"), "{svg}");
+    }
+
     #[test]
     fn plot_legends_typeset_expressions() {
       let svg = export_svg(
@@ -39899,8 +39917,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           })
         })
         .count();
-      // Each of the two boxes shows three faces and so nine edges.
-      assert_eq!((last.len(), shown), (24, 18));
+      // Each of the two boxes shows three faces and so nine edges. The
+      // slab's far top edge runs behind the box above it: a long edge is
+      // placed piece by piece, so that one is stroked as four stretches,
+      // two of them shown.
+      assert_eq!((last.len(), shown), (28, 19));
     }
 
     #[test]
@@ -55748,6 +55769,57 @@ mod manipulate {
     assert!(json.contains("\"mutation\":\"n = 3\""), "{json}");
   }
 
+  /// `ControlType -> TogglerBar` controls laid out in a `Dynamic@Column`:
+  /// a choice list built from another control's variable stays held (so it
+  /// follows that variable), a bar inside an `If` of the layout carries its
+  /// condition, and a `Background` reaches every toggle of its bar.
+  #[test]
+  fn spec_toggler_bar_controls_keep_live_choices_condition_and_background() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, {mode, {1, 2}},        {{count, 2}, ControlType -> None},        Dynamic@Column[{         Control[{{a, {}, \"\"}, Range[count], ControlType -> TogglerBar,            Background -> Red}],          If[mode == 1, \"\",            Control[{{b, {}, \"\"}, Range[count], ControlType -> TogglerBar}]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.displays,
+      vec![
+        "TogglerBar[Dynamic[a], Range[count], Background -> Red]".to_string(),
+        "If[!(mode == 1), TogglerBar[Dynamic[b], Range[count]], \"\"]"
+          .to_string(),
+      ]
+    );
+    let render = |mode: &str, count: &str| -> Vec<String> {
+      let mut bindings = manipulate_initial_bindings(&spec);
+      for (name, value) in &mut bindings {
+        match name.as_str() {
+          "mode" => *value = mode.to_string(),
+          "count" => *value = count.to_string(),
+          _ => {}
+        }
+      }
+      woxi::with_scoped_globals(&bindings, || {
+        spec
+          .displays
+          .iter()
+          .map(|d| woxi::functions::graphics::render_manipulate_display(d, &[]))
+          .collect()
+      })
+    };
+    let togglers = |json: &str| json.matches("\"kind\":\"toggler\"").count();
+    let red = "\"background\":\"rgb(255, 0, 0)\"";
+
+    let shown = render("1", "2");
+    assert_eq!(togglers(&shown[0]), 2, "{}", shown[0]);
+    assert_eq!(shown[0].matches(red).count(), 2, "{}", shown[0]);
+    assert_eq!(togglers(&shown[1]), 0, "{}", shown[1]);
+
+    // More choices once the count grows, and the second bar in mode 2.
+    let shown = render("2", "5");
+    assert_eq!(togglers(&shown[0]), 5, "{}", shown[0]);
+    assert_eq!(togglers(&shown[1]), 5, "{}", shown[1]);
+    assert!(shown[1].contains("\"background\":null"), "{}", shown[1]);
+  }
+
   /// `RadioButtonBar[Dynamic[var], choices]` used the same way (bound to an
   /// otherwise-undeclared variable, as part of an extra display argument)
   /// gets the same auto-initialization and single-value write-back as
@@ -57552,6 +57624,41 @@ mod manipulate {
       .collect();
     // (The unnamed entry is the "chains" heading.)
     assert_eq!(names, ["w", "j"]);
+  }
+
+  /// A control spec's `ImageSize` names the width of its slider: a named
+  /// size, a number, or the width of a `{w, h}` pair. Specs without a
+  /// usable width are left out, so their sliders keep the default width.
+  #[test]
+  fn control_image_size_option_gives_the_slider_width() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c, d, e, f}, \
+       {{a, 1, \"a\"}, 0, 2, ImageSize -> Tiny}, \
+       {{b, 1}, 0, 2, Slider, ImageSize -> Small}, \
+       Control[{{c, 1}, 0, 2, ImageSize -> Medium}], \
+       {{d, 1}, 0, 2, ImageSize -> Large}, \
+       {{e, 1}, 0, 2, ImageSize -> {75, 20}}, \
+       Row[{Control[{{f, 1}, 0, 2, ImageSize -> 2*45}], Control[{g, 0, 2}]}], \
+       {{h, 1}, 0, 2, ImageSize -> Automatic}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let widths: Vec<(&str, f64)> = spec
+      .control_image_widths
+      .iter()
+      .map(|(name, width)| (name.as_str(), *width))
+      .collect();
+    assert_eq!(
+      widths,
+      vec![
+        ("a", 50.0),
+        ("b", 100.0),
+        ("c", 200.0),
+        ("d", 400.0),
+        ("e", 75.0),
+        ("f", 90.0),
+      ]
+    );
   }
 
   /// A control spec's `Background -> color` option is kept as live code
@@ -71433,6 +71540,96 @@ mod plots_with_nothing_to_draw {
   }
 }
 
+mod color_function_directive_list {
+  use super::*;
+
+  fn svg(data: &str, cf: &str, extra: &str) -> String {
+    interpret(&format!(
+      "ExportString[ListLinePlot[{data}, ColorFunction -> {cf}{extra}], \
+       \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  /// The `points` of every curve polyline stroked in one of `colors`.
+  fn polylines(svg: &str, colors: &[&str]) -> Vec<Vec<String>> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .filter(|el| {
+        let el = el.split('>').next().unwrap_or("");
+        colors
+          .iter()
+          .any(|c| el.contains(&format!("stroke=\"{c}\"")))
+      })
+      .filter_map(|el| {
+        let pts = el.split("points=\"").nth(1)?.split('"').next()?;
+        Some(pts.split_whitespace().map(str::to_string).collect())
+      })
+      .collect()
+  }
+
+  /// A `ColorFunction` returning a list of directives colors the curve by
+  /// the last color in the list, like the equivalent `Directive[…]`, both
+  /// for a function-like series and for a path that doubles back in x.
+  #[test]
+  fn list_of_directives_colors_like_its_last_color() {
+    clear_state();
+    for data in [
+      "{{1, 1}, {2, 3}, {3, 2}, {4, 5}}",
+      "{{1, 1}, {2, 3}, {1, 4}, {2, 1}, {1, 1}}",
+    ] {
+      for extra in ["", ", InterpolationOrder -> 2"] {
+        let last = svg(data, "Function[{x, y}, Hue[y]]", extra);
+        for cf in [
+          "Function[{x, y}, {Hue[x], Hue[y]}]",
+          "Function[{x, y}, Directive[Hue[x], Hue[y]]]",
+          "Function[{x, y}, {Thick, Hue[y]}]",
+          "({Hue[#1], Hue[#2]} &)",
+        ] {
+          assert_eq!(svg(data, cf, extra), last, "{data} {cf} {extra}");
+        }
+        let first = svg(data, "Function[{x, y}, Hue[x]]", extra);
+        assert_ne!(first, last, "{data} {extra}");
+        assert_eq!(
+          svg(data, "Function[{x, y}, {Hue[y], Hue[x]}]", extra),
+          first,
+          "{data} {extra}"
+        );
+      }
+    }
+  }
+
+  /// A list of three or four numbers still is `RGBColor` channels.
+  #[test]
+  fn numeric_list_stays_rgb_channels() {
+    clear_state();
+    let data = "{{1, 1}, {2, 3}, {1, 4}}";
+    assert_eq!(
+      svg(data, "Function[{x, y}, {x, y, 0}]", ""),
+      svg(data, "Function[{x, y}, RGBColor[x, y, 0]]", "")
+    );
+  }
+
+  /// The color runs of a path that is not a function of x overlap by one
+  /// step, so a thick curve shows no notch where two runs meet.
+  #[test]
+  fn color_runs_of_a_path_overlap() {
+    clear_state();
+    let out = svg(
+      "{{1, 1}, {2, 3}, {1, 4}}",
+      "Function[{x, y}, Hue[y / 2]]",
+      ", PlotStyle -> Thickness[0.05], Axes -> False",
+    );
+    // Midpoint heights 2 and 3.5 scale to 1/3 and 5/6: Hue[1/6], Hue[5/12].
+    let runs = polylines(&out, &["#FFFF00", "#00FF80"]);
+    assert_eq!(runs.len(), 2, "{out}");
+    assert_eq!(runs[0].len(), 3, "{out}");
+    assert_eq!(runs[1].len(), 2, "{out}");
+    assert_eq!(runs[0][1..], runs[1][..], "{out}");
+  }
+}
+
 mod array_plot_argument_errors {
   use super::*;
 
@@ -84369,6 +84566,71 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
   );
 }
 
+mod numeric_array_plot_data {
+  use woxi::interpret_with_stdout;
+
+  // The plots of array data draw a NumericArray as the array it holds.
+  #[test]
+  fn array_plots_draw_a_numeric_array() {
+    for plot in [
+      "ArrayPlot",
+      "MatrixPlot",
+      "ReliefPlot",
+      "ListDensityPlot",
+      "ListContourPlot",
+      "ListLinePlot",
+    ] {
+      let code = format!(
+        "na = NumericArray[{{{{1, 2, 3}}, {{4, 9, 6}}, {{7, 5, 8}}}}, \"UnsignedInteger8\"]; \
+         ExportString[{plot}[na], \"SVG\"] === ExportString[{plot}[Normal[na]], \"SVG\"]"
+      );
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "True", "{plot}");
+      assert!(r.warnings.is_empty(), "{plot}: {:?}", r.warnings);
+    }
+    // Also what a structural operation gives back, and with options.
+    let r = interpret_with_stdout(
+      "na = NumericArray[{{1, 2, 3}, {4, 9, 6}, {7, 5, 8}}, \"UnsignedInteger8\"]; \
+       {Head[ListPlot3D[Reverse[na], Mesh -> None]], \
+        Head[ArrayPlot[Take[na, 2], ColorFunction -> GrayLevel]], \
+        Head[ListPlot[na[[1]]]]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{Graphics3D, Graphics, Graphics}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // A PlotRange that names no range is General::prng, and the plot is
+  // drawn with its automatic range.
+  #[test]
+  fn invalid_plot_range_message() {
+    for plot in ["ListPlot", "ListLinePlot"] {
+      let r = interpret_with_stdout(&format!(
+        "Head[{plot}[{{1, 2, 3}}, PlotRange -> {{0, 1.01 f[x]}}]]"
+      ))
+      .unwrap();
+      assert_eq!(r.result, "Graphics", "{plot}");
+      assert_eq!(
+        r.warnings,
+        vec![
+          "General::prng: Value of option PlotRange -> {0, 1.01*f[x]} is not \
+           All, Full, Automatic, a positive machine number, or an appropriate \
+           list of range specifications."
+        ],
+        "{plot}"
+      );
+    }
+    for range in ["All", "{0, 5}", "{{0, All}, {Automatic, Pi}}", "{Full, 7}"] {
+      let r = interpret_with_stdout(&format!(
+        "Head[ListPlot[{{1, 2, 3}}, PlotRange -> {range}]]"
+      ))
+      .unwrap();
+      assert_eq!(r.result, "Graphics", "{range}");
+      assert!(r.warnings.is_empty(), "{range}: {:?}", r.warnings);
+    }
+  }
+}
+
 /// Regression: `Inset[Framed[Pane[content, {w, h}]], pos]` drew its frame
 /// around the content alone, so an empty pane used as a colored plate
 /// collapsed to a sliver. The frame encloses the pane's box (plus the
@@ -84549,4 +84811,52 @@ fn labeled_label_style_styles_the_labels() {
     export_svg("Labeled[Graphics[Disk[]], \"a\", LabelStyle -> Automatic]"),
     export_svg("Labeled[Graphics[Disk[]], \"a\"]")
   );
+}
+
+mod text_column_of_nested_rows {
+  use super::*;
+
+  /// The outer height of the exported picture.
+  fn height(svg: &str) -> f64 {
+    let rest = svg.split_once("height=\"").expect("height").1;
+    rest.split_once('"').unwrap().0.parse().unwrap()
+  }
+
+  /// Regression: a text `Row` holding another text `Row` (`Row[{n, " = ",
+  /// Row[parts, " + "]}]`) was stacked in a `Text[Column[…]]` as a padded
+  /// box with a gap below instead of at the text line pitch, so a long
+  /// list ran well past the pane that held it.
+  #[test]
+  fn nested_text_rows_take_the_text_line_pitch() {
+    let nested = export_svg(
+      "Text[Column[Table[Row[{i, \" = \", Row[{i - 1, 1}, \" + \"]}], {i, 2, 9}]]]",
+    );
+    let flat = export_svg(
+      "Text[Column[Table[Row[{i, \" = \", i - 1, \" + \", 1}], {i, 2, 9}]]]",
+    );
+    assert_eq!(height(&nested), height(&flat), "{nested}\n{flat}");
+    // Eight lines of 14 pt text stay under 19 pt apiece.
+    assert!(height(&nested) < 8.0 * 19.0, "{nested}");
+  }
+
+  /// The same holds with an alignment argument and without a separator.
+  #[test]
+  fn aligned_column_of_nested_rows_matches_flat_rows() {
+    let nested = export_svg(
+      "Text[Column[Table[Row[{i, Row[{\"a\", Row[{\"b\", i}]}]}], {i, 5}], Left]]",
+    );
+    let flat = export_svg(
+      "Text[Column[Table[Row[{i, \"a\", \"b\", i}], {i, 5}], Left]]",
+    );
+    assert_eq!(height(&nested), height(&flat), "{nested}\n{flat}");
+  }
+
+  /// A nested `Row` whose separator breaks the line is no one-line text.
+  #[test]
+  fn nested_row_with_line_break_separator_keeps_its_box() {
+    let broken =
+      export_svg("Text[Column[Table[Row[{i, Row[{1, 2}, \"\\n\"]}], {i, 4}]]]");
+    let flat = export_svg("Text[Column[Table[Row[{i, Row[{1, 2}]}], {i, 4}]]]");
+    assert!(height(&broken) > height(&flat), "{broken}\n{flat}");
+  }
 }

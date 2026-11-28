@@ -2112,6 +2112,8 @@ fn unpack_channels(
 /// color yield `None`.
 pub(crate) fn parse_style_color(expr: &Expr) -> Option<Color> {
   match expr {
+    // Not through the list branch of `parse_color_function_result`: a
+    // style list of three numbers is not a color.
     Expr::List(items) => parse_color_function_result(&Expr::FunctionCall {
       name: "Directive".to_string(),
       args: items.clone(),
@@ -2124,18 +2126,27 @@ pub(crate) fn parse_style_color(expr: &Expr) -> Option<Color> {
 /// directive, a list of three or four numbers is read as `RGBColor` channels
 /// (`ColorFunction -> ({#1, #2, 0} &)` colors like `RGBColor[#1, #2, 0]`),
 /// so e.g. a `BSplineFunction` of `ImageData` can color a surface directly.
+/// A list of directives sets the color of its last color directive.
 pub(crate) fn parse_color_function_result(expr: &Expr) -> Option<Color> {
   if let Expr::List(items) = expr
     && matches!(items.len(), 3 | 4)
+    && let Some(ch) =
+      items.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
   {
-    let ch: Option<Vec<f64>> = items.iter().map(expr_to_f64).collect();
-    let ch = ch?;
     let c = Color::new(
       ch[0].clamp(0.0, 1.0),
       ch[1].clamp(0.0, 1.0),
       ch[2].clamp(0.0, 1.0),
     );
     return Some(c.with_alpha(ch.get(3).copied().unwrap_or(1.0)));
+  }
+  // Any other list is a list of directives (`{Hue[x], Hue[y]}`,
+  // `{Thick, Red}`), read like `Directive[…]`: the last color wins.
+  if let Expr::List(items) = expr {
+    return parse_color_function_result(&Expr::FunctionCall {
+      name: "Directive".to_string(),
+      args: items.clone(),
+    });
   }
   // `Directive[color, Opacity[a]]` (or `Opacity[a, color]`): the color the
   // directive sets, with the opacity folded into its alpha. A directive
@@ -6724,15 +6735,21 @@ fn wrap_text_to_measure(
     .map(|line| {
       let mut lines: Vec<String> = Vec::new();
       let mut current = String::new();
+      // Whether the line being built already holds a word (possibly an
+      // empty one, between two spaces): the next word then follows a space,
+      // so leading and repeated spaces are kept.
+      let mut started = false;
       for word in line.split(' ') {
         if !current.is_empty() && measure(&format!("{current} {word}")) > width
         {
           lines.push(std::mem::take(&mut current));
+          started = false;
         }
-        if !current.is_empty() {
+        if started {
           current.push(' ');
         }
         current.push_str(word);
+        started = true;
       }
       lines.push(current);
       lines.join("\n")
@@ -6810,18 +6827,22 @@ fn wrap_text_to_points(text: &str, width: f64, font_size: f64) -> String {
       let mut lines: Vec<String> = Vec::new();
       let mut current = String::new();
       let mut current_w = 0.0;
+      // As in `wrap_text_to_measure`: leading and repeated spaces are kept.
+      let mut started = false;
       for word in line.split(' ') {
         let word_w = em(word);
         if !current.is_empty() && current_w + space + word_w > width {
           lines.push(std::mem::take(&mut current));
           current_w = 0.0;
+          started = false;
         }
-        if !current.is_empty() {
+        if started {
           current.push(' ');
           current_w += space;
         }
         current.push_str(word);
         current_w += word_w;
+        started = true;
       }
       lines.push(current);
       lines.join("\n")
@@ -6878,6 +6899,21 @@ pub(crate) fn grid_wrapped_to_pane_width(
         if is_style_wrapper(name) && !args.is_empty() =>
       {
         atom_text(&args[0])
+      }
+      // A nested text `Row` shows its items joined by its separator.
+      Expr::FunctionCall { name, args } if name == "Row" => {
+        let separator = match args.get(1) {
+          Some(Expr::String(s)) => s.as_str(),
+          _ => "",
+        };
+        match args.first() {
+          Some(Expr::List(items)) => items
+            .iter()
+            .map(atom_text)
+            .collect::<Vec<_>>()
+            .join(separator),
+          _ => crate::syntax::expr_to_string(e),
+        }
       }
       other => crate::syntax::expr_to_string(other),
     }
@@ -7051,7 +7087,15 @@ pub(crate) fn is_typeset_grid_item(expr: &Expr) -> bool {
   )
 }
 
-/// A notebook shows a list holding typeset matrices or tables
+/// A `Button[label, action, …]`, which is drawn as its button.
+fn is_drawn_button(expr: &Expr) -> bool {
+  matches!(
+    strip_style_wrappers(expr),
+    Expr::FunctionCall { name, args } if name == "Button" && args.len() >= 2
+  )
+}
+
+/// A notebook shows a list holding typeset matrices, tables or buttons
 /// (`{MatrixForm[a], MatrixForm[b]}`) with each item laid out in two
 /// dimensions between the list's braces and commas. Rewrite such a list —
 /// looking through `Text` and `Style` wrappers — as the
@@ -7059,7 +7103,11 @@ pub(crate) fn is_typeset_grid_item(expr: &Expr) -> bool {
 /// `expr` is no such list.
 pub(crate) fn list_with_grids_as_row(expr: &Expr) -> Option<Expr> {
   match expr {
-    Expr::List(items) if items.iter().any(is_typeset_grid_item) => {
+    Expr::List(items)
+      if items
+        .iter()
+        .any(|i| is_typeset_grid_item(i) || is_drawn_button(i)) =>
+    {
       let mut row = Vec::with_capacity(items.len() * 2 + 1);
       row.push(Expr::String("{".to_string()));
       for (i, item) in items.iter().enumerate() {
@@ -7071,6 +7119,37 @@ pub(crate) fn list_with_grids_as_row(expr: &Expr) -> Option<Expr> {
       row.push(Expr::String("}".to_string()));
       Some(Expr::FunctionCall {
         name: "Row".to_string(),
+        args: vec![Expr::List(row.into())].into(),
+      })
+    }
+    // A `Row` item that is such a list is set the same way, its braces,
+    // commas and items joining the row.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(items)
+          if items.iter().any(|i| matches!(i, Expr::List(_))
+            && list_with_grids_as_row(i).is_some())) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut row = Vec::with_capacity(items.len());
+      for item in items {
+        match &list_with_grids_as_row(item) {
+          Some(Expr::FunctionCall { args: inner, .. })
+            if matches!(item, Expr::List(_)) =>
+          {
+            match inner.first() {
+              Some(Expr::List(parts)) => row.extend(parts.iter().cloned()),
+              _ => row.push(item.clone()),
+            }
+          }
+          _ => row.push(item.clone()),
+        }
+      }
+      Some(Expr::FunctionCall {
+        name: name.clone(),
         args: vec![Expr::List(row.into())].into(),
       })
     }
@@ -7755,39 +7834,53 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         None => graphics_text_content(&args[0]),
       }
     }
-    // A product with a string factor (`" = " NumberForm[x, 3]`) is the
-    // factors set side by side, each typeset on its own — the wrappers
-    // inside it still apply instead of printing as `NumberForm[…]` source.
+    // A product with a string or number-form factor (`NumberForm[x, 3]
+    // "m"`) is the factors set side by side, each typeset on its own — the
+    // wrappers inside it still apply instead of printing as `NumberForm[…]`
+    // source — in TraditionalForm's order of factors: `9.1 m`.
     Expr::FunctionCall { name, args }
       if name == "Times"
-        && args.iter().any(|a| matches!(a, Expr::String(_))) =>
+        && args.iter().any(|a| {
+          matches!(a, Expr::String(_))
+            || matches!(a, Expr::FunctionCall { name, args }
+              if !args.is_empty() && matches!(
+                name.as_str(),
+                "NumberForm"
+                  | "PaddedForm"
+                  | "AccountingForm"
+                  | "ScientificForm"
+                  | "EngineeringForm"
+              ))
+        }) =>
     {
       // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
       // denominator under the rest, so the label reads `7/100` on one line.
-      let mut numerator: Vec<String> = Vec::new();
-      let mut denominator: Vec<String> = Vec::new();
+      let mut numerator: Vec<Expr> = Vec::new();
+      let mut denominator: Vec<Expr> = Vec::new();
       for a in args {
         match a {
           Expr::FunctionCall { name: rn, args: ra }
             if rn == "Rational" && ra.len() == 2 =>
           {
             if !matches!(&ra[0], Expr::Integer(1)) {
-              numerator.push(graphics_text_content(&ra[0]));
+              numerator.push(ra[0].clone());
             }
-            denominator.push(graphics_text_content(&ra[1]));
+            denominator.push(ra[1].clone());
           }
-          Expr::FunctionCall { name: pn, args: pa }
-            if pn == "Power"
-              && pa.len() == 2
-              && matches!(&pa[1], Expr::Integer(-1)) =>
-          {
-            denominator.push(graphics_text_content(&pa[0]));
-          }
-          other => numerator.push(graphics_text_content(other)),
+          other => match as_power(other) {
+            Some((base, Expr::Integer(-1))) => denominator.push(base.clone()),
+            _ => numerator.push(other.clone()),
+          },
         }
       }
-      let num = numerator.join(" ");
-      match denominator.as_slice() {
+      use crate::evaluator::dispatch::complex_and_special::tf_order_factors;
+      tf_order_factors(&mut numerator);
+      tf_order_factors(&mut denominator);
+      let texts = |factors: &[Expr]| -> Vec<String> {
+        factors.iter().map(graphics_text_content).collect()
+      };
+      let num = texts(&numerator).join(" ");
+      match texts(&denominator).as_slice() {
         [] => num,
         [d] => format!("{num}/{d}"),
         ds => format!("{num}/({})", ds.join(" ")),
@@ -8737,9 +8830,14 @@ fn animator_slider_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 /// Width in pixels of a slider drawn inside a picture: its `ImageSize`
-/// (a number, the width of a `{w, h}` pair, or a named size), else
-/// `default`.
+/// (see [`slider_image_width`]), else `default`.
 fn picture_slider_width(options: &[Expr], default: f64) -> f64 {
+  slider_image_width(options).unwrap_or(default)
+}
+
+/// Width in pixels a slider's `ImageSize` option asks for: a number, the
+/// width of a `{w, h}` pair, or a named size. `None` without a usable one.
+fn slider_image_width(options: &[Expr]) -> Option<f64> {
   let size = options.iter().find_map(|o| match option_kv(o) {
     Some(("ImageSize", value)) => evaluate_expr_to_expr(value).ok(),
     _ => None,
@@ -8756,9 +8854,7 @@ fn picture_slider_width(options: &[Expr], default: f64) -> f64 {
     Some(other) => expr_to_f64(other),
     None => None,
   };
-  width
-    .filter(|w| w.is_finite() && *w >= 20.0)
-    .unwrap_or(default)
+  width.filter(|w| w.is_finite() && *w >= 20.0)
 }
 
 /// A `Slider`/`Manipulator`/`Animator[value, {min, max, step}, opts…]`
@@ -39152,15 +39248,25 @@ fn grid_svg_styled_internal_reporting(
         .unwrap_or(alignment_h);
       // Decimal columns anchor each cell so its decimal point lands at a shared
       // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
-      // Cells that don't render as plain numbers fall back to centering.
+      // A cell without the character has it at its right edge, so it ends at
+      // `dot_x`. In a column where no cell has the character, that point is
+      // the column's right edge: the entries stay flush right in a column
+      // that `ItemSize` makes wider than they are, as the front end lays
+      // them out. Cells that don't render as plain numbers fall back to
+      // centering.
       let (anchor, cx): (&str, f64) = if col_align == "decimal" {
-        let (max_int, _) = col_decimal_dims
+        let (max_int, max_frac) = col_decimal_dims
           .get(j)
           .copied()
           .flatten()
           .unwrap_or((0.0, 0.0));
-        let dot_x = x_offset + col_pad_left[j] + max_int * char_width;
+        let dot_x = if max_frac > 0.0 {
+          x_offset + col_pad_left[j] + max_int * char_width
+        } else {
+          x_offset + col_w - col_pad_right[j]
+        };
         match decimal_split_width(cell, col_char(j)) {
+          Some((_, 0.0)) => ("end", dot_x),
           Some((iw, _)) => ("start", dot_x - iw * char_width),
           None => ("middle", x_offset + col_w / 2.0),
         }
@@ -46151,6 +46257,25 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Button[label, action, …], directives…]` (a button in a
+        // styled row) is still drawn as its button, the directives styling
+        // its label.
+        if let Expr::FunctionCall {
+          name: b,
+          args: b_args,
+        } = &args[0]
+          && b == "Button"
+          && b_args.len() >= 2
+        {
+          let mut button = b_args.to_vec();
+          button[0] = call(
+            "Style",
+            std::iter::once(b_args[0].clone())
+              .chain(args[1..].iter().cloned())
+              .collect(),
+          );
+          return Some(button_cell_svg(&button));
+        }
         // `Style[Text[Style[Column[…], 12]], 14]`: a one-argument `Text`
         // only marks its content as text, so the style goes straight onto
         // that content. Otherwise the wrapper hid the layout below it.
@@ -46686,8 +46811,24 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
       }
       // A list of text atoms is written out in braces on the same line.
       Expr::List(items) => items.iter().all(is_text_atom),
+      // A `Row` of text atoms set among the others (`Row[{n, " = ",
+      // Row[parts, " + "]}]`) runs on in the same line.
+      Expr::FunctionCall { name, args } if name == "Row" => is_text_row(args),
       _ => false,
     }
+  }
+  // The arguments of a `Row` that sets text atoms, joined by nothing or
+  // by a one-line string, on a single line.
+  fn is_text_row(args: &[Expr]) -> bool {
+    let separator_ok = match args.get(1) {
+      None => true,
+      Some(Expr::String(s)) => !s.contains('\n'),
+      Some(_) => false,
+    };
+    args.len() <= 2
+      && separator_ok
+      && matches!(args.first(), Some(Expr::List(items))
+        if !items.is_empty() && items.iter().all(is_text_atom))
   }
   let mut core = expr;
   let mut text_face = false;
@@ -46707,23 +46848,7 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
   let Expr::FunctionCall { name, args } = core else {
     return None;
   };
-  let separator_ok = match args.get(1) {
-    None => true,
-    Some(Expr::String(s)) => !s.contains('\n'),
-    Some(_) => false,
-  };
-  match args.first() {
-    Some(Expr::List(items))
-      if name == "Row"
-        && args.len() <= 2
-        && separator_ok
-        && !items.is_empty()
-        && items.iter().all(is_text_atom) =>
-    {
-      Some(text_face)
-    }
-    _ => None,
-  }
+  (name == "Row" && is_text_row(args)).then_some(text_face)
 }
 
 /// Whether `item` (under any `Style`/`Text` wrappers) is a `Column` that
@@ -48985,13 +49110,20 @@ fn framed_box_to_svg(
 
   let content = &args[0];
 
+  // `Appearance -> Frameless` (or `"Frameless"`) leaves the box without
+  // its border and its default fill: only the content and margins remain.
+  let frameless = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
+    k == "Appearance"
+      && matches!(v, Expr::Identifier(a) | Expr::String(a) if a == "Frameless")
+  });
+
   // Optional `Background -> color` option fills the inside of the frame.
   let bg_fill = args[1..]
     .iter()
     .filter_map(option_kv)
     .find(|(k, _)| *k == "Background")
     .and_then(|(_, v)| parse_color(v))
-    .or(default_background)
+    .or(default_background.filter(|_| !frameless))
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
   // `FrameStyle -> None` draws the box without a border; any other style
@@ -49012,7 +49144,8 @@ fn framed_box_to_svg(
     matches!(
       frame_style_opt,
       Some(Expr::Identifier(n)) if n == "None"
-    ) || (is_panel && has_background && frame_style_opt.is_none());
+    ) || (is_panel && has_background && frame_style_opt.is_none())
+      || frameless;
   let frame_style =
     frame_style_opt.and_then(crate::functions::plot::parse_style_directives);
   let (frame_color, stroke_width) = crate::functions::plot::style_stroke(
@@ -52588,6 +52721,12 @@ pub struct ManipulateSpec {
   /// change (see [`manipulate_eval_background`]). A static color is kept
   /// here too; controls without the option do not appear.
   pub control_backgrounds: Vec<(String, String)>,
+  /// Per-control slider widths in pixels, as `(control name, width)`:
+  /// `{{w, 1, "width"}, 0, 2, ImageSize -> Tiny}` draws a short slider
+  /// instead of one stretched over the panel, which is what lets a `Row`
+  /// of several such controls fit on one line. Only specs whose
+  /// `ImageSize` names a width appear (see [`slider_image_width`]).
+  pub control_image_widths: Vec<(String, f64)>,
   /// Per-control `ControlPlacement -> Top | Bottom | Left | Right`, as
   /// `(control name, side)`: `{{n, 3, "sides"}, {3, 4, 5}, ControlPlacement
   /// -> Left}` moves just that control beside the output while the rest of
@@ -53638,6 +53777,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut control_backgrounds: Vec<(String, String)> = inner
     .as_ref()
     .map_or_default(|i| i.control_backgrounds.clone());
+  let mut control_image_widths: Vec<(String, f64)> = inner
+    .as_ref()
+    .map_or_default(|i| i.control_image_widths.clone());
   let mut control_placements: Vec<(String, ControlPlacement)> = inner
     .as_ref()
     .map_or_default(|i| i.control_placements.clone());
@@ -54674,6 +54816,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           control_backgrounds.push((c.name().to_string(), code));
         }
+        if let Expr::List(items) = &spec
+          && !c.name().is_empty()
+          && let Some(width) = slider_image_width(items)
+        {
+          control_image_widths.retain(|(n, _)| n != c.name());
+          control_image_widths.push((c.name().to_string(), width));
+        }
         if let Some(side) = per_control_placement(&spec) {
           control_placements.push((c.name().to_string(), side));
         }
@@ -54733,6 +54882,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         // Several readouts may share one placeholder variable; it is still
         // a single variable, bound once.
+        // A bar inside an `If[cond, …]` of the control layout is on screen
+        // only while its branch is: the display itself carries the
+        // condition, re-checked on every re-render like the bar's choices.
+        let display = match control_visible.iter().find(|(n, _)| *n == name) {
+          Some((_, cond)) => format!("If[{cond}, {display}, \"\"]"),
+          None => display,
+        };
         if !state.iter().any(|(n, _)| *n == name) {
           state.push((name, value));
         }
@@ -55435,6 +55591,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values,
     dynamic_labels,
     control_backgrounds,
+    control_image_widths,
     control_placements,
     successive_placements,
     row_joined_controls,
@@ -61170,6 +61327,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61261,6 +61419,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61365,6 +61524,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61639,6 +61799,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61712,6 +61873,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -61794,6 +61956,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_backgrounds: Vec::new(),
+    control_image_widths: Vec::new(),
     control_placements: Vec::new(),
     successive_placements: Vec::new(),
     row_joined_controls: Vec::new(),
@@ -65289,6 +65452,18 @@ fn parse_manipulate_control(
     }
     && matches!(choices, Expr::List(_))
   {
+    // A choice list computed from another control's variable
+    // (`Range[n]` with `n` a hidden count the body updates) stays held, so
+    // the bar offers the choices that variable gives on every re-render
+    // rather than the ones its starting value gave.
+    let held_choices = unwrap_dynamic_choices(bounds[0]);
+    let choices = if !matches!(held_choices, Expr::List(_))
+      && expr_references_any(held_choices, siblings)
+    {
+      held_choices.clone()
+    } else {
+      choices
+    };
     let value = match &explicit_initial {
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
@@ -65302,6 +65477,10 @@ fn parse_manipulate_control(
     }
     if let Some(cond) = &enabled {
       bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
+    }
+    // The control's `Background -> color` paints the face of each toggle.
+    if let Some(color) = control_background_code(items) {
+      bar_options.push_str(&format!(", Background -> {color}"));
     }
     // Keep the requested head: a `CheckboxBar` draws checkboxes, a
     // `TogglerBar` toggle buttons.
@@ -67962,6 +68141,9 @@ pub enum DisplayNode {
     /// The choice belongs to a `CheckboxBar`, which Wolfram draws as a
     /// checkbox followed by its label rather than as a toggle button.
     checkbox: bool,
+    /// The face color of the bar's `Background -> color` option, as an
+    /// `(r, g, b)` triple in `0.0..=1.0`; `None` for the default look.
+    background: Option<(f64, f64, f64)>,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -69361,6 +69543,7 @@ fn togglerbar_node(
       selected: choice.selected,
       enabled: bar.enabled,
       checkbox,
+      background: bar.background,
     })
     .collect();
   Some(if bar.vertical {
@@ -69384,6 +69567,8 @@ struct TogglerBarChoices {
   choices: Vec<TogglerBarChoice>,
   enabled: bool,
   vertical: bool,
+  /// The face color a `Background -> color` option gives every toggle.
+  background: Option<(f64, f64, f64)>,
 }
 
 /// Resolve the arguments of a `TogglerBar`/`CheckboxBar` (see
@@ -69511,6 +69696,7 @@ fn togglerbar_choices(args: &[Expr]) -> Option<TogglerBarChoices> {
     choices: bar_choices,
     enabled,
     vertical,
+    background: extract_button_background(&args[2..]),
   })
 }
 
@@ -69607,6 +69793,7 @@ fn setterbar_node(
       selected,
       enabled,
       checkbox: false,
+      background: extract_button_background(&args[2..]),
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -70534,13 +70721,23 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       selected,
       enabled,
       checkbox,
+      background,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{},"background":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
       enabled,
       checkbox,
+      match background {
+        Some((r, g, b)) => format!(
+          r#""rgb({}, {}, {})""#,
+          (r * 255.0).round(),
+          (g * 255.0).round(),
+          (b * 255.0).round()
+        ),
+        None => "null".to_string(),
+      },
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,
