@@ -59105,6 +59105,85 @@ mod manipulate {
     assert!(spec.displays[0].contains("Checkbox"));
   }
 
+  /// A `ControlType -> TogglerBar` control painted `Background -> color`
+  /// keeps that color: the bar (not its label) sits on a plate of it.
+  #[test]
+  fn toggler_bar_control_background_paints_a_backdrop() {
+    use woxi::functions::graphics::{
+      manipulate_initial_bindings, render_manipulate_display,
+    };
+    let tree_of = |options: &str| {
+      let code = format!(
+        "Manipulate[Total[picks], \
+         {{{{picks, {{1, 3}}, \"picks\"}}, Range[3], \
+         ControlType -> TogglerBar{options}}}]"
+      );
+      let expr = interpret_to_expr(&code).unwrap();
+      let spec = extract_manipulate_spec(&expr).unwrap();
+      assert_eq!(spec.displays.len(), 1, "displays: {:?}", spec.displays);
+      let bindings = manipulate_initial_bindings(&spec);
+      render_manipulate_display(&spec.displays[0], &bindings)
+    };
+    let painted = tree_of(", Background -> Yellow");
+    assert!(
+      painted.contains(r#""kind":"backdrop","color":"rgb(255,255,0)""#),
+      "tree: {painted}"
+    );
+    // The plate wraps the three toggles and leaves the label outside.
+    let plate = painted.find(r#""kind":"backdrop""#).unwrap();
+    assert!(painted.find("picks").unwrap() < plate, "tree: {painted}");
+    assert_eq!(painted[plate..].matches(r#""kind":"toggler""#).count(), 3);
+    let orange = tree_of(", Background -> RGBColor[1, 0.5, 0]");
+    assert!(
+      orange.contains(r#""color":"rgb(255,128,0)""#),
+      "tree: {orange}"
+    );
+    // No option, or one that names no color, leaves the bar plain.
+    for plain in ["", ", Background -> None", ", Background -> Automatic"] {
+      let tree = tree_of(plain);
+      assert!(!tree.contains("backdrop"), "{plain}: {tree}");
+      assert_eq!(tree.matches(r#""kind":"toggler""#).count(), 3);
+    }
+  }
+
+  /// A `Dynamic` bar background follows the live bindings, and a bar
+  /// written straight into a display element is painted the same way.
+  #[test]
+  fn bar_backdrop_follows_the_bindings_and_covers_in_body_bars() {
+    use woxi::functions::graphics::{
+      manipulate_initial_bindings, render_manipulate_display,
+    };
+    let code = r#"Manipulate[{picks, lit},
+      {{picks, {2}, "picks"}, {1, 2}, ControlType -> CheckboxBar,
+       Background -> Dynamic[If[lit, Green, None]]},
+      {{lit, True}, {True, False}}]"#;
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let mut bindings = manipulate_initial_bindings(&spec);
+    let tree = render_manipulate_display(&spec.displays[0], &bindings);
+    assert!(tree.contains(r#""color":"rgb(0,255,0)""#), "tree: {tree}");
+    for binding in &mut bindings {
+      if binding.0 == "lit" {
+        binding.1 = "False".to_string();
+      }
+    }
+    let tree = render_manipulate_display(&spec.displays[0], &bindings);
+    assert!(!tree.contains("backdrop"), "tree: {tree}");
+
+    for bar in ["TogglerBar", "SetterBar", "RadioButtonBar", "CheckboxBar"] {
+      let display =
+        format!("{bar}[Dynamic[pick], {{1, 2}}, Background -> Red]");
+      let tree = render_manipulate_display(
+        &display,
+        &[("pick".to_string(), "{1}".to_string())],
+      );
+      assert!(
+        tree.contains(r#""kind":"backdrop","color":"rgb(255,0,0)""#),
+        "{bar}: {tree}"
+      );
+    }
+  }
+
   #[test]
   fn display_renders_interactive_checkbox_grid() {
     // The trailing `Dynamic[Panel[Grid[Outer[Checkbox[…]]]]]` renders into a

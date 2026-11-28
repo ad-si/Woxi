@@ -10264,6 +10264,61 @@ mod tests {
     assert!(state.joins_previous_control(0));
   }
 
+  /// A `ControlType -> TogglerBar` control painted `Background -> color`
+  /// draws its bar on a plate of that color, and keeps it when a toggle is
+  /// pressed. Regression: the option was dropped, leaving the bar plain.
+  #[test]
+  fn toggler_bar_control_keeps_its_background_color() {
+    use woxi::functions::graphics::DisplayNode;
+    fn plates(node: &DisplayNode, out: &mut Vec<((f64, f64, f64), usize)>) {
+      fn togglers(node: &DisplayNode) -> usize {
+        match node {
+          DisplayNode::Toggler { .. } => 1,
+          DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
+            cs.iter().map(togglers).sum()
+          }
+          _ => 0,
+        }
+      }
+      match node {
+        DisplayNode::Backdrop { color, child } => {
+          out.push((*color, togglers(child)));
+        }
+        DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
+          cs.iter().for_each(|c| plates(c, out));
+        }
+        _ => {}
+      }
+    }
+    let code = r#"Manipulate[
+      Total[layers] + n,
+      {n, 0, 5},
+      {{layers, {1, 2}, "layers"}, Range[3], ControlType -> TogglerBar,
+        Background -> Yellow}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let check = |state: &ManipulateState| {
+      let mut found = Vec::new();
+      state
+        .display_trees
+        .iter()
+        .for_each(|t| plates(t, &mut found));
+      assert_eq!(
+        found,
+        vec![((1.0, 1.0, 0.0), 3)],
+        "{:?}",
+        state.display_trees
+      );
+    };
+    check(&state);
+    state.apply_display_mutation("layers = {3}");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    check(&state);
+  }
+
   /// A `ClickPane` graphic whose `ImageSize` is wider than its square
   /// `PlotRange` is drawn letterboxed: a click must report the coordinates
   /// of the graphic under the pointer, not a position stretched over the

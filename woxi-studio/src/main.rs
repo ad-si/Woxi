@@ -6172,6 +6172,7 @@ fn display_node_plain_text(
     }
     DisplayNode::Static { text, .. } => text.clone(),
     DisplayNode::Panel(child)
+    | DisplayNode::Backdrop { child, .. }
     | DisplayNode::Toggler { label: child, .. }
     | DisplayNode::Button { label: child, .. }
     | DisplayNode::ActionMenu { label: child, .. } => {
@@ -6368,6 +6369,18 @@ fn render_display_node<'a>(
       container(render_display_node(cell_idx, child))
         .padding(6)
         .style(container::rounded_box)
+        .into()
+    }
+    // A bar painted `Background -> color`: the color fills the area right
+    // behind the bar, with no frame or margin of its own.
+    DisplayNode::Backdrop { color, child } => {
+      let (r, g, b) = *color;
+      let plate = iced::Color::from_rgb(r as f32, g as f32, b as f32);
+      container(render_display_node(cell_idx, child))
+        .style(move |_theme| container::Style {
+          background: Some(plate.into()),
+          ..Default::default()
+        })
         .into()
     }
     // A table of plain text cells (a `TableForm` readout, with its heading
@@ -20159,7 +20172,9 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         DisplayNode::Toggler {
           mutation, selected, ..
         } => out.push((mutation.clone(), *selected)),
-        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Panel(child) | DisplayNode::Backdrop { child, .. } => {
+          walk(child, out)
+        }
         DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
@@ -20202,7 +20217,9 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     fn walk(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
       match node {
         DisplayNode::Popup { .. } => out.push(node.clone()),
-        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Panel(child) | DisplayNode::Backdrop { child, .. } => {
+          walk(child, out)
+        }
         DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
