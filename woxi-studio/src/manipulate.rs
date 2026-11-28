@@ -10440,6 +10440,32 @@ mod tests {
     assert_eq!(value(&state), before, "an hour has not passed yet");
   }
 
+  /// A framed `ArrayPlot` drawn beside a `Dynamic` that steps its own state
+  /// keeps its frame while the `Dynamic` refreshes. Regression: the refresh
+  /// reads the body's value back from source form, and the plot's symbolic
+  /// form had no frame, so the static plot turned into a bare grid.
+  #[test]
+  fn static_array_plot_keeps_its_frame_beside_a_stepping_dynamic() {
+    let code = r#"Manipulate[
+      Row[{ArrayPlot[{{1, 0}, {0, 1}}, PlotRangePadding -> 0, ImageSize -> 20],
+        Dynamic@ArrayPlot[If[go, n = 1 + n; RotateLeft[{{1, 0}, {0, 0}}, n],
+          {{1, 0}, {0, 0}}], Frame -> False, ImageSize -> 40]}],
+      {{go, True}, {False, True}},
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick(), "the Dynamic keeps stepping");
+    state.tick();
+    state.tick();
+    let svg = state.current_svg().expect("a picture");
+    assert!(
+      svg.contains("stroke=\"#666666\""),
+      "the static plot lost its frame: {svg}"
+    );
+  }
+
   /// A timed `Refresh` reached only through a helper definition (a clock
   /// label `Dynamic[Refresh[…, UpdateInterval -> t]]` inside a graphic the
   /// body builds by calling the helper) is paced by the interval it ran

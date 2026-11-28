@@ -36156,6 +36156,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// The symbolic form of an `ArrayPlot` carries its frame, the padding
+    /// around the cells and the plot label, so a plot read back from its
+    /// InputForm is drawn framed again. Regression: only the raster and the
+    /// size survived, and the redrawn plot was a bare grid.
+    #[test]
+    fn array_plot_input_form_keeps_frame_and_padding() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "ToString[InputForm[ArrayPlot[{{1, 1}, {1, 0}}, \
+           PlotRangePadding -> 0, ImageSize -> 10]]]"
+        )
+        .unwrap(),
+        "Graphics[Raster[{{0, 1}, {0, 0}}, {{0, 0}, {2, 2}}, {0, 1}], \
+         Frame -> True, FrameTicks -> None, ImageSize -> 10, \
+         PlotRangePadding -> 0]"
+      );
+      // No frame is recorded where none is drawn.
+      assert_eq!(
+        interpret(
+          "ToString[InputForm[ArrayPlot[{{1, 1}, {1, 0}}, Frame -> False, \
+           PlotLabel -> \"a\"]]]"
+        )
+        .unwrap(),
+        "Graphics[Raster[{{0, 1}, {0, 0}}, {{0, 0}, {2, 2}}, {0, 1}], \
+         PlotLabel -> \"a\"]"
+      );
+      assert_eq!(
+        interpret(
+          "FreeQ[ToExpression[ToString[InputForm[ArrayPlot[{{1, 1}, {1, 0}}, \
+           Mesh -> True]]]], Frame]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // The redrawn plot has its frame line.
+      let svg = interpret(
+        "ExportString[ToExpression[ToString[InputForm[ArrayPlot[{{1, 1}, \
+         {1, 0}}]]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("stroke=\"#666666\""), "no frame in {svg}");
+    }
+
     /// Regression: `First[ArrayPlot[…]]` hit `First::normal` because the plot
     /// had no symbolic content, so a Manipulate that draws an ArrayPlot as a
     /// backdrop (`First@background`) rendered nothing.
