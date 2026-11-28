@@ -1065,3 +1065,72 @@ mod epilog_inset_column_of_rows {
     assert!(svg.matches("<svg").count() > 1, "{svg}");
   }
 }
+
+mod shown_plot_grid_lines {
+  use super::*;
+
+  /// The `<line>` elements drawn in mid gray, i.e. the grid lines.
+  fn grid_lines(svg: &str) -> Vec<&str> {
+    svg
+      .split('<')
+      .filter(|e| e.starts_with("line ") && e.contains("rgb(128,128,128)"))
+      .collect()
+  }
+
+  #[test]
+  fn plot_grid_lines_stay_translucent_under_a_graphics_overlay() {
+    // A plot's grid lines are `GrayLevel[0.5, 0.4]`; combining the plot
+    // with a `Graphics` in `Show` used to draw them opaque.
+    for grid in ["Automatic", "{{0.25, 0.5}, {0.5}}", "{Automatic, None}"] {
+      let svg = svg_of(&format!(
+        "Show[Plot[x^2, {{x, 0, 1}}, Frame -> True, GridLines -> {grid}], \
+         Graphics[Line[{{{{0, 0}}, {{1, 0.5}}}}]]]"
+      ));
+      let lines = grid_lines(&svg);
+      assert!(!lines.is_empty(), "{grid}: {svg}");
+      for line in lines {
+        assert!(line.contains("opacity=\"0.4\""), "{grid}: {line}");
+      }
+    }
+  }
+
+  #[test]
+  fn explicit_grid_lines_style_of_a_shown_plot_is_kept() {
+    for show in [
+      "Show[Plot[x, {x, 0, 1}, GridLines -> Automatic, \
+       GridLinesStyle -> Red], Graphics[Point[{0.5, 0.5}]]]",
+      "Show[Plot[x, {x, 0, 1}, GridLines -> Automatic], \
+       Graphics[Point[{0.5, 0.5}]], GridLinesStyle -> Red]",
+    ] {
+      let svg = svg_of(show);
+      assert!(grid_lines(&svg).is_empty(), "{svg}");
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"0.20\"/>"),
+        "{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn shown_plot_reports_its_grid_lines_style() {
+    assert_eq!(
+      interpret(
+        "Options[Show[Plot[x, {x, 0, 1}], Graphics[Point[{0.5, 0.5}]]], \
+         GridLinesStyle]"
+      )
+      .unwrap(),
+      "{GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]}"
+    );
+  }
+
+  #[test]
+  fn bare_graphics_grid_lines_are_unaffected() {
+    let svg = svg_of(
+      "Show[Graphics[Line[{{0, 0}, {1, 1}}], Frame -> True, \
+       GridLines -> Automatic]]",
+    );
+    let lines = grid_lines(&svg);
+    assert!(!lines.is_empty(), "{svg}");
+    assert!(lines.iter().all(|l| !l.contains("opacity")), "{svg}");
+  }
+}

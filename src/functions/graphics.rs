@@ -34417,6 +34417,22 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         merged_options
           .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
       }
+      // A plot draws its grid lines translucent (`GridLinesStyle ->
+      // Directive[GrayLevel[0.5, 0.4]]`), and the result keeps that style
+      // where a bare `Graphics` would draw them opaque.
+      if !has_option(&merged_options, "GridLinesStyle") {
+        merged_options.push(rule_expr(
+          id_expr("GridLinesStyle"),
+          Expr::FunctionCall {
+            name: "Directive".into(),
+            args: vec![Expr::FunctionCall {
+              name: "GrayLevel".into(),
+              args: vec![Expr::Real(0.5), Expr::Real(0.4)].into(),
+            }]
+            .into(),
+          },
+        ));
+      }
       // A bare `PlotRange -> {min, max}` on a plot is the *y* range (a
       // half-open `{min, All}` too, its open end following the data); the
       // horizontal extent stays that of the plotted domain.
