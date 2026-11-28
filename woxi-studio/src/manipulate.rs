@@ -2107,6 +2107,9 @@ impl ManipulateState {
       // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
         let init = load_leading_packages(&init);
+        trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
+          &init, &bindings,
+        ));
         let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
         let after = woxi::functions::graphics::read_manipulate_state(&names);
@@ -5156,6 +5159,33 @@ mod tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert_eq!(state.text_output.as_deref(), Some("40"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a linkage animation).
+  /// Its Initialization defines a helper whose product is grouped by
+  /// parentheses, `(Sqrt[u - Pi] Sqrt[1/(u - Pi)]) Sqrt[…]` — a
+  /// differentiable sign. The Initialization code used to be re-printed
+  /// flattened (`Sqrt[u - Pi]*Sqrt[(u - Pi)^(-1)]*Sqrt[…]`), which
+  /// multiplies the machine real in before the two imaginary factors have
+  /// cancelled exactly, so the helper returned `x + 0.*I` and every
+  /// primitive placed with it failed to draw. This is a self-authored,
+  /// construct-equivalent example.
+  #[test]
+  fn initialization_keeps_the_grouping_of_a_product() {
+    let code = r#"Manipulate[
+      reach[u, w],
+      {{w, 0.5}, 0, 1},
+      {{u, 0}, 0, 2 Pi, 0.05, Trigger},
+      Initialization :> {
+        reach[u_, w_] := Sqrt[4 + (Sqrt[u - Pi] Sqrt[1/(u - Pi)]) Sqrt[3] Sqrt[w Sin[u]^2]]
+      }]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("2."));
   }
 
   /// A hidden `ControlType -> None` variable is bound when Initialization
