@@ -1775,12 +1775,15 @@ fn render_circle_like(
     }
   });
 
+  // A reversed range covers the same angles as the ordered one, and a
+  // range of a full turn or more is the whole circle, drawn below.
+  let angles = angles
+    .and_then(|(a1, a2)| crate::functions::graphics::partial_arc_range(a1, a2));
+
   if let Some((a1, a2)) = angles {
     let (sx, sy) = (pcx + prx * a1.cos(), pcy - pry * a1.sin());
     let (ex, ey) = (pcx + prx * a2.cos(), pcy - pry * a2.sin());
-    let large = i32::from(
-      (a2 - a1).abs() % (2.0 * std::f64::consts::PI) > std::f64::consts::PI,
-    );
+    let large = i32::from(a2 - a1 > std::f64::consts::PI);
     // SVG y grows downward, so a counter-clockwise data-space arc is
     // sweep-flag 0.
     if filled {

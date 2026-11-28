@@ -280,6 +280,71 @@ fn epilog_disk_with_offset_radius() {
   assert_eq!(svg.matches("rx=\"20.0\" ry=\"20.0\"").count(), 10, "{svg}");
 }
 
+/// The shapes an `Epilog` of `prims` draws over a fixed plot.
+fn epilog_shapes(prims: &str) -> String {
+  let svg = svg_of(&format!(
+    "Plot[x, {{x, -1, 1}}, PlotRange -> 1, Epilog -> {{{prims}}}]"
+  ));
+  let (_, shapes) = svg.split_once("epilogClip").expect("an epilog group");
+  shapes.to_string()
+}
+
+/// A `Disk` or `Circle` angle range given backwards (`{a, b}` with
+/// `a > b`) in an `Epilog` covers the same angles as `{b, a}`, like in a
+/// `Graphics`. The wedge used to be drawn on a different circle, from the
+/// first angle on.
+#[test]
+fn epilog_reversed_angle_range_is_the_ordered_one() {
+  for (a, b) in [
+    ("0", "-4.15"),
+    ("0", "-2"),
+    ("1", "-1/2"),
+    ("3 Pi/2", "Pi/4"),
+    ("-1", "-5"),
+  ] {
+    for head in ["Disk", "Circle"] {
+      let reversed =
+        epilog_shapes(&format!("{head}[{{0, 0}}, 0.5, {{{a}, {b}}}]"));
+      let ordered =
+        epilog_shapes(&format!("{head}[{{0, 0}}, 0.5, {{{b}, {a}}}]"));
+      assert!(reversed.contains("<path d=\"M "), "{reversed}");
+      assert_eq!(reversed, ordered, "{head} from {a} to {b}");
+    }
+  }
+}
+
+/// An angle range of a full turn or more in an `Epilog` is the whole
+/// `Disk` or `Circle`, not the wedge left after taking whole turns off.
+#[test]
+fn epilog_angle_range_beyond_a_full_turn_is_the_whole_shape() {
+  for range in ["{0, 2 Pi}", "{0, 7}", "{1, -7}", "{-10, 10}"] {
+    for head in ["Disk", "Circle"] {
+      let ranged = epilog_shapes(&format!("{head}[{{0, 0}}, 0.5, {range}]"));
+      let whole = epilog_shapes(&format!("{head}[{{0, 0}}, 0.5]"));
+      assert!(whole.contains("<ellipse "), "{whole}");
+      assert_eq!(ranged, whole, "{head} over {range}");
+    }
+  }
+}
+
+/// A wedge of more than half a turn takes the long way around its circle
+/// and one of less than half a turn the short way, whichever way around
+/// the range is given.
+#[test]
+fn epilog_wedge_takes_the_long_arc_only_beyond_half_a_turn() {
+  let large_arc = |range: &str| {
+    let shapes = epilog_shapes(&format!("Disk[{{0, 0}}, 0.5, {range}]"));
+    let (_, arc) = shapes.split_once(" A ").expect("an arc");
+    arc.split_whitespace().nth(3).map(str::to_string)
+  };
+  for range in ["{0, 4}", "{0, -4}", "{-4, 0}", "{2, 6}"] {
+    assert_eq!(large_arc(range).as_deref(), Some("1"), "{range}");
+  }
+  for range in ["{0, 2}", "{0, -2}", "{5, 3}", "{-1, 1}"] {
+    assert_eq!(large_arc(range).as_deref(), Some("0"), "{range}");
+  }
+}
+
 mod axes {
   use super::*;
 

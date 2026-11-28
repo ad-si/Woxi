@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Disk` or `Circle` in the `Epilog` or `Prolog` of a plot whose angle
+    range runs backwards (`Disk[c, r, {0, -2}]`) covers the angles between
+    the two, as it does in a `Graphics`, instead of a sliver of a different
+    circle, and a range of a full turn or more draws the whole shape.
 - A `Slider`, `Manipulator` or `Animator` laid out in a `Grid`, `Row` or
     `Column` is drawn as a slider instead of its source text, at its
     `ImageSize`. Inside a `Manipulate` body in Woxi Studio it is live:
