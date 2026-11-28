@@ -79001,6 +79001,69 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   }
 }
 
+/// Regression: an invisible box pinned by a `PlotRange` that is much longer
+/// than it is thick keeps the outline fit under the default camera, also
+/// inside a `Manipulate` frame. Wolfram's snapshots of a Demonstration's two
+/// spheres on a line in an 18 × 10 × 4 range at `ImageSize -> {600, 375}`
+/// draw them about 1.56× as large as the sphere framing Woxi gave them. A
+/// less elongated pinned box and an explicit `ViewPoint` keep the sphere.
+#[test]
+fn elongated_pinned_3d_range_under_the_default_camera_fits_its_outline() {
+  let scene = |range: &str, extra: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{Sphere[{{-5, 0, 0}}, 0.8], Sphere[{{4, 0, 0}}, 0.8]}}, \
+       Boxed -> False, PlotRange -> {range}, \
+       ImageSize -> {{600, 375}}{extra}]"
+    ))
+  };
+  let off = ", SphericalRegion -> False";
+  let on = ", SphericalRegion -> True";
+  for range in [
+    "{{-8, 10}, {-5, 5}, {-2, 2}}",
+    "{{-8, 10}, {-2, 2}, {-5, 5}}",
+  ] {
+    let automatic = scene(range, "");
+    assert_ne!(scene(range, off), scene(range, on), "{range}");
+    assert_eq!(automatic, scene(range, off), "{range}");
+    assert_eq!(
+      woxi::with_manipulate_frame(|| scene(range, "")),
+      woxi::with_manipulate_frame(|| scene(range, off)),
+      "{range} in a Manipulate frame"
+    );
+    // An explicit `ViewPoint` still frames the scene by its sphere.
+    let view = ", ViewPoint -> {1.3, -2.4, 2}";
+    assert_eq!(
+      scene(range, view),
+      scene(range, &format!("{view}{on}")),
+      "{range}"
+    );
+  }
+  // The spheres are drawn at the outline-fitted scale: a unit spans about
+  // 28 px of the 600 × 375 picture, so the two centers lie well over 200 px
+  // apart (sphere framing would put them about 140 px apart).
+  let xs: Vec<f64> = scene("{{-8, 10}, {-5, 5}, {-2, 2}}", "")
+    .split("points=\"")
+    .skip(1)
+    .flat_map(|rest| {
+      let pts = &rest[..rest.find('"').unwrap()];
+      pts
+        .split_whitespace()
+        .filter_map(|p| p.split(',').next()?.parse::<f64>().ok())
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let span = xs.iter().copied().fold(f64::MIN, f64::max)
+    - xs.iter().copied().fold(f64::MAX, f64::min);
+  assert!(
+    (245.0..275.0).contains(&span),
+    "expected the spheres to span about 258 px, got {span}"
+  );
+
+  // A pinned box of moderate proportions keeps the sphere framing.
+  let compact = "{{-8, 10}, {-5, 5}, {-4, 4}}";
+  assert_eq!(scene(compact, ""), scene(compact, on));
+}
+
 /// Regression: an unboxed scene of fixed size with a pinned `PlotRange` or
 /// an explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or
 /// list keeps the outline fit, also inside a `Manipulate` frame. Wolfram's
@@ -79191,8 +79254,8 @@ fn elongated_unboxed_3d_scene_seen_from_afar_fits_its_outline() {
 /// `ViewPoint` nor a `PlotRange` fills its fixed-size picture by the box
 /// outline, as Wolfram's snapshot of a Demonstration's stepped stack of
 /// cuboids shows (262 px wide at `ImageSize -> {400, 300}`; Woxi's outline
-/// fit gives 250 px, its sphere framing 184 px). A set camera or range
-/// still switches the frame to the sphere framing.
+/// fit gives 250 px, its sphere framing 184 px). A set camera or a range
+/// of moderate proportions still switches the frame to the sphere framing.
 #[test]
 fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
   let scene = |opts: &str| {
@@ -79212,7 +79275,7 @@ fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
   assert_eq!(export_svg(&scene("")), outline);
   for pin in [
     ", ViewPoint -> {1.3, -2.4, 2}",
-    ", PlotRange -> {{-3, 3}, {-2, 2}, {0, 1}}",
+    ", PlotRange -> {{-3, 3}, {-2, 2}, {-1, 1}}",
   ] {
     let framed = woxi::with_manipulate_frame(|| export_svg(&scene(pin)));
     let spherical =
