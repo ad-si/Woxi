@@ -7,6 +7,32 @@
     of running a simplification pass over it that took several times as
     long as the determinant itself, so a `Manipulate` computing hundreds
     of them redraws in a fraction of the time.
+- A `Dynamic[…]` readout beside a `Manipulate` control whose value is a
+    root or a built-up fraction (`Dynamic[Sqrt[d]]`, `Dynamic[(a + 1)/2]`)
+    is typeset with its radical sign or fraction bar in Woxi Studio instead
+    of being spelled out as `Sqrt[10]`.
+- The outline of a `Graphics3D` face that runs behind a narrow solid (the
+    far edge of a long floor `Polygon` with a `Cuboid` standing on its
+    middle) no longer shows through that solid when other faces lie
+    behind the edge elsewhere: a long outline edge is placed in the draw
+    order stretch by stretch instead of from a few samples along it.
+- A curve leaving a `PlotRange` that only `Show` pins
+    (`Show[ParametricPlot[…], PlotRange -> {{-1, 1}, {-1, 1}}]`) runs on
+    through the padding to the edge of the picture on every side, instead
+    of stopping short of the top and bottom alone. A range the plot itself
+    pins still cuts its curve there.
+- A `ControlType -> TogglerBar` (or `CheckboxBar`) control of a
+    `Manipulate` whose choice list is computed from another control's
+    variable (`Range[n]`) offers the choices that variable gives now,
+    rather than the ones its starting value gave. Inside an
+    `If[cond, …]` of the control layout the bar shows only while its
+    branch does, and a `Background -> color` on a `TogglerBar` or
+    `SetterBar` paints its toggles.
+- A `TogglerBar`, `CheckboxBar`, `SetterBar` or `RadioButtonBar` drawn in
+    a `Manipulate` panel — as a `ControlType -> TogglerBar` control or
+    written into a display element — is painted on the plate its
+    `Background -> color` option asks for, instead of dropping the color.
+    A `Dynamic` color follows the controls.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that

@@ -1565,8 +1565,17 @@ fn dimension_bins(
   };
   let (min_val, max_val, dx) = match spec {
     None => covering(1.0),
-    Some(dx @ (Expr::Integer(_) | Expr::Real(_))) => {
-      covering(numeric_expr_to_f64(dx)?)
+    Some(dx)
+      if !matches!(dx, Expr::List(_))
+        && let Some(dx) = crate::functions::math_ast::try_eval_to_f64(dx) =>
+    {
+      // A zero width divides the data range by zero before it is refused.
+      if dx == 0.0 {
+        crate::emit_message(
+          "Infinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
+        );
+      }
+      covering(dx)
     }
     Some(Expr::List(outer))
       if outer.len() == 1
@@ -1588,7 +1597,14 @@ fn dimension_bins(
       };
       (min_v, max_v, dx)
     }
-    _ => return None,
+    // Anything else is no bin specification: `head::bins`.
+    Some(other) => {
+      crate::emit_message(&format!(
+        "{head}::bins: The bin specification {} is invalid for the given data.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
+      return None;
+    }
   };
   if dx <= 0.0 {
     bin_step_message(head, dx);
