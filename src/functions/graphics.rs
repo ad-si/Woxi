@@ -7729,39 +7729,53 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         None => graphics_text_content(&args[0]),
       }
     }
-    // A product with a string factor (`" = " NumberForm[x, 3]`) is the
-    // factors set side by side, each typeset on its own — the wrappers
-    // inside it still apply instead of printing as `NumberForm[…]` source.
+    // A product with a string or number-form factor (`NumberForm[x, 3]
+    // "m"`) is the factors set side by side, each typeset on its own — the
+    // wrappers inside it still apply instead of printing as `NumberForm[…]`
+    // source — in TraditionalForm's order of factors: `9.1 m`.
     Expr::FunctionCall { name, args }
       if name == "Times"
-        && args.iter().any(|a| matches!(a, Expr::String(_))) =>
+        && args.iter().any(|a| {
+          matches!(a, Expr::String(_))
+            || matches!(a, Expr::FunctionCall { name, args }
+              if !args.is_empty() && matches!(
+                name.as_str(),
+                "NumberForm"
+                  | "PaddedForm"
+                  | "AccountingForm"
+                  | "ScientificForm"
+                  | "EngineeringForm"
+              ))
+        }) =>
     {
       // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
       // denominator under the rest, so the label reads `7/100` on one line.
-      let mut numerator: Vec<String> = Vec::new();
-      let mut denominator: Vec<String> = Vec::new();
+      let mut numerator: Vec<Expr> = Vec::new();
+      let mut denominator: Vec<Expr> = Vec::new();
       for a in args {
         match a {
           Expr::FunctionCall { name: rn, args: ra }
             if rn == "Rational" && ra.len() == 2 =>
           {
             if !matches!(&ra[0], Expr::Integer(1)) {
-              numerator.push(graphics_text_content(&ra[0]));
+              numerator.push(ra[0].clone());
             }
-            denominator.push(graphics_text_content(&ra[1]));
+            denominator.push(ra[1].clone());
           }
-          Expr::FunctionCall { name: pn, args: pa }
-            if pn == "Power"
-              && pa.len() == 2
-              && matches!(&pa[1], Expr::Integer(-1)) =>
-          {
-            denominator.push(graphics_text_content(&pa[0]));
-          }
-          other => numerator.push(graphics_text_content(other)),
+          other => match as_power(other) {
+            Some((base, Expr::Integer(-1))) => denominator.push(base.clone()),
+            _ => numerator.push(other.clone()),
+          },
         }
       }
-      let num = numerator.join(" ");
-      match denominator.as_slice() {
+      use crate::evaluator::dispatch::complex_and_special::tf_order_factors;
+      tf_order_factors(&mut numerator);
+      tf_order_factors(&mut denominator);
+      let texts = |factors: &[Expr]| -> Vec<String> {
+        factors.iter().map(graphics_text_content).collect()
+      };
+      let num = texts(&numerator).join(" ");
+      match texts(&denominator).as_slice() {
         [] => num,
         [d] => format!("{num}/{d}"),
         ds => format!("{num}/({})", ds.join(" ")),
