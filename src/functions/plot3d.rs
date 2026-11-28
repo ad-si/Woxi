@@ -643,9 +643,17 @@ fn outline_draw_slots(
   let stretch_bounds = if stretch_segs.is_empty() {
     Vec::new()
   } else {
+    // Only an opaque face hides the stretch behind it: a see-through one
+    // is shrunk to a point, which covers nothing.
+    let mut opaque = std::borrow::Cow::Borrowed(tris);
+    if tris.iter().any(|t| t.opacity < 1.0) {
+      for t in opaque.to_mut().iter_mut().filter(|t| t.opacity < 1.0) {
+        t.projected = [t.projected[0]; 3];
+      }
+    }
     line_draw_bounds(
       verts,
-      tris,
+      &opaque,
       &stretch_segs,
       &[],
       camera,
