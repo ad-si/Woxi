@@ -36140,7 +36140,10 @@ fn is_multiline_text_cell(cell: &Expr) -> bool {
 fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
-      "Top" => Some(VAlign::Top),
+      // A horizontal value in the vertical position (`Alignment ->
+      // {Center, {Left, Left}}`) has no side to go to: the front end sets
+      // such a row against its top edge.
+      "Top" | "Left" | "Right" => Some(VAlign::Top),
       "Bottom" => Some(VAlign::Bottom),
       "Baseline" => Some(VAlign::Baseline),
       "Center" | "Axis" => Some(VAlign::Center),
@@ -36847,6 +36850,46 @@ fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
 /// takes the grid's style directives, with the sans face as the default
 /// family. Other cells are returned unchanged.
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  // `Style[Column[…], 15]` is the same column with directives of its own:
+  // the column underneath takes the grid's style, and the cell's
+  // directives, being nearer the text, go after it so they win.
+  if let Expr::FunctionCall { name, args } = cell
+    && name == "Style"
+    && args.len() >= 2
+    && matches!(strip_style_wrappers(&args[0]), Expr::FunctionCall { name, .. } if name == "Column")
+  {
+    let inner = match column_cell_in_grid_style(&args[0], style) {
+      styled @ Expr::FunctionCall { .. } if !matches!(&styled, Expr::FunctionCall { name, .. } if name == "Column") => {
+        styled
+      }
+      // A column that is no plain text run keeps its layout, set in the
+      // grid's face.
+      column => call(
+        "Style",
+        vec![
+          column,
+          rule_expr(
+            id_expr("FontFamily"),
+            Expr::String(grid_text_family(style)),
+          ),
+        ],
+      ),
+    };
+    let Expr::FunctionCall {
+      args: inner_args, ..
+    } = &inner
+    else {
+      return cell.clone();
+    };
+    return call(
+      "Style",
+      inner_args
+        .iter()
+        .cloned()
+        .chain(args[1..].iter().cloned())
+        .collect::<Vec<_>>(),
+    );
+  }
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
   }
