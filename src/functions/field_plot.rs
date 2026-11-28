@@ -3979,7 +3979,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// The `PlotLegends` position of a plot's automatic color bar:
 /// `Automatic` puts it `After` the plot, `Placed[Automatic, pos]` at `pos`.
-fn automatic_legend_position(value: &Expr) -> Option<Expr> {
+pub(crate) fn automatic_legend_position(value: &Expr) -> Option<Expr> {
   match value {
     Expr::Identifier(v) if v == "Automatic" => Some(id_expr("After")),
     Expr::FunctionCall { name, args }

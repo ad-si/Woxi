@@ -349,6 +349,124 @@ fn with_bar_legend(
   )
 }
 
+/// The `Placed[BarLegend[…], pos, Identity]` of `ComplexPlot3D`'s default
+/// coloring: a bar over the phase, labeled from `-π` to `π`. It does not
+/// depend on the plotted values. Only the placement changes it: an edge
+/// above or below lays the bar out in a `Row`, and the side its ticks go
+/// on follows [`bar_legend_ticks_left`].
+fn complex_phase_bar_legend(position: &Expr) -> Option<Expr> {
+  let row = is_vertical_edge(match position {
+    Expr::List(items) if !items.is_empty() => &items[0],
+    other => other,
+  });
+  let (layout, size) = if row { ("Row", 225) } else { ("Column", 150) };
+  let tick_side = if bar_legend_ticks_left(position, row) {
+    "Left"
+  } else {
+    "Right"
+  };
+  let ticks = (0..5)
+    .map(|i| {
+      let group = (0..5)
+        .map(|j| format!("{}/20", 4 * i + j))
+        .collect::<Vec<_>>()
+        .join(", ");
+      format!("{{{group}}}")
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
+  let source = format!(
+    "BarLegend[{{ColorDataFunction[\"MidShiftBalancedHue\", \
+     \"ThemeGradients\", {{0, 1}}, \
+     Blend[\"MidShiftBalancedHue\", #1] &][#1] &, {{0, 1}}}}, \
+     LabelStyle -> {{}}, LegendLayout -> \"{layout}\", \
+     LegendMarkerSize -> {size}, \"ColorFunctionShading\" -> None, \
+     OpacityFunction -> None, \"OpacityFunctionTicks\" -> None, \
+     \"OpacityFunctionSize\" -> Scaled[0.5], \
+     \"OpacityFunctionRange\" -> {{0, 1}}, \
+     Charting`TickLabels -> {{\"-π\", \"-π/2\", \"0\", \"π/2\", \"π\"}}, \
+     Ticks -> {{{{0., 0.25, 0.5, 0.75, 1.}}, {{{ticks}}}}}, \
+     Charting`TickSide -> {tick_side}, ColorFunctionScaling -> True]"
+  );
+  let bar = crate::syntax::string_to_expr(&source).ok()?;
+  let bar = crate::evaluator::evaluate_expr_to_expr(&bar).ok()?;
+  Some(call(
+    "Placed",
+    vec![bar, position.clone(), id_expr("Identity")],
+  ))
+}
+
+/// `Above`, `Top`, `Below` or `Bottom`: a placement on the edge above or
+/// below the plot.
+fn is_vertical_edge(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s)
+    if matches!(s.as_str(), "Above" | "Top" | "Below" | "Bottom"))
+}
+
+/// Whether a placed bar legend puts its ticks on its left side. Beside the
+/// plot (a `Column`), the placement is read as a point `{h, v}` of the
+/// plot's unit square (`Left`/`Before` 0, `Center` 0.5, `Right`/`After`
+/// 1; `Bottom`/`Below` 0, `Top`/`Above` 1, and the first point of a
+/// `{pos, anchor}` pair or of `Scaled[…]`): the ticks go left above the
+/// diagonal, `v > h`, and on it in its lower-left half. Above or below the
+/// plot (a `Row`, whose first coordinate is the vertical edge) they go
+/// left on the top edge.
+fn bar_legend_ticks_left(position: &Expr, row: bool) -> bool {
+  let coordinate = |e: &Expr, vertical: bool| -> Option<f64> {
+    match e {
+      Expr::Identifier(s) => match s.as_str() {
+        "Left" | "Before" if !vertical => Some(0.0),
+        "Right" | "After" if !vertical => Some(1.0),
+        "Bottom" | "Below" if vertical => Some(0.0),
+        "Top" | "Above" if vertical => Some(1.0),
+        "Center" => Some(0.5),
+        _ => None,
+      },
+      other => crate::functions::math_ast::try_eval_to_f64(other),
+    }
+  };
+  let point = |e: &Expr| -> Option<(f64, f64)> {
+    let pair = match e {
+      Expr::Identifier(s) => {
+        let h = if matches!(s.as_str(), "Left" | "Before") {
+          0.0
+        } else {
+          1.0
+        };
+        return Some((h, 0.5));
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Scaled" && args.len() == 1 =>
+      {
+        &args[0]
+      }
+      // `{pos, anchor}`: where the legend's anchor point is put.
+      Expr::List(items)
+        if items.len() == 2 && matches!(&items[0], Expr::List(_)) =>
+      {
+        &items[0]
+      }
+      other => other,
+    };
+    let Expr::List(p) = pair else { return None };
+    if p.len() != 2 {
+      return None;
+    }
+    Some((coordinate(&p[0], false)?, coordinate(&p[1], true)?))
+  };
+  if row {
+    let edge = match position {
+      Expr::List(items) if !items.is_empty() => &items[0],
+      other => other,
+    };
+    return matches!(edge, Expr::Identifier(s) if s == "Above" || s == "Top");
+  }
+  match point(position) {
+    Some((h, v)) => v > h || (v == h && h < 0.5),
+    None => false,
+  }
+}
+
 /// The arguments with every option list (`{PlotStyle -> Red, …}`, possibly
 /// nested) after the first argument spliced in as separate options, or
 /// `None` when there is none. A plot's `OptionsPattern[]` accepts its
@@ -1077,27 +1195,59 @@ pub fn dispatch_plotting(
           .into(),
         ),
       ];
-      // Drop options like PlotLegends -> Automatic that Plot3D doesn't
-      // model the same way; pass others through.
+      // `PlotLegends` is not Plot3D's (which would legend the modulus):
+      // it is taken off here and, for the default phase coloring, becomes
+      // the phase color bar Wolfram attaches.
+      let mut legend_position = None;
+      let mut default_colors = true;
       for opt in &args[2..] {
-        if let Expr::Rule { pattern, .. } = opt
-          && matches!(&**pattern, Expr::Identifier(s) if s == "PlotLegends")
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } = opt
+          && let Expr::Identifier(key) = &**pattern
         {
-          continue;
+          match key.as_str() {
+            "PlotLegends" => {
+              // The plot holds its options: `Placed[Automatic, p]` in a
+              // `Table` over `p` is evaluated to the placement it names.
+              let value = crate::evaluator::evaluate_expr_to_expr(replacement)
+                .unwrap_or_else(|_| (**replacement).clone());
+              legend_position =
+                crate::functions::field_plot::automatic_legend_position(&value);
+              continue;
+            }
+            "ColorFunction" => {
+              default_colors = matches!(&**replacement,
+                Expr::Identifier(v) if v == "Automatic");
+            }
+            _ => {}
+          }
         }
         plot_args.push(opt.clone());
       }
+      let legend = legend_position
+        .filter(|_| default_colors)
+        .and_then(|pos| complex_phase_bar_legend(&pos));
       Some(quiet_plot(|| {
-        match crate::functions::plot3d::plot3d_ast(&plot_args) {
-          Ok(g) => Ok(g),
+        let plot = match crate::functions::plot3d::plot3d_ast(&plot_args) {
+          Ok(g) => g,
           // When the function isn't numerically evaluable (e.g. symbolic
           // special functions), fall back to an empty Graphics3D so the
           // caller still gets a placeholder, matching wolframscript's
           // `-Graphics3D-` output.
           Err(_) => crate::functions::plot3d::graphics3d_ast(&[Expr::List(
             vec![].into(),
-          )]),
-        }
+          )])?,
+        };
+        Ok(match &legend {
+          Some(placed) => call("Legended", vec![plot, placed.clone()]),
+          None => plot,
+        })
       }))
     }
     // ComplexRegionPlot[pred, {z, zmin, zmax}] — plot the region in the

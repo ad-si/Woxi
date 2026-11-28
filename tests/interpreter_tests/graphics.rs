@@ -49764,11 +49764,11 @@ mod complex_plot_3d {
   fn sin_returns_graphics3d() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49776,11 +49776,11 @@ mod complex_plot_3d {
   fn polynomial() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49797,11 +49797,11 @@ mod complex_plot_3d {
     // Audit-style call: ComplexPlot3D over an arbitrary head.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49809,15 +49809,78 @@ mod complex_plot_3d {
   fn unevaluable_function_falls_back() {
     // A function that never evaluates to a number leaves nothing to draw:
     // ComplexPlot3D returns an empty 3D plot (the caller still gets a
-    // -Graphics3D- placeholder) instead of failing.
+    // -Graphics3D- placeholder) instead of failing. Its phase legend does
+    // not depend on the values, so it is still attached.
     assert_eq!(
       interpret(
         "g = ComplexPlot3D[f[z], {z, -1 - I, 1 + I}, \
          PlotLegends -> Automatic]; \
-         {g, Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
+         {Head[g], Head[First[g]], \
+         Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
       )
       .unwrap(),
-      "{-Graphics3D-, 0}"
+      "{Legended, Graphics3D, 0}"
+    );
+  }
+
+  #[test]
+  fn automatic_legend_is_the_phase_bar() {
+    // `PlotLegends -> Automatic` attaches a bar over the phase, `-π` to
+    // `π`, the same for every function and range.
+    assert_eq!(
+      interpret(
+        "ToString[ComplexPlot3D[z^2, {z, -2 - I, 2 + I}, \
+         PlotLegends -> Automatic][[2]], InputForm]"
+      )
+      .unwrap(),
+      "Placed[BarLegend[{ColorDataFunction[\"MidShiftBalancedHue\", \
+       \"ThemeGradients\", {0, 1}, Blend[\"MidShiftBalancedHue\", #1] & ][#1] & , \
+       {0, 1}}, LabelStyle -> {}, LegendLayout -> \"Column\", \
+       LegendMarkerSize -> 150, \"ColorFunctionShading\" -> None, \
+       OpacityFunction -> None, \"OpacityFunctionTicks\" -> None, \
+       \"OpacityFunctionSize\" -> Scaled[0.5], \
+       \"OpacityFunctionRange\" -> {0, 1}, \
+       Charting`TickLabels -> {\"-π\", \"-π/2\", \"0\", \"π/2\", \"π\"}, \
+       Ticks -> {{0., 0.25, 0.5, 0.75, 1.}, \
+       {{0, 1/20, 1/10, 3/20, 1/5}, {1/5, 1/4, 3/10, 7/20, 2/5}, \
+       {2/5, 9/20, 1/2, 11/20, 3/5}, {3/5, 13/20, 7/10, 3/4, 4/5}, \
+       {4/5, 17/20, 9/10, 19/20, 1}}}, Charting`TickSide -> Right, \
+       ColorFunctionScaling -> True], After, Identity]"
+    );
+    // `ColorFunction -> Automatic` is the default coloring.
+    assert_eq!(
+      interpret(
+        "Head[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         ColorFunction -> Automatic, PlotLegends -> Automatic]]"
+      )
+      .unwrap(),
+      "Legended"
+    );
+  }
+
+  #[test]
+  fn placed_phase_legend_layout_and_tick_side() {
+    // Above or below the plot the bar is a wider `Row`; beside it, its
+    // ticks go left for a placement above the square's diagonal (or on
+    // the diagonal's lower-left half).
+    assert_eq!(
+      interpret(
+        "Table[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         PlotLegends -> Placed[Automatic, p]][[2]] /. \
+         Placed[BarLegend[_, o___], _, _] :> (\
+         {LegendLayout, LegendMarkerSize, Charting`TickSide} /. {o}), \
+         {p, {After, Before, Left, Above, Bottom, {Center, Top}, \
+         {Right, Top}, {Left, Bottom}, {0.5, 0.5}, {0.4, 0.4}, \
+         {0.7, 0.8}, {0.4, 0.1}, Scaled[{0.2, 0.3}], \
+         {{0.2, 0.2}, {1, 1}}, {Top, Right}, {Bottom, Left}}}]"
+      )
+      .unwrap(),
+      "{{Column, 150, Right}, {Column, 150, Left}, {Column, 150, Left}, \
+       {Row, 225, Left}, {Row, 225, Right}, {Column, 150, Left}, \
+       {Column, 150, Right}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Row, 225, Left}, \
+       {Row, 225, Right}}"
     );
   }
 
