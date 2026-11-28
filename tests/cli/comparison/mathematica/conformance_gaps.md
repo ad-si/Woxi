@@ -10371,6 +10371,17 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   5% of its height taller than the pictures whatever `Spacings` says. The
   same rule for `GraphicsGrid`/`GraphicsColumn` and for pictures with only
   a width is not decoded (see the two items above).
+- `GraphicsColumn[{Plot[…, ImageSize -> 200], ParametricPlot[{u, 0}, {u, 0,
+  Pi}, PlotStyle -> {Thickness[0.1]}, ColorFunction -> …, Epilog -> {Line[…]}]},
+  Center, -10, ImageSize -> {400, 400}]` (read off a notebook front end
+  snapshot, no wolframscript at hand): the widths are decoded (pictures keep
+  the proportions of their own `ImageSize`, an unsized one counting as 360,
+  and the widest spans 1/1.1 of the column), the heights are not: Wolfram's
+  two rows are about 4 pt further apart than Woxi's. In the same picture the
+  thick colored line of the `ParametricPlot` runs about 15 pt past both ends
+  of its `{0, Pi}` range, across the whole axis, where Woxi ends it at the
+  range; and the tick labels at the two ends of an axis (`0`, `Pi`) sit
+  about 30 pt below the axis while the middle one stays next to it.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
