@@ -23088,7 +23088,8 @@ mod plot3d {
 
     /// A `Text` label that multiplies a formatted number by a unit string
     /// is set in TraditionalForm's order of factors — the number first —
-    /// and a unit it is divided by goes after a slash.
+    /// and a unit it is divided by stacks under it as a built-up fraction,
+    /// with the factors above the bar in the same order.
     #[test]
     fn text_label_sets_a_number_form_before_its_unit() {
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"]}]"#);
@@ -23099,9 +23100,20 @@ mod plot3d {
       assert!(svg.contains(">9.1 x<"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"/"s"]}]"#);
-      assert!(svg.contains(">9.1 m/s<"), "{svg}");
+      assert_eq!(svg.matches("<line").count(), 1, "a fraction bar: {svg}");
+      let (n, m, d) = (
+        svg.find(">9.1<").expect("9.1"),
+        svg.find(">m<").expect("m"),
+        svg.find(">s<").expect("s"),
+      );
+      assert!(n < m && m < d, "9.1 m over s: {svg}");
+      assert!(!svg.contains("NumberForm") && !svg.contains(">1<"), "{svg}");
       let svg = export_svg(r#"Graphics[{Text["a"/("s" "t")]}]"#);
-      assert!(svg.contains(">a/(s t)<"), "{svg}");
+      assert_eq!(svg.matches("<line").count(), 1, "a fraction bar: {svg}");
+      for part in [">a<", ">s<", ">t<"] {
+        assert!(svg.contains(part), "{part}: {svg}");
+      }
+      assert!(!svg.contains(">a/"), "not on one line: {svg}");
     }
 
     #[test]
@@ -46700,13 +46712,17 @@ mod grid_frame_and_background {
       export_svg(&format!("Grid[{rows}, Alignment -> {{{{Left, \".\"}}}}]"));
     assert_eq!(decimal, dot);
     // The whole numbers end at the shared decimal point: the two-digit one
-    // starts further left than the one-digit ones, which start together.
-    let (x0, anchor) = grid_text_x(&decimal, "0");
-    let (x21, _) = grid_text_x(&decimal, "21.375");
-    let (x7, _) = grid_text_x(&decimal, "7.5");
-    assert_eq!(anchor, "start");
-    assert_eq!(x0, x7);
+    // starts further left than the one-digit one, and the `0` without a
+    // point is set flush against it, past the start of `7.5`.
+    let (x0, anchor0) = grid_text_x(&decimal, "0");
+    let (x21, anchor21) = grid_text_x(&decimal, "21.375");
+    let (x7, anchor7) = grid_text_x(&decimal, "7.5");
+    assert_eq!(
+      (anchor0.as_str(), anchor21.as_str(), anchor7.as_str()),
+      ("end", "start", "start")
+    );
     assert!(x21 < x7, "21.375 at {x21}, 7.5 at {x7}");
+    assert!(x7 < x0, "7.5 at {x7}, 0 ends at {x0}");
     // A lone `Alignment -> Decimal` and `{Decimal, rows}` do the same.
     for spec in ["Decimal", "{Decimal, Baseline}"] {
       let svg = export_svg(&format!(

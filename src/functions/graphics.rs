@@ -7347,6 +7347,27 @@ fn is_null_row_item(item: &Expr) -> bool {
   matches!(item, Expr::Identifier(n) if n == "Null")
 }
 
+/// Whether a factor of a product in a graphics label is set as text: a
+/// string (`"m"`) or a number form (`NumberForm[x, 2]`). Such a product is
+/// typeset in TraditionalForm's order of factors, the number first.
+fn is_text_label_factor(factor: &Expr) -> bool {
+  match factor {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, args } => {
+      !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "NumberForm"
+            | "PaddedForm"
+            | "AccountingForm"
+            | "ScientificForm"
+            | "EngineeringForm"
+        )
+    }
+    _ => false,
+  }
+}
+
 pub(crate) fn graphics_text_content(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return graphics_text_content(&styled);
@@ -7839,19 +7860,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // wrappers inside it still apply instead of printing as `NumberForm[…]`
     // source — in TraditionalForm's order of factors: `9.1 m`.
     Expr::FunctionCall { name, args }
-      if name == "Times"
-        && args.iter().any(|a| {
-          matches!(a, Expr::String(_))
-            || matches!(a, Expr::FunctionCall { name, args }
-              if !args.is_empty() && matches!(
-                name.as_str(),
-                "NumberForm"
-                  | "PaddedForm"
-                  | "AccountingForm"
-                  | "ScientificForm"
-                  | "EngineeringForm"
-              ))
-        }) =>
+      if name == "Times" && args.iter().any(is_text_label_factor) =>
     {
       // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
       // denominator under the rest, so the label reads `7/100` on one line.
@@ -10686,6 +10695,19 @@ pub(crate) fn stacked_label_picture(
         || label_has_large_operator_script(content) =>
     {
       inline_box_string_to_box_expr(s)
+    }
+    // A quotient of a product with a string or number-form factor
+    // (`NumberForm[9.1, 2] "m"/"s"`) stacks in TraditionalForm's order of
+    // factors, the number first, like its one-line form (`9.1 m`).
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.iter().any(is_text_label_factor)
+        && label_typesets_fraction(content) =>
+    {
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(content),
+      ))
     }
     _ if label_typesets_fraction(content)
       || formula_has_graphics_operand(content)
