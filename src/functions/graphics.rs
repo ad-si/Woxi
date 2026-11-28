@@ -10748,6 +10748,106 @@ fn row_frame_as_framed(label: &Expr) -> Option<Expr> {
   })
 }
 
+/// The `FrameMargins` of a `Framed` label as `(left, right, bottom, top)`
+/// points: one number for all sides, or `{{l, r}, {b, t}}`. Sides left
+/// unsaid take `default_margin`.
+fn frame_margins(
+  frame_opts: &[Expr],
+  default_margin: f64,
+) -> (f64, f64, f64, f64) {
+  let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
+    Some(("FrameMargins", v)) => Some(v),
+    _ => None,
+  });
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
+      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
+      (m, m, m, m)
+    }
+  }
+}
+
+/// Box a label already typeset as a picture — a string whose box notation
+/// stacks a fraction — the way `Framed` does: the `FrameMargins` around it,
+/// the optional `background` behind and, unless `FrameStyle -> None` left
+/// `frame_color` empty, the border. Returns the SVG and its width and
+/// height.
+fn frame_typeset_picture(
+  (picture, picture_w, picture_h): (String, f64, f64),
+  frame_color: Option<Color>,
+  background: Option<Color>,
+  frame_opts: &[Expr],
+) -> (String, f64, f64) {
+  let (left, right, bottom, top) = frame_margins(frame_opts, 5.0);
+  let w = (picture_w + left + right).ceil().max(1.0);
+  let h = (picture_h + top + bottom).ceil().max(1.0);
+  let (fill, fill_opacity) = match background {
+    Some(bg) => (bg.to_svg_rgb(), bg.opacity_attr()),
+    None => ("none".to_string(), String::new()),
+  };
+  let mut svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" {TEXT_LABEL_PICTURE_MARK} \
+     width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">"
+  );
+  svg.push_str(&label_box_rect(
+    w,
+    h,
+    frame_color,
+    background,
+    &fill,
+    &fill_opacity,
+  ));
+  svg.push_str(&format!(
+    "<g transform=\"translate({left:.2},{top:.2})\">{picture}</g></svg>"
+  ));
+  (svg, w, h)
+}
+
+/// The rectangle behind a boxed label `w` by `h` points: the border in
+/// `frame_color` over the `background`, or the bare background of an
+/// unframed one. Empty when there is neither.
+fn label_box_rect(
+  w: f64,
+  h: f64,
+  frame_color: Option<Color>,
+  background: Option<Color>,
+  fill: &str,
+  fill_opacity: &str,
+) -> String {
+  match frame_color {
+    Some(frame_color) => format!(
+      "<rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
+       fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
+      w - 1.0,
+      h - 1.0,
+      frame_color.to_svg_rgb(),
+      if frame_color.a < 1.0 {
+        format!(" stroke-opacity=\"{}\"", frame_color.a)
+      } else {
+        String::new()
+      },
+    ),
+    None if background.is_some() => format!(
+      "<rect x=\"0\" y=\"0\" width=\"{w:.2}\" height=\"{h:.2}\" \
+       fill=\"{fill}\"{fill_opacity}/>"
+    ),
+    None => String::new(),
+  }
+}
+
 /// The attribute marking an inset picture as a `Text` label laid out on its
 /// own (see `framed_label_picture`): like any label, it widens an automatic
 /// plot range to fit, which an ordinary inset does not.
@@ -10935,30 +11035,8 @@ fn framed_label_picture(
   let content_w = pane_size.0.map_or(content_w, |w| w.max(content_w));
   let content_h = pane_size.1.map_or(content_h, |h| h.max(content_h));
 
-  let default_margin = if frame_color.is_some() { 5.0 } else { 0.0 };
-  let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
-    Some(("FrameMargins", v)) => Some(v),
-    _ => None,
-  });
-  let pair = |v: &Expr| -> Option<(f64, f64)> {
-    match v {
-      Expr::List(p) if p.len() == 2 => {
-        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
-      }
-      other => expr_to_f64(other).map(|m| (m, m)),
-    }
-  };
-  let (left, right, bottom, top) = match margins {
-    Some(Expr::List(p)) if p.len() == 2 => {
-      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
-      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
-      (l, r, b, t)
-    }
-    other => {
-      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
-      (m, m, m, m)
-    }
-  };
+  let (left, right, bottom, top) =
+    frame_margins(frame_opts, if frame_color.is_some() { 5.0 } else { 0.0 });
   let w = (content_w + left + right).ceil().max(1.0);
   let h = (content_h + top + bottom).ceil().max(1.0);
   let (fill, fill_opacity) = match background {
@@ -10969,25 +11047,14 @@ fn framed_label_picture(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" {TEXT_LABEL_PICTURE_MARK} \
      width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">"
   );
-  match frame_color {
-    Some(frame_color) => svg.push_str(&format!(
-      "<rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
-       fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
-      w - 1.0,
-      h - 1.0,
-      frame_color.to_svg_rgb(),
-      if frame_color.a < 1.0 {
-        format!(" stroke-opacity=\"{}\"", frame_color.a)
-      } else {
-        String::new()
-      },
-    )),
-    None if background.is_some() => svg.push_str(&format!(
-      "<rect x=\"0\" y=\"0\" width=\"{w:.2}\" height=\"{h:.2}\" \
-       fill=\"{fill}\"{fill_opacity}/>"
-    )),
-    None => {}
-  }
+  svg.push_str(&label_box_rect(
+    w,
+    h,
+    frame_color,
+    background,
+    &fill,
+    &fill_opacity,
+  ));
   let ff_attr = if style.font_family.is_empty() {
     String::new()
   } else {
@@ -11147,6 +11214,8 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // tip a static picture cannot show) only wrap the content, so the
   // `Style` inside them still applies.
   let mut content = framed_body;
+  let outer_frame = !std::ptr::eq(framed_body, first_arg);
+  let mut inner_frame: Option<(Vec<Expr>, Color)> = None;
   let mut style_line_anchor: Option<&'static str> = None;
   // `Pane[Style[text, dirs…], w]` sets the styled text in a box `w` points
   // wide: the `Style` inside still sizes and aligns the label, and the
@@ -11180,6 +11249,21 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         }
       }
       break;
+    }
+    // A `Framed` the label's `Style` wraps (`Style[Framed[x], 20,
+    // Background -> White]`, the gate boxes of a circuit diagram) boxes the
+    // label all the same: its border takes the color styled so far, and the
+    // `Style`s inside it still reach the text.
+    if name == "Framed" {
+      if outer_frame || inner_frame.is_some() {
+        break;
+      }
+      inner_frame = Some((
+        splice_option_lists(sargs).split_off(1),
+        local_style.effective_color(),
+      ));
+      content = peel_label_rotate(&sargs[0], &mut rotation);
+      continue;
     }
     if !is_style_wrapper(name) {
       break;
@@ -11445,18 +11529,34 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       call("Style", style_args)
     })
   };
-  if frame_opts.is_empty()
-    && let Some((svg, w, h)) = stacked_label_picture(
-      faced_content.as_ref().unwrap_or(content),
-      local_style.font_size,
-      &local_style.font_family,
-      &local_style.effective_color().to_svg_rgb(),
-    )
-    && let Some((x, y, scaled)) = match args.get(1) {
-      Some(pos) => expr_to_anchor(pos),
-      None => Some((0.0, 0.0, false)),
-    }
-  {
+  // A `Framed` such label keeps its box around the typeset picture.
+  let boxed = match &inner_frame {
+    Some((opts, color)) => Some((&opts[..], *color)),
+    None => outer_frame.then_some((frame_opts, frame_default_color)),
+  };
+  if let Some(picture) = stacked_label_picture(
+    faced_content.as_ref().unwrap_or(content),
+    local_style.font_size,
+    &local_style.font_family,
+    &local_style.effective_color().to_svg_rgb(),
+  ) && let Some((x, y, scaled)) = match args.get(1) {
+    Some(pos) => expr_to_anchor(pos),
+    None => Some((0.0, 0.0, false)),
+  } {
+    let (svg, w, h) = match boxed {
+      Some((opts, default_color)) => frame_typeset_picture(
+        picture,
+        label_frame(opts, default_color).map(|f| f.color),
+        option_value(opts, "Background")
+          .and_then(parse_color)
+          .or_else(|| {
+            option_value(&args[1..], "Background").and_then(parse_color)
+          })
+          .or(local_style.text_background),
+        opts,
+      ),
+      None => picture,
+    };
     let (svg, w, h) =
       align_inset_picture(svg, w, h, picture_offset.unwrap_or_default());
     prims.push(Primitive::InsetGraphic {
@@ -11547,15 +11647,20 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // content — leaves its background in the style state, which is how
   // `Style[Text[…], Background -> White]` keeps a distance label legible over
   // the line it sits on.
+  let (frame_opts, frame_default_color) = match &inner_frame {
+    Some((opts, color)) => (&opts[..], *color),
+    None => (frame_opts, frame_default_color),
+  };
   let background = background_of(frame_opts)
     .or_else(|| background_of(&args[1..]))
     .or(local_style.text_background);
   // Wolfram draws a `Framed` box with a thin border unless the label asks
   // for none; an explicit `FrameStyle -> color` recolors it.
-  let is_framed = matches!(
-    &args[0],
-    Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
-  );
+  let is_framed = inner_frame.is_some()
+    || matches!(
+      &args[0],
+      Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
+    );
   let frame = if is_framed {
     label_frame(frame_opts, frame_default_color)
   } else {

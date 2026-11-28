@@ -6494,6 +6494,76 @@ mod graphics {
       );
     }
 
+    /// A `Framed` the label's `Style` wraps is boxed like one written
+    /// around the `Style`: the border takes the color styled so far (or the
+    /// frame's own `FrameStyle`), the `Style`'s `Background` fills it, and
+    /// the font size still reaches the text.
+    #[test]
+    fn a_framed_label_inside_a_style_draws_its_box() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Framed[\"hi\"], 20, Background -> White], \
+         {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(255,255,255)\" stroke=\"rgb(0,0,0)\""),
+        "{svg}"
+      );
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      let svg = export_svg(
+        "Graphics[{Text[Style[Framed[\"hi\", FrameStyle -> Red], 12], \
+         {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"none\" stroke=\"rgb(255,0,0)\""),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Graphics[{Text[Style[Framed[Style[\"hi\", Red]], Blue], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"none\" stroke=\"rgb(0,0,255)\""),
+        "{svg}"
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+    }
+
+    /// A framed label whose string stacks a fraction keeps both: the
+    /// fraction is typeset built up, inside the frame's border and
+    /// background, whether the `Framed` is outermost or inside a `Style`.
+    #[test]
+    fn a_framed_stacked_fraction_label_keeps_its_box() {
+      for label in [
+        "Framed[\"\\!\\(\\*FractionBox[\\(1\\), \\(3\\)]\\)(a+b)\", \
+         FrameStyle -> Red, Background -> Yellow]",
+        "Style[Framed[\"\\!\\(\\*FractionBox[\\(1\\), \\(3\\)]\\)(a+b)\", \
+         FrameStyle -> Red, Background -> Yellow], 10]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(
+          svg.contains("fill=\"rgb(255,255,0)\" stroke=\"rgb(255,0,0)\""),
+          "{label}: {svg}"
+        );
+        // Built up: a fraction bar, not the one-line `1/3`.
+        assert!(!svg.contains("1/3"), "{label}: {svg}");
+        assert!(!svg.contains("FractionBox"), "{label}: {svg}");
+      }
+      // Without options the frame is the default thin black border, and
+      // `FrameStyle -> None` leaves the fraction unboxed.
+      let framed = export_svg(
+        "Graphics[{Text[Framed[\"\\!\\(\\*FractionBox[\\(1\\), \\(2\\)]\\)\"], \
+         {0, 0}]}]",
+      );
+      assert!(
+        framed.contains("fill=\"none\" stroke=\"rgb(0,0,0)\""),
+        "{framed}"
+      );
+      let bare = export_svg(
+        "Graphics[{Text[Framed[\"\\!\\(\\*FractionBox[\\(1\\), \\(2\\)]\\)\", \
+         FrameStyle -> None], {0, 0}]}]",
+      );
+      assert!(!bare.contains("stroke=\"rgb(0,0,0)\"/>"), "{bare}");
+    }
+
     /// A merged cell of a grid label draws nothing of its own.
     #[test]
     fn framed_grid_label_hides_span_markers() {
