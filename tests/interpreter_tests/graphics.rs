@@ -11266,8 +11266,10 @@ mod plot3d {
       .unwrap();
       assert_eq!(result, "True");
       // Rules that only match a symbolic variable are still applied first.
+      // (Wolfram's last sample lies a hair short of `t = 1`, at
+      // `1 - 2.04*10^-8`, so the endpoint is compared with a tolerance.)
       let result = interpret(
-        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]] == {Cos[1.], Sin[1.], 1.}",
+        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          end = Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]];          Max[Abs[end - {Cos[end[[3]]], Sin[end[[3]]], 1.}]] < 10^-6",
       )
       .unwrap();
       assert_eq!(result, "True");
