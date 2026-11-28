@@ -51647,6 +51647,62 @@ fn trigger_repetitions_from_expr(e: &Expr) -> Option<TriggerRepetitions> {
   }
 }
 
+/// The point-count limits of a locator list whose count is unbounded.
+const UNBOUNDED_POINT_LIMITS: (usize, usize) = (0, usize::MAX);
+
+/// Reads a `LocatorAutoCreate -> value` option: `Some((min, max))` with the
+/// fewest and the most points the list may hold when the value allows adding
+/// and removing points, `None` for any other option or a value that
+/// disables it.
+///
+/// `True`, `Automatic` and `All` leave the count unbounded, `{min, max}`
+/// keeps it within that range, and a bare positive integer caps it.
+fn locator_auto_create_limits(option: &Expr) -> Option<(usize, usize)> {
+  let (Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  }) = option
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
+  {
+    return None;
+  }
+  // A count bound: a non-negative integer, or `Infinity` for "no limit".
+  let bound = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) => usize::try_from(*n).ok(),
+      Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+      Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => {
+        Some(usize::MAX)
+      }
+      _ => None,
+    }
+  };
+  match replacement.as_ref() {
+    Expr::Identifier(s) if s == "True" || s == "Automatic" || s == "All" => {
+      Some(UNBOUNDED_POINT_LIMITS)
+    }
+    Expr::List(bounds) => match bounds.as_slice() {
+      [] => None,
+      [lo, hi] => match (bound(lo), bound(hi)) {
+        (Some(lo), Some(hi)) if lo <= hi => Some((lo, hi)),
+        _ => Some(UNBOUNDED_POINT_LIMITS),
+      },
+      _ => Some(UNBOUNDED_POINT_LIMITS),
+    },
+    Expr::Integer(n) if *n > 0 => {
+      Some((0, usize::try_from(*n).unwrap_or(usize::MAX)))
+    }
+    _ => None,
+  }
+}
+
 /// A single control inside a Manipulate expression.
 ///
 /// Continuous controls correspond to `{u, umin, umax}` or
@@ -51840,6 +51896,10 @@ pub enum ManipulateControl {
     y_min: f64,
     y_max: f64,
     auto_create: bool,
+    /// The fewest and the most points the list may hold while points are
+    /// added and removed (`LocatorAutoCreate -> {min, max}`); `(0,
+    /// usize::MAX)` when the count is unbounded.
+    point_limits: (usize, usize),
     label: String,
     /// Set when the pane drives a *derived* variable: the pane's own
     /// `Dynamic[local, f]` callback (`Function[{val, expr}, var = …]`) turns
@@ -54727,6 +54787,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         y_min,
         y_max,
         auto_create: false,
+        point_limits: UNBOUNDED_POINT_LIMITS,
         label: var.clone(),
         derived: None,
         single: false,
@@ -64257,34 +64318,16 @@ fn parse_manipulate_control(
         .and_then(locator_pane_bounds)
         .unwrap_or(corner_bounds)
     };
-    let auto_create = items
+    let point_limits = items
       .iter()
       .chain(
         custom_locator_pane_options(items)
           .iter()
           .flat_map(|pane| pane.iter().skip(1)),
       )
-      .any(|it| {
-      matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LocatorAutoCreate")
-            && match replacement.as_ref() {
-              Expr::Identifier(s) => {
-                s == "True" || s == "Automatic" || s == "All"
-              }
-              // `LocatorAutoCreate -> {min, max}` bounds how many points
-              // the user may add; any such range still means "adding is
-              // allowed".
-              Expr::List(bounds) => !bounds.is_empty(),
-              // `LocatorAutoCreate -> n`: a bare positive integer caps how
-              // many locators may be added (0/negative disables it).
-              Expr::Integer(n) => *n > 0,
-              _ => false,
-            }
-      )
-    });
+      .find_map(locator_auto_create_limits);
+    let auto_create = point_limits.is_some();
+    let point_limits = point_limits.unwrap_or(UNBOUNDED_POINT_LIMITS);
     // A pane bound to a local `Dynamic[local, f]` whose callback derives this
     // variable (`DynamicModule[{pts = …}, LocatorPane[Dynamic[pts, f], …]]`):
     // the draggable points are `local`'s, and the variable follows through `f`.
@@ -64306,6 +64349,11 @@ fn parse_manipulate_control(
           )
         })
       });
+      let point_limits = pane
+        .iter()
+        .flat_map(|p| p.iter().skip(1))
+        .find_map(locator_auto_create_limits)
+        .unwrap_or(UNBOUNDED_POINT_LIMITS);
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Locator {
           name,
@@ -64315,6 +64363,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create,
+          point_limits,
           label,
           derived: Some(derived),
           single: false,
@@ -64373,6 +64422,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create,
+          point_limits,
           label,
           derived: None,
           single: false,
@@ -64399,6 +64449,7 @@ fn parse_manipulate_control(
           y_min,
           y_max,
           auto_create: false,
+          point_limits: UNBOUNDED_POINT_LIMITS,
           label,
           derived: None,
           single: true,
@@ -67112,13 +67163,20 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         y_min,
         y_max,
         auto_create,
+        point_limits: (min_points, max_points),
         label,
         ..
       } => {
         let point_parts: Vec<String> =
           points.iter().map(|(x, y)| format!("[{x},{y}]")).collect();
+        // An unbounded count has no `maxPoints`.
+        let max_json = if *max_points == usize::MAX {
+          "null".to_string()
+        } else {
+          max_points.to_string()
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{}}}"#,
+          r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{},"minPoints":{},"maxPoints":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           x_min,
@@ -67127,6 +67185,8 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           y_max,
           point_parts.join(","),
           auto_create,
+          min_points,
+          max_json,
         ));
       }
       ManipulateControl::Trigger {
@@ -71243,6 +71303,68 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!((*x_initial, *y_initial), (0.5, 0.3));
       }
       other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
+  /// `LocatorAutoCreate -> {min, max}` bounds how many points the list may
+  /// hold, `-> n` caps it, and `-> True` leaves it unbounded.
+  #[test]
+  fn locator_auto_create_range_limits_the_point_count() {
+    let limits = |option: &str| {
+      let s = spec(&format!(
+        "Manipulate[pts, {{{{pts, {{{{0, 0}}, {{1, 1}}, {{2, 0}}}}}}, \
+         {{-1, -1}}, {{3, 2}}, Locator, {option}}}]"
+      ));
+      match &s.controls[0] {
+        ManipulateControl::Locator {
+          auto_create,
+          point_limits,
+          ..
+        } => (*auto_create, *point_limits),
+        other => panic!("expected a Locator control, got {other:?}"),
+      }
+    };
+    assert_eq!(limits("LocatorAutoCreate -> {2, 8}"), (true, (2, 8)));
+    assert_eq!(
+      limits("LocatorAutoCreate -> {1, Infinity}"),
+      (true, (1, usize::MAX))
+    );
+    assert_eq!(limits("LocatorAutoCreate -> 5"), (true, (0, 5)));
+    assert_eq!(limits("LocatorAutoCreate -> True"), (true, (0, usize::MAX)));
+    assert_eq!(
+      limits("LocatorAutoCreate -> False"),
+      (false, (0, usize::MAX))
+    );
+    // The limits reach the browser front ends with the control.
+    let json = |option: &str| {
+      manipulate_spec_to_json(&spec(&format!(
+        "Manipulate[pts, {{{{pts, {{{{0, 0}}, {{1, 1}}}}}}, {{-1, -1}}, \
+         {{3, 2}}, Locator, {option}}}]"
+      )))
+    };
+    assert!(
+      json("LocatorAutoCreate -> {2, 8}")
+        .contains(r#""autoCreate":true,"minPoints":2,"maxPoints":8"#)
+    );
+    assert!(
+      json("LocatorAutoCreate -> True")
+        .contains(r#""autoCreate":true,"minPoints":0,"maxPoints":null"#)
+    );
+  }
+
+  /// The pane form of the same option carries its limits too.
+  #[test]
+  fn locator_pane_auto_create_range_limits_the_point_count() {
+    let s = spec(
+      "Manipulate[pts, {{pts, {{0, 0}, {1, 1}, {2, 0}}, \"\"}, {-1, -1}, \
+       {3, 2}, (LocatorPane[Dynamic[pts], Graphics[{}], \
+       LocatorAutoCreate -> {3, 20}] &)}]",
+    );
+    match &s.controls[0] {
+      ManipulateControl::Locator { point_limits, .. } => {
+        assert_eq!(*point_limits, (3, 20));
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
     }
   }
 

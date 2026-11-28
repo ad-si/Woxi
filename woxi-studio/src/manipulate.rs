@@ -234,6 +234,9 @@ pub enum ControlState {
     y_max: f64,
     points: Vec<(f64, f64)>,
     auto_create: bool,
+    /// The fewest and the most points the list may hold
+    /// (`LocatorAutoCreate -> {min, max}`).
+    point_limits: (usize, usize),
     /// The variable follows the dragged points through a callback instead of
     /// holding them (see `woxi::functions::graphics::LocatorDerived`).
     derived: Option<woxi::functions::graphics::LocatorDerived>,
@@ -382,6 +385,48 @@ fn equal_up_to_machine_rounding(
 }
 
 impl ControlState {
+  /// Adds a point to a `LocatorAutoCreate` locator at the center of its
+  /// range, ready to drag. Returns whether a point was added: a list
+  /// already holding the most points its limits allow stays as it is.
+  pub fn add_locator_point(&mut self) -> bool {
+    let ControlState::Locator {
+      points,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      point_limits,
+      ..
+    } = self
+    else {
+      return false;
+    };
+    if points.len() >= point_limits.1 {
+      return false;
+    }
+    points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
+    true
+  }
+
+  /// Removes the point at `point_idx` from a `LocatorAutoCreate` locator.
+  /// Returns whether a point was removed: a list at the fewest points its
+  /// limits allow stays as it is.
+  pub fn remove_locator_point(&mut self, point_idx: usize) -> bool {
+    let ControlState::Locator {
+      points,
+      point_limits,
+      ..
+    } = self
+    else {
+      return false;
+    };
+    if point_idx >= points.len() || points.len() <= point_limits.0 {
+      return false;
+    }
+    points.remove(point_idx);
+    true
+  }
+
   pub fn name(&self) -> &str {
     match self {
       ControlState::Continuous { name, .. } => name,
@@ -4208,6 +4253,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_min,
         y_max,
         auto_create,
+        point_limits,
         label,
         derived,
         single,
@@ -4220,6 +4266,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_max: *y_max,
         points: points.clone(),
         auto_create: *auto_create,
+        point_limits: *point_limits,
         derived: derived.clone(),
         single: *single,
       },

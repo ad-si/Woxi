@@ -2138,17 +2138,8 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Locator {
-            points,
-            x_min,
-            x_max,
-            y_min,
-            y_max,
-            ..
-          } = control
+          && control.add_locator_point()
         {
-          // New points appear at the range center, ready to drag.
-          points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -2161,10 +2152,8 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Locator { points, .. } = control
-          && point_idx < points.len()
+          && control.remove_locator_point(point_idx)
         {
-          points.remove(point_idx);
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -5602,6 +5591,7 @@ fn render_manipulate_widget<'a>(
         y_max,
         points,
         auto_create,
+        point_limits,
         derived: _,
         single: _,
       } => {
@@ -5666,7 +5656,8 @@ fn render_manipulate_widget<'a>(
           .spacing(8);
           if *auto_create {
             let mut remove_btn = button(text("−").size(11)).padding([1, 6]);
-            if enabled {
+            // At the fewest points the list may hold nothing more can go.
+            if enabled && points.len() > point_limits.0 {
               remove_btn =
                 remove_btn.on_press(Message::ManipulateLocatorRemoved(
                   cell_idx, ctrl_idx, point_idx,
@@ -5678,7 +5669,7 @@ fn render_manipulate_widget<'a>(
         }
         if *auto_create {
           let mut add_btn = button(text("+ point").size(11)).padding([1, 6]);
-          if enabled {
+          if enabled && points.len() < point_limits.1 {
             add_btn = add_btn
               .on_press(Message::ManipulateLocatorAdded(cell_idx, ctrl_idx));
           }
@@ -14059,6 +14050,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// `LocatorAutoCreate -> {min, max}` keeps the number of locators within
+  /// that range: removing stops at `min` and adding stops at `max`, so a
+  /// body that needs at least one point never sees an empty list.
+  #[test]
+  fn locator_auto_create_range_bounds_adding_and_removing() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Line[pts]}, PlotRange -> {{0, 10}, {0, 10}}], \
+       {{pts, {{2, 2}, {8, 2}, {8, 8}}}, {0, 0}, {10, 10}, Locator, \
+       LocatorAutoCreate -> {2, 4}}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Locator {
+        auto_create: true,
+        point_limits: (2, 4),
+        ..
+      }
+    ));
+    let count = |state: &manipulate::ManipulateState| match &state.controls[0] {
+      manipulate::ControlState::Locator { points, .. } => points.len(),
+      other => panic!("expected a locator control, got {other:?}"),
+    };
+    // 3 points: one more fits, a fifth does not.
+    assert!(state.controls[0].add_locator_point());
+    assert!(!state.controls[0].add_locator_point());
+    assert_eq!(count(&state), 4, "the list is full at the upper limit");
+    // Removing stops at the lower limit.
+    assert!(state.controls[0].remove_locator_point(0));
+    assert!(state.controls[0].remove_locator_point(0));
+    assert!(!state.controls[0].remove_locator_point(0));
+    assert_eq!(count(&state), 2, "the lower limit keeps two points");
+    state.reevaluate();
+    assert!(state.graphics_handle.is_some(), "re-render at the limit");
   }
 
   #[test]
