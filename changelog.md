@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A curve leaving a `PlotRange` that only `Show` pins
+    (`Show[ParametricPlot[…], PlotRange -> {{-1, 1}, {-1, 1}}]`) runs on
+    through the padding to the edge of the picture on every side, instead
+    of stopping short of the top and bottom alone. A range the plot itself
+    pins still cuts its curve there.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that
