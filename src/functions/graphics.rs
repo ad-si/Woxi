@@ -54668,6 +54668,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         // Several readouts may share one placeholder variable; it is still
         // a single variable, bound once.
+        // A bar inside an `If[cond, …]` of the control layout is on screen
+        // only while its branch is: the display itself carries the
+        // condition, re-checked on every re-render like the bar's choices.
+        let display = match control_visible.iter().find(|(n, _)| *n == name) {
+          Some((_, cond)) => format!("If[{cond}, {display}, \"\"]"),
+          None => display,
+        };
         if !state.iter().any(|(n, _)| *n == name) {
           state.push((name, value));
         }
@@ -65191,6 +65198,18 @@ fn parse_manipulate_control(
     }
     && matches!(choices, Expr::List(_))
   {
+    // A choice list computed from another control's variable
+    // (`Range[n]` with `n` a hidden count the body updates) stays held, so
+    // the bar offers the choices that variable gives on every re-render
+    // rather than the ones its starting value gave.
+    let held_choices = unwrap_dynamic_choices(bounds[0]);
+    let choices = if !matches!(held_choices, Expr::List(_))
+      && expr_references_any(held_choices, siblings)
+    {
+      held_choices.clone()
+    } else {
+      choices
+    };
     let value = match &explicit_initial {
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
@@ -65204,6 +65223,10 @@ fn parse_manipulate_control(
     }
     if let Some(cond) = &enabled {
       bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
+    }
+    // The control's `Background -> color` paints the face of each toggle.
+    if let Some(color) = control_background_code(items) {
+      bar_options.push_str(&format!(", Background -> {color}"));
     }
     // Keep the requested head: a `CheckboxBar` draws checkboxes, a
     // `TogglerBar` toggle buttons.
@@ -67864,6 +67887,9 @@ pub enum DisplayNode {
     /// The choice belongs to a `CheckboxBar`, which Wolfram draws as a
     /// checkbox followed by its label rather than as a toggle button.
     checkbox: bool,
+    /// The face color of the bar's `Background -> color` option, as an
+    /// `(r, g, b)` triple in `0.0..=1.0`; `None` for the default look.
+    background: Option<(f64, f64, f64)>,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -69263,6 +69289,7 @@ fn togglerbar_node(
       selected: choice.selected,
       enabled: bar.enabled,
       checkbox,
+      background: bar.background,
     })
     .collect();
   Some(if bar.vertical {
@@ -69286,6 +69313,8 @@ struct TogglerBarChoices {
   choices: Vec<TogglerBarChoice>,
   enabled: bool,
   vertical: bool,
+  /// The face color a `Background -> color` option gives every toggle.
+  background: Option<(f64, f64, f64)>,
 }
 
 /// Resolve the arguments of a `TogglerBar`/`CheckboxBar` (see
@@ -69413,6 +69442,7 @@ fn togglerbar_choices(args: &[Expr]) -> Option<TogglerBarChoices> {
     choices: bar_choices,
     enabled,
     vertical,
+    background: extract_button_background(&args[2..]),
   })
 }
 
@@ -69509,6 +69539,7 @@ fn setterbar_node(
       selected,
       enabled,
       checkbox: false,
+      background: extract_button_background(&args[2..]),
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -70436,13 +70467,23 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       selected,
       enabled,
       checkbox,
+      background,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{},"background":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
       enabled,
       checkbox,
+      match background {
+        Some((r, g, b)) => format!(
+          r#""rgb({}, {}, {})""#,
+          (r * 255.0).round(),
+          (g * 255.0).round(),
+          (b * 255.0).round()
+        ),
+        None => "null".to_string(),
+      },
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,

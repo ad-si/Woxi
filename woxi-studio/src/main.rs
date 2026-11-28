@@ -6407,6 +6407,7 @@ fn render_display_node<'a>(
       selected,
       enabled,
       checkbox: true,
+      ..
     } => {
       // One choice of a CheckboxBar: a checkbox followed by its label,
       // toggling the value's membership in the bound list variable.
@@ -6427,6 +6428,7 @@ fn render_display_node<'a>(
       selected,
       enabled,
       checkbox: false,
+      background,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
       // removes its value from the bound list variable. A bar whose
@@ -6434,13 +6436,17 @@ fn render_display_node<'a>(
       // draws in its grayed-out disabled style.
       let selected = *selected;
       let mutation = mutation.clone();
+      let face = *background;
       button(render_display_node(cell_idx, label))
         .padding([2, 6])
         .style(move |theme: &iced::Theme, status| {
-          let mut style = if selected {
-            button::primary(theme, status)
-          } else {
-            button::secondary(theme, status)
+          // A bar's `Background -> color` paints the faces of its
+          // unselected toggles, as it does a setter's; a selected one
+          // keeps the accent so it still reads as selected.
+          let mut style = match face {
+            Some(rgb) if !selected => colored_button_style(rgb, status),
+            _ if selected => button::primary(theme, status),
+            _ => button::secondary(theme, status),
           };
           style.border.radius = 4.0.into();
           style
