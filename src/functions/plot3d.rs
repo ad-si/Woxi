@@ -8437,12 +8437,13 @@ fn clipped_rim_lines(
     return None;
   }
   // The outline keeps the look the unclipped primitive's rim has: the
-  // `EdgeForm` color, width and dashing, opaque whatever the faces are.
+  // `EdgeForm` color, width, dashing and opacity, whatever the faces'
+  // own opacity is.
   let mut line_style = style.clone();
   line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
   line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
   line_style.dashing.clone_from(&style.edge_dashing);
-  line_style.opacity = 1.0;
+  line_style.opacity = style.edge_opacity;
   Some(Primitive3D::Line3D {
     segments,
     style: line_style,
@@ -9092,6 +9093,9 @@ struct StyleState3D {
   /// `FaceForm[front, back]`: the color of faces turned away from the
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
+  /// `FaceForm[front, None]` leaves the side turned away from the viewer
+  /// undrawn, so a see-through solid shows its near wall alone.
+  back_faces: bool,
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means
   /// [`DEFAULT_LINE_3D_WIDTH`].
@@ -9211,10 +9215,12 @@ impl StyleState3D {
       if fo.color.is_none() {
         self.color = Some(rgb);
         self.back_color = None;
+        self.back_faces = true;
       }
     } else {
       self.color = Some(rgb);
       self.back_color = None;
+      self.back_faces = true;
     }
   }
 
@@ -9238,6 +9244,7 @@ impl Default for StyleState3D {
     Self {
       color: None, // None means the renderer's default
       back_color: None,
+      back_faces: true,
       opacity: 1.0,
       thickness: None,
       caps: TubeCaps::Round,
@@ -9515,6 +9522,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       base_opacity,
       recolored: false,
     });
+    style.back_faces =
+      !matches!(args.get(1), Some(Expr::Identifier(n)) if n == "None");
     style.back_color = match args.get(1) {
       Some(back) => {
         let mut b = StyleState3D::default();
@@ -11803,6 +11812,25 @@ fn inset_graphics3d_content(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The picture of a 2D `Graphics` used as the content of an `Inset` in a
+/// 3D scene, with its natural width and height — `None` for anything else.
+fn inset_graphics_picture(expr: &Expr) -> Option<(String, f64, f64)> {
+  let is_graphics = match expr {
+    Expr::Graphics { is_3d, .. } => !is_3d,
+    Expr::FunctionCall { name, .. } => name == "Graphics",
+    _ => false,
+  };
+  if !is_graphics {
+    return None;
+  }
+  let svg = crate::evaluator::expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let dims = crate::functions::graphics::parse_svg_dimensions(&svg)?;
+  Some((svg, dims.nat_w, dims.nat_h))
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -12326,15 +12354,32 @@ fn collect_3d_primitives_styled(
         // fall through to the same label rendering `Text` uses above.
         "Inset" if args.len() >= 2 => {
           if let Some(pos) = parse_point3d(&args[1]) {
-            let label_expr = match &args[0] {
-              Expr::FunctionCall { name, args: inner }
-                if name == "Text" && !inner.is_empty() =>
-              {
-                &inner[0]
-              }
-              other => other,
-            };
-            push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
+            // `Inset[Graphics[…], pos]` draws the 2D picture at its own
+            // size, centered on the point.
+            if let Some(picture) = inset_graphics_picture(&args[0]) {
+              prims.push(Primitive3D::Text3D {
+                label: String::new(),
+                pos,
+                offset: (0.0, 0.0),
+                font_size: 12.0,
+                width_chars: 0,
+                picture: Some(picture),
+                bold: false,
+                italic: false,
+                panel: TextPanel3D::default(),
+                style: style.clone(),
+              });
+            } else {
+              let label_expr = match &args[0] {
+                Expr::FunctionCall { name, args: inner }
+                  if name == "Text" && !inner.is_empty() =>
+                {
+                  &inner[0]
+                }
+                other => other,
+              };
+              push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
+            }
           }
         }
         // `Cylinder[{p1, p2}, r]` and `Cone[{p1, p2}, r]`; a list of
@@ -15859,9 +15904,37 @@ fn scaled_view_vertical(
   scaled
 }
 
+/// The field of view `ViewAngle -> All` gives a camera at `eye` looking at
+/// `target`: the narrowest cone around the view axis that holds the sphere
+/// around the box `bounds`. A box the camera is too close to, or inside
+/// of, leaves the angle to the default (`None`).
+fn whole_scene_view_angle(
+  eye: [f64; 3],
+  target: [f64; 3],
+  bounds: &[(f64, f64); 3],
+) -> Option<f64> {
+  let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  let center = bounds.map(|(lo, hi)| f64::midpoint(lo, hi));
+  let radius = v_len(bounds.map(|(lo, hi)| (hi - lo) / 2.0));
+  let axis = sub(target, eye);
+  let to_center = sub(center, eye);
+  let (axis_len, distance) = (v_len(axis), v_len(to_center));
+  if !radius.is_finite() || axis_len < 1e-12 || distance <= radius {
+    return None;
+  }
+  let cos_off_axis =
+    (axis[0] * to_center[0] + axis[1] * to_center[1] + axis[2] * to_center[2])
+      / (axis_len * distance);
+  let half = cos_off_axis.clamp(-1.0, 1.0).acos() + (radius / distance).asin();
+  (half > 0.0 && half < std::f64::consts::FRAC_PI_2).then_some(2.0 * half)
+}
+
 /// Moves the contents into the screen space of a perspective camera at
 /// `eye` looking at `target`: a point at camera-space `(x, y, z)` (`z`
-/// the distance along the view axis) becomes `(x/z, -1/z, y/z)`. What lies
+/// the distance along the view axis) becomes `(x/z, -D/z, y/z)`, `D` being
+/// the distance of `target`: depths around the target then keep the scale
+/// the warp gives lengths across the view there, so what is ordered or lit
+/// by its depth is not flattened against the picture plane. What lies
 /// behind the camera is dropped; a sphere keeps its round outline with the
 /// radius it has at its center's distance.
 fn perspective_warp(
@@ -15889,6 +15962,7 @@ fn perspective_warp(
     return;
   }
   let fwd = unit(dir);
+  let target_distance = norm(dir);
   let mut right = cross(fwd, vertical);
   if norm(right) < 1e-9 {
     right = cross(fwd, [0.0, 1.0, 0.0]);
@@ -15905,7 +15979,7 @@ fn perspective_warp(
     let z = dot(d, fwd);
     (z > NEAR).then(|| Point3D {
       x: dot(d, right) / z,
-      y: -1.0 / z,
+      y: -target_distance / z,
       z: dot(d, up) / z,
     })
   };
@@ -15915,6 +15989,7 @@ fn perspective_warp(
   let dist = |p: &Point3D| dot([p.x - eye[0], p.y - eye[1], p.z - eye[2]], fwd);
 
   let old = std::mem::take(prims);
+  let cylinder_scene = CylinderScene::of(&old, None);
   for prim in old {
     match prim {
       Primitive3D::Sphere {
@@ -16001,36 +16076,51 @@ fn perspective_warp(
           });
         }
       }
-      Primitive3D::Cylinder {
-        p1,
-        p2,
-        radius,
-        style,
-      } => {
-        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
-          let r = radius / dist(&p1).min(dist(&p2));
-          prims.push(Primitive3D::Cylinder {
-            p1: a,
-            p2: b,
-            radius: r,
-            style,
+      // The warp is projective, so it bends a round solid into a shape the
+      // analytic primitives cannot describe (an end disk seen from above
+      // its plane opens into an ellipse, a disk facing the camera stays
+      // round): the solid is warped as the facets it is drawn with, and
+      // its `EdgeForm` rims as the polylines around them.
+      prim @ (Primitive3D::Cylinder { .. } | Primitive3D::Cone { .. }) => {
+        let mut budget = (MAX_SIDE_SUBDIVISIONS, CYLINDER_SIDES);
+        let tris = match &prim {
+          Primitive3D::Cylinder { p1, p2, radius, .. } => {
+            budget = cylinder_scene.budget(p1, p2, *radius);
+            tessellate_cylinder(p1, p2, *radius, budget.0, budget.1)
+          }
+          Primitive3D::Cone { p1, p2, radius, .. } => {
+            tessellate_cone(p1, p2, *radius)
+          }
+          _ => unreachable!(),
+        };
+        // No box cuts the rims here: one around the whole solid keeps them.
+        let mut around = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+        for (a, b, c) in &tris {
+          for p in [a, b, c] {
+            for (side, v) in around.iter_mut().zip([p.x, p.y, p.z]) {
+              *side = (side.0.min(v - 1.0), side.1.max(v + 1.0));
+            }
+          }
+        }
+        let rims = clipped_rim_lines(&prim, &tris, &around, budget);
+        let tris: Vec<(Point3D, Point3D, Point3D)> = tris
+          .iter()
+          .filter_map(|(a, b, c)| Some((warp(a)?, warp(b)?, warp(c)?)))
+          .collect();
+        if !tris.is_empty() {
+          prims.push(Primitive3D::Surface3D {
+            tris,
+            style: primitive_style(&prim).clone(),
+            smooth: true,
+            outlined: false,
           });
         }
-      }
-      Primitive3D::Cone {
-        p1,
-        p2,
-        radius,
-        style,
-      } => {
-        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
-          let r = radius / dist(&p1).min(dist(&p2));
-          prims.push(Primitive3D::Cone {
-            p1: a,
-            p2: b,
-            radius: r,
-            style,
-          });
+        if let Some(Primitive3D::Line3D { segments, style }) = rims {
+          let segments: Vec<Vec<Point3D>> =
+            segments.iter().filter_map(|s| warp_all(s)).collect();
+          if !segments.is_empty() {
+            prims.push(Primitive3D::Line3D { segments, style });
+          }
         }
       }
       Primitive3D::Text3D {
@@ -16529,6 +16619,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is `|ViewPoint|`, which Wolfram measures in units of the longest side
   // of the displayed box.
   let mut view_angle: Option<f64> = None;
+  // `ViewAngle -> All`: the field of view that takes in the whole scene.
+  let mut view_angle_all = false;
   // `ViewCenter -> {a, b, c}`: the point the camera looks at, as fractions
   // of the displayed box along each axis (`{1/2, 1/2, 1/2}` is its middle).
   let mut view_center: Option<[f64; 3]> = None;
@@ -16677,6 +16769,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
         "ViewAngle" => {
+          view_angle_all = matches!(
+            strip_dynamic(replacement),
+            Expr::Identifier(name) if name == "All"
+          );
           if let Some(a) = parse_view_angle(replacement) {
             view_angle = Some(a);
           }
@@ -17211,6 +17307,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
       let vertical = scaled_view_vertical(camera.vertical, &bounds);
+      if view_angle_all {
+        view_angle = whole_scene_view_angle(eye, target, &bounds);
+      }
       perspective_warp(&mut prims, eye, target, vertical);
       // The warped scene is framed by what it shows.
       anchored_bounds.set(None);
@@ -17493,6 +17592,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &StyleState3D {
             color: None,
             back_color: None,
+            back_faces: true,
             opacity: 1.0,
             thickness: None,
             caps: TubeCaps::Round,
@@ -17722,14 +17822,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         smooth: true,
         tris: surface,
         ..
-      } if prim_opacity >= 1.0 => {
+      } if prim_opacity >= 1.0 || !prim_style.back_faces => {
         let corners: Vec<[Point3D; 3]> =
           surface.iter().map(|&(a, b, c)| [a, b, c]).collect();
         crate::functions::smooth_shading::closed_convex_interior(&corners)
       }
       _ => None,
     };
-    let closed_center = solid_interior.filter(|_| prim_opacity >= 1.0);
+    // So is the far side of any solid under `FaceForm[front, None]`.
+    let closed_center =
+      solid_interior.filter(|_| prim_opacity >= 1.0 || !prim_style.back_faces);
     // Whether a facet of a convex solid is wound with its normal pointing
     // into the solid.
     let wound_inward = |a: Point3D, b: Point3D, c: Point3D| {
@@ -17812,6 +17914,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sign = if v_dot(n, out) < 0.0 { -1.0 } else { 1.0 };
         let view = camera.toward_viewer(c);
         if sign * v_dot(n, view) < -1e-9 {
+          continue;
+        }
+      } else if !prim_style.back_faces {
+        // An open face shows its front where its corners run
+        // counterclockwise.
+        let n = polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
+        let view = camera.toward_viewer(tri_center(v0, v1, v2));
+        if v_dot(n, view) < -1e-9 {
           continue;
         }
       }
