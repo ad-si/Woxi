@@ -2138,17 +2138,8 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Locator {
-            points,
-            x_min,
-            x_max,
-            y_min,
-            y_max,
-            ..
-          } = control
+          && control.add_locator_point()
         {
-          // New points appear at the range center, ready to drag.
-          points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -2161,10 +2152,8 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Locator { points, .. } = control
-          && point_idx < points.len()
+          && control.remove_locator_point(point_idx)
         {
-          points.remove(point_idx);
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -5647,6 +5636,7 @@ fn render_manipulate_widget<'a>(
         y_max,
         points,
         auto_create,
+        point_limits,
         derived: _,
         single: _,
       } => {
@@ -5711,7 +5701,8 @@ fn render_manipulate_widget<'a>(
           .spacing(8);
           if *auto_create {
             let mut remove_btn = button(text("−").size(11)).padding([1, 6]);
-            if enabled {
+            // At the fewest points the list may hold nothing more can go.
+            if enabled && points.len() > point_limits.0 {
               remove_btn =
                 remove_btn.on_press(Message::ManipulateLocatorRemoved(
                   cell_idx, ctrl_idx, point_idx,
@@ -5723,7 +5714,7 @@ fn render_manipulate_widget<'a>(
         }
         if *auto_create {
           let mut add_btn = button(text("+ point").size(11)).padding([1, 6]);
-          if enabled {
+          if enabled && points.len() < point_limits.1 {
             add_btn = add_btn
               .on_press(Message::ManipulateLocatorAdded(cell_idx, ctrl_idx));
           }
@@ -11518,6 +11509,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.text_output.as_deref(), Some("{2, 9, 0}"));
   }
 
+  /// An `OpenerView[{label, content}]` in the layout a Manipulate body
+  /// returns is drawn closed (triangle and label), opens on a click on its
+  /// label row and stays open when a control re-renders the body.
+  /// Regression: it was printed as its source text.
+  #[test]
+  fn opener_view_in_a_manipulate_body_opens_on_click() {
+    let code = "Manipulate[Column[{Graphics[Disk[{x, 0}]], \
+                OpenerView[{\"bodyOpenerLabel\", \"bodyOpenerContent\"}]}], \
+                {x, 0, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    let shown = |state: &manipulate::ManipulateState| {
+      let svg = state.current_svg().expect("the body draws a picture");
+      assert!(!svg.contains("OpenerView"), "source text leaked: {svg}");
+      assert!(svg.contains("bodyOpenerLabel"), "missing label: {svg}");
+      svg.contains("bodyOpenerContent")
+    };
+    assert!(!shown(&state), "the opener starts closed");
+    assert_eq!(state.button_regions.len(), 1);
+
+    let toggle = state.button_regions[0].action.clone();
+    state.apply_button_action(&toggle);
+    assert!(shown(&state), "a click opens it");
+    // Moving a control re-renders the body without closing it again.
+    state.slide_continuous(0, 0.5);
+    assert!(shown(&state));
+
+    let toggle = state.button_regions[0].action.clone();
+    state.apply_button_action(&toggle);
+    assert!(!shown(&state), "a second click closes it");
+  }
+
   /// A `FlipView[{e1, e2, …}]` in a Manipulate body shows one element and
   /// flips to the next on a click, wrapping around, and stays on that
   /// element when a control re-renders the body. Regression: it was typeset
@@ -12237,14 +12261,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .collect();
     assert_eq!(ys.len(), 3, "{svg}");
     assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
-    // The label's subscript is shifted within one `tspan` (at the 9-point
-    // minimum script size, 90 % of the label's 10 points).
+    // The label's subscript is shifted within one `tspan`, at the 9-point
+    // minimum script size of the 10-point graphics text.
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">r</tspan>"
       ),
       "{svg}"
     );
+  }
+
+  /// A body that collects the labels of an axis in a loop with `Sow` and
+  /// `Reap`, each a `Text` of a string divided by the loop counter, and
+  /// merges them into a plot with `Show`. Every such quotient is drawn as
+  /// a fraction stacked over a bar (it was the one line `1/2`), and the
+  /// number of labels follows the slider. Independently written, not
+  /// copied from any specific Demonstration.
+  #[test]
+  fn manipulate_sown_string_quotient_labels_are_stacked_fractions() {
+    let code = r#"Manipulate[
+      Show[Plot[Exp[-t], {t, 0, 4}, Ticks -> None],
+        Reap[Do[Sow[Graphics[Text[Style["2"/k, Small, Black],
+          {-0.2, 2/k}]]], {k, 3, m + 2}]][[2, 1]],
+        PlotRange -> {{-0.5, 4}, {0, 1}}],
+      {{m, 2, "m"}, 1, 4, 1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a slider row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let bars = |svg: &str| {
+      svg
+        .split("<line ")
+        .skip(1)
+        .filter(|l| l.contains("stroke=\"currentColor\""))
+        .count()
+    };
+    let svg = state.current_svg().expect("the result is drawn");
+    assert!(!svg.contains(">2/3<") && !svg.contains(">2/4<"), "{svg}");
+    assert_eq!(bars(&svg), 2, "one fraction bar per label: {svg}");
+    assert!(
+      svg.contains(">3</text>") && svg.contains(">4</text>"),
+      "{svg}"
+    );
+    assert!(state.slide_continuous(0, 4.0));
+    state.reevaluate();
+    let svg = state.current_svg().expect("the result is redrawn");
+    assert_eq!(bars(&svg), 4, "one fraction bar per label: {svg}");
+    assert!(svg.contains(">6</text>"), "{svg}");
   }
 
   /// A body that prints an expanded product in a chosen term order — the
@@ -14105,6 +14169,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// `LocatorAutoCreate -> {min, max}` keeps the number of locators within
+  /// that range: removing stops at `min` and adding stops at `max`, so a
+  /// body that needs at least one point never sees an empty list.
+  #[test]
+  fn locator_auto_create_range_bounds_adding_and_removing() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Line[pts]}, PlotRange -> {{0, 10}, {0, 10}}], \
+       {{pts, {{2, 2}, {8, 2}, {8, 8}}}, {0, 0}, {10, 10}, Locator, \
+       LocatorAutoCreate -> {2, 4}}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Locator {
+        auto_create: true,
+        point_limits: (2, 4),
+        ..
+      }
+    ));
+    let count = |state: &manipulate::ManipulateState| match &state.controls[0] {
+      manipulate::ControlState::Locator { points, .. } => points.len(),
+      other => panic!("expected a locator control, got {other:?}"),
+    };
+    // 3 points: one more fits, a fifth does not.
+    assert!(state.controls[0].add_locator_point());
+    assert!(!state.controls[0].add_locator_point());
+    assert_eq!(count(&state), 4, "the list is full at the upper limit");
+    // Removing stops at the lower limit.
+    assert!(state.controls[0].remove_locator_point(0));
+    assert!(state.controls[0].remove_locator_point(0));
+    assert!(!state.controls[0].remove_locator_point(0));
+    assert_eq!(count(&state), 2, "the lower limit keeps two points");
+    state.reevaluate();
+    assert!(state.graphics_handle.is_some(), "re-render at the limit");
   }
 
   #[test]
