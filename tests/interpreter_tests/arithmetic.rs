@@ -9167,6 +9167,54 @@ mod cases {
     );
   }
 
+  /// The angular-momentum coupling symbols have their own notation: a
+  /// Clebsch–Gordan coefficient is the bracket `⟨j₁ j₂ m₁ m₂ | j₁ j₂ j m⟩`,
+  /// a 3-j symbol stacks momenta over projections in parentheses and a 6-j
+  /// symbol its two triples in braces.
+  #[test]
+  fn traditional_form_angular_momentum_coupling_notation() {
+    assert_eq!(
+      held_traditional_boxes("ClebschGordan[{a, b}, {c, d}, {e, f}]"),
+      "RowBox[{\"\u{2329}\", RowBox[{\"a\", \" \", \"c\", \" \", \"b\", \" \", \"d\"}], \
+       \"\u{F432}\", RowBox[{\"a\", \" \", \"c\", \" \", \"e\", \" \", \"f\"}], \
+       \"\u{232A}\"}]"
+    );
+    assert_eq!(
+      held_traditional_boxes("ClebschGordan[{2, 1}, {3/2, 1/2}, {5/2, 3/2}]"),
+      "RowBox[{\"\u{2329}\", RowBox[{\"2\", \" \", FractionBox[\"3\", \"2\"], \" \", \
+       \"1\", \" \", FractionBox[\"1\", \"2\"]}], \"\u{F432}\", RowBox[{\"2\", \" \", \
+       FractionBox[\"3\", \"2\"], \" \", FractionBox[\"5\", \"2\"], \" \", \
+       FractionBox[\"3\", \"2\"]}], \"\u{232A}\"}]"
+    );
+    assert_eq!(
+      held_traditional_boxes("ThreeJSymbol[{a, b}, {c, d}, {e, f}]"),
+      r#"RowBox[{"(", GridBox[{{"a", "c", "e"}, {"b", "d", "f"}}], ")"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("SixJSymbol[{a, b, c}, {d, e, f}]"),
+      r#"RowBox[{"{", GridBox[{{"a", "b", "c"}, {"d", "e", "f"}}], "}"}]"#
+    );
+    // Any other argument shape is not that notation.
+    assert!(
+      held_traditional_boxes("ClebschGordan[a, b, c]")
+        .contains("ClebschGordan")
+    );
+  }
+
+  /// `InputForm[expr]` keeps its one-line text inside TraditionalForm: the
+  /// fraction stays `1/2` and no `InputForm[…]` call is typeset.
+  #[test]
+  fn traditional_form_keeps_input_form_text() {
+    assert_eq!(
+      held_traditional_boxes("InputForm[1/2]"),
+      r#"InterpretationBox[StyleBox["1/2", ShowStringCharacters -> True, NumberMarks -> True], InputForm[1/2], Editable -> True, AutoDelete -> True]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("Row[{a, InputForm[x^2]}]"),
+      r#"TemplateBox[{"a", InterpretationBox[StyleBox["x^2", ShowStringCharacters -> True, NumberMarks -> True], InputForm[x^2], Editable -> True, AutoDelete -> True]}, "RowDefault"]"#
+    );
+  }
+
   /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
   /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
   #[test]
