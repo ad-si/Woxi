@@ -4617,24 +4617,59 @@ pub(crate) struct GraphicLabel {
   /// Natural width/height in nominal pixels, as `svg_natural_size` reports.
   pub width: f64,
   pub height: f64,
+  /// The `Graphics[…]` the picture was drawn from, when it is one, so it
+  /// can be drawn again at another size (see [`fit_graphic_label`]).
+  pub source: Option<Expr>,
 }
 
-/// Scale a [`GraphicLabel`]'s natural render-space size (`width`/`height` ×
-/// `sf`) down to fit within `max_w` render-space pixels, preserving its
-/// aspect ratio. Returns `(width, height)` in render-space pixels.
-pub(crate) fn scaled_graphic_label_size(
+/// Fit a [`GraphicLabel`] within `max_w` render-space pixels (`sf` of them
+/// to the nominal pixel). Returns its markup with the `(width, height)` it
+/// takes in render-space pixels.
+///
+/// A `Graphics[…]` too wide for the edge is drawn again at the edge's
+/// width, which keeps its text and arrowheads at their own size the way
+/// Wolfram's shrunken label does; any other picture is scaled down whole,
+/// preserving its aspect ratio.
+pub(crate) fn fit_graphic_label(
   g: &GraphicLabel,
   max_w: f64,
   sf: f64,
-) -> (f64, f64) {
+) -> (std::borrow::Cow<'_, str>, f64, f64) {
+  use std::borrow::Cow;
   let natural_w = g.width * sf;
   let natural_h = g.height * sf;
-  if natural_w > max_w && natural_w > 0.0 {
-    let scale = max_w / natural_w;
-    (max_w, natural_h * scale)
-  } else {
-    (natural_w, natural_h)
+  if natural_w <= max_w || natural_w <= 0.0 || sf <= 0.0 {
+    return (Cow::Borrowed(&g.svg), natural_w, natural_h);
   }
+  if let Some(Expr::FunctionCall { name, args }) = &g.source {
+    let mut args: Vec<Expr> = args
+      .iter()
+      .filter(|a| {
+        !matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "ImageSize"))
+      })
+      .cloned()
+      .collect();
+    args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+      replacement: Box::new(Expr::Real(max_w / sf)),
+    });
+    let svg = crate::evaluator::expr_to_svg(&Expr::FunctionCall {
+      name: name.clone(),
+      args: args.into(),
+    });
+    if svg.starts_with("<svg")
+      && let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
+      && w > 0.0
+      && h > 0.0
+    {
+      // Rounding may leave the picture a hair wider than the edge.
+      let scale = (max_w / (w * sf)).min(1.0);
+      return (Cow::Owned(svg), w * sf * scale, h * sf * scale);
+    }
+  }
+  let scale = max_w / natural_w;
+  (Cow::Borrowed(&g.svg), max_w, natural_h * scale)
 }
 
 /// Font size / color parsed from a `LabelStyle -> …` option. Either field
@@ -5647,7 +5682,7 @@ pub(crate) fn plot_labels_svg(
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
   // picture, scaled to the frame's width, instead of drawn as text.
   if let Some(graphic) = &opts.frame_label_bottom_graphic {
-    let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
+    let (graphic_svg, gw, gh) = fit_graphic_label(graphic, plot_w, sf);
     let cx = plot_x0 + plot_w / 2.0;
     // Stack below the plain-text bottom label when both are present.
     let top_y = bottom_label_top
@@ -5658,7 +5693,7 @@ pub(crate) fn plot_labels_svg(
       };
     let cy = top_y + gh / 2.0;
     labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
-      &graphic.svg,
+      &graphic_svg,
       cx,
       cy,
       gw,
@@ -5798,11 +5833,11 @@ pub(crate) fn plot_labels_svg(
 
   // A top `FrameLabel` drawn as a picture sits just above the frame.
   if let Some(graphic) = &opts.frame_label_top_graphic {
-    let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
+    let (graphic_svg, gw, gh) = fit_graphic_label(graphic, plot_w, sf);
     let cx = plot_x0 + plot_w / 2.0;
     let cy = margin_top - room_top - gap - gh / 2.0;
     labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
-      &graphic.svg,
+      &graphic_svg,
       cx,
       cy,
       gw,
@@ -6799,7 +6834,7 @@ fn generate_svg_with_options(
   // them; unframed axes draw their own labels, so it is plain margin.
   let graphic_h = |g: &Option<GraphicLabel>| {
     g.as_ref().map_or(0.0, |g| {
-      scaled_graphic_label_size(g, render_width as f64 * 0.85, sf).1 / sf
+      fit_graphic_label(g, render_width as f64 * 0.85, sf).2 / sf
     })
   };
   let decorations = plot_padding::plot_decorations(
@@ -17377,7 +17412,8 @@ fn frame_label_picture(e: &Expr) -> Option<String> {
   crate::functions::graphics::axes_label_fraction_picture(e)
 }
 
-/// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
+/// A `FrameLabel` entry that is a picture (`Graphics[…]`) or a
+/// `Grid[…]`/`TableForm[…]` — a table meant
 /// to be laid out as a picture, not read off as text (`expr_to_label`
 /// silently drops it since `Grid` is a known builtin, not an unrenderable
 /// applied form). Renders it through the same pipeline a standalone
@@ -17394,6 +17430,31 @@ fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
   {
     styles.push(&args[1..]);
     val = &args[0];
+  }
+  // A picture (`Graphics[…]`, an `Image`) labels the edge as itself.
+  if let Some((svg, width, height)) =
+    crate::functions::graphics::plot_label_graphic_svg(val)
+  {
+    // A two-dimensional `Graphics[…]` can be drawn again to fit the edge.
+    let source = match val {
+      Expr::FunctionCall { name, .. } if name == "Graphics" => {
+        Some(val.clone())
+      }
+      Expr::Graphics {
+        is_3d: false,
+        structure: Some(structure),
+        ..
+      } if matches!(structure.as_ref(), Expr::FunctionCall { name, .. } if name == "Graphics") => {
+        Some(structure.as_ref().clone())
+      }
+      _ => None,
+    };
+    return Some(GraphicLabel {
+      svg,
+      width,
+      height,
+      source,
+    });
   }
   let Expr::FunctionCall { name, args } = val else {
     return None;
@@ -17437,7 +17498,12 @@ fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
     _ => return None,
   };
   let (width, height) = crate::functions::graphics::svg_natural_size(&svg)?;
-  Some(GraphicLabel { svg, width, height })
+  Some(GraphicLabel {
+    svg,
+    width,
+    height,
+    source: None,
+  })
 }
 
 /// Whether the items of a `Row[{…}]` include a `Graphics`, directly or in a

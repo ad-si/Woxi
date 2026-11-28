@@ -6549,6 +6549,63 @@ font-size=\"90%\">i</tspan>"
   }
 
   #[test]
+  fn test_frame_label_graphics_is_drawn_as_a_picture() {
+    // A `FrameLabel` entry that is a `Graphics[…]` (arrows pointing along
+    // the edge) was dropped; it is drawn as a picture beside its edge. One
+    // wider than the frame is drawn again at the frame's width instead of
+    // being scaled down, so its text keeps its size.
+    fn nested_svg(svg: &str) -> (f64, f64) {
+      let tag = svg
+        .match_indices("<svg ")
+        .nth(1)
+        .map(|(at, _)| &svg[at..at + svg[at..].find('>').unwrap()])
+        .unwrap_or_else(|| panic!("no nested <svg> label: {svg}"));
+      let attr = |name: &str| {
+        let from = tag.find(name).unwrap() + name.len();
+        tag[from..].split('"').next().unwrap().to_string()
+      };
+      let width: f64 = attr(" width=\"").parse().unwrap();
+      let view_w: f64 = attr(" viewBox=\"")
+        .split(' ')
+        .nth(2)
+        .unwrap()
+        .parse()
+        .unwrap();
+      (width, view_w)
+    }
+    for edge in ["{\"b\", {}}", "{{}, \"t\"}"] {
+      for (size, expected) in [(500, 320.0), (50, 50.0)] {
+        clear_state();
+        let label = format!(
+          "Graphics[{{Arrow[{{{{0, 0}}, {{100, 0}}}}], \
+             Text[\"mid\", {{50, 0}}]}}, ImageSize -> {size}]"
+        );
+        let labels = edge.replace("{}", &label);
+        let svg = interpret(&format!(
+          "ExportString[Plot[x, {{x, -1, 1}}, Frame -> True, \
+             FrameLabel -> {{{{\"a\", \"\"}}, {labels}}}, \
+             ImagePadding -> {{{{40, 40}}, {{35, 35}}}}, ImageSize -> 400], \
+             \"SVG\"]"
+        ))
+        .unwrap();
+        let (width, view_w) = nested_svg(&svg);
+        assert!(svg.contains(">mid<"), "label text missing: {svg}");
+        assert!(
+          (view_w - expected).abs() < 0.5,
+          "an ImageSize -> {size} label on a 320 px edge is drawn \
+           {expected} px wide, got {view_w}"
+        );
+        // Drawn at its own scale: one label pixel is one plot pixel.
+        assert!(
+          (width / view_w - 10.0).abs() < 0.05,
+          "label scaled by {} instead of drawn at size",
+          width / view_w / 10.0
+        );
+      }
+    }
+  }
+
+  #[test]
   fn test_axes_label_builtin_head_application_is_drawn() {
     // An `AxesLabel` entry that applies a built-in function (`Re[Z]`,
     // `-Im[Z]`) vanished: `applied_label` only kept a built-in head when

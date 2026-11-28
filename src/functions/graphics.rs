@@ -29125,7 +29125,9 @@ fn inline_frame_layout(expr: &Expr) -> Option<(String, f64, f64)> {
 /// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or
 /// an `Image`): drawn at its own natural size above the graphic instead of
 /// being printed as `Graphics[…]` source text.
-fn plot_label_graphic_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+pub(crate) fn plot_label_graphic_svg(
+  expr: &Expr,
+) -> Option<(String, f64, f64)> {
   let svg = match peel_style_wrapper(expr) {
     Expr::Graphics { svg, is_3d, .. } => {
       if *is_3d {
