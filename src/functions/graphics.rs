@@ -7839,19 +7839,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // wrappers inside it still apply instead of printing as `NumberForm[…]`
     // source — in TraditionalForm's order of factors: `9.1 m`.
     Expr::FunctionCall { name, args }
-      if name == "Times"
-        && args.iter().any(|a| {
-          matches!(a, Expr::String(_))
-            || matches!(a, Expr::FunctionCall { name, args }
-              if !args.is_empty() && matches!(
-                name.as_str(),
-                "NumberForm"
-                  | "PaddedForm"
-                  | "AccountingForm"
-                  | "ScientificForm"
-                  | "EngineeringForm"
-              ))
-        }) =>
+      if name == "Times" && has_text_or_number_form_factor(args) =>
     {
       // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
       // denominator under the rest, so the label reads `7/100` on one line.
@@ -10665,6 +10653,23 @@ fn expr_holds_grid(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a product has a string or a number-form factor (`NumberForm[x, 3]
+/// "m"`): its factors are typeset one by one, in TraditionalForm's order.
+fn has_text_or_number_form_factor(factors: &[Expr]) -> bool {
+  factors.iter().any(|a| {
+    matches!(a, Expr::String(_))
+      || matches!(a, Expr::FunctionCall { name, args }
+      if !args.is_empty() && matches!(
+        name.as_str(),
+        "NumberForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+      ))
+  })
+}
+
 /// The picture of a label that cannot be set as one line of text, with its
 /// width and height in points, or `None` for a label that can.
 ///
@@ -10691,11 +10696,21 @@ pub(crate) fn stacked_label_picture(
       || formula_has_graphics_operand(content)
       || label_has_large_operator_script(content) =>
     {
-      Some(crate::strip_number_precision_markers(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          content,
-        ),
-      ))
+      use crate::evaluator::dispatch::complex_and_special::{
+        expr_to_box_form, expr_to_box_form_traditional,
+      };
+      // A product with a string or number-form factor keeps
+      // TraditionalForm's order of factors when its quotient stacks:
+      // `NumberForm[9.1, 2] "m"/"s"` is `9.1 m` over `s`.
+      let boxes = match content {
+        Expr::FunctionCall { name, args }
+          if name == "Times" && has_text_or_number_form_factor(args) =>
+        {
+          expr_to_box_form_traditional(content)
+        }
+        _ => expr_to_box_form(content),
+      };
+      Some(crate::strip_number_precision_markers(&boxes))
     }
     // `TraditionalForm[x^n]` typesets the power with a raised exponent
     // (and a quotient as a built-up fraction); flattening its boxes to

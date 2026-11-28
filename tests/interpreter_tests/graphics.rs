@@ -23088,7 +23088,7 @@ mod plot3d {
 
     /// A `Text` label that multiplies a formatted number by a unit string
     /// is set in TraditionalForm's order of factors — the number first —
-    /// and a unit it is divided by goes after a slash.
+    /// and a unit it is divided by goes under a fraction bar.
     #[test]
     fn text_label_sets_a_number_form_before_its_unit() {
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"]}]"#);
@@ -23098,10 +23098,18 @@ mod plot3d {
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] x]}]"#);
       assert!(svg.contains(">9.1 x<"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
+      // Regression: the stacked numerator kept the canonical order `m 9.1`.
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"/"s"]}]"#);
-      assert!(svg.contains(">9.1 m/s<"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      let (num, den) = svg.split_once("<line ").expect("a fraction bar");
+      let (number, unit) = (num.find(">9.1<"), num.find(">m<"));
+      assert!(number.is_some() && number < unit, "{svg}");
+      assert!(den.contains(">s<"), "{svg}");
       let svg = export_svg(r#"Graphics[{Text["a"/("s" "t")]}]"#);
-      assert!(svg.contains(">a/(s t)<"), "{svg}");
+      let (num, den) = svg.split_once("<line ").expect("a fraction bar");
+      assert!(num.contains(">a<"), "{svg}");
+      let (s, t) = (den.find(">s<"), den.find(">t<"));
+      assert!(s.is_some() && s < t, "{svg}");
     }
 
     #[test]
