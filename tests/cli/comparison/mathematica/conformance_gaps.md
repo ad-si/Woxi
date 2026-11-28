@@ -6414,11 +6414,23 @@ default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (`ComplexPlot`, `ComplexPlot3D`, `ComplexListPlot` and `ComplexRegionPlot`
 are implemented.)
 
-### `PlotLegends` on `ComplexPlot`, `ComplexPlot3D` and `Plot3D`
+### `PlotLegends` on `ComplexPlot` and colored `ComplexPlot3D`
 
-With `PlotLegends -> Automatic`, WL wraps these plots in
-`Legended[plot, BarLegend[…]]` (head `Legended`); Woxi returns the bare
-`Graphics`/`Graphics3D`, so `Head` and `[[1]]` differ.
+With `PlotLegends -> Automatic`, WL wraps a complex plot in
+`Legended[plot, Placed[BarLegend[…], pos, Identity]]`. Woxi does this only for
+`ComplexPlot3D` with its default coloring, whose phase bar does not depend on
+the plotted values. For every other case Woxi returns the bare
+`Graphics`/`Graphics3D`, so `Head` and `[[1]]` differ:
+
+- `ComplexPlot`'s bar has an `OpacityFunctionTicks` label at 0.9 (for example
+  `NumberForm[1.3, {Infinity, 1}]` for `z` on the unit square, `16` for `z^3`
+  on `{-2 - 2 I, 2 + 2 I}`). That label and its `LegendMarkerSize` (150 or 225)
+  follow WL's adaptive sample set, which Woxi's sampling does not reproduce.
+- A `ColorFunction` changes the bar. `Hue` gives `{Hue[#1] &, {0, 1}}`, and
+  named schemes add a `"ColorFunctionShading"` or an `OpacityFunction` with log
+  ticks (`"CyclicLogAbs"`).
+
+(`Plot3D[…, PlotLegends -> Automatic]` gives a bare `Graphics3D` in WL too.)
 
 ### `GeoGraphics` view and output form
 
