@@ -6879,6 +6879,21 @@ pub(crate) fn grid_wrapped_to_pane_width(
       {
         atom_text(&args[0])
       }
+      // A nested text `Row` shows its items joined by its separator.
+      Expr::FunctionCall { name, args } if name == "Row" => {
+        let separator = match args.get(1) {
+          Some(Expr::String(s)) => s.as_str(),
+          _ => "",
+        };
+        match args.first() {
+          Some(Expr::List(items)) => items
+            .iter()
+            .map(atom_text)
+            .collect::<Vec<_>>()
+            .join(separator),
+          _ => crate::syntax::expr_to_string(e),
+        }
+      }
       other => crate::syntax::expr_to_string(other),
     }
   }
@@ -46616,8 +46631,24 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
       }
       // A list of text atoms is written out in braces on the same line.
       Expr::List(items) => items.iter().all(is_text_atom),
+      // A `Row` of text atoms set among the others (`Row[{n, " = ",
+      // Row[parts, " + "]}]`) runs on in the same line.
+      Expr::FunctionCall { name, args } if name == "Row" => is_text_row(args),
       _ => false,
     }
+  }
+  // The arguments of a `Row` that sets text atoms, joined by nothing or
+  // by a one-line string, on a single line.
+  fn is_text_row(args: &[Expr]) -> bool {
+    let separator_ok = match args.get(1) {
+      None => true,
+      Some(Expr::String(s)) => !s.contains('\n'),
+      Some(_) => false,
+    };
+    args.len() <= 2
+      && separator_ok
+      && matches!(args.first(), Some(Expr::List(items))
+        if !items.is_empty() && items.iter().all(is_text_atom))
   }
   let mut core = expr;
   let mut text_face = false;
@@ -46637,23 +46668,7 @@ pub(crate) fn one_line_text_row(expr: &Expr) -> Option<bool> {
   let Expr::FunctionCall { name, args } = core else {
     return None;
   };
-  let separator_ok = match args.get(1) {
-    None => true,
-    Some(Expr::String(s)) => !s.contains('\n'),
-    Some(_) => false,
-  };
-  match args.first() {
-    Some(Expr::List(items))
-      if name == "Row"
-        && args.len() <= 2
-        && separator_ok
-        && !items.is_empty()
-        && items.iter().all(is_text_atom) =>
-    {
-      Some(text_face)
-    }
-    _ => None,
-  }
+  (name == "Row" && is_text_row(args)).then_some(text_face)
 }
 
 /// Whether `item` (under any `Style`/`Text` wrappers) is a `Column` that

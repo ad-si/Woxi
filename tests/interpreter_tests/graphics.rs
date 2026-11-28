@@ -84353,3 +84353,51 @@ fn text_centered_on_the_plot_range_border_is_cut_off_there() {
   assert!(xs[1] - xs[0] > 33.0, "{xs:?}");
   assert!(xs[1] > 528.0, "{xs:?}");
 }
+
+mod text_column_of_nested_rows {
+  use super::*;
+
+  /// The outer height of the exported picture.
+  fn height(svg: &str) -> f64 {
+    let rest = svg.split_once("height=\"").expect("height").1;
+    rest.split_once('"').unwrap().0.parse().unwrap()
+  }
+
+  /// Regression: a text `Row` holding another text `Row` (`Row[{n, " = ",
+  /// Row[parts, " + "]}]`) was stacked in a `Text[Column[…]]` as a padded
+  /// box with a gap below instead of at the text line pitch, so a long
+  /// list ran well past the pane that held it.
+  #[test]
+  fn nested_text_rows_take_the_text_line_pitch() {
+    let nested = export_svg(
+      "Text[Column[Table[Row[{i, \" = \", Row[{i - 1, 1}, \" + \"]}], {i, 2, 9}]]]",
+    );
+    let flat = export_svg(
+      "Text[Column[Table[Row[{i, \" = \", i - 1, \" + \", 1}], {i, 2, 9}]]]",
+    );
+    assert_eq!(height(&nested), height(&flat), "{nested}\n{flat}");
+    // Eight lines of 14 pt text stay under 19 pt apiece.
+    assert!(height(&nested) < 8.0 * 19.0, "{nested}");
+  }
+
+  /// The same holds with an alignment argument and without a separator.
+  #[test]
+  fn aligned_column_of_nested_rows_matches_flat_rows() {
+    let nested = export_svg(
+      "Text[Column[Table[Row[{i, Row[{\"a\", Row[{\"b\", i}]}]}], {i, 5}], Left]]",
+    );
+    let flat = export_svg(
+      "Text[Column[Table[Row[{i, \"a\", \"b\", i}], {i, 5}], Left]]",
+    );
+    assert_eq!(height(&nested), height(&flat), "{nested}\n{flat}");
+  }
+
+  /// A nested `Row` whose separator breaks the line is no one-line text.
+  #[test]
+  fn nested_row_with_line_break_separator_keeps_its_box() {
+    let broken =
+      export_svg("Text[Column[Table[Row[{i, Row[{1, 2}, \"\\n\"]}], {i, 4}]]]");
+    let flat = export_svg("Text[Column[Table[Row[{i, Row[{1, 2}]}], {i, 4}]]]");
+    assert!(height(&broken) > height(&flat), "{broken}\n{flat}");
+  }
+}
