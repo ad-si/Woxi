@@ -10372,6 +10372,11 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   5% of its height taller than the pictures whatever `Spacings` says. The
   same rule for `GraphicsGrid`/`GraphicsColumn` and for pictures with only
   a width is not decoded (see the two items above).
+- `GraphicsColumn[{Show[ParametricPlot[…], …, Axes -> False, PlotRange ->
+  {{-r, r}, {-r, r}}]}, ImageSize -> {425, 425}]` (read off a front end
+  snapshot, no wolframscript at hand): Wolfram draws the single square
+  picture about 405 pt across, centered — 1/1.05 of the column on both
+  sides — where Woxi fills the whole 425 pt.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
