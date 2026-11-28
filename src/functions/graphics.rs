@@ -49683,8 +49683,7 @@ fn wrap_list_text_in(
     Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
-      let content =
-        wrap_list_text_in(
+      let content = wrap_list_text_in(
         &args[0],
         width,
         styles,
@@ -49695,8 +49694,7 @@ fn wrap_list_text_in(
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      let content =
-        wrap_list_text_in(
+      let content = wrap_list_text_in(
         &args[0],
         width,
         styles,
@@ -49709,7 +49707,8 @@ fn wrap_list_text_in(
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
-      let content = wrap_list_text_in(&args[0], width, styles, true, cell_width, prose)?;
+      let content =
+        wrap_list_text_in(&args[0], width, styles, true, cell_width, prose)?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args }
