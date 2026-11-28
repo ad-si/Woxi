@@ -6408,6 +6408,25 @@ mod unknown_function_no_args {
     assert_eq!(interpret("\\[ImaginaryJ]").unwrap(), "I");
   }
 
+  /// `\[SpanFromLeft]`, `\[SpanFromAbove]` and `\[SpanFromBoth]` are the
+  /// `Grid` span symbols typed as characters; they used to parse as an
+  /// invisible identifier, turning a merged cell into an empty one.
+  #[test]
+  fn span_named_chars_are_the_span_symbols() {
+    assert_eq!(
+      interpret(
+        "{\\[SpanFromLeft], \\[SpanFromAbove], \\[SpanFromBoth]} === \
+         {SpanFromLeft, SpanFromAbove, SpanFromBoth}"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ToString[{a, \\[SpanFromLeft]}, InputForm]").unwrap(),
+      "{a, SpanFromLeft}"
+    );
+  }
+
   #[test]
   fn imaginary_i_named_char_evaluates_to_i() {
     assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");

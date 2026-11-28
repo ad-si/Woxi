@@ -23088,7 +23088,8 @@ mod plot3d {
 
     /// A `Text` label that multiplies a formatted number by a unit string
     /// is set in TraditionalForm's order of factors — the number first —
-    /// and a unit it is divided by goes under a fraction bar.
+    /// and a unit it is divided by stacks under it as a built-up fraction,
+    /// with the factors above the bar in the same order.
     #[test]
     fn text_label_sets_a_number_form_before_its_unit() {
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"]}]"#);
@@ -23098,18 +23099,21 @@ mod plot3d {
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] x]}]"#);
       assert!(svg.contains(">9.1 x<"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
-      // Regression: the stacked numerator kept the canonical order `m 9.1`.
       let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"/"s"]}]"#);
-      assert!(!svg.contains("NumberForm"), "{svg}");
-      let (num, den) = svg.split_once("<line ").expect("a fraction bar");
-      let (number, unit) = (num.find(">9.1<"), num.find(">m<"));
-      assert!(number.is_some() && number < unit, "{svg}");
-      assert!(den.contains(">s<"), "{svg}");
+      assert_eq!(svg.matches("<line").count(), 1, "a fraction bar: {svg}");
+      let (n, m, d) = (
+        svg.find(">9.1<").expect("9.1"),
+        svg.find(">m<").expect("m"),
+        svg.find(">s<").expect("s"),
+      );
+      assert!(n < m && m < d, "9.1 m over s: {svg}");
+      assert!(!svg.contains("NumberForm") && !svg.contains(">1<"), "{svg}");
       let svg = export_svg(r#"Graphics[{Text["a"/("s" "t")]}]"#);
-      let (num, den) = svg.split_once("<line ").expect("a fraction bar");
-      assert!(num.contains(">a<"), "{svg}");
-      let (s, t) = (den.find(">s<"), den.find(">t<"));
-      assert!(s.is_some() && s < t, "{svg}");
+      assert_eq!(svg.matches("<line").count(), 1, "a fraction bar: {svg}");
+      for part in [">a<", ">s<", ">t<"] {
+        assert!(svg.contains(part), "{part}: {svg}");
+      }
+      assert!(!svg.contains(">a/"), "not on one line: {svg}");
     }
 
     #[test]
@@ -46682,6 +46686,113 @@ mod grid_frame_and_background {
       svg.contains("text-anchor=\"end\""),
       "Should have right-aligned column"
     );
+  }
+
+  /// The `x` of the `<text>` element drawing `label`, with its anchor.
+  fn grid_text_x(svg: &str, label: &str) -> (f64, String) {
+    let end = svg
+      .find(&format!(">{label}</text>"))
+      .unwrap_or_else(|| panic!("no text {label:?} in {svg}"));
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let attr = |name: &str| {
+      let start = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      tag[start..start + tag[start..].find('"').unwrap()].to_string()
+    };
+    (attr(" x").parse().unwrap(), attr("text-anchor"))
+  }
+
+  #[test]
+  fn grid_decimal_symbol_aligns_like_the_dot_string() {
+    // `Decimal` lines a column up on its decimal points, exactly as the
+    // `"."` character alignment does; it used to be read as `Center`.
+    let rows = "{{\"a\", 0}, {\"b\", 21.375}, {\"c\", 7.5}}";
+    let decimal =
+      export_svg(&format!("Grid[{rows}, Alignment -> {{{{Left, Decimal}}}}]"));
+    let dot =
+      export_svg(&format!("Grid[{rows}, Alignment -> {{{{Left, \".\"}}}}]"));
+    assert_eq!(decimal, dot);
+    // The whole numbers end at the shared decimal point: the two-digit one
+    // starts further left than the one-digit one, and the `0` without a
+    // point is set flush against it, past the start of `7.5`.
+    let (x0, anchor0) = grid_text_x(&decimal, "0");
+    let (x21, anchor21) = grid_text_x(&decimal, "21.375");
+    let (x7, anchor7) = grid_text_x(&decimal, "7.5");
+    assert_eq!(
+      (anchor0.as_str(), anchor21.as_str(), anchor7.as_str()),
+      ("end", "start", "start")
+    );
+    assert!(x21 < x7, "21.375 at {x21}, 7.5 at {x7}");
+    assert!(x7 < x0, "7.5 at {x7}, 0 ends at {x0}");
+    // A lone `Alignment -> Decimal` and `{Decimal, rows}` do the same.
+    for spec in ["Decimal", "{Decimal, Baseline}"] {
+      let svg = export_svg(&format!(
+        "Grid[{{{{0}}, {{21.375}}, {{7.5}}}}, Alignment -> {spec}]"
+      ));
+      assert!(
+        grid_text_x(&svg, "21.375").0 < grid_text_x(&svg, "7.5").0,
+        "{spec}: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn grid_decimal_alignment_sees_through_colored_numbers() {
+    // A color-only `Style` around a number does not move its decimal
+    // point, so the column still lines up (it used to fall back to
+    // centering every styled number).
+    let plain = export_svg(
+      "Grid[{{\"a\", 0}, {\"b\", 21.375}}, Alignment -> {{Left, Decimal}}]",
+    );
+    let colored = export_svg(
+      "Grid[{{\"a\", Style[0, Green]}, {\"b\", Style[21.375, Red]}}, \
+       Alignment -> {{Left, Decimal}}]",
+    );
+    for label in ["0", "21.375"] {
+      assert_eq!(grid_text_x(&colored, label), grid_text_x(&plain, label));
+    }
+  }
+
+  #[test]
+  fn grid_alignment_item_rules_place_single_items() {
+    // The third part of `Alignment -> {cols, rows, rules}` aligns the
+    // items (or blocks of items) its `{i, j} -> align` rules name.
+    let rows = "{{\"h\", \"k\"}, {\"wide entry\", \"another one\"}}";
+    let base =
+      export_svg(&format!("Grid[{rows}, Alignment -> {{Left, Baseline}}]"));
+    assert_eq!(grid_text_x(&base, "h").1, "start");
+    assert_eq!(grid_text_x(&base, "k").1, "start");
+    // One item, given as `{i, j}` and as a `{{i, i}, {j, j}}` block.
+    for pos in ["{1, 1}", "{{1, 1}, {1, 1}}"] {
+      let svg = export_svg(&format!(
+        "Grid[{rows}, Alignment -> {{Left, Baseline, {pos} -> Center}}]"
+      ));
+      assert_eq!(grid_text_x(&svg, "h").1, "middle", "{pos}");
+      assert_eq!(grid_text_x(&svg, "k"), grid_text_x(&base, "k"), "{pos}");
+      assert_eq!(
+        grid_text_x(&svg, "wide entry"),
+        grid_text_x(&base, "wide entry"),
+        "{pos}"
+      );
+    }
+    // A list of rules, one of them over a block of columns.
+    let svg = export_svg(&format!(
+      "Grid[{rows}, Alignment -> {{Left, Baseline, \
+       {{{{1, {{1, 2}}}} -> Right, {{2, 2}} -> Center}}}}]"
+    ));
+    assert_eq!(grid_text_x(&svg, "h").1, "end");
+    assert_eq!(grid_text_x(&svg, "k").1, "end");
+    assert_eq!(grid_text_x(&svg, "wide entry").1, "start");
+    assert_eq!(grid_text_x(&svg, "another one").1, "middle");
+    // A centered item that spans the row sits in the middle of the grid.
+    let svg = export_svg(
+      "Grid[{{\"h\", SpanFromLeft}, {\"wide entry\", \"another one\"}}, \
+       Alignment -> {Left, Baseline, {1, 1} -> Center}]",
+    );
+    let (x, anchor) = grid_text_x(&svg, "h");
+    assert_eq!(anchor, "middle");
+    let left = grid_text_x(&svg, "wide entry").0;
+    let right = grid_text_x(&svg, "another one").0;
+    assert!(left < x && x > right - 20.0, "h at {x}: {svg}");
   }
 
   #[test]

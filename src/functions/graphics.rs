@@ -7347,6 +7347,27 @@ fn is_null_row_item(item: &Expr) -> bool {
   matches!(item, Expr::Identifier(n) if n == "Null")
 }
 
+/// Whether a factor of a product in a graphics label is set as text: a
+/// string (`"m"`) or a number form (`NumberForm[x, 2]`). Such a product is
+/// typeset in TraditionalForm's order of factors, the number first.
+fn is_text_label_factor(factor: &Expr) -> bool {
+  match factor {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, args } => {
+      !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "NumberForm"
+            | "PaddedForm"
+            | "AccountingForm"
+            | "ScientificForm"
+            | "EngineeringForm"
+        )
+    }
+    _ => false,
+  }
+}
+
 pub(crate) fn graphics_text_content(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return graphics_text_content(&styled);
@@ -7839,7 +7860,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // wrappers inside it still apply instead of printing as `NumberForm[…]`
     // source — in TraditionalForm's order of factors: `9.1 m`.
     Expr::FunctionCall { name, args }
-      if name == "Times" && has_text_or_number_form_factor(args) =>
+      if name == "Times" && args.iter().any(is_text_label_factor) =>
     {
       // A fractional factor (`"7"/100` is `Times[1/100, "7"]`) moves its
       // denominator under the rest, so the label reads `7/100` on one line.
@@ -10653,23 +10674,6 @@ fn expr_holds_grid(expr: &Expr) -> bool {
   }
 }
 
-/// Whether a product has a string or a number-form factor (`NumberForm[x, 3]
-/// "m"`): its factors are typeset one by one, in TraditionalForm's order.
-fn has_text_or_number_form_factor(factors: &[Expr]) -> bool {
-  factors.iter().any(|a| {
-    matches!(a, Expr::String(_))
-      || matches!(a, Expr::FunctionCall { name, args }
-      if !args.is_empty() && matches!(
-        name.as_str(),
-        "NumberForm"
-          | "PaddedForm"
-          | "AccountingForm"
-          | "ScientificForm"
-          | "EngineeringForm"
-      ))
-  })
-}
-
 /// The picture of a label that cannot be set as one line of text, with its
 /// width and height in points, or `None` for a label that can.
 ///
@@ -10692,25 +10696,28 @@ pub(crate) fn stacked_label_picture(
     {
       inline_box_string_to_box_expr(s)
     }
+    // A quotient of a product with a string or number-form factor
+    // (`NumberForm[9.1, 2] "m"/"s"`) stacks in TraditionalForm's order of
+    // factors, the number first, like its one-line form (`9.1 m`).
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.iter().any(is_text_label_factor)
+        && label_typesets_fraction(content) =>
+    {
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(content),
+      ))
+    }
     _ if label_typesets_fraction(content)
       || formula_has_graphics_operand(content)
       || label_has_large_operator_script(content) =>
     {
-      use crate::evaluator::dispatch::complex_and_special::{
-        expr_to_box_form, expr_to_box_form_traditional,
-      };
-      // A product with a string or number-form factor keeps
-      // TraditionalForm's order of factors when its quotient stacks:
-      // `NumberForm[9.1, 2] "m"/"s"` is `9.1 m` over `s`.
-      let boxes = match content {
-        Expr::FunctionCall { name, args }
-          if name == "Times" && has_text_or_number_form_factor(args) =>
-        {
-          expr_to_box_form_traditional(content)
-        }
-        _ => expr_to_box_form(content),
-      };
-      Some(crate::strip_number_precision_markers(&boxes))
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          content,
+        ),
+      ))
     }
     // `TraditionalForm[x^n]` typesets the power with a raised exponent
     // (and a quotient as a built-up fraction); flattening its boxes to
@@ -24802,7 +24809,13 @@ fn inline_graphics_box_layout(
     width: w,
     height: above + below,
     baseline: above,
-    elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
+    // The picture is drawn as it is on its own: the stroke and fill the
+    // formula sets for its glyphs must not reach the picture's shapes (a
+    // 3D scene's background would gain an outline).
+    elements: format!(
+      "<g fill=\"black\" stroke=\"none\">{}</g>",
+      embed_svg_centered(svg, w / 2.0, above - axis, w, h)
+    ),
   })
 }
 
@@ -36720,20 +36733,21 @@ fn row_vertical_alignments(
 
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
+    _ if alignment_char(expr).is_some() => "decimal",
     Expr::Identifier(val) => match val.as_str() {
       "Left" => "start",
       "Right" => "end",
       _ => "middle",
     },
-    _ if alignment_char(expr).is_some() => "decimal",
     _ => "middle",
   }
 }
 
 /// The character a one-character string alignment (`"."`, `":"`, …) lines
-/// a column's entries up on.
+/// a column's entries up on; `Decimal` is the decimal point.
 fn alignment_char(expr: &Expr) -> Option<char> {
   match expr {
+    Expr::Identifier(name) if name == "Decimal" => Some('.'),
     Expr::String(s) => {
       let mut chars = s.chars();
       match (chars.next(), chars.next()) {
@@ -36764,6 +36778,17 @@ fn split_decimal_str(s: &str, ch: char) -> (f64, f64) {
 /// fraction or scientific-notation form containing SVG markup), in which case
 /// the caller falls back to centering.
 fn decimal_split_width(cell: &Expr, ch: char) -> Option<(f64, f64)> {
+  // A `Style[number, color…]` wrapper colors the number without changing
+  // where its decimal point is. (Any other directive may change the glyph
+  // widths, so such a cell keeps the centered fallback.)
+  let mut cell = cell;
+  while let Expr::FunctionCall { name, args } = cell
+    && name == "Style"
+    && !args.is_empty()
+    && args[1..].iter().all(|d| parse_color(d).is_some())
+  {
+    cell = &args[0];
+  }
   let s = expr_to_svg_markup(cell);
   if s.contains('<') {
     return None;
@@ -38475,7 +38500,7 @@ fn grid_svg_styled_internal_reporting(
           _ => {}
         },
         "Alignment" => match replacement.as_ref() {
-          spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+          spec if alignment_char(spec).is_some() => {
             alignment_h = "decimal";
             align_char = char_of(spec);
           }
@@ -38496,9 +38521,58 @@ fn grid_svg_styled_internal_reporting(
             if let Some(row_spec) = items.get(1) {
               row_valigns = row_vertical_alignments(row_spec, rows.len());
             }
+            // Alignment -> {cols, rows, {{i, j} -> align, …}}: the third
+            // part places individual items (or blocks of them); an
+            // `Item`'s own alignment, noted first, still wins.
+            let item_rules: Vec<&Expr> = match items.get(2) {
+              Some(Expr::List(rules)) => rules.iter().collect(),
+              Some(rule) => vec![rule],
+              None => Vec::new(),
+            };
+            for rule in item_rules {
+              let Expr::Rule {
+                pattern,
+                replacement: align,
+              } = rule
+              else {
+                continue;
+              };
+              let Some(((r0, r1), (c0, c1))) = grid_rule_block(pattern) else {
+                continue;
+              };
+              let (h, v) = match align.as_ref() {
+                Expr::List(pair) => (pair.first(), pair.get(1)),
+                other => (Some(other), None),
+              };
+              // The rule's positions are 1-indexed, the items' 0-indexed.
+              for i in r0 - 1..r1 {
+                for j in c0 - 1..c1 {
+                  // A lone `Top`/`Bottom`/`Baseline` is a vertical value.
+                  match h {
+                    Some(Expr::Identifier(name))
+                      if matches!(
+                        name.as_str(),
+                        "Top" | "Bottom" | "Baseline"
+                      ) =>
+                    {
+                      if let Some(v) = h.and_then(vertical_alignment) {
+                        item_v_aligns.push(((i, j), v));
+                      }
+                    }
+                    Some(h) => {
+                      item_aligns.push(((i, j), alignment_to_anchor(h)));
+                    }
+                    None => {}
+                  }
+                  if let Some(v) = v.and_then(vertical_alignment) {
+                    item_v_aligns.push(((i, j), v));
+                  }
+                }
+              }
+            }
             if let Some(first) = items.first() {
               match first {
-                spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+                spec if alignment_char(spec).is_some() => {
                   alignment_h = "decimal";
                   align_char = char_of(spec);
                 }
@@ -70599,6 +70673,38 @@ fn assign_checkbox_state(
   }
 }
 
+/// Whether a display value is an algebraic expression (a `Power`, `Times`
+/// or `Plus`, or a `Rational` number) whose box form stacks material: a
+/// radical sign over its radicand or a fraction over its bar. Lists,
+/// strings and layout heads are not looked into, since each has its own
+/// display path.
+fn value_typesets_stacked(expr: &Expr) -> bool {
+  fn box_is_stacked(boxes: &Expr) -> bool {
+    match boxes {
+      Expr::FunctionCall { name, args } => {
+        matches!(name.as_str(), "FractionBox" | "SqrtBox" | "RadicalBox")
+          || args.iter().any(box_is_stacked)
+      }
+      Expr::List(items) => items.iter().any(box_is_stacked),
+      _ => false,
+    }
+  }
+  let algebraic = match expr {
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(
+        name.as_str(),
+        "Power" | "Sqrt" | "Times" | "Plus" | "Rational"
+      )
+    }
+    _ => false,
+  };
+  algebraic
+    && box_is_stacked(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    )
+}
+
 /// Whether `expr` holds a `NumberForm`/`PaddedForm`/`AccountingForm`
 /// wrapper anywhere, which only a typeset rendering turns into digits.
 fn holds_number_format(expr: &Expr) -> bool {
@@ -70846,6 +70952,22 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
             template,
             &args[1..],
           ),
+        }
+      } else if let Some(value) = &r.expr
+        && value_typesets_stacked(value)
+        && let Ok(svg) = grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![value.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        // A value the notebook builds up in two dimensions (a root under
+        // its radical sign, a fraction over its bar) is typeset that way:
+        // a line of text can only spell it out as `Sqrt[10]`.
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
         }
       } else if !is_display_placeholder(&r.result)
         && let Some(text) =
@@ -73197,6 +73319,56 @@ mod manipulate_display_number_form_tests {
     match node {
       DisplayNode::Static { text, svg: None } => assert_eq!(text, "2."),
       other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  /// Regression: a `Dynamic[Sqrt[…]]` readout beside a control spelled the
+  /// root out as the text `Sqrt[10]`, where a notebook draws the radical
+  /// sign over the radicand.
+  #[test]
+  fn dynamic_root_caption_is_typeset_under_a_radical() {
+    for (code, bindings) in [
+      ("Dynamic[Sqrt[ToString[d]]]", vec![("d", "10")]),
+      ("Dynamic[Sqrt[d]]", vec![("d", "13")]),
+      ("Dynamic[2 Sqrt[d] + 1]", vec![("d", "x")]),
+    ] {
+      let bindings: Vec<(String, String)> = bindings
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+      match build_manipulate_display(code, &bindings) {
+        DisplayNode::Static {
+          svg: Some(svg),
+          text,
+        } => {
+          assert!(text.is_empty(), "{code}: {text}");
+          assert!(svg.contains("<path"), "{code}: no radical sign: {svg}");
+          assert!(!svg.contains("Sqrt"), "{code}: {svg}");
+        }
+        other => panic!("{code}: expected a typeset node, got {other:?}"),
+      }
+    }
+  }
+
+  /// A root that evaluates to a plain number has nothing to stack and
+  /// stays a line of text.
+  #[test]
+  fn dynamic_exact_root_caption_stays_text() {
+    let bindings = vec![("d".to_string(), "49".to_string())];
+    match build_manipulate_display("Dynamic[Sqrt[d]]", &bindings) {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "7"),
+      other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  /// A built-up fraction readout is drawn over its bar, not run together
+  /// on one line.
+  #[test]
+  fn dynamic_fraction_caption_is_typeset_stacked() {
+    let bindings = vec![("d".to_string(), "x".to_string())];
+    match build_manipulate_display("Dynamic[(d + 1)/2]", &bindings) {
+      DisplayNode::Static { svg: Some(_), text } => assert_eq!(text, ""),
+      other => panic!("expected a typeset node, got {other:?}"),
     }
   }
 

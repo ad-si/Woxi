@@ -2,6 +2,26 @@
 
 # Unreleased
 
+- `Grid` reads `Alignment -> Decimal` (alone or for a column) as lining
+    the numbers up on their decimal points, like the `"."` character
+    alignment, and does so for numbers wrapped in a color `Style` too,
+    instead of centering them.
+- The third part of a `Grid` alignment, `Alignment -> {cols, rows,
+    {{i, j} -> align, …}}`, aligns the single items or blocks of items its
+    rules name.
+- `\[SpanFromLeft]`, `\[SpanFromAbove]` and `\[SpanFromBoth]` are read as
+    the `Grid` span symbols, in source code and in the cells of a notebook,
+    instead of as an empty item, so a merged cell typed that way stays
+    merged.
+- A `Dynamic[…]` readout beside a `Manipulate` control whose value is a
+    root or a built-up fraction (`Dynamic[Sqrt[d]]`, `Dynamic[(a + 1)/2]`)
+    is typeset with its radical sign or fraction bar in Woxi Studio instead
+    of being spelled out as `Sqrt[10]`.
+- The outline of a `Graphics3D` face that runs behind a narrow solid (the
+    far edge of a long floor `Polygon` with a `Cuboid` standing on its
+    middle) no longer shows through that solid when other faces lie
+    behind the edge elsewhere: a long outline edge is placed in the draw
+    order stretch by stretch instead of from a few samples along it.
 - A curve leaving a `PlotRange` that only `Show` pins
     (`Show[ParametricPlot[…], PlotRange -> {{-1, 1}, {-1, 1}}]`) runs on
     through the padding to the edge of the picture on every side, instead

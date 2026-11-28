@@ -11865,8 +11865,10 @@ impl Wide {
 
 /// A value in [`Wide`] arithmetic, or the knowledge that it is not real:
 /// in machine arithmetic a negative number to a non-integer power is
-/// complex, and so is everything computed from it, except a product with
-/// zero (`0. (-2.)^0.5` is `0. + 0. I`, which a plot draws as zero).
+/// complex, and so is a sum or product of it with real numbers, except a
+/// product with zero (`0. (-2.)^0.5` is `0. + 0. I`, which a plot draws as
+/// zero). Where several complex values meet (or one is raised to a power)
+/// the imaginary parts may cancel, so `eval_wide` gives no answer there.
 #[derive(Clone, Copy)]
 enum WideValue {
   Real(Wide),
@@ -11893,31 +11895,39 @@ impl NExpr {
       Self::Var(i) => vars.get(*i).copied().map(Real),
       Self::Add(items) => {
         let mut acc = Wide::ZERO;
-        let mut nonreal = false;
+        let mut nonreal = 0usize;
         for e in items {
           match e.eval_wide(vars)? {
             Real(w) => acc = acc.add(w),
-            NonReal => nonreal = true,
+            NonReal => nonreal += 1,
           }
         }
-        Some(if nonreal { NonReal } else { Real(acc) })
+        match nonreal {
+          0 => Some(Real(acc)),
+          1 => Some(NonReal),
+          // Imaginary parts can cancel (`Sqrt[-x] - Sqrt[-x]`).
+          _ => None,
+        }
       }
       Self::Mul(items) => {
         let mut acc = Wide::one();
-        let mut nonreal = false;
+        let mut nonreal = 0usize;
         for e in items {
           match e.eval_wide(vars)? {
             Real(w) => acc = acc.mul(w),
-            NonReal => nonreal = true,
+            NonReal => nonreal += 1,
           }
         }
-        Some(if acc.m == 0.0 {
-          Real(Wide::ZERO)
-        } else if nonreal {
-          NonReal
-        } else {
-          Real(acc)
-        })
+        if acc.m == 0.0 {
+          return Some(Real(Wide::ZERO));
+        }
+        match nonreal {
+          0 => Some(Real(acc)),
+          1 => Some(NonReal),
+          // A product of complex numbers can be real again
+          // (`Sqrt[x - Pi] Sqrt[1/(x - Pi)]` is `-1. + 0. I` below `Pi`).
+          _ => None,
+        }
       }
       Self::Neg(a) => Some(match a.eval_wide(vars)? {
         Real(w) => Real(w.neg()),
@@ -11929,7 +11939,8 @@ impl NExpr {
           Real(b) if b.m < 0.0 && p.fract() != 0.0 => Some(NonReal),
           Real(b) => b.pow(p).map(Real),
           NonReal if p == 0.0 => Some(Real(Wide::one())),
-          NonReal => Some(NonReal),
+          // A power of a complex number can be real (`Sqrt[-x]^2`).
+          NonReal => None,
         }
       }
       Self::Fn1(f, a) => Wide::new(f(machine(a)?)).map(Real),
