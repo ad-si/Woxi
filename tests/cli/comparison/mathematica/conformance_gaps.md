@@ -354,18 +354,6 @@ canonical order of their boxes less the numeric coefficient, which
 reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
 `Sin[x] + Sin[2 x]`) are unverified.
 
-### TraditionalForm sets Greek-letter factors of a product first
-
-Known only from the stored output of a Demonstration (no `wolframscript`
-run): with `\[Alpha]`, `\[Beta]` and the other symbols undefined,
-`TraditionalForm[P V \[Beta] Subscript[c, v]/Subscript[c, p]]` is drawn as
-`β P V c_v / c_p`, `T V \[Alpha]/Subscript[c, p]` as `α T V / c_p`, and
-`P \[Beta] Subscript[c, v]/(T \[Alpha])` as `β P c_v / (α T)` — the Greek
-letters lead and the subscripted `c` stays last. Woxi sets the first as
-`c_v P V β / c_p`: it keeps the canonical order of the plain symbols and
-orders `Subscript[c, v]` as its base `c` (ahead of `P`). The rule behind
-Wolfram's order is not established.
-
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
@@ -585,6 +573,17 @@ unit apart whenever a symbolic factor is present (`-I` alone is
 patterns see three factors instead of two. Held printing compensates: a held
 `Times[-1, I, x]` prints `-I*x` (Wolfram brackets the literal call as
 `-(I*x)`) because in Woxi it is also the evaluated form of `-I x`.
+
+### A negated sum among other factors is distributed
+
+```sh
+wolframscript -code '-(a + b) c'   # -((a + b)*c)
+woxi eval '-(a + b) c'             # (-a - b)*c
+```
+
+Wolfram keeps `Times[-1, Plus[a, b], c]`; Woxi folds the `-1` into the sum
+whenever another factor is present. The values are equal, but
+`TraditionalForm` then sets `c (-a - b)` where Wolfram has `c (-(a + b))`.
 
 ### A rational multiple of a sum is ordered against a product by its own rule
 

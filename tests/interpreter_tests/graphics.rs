@@ -22853,6 +22853,24 @@ mod plot3d {
       assert!(!svg.contains("NumberForm"), "{svg}");
     }
 
+    /// A `Text` label that multiplies a formatted number by a unit string
+    /// is set in TraditionalForm's order of factors — the number first —
+    /// and a unit it is divided by goes after a slash.
+    #[test]
+    fn text_label_sets_a_number_form_before_its_unit() {
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"]}]"#);
+      assert!(svg.contains(">9.1 m<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text["m" NumberForm[0.7712, 2]]}]"#);
+      assert!(svg.contains(">0.77 m<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] x]}]"#);
+      assert!(svg.contains(">9.1 x<"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text[NumberForm[9.1, 2] "m"/"s"]}]"#);
+      assert!(svg.contains(">9.1 m/s<"), "{svg}");
+      let svg = export_svg(r#"Graphics[{Text["a"/("s" "t")]}]"#);
+      assert!(svg.contains(">a/(s t)<"), "{svg}");
+    }
+
     #[test]
     fn plot_legends_typeset_expressions() {
       let svg = export_svg(
