@@ -22821,9 +22821,12 @@ impl BoxLayout {
     let s = mapped.as_str();
     // `\[NoBreak]` (which a TraditionalForm matrix sets inside its
     // parentheses), zero-width spaces and `\[InvisibleApplication]` take no
-    // room.
-    let zero_width =
-      |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
+    // room, and neither do the private-use characters that are drawn as
+    // nothing (`\[InvisibleSpace]`, `\[InvisibleComma]`).
+    let zero_width = |c: &char| {
+      matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}')
+        || crate::syntax::is_glyphless_private_use(*c)
+    };
     let family = BOX_FONT_FAMILY.with(|f| f.borrow().clone());
     let w = match family.as_deref() {
       // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a
@@ -29189,7 +29192,9 @@ fn inline_frame_layout(expr: &Expr) -> Option<(String, f64, f64)> {
 /// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or
 /// an `Image`): drawn at its own natural size above the graphic instead of
 /// being printed as `Graphics[…]` source text.
-fn plot_label_graphic_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+pub(crate) fn plot_label_graphic_svg(
+  expr: &Expr,
+) -> Option<(String, f64, f64)> {
   let svg = match peel_style_wrapper(expr) {
     Expr::Graphics { svg, is_3d, .. } => {
       if *is_3d {
@@ -33771,9 +33776,17 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .unwrap_or((false, false));
-    let first_plot = plot_sources
-      .iter()
-      .find(|ps| !any_curves || !ps.series.is_empty());
+    // That first plot may be one without a curve: the `PlotRange` it was
+    // given stands all the same, whatever the curves after it reach. Left
+    // to itself, a plot without a curve settled on no range to keep.
+    let first_plot = plot_sources.iter().find(|ps| {
+      !any_curves
+        || !ps.series.is_empty()
+        || ps
+          .options
+          .iter()
+          .any(|o| matches!(option_name_value(o), Some(("PlotRange", _))))
+    });
     // A list plot already settled its `All` into numbers, which `Show`
     // keeps like any other range of the first plot.
     // An `All` given to `Show` itself is no range of the first plot: it
@@ -35275,7 +35288,7 @@ pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
     {
-      !has_string_operand(expr) && typesets_fraction_box(expr)
+      typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(items) if items.iter().any(row_item_typesets_fraction))
@@ -35325,7 +35338,7 @@ pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
         | crate::syntax::BinaryOperator::Divide
         | crate::syntax::BinaryOperator::Power,
       ..
-    } if !has_string_operand(expr) => box_has_fraction(
+    } => box_has_fraction(
       &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
     ),
     Expr::UnaryOp {
@@ -35423,24 +35436,6 @@ fn typesets_fraction_box(expr: &Expr) -> bool {
     && box_has_fraction(
       &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
     )
-}
-
-/// Whether an arithmetic expression has a bare string among its operands
-/// (`"7"/100`): such a quotient is drawn on one line, as `7/100`.
-fn has_string_operand(expr: &Expr) -> bool {
-  match expr {
-    Expr::String(_) => true,
-    Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
-    {
-      args.iter().any(has_string_operand)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      has_string_operand(left) || has_string_operand(right)
-    }
-    Expr::UnaryOp { operand, .. } => has_string_operand(operand),
-    _ => false,
-  }
 }
 
 /// Whether a label holds inline box notation that hangs limits on a large
@@ -42328,6 +42323,92 @@ fn with_hit_region(svg: String, action: &str) -> String {
   out
 }
 
+/// Name stem of the hidden global holding whether an `OpenerView` without a
+/// `Dynamic` state of its own is open (see [`opener_view_shown`]).
+const OPENER_VIEW_STATE_STEM: &str = "openerViewState$";
+
+/// What an `OpenerView[{label, content}]`, `OpenerView[…, open]` or
+/// `OpenerView[…, Dynamic[open]]` nested in a layout shows: a disclosure
+/// triangle beside the label and, while it is open, the content below.
+/// The label row carries a hit region whose action flips the open state, so
+/// a live widget opens and closes the view on a click, the way the FrontEnd
+/// does. A view without a `Dynamic` state keeps it in a hidden global named
+/// after its label, which stays the same across re-renders of the layout
+/// around it. `None` unless the first argument is a `{label, content}` pair.
+pub(crate) fn opener_view_shown(args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(pair)) = args.first() else {
+    return None;
+  };
+  let [label, content] = pair.as_slice() else {
+    return None;
+  };
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  let state_of = |target: &Expr| match evaluate_expr_to_expr(target) {
+    Ok(Expr::Identifier(ref v)) if v == "True" || v == "False" => {
+      Some(v == "True")
+    }
+    _ => None,
+  };
+  let (target, open) = match args.get(1) {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      (
+        crate::syntax::expr_to_source_form(&dargs[0]),
+        state_of(&dargs[0]).unwrap_or(false),
+      )
+    }
+    initial => {
+      let target = format!(
+        "{OPENER_VIEW_STATE_STEM}{:x}",
+        stable_text_hash(&crate::syntax::expr_to_source_form(label))
+      );
+      let open = state_of(&id_expr(&target))
+        .unwrap_or_else(|| initial.is_some_and(is_true));
+      (target, open)
+    }
+  };
+  let header = call(
+    "Row",
+    vec![Expr::List(
+      vec![
+        Expr::String(if open { "\u{25BE} " } else { "\u{25B8} " }.to_string()),
+        label.clone(),
+      ]
+      .into(),
+    )],
+  );
+  let svg = crate::evaluator::expr_to_svg(&resolve_display_item(&header));
+  let header = if svg.is_empty() {
+    header
+  } else {
+    Expr::Graphics {
+      svg: with_hit_region(
+        svg,
+        &format!("{target} = {}", if open { "False" } else { "True" }),
+      ),
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    }
+  };
+  if !open {
+    return Some(header);
+  }
+  // The content sits below the label, clear of the triangle.
+  let indented = call(
+    "Row",
+    vec![Expr::List(
+      vec![call("Spacer", vec![Expr::Integer(14)]), content.clone()].into(),
+    )],
+  );
+  Some(call(
+    "Column",
+    vec![Expr::List(vec![header, indented].into())],
+  ))
+}
+
 /// Name stem of the hidden variable holding which element a `FlipView`
 /// without an index of its own is flipped to inside a `Manipulate` (see
 /// [`bind_flip_view_indices`]).
@@ -44366,6 +44447,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       // the front end shows it: the row of tab labels above the pane its
       // selector names (the first pane without a selector), framed in a
       // gray panel, rather than the call's source text.
+      // `OpenerView[{label, content}, open]` nested in a layout is drawn as
+      // its disclosure triangle and label, above the content while open.
+      "OpenerView" if peel_tabview => match opener_view_shown(args) {
+        Some(shown) => {
+          current = shown;
+          continue;
+        }
+        None => false,
+      },
       "TabView" if peel_tabview => match crate::tabview_drawn_layout(args) {
         Some(content) => {
           current = content;

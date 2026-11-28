@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
+    (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
+    `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that
+    swings over the top — no longer jump.
+- An `OpenerView[{label, content}]` laid out in a `Column`, `Row`, `Grid`
+    or frame is drawn as its disclosure triangle and label, with the
+    content below while it is open, instead of its source text. Inside a
+    `Manipulate` body in Woxi Studio a click on the label opens and closes
+    it.
+- `ToString[StandardForm[expr]]` typesets the same boxes as
+    `ToString[expr, StandardForm]`: a sum inside a product or under a
+    power keeps its parentheses.
 - `Plot3D` cuts a surface off where it leaves the vertical `PlotRange` and
     fills the cut with the light gray cap of `ClippingStyle -> Automatic`
     (`None` leaves it open, a color fills it with that color) instead of
