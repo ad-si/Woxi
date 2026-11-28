@@ -7707,12 +7707,11 @@ mod graphics {
           .split("points=\"")
           .nth(1)
           .and_then(|p| p.split('"').next())
-          .map(|p| {
+          .map_or_default(|p| {
             p.split_whitespace()
               .filter_map(|p| p.split_once(',')?.1.parse().ok())
               .collect()
-          })
-          .unwrap_or_default();
+          });
         let top = ys.iter().copied().fold(f64::INFINITY, f64::min);
         let bottom = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         assert!(top <= 10.0, "curve stops at {top}: {svg}");
