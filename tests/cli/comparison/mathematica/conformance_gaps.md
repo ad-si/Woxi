@@ -5851,6 +5851,23 @@ with `PlotPoints -> 5`, and 27 with `PlotPoints -> 5, MaxRecursion -> 0`.
 Woxi makes 10000 every time. The pictures look alike, but an expensive body
 (a compiled iteration, say) runs about 10–50 times longer than in Wolfram.
 
+### Automatic value range of 2D field plots is a heuristic
+
+`DensityPlot` and `ContourPlot` drop outliers from the values their colors
+span with Woxi's own rule, not Wolfram's: a tail beyond a `3 IQR` fence is
+cut when it holds at most 15 % of the samples and reaches more than three
+times further out than the range kept. That clips a pole and leaves the ramp of a saturating field
+alone (`DensityPlot[Erf[y/77.5], {x, 0, 1}, {y, 0, 400}]` shades from 0 to
+1, as the stored snapshot of the DiffusionOnAMacroElectrode Demonstration
+does), but the cut-off value next to a pole, and which broad peaks count as
+outliers, are not checked against wolframscript.
+
+An explicit `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` removes the
+`Scaled[0.02]` margin only when both coordinate ranges are numbers; a
+range that fixes one axis (`{{0, 1}, Automatic}`) keeps the margin on both.
+The explicit ranges do not move the axes either: they stay on the
+iterator ranges.
+
 ### Frameless `ContourPlot`: band colors and side padding
 
 Seen in the UnsteadyStateHeatConductionInACylinder Demonstration

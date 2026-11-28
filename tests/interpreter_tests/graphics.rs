@@ -32684,29 +32684,120 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `PlotRange -> All` (or `{Full, Full, All}`) stretches the colors
-    /// over every sampled value: the flanks of a ridge over a flat
-    /// background keep their gradient instead of saturating at the end
-    /// color, as they do under the automatic outlier-clipping range.
+    /// over every sampled value: the flanks of a pole-like ridge keep
+    /// their gradient instead of saturating at the end color, as they do
+    /// under the automatic outlier-clipping range.
     #[test]
     fn density_plot_plot_range_all_keeps_every_value() {
       clear_state();
-      // Cells of row 50 at x ≈ 0.05 (background), 4.95 (crest), 5.55 and
-      // 5.95 (flank).
+      // Cells of row 50 at x ≈ 0.05 (background), 4.95 (crest), 5.25 and
+      // 5.55 (flank).
       let cells = |range: &str| {
         interpret(&format!(
-          "r = First[DensityPlot[Exp[-2 (x - 5)^2], {{x, 0, 10}}, \
+          "r = First[DensityPlot[1/((x - 5)^2 + 1/100), {{x, 0, 10}}, \
            {{y, 0, 1}}, ColorFunction -> \"TemperatureMap\" {range}]][[1]]; \
-           Round[255 r[[1, 50, {{1, 50, 56, 60}}]]]"
+           Round[255 r[[1, 50, {{1, 50, 53, 56}}]]]"
         ))
         .unwrap()
       };
       let (blue, red) = ("{46, 78, 238, 255}", "{208, 34, 42, 255}");
       assert_eq!(cells(""), format!("{{{blue}, {red}, {red}, {red}}}"));
       let full = format!(
-        "{{{blue}, {red}, {{253, 253, 205, 255}}, {{115, 144, 242, 255}}}}"
+        "{{{blue}, {red}, {{119, 147, 243, 255}}, {{61, 94, 239, 255}}}}"
       );
       assert_eq!(cells(", PlotRange -> All"), full);
       assert_eq!(cells(", PlotRange -> {Full, Full, All}"), full);
+    }
+
+    /// A field that saturates over most of the domain keeps the colors of
+    /// its steep ramp: the ramp lies beyond the outlier fence (the
+    /// quartiles bunch at the plateau) but holds too many samples to be an
+    /// outlier, so it is not flattened to the end color.
+    #[test]
+    fn density_plot_keeps_the_ramp_of_a_saturating_field() {
+      clear_state();
+      // Rows at y ≈ 2, 38, 78 and 398 of the first column.
+      let rows = |body: &str| {
+        interpret(&format!(
+          "r = First[DensityPlot[{body}, {{x, 0, 1}}, {{y, 0, 400}}, \
+           ColorFunction -> GrayLevel]][[1]]; \
+           Round[100 r[[1, {{1, 10, 20, 100}}, 1, 1]]]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(rows("Erf[y/77.5]"), "{0, 50, 84, 100}");
+      assert_eq!(rows("1 - Erf[y/77.5]"), "{100, 50, 16, 0}");
+      assert_eq!(rows("Tanh[y/60]"), "{0, 55, 86, 100}");
+      // A sharper or a gentler ramp is kept as well.
+      assert_eq!(rows("Erf[y/50]"), "{0, 71, 97, 100}");
+      assert_eq!(rows("Erf[y/85]"), "{0, 46, 80, 100}");
+    }
+
+    /// A pole still counts as an outlier: the few samples next to it are
+    /// cut off, so the rest of the field keeps its gradient.
+    #[test]
+    fn density_plot_still_fences_off_a_pole() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "r = First[DensityPlot[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}, \
+           ColorFunction -> GrayLevel]][[1]]; \
+           Round[100 r[[1, {1, 30, 45, 50}, 50, 1]]]"
+        )
+        .unwrap(),
+        "{6, 62, 100, 100}"
+      );
+    }
+
+    /// An explicit `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` (with or
+    /// without a value part) puts the frame right on the range; without
+    /// one, or with a value range alone, the plot keeps its 2 % margin.
+    #[test]
+    fn field_plot_explicit_coordinate_range_has_no_padding() {
+      clear_state();
+      let padding = |plot: &str| {
+        interpret(&format!("PlotRangePadding /. Options[{plot}]")).unwrap()
+      };
+      let none = "{{Scaled[0.], Scaled[0.]}, {Scaled[0.], Scaled[0.]}}";
+      let margin =
+        "{{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02], Scaled[0.02]}}";
+      assert_eq!(
+        padding(
+          "DensityPlot[x + y, {x, 0, 1}, {y, 0, 400}, \
+           PlotRange -> {{0, 1}, {0, 400}}]"
+        ),
+        none
+      );
+      assert_eq!(
+        padding(
+          "ContourPlot[x y, {x, 0, 1}, {y, 0, 2}, \
+           PlotRange -> {{0, 1}, {0, 2}, {0, 1}}]"
+        ),
+        none
+      );
+      assert_eq!(
+        padding("DensityPlot[x + y, {x, 0, 1}, {y, 0, 400}]"),
+        margin
+      );
+      assert_eq!(
+        padding(
+          "DensityPlot[x + y, {x, 0, 1}, {y, 0, 2}, PlotRange -> {0, 1}]"
+        ),
+        margin
+      );
+      // The picture's color image fills the frame.
+      let svg = interpret(
+        "ExportString[DensityPlot[x + y, {x, 0, 1}, {y, 0, 400}, \
+         PlotRange -> {{0, 1}, {0, 400}}], \"SVG\"]",
+      )
+      .unwrap();
+      let at = svg.find("<image ").expect("color image");
+      let rest = &svg[at + "<image ".len()..];
+      let geometry = &rest[..rest.find(" preserveAspectRatio").unwrap()];
+      assert!(
+        svg.contains(&format!("<rect {geometry} fill=\"none\"")),
+        "no frame at {geometry}"
+      );
     }
 
     /// Field plots clip to their range (`PlotRangeClipping -> True`, as
@@ -46699,14 +46790,19 @@ mod grid_frame_and_background {
     let dot =
       export_svg(&format!("Grid[{rows}, Alignment -> {{{{Left, \".\"}}}}]"));
     assert_eq!(decimal, dot);
-    // The whole numbers end at the shared decimal point: the two-digit one
-    // starts further left than the one-digit ones, which start together.
+    // The whole numbers end at the shared decimal point. A number with a
+    // point starts its whole digits left of it, so the two-digit one starts
+    // one digit further left than the one-digit one; the entry without a
+    // point ends at it, one digit right of where the one-digit one starts.
     let (x0, anchor) = grid_text_x(&decimal, "0");
     let (x21, _) = grid_text_x(&decimal, "21.375");
     let (x7, _) = grid_text_x(&decimal, "7.5");
-    assert_eq!(anchor, "start");
-    assert_eq!(x0, x7);
+    assert_eq!(anchor, "end");
     assert!(x21 < x7, "21.375 at {x21}, 7.5 at {x7}");
+    assert!(
+      ((x0 - x7) - (x7 - x21)).abs() < 1e-6,
+      "0 ends at {x0}, 7.5 at {x7}, 21.375 at {x21}"
+    );
     // A lone `Alignment -> Decimal` and `{Decimal, rows}` do the same.
     for spec in ["Decimal", "{Decimal, Baseline}"] {
       let svg = export_svg(&format!(

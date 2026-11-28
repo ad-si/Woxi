@@ -514,6 +514,20 @@ fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Whether a `PlotRange` spells out both coordinate ranges as numbers
+/// (`{{xmin, xmax}, {ymin, ymax}}`, with or without a value part). The
+/// frame then sits right on the range: Wolfram's automatic
+/// `PlotRangePadding` adds no margin next to an explicit range.
+fn plot_range_fixes_domain(value: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let is_pair = |e: &Expr| {
+    matches!(e, Expr::List(ends) if ends.len() == 2
+      && ends.iter().all(|end| try_eval_to_f64(end).is_some()))
+  };
+  matches!(&val, Expr::List(parts)
+    if (2..=3).contains(&parts.len()) && parts[..2].iter().all(is_pair))
+}
+
 /// Whether a density or contour plot's `PlotRange` asks for every value
 /// (`All`, or `{xr, yr, All}`), so no sample is dropped as an outlier.
 fn plot_value_range_is_all(value: &Expr) -> bool {
@@ -696,6 +710,7 @@ fn parse_density_contour_options(
   let mut bar_legend: Option<Expr> = None;
   let mut value_range: Option<(f64, f64)> = None;
   let mut full_value_range = false;
+  let mut explicit_domain = false;
   let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
@@ -866,6 +881,7 @@ fn parse_density_contour_options(
         "PlotRange" => {
           value_range = plot_value_range(replacement);
           full_value_range = plot_value_range_is_all(replacement);
+          explicit_domain = plot_range_fixes_domain(replacement);
         }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => bar_legend = automatic_legend_position(replacement),
@@ -913,7 +929,11 @@ fn parse_density_contour_options(
     value_range,
     full_value_range,
     clipping,
-    range_padding: FIELD_RANGE_PADDING,
+    range_padding: if explicit_domain {
+      0.0
+    } else {
+      FIELD_RANGE_PADDING
+    },
   }
 }
 
@@ -2121,11 +2141,6 @@ fn scaled_color(
   density_gradient(t)
 }
 
-/// Robust value range over a set of function samples — an IQR fence
-/// excludes extreme outliers so a singularity in the sampled domain (e.g. a
-/// pole in the plotted function) can't collapse the color scale and contour
-/// levels onto a handful of pixels around it, leaving the rest of the plot a
-/// single flat color.
 /// The smallest and largest finite sample.
 fn full_value_range(values: &[f64]) -> (f64, f64) {
   values
@@ -2137,6 +2152,11 @@ fn full_value_range(values: &[f64]) -> (f64, f64) {
     })
 }
 
+/// Robust value range over a set of function samples — an IQR fence
+/// excludes extreme outliers so a singularity in the sampled domain (e.g. a
+/// pole in the plotted function) can't collapse the color scale and contour
+/// levels onto a handful of pixels around it, leaving the rest of the plot a
+/// single flat color.
 fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let mut vs: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();
@@ -2161,16 +2181,46 @@ fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let fence_lo = q1 - 3.0 * iqr;
   let fence_hi = q3 + 3.0 * iqr;
 
-  let v_min = vs.iter().copied().find(|&v| v >= fence_lo).unwrap_or(vs[0]);
-  let v_max = vs
-    .iter()
-    .rev()
-    .copied()
-    .find(|&v| v <= fence_hi)
-    .unwrap_or(vs[n - 1]);
+  let below = vs.partition_point(|&v| v < fence_lo);
+  let above = n - vs.partition_point(|&v| v <= fence_hi);
+  let fenced_min = vs.get(below).copied().unwrap_or(vs[0]);
+  let fenced_max = vs[..n - above].last().copied().unwrap_or(vs[n - 1]);
+  let kept = fenced_max - fenced_min;
+
+  // A tail beyond the fence is dropped only when it is a real outlier: a
+  // few samples (at most `OUTLIER_SHARE` of them) reaching much further
+  // out (`OUTLIER_REACH` times) than the whole range kept, as next to a
+  // pole. The steep ramp of a field that saturates over most of the domain
+  // (`Erf[y]`, `Tanh[x]`) also lies beyond the fence, because the
+  // quartiles bunch at the plateau, but it either holds a large share of
+  // the samples or stays close to the range kept, and belongs to the
+  // picture.
+  let is_outlier_tail = |count: usize, reach: f64| {
+    count > 0
+      && (count as f64) <= OUTLIER_SHARE * n as f64
+      && reach > OUTLIER_REACH * kept
+  };
+  let v_min = if is_outlier_tail(below, fenced_min - vs[0]) {
+    fenced_min
+  } else {
+    vs[0]
+  };
+  let v_max = if is_outlier_tail(above, vs[n - 1] - fenced_max) {
+    fenced_max
+  } else {
+    vs[n - 1]
+  };
 
   (v_min, v_max)
 }
+
+/// The largest share of a field plot's samples one outlier tail may hold
+/// (see `robust_value_range`).
+const OUTLIER_SHARE: f64 = 0.15;
+
+/// How many times further out than the range kept an outlier tail reaches
+/// at least (see `robust_value_range`).
+const OUTLIER_REACH: f64 = 3.0;
 
 /// Scale a value into [0,1] over [v_min, v_max] (0.5 for a flat range).
 fn scale_value(v: f64, v_min: f64, v_max: f64) -> f64 {
@@ -3968,7 +4018,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     true,
-    FIELD_RANGE_PADDING,
+    opts.range_padding,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
   // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
@@ -4510,7 +4560,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     true,
-    FIELD_RANGE_PADDING,
+    opts.range_padding,
   );
 
   // Use plotters for axes
@@ -8623,7 +8673,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_min, x_max),
     (y_min, y_max),
     false,
-    FIELD_RANGE_PADDING,
+    opts.range_padding,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
   Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
