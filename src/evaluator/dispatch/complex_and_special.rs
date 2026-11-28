@@ -4868,6 +4868,24 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   {
     return args[0].clone();
   }
+  // `DisplayForm[expr]` shows the boxes inside `expr` as the boxes they are
+  // and is itself only a tag around them: wolframscript's
+  // `ToBoxes[DisplayForm[FractionBox["a", "b"]]]` is
+  // `TagBox[FractionBox["a", "b"], DisplayForm]`, so the fraction is still
+  // drawn when a `Framed` or `Style` wraps it.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "DisplayForm"
+    && args.len() == 1
+  {
+    return Expr::FunctionCall {
+      name: "TagBox".to_string(),
+      args: vec![
+        display_form_boxes(&args[0]),
+        Expr::Identifier("DisplayForm".to_string()),
+      ]
+      .into(),
+    };
+  }
   match expr {
     // wolframscript: positive integers render as a single String
     // (`"14"`); negative integers decompose into
