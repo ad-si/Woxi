@@ -444,6 +444,13 @@ pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
   std::borrow::Cow::Owned(out)
 }
 
+/// Whether `c` is one of Wolfram's private-use characters that has no glyph
+/// of its own (`\[InvisibleSpace]`, `\[InvisibleComma]`, …), so it is drawn
+/// as nothing and takes no room.
+pub fn is_glyphless_private_use(c: char) -> bool {
+  private_use_glyph(c) == Some("")
+}
+
 /// The visible stand-in for a single private-use character, or `None` to
 /// leave it alone. See [`substitute_private_use_glyphs`].
 fn private_use_glyph(c: char) -> Option<&'static str> {

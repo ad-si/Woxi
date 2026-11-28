@@ -3663,6 +3663,50 @@ mod jacobi_amplitude {
     assert!((val - 1.5).abs() < 1e-6);
   }
 
+  // Below m = 1 the amplitude keeps growing with u (by Pi every 2 K(m))
+  // instead of wrapping around into (-Pi, Pi].
+  #[test]
+  fn grows_past_pi() {
+    assert_eq!(
+      interpret(
+        "Chop[JacobiAmplitude[{2, 6, -4} EllipticK[0.6], 0.6]/Pi - {1, 3, -2}, 10^-9]"
+      )
+      .unwrap(),
+      "{0, 0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Abs[EllipticF[JacobiAmplitude[u, m], m] - u] < 10^-9, \
+         {u, {7.5, -7.5, 20.}}, {m, {0.3, 0.9, -2.}}]"
+      )
+      .unwrap(),
+      "{{True, True, True}, {True, True, True}, {True, True, True}}"
+    );
+  }
+
+  #[test]
+  fn monotonic_in_u() {
+    assert_eq!(
+      interpret(
+        "OrderedQ[Table[JacobiAmplitude[u, 0.64], {u, 0., 12., 0.25}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // From m = 1 on the amplitude is bounded.
+  #[test]
+  fn bounded_from_m_one() {
+    assert_eq!(
+      interpret(
+        "{Abs[JacobiAmplitude[7.5, 1.]] < Pi/2, Abs[JacobiAmplitude[7.5, 1.5]] < Pi/2}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(

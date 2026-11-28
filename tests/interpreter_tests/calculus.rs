@@ -14190,6 +14190,45 @@ mod nmaximize {
     );
   }
 
+  /// A variable bounded on one side only (`s > 0`) is searched from the end
+  /// of its half-line: a maximum near it is not lost between the samples of
+  /// the whole default range, whichever side the bound is on.
+  #[test]
+  fn nmaximize_searches_a_half_line_from_its_end() {
+    for (input, expected) in [
+      (
+        "NMaximize[{-10 Log[s] - 800/s^2, s > 0}, s]",
+        "{-30.37586907616913, {s -> 12.649110640673518}}",
+      ),
+      (
+        "NMinimize[{10 Log[-s] + 800/s^2, s < 0}, s]",
+        "{30.37586907616913, {s -> -12.649110640673518}}",
+      ),
+      (
+        "NMinimize[{10 Log[s] + 800/s^2, s > 2}, s]",
+        "{30.37586907616913, {s -> 12.649110640673518}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  /// An objective that is singular at the first point tried (the
+  /// exponential underflows there, so its logarithm is `Indeterminate`) is
+  /// still optimized from the points where it is a number.
+  #[test]
+  fn nmaximize_objective_singular_at_the_first_probe() {
+    assert_eq!(
+      interpret("NMaximize[{Log[Exp[-900/s^2]/s], s > 0}, s]").unwrap(),
+      "{-4.247770971942128, {s -> 42.42640687119285}}"
+    );
+    // One that is a number nowhere stays unevaluated.
+    assert_eq!(
+      interpret("NMinimize[Log[0. x], x]").unwrap(),
+      "NMinimize[Indeterminate, x]"
+    );
+  }
+
   #[test]
   fn nminimize_quadratic() {
     // NMinimize[{x^2 - 4*x + 5, -10 < x < 10}, x] should find min at x=2
