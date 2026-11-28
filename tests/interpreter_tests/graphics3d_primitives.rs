@@ -4742,3 +4742,151 @@ mod parametric_plot_range_all {
     );
   }
 }
+
+/// Round solids under the perspective camera of a `ViewVector`, the
+/// `ViewAngle -> All` field of view, `FaceForm[front, None]` and a 2D
+/// `Graphics` set into a scene with `Inset`.
+mod perspective_scenes {
+  use super::*;
+
+  /// The width and height of everything the `<polygon>`s of an SVG cover.
+  fn polygon_extent(svg: &str) -> (f64, f64) {
+    let (mut x0, mut x1, mut y0, mut y1) =
+      (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for tag in svg.split("<polygon points=\"").skip(1) {
+      for pair in tag.split('"').next().unwrap().split_whitespace() {
+        let (x, y) = pair.split_once(',').unwrap();
+        let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+        x0 = x0.min(x);
+        x1 = x1.max(x);
+        y0 = y0.min(y);
+        y1 = y1.max(y);
+      }
+    }
+    (x1 - x0, y1 - y0)
+  }
+
+  /// A flat cylinder whose axis runs toward the camera is a disk seen
+  /// face on. Regression: only the two ends of its axis were moved into
+  /// the camera's space, which turned the axis sideways for a disk off the
+  /// view axis and drew it as a slanted ellipse.
+  #[test]
+  fn disk_facing_the_camera_stays_round() {
+    for x in ["0", "1.5", "-2"] {
+      let (w, h) = polygon_extent(&svg(&format!(
+        "Graphics3D[Cylinder[{{{{{x}, 0, 0}}, {{{x}, -0.1, 0}}}}, 0.5], \
+         ViewVector -> {{{{0, -15, 0}}, {{0, 0, 0}}}}, Boxed -> False, \
+         ImageSize -> {{400, 400}}]"
+      )));
+      assert!((w / h - 1.0).abs() < 0.03, "x = {x}: {w} x {h}");
+    }
+  }
+
+  /// The ends of an upright cylinder or cone seen from above open into
+  /// ellipses, which make its picture taller than its flat side view.
+  #[test]
+  fn round_solid_seen_from_above_shows_its_end_disks() {
+    for solid in ["Cylinder", "Cone"] {
+      let (w, h) = polygon_extent(&svg(&format!(
+        "Graphics3D[{solid}[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1], \
+         ViewVector -> {{{{0, -10, 3}}, {{0, 0, 0.5}}}}, Boxed -> False, \
+         ImageSize -> {{400, 400}}]"
+      )));
+      // Side on, the solid is half as tall as it is wide.
+      assert!(h / w > 0.6, "{solid}: {w} x {h}");
+      assert!(h / w < 0.8, "{solid}: {w} x {h}");
+    }
+  }
+
+  /// The rims of a cylinder under a `ViewVector` are outlined with the
+  /// `EdgeForm` color and opacity.
+  #[test]
+  fn warped_cylinder_rims_keep_the_edge_form() {
+    let scene = |edge: &str| {
+      svg(&format!(
+        "Graphics3D[{{{edge}, Cylinder[]}}, \
+         ViewVector -> {{{{0, -10, 3}}, {{0, 0, 0}}}}, Boxed -> False]"
+      ))
+    };
+    let outlined = scene("EdgeForm[{Red, Opacity[0.5]}]");
+    assert!(
+      outlined.contains("stroke=\"rgb(255,0,0)\"")
+        && outlined.contains("opacity=\"0.5\""),
+      "the rims must be stroked in the EdgeForm color and opacity"
+    );
+    assert!(!scene("EdgeForm[None]").contains("<line "));
+  }
+
+  /// `ViewAngle -> All` opens the camera just far enough to hold the
+  /// sphere around the box: for a cube of side 2 seen from 20 away, the
+  /// half angle is `ArcSin[Sqrt[3]/20]`, and the cube's near face (19
+  /// away) spans `400 (1/19) / Tan[%]` of the 400 pixels.
+  #[test]
+  fn view_angle_all_holds_the_whole_scene() {
+    let scene = |angle: &str| {
+      polygon_extent(&svg(&format!(
+        "Graphics3D[Cuboid[{{-1, -1, -1}}, {{1, 1, 1}}], \
+         ViewVector -> {{{{0, -20, 0}}, {{0, 0, 0}}}}, {angle}\
+         ImageSize -> {{400, 400}}, Boxed -> False]"
+      )))
+    };
+    let (w, h) = scene("ViewAngle -> All, ");
+    let half_angle = (3.0_f64.sqrt() / 20.0).asin();
+    let expected = 400.0 / 19.0 / half_angle.tan();
+    assert!((w - expected).abs() < 2.0, "{w} vs {expected}");
+    assert!((h - expected).abs() < 2.0, "{h} vs {expected}");
+    // The default field of view is much wider.
+    assert!(scene("").0 < w / 2.0);
+    // A camera aimed beside the box widens the view to keep it whole.
+    let (off_axis, _) = polygon_extent(&svg(
+      "Graphics3D[Cuboid[{-1, -1, -1}, {1, 1, 1}], \
+       ViewVector -> {{0, -20, 0}, {3, 0, 0}}, ViewAngle -> All, \
+       ImageSize -> {400, 400}, Boxed -> False]",
+    ));
+    assert!(off_axis < 0.75 * w, "{off_axis} vs {w}");
+  }
+
+  /// `FaceForm[front, None]` draws no back faces: a see-through solid
+  /// shows its near wall only, and an open polygon only the side its
+  /// corners run counterclockwise on.
+  #[test]
+  fn face_form_none_hides_back_faces() {
+    let solid = |form: &str| {
+      polygon_count(&svg(&format!(
+        "Graphics3D[{{Opacity[0.5], {form}, Cylinder[]}}, Boxed -> False]"
+      )))
+    };
+    let (both, front) = (solid("FaceForm[Red]"), solid("FaceForm[Red, None]"));
+    assert!(front > 0 && front * 2 <= both + 48, "{front} of {both}");
+    for corners in [
+      "{{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}",
+      "{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}",
+    ] {
+      let seen_from = |view: &str| {
+        polygon_count(&svg(&format!(
+          "Graphics3D[{{FaceForm[Red, None], Polygon[{corners}]}}, \
+           ViewPoint -> {view}]"
+        )))
+      };
+      assert!(seen_from("{0, -3, 0}") > 0, "{corners}: front");
+      assert_eq!(seen_from("{0, 3, 0}"), 0, "{corners}: back");
+    }
+  }
+
+  /// `Inset[Graphics[…], {x, y, z}]` sets the 2D picture into the scene at
+  /// its own size. Regression: it was read as a text label and dropped.
+  #[test]
+  fn inset_graphics_is_drawn_at_its_own_size() {
+    let scene = svg(
+      "Graphics3D[{Sphere[], \
+       Inset[Graphics[Disk[], ImageSize -> 60], {0, 0, 2}]}]",
+    );
+    assert_eq!(scene.matches("<svg").count(), 2);
+    let inner = scene.split("<svg").nth(2).unwrap();
+    assert!(inner.contains("width=\"60\""), "{}", &inner[..200]);
+    // A text inset stays a label.
+    let label = svg("Graphics3D[{Sphere[], Inset[\"top\", {0, 0, 2}]}]");
+    assert_eq!(label.matches("<svg").count(), 1);
+    assert!(label.contains(">top<"));
+  }
+}
