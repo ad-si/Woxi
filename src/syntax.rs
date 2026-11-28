@@ -639,6 +639,8 @@ fn named_char_to_expr(s: &str) -> Expr {
   match name {
     "Infinity" => return id_expr("Infinity"),
     "ImaginaryI" | "ImaginaryJ" => return id_expr("I"),
+    // `\[SpanFromLeft]` & co. are the `Grid` span symbols themselves.
+    "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth" => return id_expr(name),
     _ => {}
   }
 
@@ -16095,9 +16097,18 @@ thread_local! {
 /// text is code to be evaluated again (e.g. a Manipulate body) rather than
 /// text to display: the box segment is lossy once read back (`Block(…)`,
 /// `=` for `==`).
+///
+/// The code is still unevaluated, so it is printed as held: a product
+/// grouped by parentheses keeps its grouping (`(a*b)*c`, not `a*b*c`) and a
+/// quotient stays one (`1/q`, not `q^(-1)`). Flattening it would change the
+/// order the factors are multiplied in once the text is evaluated — and
+/// with it whether `(Sqrt[x - Pi]*Sqrt[1/(x - Pi)])*Sqrt[0.]` at `x = 0` is
+/// the real `0.` or the complex `0. + 0.*I`.
 pub fn expr_to_source_form(expr: &Expr) -> String {
   let prev = KEEP_FORM_HEADS_AS_SOURCE.with(|c| c.replace(true));
+  let prev_held = IN_HELD_FORMAT.with(|c| c.replace(true));
   let out = expr_to_input_form(expr);
+  IN_HELD_FORMAT.with(|c| c.set(prev_held));
   KEEP_FORM_HEADS_AS_SOURCE.with(|c| c.set(prev));
   out
 }

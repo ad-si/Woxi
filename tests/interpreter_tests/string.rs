@@ -16525,6 +16525,98 @@ mod typeset_boxes_regressions {
     assert_eq!(interpret("ToBoxes[RawBoxes[\"(\"]]").unwrap(), "(");
   }
 
+  /// `DisplayForm` is a tag around the boxes it shows: the boxes inside it
+  /// stay boxes, and everything else is typeset as usual.
+  #[test]
+  fn display_form_to_boxes_tags_its_boxes() {
+    clear_state();
+    for (input, expected) in [
+      (
+        r#"ToBoxes[DisplayForm[FractionBox["a", "b"]]]"#,
+        "TagBox[FractionBox[a, b], DisplayForm]",
+      ),
+      (
+        "ToBoxes[DisplayForm[RadicalBox[1 - 2 x, n]]]",
+        "TagBox[RadicalBox[RowBox[{1, -, RowBox[{2,  , x}]}], n], DisplayForm]",
+      ),
+      (
+        "ToBoxes[DisplayForm[x + y]]",
+        "TagBox[RowBox[{x, +, y}], DisplayForm]",
+      ),
+      (
+        r#"ToBoxes[Framed[DisplayForm[SqrtBox["a"]]]]"#,
+        "FrameBox[TagBox[SqrtBox[a], DisplayForm], StripOnInput -> False]",
+      ),
+      (
+        r#"ToBoxes[Style[DisplayForm[SqrtBox["a"]], Bold]]"#,
+        "StyleBox[TagBox[SqrtBox[a], DisplayForm], Bold, StripOnInput -> False]",
+      ),
+      (
+        r#"ToBoxes[Row[{DisplayForm[SubscriptBox["a", "1"]], "b"}]]"#,
+        "TemplateBox[{TagBox[SubscriptBox[a, 1], DisplayForm], \"b\"}, RowDefault]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  /// Boxes shown by a `DisplayForm` are drawn as boxes inside a wrapper
+  /// that typesets its content, not written out as the call's source.
+  #[test]
+  fn display_form_boxes_are_drawn_inside_wrappers() {
+    clear_state();
+    for wrapped in [
+      "Framed[DisplayForm[RadicalBox[1 - 2 x, n]]]",
+      "Framed[Style[Pane[DisplayForm[RadicalBox[1 - 2 x, n]]], 32, Bold]]",
+      "Panel[DisplayForm[RadicalBox[1 - 2 x, n]]]",
+      "Framed[DisplayForm[FractionBox[x, n]]]",
+    ] {
+      let svg =
+        interpret(&format!("ExportString[{wrapped}, \"SVG\"]")).unwrap();
+      for source in ["DisplayForm", "RadicalBox", "FractionBox"] {
+        assert!(!svg.contains(source), "{wrapped} draws the text {source}");
+      }
+      assert!(svg.contains(">x</text>"), "{wrapped} lost its content");
+      assert!(svg.contains(">n</text>"), "{wrapped} lost its content");
+    }
+  }
+
+  /// `Pane[content, BaseStyle -> directives]` sets its content the way an
+  /// enclosing `Style[content, directives]` does.
+  #[test]
+  fn pane_base_style_sets_its_content() {
+    clear_state();
+    let svg = |expr: &str| {
+      interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+    };
+    for (base, directives) in [
+      ("{FontSize -> 20, Red}", "FontSize -> 20, Red"),
+      ("Blue", "Blue"),
+      ("{Bold, 18}", "Bold, 18"),
+    ] {
+      for content in ["\"abc\"", "Grid[{{\"abc\"}, {x^2}}]"] {
+        assert_eq!(
+          svg(&format!("Pane[{content}, BaseStyle -> {base}]")),
+          svg(&format!("Pane[Style[{content}, {directives}]]")),
+          "{content} in {base}"
+        );
+        assert_eq!(
+          svg(&format!(
+            "Pane[{content}, ImageSize -> {{200, 100}}, BaseStyle -> {base}]"
+          )),
+          svg(&format!(
+            "Pane[Style[{content}, {directives}], ImageSize -> {{200, 100}}]"
+          )),
+          "sized {content} in {base}"
+        );
+      }
+    }
+    assert_ne!(
+      svg("Pane[\"abc\", BaseStyle -> {FontSize -> 20, Red}]"),
+      svg("Pane[\"abc\"]")
+    );
+  }
+
   /// The fixed-digit `NumberForm[x, {n, f}]` box keeps the sign of a
   /// negative value that has to be rounded, and shows no negative zero.
   #[test]

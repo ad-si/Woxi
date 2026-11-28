@@ -1995,9 +1995,29 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(expanded),
     );
   }
+  // A large constant (rotations of normalized vectors built from
+  // `Cos[2 Pi k/17]`, say) is left as the plain sum of products: multiplying
+  // out and simplifying hundreds of trigonometric terms costs far more than
+  // the determinant itself, and such a number is only ever used numerically.
+  if is_large_numeric_constant(&det) {
+    return Ok(evaluate_expr_to_expr(&det).unwrap_or(det));
+  }
   let r = crate::functions::expand_and_combine(&det);
   let r = simplify_expr(&r);
   Ok(reduce_radical_determinant(&matrix, &r).unwrap_or(r))
+}
+
+/// The leaf count from which a constant determinant is no longer simplified.
+const LARGE_CONSTANT_LEAVES: i128 = 250;
+
+/// Whether `e` is a number without free symbols (`NumericQ`) of at least
+/// `LARGE_CONSTANT_LEAVES` leaves.
+fn is_large_numeric_constant(e: &Expr) -> bool {
+  crate::functions::predicate_ast::is_numeric_q(e)
+    && matches!(
+      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(e)),
+      Ok(Expr::Integer(n)) if n >= LARGE_CONSTANT_LEAVES
+    )
 }
 
 /// Entries that are numbers built from radicals (`1/(1 + Sqrt[5])`) give an
