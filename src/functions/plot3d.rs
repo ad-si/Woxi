@@ -16288,6 +16288,15 @@ const THIN_SHEET_MAX_SIDE_RATIO: f64 = 0.01;
 /// filling a 300 × 400 picture).
 const COMPACT_BOX_MAX_SIDE_RATIO: f64 = 2.25;
 
+/// Longest-to-shortest side ratio up to which an invisible box pinned by
+/// an explicit `PlotRange` is sphere-framed under the default camera in a
+/// picture of fixed size (see `elongated_pinned_range` in
+/// `graphics3d_ast`). Wolfram's snapshots put the limit between a
+/// 22 × 8.5 × 8.5 box (a long tube, sphere-framed at
+/// `ImageSize -> {595, 375}`) and an 18 × 10 × 4 one (two spheres on a
+/// line, outline-fitted at `ImageSize -> {600, 375}`).
+const PINNED_BOX_MAX_SIDE_RATIO: f64 = 3.5;
+
 /// Distance of an explicit `ViewPoint` from the box center, in units of
 /// the box's longest side, from which an elongated unboxed scene keeps the
 /// outline fit in a picture of fixed size (see its use in `graphics3d_ast`):
@@ -17085,8 +17094,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && view_distance.is_finite()
       && view_distance >= DISTANT_VIEW_POINT
   };
-  let explicitly_framed =
-    plot_range.is_some() || (explicit_view_point && !elongated_automatic_range);
+  // A pinned box that is much longer than it is thick keeps the outline
+  // fit under the default camera: Wolfram's snapshots of a Demonstration's
+  // unboxed spheres moving along x in an 18 × 10 × 4 `PlotRange` at
+  // `ImageSize -> {600, 375}` inside a `Manipulate` draw a unit about
+  // 28 px long, as the outline fit does (sphere framing would draw it
+  // 18 px long). The pinned tubes above (a 22 × 8.5 × 8.5 box at most)
+  // are sphere-framed, which puts the limit between their side ratio of
+  // 2.6 and this one of 4.5 (see `PINNED_BOX_MAX_SIDE_RATIO`).
+  let elongated_pinned_range = !explicit_view_point
+    && plot_range.is_some_and(|range| {
+      let sides = range.map(|(lo, hi)| hi - lo);
+      let longest = sides.into_iter().fold(0.0, f64::max);
+      let shortest = sides.into_iter().fold(f64::INFINITY, f64::min);
+      longest.is_finite()
+        && shortest > 0.0
+        && longest > PINNED_BOX_MAX_SIDE_RATIO * shortest
+    });
+  let explicitly_framed = (plot_range.is_some() && !elongated_pinned_range)
+    || (explicit_view_point && !elongated_automatic_range);
   let automatic_sphere = !spherical_region
     && !spherical_region_off
     && !OUTLINE_FIT_CELL.get()

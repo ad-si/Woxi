@@ -9931,7 +9931,7 @@ mod plot3d {
       assert!((lo - 0.1).abs() < 0.005, "cap starts at {lo}");
       assert!((hi - 1.0).abs() < 0.005, "cap ends at {hi}");
       // A surface inside its range has no cap.
-      assert!(top_view_fractions("", "<polygon", gray).is_empty());
+      assert_eq!(top_view_fractions("", "<polygon", gray), [] as [f64; 0]);
     }
 
     /// `ClippingStyle -> None` leaves the cut open, and a color fills it
@@ -9947,9 +9947,9 @@ mod plot3d {
       };
       let open = ", PlotRange -> {{0, 1}, {0, 1}, {0, 1}}, \
                   ClippingStyle -> None";
-      assert!(top_view_fractions(open, "<polygon", gray).is_empty());
+      assert_eq!(top_view_fractions(open, "<polygon", gray), [] as [f64; 0]);
       let red = ", PlotRange -> {0, 1}, ClippingStyle -> Red";
-      assert!(top_view_fractions(red, "<polygon", gray).is_empty());
+      assert_eq!(top_view_fractions(red, "<polygon", gray), [] as [f64; 0]);
       assert!((reach(red) - 1.0).abs() < 0.005, "{}", reach(red));
     }
 
@@ -11288,8 +11288,10 @@ mod plot3d {
       .unwrap();
       assert_eq!(result, "True");
       // Rules that only match a symbolic variable are still applied first.
+      // (Wolfram's last sample lies a hair short of `t = 1`, at
+      // `1 - 2.04*10^-8`, so the endpoint is compared with a tolerance.)
       let result = interpret(
-        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]] == {Cos[1.], Sin[1.], 1.}",
+        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          end = Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]];          Max[Abs[end - {Cos[end[[3]]], Sin[end[[3]]], 1.}]] < 10^-6",
       )
       .unwrap();
       assert_eq!(result, "True");
@@ -49784,11 +49786,11 @@ mod complex_plot_3d {
   fn sin_returns_graphics3d() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49796,11 +49798,11 @@ mod complex_plot_3d {
   fn polynomial() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49817,11 +49819,11 @@ mod complex_plot_3d {
     // Audit-style call: ComplexPlot3D over an arbitrary head.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49829,15 +49831,78 @@ mod complex_plot_3d {
   fn unevaluable_function_falls_back() {
     // A function that never evaluates to a number leaves nothing to draw:
     // ComplexPlot3D returns an empty 3D plot (the caller still gets a
-    // -Graphics3D- placeholder) instead of failing.
+    // -Graphics3D- placeholder) instead of failing. Its phase legend does
+    // not depend on the values, so it is still attached.
     assert_eq!(
       interpret(
         "g = ComplexPlot3D[f[z], {z, -1 - I, 1 + I}, \
          PlotLegends -> Automatic]; \
-         {g, Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
+         {Head[g], Head[First[g]], \
+         Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
       )
       .unwrap(),
-      "{-Graphics3D-, 0}"
+      "{Legended, Graphics3D, 0}"
+    );
+  }
+
+  #[test]
+  fn automatic_legend_is_the_phase_bar() {
+    // `PlotLegends -> Automatic` attaches a bar over the phase, `-π` to
+    // `π`, the same for every function and range.
+    assert_eq!(
+      interpret(
+        "ToString[ComplexPlot3D[z^2, {z, -2 - I, 2 + I}, \
+         PlotLegends -> Automatic][[2]], InputForm]"
+      )
+      .unwrap(),
+      "Placed[BarLegend[{ColorDataFunction[\"MidShiftBalancedHue\", \
+       \"ThemeGradients\", {0, 1}, Blend[\"MidShiftBalancedHue\", #1] & ][#1] & , \
+       {0, 1}}, LabelStyle -> {}, LegendLayout -> \"Column\", \
+       LegendMarkerSize -> 150, \"ColorFunctionShading\" -> None, \
+       OpacityFunction -> None, \"OpacityFunctionTicks\" -> None, \
+       \"OpacityFunctionSize\" -> Scaled[0.5], \
+       \"OpacityFunctionRange\" -> {0, 1}, \
+       Charting`TickLabels -> {\"-π\", \"-π/2\", \"0\", \"π/2\", \"π\"}, \
+       Ticks -> {{0., 0.25, 0.5, 0.75, 1.}, \
+       {{0, 1/20, 1/10, 3/20, 1/5}, {1/5, 1/4, 3/10, 7/20, 2/5}, \
+       {2/5, 9/20, 1/2, 11/20, 3/5}, {3/5, 13/20, 7/10, 3/4, 4/5}, \
+       {4/5, 17/20, 9/10, 19/20, 1}}}, Charting`TickSide -> Right, \
+       ColorFunctionScaling -> True], After, Identity]"
+    );
+    // `ColorFunction -> Automatic` is the default coloring.
+    assert_eq!(
+      interpret(
+        "Head[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         ColorFunction -> Automatic, PlotLegends -> Automatic]]"
+      )
+      .unwrap(),
+      "Legended"
+    );
+  }
+
+  #[test]
+  fn placed_phase_legend_layout_and_tick_side() {
+    // Above or below the plot the bar is a wider `Row`; beside it, its
+    // ticks go left for a placement above the square's diagonal (or on
+    // the diagonal's lower-left half).
+    assert_eq!(
+      interpret(
+        "Table[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         PlotLegends -> Placed[Automatic, p]][[2]] /. \
+         Placed[BarLegend[_, o___], _, _] :> (\
+         {LegendLayout, LegendMarkerSize, Charting`TickSide} /. {o}), \
+         {p, {After, Before, Left, Above, Bottom, {Center, Top}, \
+         {Right, Top}, {Left, Bottom}, {0.5, 0.5}, {0.4, 0.4}, \
+         {0.7, 0.8}, {0.4, 0.1}, Scaled[{0.2, 0.3}], \
+         {{0.2, 0.2}, {1, 1}}, {Top, Right}, {Bottom, Left}}}]"
+      )
+      .unwrap(),
+      "{{Column, 150, Right}, {Column, 150, Left}, {Column, 150, Left}, \
+       {Row, 225, Left}, {Row, 225, Right}, {Column, 150, Left}, \
+       {Column, 150, Right}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Row, 225, Left}, \
+       {Row, 225, Right}}"
     );
   }
 
@@ -79030,6 +79095,69 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   }
 }
 
+/// Regression: an invisible box pinned by a `PlotRange` that is much longer
+/// than it is thick keeps the outline fit under the default camera, also
+/// inside a `Manipulate` frame. Wolfram's snapshots of a Demonstration's two
+/// spheres on a line in an 18 × 10 × 4 range at `ImageSize -> {600, 375}`
+/// draw them about 1.56× as large as the sphere framing Woxi gave them. A
+/// less elongated pinned box and an explicit `ViewPoint` keep the sphere.
+#[test]
+fn elongated_pinned_3d_range_under_the_default_camera_fits_its_outline() {
+  let scene = |range: &str, extra: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{Sphere[{{-5, 0, 0}}, 0.8], Sphere[{{4, 0, 0}}, 0.8]}}, \
+       Boxed -> False, PlotRange -> {range}, \
+       ImageSize -> {{600, 375}}{extra}]"
+    ))
+  };
+  let off = ", SphericalRegion -> False";
+  let on = ", SphericalRegion -> True";
+  for range in [
+    "{{-8, 10}, {-5, 5}, {-2, 2}}",
+    "{{-8, 10}, {-2, 2}, {-5, 5}}",
+  ] {
+    let automatic = scene(range, "");
+    assert_ne!(scene(range, off), scene(range, on), "{range}");
+    assert_eq!(automatic, scene(range, off), "{range}");
+    assert_eq!(
+      woxi::with_manipulate_frame(|| scene(range, "")),
+      woxi::with_manipulate_frame(|| scene(range, off)),
+      "{range} in a Manipulate frame"
+    );
+    // An explicit `ViewPoint` still frames the scene by its sphere.
+    let view = ", ViewPoint -> {1.3, -2.4, 2}";
+    assert_eq!(
+      scene(range, view),
+      scene(range, &format!("{view}{on}")),
+      "{range}"
+    );
+  }
+  // The spheres are drawn at the outline-fitted scale: a unit spans about
+  // 28 px of the 600 × 375 picture, so the two centers lie well over 200 px
+  // apart (sphere framing would put them about 140 px apart).
+  let xs: Vec<f64> = scene("{{-8, 10}, {-5, 5}, {-2, 2}}", "")
+    .split("points=\"")
+    .skip(1)
+    .flat_map(|rest| {
+      let pts = &rest[..rest.find('"').unwrap()];
+      pts
+        .split_whitespace()
+        .filter_map(|p| p.split(',').next()?.parse::<f64>().ok())
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let span = xs.iter().copied().fold(f64::MIN, f64::max)
+    - xs.iter().copied().fold(f64::MAX, f64::min);
+  assert!(
+    (245.0..275.0).contains(&span),
+    "expected the spheres to span about 258 px, got {span}"
+  );
+
+  // A pinned box of moderate proportions keeps the sphere framing.
+  let compact = "{{-8, 10}, {-5, 5}, {-4, 4}}";
+  assert_eq!(scene(compact, ""), scene(compact, on));
+}
+
 /// Regression: an unboxed scene of fixed size with a pinned `PlotRange` or
 /// an explicit `ViewPoint` that is a cell of a `Grid`, `Row`, `Column` or
 /// list keeps the outline fit, also inside a `Manipulate` frame. Wolfram's
@@ -79081,6 +79209,77 @@ fn pinned_3d_scene_in_a_layout_cell_fits_its_outline() {
   };
   assert_eq!(held(""), held(", SphericalRegion -> False"));
   assert_ne!(held(""), held(", SphericalRegion -> True"));
+}
+
+/// Regression: a `Column` shown as a result of its own (the way a notebook
+/// cell or a `Manipulate` frame displays it, not through `ExportString`)
+/// draws its items beforehand, and a 3D scene of fixed size among them was
+/// left framed by its sphere. Wolfram's snapshots of a Demonstration's
+/// `Manipulate` of a `Column` holding a boxed scene (a 24 × 4 × 4 pinned
+/// range seen from `{2, -3, 2.5}` at `ImageSize -> {350, 200}`) over a
+/// `Plot` draw the box about 337 px wide, as the outline fit does; Woxi drew
+/// it 181 px wide.
+#[test]
+fn pinned_3d_scene_in_a_displayed_column_fits_its_outline() {
+  let displayed = |code: &str| {
+    woxi::interpret_with_stdout(code)
+      .expect("evaluate")
+      .graphics
+      .expect("the column should be drawn as a picture")
+  };
+  // The widest horizontal span of the scene's lines.
+  let width = |svg: &str| {
+    let xs: Vec<f64> = svg
+      .split(" x1=\"")
+      .chain(svg.split(" x2=\""))
+      .filter_map(|rest| rest[..rest.find('"')?].parse::<f64>().ok())
+      .collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  for (box_options, size) in [
+    ("", "{350, 200}"),
+    (", Boxed -> False", "{350, 200}"),
+    (", Axes -> {True, False, False}", "{300, 300}"),
+  ] {
+    let column = |extra: &str, rest: &str| {
+      format!(
+        "Column[{{Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {size}\
+         {box_options}{extra}]{rest}}}]"
+      )
+    };
+    for rest in ["", ", \"caption\"", ", Plot[x, {x, 0, 1}]"] {
+      let in_frame = |extra: &str| {
+        woxi::with_manipulate_frame(|| displayed(&column(extra, rest)))
+      };
+      let automatic = in_frame("");
+      let outline = in_frame(", SphericalRegion -> False");
+      let sphere = in_frame(", SphericalRegion -> True");
+      assert_eq!(automatic, outline, "{box_options} {size} {rest}");
+      // An explicit `SphericalRegion -> True` is kept in the column.
+      assert_ne!(automatic, sphere, "{box_options} {size} {rest}");
+      // The lines of a `Plot` below would hide the scene's own extent.
+      assert!(
+        !rest.is_empty() || width(&automatic) > 1.05 * width(&sphere),
+        "{box_options} {size} {rest}: {} vs {}",
+        width(&automatic),
+        width(&sphere)
+      );
+    }
+  }
+  // On its own the scene of a `Manipulate` frame is still sphere-framed.
+  let alone = |extra: &str| {
+    woxi::with_manipulate_frame(|| {
+      displayed(&format!(
+        "Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {{350, 200}}{extra}]"
+      ))
+    })
+  };
+  assert_eq!(alone(""), alone(", SphericalRegion -> True"));
 }
 
 /// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
@@ -79220,8 +79419,8 @@ fn elongated_unboxed_3d_scene_seen_from_afar_fits_its_outline() {
 /// `ViewPoint` nor a `PlotRange` fills its fixed-size picture by the box
 /// outline, as Wolfram's snapshot of a Demonstration's stepped stack of
 /// cuboids shows (262 px wide at `ImageSize -> {400, 300}`; Woxi's outline
-/// fit gives 250 px, its sphere framing 184 px). A set camera or range
-/// still switches the frame to the sphere framing.
+/// fit gives 250 px, its sphere framing 184 px). A set camera or a range
+/// of moderate proportions still switches the frame to the sphere framing.
 #[test]
 fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
   let scene = |opts: &str| {
@@ -79241,7 +79440,7 @@ fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
   assert_eq!(export_svg(&scene("")), outline);
   for pin in [
     ", ViewPoint -> {1.3, -2.4, 2}",
-    ", PlotRange -> {{-3, 3}, {-2, 2}, {0, 1}}",
+    ", PlotRange -> {{-3, 3}, {-2, 2}, {-1, 1}}",
   ] {
     let framed = woxi::with_manipulate_frame(|| export_svg(&scene(pin)));
     let spherical =
@@ -83943,4 +84142,58 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
       .contains(">P<tspan baseline-shift=\"sub\" font-size=\"70%\">q</tspan><"),
     "the 20-point subscript: {svg}"
   );
+}
+
+/// Regression: `Inset[Framed[Pane[content, {w, h}]], pos]` drew its frame
+/// around the content alone, so an empty pane used as a colored plate
+/// collapsed to a sliver. The frame encloses the pane's box (plus the
+/// default 5-point margins), and still grows with larger content.
+#[test]
+fn inset_framed_pane_keeps_the_pane_size() {
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"\", {120, 30}], Background -> Yellow], \
+     {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    svg.contains("width=\"129.00\" height=\"39.00\" fill=\"rgb(255,255,0)\""),
+    "the empty plate: {svg}"
+  );
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"zzlabel\", ImageSize -> {80, 50}]], \
+     {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    svg.contains("width=\"89.00\" height=\"59.00\""),
+    "the pane sized by ImageSize: {svg}"
+  );
+  assert!(svg.contains(">zzlabel<"), "the content: {svg}");
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"zzlabel\", {2, 2}]], {0, 0}]}, \
+     PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    !svg.contains("width=\"11.00\" height=\"11.00\""),
+    "content larger than the pane keeps its room: {svg}"
+  );
+}
+
+/// A `Text` centered on the border of an explicit `PlotRange` is cut off at
+/// the picture's edge, as in Wolfram: it is not dragged back inside, which
+/// would set it on top of its neighbor in a table of labels.
+#[test]
+fn text_centered_on_the_plot_range_border_is_cut_off_there() {
+  let svg = export_svg(
+    "Graphics[{Text[28, {140, 0}], Text[30, {150, 0}]}, \
+     PlotRange -> {{-4, 150}, {-4, 130}}, ImageSize -> {530, 470}]",
+  );
+  let xs: Vec<f64> = svg
+    .split("<text x=\"")
+    .skip(1)
+    .filter_map(|rest| rest.split('"').next()?.parse().ok())
+    .collect();
+  assert_eq!(xs.len(), 2, "{svg}");
+  // Ten units are 34 pt apart; the label on the border keeps (almost) all
+  // of that distance and ends half outside the 530 pt wide picture.
+  assert!(xs[1] - xs[0] > 33.0, "{xs:?}");
+  assert!(xs[1] > 528.0, "{xs:?}");
 }
