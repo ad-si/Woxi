@@ -854,6 +854,64 @@ mod layout_display {
     }
   }
 
+  /// Regression: in a column aligned on a character (`Alignment -> "."`)
+  /// that `ItemSize` makes wider than its entries, entries without the
+  /// character sat flush left. They carry the character at their right
+  /// edge, so the front end sets them flush right in the column.
+  #[test]
+  fn grid_char_aligned_entries_end_at_fixed_column_right_edge() {
+    let texts = |svg: &str| -> Vec<(String, f64, String)> {
+      svg
+        .match_indices("<text ")
+        .map(|(i, _)| {
+          let end = i + svg[i..].find("</text>").unwrap();
+          let tag_end = i + svg[i..].find('>').unwrap();
+          let tag = &svg[i..tag_end];
+          let attr = |name: &str| -> String {
+            let j = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+            tag[j..j + tag[j..].find('"').unwrap()].to_string()
+          };
+          (
+            svg[tag_end + 1..end].to_string(),
+            attr("x").parse().unwrap(),
+            attr("text-anchor"),
+          )
+        })
+        .collect()
+    };
+    let aligned = svg_of(
+      "Grid[{{7, \"ab\", 1.5}, {123, \"c\", 22.25}}, \
+       Alignment -> \".\", ItemSize -> {{6, 5, 6}, Automatic}]",
+    );
+    let right = svg_of(
+      "Grid[{{7, \"ab\", 1.5}, {123, \"c\", 22.25}}, \
+       Alignment -> Right, ItemSize -> {{6, 5, 6}, Automatic}]",
+    );
+    let (aligned, right) = (texts(&aligned), texts(&right));
+    let find = |all: &[(String, f64, String)], text: &str| {
+      all.iter().find(|t| t.0 == text).cloned().unwrap()
+    };
+    // The columns without a "." match right-aligned ones.
+    for text in ["7", "123", "ab", "c"] {
+      let (a, r) = (find(&aligned, text), find(&right, text));
+      assert_eq!(a.2, "end", "{aligned:?}");
+      assert!((a.1 - r.1).abs() < 0.01, "{text}: {aligned:?}\n{right:?}");
+    }
+    // The column with decimal points still lines them up: the longer
+    // integer part starts one digit further left.
+    let (short, long) = (find(&aligned, "1.5"), find(&aligned, "22.25"));
+    assert_eq!(short.2, "start", "{aligned:?}");
+    assert!(long.1 < short.1, "{aligned:?}");
+  }
+
+  /// Regression: text wrapped to a fixed `ItemSize` width lost its leading
+  /// space and had runs of spaces collapsed to one.
+  #[test]
+  fn grid_item_size_keeps_leading_and_repeated_spaces() {
+    let svg = svg_of("Grid[{{\" of  a \", \"x\"}}, ItemSize -> {{8, 2}}]");
+    assert!(svg.contains("> of  a <"), "{svg}");
+  }
+
   /// Regression: a picture (here a nested `Grid`) wider than its fixed
   /// `ItemSize` column was squeezed into the column, so the outer grid was
   /// narrower than its content and the picture's right side was cut off.
