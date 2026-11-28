@@ -4395,6 +4395,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         _ => expr,
       }
     }
+    // `LabelStyle -> spec` styles the labels: push it onto each one.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && let Some(styled) =
+          functions::graphics::labeled_label_style_pushed(args) =>
+    {
+      match render_grid_if_needed(styled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
@@ -4541,6 +4552,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           Some(svg) => graphics_result(svg),
           None => expr,
         }
+      } else if let Some(flow) =
+        evaluator::dispatch::io_functions::display_box_product_flow(&expr)
+      {
+        // Factors that are not all tables: the product is typeset as the
+        // factors side by side, wrapping at the page width.
+        graphics_result(evaluator::dispatch::io_functions::expr_to_svg(&flow))
       } else {
         expr
       }

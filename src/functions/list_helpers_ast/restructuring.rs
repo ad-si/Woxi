@@ -1613,13 +1613,15 @@ pub fn rotate_unified_ast(
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
   let subject = &args[0];
+  // `Rational` and `Complex` numbers are atoms, whatever holds them.
   if !matches!(
     subject,
     Expr::List(_)
       | Expr::FunctionCall { .. }
       | Expr::CurriedCall { .. }
       | Expr::Association(_)
-  ) {
+  ) || crate::functions::list_helpers_ast::sorting::is_atomic_arg(subject)
+  {
     crate::emit_message(&format!(
       "{}::normal: Nonatomic expression expected at position 1 in {}.",
       fname,

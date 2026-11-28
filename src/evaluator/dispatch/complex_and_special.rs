@@ -6167,7 +6167,7 @@ const TF_SYMBOL_GLYPHS: &[(&str, &str)] = &[
   ("ImaginaryI", "\u{2148}"),
   ("Degree", "\u{00B0}"),          // °
   ("EulerGamma", "\u{03B3}"),      // γ
-  ("GoldenRatio", "\u{03C6}"),     // φ
+  ("GoldenRatio", "\u{03D5}"),     // ϕ
   ("ComplexInfinity", "\u{221E}"), // ∞
 ];
 
@@ -7247,9 +7247,14 @@ fn tf_times(expr: &Expr) -> Expr {
   } = product;
   // A literal `1` factor is no factor at all: `a/b 1/c` sets as `a/(b c)`.
   numerators.retain(|f| !matches!(f, Expr::Integer(1)));
-  tf_order_factors(&mut numerators);
+  let lead = tf_order_factors_tracking(&mut numerators);
   tf_order_factors(&mut denominators);
-  let row_of = |parts: &[Expr]| -> Expr {
+  // The minus of a product is written on the factor that leads it in
+  // canonical order. When the letter order moves that factor back, it
+  // takes its minus along in parentheses: `-x f[1]` is `f(1) (-x)`.
+  let minus_at =
+    (negative && denominators.is_empty() && lead > 0).then_some(lead);
+  let row_of = |parts: &[Expr], minus_at: Option<usize>| -> Expr {
     // A lone factor is set as it is: `a/(b c)` has `b c` under the bar.
     if let [only] = parts {
       return tf(only);
@@ -7262,7 +7267,11 @@ fn tf_times(expr: &Expr) -> Expr {
       // A large operator followed by another factor is parenthesized;
       // the last one runs on to the end of the product. A product among
       // other factors keeps its grouping: `a (b c)`.
-      if (i + 1 < parts.len() && tf_is_big_operator(f)) || tf_is_product_node(f)
+      if minus_at == Some(i) {
+        items
+          .push(tf_parens(row_box(vec![tf_string("-"), tf_factor_boxed(f)])));
+      } else if (i + 1 < parts.len() && tf_is_big_operator(f))
+        || tf_is_product_node(f)
       {
         items.push(tf_parens(tf(f)));
       } else {
@@ -7275,17 +7284,17 @@ fn tf_times(expr: &Expr) -> Expr {
     if numerators.is_empty() {
       tf_string("1")
     } else {
-      row_of(&numerators)
+      row_of(&numerators, minus_at)
     }
   } else {
     let num = if numerators.is_empty() {
       tf_string("1")
     } else {
-      row_of(&numerators)
+      row_of(&numerators, minus_at)
     };
-    tf_box("FractionBox", vec![num, row_of(&denominators)])
+    tf_box("FractionBox", vec![num, row_of(&denominators, None)])
   };
-  if !negative {
+  if !negative || minus_at.is_some() {
     return body;
   }
   // The minus of a product of several factors goes on the first one:
@@ -7312,53 +7321,30 @@ fn tf_times(expr: &Expr) -> Expr {
 
 /// Put the factors of a product into the order TraditionalForm sets them in.
 /// Exact numeric factors lead, in their canonical order: `a Pi` is set as
-/// `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`. An indexed variable
-/// `Subscript[k, 1]` is ordered as its base symbol `k` would be, so it moves
-/// ahead of later symbols and of function applications: `x Subscript[k, 1]`
-/// is set as `k₁ x` and `Sin[x] Subscript[k, 2]` as `k₂ sin(x)`. A held
-/// product keeps the order it was written in (apart from the numbers).
+/// `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`. The others go by the letters
+/// their boxes show (see `tf_times_order`): `x Subscript[k, 1]` is set as
+/// `k₁ x`, `Sin[x] Subscript[k, 2]` as `k₂ sin(x)`, `"m" f[1]` as `f(1) m`
+/// and `"m" NumberForm[9., 2]` as `9. m`. A held product keeps the order it
+/// was written in (apart from the numbers).
 pub(crate) fn tf_order_factors(factors: &mut Vec<Expr>) {
+  tf_order_factors_tracking(factors);
+}
+
+/// `tf_order_factors`, giving the place the factor that led the product
+/// before the letter order (the one a lone minus sign is written on) ends
+/// up at.
+fn tf_order_factors_tracking(factors: &mut Vec<Expr>) -> usize {
   factors.sort_by_key(|f| !tf_is_numeric_constant(f));
-  if TF_HELD.get() {
-    return;
+  if TF_HELD.get() || factors.len() < 2 {
+    return 0;
   }
-  // The base symbol of `Subscript[sym, …]`, the key it is ordered by.
-  fn indexed_base(e: &Expr) -> Option<Expr> {
-    match e {
-      Expr::FunctionCall { name, args }
-        if name == "Subscript"
-          && args.len() >= 2
-          && matches!(args[0], Expr::Identifier(_)) =>
-      {
-        Some(args[0].clone())
-      }
-      _ => None,
-    }
-  }
-  if !factors.iter().any(|f| indexed_base(f).is_some()) {
-    return;
-  }
-  let key = |e: &Expr| indexed_base(e).unwrap_or_else(|| e.clone());
-  let (indexed, mut ordered): (Vec<Expr>, Vec<Expr>) = std::mem::take(factors)
-    .into_iter()
-    .partition(|f| indexed_base(f).is_some());
-  let numbers = ordered
-    .iter()
-    .take_while(|f| tf_is_numeric_constant(f))
-    .count();
-  // Insert each indexed variable ahead of the first factor its base symbol
-  // sorts before; ties keep the indexed variable after.
-  for f in indexed {
-    let k = key(&f);
-    let at = (numbers..ordered.len())
-      .find(|&i| {
-        crate::functions::list_helpers_ast::canonical_cmp(&k, &key(&ordered[i]))
-          == std::cmp::Ordering::Less
-      })
-      .unwrap_or(ordered.len());
-    ordered.insert(at, f);
-  }
-  *factors = ordered;
+  let boxes: Vec<Expr> = factors.iter().map(tf_factor_boxed).collect();
+  let order = tf_times_order(&boxes);
+  let lead = order.iter().position(|&i| i == 0).unwrap_or(0);
+  let mut taken: Vec<Option<Expr>> =
+    std::mem::take(factors).into_iter().map(Some).collect();
+  *factors = order.into_iter().filter_map(|i| taken[i].take()).collect();
+  lead
 }
 
 /// The TraditionalForm glyph of a relational operator: `a == b` is set as
@@ -7795,6 +7781,171 @@ fn tf_visit_strings(b: &Expr, f: &mut impl FnMut(&str)) {
   }
 }
 
+/// The function names TraditionalForm ranks after the variables of a term
+/// or factor, in their fixed order.
+const TF_RANKED: [&str; 56] = [
+  "ln",
+  "log",
+  "sin",
+  "cos",
+  "tan",
+  "cot",
+  "csc",
+  "sec",
+  "sinh",
+  "cosh",
+  "tanh",
+  "coth",
+  "csch",
+  "sech",
+  "Gamma",
+  "Gamma2",
+  "Gamma3",
+  "GammaRegularized",
+  "GammaRegularized3",
+  "PolyGamma",
+  "PolyGamma2",
+  "Beta",
+  "Beta3",
+  "BetaRegularized",
+  "BetaRegularized4",
+  "InverseGammaRegularized",
+  "InverseGammaRegularized3",
+  "InverseBetaRegularized",
+  "InverseBetaRegularized4",
+  "BesselJ",
+  "BesselY",
+  "BesselI",
+  "BesselK",
+  "HankelH1",
+  "HankelH2",
+  "BesselJZero",
+  "BesselYZero",
+  "EllipticF",
+  "EllipticE",
+  "EllipticE2",
+  "EllipticPi",
+  "EllipticPi3",
+  "EllipticTheta",
+  "AiryAi",
+  "AiryAiPrime",
+  "AiryBi",
+  "AiryBiPrime",
+  "KelvinBer",
+  "KelvinBer2",
+  "KelvinBei",
+  "KelvinBei2",
+  "KelvinKer",
+  "KelvinKer2",
+  "KelvinKei",
+  "KelvinKei2",
+  "CTraditional",
+];
+
+/// Whether a box string counts as a "variable" in TraditionalForm's term
+/// and factor order: anything but numbers, signs, parentheses and the
+/// constants π, ⅇ, ⅈ, ℽ.
+fn tf_is_variable_text(s: &str) -> bool {
+  // π, \[ExponentialE], \[ImaginaryI], \[DoubledGamma] (as box text or
+  // as Woxi's drawn glyphs).
+  !matches!(
+    s,
+    "\u{03C0}"
+      | "\u{F74D}"
+      | "\u{F74E}"
+      | "\u{F74A}"
+      | "\u{2147}"
+      | "\u{2148}"
+      | "\u{213D}"
+  ) && (s.is_empty()
+    || !s
+      .chars()
+      .all(|c| c.is_whitespace() || "0123456789.`*^-+/()".contains(c)))
+}
+
+/// How far a character code is shifted down for TraditionalForm's term and
+/// factor order: Greek and some private-use letters sort as Latin ones.
+fn tf_letter_offset(c: u32) -> u32 {
+  let between = |lo: u32, hi: u32| (lo..=hi).contains(&c);
+  let mut o = 0;
+  if between(913, 937) || between(945, 969) {
+    o += 848;
+  }
+  for (lo, hi, by) in [
+    (63154, 63179, 63057),
+    (63180, 63205, 63083),
+    (63206, 63231, 63109),
+    (63344, 63369, 63279),
+    (63396, 63421, 63331),
+    (63488, 63513, 63391),
+    (63514, 63539, 63449),
+  ] {
+    if between(lo, hi) {
+      o += by;
+    }
+  }
+  o
+}
+
+/// The order Wolfram's TraditionalForm sets the factors of a product in, as
+/// `TraditionalFormDump`ordtimes` does: each factor is keyed by the sorted
+/// "variable" strings of its box (see `tf_is_variable_text`), Greek letters
+/// shifted to Latin ones and the function names it knows (`sin`, `log`, …)
+/// moved behind the others by their fixed rank. The keys are then put in
+/// canonical order, which sets a shorter key first — a factor without any
+/// variable (`f(1)`, a `NumberForm` of a number) leads, a one-letter factor
+/// goes ahead of a sum or a function application — and factors with equal
+/// keys keep their order.
+fn tf_times_order(boxes: &[Expr]) -> Vec<usize> {
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let keys: Vec<Expr> = boxes
+    .iter()
+    .map(|b| {
+      let mut names: Vec<Expr> = Vec::new();
+      tf_visit_strings(b, &mut |s| {
+        // A string factor is boxed as the quoted text `"m"`; it ranks by
+        // the letters it shows.
+        let s = tf_unquoted(s);
+        if tf_is_variable_text(s) {
+          names.push(Expr::String(s.to_string()));
+        }
+      });
+      names.sort_by(canonical_cmp);
+      names.dedup_by(|a, b| canonical_cmp(a, b) == std::cmp::Ordering::Equal);
+      let mut key: Vec<(bool, Expr)> = names
+        .into_iter()
+        .map(|name| {
+          let Expr::String(ref text) = name else {
+            unreachable!()
+          };
+          let shifted: String = text
+            .chars()
+            .map(|c| {
+              char::from_u32(c as u32 - tf_letter_offset(c as u32)).unwrap_or(c)
+            })
+            .collect();
+          match TF_RANKED.iter().position(|r| *r == shifted) {
+            Some(k) => (
+              true,
+              crate::helpers::call(
+                "\u{23B5}",
+                vec![Expr::Integer(k as i128 + 1)],
+              ),
+            ),
+            None => (false, Expr::String(shifted)),
+          }
+        })
+        .collect();
+      // Known functions go after the variables.
+      key.sort_by_key(|(ranked, _)| *ranked);
+      Expr::List(key.into_iter().map(|(_, k)| k).collect())
+    })
+    .collect();
+  let mut order: Vec<usize> = (0..boxes.len()).collect();
+  order.sort_by(|&i, &j| canonical_cmp(&keys[i], &keys[j]));
+  order
+}
+
 /// The order Wolfram's TraditionalForm sets the terms of a sum in — a
 /// transcription of `TraditionalFormDump`ordplus`. Each term is keyed by
 /// the sorted "variable" strings of its box (anything but numbers, signs,
@@ -7816,103 +7967,8 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
       _ => {}
     }
   }
-  const RANKED: [&str; 56] = [
-    "ln",
-    "log",
-    "sin",
-    "cos",
-    "tan",
-    "cot",
-    "csc",
-    "sec",
-    "sinh",
-    "cosh",
-    "tanh",
-    "coth",
-    "csch",
-    "sech",
-    "Gamma",
-    "Gamma2",
-    "Gamma3",
-    "GammaRegularized",
-    "GammaRegularized3",
-    "PolyGamma",
-    "PolyGamma2",
-    "Beta",
-    "Beta3",
-    "BetaRegularized",
-    "BetaRegularized4",
-    "InverseGammaRegularized",
-    "InverseGammaRegularized3",
-    "InverseBetaRegularized",
-    "InverseBetaRegularized4",
-    "BesselJ",
-    "BesselY",
-    "BesselI",
-    "BesselK",
-    "HankelH1",
-    "HankelH2",
-    "BesselJZero",
-    "BesselYZero",
-    "EllipticF",
-    "EllipticE",
-    "EllipticE2",
-    "EllipticPi",
-    "EllipticPi3",
-    "EllipticTheta",
-    "AiryAi",
-    "AiryAiPrime",
-    "AiryBi",
-    "AiryBiPrime",
-    "KelvinBer",
-    "KelvinBer2",
-    "KelvinBei",
-    "KelvinBei2",
-    "KelvinKer",
-    "KelvinKer2",
-    "KelvinKei",
-    "KelvinKei2",
-    "CTraditional",
-  ];
-  let is_variable = |s: &str| {
-    // π, \[ExponentialE], \[ImaginaryI], \[DoubledGamma] (as box text or
-    // as Woxi's drawn glyphs).
-    !matches!(
-      s,
-      "\u{03C0}"
-        | "\u{F74D}"
-        | "\u{F74E}"
-        | "\u{F74A}"
-        | "\u{2147}"
-        | "\u{2148}"
-        | "\u{213D}"
-    ) && (s.is_empty()
-      || !s
-        .chars()
-        .all(|c| c.is_whitespace() || "0123456789.`*^-+/()".contains(c)))
-  };
-  // `offsetFunc`: Greek and some private-use letters sort as Latin ones.
-  let offset = |c: u32| -> u32 {
-    let between = |lo: u32, hi: u32| (lo..=hi).contains(&c);
-    let mut o = 0;
-    if between(913, 937) || between(945, 969) {
-      o += 848;
-    }
-    for (lo, hi, by) in [
-      (63154, 63179, 63057),
-      (63180, 63205, 63083),
-      (63206, 63231, 63109),
-      (63344, 63369, 63279),
-      (63396, 63421, 63331),
-      (63488, 63513, 63391),
-      (63514, 63539, 63449),
-    ] {
-      if between(lo, hi) {
-        o += by;
-      }
-    }
-    o
-  };
+  let is_variable = tf_is_variable_text;
+  let offset = tf_letter_offset;
   let int_list =
     |v: Vec<i128>| Expr::List(v.into_iter().map(Expr::Integer).collect());
   let keys: Vec<Vec<Expr>> = terms
@@ -7958,16 +8014,17 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
             .chars()
             .map(|c| char::from_u32(c as u32 - offset(c as u32)).unwrap_or(c))
             .collect();
-          let (ranked, head) = match RANKED.iter().position(|r| *r == shifted) {
-            Some(k) => (
-              true,
-              crate::helpers::call(
-                "\u{23B5}",
-                vec![Expr::Integer(k as i128 + 1)],
+          let (ranked, head) =
+            match TF_RANKED.iter().position(|r| *r == shifted) {
+              Some(k) => (
+                true,
+                crate::helpers::call(
+                  "\u{23B5}",
+                  vec![Expr::Integer(k as i128 + 1)],
+                ),
               ),
-            ),
-            None => (false, Expr::String(shifted)),
-          };
+              None => (false, Expr::String(shifted)),
+            };
           (ranked, Expr::List(vec![head, exps].into()))
         })
         .collect();
