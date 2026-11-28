@@ -25,6 +25,19 @@ pub fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
     return (sn / k, dn, cn);
   }
 
+  let phi = jacobi_amplitude_agm(u, m);
+
+  let sn = phi.sin();
+  let cn = phi.cos();
+  let dn = (1.0 - m * sn * sn).sqrt();
+
+  (sn, cn, dn)
+}
+
+/// The amplitude am(u, m) for a parameter m < 1, from the descending Landen
+/// (AGM) transformation. It is continuous in u (am grows by Pi every 2 K(m))
+/// rather than wrapped into (-Pi, Pi].
+fn jacobi_amplitude_agm(u: f64, m: f64) -> f64 {
   // AGM iteration to compute the sequence of a_n, b_n, c_n
   let mut a = vec![1.0];
   let mut b = vec![(1.0 - m).sqrt()];
@@ -52,11 +65,7 @@ pub fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
     phi = f64::midpoint(phi, (c[i] / a[i] * phi.sin()).asin());
   }
 
-  let sn = phi.sin();
-  let cn = phi.cos();
-  let dn = (1.0 - m * sn * sn).sqrt();
-
-  (sn, cn, dn)
+  phi
 }
 
 /// JacobiAmplitude[u, m] - amplitude for Jacobi elliptic functions
@@ -97,6 +106,12 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(u_f), Some(m_f)) = (try_eval_to_f64(u), try_eval_to_f64(m))
     && (matches!(u, Expr::Real(_)) || matches!(m, Expr::Real(_)))
   {
+    // Below m = 1 the amplitude is unbounded and monotonic in u, so the
+    // principal angle of (cn, sn) would jump by 2 Pi; take it from the AGM
+    // descent directly. From m = 1 on it is bounded and the angle is right.
+    if m_f.abs() >= 1e-16 && m_f < 1.0 - 1e-16 {
+      return Ok(Expr::Real(jacobi_amplitude_agm(u_f, m_f)));
+    }
     let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
     return Ok(Expr::Real(sn.atan2(cn)));
   }

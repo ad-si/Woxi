@@ -5599,6 +5599,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "ScientificForm"
     && !is_input_form
+    && !is_standard_form
     && let Some(rendered) = exponent_form_to_string(name, inner_args)
   {
     return Ok(Expr::String(rendered));
@@ -5612,6 +5613,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "EngineeringForm"
     && !is_input_form
+    && !is_standard_form
     && let Some(rendered) = exponent_form_to_string(name, inner_args)
   {
     return Ok(Expr::String(rendered));
@@ -5727,7 +5729,22 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "StandardForm"
     && inner_args.len() == 1
   {
-    return Ok(Expr::String(expr_to_box_form(&inner_args[0])));
+    // The same boxes `ToString[inner, StandardForm]` gives, except that
+    // a lone atom still sits in a `RowBox` of its own.
+    let boxed =
+      to_string_ast_inner(&[inner_args[0].clone(), id_expr("StandardForm")])?;
+    let prefix = format!("{BOX_START}{BOX_OPEN}{BOX_SEP}");
+    if let Expr::String(text) = &boxed
+      && let Some(inner) = text
+        .strip_prefix(prefix.as_str())
+        .and_then(|rest| rest.strip_suffix(BOX_CLOSE))
+      && !inner.contains("Box[")
+    {
+      return Ok(Expr::String(format!(
+        "{prefix}RowBox[{{{inner}}}]{BOX_CLOSE}"
+      )));
+    }
+    return Ok(boxed);
   }
 
   // If the expression is TraditionalForm[inner], produce \!\(\*FormBox[boxes, TraditionalForm]\)

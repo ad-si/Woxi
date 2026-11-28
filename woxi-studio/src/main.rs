@@ -11473,6 +11473,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.text_output.as_deref(), Some("{2, 9, 0}"));
   }
 
+  /// An `OpenerView[{label, content}]` in the layout a Manipulate body
+  /// returns is drawn closed (triangle and label), opens on a click on its
+  /// label row and stays open when a control re-renders the body.
+  /// Regression: it was printed as its source text.
+  #[test]
+  fn opener_view_in_a_manipulate_body_opens_on_click() {
+    let code = "Manipulate[Column[{Graphics[Disk[{x, 0}]], \
+                OpenerView[{\"bodyOpenerLabel\", \"bodyOpenerContent\"}]}], \
+                {x, 0, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    let shown = |state: &manipulate::ManipulateState| {
+      let svg = state.current_svg().expect("the body draws a picture");
+      assert!(!svg.contains("OpenerView"), "source text leaked: {svg}");
+      assert!(svg.contains("bodyOpenerLabel"), "missing label: {svg}");
+      svg.contains("bodyOpenerContent")
+    };
+    assert!(!shown(&state), "the opener starts closed");
+    assert_eq!(state.button_regions.len(), 1);
+
+    let toggle = state.button_regions[0].action.clone();
+    state.apply_button_action(&toggle);
+    assert!(shown(&state), "a click opens it");
+    // Moving a control re-renders the body without closing it again.
+    state.slide_continuous(0, 0.5);
+    assert!(shown(&state));
+
+    let toggle = state.button_regions[0].action.clone();
+    state.apply_button_action(&toggle);
+    assert!(!shown(&state), "a second click closes it");
+  }
+
   /// A `FlipView[{e1, e2, …}]` in a Manipulate body shows one element and
   /// flips to the next on a click, wrapping around, and stays on that
   /// element when a control re-renders the body. Regression: it was typeset
@@ -12192,10 +12225,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .collect();
     assert_eq!(ys.len(), 3, "{svg}");
     assert!(ys.iter().all(|&y| y < 360.0), "{ys:?}: {svg}");
-    // The label's subscript is shifted within one `tspan`.
+    // The label's subscript is shifted within one `tspan`, at the minimum
+    // script size of the 10-point label.
     assert!(
       svg.contains(
-        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">r</tspan>"
+        "<tspan font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">r</tspan>"
       ),
       "{svg}"
     );

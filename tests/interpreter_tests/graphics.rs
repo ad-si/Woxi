@@ -40694,6 +40694,146 @@ mod graphics_list {
     );
   }
 
+  // `ToString[StandardForm[expr]]` typesets the boxes `ToString[expr,
+  // StandardForm]` does. Regression: it built them separately and left out
+  // the parentheses of a sum inside a product or under a power.
+  #[test]
+  fn standard_form_wrapper_boxes_keep_parentheses() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[StandardForm[a (b + c)]]").unwrap(),
+      "DisplayForm[RowBox[{a,  , RowBox[{(, RowBox[{b, +, c}], )}]}]]"
+    );
+    assert_eq!(
+      interpret("ToString[StandardForm[(b + c)^2]]").unwrap(),
+      "DisplayForm[SuperscriptBox[RowBox[{(, RowBox[{b, +, c}], )}], 2]]"
+    );
+    for expr in [
+      "a (b + c)",
+      "(b + c)^n",
+      "x - 2 (b + Cos[t])/r",
+      "0.5 t - 2 (0.7 (c + Cos[t]) - 0.25 (d + EllipticE[t, 0.5]))",
+      "Sqrt[1 - k Sin[t]^2]",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "ToString[StandardForm[{expr}]] === ToString[{expr}, StandardForm]"
+        ))
+        .unwrap(),
+        "True",
+        "{expr}"
+      );
+    }
+  }
+
+  // `ToString[ScientificForm[x], StandardForm]` gives boxes, like every
+  // other expression does, rather than the two-line OutputForm text.
+  #[test]
+  fn standard_form_boxes_of_exponent_forms() {
+    clear_state();
+    for (form, x, mantissa) in [
+      ("ScientificForm", "1000.", "1."),
+      ("EngineeringForm", "12345.", "12.345"),
+    ] {
+      let boxes = format!(
+        "DisplayForm[TagBox[InterpretationBox[StyleBox[RowBox[{{\"{mantissa}\", \
+         \u{d7}, SuperscriptBox[10, \"3\"]}}], ShowStringCharacters -> False], \
+         {x}, AutoDelete -> True], {form}]]"
+      );
+      assert_eq!(
+        interpret(&format!("ToString[{form}[{x}], StandardForm]")).unwrap(),
+        boxes
+      );
+      assert_eq!(
+        interpret(&format!("ToString[StandardForm[{form}[{x}]]]")).unwrap(),
+        boxes
+      );
+    }
+  }
+
+  // `OpenerView[{label, content}]` in a layout draws its disclosure
+  // triangle and label, with the content below only while it is open.
+  // Regression: it was printed as its source text.
+  #[test]
+  fn opener_view_in_a_layout_is_drawn() {
+    clear_state();
+    let svg = |code: &str| {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(!svg.contains("OpenerView"), "source text leaked: {svg}");
+      svg
+    };
+    let closed = svg(
+      "Column[{Graphics[Disk[]], \
+       OpenerView[{\"drawnOpenerLabel\", \"drawnOpenerContent\"}]}]",
+    );
+    assert!(
+      closed.contains("\u{25B8}"),
+      "missing closed triangle: {closed}"
+    );
+    assert!(closed.contains("drawnOpenerLabel"));
+    assert!(!closed.contains("drawnOpenerContent"));
+    // The label row is a pressable region.
+    assert!(closed.contains("woxi-btn-"));
+
+    for layout in ["Column[{#}]", "Row[{\"x\", #}]", "Grid[{{#}}]"] {
+      let open = svg(&layout.replace(
+        "#",
+        "OpenerView[{\"openOpenerLabel\", \"openOpenerContent\"}, True]",
+      ));
+      assert!(open.contains("\u{25BE}"), "missing open triangle: {open}");
+      assert!(open.contains("openOpenerLabel"));
+      assert!(open.contains("openOpenerContent"));
+    }
+  }
+
+  // The open state of an `OpenerView` follows its `Dynamic` variable, and
+  // the hit region's action flips it.
+  #[test]
+  fn opener_view_follows_its_dynamic_state() {
+    clear_state();
+    let code = "ExportString[Column[{OpenerView[{\"dynLabel\", \
+                \"dynContent\"}, Dynamic[openerShown]]}], \"SVG\"]";
+    let action = |svg: &str| {
+      let id = svg
+        .split("id=\"")
+        .filter_map(|rest| rest.split('"').next())
+        .find(|id| id.starts_with("woxi-btn-"))
+        .expect("the label row is pressable")
+        .to_string();
+      woxi::functions::graphics::button_action_from_hit_id(&id).unwrap()
+    };
+    let closed = interpret(code).unwrap();
+    assert!(!closed.contains("dynContent"));
+    assert_eq!(action(&closed), "openerShown = True");
+    interpret(&action(&closed)).unwrap();
+    let open = interpret(code).unwrap();
+    assert!(open.contains("dynContent"));
+    assert_eq!(action(&open), "openerShown = False");
+    interpret(&action(&open)).unwrap();
+    assert!(!interpret(code).unwrap().contains("dynContent"));
+  }
+
+  // An `OpenerView` with no `Dynamic` state remembers a press across
+  // re-renders, and starts out as its literal state says.
+  #[test]
+  fn opener_view_without_dynamic_state_remembers_a_press() {
+    clear_state();
+    let code = "ExportString[Column[{OpenerView[{\"pressLabel\", \
+                \"pressContent\"}, True]}], \"SVG\"]";
+    let open = interpret(code).unwrap();
+    assert!(open.contains("pressContent"));
+    let id = open
+      .split("id=\"")
+      .filter_map(|rest| rest.split('"').next())
+      .find(|id| id.starts_with("woxi-btn-"))
+      .expect("the label row is pressable")
+      .to_string();
+    let close =
+      woxi::functions::graphics::button_action_from_hit_id(&id).unwrap();
+    interpret(&close).unwrap();
+    assert!(!interpret(code).unwrap().contains("pressContent"));
+  }
+
   #[test]
   fn table_with_style_wrapping_graphics() {
     clear_state();

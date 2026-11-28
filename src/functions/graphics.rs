@@ -42269,6 +42269,92 @@ fn with_hit_region(svg: String, action: &str) -> String {
   out
 }
 
+/// Name stem of the hidden global holding whether an `OpenerView` without a
+/// `Dynamic` state of its own is open (see [`opener_view_shown`]).
+const OPENER_VIEW_STATE_STEM: &str = "openerViewState$";
+
+/// What an `OpenerView[{label, content}]`, `OpenerView[…, open]` or
+/// `OpenerView[…, Dynamic[open]]` nested in a layout shows: a disclosure
+/// triangle beside the label and, while it is open, the content below.
+/// The label row carries a hit region whose action flips the open state, so
+/// a live widget opens and closes the view on a click, the way the FrontEnd
+/// does. A view without a `Dynamic` state keeps it in a hidden global named
+/// after its label, which stays the same across re-renders of the layout
+/// around it. `None` unless the first argument is a `{label, content}` pair.
+pub(crate) fn opener_view_shown(args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(pair)) = args.first() else {
+    return None;
+  };
+  let [label, content] = pair.as_slice() else {
+    return None;
+  };
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  let state_of = |target: &Expr| match evaluate_expr_to_expr(target) {
+    Ok(Expr::Identifier(ref v)) if v == "True" || v == "False" => {
+      Some(v == "True")
+    }
+    _ => None,
+  };
+  let (target, open) = match args.get(1) {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      (
+        crate::syntax::expr_to_source_form(&dargs[0]),
+        state_of(&dargs[0]).unwrap_or(false),
+      )
+    }
+    initial => {
+      let target = format!(
+        "{OPENER_VIEW_STATE_STEM}{:x}",
+        stable_text_hash(&crate::syntax::expr_to_source_form(label))
+      );
+      let open = state_of(&id_expr(&target))
+        .unwrap_or_else(|| initial.is_some_and(is_true));
+      (target, open)
+    }
+  };
+  let header = call(
+    "Row",
+    vec![Expr::List(
+      vec![
+        Expr::String(if open { "\u{25BE} " } else { "\u{25B8} " }.to_string()),
+        label.clone(),
+      ]
+      .into(),
+    )],
+  );
+  let svg = crate::evaluator::expr_to_svg(&resolve_display_item(&header));
+  let header = if svg.is_empty() {
+    header
+  } else {
+    Expr::Graphics {
+      svg: with_hit_region(
+        svg,
+        &format!("{target} = {}", if open { "False" } else { "True" }),
+      ),
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    }
+  };
+  if !open {
+    return Some(header);
+  }
+  // The content sits below the label, clear of the triangle.
+  let indented = call(
+    "Row",
+    vec![Expr::List(
+      vec![call("Spacer", vec![Expr::Integer(14)]), content.clone()].into(),
+    )],
+  );
+  Some(call(
+    "Column",
+    vec![Expr::List(vec![header, indented].into())],
+  ))
+}
+
 /// Name stem of the hidden variable holding which element a `FlipView`
 /// without an index of its own is flipped to inside a `Manipulate` (see
 /// [`bind_flip_view_indices`]).
@@ -44307,6 +44393,15 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       // the front end shows it: the row of tab labels above the pane its
       // selector names (the first pane without a selector), framed in a
       // gray panel, rather than the call's source text.
+      // `OpenerView[{label, content}, open]` nested in a layout is drawn as
+      // its disclosure triangle and label, above the content while open.
+      "OpenerView" if peel_tabview => match opener_view_shown(args) {
+        Some(shown) => {
+          current = shown;
+          continue;
+        }
+        None => false,
+      },
       "TabView" if peel_tabview => match crate::tabview_drawn_layout(args) {
         Some(content) => {
           current = content;
