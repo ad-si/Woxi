@@ -8119,6 +8119,68 @@ pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// Whether `expr` is a box the FrontEnd lays out in two dimensions rather
+/// than prints as a line of source: a display box, a `Pane`, a layout or a
+/// picture.
+fn is_layout_box(expr: &Expr) -> bool {
+  is_display_box(expr)
+    || lays_out_a_graphic(expr)
+    || matches!(expr, Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && (name == "Pane" || LAYOUT_HEADS.contains(&name.as_str())))
+}
+
+/// The factors of a product that holds a layout box (`Text[…] Pane[…]`, two
+/// expressions written one after the other with no separator), which the
+/// FrontEnd typesets side by side with a space between them: a `Row` of
+/// them, or — when they do not fit the page width together — a `Column` of
+/// the `Row`s they break into. `None` for any other expression.
+pub(crate) fn display_box_product_flow(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Times" || args.len() < 2 || !args.iter().any(is_layout_box) {
+    return None;
+  }
+  // A quotient (a factor raised to a power) is set as its fraction.
+  if args.iter().any(|f| {
+    matches!(f, Expr::BinaryOp { .. })
+      || matches!(f, Expr::FunctionCall { name, .. } if name == "Power")
+  }) {
+    return None;
+  }
+  let space = str_expr(" ");
+  let (space_width, _) =
+    crate::functions::graphics::parse_svg_wh(&expr_to_svg(&space));
+  let max_width = crate::functions::container_layout::max_line_width();
+  let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+  let mut used = 0.0;
+  for factor in args {
+    let (width, _) =
+      crate::functions::graphics::parse_svg_wh(&expr_to_svg(factor));
+    if used > 0.0 && used + space_width + width > max_width {
+      lines.push(Vec::new());
+      used = 0.0;
+    }
+    if let Some(line) = lines.last_mut() {
+      if !line.is_empty() {
+        line.push(space.clone());
+        used += space_width;
+      }
+      line.push(factor.clone());
+    }
+    used += width;
+  }
+  let mut rows: Vec<Expr> = lines
+    .into_iter()
+    .map(|line| call1("Row", Expr::List(line.into())))
+    .collect();
+  if rows.len() == 1 {
+    return rows.pop();
+  }
+  Some(call1("Column", Expr::List(rows.into())))
+}
+
 /// A `Framed[…]` / `Panel[…]` / `Text[…]` call: a display box the FrontEnd
 /// typesets rather than prints, so a `Rule` between them is drawn as the
 /// boxes around an arrow.
@@ -8281,6 +8343,11 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
   {
     return svg;
   }
+  // A product with a display box among its factors is typeset as the
+  // factors side by side, flowing onto further lines at the page width.
+  if let Some(flow) = display_box_product_flow(expr) {
+    return expr_to_svg(&flow);
+  }
   match expr {
     // `TextGrid[…]` is effectively `Text[Grid[…]]`: its cells are set in
     // the proportional text face, so a column of `-1`s is only as wide as
@@ -8323,6 +8390,26 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
       if name == "Button" && args.len() >= 2 =>
     {
       crate::functions::graphics::button_svg(args)
+    }
+    // `Style[Button[label, action, …], directives…]` (a button inside
+    // styled text) is still its button, the directives styling the label.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: b, args: bargs }
+          if b == "Button" && bargs.len() >= 2) =>
+    {
+      let Expr::FunctionCall { args: bargs, .. } = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let mut button_args = bargs.to_vec();
+      button_args[0] = call(
+        "Style",
+        std::iter::once(bargs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      crate::functions::graphics::button_svg(&button_args)
     }
     // `TogglerBar[Dynamic[var], choices]` draws as its row of toggle
     // plates.

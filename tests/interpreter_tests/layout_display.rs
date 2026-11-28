@@ -47,6 +47,107 @@ mod layout_display {
       .collect()
   }
 
+  /// Regression: a product with a layout box among its factors (two
+  /// expressions written one after the other with no separator) printed
+  /// as one line of source; it is typeset as its factors side by side.
+  #[test]
+  fn product_of_display_boxes_is_set_side_by_side() {
+    for (product, row) in [
+      (
+        r#"Text["cap"] Panel[Column[{1, 2}]]"#,
+        r#"Row[{Panel[Column[{1, 2}]], " ", Text["cap"]}]"#,
+      ),
+      (
+        r#"x Pane[Grid[{{1, 2}, {3, 4}}]] Framed["f"]"#,
+        r#"Row[{x, " ", Framed["f"], " ", Pane[Grid[{{1, 2}, {3, 4}}]]}]"#,
+      ),
+    ] {
+      let svg = svg_of(product);
+      assert_eq!(svg, svg_of(row), "{product}");
+      let text = flat_text(&svg);
+      assert!(
+        !text.contains("Panel[") && !text.contains("Pane["),
+        "{text}"
+      );
+    }
+    // A plain symbolic product is no layout.
+    assert_eq!(flat_text(&svg_of("x y")), "xy");
+  }
+
+  /// Factors too wide for one line together break onto further lines, as
+  /// the items of a row do at the page width.
+  #[test]
+  fn product_of_display_boxes_wraps_at_the_page_width() {
+    let wide = "Framed[Graphics[Disk[], ImageSize -> 700]]";
+    let narrow = "Text[Graphics[Disk[], ImageSize -> 400]]";
+    assert_eq!(
+      svg_of(&format!("{wide} {narrow}")),
+      svg_of(&format!("Column[{{Row[{{{wide}}}], Row[{{{narrow}}}]}}]")),
+    );
+    // Three factors: the first two share a line, the third starts a new one.
+    let small = "Framed[Graphics[Disk[], ImageSize -> 300]]";
+    let big = "Text[Graphics[Disk[], ImageSize -> 800]]";
+    assert_eq!(
+      svg_of(&format!("a {small} {big}")),
+      svg_of(&format!(
+        "Column[{{Row[{{a, \" \", {small}}}], Row[{{{big}}}]}}]"
+      )),
+    );
+  }
+
+  /// Regression: buttons in a list, or under the style of the text around
+  /// them, printed as `Button[…]` source instead of being drawn.
+  #[test]
+  fn buttons_in_lists_and_styled_rows_are_drawn() {
+    for expr in [
+      r#"{Button["u", x = 1], Button["v", x = 2]}"#,
+      r#"Text[Row[{"A = ", {Button["u", x = 1], Button["v", x = 2]}}]]"#,
+      r#"Panel[Text[Row[{"A = ", {Button["u", x = 1], Button["v", x = 2]}}]]]"#,
+    ] {
+      let text = flat_text(&svg_of(expr));
+      assert!(text.ends_with("{u,v}"), "{expr}: {text}");
+      assert!(!text.contains("Button"), "{expr}: {text}");
+    }
+    for expr in [
+      r#"Style[Row[{"A = ", Button["u", x = 1]}], Bold]"#,
+      r#"Row[{"A = ", Style[Button["u", x = 1], Italic]}]"#,
+      r#"Text[Button["u", x = 1]]"#,
+    ] {
+      let svg = svg_of(expr);
+      let text = flat_text(&svg);
+      assert!(text.ends_with('u') && !text.contains("Button"), "{text}");
+      assert!(!rects(&svg).is_empty(), "the button plate is drawn: {svg}");
+    }
+  }
+
+  /// `Appearance -> Frameless` leaves a `Panel` without border and fill.
+  #[test]
+  fn frameless_panel_has_no_border_or_fill() {
+    for appearance in ["Frameless", "\"Frameless\""] {
+      let svg = svg_of(&format!(r#"Panel["x", Appearance -> {appearance}]"#));
+      for rect in rects(&svg) {
+        assert!(rect.contains(r#"fill="none""#), "{rect}");
+        assert!(!rect.contains("stroke="), "{rect}");
+      }
+      // The box keeps its size: only the chrome goes.
+      let plain = svg_of(r#"Panel["x"]"#);
+      let size = |s: &str| s[..s.find('>').unwrap()].to_string();
+      assert_eq!(size(&svg), size(&plain));
+    }
+    let plain = svg_of(r#"Panel["x"]"#);
+    assert!(
+      rects(&plain).iter().any(|r| r.contains("stroke=")),
+      "{plain}"
+    );
+    // A background of its own is still painted.
+    let svg =
+      svg_of(r#"Panel["x", Appearance -> Frameless, Background -> Red]"#);
+    assert!(
+      rects(&svg).iter().any(|r| r.contains("rgb(255,0,0)")),
+      "{svg}"
+    );
+  }
+
   /// Regression: a `Background` row list `{c1, …}` colored every row
   /// cyclically; like any explicit spec list it names only the first rows.
   #[test]
