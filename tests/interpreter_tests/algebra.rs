@@ -26773,6 +26773,99 @@ mod polynomial_gcd_radical_coefficients {
   }
 }
 
+// Constants that are not rational numbers share no content: their coefficient
+// gcd used to come back as an inert `GCD[…]` that nested into itself with
+// every division step, so a linear system with such coefficients never
+// finished.
+mod polynomial_gcd_irrational_constants {
+  use super::*;
+
+  #[test]
+  fn constants_without_common_content() {
+    assert_eq!(interpret("PolynomialGCD[2 Pi - 6 E, Pi - E]").unwrap(), "1");
+    assert_eq!(
+      interpret(
+        "PolynomialGCD[2 Cos[Pi/8] - 6 Sin[Pi/8], Cos[Pi/8] - Sin[Pi/8]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("PolynomialGCD[6, 4]").unwrap(), "2");
+    assert_eq!(interpret("PolynomialGCD[1/2, 3/4]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn linear_system_with_trigonometric_coefficients_finishes() {
+    assert_eq!(
+      interpret(
+        "c = Cos[Pi/8]; s = Sin[Pi/8]; r = Sqrt[9 c^2 + 9 s^2]; \
+         sol = Solve[{(y - 2)/Sqrt[2] == (x + 2)/Sqrt[2], \
+           (y - 2) 3 c/r == 3 s (x - 2)/r}, {x, y}]; \
+         {Length[sol], \
+          Chop[N[({x, y} /. First[sol]) - \
+            {-2 (c + s)/(c - s), 2 (c - 3 s)/(c - s)}]]}"
+      )
+      .unwrap(),
+      "{1, {0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "c = Cos[Pi/8]; s = Sin[Pi/8]; r = Sqrt[9 c^2 + 9 s^2]; \
+         sol = NSolve[{(y - 2)/Sqrt[2] == (x + 2)/Sqrt[2], \
+           (y - 2) 3 c/r == 3 s (x - 2)/r}, {x, y}]; \
+         Chop[({x, y} /. First[sol]) - \
+           N[{-2 (c + s)/(c - s), 2 (c - 3 s)/(c - s)}], 10^-9]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
+
+// The numeric content of a radical's base comes out of the radical wherever
+// it stands, so the radicals of a sum agree and cancel.
+mod together_radical_content {
+  use super::*;
+
+  #[test]
+  fn content_leaves_the_radical() {
+    for (input, expected) in [
+      ("Together[Sqrt[4 c + 4]]", "2*Sqrt[1 + c]"),
+      (
+        "Together[a/Sqrt[4 c + 4] + b/Sqrt[4 c + 4]]",
+        "(a + b)/(2*Sqrt[1 + c])",
+      ),
+      (
+        "Together[a/Sqrt[4 c + 4] + b/Sqrt[c + 1]]",
+        "(a + 2*b)/(2*Sqrt[1 + c])",
+      ),
+      ("Together[a Sqrt[4 c + 4] + b]", "b + 2*a*Sqrt[1 + c]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn shared_radical_cancels_in_a_quotient() {
+    for (input, expected) in [
+      (
+        "Together[(a/Sqrt[c + 4] + b/Sqrt[c + 4])/(d/Sqrt[c + 4] + e/Sqrt[c + 4])]",
+        "(a + b)/(d + e)",
+      ),
+      (
+        "Together[(a/(c + 4)^(1/3) + b/(c + 4)^(1/3))/(d/(c + 4)^(1/3) + e/(c + 4)^(1/3))]",
+        "(a + b)/(d + e)",
+      ),
+      (
+        "Together[(a/Sqrt[4 c^2 + 4 s^2] + b/Sqrt[4 c^2 + 4 s^2])/(d/Sqrt[4 c^2 + 4 s^2])]",
+        "(a + b)/d",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
+
 // A transcendental equation with machine coefficients on a bounded interval
 // has its real roots there found numerically; the interval used to be
 // dropped (an unevaluated Solve) or only the principal inverse kept.

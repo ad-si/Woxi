@@ -8682,6 +8682,117 @@ mod cases {
     );
   }
 
+  /// TraditionalForm orders the factors of a product by the letters their
+  /// boxes show: a factor without any (a call on numbers, a `NumberForm` of
+  /// a number) leads, a one-letter factor goes ahead of a sum or a function
+  /// application, a string ranks by its text and a Greek letter as the
+  /// Latin one it corresponds to. Factors that tie keep canonical order.
+  #[test]
+  fn traditional_form_orders_factors_by_their_letters() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[f[1] "m"]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{f, (, 1, )}],  , "m"}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm["m" a]]"#,
+      r#"TagBox[FormBox[RowBox[{a,  , "m"}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm["m" x]]"#,
+      r#"TagBox[FormBox[RowBox[{"m",  , x}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm["m" m]]"#,
+      r#"TagBox[FormBox[RowBox[{"m",  , m}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm["m" Sin[x]]]"#,
+      r#"TagBox[FormBox[RowBox[{"m",  , RowBox[{sin, (, x, )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[(a + b) c]]"#,
+      r#"TagBox[FormBox[RowBox[{c,  , RowBox[{(, RowBox[{a, +, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[z (a + b)^2]]"#,
+      r#"TagBox[FormBox[RowBox[{z,  , SuperscriptBox[RowBox[{(, RowBox[{a, +, b}], )}], 2]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Cos[x] Sin[x]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{sin, (, x, )}],  , RowBox[{cos, (, x, )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[\[Theta] r]]"#,
+      r#"TagBox[FormBox[RowBox[{θ,  , r}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[\[Omega] t]]"#,
+      r#"TagBox[FormBox[RowBox[{t,  , ω}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[P V \[Beta] Subscript[c, v]/Subscript[c, p]]]"#,
+      r#"TagBox[FormBox[FractionBox[RowBox[{β,  , P,  , V,  , SubscriptBox[c, v]}], SubscriptBox[c, p]], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[1/(x f[1] "m")]]"#,
+      r#"TagBox[FormBox[FractionBox[1, RowBox[{RowBox[{f, (, 1, )}],  , "m",  , x}]], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[GoldenRatio x]]"#,
+      r#"TagBox[FormBox[RowBox[{x,  , ϕ}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[x a "m" f[1]]]]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{x,  , a,  , "m",  , RowBox[{f, (, 1, )}]}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
+  /// A `NumberForm` of a number has no letters, so it leads a string or a
+  /// symbol it multiplies in TraditionalForm (`9.1 m`), while a
+  /// `NumberForm` of a symbol ranks by that symbol.
+  #[test]
+  fn traditional_form_sets_a_number_form_factor_first() {
+    assert_case(
+      r#"ToBoxes[NumberForm[9.1, 2] "m", TraditionalForm]"#,
+      r#"FormBox[RowBox[{TagBox[InterpretationBox[StyleBox["9.1", ShowStringCharacters -> False], 9.1, AutoDelete -> True], NumberForm[#1, 2] & ],  , "m"}], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes[NumberForm[0.7712, 2] x "m", TraditionalForm]"#,
+      r#"FormBox[RowBox[{TagBox[InterpretationBox[StyleBox["0.77", ShowStringCharacters -> False], 0.7712, AutoDelete -> True], NumberForm[#1, 2] & ],  , "m",  , x}], TraditionalForm]"#,
+    );
+    assert_case(
+      r#"ToBoxes["m" NumberForm[x, 2], TraditionalForm]"#,
+      r#"FormBox[RowBox[{"m",  , TagBox[x, NumberForm[#1, 2] & ]}], TraditionalForm]"#,
+    );
+  }
+
+  /// The minus sign of a product is written on the factor that leads it in
+  /// canonical order; when TraditionalForm's order of factors moves that
+  /// factor back, it takes the sign along in parentheses.
+  #[test]
+  fn traditional_form_keeps_a_product_minus_on_its_factor() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-x f[1]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{f, (, 1, )}],  , RowBox[{(, RowBox[{-, x}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-x f[1] g[2]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{f, (, 1, )}],  , RowBox[{g, (, 2, )}],  , RowBox[{(, RowBox[{-, x}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-2 x f[1]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{-, 2}],  , RowBox[{f, (, 1, )}],  , x}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-Sin[x] k]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{-, k}],  , RowBox[{sin, (, x, )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-x f[1]/y]]"#,
+      r#"TagBox[FormBox[RowBox[{-, FractionBox[RowBox[{RowBox[{f, (, 1, )}],  , x}], y]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A negative rational sets its minus sign before the fraction bar in
   /// TraditionalForm, as in StandardForm, not in the numerator.
   /// `¬` parenthesizes an operand that binds looser than it — an `∨`, an

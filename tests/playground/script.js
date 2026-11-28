@@ -645,6 +645,16 @@ function renderManipulate(item) {
         div.appendChild(renderDisplayTree(node.child))
         return div
       }
+      case "backdrop": {
+        // A bar painted `Background -> color`: the color fills the area
+        // right behind the bar.
+        const div = document.createElement("div")
+        div.className = "manipulate-display-backdrop"
+        div.style.display = "inline-block"
+        div.style.background = node.color
+        div.appendChild(renderDisplayTree(node.child))
+        return div
+      }
       case "grid": {
         const grid = document.createElement("div")
         grid.className = "manipulate-display-grid"
@@ -711,6 +721,10 @@ function renderManipulate(item) {
           ? "manipulate-display-toggler selected"
           : "manipulate-display-toggler"
         if (node.label) btn.appendChild(renderDisplayTree(node.label))
+        // A bar's `Background -> color` paints its unselected toggles.
+        if (node.background && !node.selected) {
+          btn.style.background = node.background
+        }
         // A bar whose `Enabled -> cond` reads False is grayed out.
         if (node.enabled === false) {
           btn.disabled = true
