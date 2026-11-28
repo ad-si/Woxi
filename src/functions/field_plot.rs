@@ -10027,8 +10027,8 @@ fn array_plot_ast_inset(
   for opt in &args[1..] {
     if let Expr::Rule { pattern, .. } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
-      && matches!(name.as_str(), "PlotLabel" | "FrameStyle")
-        | (name == "PlotRangePadding" && !ticks_present)
+      && (matches!(name.as_str(), "PlotLabel" | "FrameStyle")
+        || (name == "PlotRangePadding" && !ticks_present))
     {
       structure_args.push(opt.clone());
     }
