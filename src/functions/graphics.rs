@@ -2112,6 +2112,8 @@ fn unpack_channels(
 /// color yield `None`.
 pub(crate) fn parse_style_color(expr: &Expr) -> Option<Color> {
   match expr {
+    // Not through the list branch of `parse_color_function_result`: a
+    // style list of three numbers is not a color.
     Expr::List(items) => parse_color_function_result(&Expr::FunctionCall {
       name: "Directive".to_string(),
       args: items.clone(),
@@ -2124,18 +2126,27 @@ pub(crate) fn parse_style_color(expr: &Expr) -> Option<Color> {
 /// directive, a list of three or four numbers is read as `RGBColor` channels
 /// (`ColorFunction -> ({#1, #2, 0} &)` colors like `RGBColor[#1, #2, 0]`),
 /// so e.g. a `BSplineFunction` of `ImageData` can color a surface directly.
+/// A list of directives sets the color of its last color directive.
 pub(crate) fn parse_color_function_result(expr: &Expr) -> Option<Color> {
   if let Expr::List(items) = expr
     && matches!(items.len(), 3 | 4)
+    && let Some(ch) =
+      items.iter().map(expr_to_f64).collect::<Option<Vec<f64>>>()
   {
-    let ch: Option<Vec<f64>> = items.iter().map(expr_to_f64).collect();
-    let ch = ch?;
     let c = Color::new(
       ch[0].clamp(0.0, 1.0),
       ch[1].clamp(0.0, 1.0),
       ch[2].clamp(0.0, 1.0),
     );
     return Some(c.with_alpha(ch.get(3).copied().unwrap_or(1.0)));
+  }
+  // Any other list is a list of directives (`{Hue[x], Hue[y]}`,
+  // `{Thick, Red}`), read like `Directive[…]`: the last color wins.
+  if let Expr::List(items) = expr {
+    return parse_color_function_result(&Expr::FunctionCall {
+      name: "Directive".to_string(),
+      args: items.clone(),
+    });
   }
   // `Directive[color, Opacity[a]]` (or `Opacity[a, color]`): the color the
   // directive sets, with the opacity folded into its alpha. A directive

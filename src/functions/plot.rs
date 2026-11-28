@@ -7972,12 +7972,18 @@ fn generate_svg_with_options(
                       })?;
                     continue;
                   }
-                  for (run_color, run) in color_function_runs(
-                    segment,
-                    cf,
-                    cf_scaling,
-                    cf_ranges,
-                  ) {
+                  // Each run reaches one step into the next, which is
+                  // then drawn over it: runs that merely met end to end
+                  // left a notch between their butt-capped strokes
+                  // wherever a thick curve bends.
+                  let mut runs =
+                    color_function_runs(segment, cf, cf_scaling, cf_ranges);
+                  for i in 1..runs.len() {
+                    if let Some(&next) = runs[i].1.get(1) {
+                      runs[i - 1].1.push(next);
+                    }
+                  }
+                  for (run_color, run) in runs {
                     chart
                       .draw_series(LineSeries::new(
                         run,
