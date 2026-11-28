@@ -1197,4 +1197,35 @@ mod entity_display_name_tests {
     assert!(svg.contains("<rect"), "the frame must be drawn: {svg}");
     assert!(!svg.contains("[a]"), "{svg}");
   }
+
+  /// The directives of a `StyleBox` shown through `DisplayForm` style its
+  /// content; a bare color used to be typeset as content of its own, which
+  /// dropped the color from the line.
+  #[test]
+  fn style_box_line_of_a_column_keeps_its_bare_color() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{DisplayForm[RowBox[{"a ", StyleBox["b", RGBColor[1, 0, 0]], StyleBox["c", Bold]}]]}, Left], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.contains(r#"<tspan fill="rgb(255,0,0)">b</tspan>"#),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(r#"<tspan font-weight="bold">c</tspan>"#),
+      "{svg}"
+    );
+  }
+
+  /// The same inside a two-dimensional box, which is laid out box by box.
+  #[test]
+  fn style_box_in_a_fraction_keeps_its_bare_color() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[DisplayForm[FractionBox[StyleBox["b", RGBColor[0, 0, 1]], "c"]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("rgb(0,0,255)"), "{svg}");
+  }
 }
