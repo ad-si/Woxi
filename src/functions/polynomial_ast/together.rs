@@ -1739,7 +1739,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
           return make_fraction(b_den, b_num);
         }
       }
-      pow2(base, exp)
+      split_radical_content(&base, &exp).unwrap_or_else(|| pow2(base, exp))
     }
 
     // Power[base, exp] as FunctionCall form
@@ -1752,7 +1752,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
           return make_fraction(b_den, b_num);
         }
       }
-      pow(base, exp)
+      split_radical_content(&base, &exp).unwrap_or_else(|| pow(base, exp))
     }
 
     // Times (binary): each factor must be fully combined so that a Plus
@@ -1800,6 +1800,42 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
     // Other function calls — do not descend (e.g. Sin[...], f[x]); leave as-is.
     _ => expr.clone(),
   }
+}
+
+/// A fractional power of a base whose numeric content Together hoisted
+/// (`(4*(1 + c))^(1/2)`) with that content taken out of the radical, as the
+/// evaluator does for any product with a positive number in it:
+/// `2*Sqrt[1 + c]`. Left as it was, the radical is neither the `Sqrt[4 + 4*c]`
+/// it came from nor the `Sqrt[1 + c]` beside it, and a sum over both never
+/// finds its common denominator.
+fn split_radical_content(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let is_fraction = matches!(
+    exp,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && matches!(args.as_slice(), [Expr::Integer(_), Expr::Integer(d)] if *d > 1)
+  );
+  if !is_fraction {
+    return None;
+  }
+  let factors = flatten_times_args(std::slice::from_ref(base));
+  let (content, mut rest): (Vec<Expr>, Vec<Expr>) = factors
+    .into_iter()
+    .partition(|f| matches!(f, Expr::Integer(n) if *n > 0));
+  if content.is_empty() || rest.is_empty() {
+    return None;
+  }
+  let content = match content.len() {
+    1 => content.into_iter().next()?,
+    _ => build_product(content),
+  };
+  let outside =
+    crate::evaluator::evaluate_expr_to_expr(&pow(content, exp.clone())).ok()?;
+  let inside = match rest.len() {
+    1 => rest.remove(0),
+    _ => build_product(rest),
+  };
+  Some(times2(outside, pow(inside, exp.clone())))
 }
 
 /// The product of `factors` with its numeric factors multiplied into one,
@@ -3131,7 +3167,8 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
               continue;
             }
           } else {
-            continue;
+            // A radical or symbolic power is one indivisible factor.
+            (expr_to_string(f), f.clone(), 1)
           }
         }
         Expr::FunctionCall { name, args }
@@ -3144,7 +3181,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
               continue;
             }
           } else {
-            continue;
+            (expr_to_string(f), f.clone(), 1)
           }
         }
         Expr::Integer(_) => continue,
@@ -3249,8 +3286,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
             if let Expr::Integer(n) = right.as_ref() {
               (expr_to_string(left), *left.clone(), *n)
             } else {
-              new_factors.push(f);
-              continue;
+              (expr_to_string(&f), f.clone(), 1)
             }
           }
           Expr::FunctionCall { name, args }
@@ -3259,8 +3295,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
             if let Expr::Integer(n) = &args[1] {
               (expr_to_string(&args[0]), args[0].clone(), *n)
             } else {
-              new_factors.push(f);
-              continue;
+              (expr_to_string(&f), f.clone(), 1)
             }
           }
           Expr::Integer(_) => {

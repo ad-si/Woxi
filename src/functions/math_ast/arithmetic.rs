@@ -10039,6 +10039,9 @@ fn combine_like_bases_depth(
       // A machine real too: `2. 2.^x` is `2.^(1 + x)`.
       Expr::Real(_) => true,
       Expr::FunctionCall { .. } => true,
+      // A rendered picture is a base like any other expression:
+      // `g g` is `g^2` for a `Graphics3D` as it is for a `Graphics`.
+      Expr::Graphics { .. } => true,
       // A power base too: `Sqrt[E^x] Sqrt[E^x]` is `E^x`.
       Expr::BinaryOp {
         op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Power,
@@ -17750,6 +17753,14 @@ where
   let Some(len) = lengths.next() else {
     return op(args);
   };
+  // A list is not threaded against a NumericArray.
+  if crate::evaluator::listable::has_numeric_array(args) {
+    let mut sorted = args.to_vec();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::compare_exprs(b, a).cmp(&0)
+    });
+    return Ok(unevaluated(head, &sorted));
+  }
   if lengths.any(|l| l != len) {
     crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
       head, args,
