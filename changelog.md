@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `Det` of a large matrix of exact constants (rotated unit vectors built
+    from `Cos[2 Pi k/17]`, say) returns the plain sum of products instead
+    of running a simplification pass over it that took several times as
+    long as the determinant itself, so a `Manipulate` computing hundreds
+    of them redraws in a fraction of the time.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that
