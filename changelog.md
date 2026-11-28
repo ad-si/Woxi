@@ -13,6 +13,11 @@
     the `Grid` span symbols, in source code and in the cells of a notebook,
     instead of as an empty item, so a merged cell typed that way stays
     merged.
+- `Det` of a large matrix of exact constants (rotated unit vectors built
+    from `Cos[2 Pi k/17]`, say) returns the plain sum of products instead
+    of running a simplification pass over it that took several times as
+    long as the determinant itself, so a `Manipulate` computing hundreds
+    of them redraws in a fraction of the time.
 - A `Dynamic[…]` readout beside a `Manipulate` control whose value is a
     root or a built-up fraction (`Dynamic[Sqrt[d]]`, `Dynamic[(a + 1)/2]`)
     is typeset with its radical sign or fraction bar in Woxi Studio instead

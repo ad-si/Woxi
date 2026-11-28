@@ -467,6 +467,43 @@ mod det {
     );
   }
 
+  // A large exact constant matrix (rotated unit vectors between points of
+  // a regular 17-gon) is not run through a simplification pass, which cost
+  // several times the sum of products itself and made a tessellation built
+  // from hundreds of such determinants take seconds.
+  #[test]
+  fn large_constant_matrix_is_not_simplified() {
+    assert_eq!(
+      interpret(
+        "rot[t_] := {{Cos[t], -Sin[t]}, {Sin[t], Cos[t]}}; \
+         pt[k_] := {Cos[2 Pi k/17], Sin[2 Pi k/17]}; \
+         dir[t_, a_, b_] := rot[t] . Normalize[pt[a] - pt[b]]; \
+         ms = Table[{rot[Pi/3] . dir[2 Pi/3, k, k + 1], dir[-Pi/3, k + 1, k]}, \
+           {k, 30}]; \
+         plain = First[AbsoluteTiming[Table[\
+           m[[1, 1]] m[[2, 2]] - m[[1, 2]] m[[2, 1]], {m, ms}]]]; \
+         time = First[AbsoluteTiming[dets = Det /@ ms]]; \
+         {time < 4 plain, AllTrue[dets, NumericQ], \
+          Max[Abs[N[dets] + Sqrt[3.]/2]] < 10^-12}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  // Small constant determinants are still simplified.
+  #[test]
+  fn small_constant_matrix_is_simplified() {
+    assert_eq!(
+      interpret(
+        "Det[{{1/Sqrt[1 + Sin[1]^2], Sin[1]/Sqrt[1 + Sin[1]^2]}, \
+              {-Sin[1]/Sqrt[1 + Sin[1]^2], 1/Sqrt[1 + Sin[1]^2]}}]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   // Machine numbers with one symbolic row: expanded along that row
   // (Demonstration NinePointCubic's 10 x 10 cubic through nine points took
   // minutes of symbolic elimination).
