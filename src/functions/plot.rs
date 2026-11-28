@@ -19067,25 +19067,37 @@ pub(crate) fn symbolic_body_agrees(
   var: &str,
   probes: &[f64],
 ) -> bool {
-  probes.iter().all(|&t| {
-    let sample = |e: &Expr| {
-      let value =
-        evaluate_expr_to_expr(&substitute_var(e, var, &Expr::Real(t))).ok()?;
-      let mut leaves = Vec::new();
-      numeric_leaves(&value, &mut leaves).then_some(leaves)
-    };
-    // A held body that is not numeric on its own (`y[t] /. sol` turns into
-    // `y[0.5] /. sol`) needs the symbolic pass; nothing to compare against.
-    let Some(direct) = sample(original) else {
-      return true;
-    };
-    sample(evaluated).is_some_and(|pre| {
-      pre.len() == direct.len()
-        && pre
-          .iter()
-          .zip(&direct)
-          .all(|(a, b)| (a - b).abs() <= 1e-6 * (1.0 + a.abs().max(b.abs())))
-    })
+  probes
+    .iter()
+    .all(|&t| symbolic_body_agrees_at(original, evaluated, &[(var, t)]))
+}
+
+/// As [`symbolic_body_agrees`], at one probe point in several plot variables.
+pub(crate) fn symbolic_body_agrees_at(
+  original: &Expr,
+  evaluated: &Expr,
+  point: &[(&str, f64)],
+) -> bool {
+  let sample = |e: &Expr| {
+    let mut probe = e.clone();
+    for (var, t) in point {
+      probe = substitute_var(&probe, var, &Expr::Real(*t));
+    }
+    let value = evaluate_expr_to_expr(&probe).ok()?;
+    let mut leaves = Vec::new();
+    numeric_leaves(&value, &mut leaves).then_some(leaves)
+  };
+  // A held body that is not numeric on its own (`y[t] /. sol` turns into
+  // `y[0.5] /. sol`) needs the symbolic pass; nothing to compare against.
+  let Some(direct) = sample(original) else {
+    return true;
+  };
+  sample(evaluated).is_some_and(|pre| {
+    pre.len() == direct.len()
+      && pre
+        .iter()
+        .zip(&direct)
+        .all(|(a, b)| (a - b).abs() <= 1e-6 * (1.0 + a.abs().max(b.abs())))
   })
 }
 
@@ -19137,8 +19149,9 @@ fn resolve_list_valued_symbol(body: &Expr, var: &str) -> Option<Expr> {
 /// A body that applies replacement rules to the plot variable — `y[t] /.
 /// sol` — has to be replaced while the variable is still symbolic: once
 /// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
-/// `y[0.3]`. Returns the replaced body when it still depends on `var`.
-fn resolve_replaced_body(body: &Expr, var: &str) -> Option<Expr> {
+/// `y[0.3]`. Returns the replaced body when it still depends on `var` and
+/// computes what the held body does at `probe_x`.
+fn resolve_replaced_body(body: &Expr, var: &str, probe_x: f64) -> Option<Expr> {
   let is_replacement = match body {
     Expr::ReplaceAll { .. } => true,
     Expr::FunctionCall { name, args } => {
@@ -19150,7 +19163,12 @@ fn resolve_replaced_body(body: &Expr, var: &str) -> Option<Expr> {
     return None;
   }
   let evaluated = eval_body_var_symbolic(body, var);
-  expr_mentions_var(&evaluated, var).then_some(evaluated)
+  // Rules built from the variable's value (`Thread[{u, v} -> f[t]]`, with
+  // `f[t]` a point only once `t` is a number) come out different when
+  // built symbolically; such a body is sampled as written instead.
+  (expr_mentions_var(&evaluated, var)
+    && symbolic_body_agrees(body, &evaluated, var, &[probe_x]))
+  .then_some(evaluated)
 }
 
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
@@ -19798,7 +19816,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
       _ => expand_generated_bodies(body, var, probe_x)
         .or_else(|| resolve_list_valued_symbol(body, var))
-        .or_else(|| resolve_replaced_body(body, var))
+        .or_else(|| resolve_replaced_body(body, var, probe_x))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
         .unwrap_or_else(|| body.clone()),
     }

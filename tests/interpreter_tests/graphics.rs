@@ -11152,6 +11152,32 @@ mod plot3d {
       assert_eq!(result, "Graphics3D");
     }
 
+    /// Rules built from the plot variable's value are built at each sample:
+    /// `Thread[{u, v} -> f[t]]` pairs `u` and `v` with the coordinates of
+    /// the point `f[t]` only once `t` is a number. Built with `t` symbolic
+    /// it would put the whole point into both, which is no curve.
+    #[test]
+    fn parametric_curve_substitutes_a_point_valued_function_per_sample() {
+      clear_state();
+      let result = interpret(
+        "f = BezierFunction[{{0., 0.}, {1., 2.}, {2., 0.}}];          pts = Cases[ParametricPlot3D[{u, v, u + v} /. Thread[{u, v} -> f[t]],          {t, 0, 1}], Line[p_] :> p, Infinity][[1]];          {First[pts], Last[pts],           Max[Abs[(#[[1]] + #[[2]] - #[[3]]) & /@ pts]] < 10^-9,           Max[Abs[Flatten[(f[#[[1]]/2] - Most[#]) & /@ pts]]] < 10^-9}",
+      )
+      .unwrap();
+      assert_eq!(result, "{{0., 0., 0.}, {2., 0., 2.}, True, True}");
+      // The same body under `Plot`, and for a function of the point.
+      let result = interpret(
+        "f = BSplineFunction[{{0., 0.}, {1., 2.}, {2., 0.}, {3., 1.}}];          pts = Cases[Plot[(u - 2 v) /. Thread[{u, v} -> f[t]], {t, 0, 1}],          Line[p_] :> p, Infinity][[1]];          Max[Abs[(#[[2]] - f[#[[1]]] . {1, -2}) & /@ pts]] < 10^-9",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Rules that only match a symbolic variable are still applied first.
+      let result = interpret(
+        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]] == {Cos[1.], Sin[1.], 1.}",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+    }
+
     /// A curve that winds many times over a long parameter range is refined
     /// where the polyline turns sharply, instead of being drawn from a
     /// fixed 200 samples (a few points per turn, i.e. a coarse polygon).
@@ -38170,6 +38196,111 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Graphics[EventHandler[Rectangle[{0, 0}, {1, 1}], \"MouseEntered\" :> (hit = 1)]]",
       );
       assert!(!plain.contains("woxi-btn-"), "{plain}");
+    }
+
+    // A `Slider[Dynamic[v], range]` cell of a layout draws as a track with
+    // its thumb at the value `v` holds, and records the variable and range
+    // on a region over the track so a live widget can drag it.
+    #[test]
+    fn a_slider_cell_draws_its_track_and_records_its_range() {
+      use woxi::functions::graphics::picture_slider_from_hit_id;
+      let slider_of = |svg: &str| {
+        let id = svg
+          .split("id=\"")
+          .find_map(|rest| {
+            rest
+              .split('"')
+              .next()
+              .filter(|id| id.starts_with("woxi-sld-"))
+          })
+          .unwrap_or_else(|| panic!("a slider region: {svg}"));
+        picture_slider_from_hit_id(id).expect("decodable region")
+      };
+      for (layout, width) in [
+        (
+          "Grid[{{\"w\", Slider[Dynamic[w], {2, 10, 2}, ImageSize -> 110]}}]",
+          110.,
+        ),
+        (
+          "Row[{Manipulator[Dynamic[w], {2, 10, 2}, ImageSize -> Small]}]",
+          100.,
+        ),
+        ("Column[{Slider[Dynamic[w], {2, 10, 2}]}]", 200.),
+      ] {
+        let svg = export_svg(&format!("(w = 4; {layout})"));
+        assert!(!svg.contains("Slider["), "not the source: {svg}");
+        assert!(!svg.contains("Manipulator["), "not the source: {svg}");
+        assert_eq!(svg.matches("id=\"woxi-sld-").count(), 1, "{svg}");
+        assert!(!svg.contains("woxi-play-"), "a slider has no play: {svg}");
+        // The thumb sits a quarter of the way along the track, which leaves
+        // room for half the thumb at either end.
+        let cx = 6.0 + 0.25 * (width - 12.0);
+        assert!(svg.contains(&format!("<circle cx=\"{cx:.1}\"")), "{svg}");
+        let slider = slider_of(&svg);
+        assert_eq!(slider.target, "w");
+        assert_eq!((slider.min, slider.max, slider.step), (2., 10., 2.));
+        assert_eq!(slider.value_at(0.0), 2.0);
+        assert_eq!(slider.value_at(0.55), 6.0);
+        assert_eq!(slider.value_at(1.7), 10.0);
+        assert_eq!(slider.write_back(8.0), "w = 8");
+      }
+      // A continuous slider stores machine reals; one over a part of a list
+      // writes that part.
+      let svg =
+        export_svg("(p = {0.5, 1}; Row[{Slider[Dynamic[p[[2]]], {0, 4}]}])");
+      let slider = slider_of(&svg);
+      assert_eq!(slider.step, 0.0);
+      assert_eq!(slider.write_back(slider.value_at(0.5)), "p[[2]] = 2.0");
+      assert_eq!(slider.write_back(slider.value_at(0.3)), "p[[2]] = 1.2");
+      // A disabled slider is drawn dimmed and cannot be dragged; one whose
+      // range is not numeric stays as written.
+      let off = export_svg(
+        "(w = 4; Row[{Slider[Dynamic[w], {2, 10}, Enabled -> False]}])",
+      );
+      assert!(
+        off.contains("<circle") && !off.contains("woxi-sld-"),
+        "{off}"
+      );
+      let symbolic = export_svg("Row[{Slider[Dynamic[w], {lo, hi}]}]");
+      assert!(symbolic.contains("Slider["), "{symbolic}");
+      assert!(!symbolic.contains("woxi-sld-"), "{symbolic}");
+    }
+
+    // An `Animator[Dynamic[v], range, …]` cell draws the same track plus a
+    // play button, with its `AnimationRate` and whether it starts playing.
+    #[test]
+    fn an_animator_cell_draws_a_track_and_a_play_button() {
+      use woxi::functions::graphics::{
+        animator_play_from_hit_id, picture_slider_from_hit_id,
+      };
+      let ids = |svg: &str, prefix: &str| -> Vec<String> {
+        svg
+          .split("id=\"")
+          .filter_map(|rest| rest.split('"').next())
+          .filter(|id| id.starts_with(prefix))
+          .map(str::to_string)
+          .collect()
+      };
+      let svg = export_svg(
+        "(t = 30; Grid[{{Animator[Dynamic[t], {20, 60}, 5, \
+         AnimationRate -> 3, AnimationRunning -> False]}}])",
+      );
+      assert!(!svg.contains("Animator["), "not the source: {svg}");
+      let (tracks, plays) = (ids(&svg, "woxi-sld-"), ids(&svg, "woxi-play-"));
+      assert_eq!((tracks.len(), plays.len()), (1, 1), "{svg}");
+      let track = picture_slider_from_hit_id(&tracks[0]).unwrap();
+      assert_eq!(animator_play_from_hit_id(&plays[0]).unwrap(), track);
+      assert_eq!(track.target, "t");
+      // The bare third argument is the step.
+      assert_eq!((track.min, track.max, track.step), (20., 60., 5.));
+      assert_eq!(track.rate, Some(3.0));
+      assert!(!track.running);
+      assert_eq!(track.snap(47.6), 50.0);
+
+      let running = export_svg("Row[{Animator[Dynamic[t], {0, 1}]}]");
+      let play = animator_play_from_hit_id(&ids(&running, "woxi-play-")[0]);
+      let play = play.unwrap();
+      assert!(play.running && play.rate.is_none());
     }
 
     // `Tooltip[shape, label]` inside a picture draws `shape` only, and

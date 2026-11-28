@@ -453,6 +453,12 @@ enum Message {
   /// stale (backlogged) ticks can be dropped instead of each triggering a
   /// full re-evaluation.
   ManipulateAnimationTick(std::time::Instant),
+  /// The play button of an `Animator` drawn inside a widget's picture was
+  /// pressed.
+  ManipulatePictureAnimatorToggled(
+    usize,
+    woxi::functions::graphics::PictureSlider,
+  ),
   /// Toggle play/pause of an animated (Animate/ListAnimate) widget.
   ManipulateTogglePlay(usize),
   /// A Trigger's step button was pressed: (cell, control, along the sweep).
@@ -1758,7 +1764,7 @@ impl WoxiStudio {
         // pointer is released (a release over the picture already ended it).
         for editor in &mut self.cell_editors {
           if let Some(state) = editor.manipulate_state.as_mut()
-            && state.mouse_pressed
+            && state.pointer_held()
           {
             state.mouse_up();
           }
@@ -2322,11 +2328,22 @@ impl WoxiStudio {
           .and_then(|e| e.manipulate_state.as_mut())
         {
           state.apply_pane_click();
+          state.slider_press();
           state.mouse_down();
           // A `ClickPane` handler may `Beep[]` or `EmitSound[…]`.
           if let Some(audio) = state.emitted_sound.take() {
             self.play_emitted_sound(cell_idx, &audio);
           }
+        }
+        Task::none()
+      }
+      Message::ManipulatePictureAnimatorToggled(cell_idx, slider) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.toggle_picture_animation(&slider);
         }
         Task::none()
       }
@@ -4853,7 +4870,7 @@ fn render_manipulate_widget<'a>(
       .panel_displays
       .iter()
       .filter(move |(_, at)| *at == slot)
-      .filter_map(|(d, _)| state.display_trees.get(*d))
+      .filter_map(|(d, _)| Some((*d, state.display_trees.get(*d)?)))
   };
   // One panel column per side of the output (see `placement_slot`). Most
   // widgets put every row on the widget-level `ControlPlacement` side, but a
@@ -4907,8 +4924,15 @@ fn render_manipulate_widget<'a>(
     // Each such display starts a line of its own; the control after it may
     // join that line (a live caption written in one `Row` with the control,
     // see `ManipulateState::joins_previous_control`).
-    for tree in panel_trees_at(ctrl_idx) {
+    for (d, tree) in panel_trees_at(ctrl_idx) {
       flush_control_line(&mut controls_col, &mut line);
+      // The picture a control function draws for its own control stands on
+      // that control's side of the output.
+      if state.control_pictures.contains(&d) {
+        let slot = placement_slot(state.placement_of(ctrl_idx));
+        switch_slot(&mut controls_col, &mut current_slot, slot);
+        side_used[slot] = true;
+      }
       line.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
@@ -5879,72 +5903,110 @@ fn render_manipulate_widget<'a>(
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
-    let picture: Element<'_, Message> =
-      if state.button_regions.is_empty() && state.tooltip_regions.is_empty() {
-        svg_widget.into()
-      } else {
-        // Pressable `Button` cells drawn inside the picture: overlay a
-        // transparent clickable area on each, running its held action.
-        let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
-        for region in &state.button_regions {
-          layers.push(
-            container(
-              button(space::Space::new())
-                .width(region.width)
-                .height(region.height)
-                .style(|_, _| button::Style::default())
-                .on_press(Message::ManipulateDisplayAction(
-                  cell_idx,
-                  region.action.clone(),
-                )),
+    let picture: Element<'_, Message> = if state.button_regions.is_empty()
+      && state.tooltip_regions.is_empty()
+      && state.play_regions.is_empty()
+    {
+      svg_widget.into()
+    } else {
+      // Pressable `Button` cells drawn inside the picture: overlay a
+      // transparent clickable area on each, running its held action.
+      let mut layers: Vec<Element<'_, Message>> = vec![svg_widget.into()];
+      for region in &state.button_regions {
+        layers.push(
+          container(
+            button(space::Space::new())
+              .width(region.width)
+              .height(region.height)
+              .style(|_, _| button::Style::default())
+              .on_press(Message::ManipulateDisplayAction(
+                cell_idx,
+                region.action.clone(),
+              )),
+          )
+          .padding(iced::Padding {
+            top: region.y,
+            left: region.x,
+            right: 0.0,
+            bottom: 0.0,
+          })
+          .into(),
+        );
+      }
+      // The play button of an `Animator` drawn inside the picture: a real
+      // button over it starts and pauses the sweep, showing which.
+      for region in &state.play_regions {
+        let playing = state
+          .picture_animation
+          .as_ref()
+          .is_some_and(|a| a.slider.target == region.slider.target);
+        layers.push(
+          container(
+            button(
+              text(if playing { "❚❚" } else { "▶" })
+                .size(9)
+                .width(Fill)
+                .height(Fill)
+                .center(),
             )
-            .padding(iced::Padding {
-              top: region.y,
-              left: region.x,
-              right: 0.0,
-              bottom: 0.0,
-            })
-            .into(),
-          );
-        }
-        // `Tooltip`-wrapped shapes: an inert area over each shows its label
-        // while the pointer rests on it.
-        for region in &state.tooltip_regions {
-          layers.push(
-            container(tooltip(
-              space::Space::new()
-                .width(region.width.max(1.0))
-                .height(region.height.max(1.0)),
-              container(text(region.text.clone()).size(12))
-                .max_width(TOOLTIP_MAX_WIDTH)
-                .padding(6)
-                .style(container::bordered_box),
-              tooltip::Position::FollowCursor,
-            ))
-            .padding(iced::Padding {
-              top: region.y,
-              left: region.x,
-              right: 0.0,
-              bottom: 0.0,
-            })
-            .into(),
-          );
-        }
-        stack(layers).into()
-      };
+            .padding(0)
+            .width(region.width)
+            .height(region.height)
+            .style(button::secondary)
+            .on_press(Message::ManipulatePictureAnimatorToggled(
+              cell_idx,
+              region.slider.clone(),
+            )),
+          )
+          .padding(iced::Padding {
+            top: region.y,
+            left: region.x,
+            right: 0.0,
+            bottom: 0.0,
+          })
+          .into(),
+        );
+      }
+      // `Tooltip`-wrapped shapes: an inert area over each shows its label
+      // while the pointer rests on it.
+      for region in &state.tooltip_regions {
+        layers.push(
+          container(tooltip(
+            space::Space::new()
+              .width(region.width.max(1.0))
+              .height(region.height.max(1.0)),
+            container(text(region.text.clone()).size(12))
+              .max_width(TOOLTIP_MAX_WIDTH)
+              .padding(6)
+              .style(container::bordered_box),
+            tooltip::Position::FollowCursor,
+          ))
+          .padding(iced::Padding {
+            top: region.y,
+            left: region.x,
+            right: 0.0,
+            bottom: 0.0,
+          })
+          .into(),
+        );
+      }
+      stack(layers).into()
+    };
     // A `ClickPane` hands its handler the position of each click; an
     // `EventHandler` gets the pointer's presses, drags and releases.
-    let picture: Element<'_, Message> =
-      if state.click_regions.is_empty() && state.mouse_region.is_none() {
-        picture
-      } else {
-        mouse_area(picture)
-          .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
-          .on_exit(Message::ManipulatePointerLeft(cell_idx))
-          .on_press(Message::ManipulatePaneClicked(cell_idx))
-          .on_release(Message::ManipulateMouseReleased(cell_idx))
-          .into()
-      };
+    let picture: Element<'_, Message> = if state.click_regions.is_empty()
+      && state.slider_regions.is_empty()
+      && state.mouse_region.is_none()
+    {
+      picture
+    } else {
+      mouse_area(picture)
+        .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+        .on_exit(Message::ManipulatePointerLeft(cell_idx))
+        .on_press(Message::ManipulatePaneClicked(cell_idx))
+        .on_release(Message::ManipulateMouseReleased(cell_idx))
+        .into()
+    };
     // A `Pane[…, Scrollbars -> …]` body scrolls inside its box.
     let picture = match state.scroll_viewport {
       Some(viewport) => scroll_pane_element(picture, viewport),
