@@ -986,8 +986,10 @@ fn play_range(opts: &[Expr], data: &[f64]) -> Option<(f64, f64)> {
 /// wolframscript normalizes them linearly so the bottom of the play range
 /// (see [`play_range`]) maps to -1 and its top to +1 — capped at 0.99999 to
 /// stay inside the asymmetric 16-bit positive range — clipping amplitudes
-/// outside it, then samples at `SampleRate` (default 8000 Hz). A constant
-/// (or single-element) signal is silent, yielding all-zero samples. Building
+/// outside it, then samples at `SampleRate` (default 8000 Hz). An empty
+/// play range `{c, c}` is widened to `{c - 1, c + 1}` with a
+/// `ListPlay::silent` warning, so a constant (or single-element) signal
+/// yields all-zero samples. Building
 /// this object makes `ListPlay` render as `-Sound-`, report `Head -> Sound`,
 /// and play the normalized waveform in the visual hosts. Returns `None` when
 /// the first argument is not a non-empty numeric list (so `ListPlay` stays
@@ -1004,13 +1006,23 @@ pub fn list_play(args: &[Expr]) -> Option<Expr> {
     data.push(try_eval_to_f64(it)?);
   }
   let normalized: Vec<Expr> = match play_range(&args[1..], &data) {
-    Some((min, max)) if max > min => data
-      .iter()
-      .map(|&x| {
-        Expr::Real((2.0 * (x - min) / (max - min) - 1.0).clamp(-1.0, 0.99999))
-      })
-      .collect(),
-    _ => vec![Expr::Real(0.0); data.len()],
+    Some((mut min, mut max)) => {
+      // An empty range `{c, c}` — explicit, or the extent of a constant
+      // signal — is widened to `{c - 1, c + 1}`, and wolframscript warns
+      // that the sound is silent. A reversed range inverts the signal.
+      if min == max {
+        crate::emit_message("ListPlay::silent: Sound in channel 1 is silent.");
+        min -= 1.0;
+        max += 1.0;
+      }
+      data
+        .iter()
+        .map(|&x| {
+          Expr::Real((2.0 * (x - min) / (max - min) - 1.0).clamp(-1.0, 0.99999))
+        })
+        .collect()
+    }
+    None => vec![Expr::Real(0.0); data.len()],
   };
   let rate =
     option_sample_rate(&args[1..], LIST_PLAY_SAMPLE_RATE).round() as i128;

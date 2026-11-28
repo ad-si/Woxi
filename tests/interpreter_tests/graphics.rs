@@ -11266,8 +11266,10 @@ mod plot3d {
       .unwrap();
       assert_eq!(result, "True");
       // Rules that only match a symbolic variable are still applied first.
+      // (Wolfram's last sample lies a hair short of `t = 1`, at
+      // `1 - 2.04*10^-8`, so the endpoint is compared with a tolerance.)
       let result = interpret(
-        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]] == {Cos[1.], Sin[1.], 1.}",
+        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          end = Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]];          Max[Abs[end - {Cos[end[[3]]], Sin[end[[3]]], 1.}]] < 10^-6",
       )
       .unwrap();
       assert_eq!(result, "True");
@@ -37248,6 +37250,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod complex_plot {
     use super::*;
 
+    /// Wolfram binds `z` like `Block` does, so a symbol holding `z^2` is
+    /// colored the same as `z^2` itself rather than left blank.
+    #[test]
+    fn complex_plot_of_body_reaching_z_through_a_stored_value() {
+      assert_eq!(
+        export_svg("h = z^2; ComplexPlot[h, {z, -1 - I, 1 + I}]"),
+        export_svg("ComplexPlot[z^2, {z, -1 - I, 1 + I}]")
+      );
+    }
+
     /// `Mod` of a complex function used to stay unevaluated, so every sample
     /// was dropped and the domain coloring came out fully transparent.
     #[test]
@@ -49752,11 +49764,11 @@ mod complex_plot_3d {
   fn sin_returns_graphics3d() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49764,11 +49776,11 @@ mod complex_plot_3d {
   fn polynomial() {
     assert_eq!(
       interpret(
-        "ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
@@ -49785,34 +49797,124 @@ mod complex_plot_3d {
     // Audit-style call: ComplexPlot3D over an arbitrary head.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
-         PlotLegends -> Automatic]"
+        "{Head[#], First[#]} &[ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, \
+         PlotLegends -> Automatic]]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, -Graphics3D-}"
     );
   }
 
   #[test]
-  fn unevaluable_special_function_falls_back() {
-    // WeberE and HermiteH[1/2, z] don't reduce numerically for symbolic
-    // complex inputs in Woxi; ComplexPlot3D falls back to an empty
-    // Graphics3D so the caller still gets a -Graphics3D- placeholder.
+  fn unevaluable_function_falls_back() {
+    // A function that never evaluates to a number leaves nothing to draw:
+    // ComplexPlot3D returns an empty 3D plot (the caller still gets a
+    // -Graphics3D- placeholder) instead of failing. Its phase legend does
+    // not depend on the values, so it is still attached.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[WeberE[2, z], {z, -2 - 2*I, 2 + 2*I}, \
-         PlotLegends -> Automatic]"
+        "g = ComplexPlot3D[f[z], {z, -1 - I, 1 + I}, \
+         PlotLegends -> Automatic]; \
+         {Head[g], Head[First[g]], \
+         Length[Cases[g, _Polygon | _GraphicsComplex, Infinity]]}"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "{Legended, Graphics3D, 0}"
     );
+  }
+
+  #[test]
+  fn automatic_legend_is_the_phase_bar() {
+    // `PlotLegends -> Automatic` attaches a bar over the phase, `-π` to
+    // `π`, the same for every function and range.
     assert_eq!(
       interpret(
-        "ComplexPlot3D[HermiteH[1/2, z], {z, -1 - I, 1 + I}, \
-         PlotLegends -> Automatic]"
+        "ToString[ComplexPlot3D[z^2, {z, -2 - I, 2 + I}, \
+         PlotLegends -> Automatic][[2]], InputForm]"
       )
       .unwrap(),
-      "-Graphics3D-"
+      "Placed[BarLegend[{ColorDataFunction[\"MidShiftBalancedHue\", \
+       \"ThemeGradients\", {0, 1}, Blend[\"MidShiftBalancedHue\", #1] & ][#1] & , \
+       {0, 1}}, LabelStyle -> {}, LegendLayout -> \"Column\", \
+       LegendMarkerSize -> 150, \"ColorFunctionShading\" -> None, \
+       OpacityFunction -> None, \"OpacityFunctionTicks\" -> None, \
+       \"OpacityFunctionSize\" -> Scaled[0.5], \
+       \"OpacityFunctionRange\" -> {0, 1}, \
+       Charting`TickLabels -> {\"-π\", \"-π/2\", \"0\", \"π/2\", \"π\"}, \
+       Ticks -> {{0., 0.25, 0.5, 0.75, 1.}, \
+       {{0, 1/20, 1/10, 3/20, 1/5}, {1/5, 1/4, 3/10, 7/20, 2/5}, \
+       {2/5, 9/20, 1/2, 11/20, 3/5}, {3/5, 13/20, 7/10, 3/4, 4/5}, \
+       {4/5, 17/20, 9/10, 19/20, 1}}}, Charting`TickSide -> Right, \
+       ColorFunctionScaling -> True], After, Identity]"
+    );
+    // `ColorFunction -> Automatic` is the default coloring.
+    assert_eq!(
+      interpret(
+        "Head[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         ColorFunction -> Automatic, PlotLegends -> Automatic]]"
+      )
+      .unwrap(),
+      "Legended"
+    );
+  }
+
+  #[test]
+  fn placed_phase_legend_layout_and_tick_side() {
+    // Above or below the plot the bar is a wider `Row`; beside it, its
+    // ticks go left for a placement above the square's diagonal (or on
+    // the diagonal's lower-left half).
+    assert_eq!(
+      interpret(
+        "Table[ComplexPlot3D[z, {z, -1 - I, 1 + I}, \
+         PlotLegends -> Placed[Automatic, p]][[2]] /. \
+         Placed[BarLegend[_, o___], _, _] :> (\
+         {LegendLayout, LegendMarkerSize, Charting`TickSide} /. {o}), \
+         {p, {After, Before, Left, Above, Bottom, {Center, Top}, \
+         {Right, Top}, {Left, Bottom}, {0.5, 0.5}, {0.4, 0.4}, \
+         {0.7, 0.8}, {0.4, 0.1}, Scaled[{0.2, 0.3}], \
+         {{0.2, 0.2}, {1, 1}}, {Top, Right}, {Bottom, Left}}}]"
+      )
+      .unwrap(),
+      "{{Column, 150, Right}, {Column, 150, Left}, {Column, 150, Left}, \
+       {Row, 225, Left}, {Row, 225, Right}, {Column, 150, Left}, \
+       {Column, 150, Right}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Column, 150, Right}, \
+       {Column, 150, Left}, {Column, 150, Left}, {Row, 225, Left}, \
+       {Row, 225, Right}}"
+    );
+  }
+
+  #[test]
+  fn body_reaching_z_through_a_stored_value_is_plotted() {
+    // Wolfram binds `z` like `Block` does, so a symbol holding `z^2`
+    // plots the same surface as `z^2` itself.
+    assert_eq!(
+      interpret(
+        "h = z^2; \
+         pts[g_] := Cases[g, GraphicsComplex[p_, ___] :> Round[p, 0.001], \
+         Infinity]; \
+         a = pts[ComplexPlot3D[h, {z, -1 - I, 1 + I}, PlotPoints -> 3, \
+         MaxRecursion -> 0]]; \
+         {Length[a], a === pts[ComplexPlot3D[z^2, {z, -1 - I, 1 + I}, \
+         PlotPoints -> 3, MaxRecursion -> 0]]}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+  }
+
+  #[test]
+  fn special_functions_without_closed_forms_are_plotted() {
+    // WeberE and HermiteH with a non-integer degree evaluate numerically
+    // at complex points, so their surfaces are drawn.
+    assert_eq!(
+      interpret(
+        "Table[Length[Cases[ComplexPlot3D[h, {z, -1 - I, 1 + I}, \
+         PlotPoints -> 5, MaxRecursion -> 0], _GraphicsComplex, \
+         Infinity]] > 0, {h, {WeberE[2, z], HermiteH[1/2, z]}}]"
+      )
+      .unwrap(),
+      "{True, True}"
     );
   }
 }
@@ -79015,6 +79117,77 @@ fn pinned_3d_scene_in_a_layout_cell_fits_its_outline() {
   };
   assert_eq!(held(""), held(", SphericalRegion -> False"));
   assert_ne!(held(""), held(", SphericalRegion -> True"));
+}
+
+/// Regression: a `Column` shown as a result of its own (the way a notebook
+/// cell or a `Manipulate` frame displays it, not through `ExportString`)
+/// draws its items beforehand, and a 3D scene of fixed size among them was
+/// left framed by its sphere. Wolfram's snapshots of a Demonstration's
+/// `Manipulate` of a `Column` holding a boxed scene (a 24 × 4 × 4 pinned
+/// range seen from `{2, -3, 2.5}` at `ImageSize -> {350, 200}`) over a
+/// `Plot` draw the box about 337 px wide, as the outline fit does; Woxi drew
+/// it 181 px wide.
+#[test]
+fn pinned_3d_scene_in_a_displayed_column_fits_its_outline() {
+  let displayed = |code: &str| {
+    woxi::interpret_with_stdout(code)
+      .expect("evaluate")
+      .graphics
+      .expect("the column should be drawn as a picture")
+  };
+  // The widest horizontal span of the scene's lines.
+  let width = |svg: &str| {
+    let xs: Vec<f64> = svg
+      .split(" x1=\"")
+      .chain(svg.split(" x2=\""))
+      .filter_map(|rest| rest[..rest.find('"')?].parse::<f64>().ok())
+      .collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  for (box_options, size) in [
+    ("", "{350, 200}"),
+    (", Boxed -> False", "{350, 200}"),
+    (", Axes -> {True, False, False}", "{300, 300}"),
+  ] {
+    let column = |extra: &str, rest: &str| {
+      format!(
+        "Column[{{Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {size}\
+         {box_options}{extra}]{rest}}}]"
+      )
+    };
+    for rest in ["", ", \"caption\"", ", Plot[x, {x, 0, 1}]"] {
+      let in_frame = |extra: &str| {
+        woxi::with_manipulate_frame(|| displayed(&column(extra, rest)))
+      };
+      let automatic = in_frame("");
+      let outline = in_frame(", SphericalRegion -> False");
+      let sphere = in_frame(", SphericalRegion -> True");
+      assert_eq!(automatic, outline, "{box_options} {size} {rest}");
+      // An explicit `SphericalRegion -> True` is kept in the column.
+      assert_ne!(automatic, sphere, "{box_options} {size} {rest}");
+      // The lines of a `Plot` below would hide the scene's own extent.
+      assert!(
+        !rest.is_empty() || width(&automatic) > 1.05 * width(&sphere),
+        "{box_options} {size} {rest}: {} vs {}",
+        width(&automatic),
+        width(&sphere)
+      );
+    }
+  }
+  // On its own the scene of a `Manipulate` frame is still sphere-framed.
+  let alone = |extra: &str| {
+    woxi::with_manipulate_frame(|| {
+      displayed(&format!(
+        "Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {{350, 200}}{extra}]"
+      ))
+    })
+  };
+  assert_eq!(alone(""), alone(", SphericalRegion -> True"));
 }
 
 /// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a

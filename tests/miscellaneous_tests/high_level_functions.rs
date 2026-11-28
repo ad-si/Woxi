@@ -5115,11 +5115,48 @@ mod high_level_functions {
           .unwrap(),
         "{0.5, -0.5, 0., 0.99999, -1.}"
       );
-      // An empty range is silent.
+      // A reversed range inverts the signal.
+      assert_eq!(
+        interpret("ListPlay[{1, 2, 3}, PlayRange -> {3, 1}][[1, 1]]").unwrap(),
+        "{0.99999, 0., -1.}"
+      );
+    }
+
+    #[test]
+    fn test_list_play_empty_play_range_widens_by_one() {
+      // An empty range `{c, c}` is widened to `{c - 1, c + 1}`.
       assert_eq!(
         interpret("ListPlay[{1, 2, 3}, PlayRange -> {1, 1}][[1, 1]]").unwrap(),
+        "{0., 0.99999, 0.99999}"
+      );
+      assert_eq!(
+        interpret("ListPlay[{0, 1, 2, 3}, PlayRange -> {1.5, 1.5}][[1, 1]]")
+          .unwrap(),
+        "{-1., -0.5, 0.5, 0.99999}"
+      );
+      // A constant signal has an empty extent and so is silent.
+      assert_eq!(
+        interpret("ListPlay[{3, 3, 3}][[1, 1]]").unwrap(),
         "{0., 0., 0.}"
       );
+    }
+
+    #[test]
+    fn test_list_play_empty_play_range_warns_silent() {
+      let result = woxi::interpret_with_stdout("ListPlay[{3, 3, 3}];").unwrap();
+      assert!(
+        result
+          .warnings
+          .iter()
+          .any(|w| w == "ListPlay::silent: Sound in channel 1 is silent."),
+        "{:?}",
+        result.warnings
+      );
+      let result = woxi::interpret_with_stdout(
+        "ListPlay[{1, 2, 3}, PlayRange -> {5, 6}];",
+      )
+      .unwrap();
+      assert!(result.warnings.is_empty(), "{:?}", result.warnings);
     }
 
     #[test]

@@ -4164,6 +4164,8 @@ mod surface_outlines_and_meshes {
   // Where the plotted function stops being real, Plot3D cuts the surface
   // along the edge of its domain, as Wolfram does. Dropping every sampling
   // cell with an undefined corner left a jagged staircase short of it.
+  // Wolfram's edge points overshoot the circle by ~4e-5 (with z = 0) while
+  // Woxi's lie on or inside it, so only their distance to it is asserted.
   #[test]
   fn plot3d_surface_runs_to_the_edge_of_the_real_domain() {
     assert_eq!(
@@ -4172,10 +4174,10 @@ mod surface_outlines_and_meshes {
          Mesh -> None]; \
          p = Cases[g, GraphicsComplex[pts_, ___] :> pts, Infinity][[1]]; \
          r = Norm[Most[#]] & /@ p; \
-         {Max[r] <= 1, Max[r] > 1 - 10^-3, Count[r, v_ /; v > 0.99] > 20}"
+         {Abs[Max[r] - 1] < 10^-3, Count[r, v_ /; v > 0.99] > 20}"
       )
       .unwrap(),
-      "{True, True, True}"
+      "{True, True}"
     );
     // The standalone render outlines that edge like any other boundary.
     let s = svg(
@@ -4194,10 +4196,10 @@ mod surface_outlines_and_meshes {
          Mesh -> None, RegionFunction -> Function[{x, y, z}, x > 0]]; \
          p = Cases[g, GraphicsComplex[pts_, ___] :> pts, Infinity][[1]]; \
          r = Norm[Most[#]] & /@ p; \
-         {Max[r] <= 1, Max[r] > 1 - 10^-3, Min[p[[All, 1]]] >= 0}"
+         {Abs[Max[r] - 1] < 10^-3, Min[p[[All, 1]]] >= 0}"
       )
       .unwrap(),
-      "{True, True, True}"
+      "{True, True}"
     );
   }
 

@@ -3979,7 +3979,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// The `PlotLegends` position of a plot's automatic color bar:
 /// `Automatic` puts it `After` the plot, `Placed[Automatic, pos]` at `pos`.
-fn automatic_legend_position(value: &Expr) -> Option<Expr> {
+pub(crate) fn automatic_legend_position(value: &Expr) -> Option<Expr> {
   match value {
     Expr::Identifier(v) if v == "Automatic" => Some(id_expr("After")),
     Expr::FunctionCall { name, args }
@@ -10951,7 +10951,14 @@ fn evaluate_complex_at(
   let z_val = build_complex_float_expr(re, im);
   let sub = substitute_var(body, zvar, &z_val);
   let result = evaluate_expr_to_expr(&sub).ok()?;
-  try_extract_complex_f64(&result)
+  try_extract_complex_f64(&result).or_else(|| {
+    // The body may reach `z` only through a stored value (`h = z^2`
+    // plotted as `h`), which textual substitution never touches: bind
+    // `z` like `Block[{z = …}, body]`, as Wolfram does.
+    let bound =
+      crate::functions::plot::evaluate_with_bound_value(body, zvar, z_val)?;
+    try_extract_complex_f64(&bound)
+  })
 }
 
 /// The LAB stops of Wolfram's cyclic `"MidShiftBalancedHue"` gradient
