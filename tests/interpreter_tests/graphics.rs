@@ -17857,6 +17857,51 @@ mod plot3d {
       assert!((w - w2 - 6.0).abs() < 1e-6, "{w} vs {w2}");
     }
 
+    /// `Framed[picture, FrameMargins -> m]` with margins thinner than the
+    /// border (zero or negative) lays the picture over the border's line;
+    /// the border is stroked on top of the picture so it stays visible,
+    /// while a `Background` still fills the box behind it.
+    #[test]
+    fn framed_border_is_drawn_over_content_that_covers_it() {
+      let picture = "Graphics[{Red, Rectangle[]}, ImageSize -> 50]";
+      // Where the border's stroke and the picture's fill sit in the SVG.
+      let positions = |options: &str| -> (usize, usize, String) {
+        let svg = export_svg(&format!("Framed[{picture}, {options}]"));
+        let border = svg.find("stroke=\"black\"").expect("a border");
+        let content = svg.find("fill=\"rgb(255,0,0)\"").expect("a picture");
+        (border, content, svg)
+      };
+      for margins in ["-1", "0", "-3", "{{-1, 4}, {4, 4}}"] {
+        let (border, content, svg) =
+          positions(&format!("FrameMargins -> {margins}"));
+        assert!(border > content, "border on top for {margins}: {svg}");
+      }
+      // Roomy margins keep the border behind the content, as before.
+      for margins in ["1", "5", "{{2, 4}, {6, 8}}"] {
+        let (border, content, svg) =
+          positions(&format!("FrameMargins -> {margins}"));
+        assert!(border < content, "border below for {margins}: {svg}");
+      }
+      // The background stays behind the picture, the border goes on top.
+      let (border, content, svg) =
+        positions("FrameMargins -> -1, Background -> Yellow");
+      let fill = svg.find("fill=\"rgb(255,255,0)\"").expect("a background");
+      assert!(fill < content && content < border, "{svg}");
+      // A thicker border is covered by margins that would clear a thin one.
+      let svg = export_svg(&format!(
+        "Framed[{picture}, FrameMargins -> 2, \
+         FrameStyle -> Directive[Black, AbsoluteThickness[4]]]"
+      ));
+      let border = svg.find("stroke-width=\"4\"").expect("a thick border");
+      let content = svg.find("fill=\"rgb(255,0,0)\"").expect("a picture");
+      assert!(border > content, "{svg}");
+      // No border at all: nothing is stroked over the picture.
+      let svg = export_svg(&format!(
+        "Framed[{picture}, FrameMargins -> -1, FrameStyle -> None]"
+      ));
+      assert!(!svg.contains("stroke=\"black\""), "{svg}");
+    }
+
     /// `ToString[…, TraditionalForm]` text keeps its string atoms quoted
     /// inside the boxes; a grid cell typesets them without the quotes.
     #[test]

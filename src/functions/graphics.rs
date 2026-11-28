@@ -48841,12 +48841,34 @@ fn framed_box_to_svg(
   let y = top
     + (total_h - top - bottom - content_h).max(0.0)
       * frame_align_y.unwrap_or(0.0);
+  // Margins thinner than the border (`FrameMargins -> -1`, a picture
+  // framed edge to edge) put the content on top of the border's line, so
+  // the border is stroked after the content rather than hidden beneath it.
+  let content_covers_border = !frame_is_none
+    && [left, right, bottom, top]
+      .iter()
+      .any(|&margin| margin < stroke_width);
+  let half = stroke_width / 2.0;
+  let rect = |fill: &str, border: &str| {
+    format!(
+      "<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{fill}\" {border}/>",
+      rw = total_w - stroke_width,
+      rh = total_h - stroke_width,
+    )
+  };
+  let border = border_attrs(total_w);
+  let (backdrop, overlay) = if content_covers_border {
+    let backdrop = if rect_fill == "none" {
+      String::new()
+    } else {
+      format!("{}\n", rect(rect_fill, ""))
+    };
+    (backdrop, format!("\n{}", rect("none", &border)))
+  } else {
+    (format!("{}\n", rect(rect_fill, &border)), String::new())
+  };
   Some(format!(
-    "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border}/>\n<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>\n</svg>",
-    half = stroke_width / 2.0,
-    rw = total_w - stroke_width,
-    rh = total_h - stroke_width,
-    border = border_attrs(total_w),
+    "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n{backdrop}<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>{overlay}\n</svg>",
     view = view_box_attr(&child_svg),
     body = strip_svg_wrapper(&child_svg)
   ))
