@@ -55769,6 +55769,57 @@ mod manipulate {
     assert!(json.contains("\"mutation\":\"n = 3\""), "{json}");
   }
 
+  /// `ControlType -> TogglerBar` controls laid out in a `Dynamic@Column`:
+  /// a choice list built from another control's variable stays held (so it
+  /// follows that variable), a bar inside an `If` of the layout carries its
+  /// condition, and a `Background` reaches every toggle of its bar.
+  #[test]
+  fn spec_toggler_bar_controls_keep_live_choices_condition_and_background() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, {mode, {1, 2}},        {{count, 2}, ControlType -> None},        Dynamic@Column[{         Control[{{a, {}, \"\"}, Range[count], ControlType -> TogglerBar,            Background -> Red}],          If[mode == 1, \"\",            Control[{{b, {}, \"\"}, Range[count], ControlType -> TogglerBar}]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.displays,
+      vec![
+        "TogglerBar[Dynamic[a], Range[count], Background -> Red]".to_string(),
+        "If[!(mode == 1), TogglerBar[Dynamic[b], Range[count]], \"\"]"
+          .to_string(),
+      ]
+    );
+    let render = |mode: &str, count: &str| -> Vec<String> {
+      let mut bindings = manipulate_initial_bindings(&spec);
+      for (name, value) in &mut bindings {
+        match name.as_str() {
+          "mode" => *value = mode.to_string(),
+          "count" => *value = count.to_string(),
+          _ => {}
+        }
+      }
+      woxi::with_scoped_globals(&bindings, || {
+        spec
+          .displays
+          .iter()
+          .map(|d| woxi::functions::graphics::render_manipulate_display(d, &[]))
+          .collect()
+      })
+    };
+    let togglers = |json: &str| json.matches("\"kind\":\"toggler\"").count();
+    let red = "\"background\":\"rgb(255, 0, 0)\"";
+
+    let shown = render("1", "2");
+    assert_eq!(togglers(&shown[0]), 2, "{}", shown[0]);
+    assert_eq!(shown[0].matches(red).count(), 2, "{}", shown[0]);
+    assert_eq!(togglers(&shown[1]), 0, "{}", shown[1]);
+
+    // More choices once the count grows, and the second bar in mode 2.
+    let shown = render("2", "5");
+    assert_eq!(togglers(&shown[0]), 5, "{}", shown[0]);
+    assert_eq!(togglers(&shown[1]), 5, "{}", shown[1]);
+    assert!(shown[1].contains("\"background\":null"), "{}", shown[1]);
+  }
+
   /// `RadioButtonBar[Dynamic[var], choices]` used the same way (bound to an
   /// otherwise-undeclared variable, as part of an extra display argument)
   /// gets the same auto-initialization and single-value write-back as

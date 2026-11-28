@@ -9163,6 +9163,66 @@ mod tests {
     );
   }
 
+  /// Bars of toggles laid out in a `Dynamic@Column[…]` among the controls:
+  /// a choice list computed from a hidden variable follows that variable
+  /// once the body assigns it, a bar inside `If[cond, "", Control[…]]`
+  /// shows only while its branch does, and each bar's `Background` paints
+  /// its toggles.
+  #[test]
+  fn toggler_bar_controls_follow_their_dynamic_layout() {
+    use woxi::functions::graphics::DisplayNode;
+
+    let code = r#"Manipulate[
+      count = 4; {first, second, mode},
+      {mode, {1, 2}},
+      {{count, 2}, ControlType -> None},
+      Dynamic@Column[{
+        Control[{{first, {}, ""}, Range[count], ControlType -> TogglerBar,
+          Background -> Red}],
+        If[mode == 1, "",
+          Control[{{second, {}, ""}, Range[count], ControlType -> TogglerBar,
+            Background -> Blue}]]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+
+    type Face = Option<(f64, f64, f64)>;
+    fn togglers(node: &DisplayNode, out: &mut Vec<Face>) {
+      match node {
+        DisplayNode::Toggler { background, .. } => out.push(*background),
+        DisplayNode::Row(items) | DisplayNode::Column(items) => {
+          items.iter().for_each(|n| togglers(n, out))
+        }
+        _ => {}
+      }
+    }
+    let bars = |state: &ManipulateState| -> Vec<Vec<Face>> {
+      state
+        .display_trees
+        .iter()
+        .map(|tree| {
+          let mut out = Vec::new();
+          togglers(tree, &mut out);
+          out
+        })
+        .collect()
+    };
+
+    // The body raised the count to 4, so the first bar offers four red
+    // toggles; the second is off screen in mode 1.
+    let red = Some((1.0, 0.0, 0.0));
+    let blue = Some((0.0, 0.0, 1.0));
+    assert_eq!(bars(&state), vec![vec![red; 4], vec![]]);
+
+    // Mode 2 brings the second bar on screen, in its own color.
+    state.apply_saved_variables(&[("mode".to_string(), "2".to_string())]);
+    assert_eq!(state.error, None);
+    assert_eq!(bars(&state), vec![vec![red; 4], vec![blue; 4]]);
+  }
+
   /// `RadioButton[Dynamic[{a, b}], {True, False}]` in a hand-built control
   /// panel is a live radio button: selected while the list matches, and a
   /// click assigns the whole list, so a group of them selects one of several
