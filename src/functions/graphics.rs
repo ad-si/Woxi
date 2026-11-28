@@ -6502,6 +6502,98 @@ const SCRIPT_SHIFT_EM: f64 = 1.0 / 3.0;
 /// Size of a script relative to its surrounding text (`font-size="70%"`).
 const SCRIPT_SCALE: f64 = 0.7;
 
+/// The smallest size a script is set at, in points (the front end's
+/// `ScriptMinSize` in its working environment): a script of 10-point text
+/// is drawn at 9 points rather than at 7, and a script of that script stays
+/// at 9 points. Text smaller than the minimum keeps its scripts at its own
+/// size.
+const SCRIPT_MIN_SIZE: f64 = 9.0;
+
+/// The size a script of text at `font_size` points is set at:
+/// [`SCRIPT_SCALE`] of it, but not below [`SCRIPT_MIN_SIZE`].
+fn floored_script_size(font_size: f64) -> f64 {
+  (font_size * SCRIPT_SCALE).max(SCRIPT_MIN_SIZE.min(font_size))
+}
+
+/// Hold the scripts of `<text>` markup to [`SCRIPT_MIN_SIZE`]: every
+/// `<tspan font-size="70%">` (a sub- or superscript) whose size would fall
+/// below the minimum gets the percentage that sets it at the minimum
+/// instead. The size around a script is read from the enclosing `<text>`
+/// and `<tspan>` elements; `font_size` is the size of markup that starts
+/// outside any `<text>`. Markup whose scripts are large enough comes back
+/// unchanged.
+fn floor_script_sizes(markup: &str, font_size: Option<f64>) -> String {
+  const SCRIPT_SIZE_ATTR: &str = "font-size=\"70%\"";
+  if !markup.contains(SCRIPT_SIZE_ATTR) {
+    return markup.to_string();
+  }
+  fn attr_size(tag: &str) -> Option<&str> {
+    let start = tag.find(" font-size=\"")? + " font-size=\"".len();
+    let end = tag[start..].find('"')?;
+    Some(&tag[start..start + end])
+  }
+  let mut out = String::with_capacity(markup.len());
+  // The font size in effect inside each open element, where it is known.
+  let mut sizes: Vec<Option<f64>> = vec![font_size];
+  let mut rest = markup;
+  while let Some(open) = rest.find('<') {
+    out.push_str(&rest[..open]);
+    let Some(close) = rest[open..].find('>') else {
+      rest = &rest[open..];
+      break;
+    };
+    let tag = &rest[open..=open + close];
+    rest = &rest[open + close + 1..];
+    if tag.starts_with("</tspan") || tag.starts_with("</text") {
+      if sizes.len() > 1 {
+        sizes.pop();
+      }
+      out.push_str(tag);
+      continue;
+    }
+    if !(tag.starts_with("<tspan") || tag.starts_with("<text")) {
+      out.push_str(tag);
+      continue;
+    }
+    let around = sizes.last().copied().flatten();
+    let mut inside = around;
+    let mut rewritten = None;
+    match attr_size(tag) {
+      Some(value) => match value.strip_suffix('%') {
+        Some(percent) => {
+          inside = around
+            .zip(percent.parse::<f64>().ok())
+            .map(|(size, percent)| size * percent / 100.0);
+          if let Some(size) = around
+            && tag.contains(SCRIPT_SIZE_ATTR)
+          {
+            let floored = floored_script_size(size);
+            if floored > size * SCRIPT_SCALE + 1e-9 {
+              inside = Some(floored);
+              let percent = format!("{:.2}", floored / size * 100.0);
+              let percent = percent.trim_end_matches('0').trim_end_matches('.');
+              rewritten = Some(tag.replacen(
+                SCRIPT_SIZE_ATTR,
+                &format!("font-size=\"{percent}%\""),
+                1,
+              ));
+            }
+          }
+        }
+        None => inside = value.parse::<f64>().ok(),
+      },
+      None if tag.starts_with("<text") => inside = None,
+      None => {}
+    }
+    out.push_str(rewritten.as_deref().unwrap_or(tag));
+    if !tag.ends_with("/>") {
+      sizes.push(inside);
+    }
+  }
+  out.push_str(rest);
+  out
+}
+
 /// The distance between the lines of a multi-line graphics label (a string
 /// with line breaks, or a `Column` of text), in ems of its font. The front
 /// end sets the lines of a 15-point label 20 points apart (measured from the
@@ -18541,6 +18633,7 @@ fn render_primitive(
       styled_ranges,
       style,
     } => {
+      let text_start = out.len();
       let color = style.effective_color();
       let fs = style.font_size;
       // The offset names which point of the label's box sits at the
@@ -18899,6 +18992,12 @@ fn render_primitive(
             &color.to_svg_rgb()
           ),
         ));
+      }
+      // The front end never sets a script below its minimum script size.
+      if out[text_start..].contains("font-size=\"70%\"") {
+        let floored = floor_script_sizes(&out[text_start..], None);
+        out.truncate(text_start);
+        out.push_str(&floored);
       }
     }
     Primitive::BezierCurvePrim {
@@ -70683,7 +70782,7 @@ Italic], \" = \", 3}]]], \"SVG\"]",
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\" \
-baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
+baseline-shift=\"sub\" font-size=\"90%\">eq</tspan> = 3"
       ),
       "{svg}"
     );
@@ -70709,17 +70808,17 @@ baseline-shift=\"sub\" font-size=\"70%\">eq</tspan> = 3"
     assert_eq!(
       text_markup(r#""f(\!\(\*SubscriptBox[\(a\), \(m\)]\))""#),
       "f(<tspan font-style=\"italic\">a</tspan><tspan font-style=\"italic\" \
-baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
+baseline-shift=\"sub\" font-size=\"90%\">m</tspan>)"
     );
     assert_eq!(
       text_markup(r#""\!\(\*SubscriptBox[\(v\), \(max\)]\)""#),
       "<tspan font-style=\"italic\">v</tspan>\
-<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan>"
+<tspan baseline-shift=\"sub\" font-size=\"90%\">max</tspan>"
     );
     assert_eq!(
       text_markup(r#""\!\(\*SuperscriptBox[\(x\), \(*\)]\)""#),
       "<tspan font-style=\"italic\">x</tspan>\
-<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>"
+<tspan baseline-shift=\"super\" font-size=\"90%\">*</tspan>"
     );
   }
 
@@ -70739,7 +70838,7 @@ baseline-shift=\"sub\" font-size=\"70%\">m</tspan>)"
       svg.contains(
         "<tspan font-style=\"italic\" fill=\"rgb(255,0,0)\">g</tspan>\
 <tspan font-style=\"italic\" fill=\"rgb(255,0,0)\" baseline-shift=\"sub\" \
-font-size=\"70%\">k</tspan> = 5"
+font-size=\"90%\">k</tspan> = 5"
       ),
       "{svg}"
     );
@@ -74812,6 +74911,80 @@ mod grid_display_null_cell_tests {
       DisplayNode::Static { svg: None, text } => assert_eq!(text, ""),
       other => panic!("expected a blank cell, got {other:?}"),
     }
+  }
+}
+
+#[cfg(test)]
+mod script_min_size_tests {
+  use super::*;
+
+  const SCRIPT: &str = "<tspan baseline-shift=\"sub\" font-size=\"70%\">";
+
+  /// A script of small text is held at the minimum script size; a script
+  /// of text large enough for 70 % to clear the minimum is left alone.
+  #[test]
+  fn scripts_of_small_text_are_held_at_the_minimum() {
+    for (size, percent) in [(10.0, "90"), (12.0, "75"), (11.0, "81.82")] {
+      let markup = format!("F{SCRIPT}g</tspan>");
+      assert_eq!(
+        floor_script_sizes(&markup, Some(size)),
+        format!(
+          "F<tspan baseline-shift=\"sub\" font-size=\"{percent}%\">g</tspan>"
+        ),
+        "at {size} points"
+      );
+    }
+    for size in [13.0, 14.0, 20.0] {
+      let markup = format!("F{SCRIPT}g</tspan>");
+      assert_eq!(floor_script_sizes(&markup, Some(size)), markup);
+    }
+    assert_eq!(floored_script_size(10.0), 9.0);
+    assert_eq!(floored_script_size(20.0), 14.0);
+  }
+
+  /// Text below the minimum keeps its scripts at its own size, and a
+  /// script of a script never shrinks below the minimum either.
+  #[test]
+  fn nested_and_tiny_scripts_stop_shrinking() {
+    let markup = format!("a{SCRIPT}b{SCRIPT}c</tspan></tspan>");
+    assert_eq!(
+      floor_script_sizes(&markup, Some(6.0)),
+      markup.replace("70%", "100%")
+    );
+    // 20 pt → 14 pt → 9.8 pt → held at 9 pt.
+    let deep = format!("a{SCRIPT}b{SCRIPT}c{SCRIPT}d</tspan></tspan></tspan>");
+    assert_eq!(
+      floor_script_sizes(&deep, Some(20.0)),
+      format!(
+        "a{SCRIPT}b{SCRIPT}c<tspan baseline-shift=\"sub\" \
+         font-size=\"91.84%\">d</tspan></tspan></tspan>"
+      )
+    );
+  }
+
+  /// The size around a script comes from the `<text>` and `<tspan>`
+  /// elements enclosing it; other percentages (a spacer's) and markup of
+  /// unknown size are left as they are.
+  #[test]
+  fn sizes_are_read_from_the_enclosing_elements() {
+    let markup = format!(
+      "<text font-size=\"20\">a{SCRIPT}b</tspan></text>\
+       <text x=\"1\" font-size=\"10\">c{SCRIPT}d</tspan>\
+       <tspan font-size=\"1%\">e</tspan>\
+       <tspan font-size=\"30\">f{SCRIPT}g</tspan></tspan>h{SCRIPT}i</tspan></text>"
+    );
+    let floored = floor_script_sizes(&markup, None);
+    assert_eq!(floored.matches("font-size=\"70%\"").count(), 2, "{floored}");
+    assert_eq!(floored.matches("font-size=\"90%\"").count(), 2, "{floored}");
+    assert!(
+      floored.contains(">c<tspan baseline-shift=\"sub\" font-size=\"90%\">d<")
+    );
+    assert!(
+      floored.contains(">h<tspan baseline-shift=\"sub\" font-size=\"90%\">i<")
+    );
+    assert!(floored.contains("<tspan font-size=\"1%\">e</tspan>"));
+    let unknown = format!("x{SCRIPT}y</tspan>");
+    assert_eq!(floor_script_sizes(&unknown, None), unknown);
   }
 }
 

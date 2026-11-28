@@ -4397,7 +4397,7 @@ mod interpreter_tests {
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\">F</tspan><tspan \
-font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">N</tspan> cos"
       ),
       "expected lowered N in SVG, got: {svg}"
     );
@@ -4418,7 +4418,7 @@ font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">N</tspan> cos"
       assert!(
         svg.contains(&format!(
           "><tspan font-style=\"italic\">l</tspan><tspan \
-font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
+font-style=\"italic\" baseline-shift=\"sub\" font-size=\"90%\">{letter}</tspan><"
         )),
         "{letter}: {svg}"
       );
@@ -4431,7 +4431,7 @@ font-style=\"italic\" baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><
     assert!(
       svg.contains(
         "<tspan font-style=\"italic\" baseline-shift=\"sub\" \
-font-size=\"70%\">i</tspan>"
+font-size=\"90%\">i</tspan>"
       ),
       "{svg}"
     );
@@ -4489,7 +4489,7 @@ font-size=\"70%\">i</tspan>"
     // Regression: an exponent with no Unicode superscript glyph (`θ^*`,
     // a letter like `q`, or several words) was written out after a caret
     // ("θ^*") instead of being typeset as a raised, smaller script.
-    let raised = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
+    let raised = "<tspan baseline-shift=\"super\" font-size=\"90%\">";
     for (code, base, script) in [
       (
         // A one-letter symbol in box code is italic.
