@@ -84115,6 +84115,39 @@ fn text_scripts_are_held_at_the_minimum_script_size() {
   );
 }
 
+/// Regression: `Inset[Framed[Pane[content, {w, h}]], pos]` drew its frame
+/// around the content alone, so an empty pane used as a colored plate
+/// collapsed to a sliver. The frame encloses the pane's box (plus the
+/// default 5-point margins), and still grows with larger content.
+#[test]
+fn inset_framed_pane_keeps_the_pane_size() {
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"\", {120, 30}], Background -> Yellow], \
+     {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    svg.contains("width=\"129.00\" height=\"39.00\" fill=\"rgb(255,255,0)\""),
+    "the empty plate: {svg}"
+  );
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"zzlabel\", ImageSize -> {80, 50}]], \
+     {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    svg.contains("width=\"89.00\" height=\"59.00\""),
+    "the pane sized by ImageSize: {svg}"
+  );
+  assert!(svg.contains(">zzlabel<"), "the content: {svg}");
+  let svg = export_svg(
+    "Graphics[{Inset[Framed[Pane[\"zzlabel\", {2, 2}]], {0, 0}]}, \
+     PlotRange -> 1, ImageSize -> 300]",
+  );
+  assert!(
+    !svg.contains("width=\"11.00\" height=\"11.00\""),
+    "content larger than the pane keeps its room: {svg}"
+  );
+}
+
 /// A `Text` centered on the border of an explicit `PlotRange` is cut off at
 /// the picture's edge, as in Wolfram: it is not dragged back inside, which
 /// would set it on top of its neighbor in a table of labels.
