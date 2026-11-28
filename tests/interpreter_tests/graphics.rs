@@ -11152,6 +11152,32 @@ mod plot3d {
       assert_eq!(result, "Graphics3D");
     }
 
+    /// Rules built from the plot variable's value are built at each sample:
+    /// `Thread[{u, v} -> f[t]]` pairs `u` and `v` with the coordinates of
+    /// the point `f[t]` only once `t` is a number. Built with `t` symbolic
+    /// it would put the whole point into both, which is no curve.
+    #[test]
+    fn parametric_curve_substitutes_a_point_valued_function_per_sample() {
+      clear_state();
+      let result = interpret(
+        "f = BezierFunction[{{0., 0.}, {1., 2.}, {2., 0.}}];          pts = Cases[ParametricPlot3D[{u, v, u + v} /. Thread[{u, v} -> f[t]],          {t, 0, 1}], Line[p_] :> p, Infinity][[1]];          {First[pts], Last[pts],           Max[Abs[(#[[1]] + #[[2]] - #[[3]]) & /@ pts]] < 10^-9,           Max[Abs[Flatten[(f[#[[1]]/2] - Most[#]) & /@ pts]]] < 10^-9}",
+      )
+      .unwrap();
+      assert_eq!(result, "{{0., 0., 0.}, {2., 0., 2.}, True, True}");
+      // The same body under `Plot`, and for a function of the point.
+      let result = interpret(
+        "f = BSplineFunction[{{0., 0.}, {1., 2.}, {2., 0.}, {3., 1.}}];          pts = Cases[Plot[(u - 2 v) /. Thread[{u, v} -> f[t]], {t, 0, 1}],          Line[p_] :> p, Infinity][[1]];          Max[Abs[(#[[2]] - f[#[[1]]] . {1, -2}) & /@ pts]] < 10^-9",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      // Rules that only match a symbolic variable are still applied first.
+      let result = interpret(
+        "sol = {x[t] -> Cos[t], y[t] -> Sin[t]};          Last[Cases[ParametricPlot3D[{x[t], y[t], t} /. sol, {t, 0, 1}],          Line[p_] :> p, Infinity][[1]]] == {Cos[1.], Sin[1.], 1.}",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+    }
+
     /// A curve that winds many times over a long parameter range is refined
     /// where the polyline turns sharply, instead of being drawn from a
     /// fixed 200 samples (a few points per turn, i.e. a coarse polygon).

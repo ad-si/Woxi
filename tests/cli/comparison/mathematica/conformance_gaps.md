@@ -6357,6 +6357,17 @@ where Woxi takes the lower-right one. Both upper-left cases give an explicit
 `{width, height}` image size, so the choice may depend on the picture's
 shape on screen rather than on the box alone; that is still unconfirmed.
 
+A third Demonstration's snapshots, of a `Show` of two `ParametricPlot3D`s
+with `ViewPoint -> {2.4, 1.3, 2.}` (the default view turned a quarter turn
+about the z axis), `SphericalRegion -> True` and `ImageSize -> {340, 340}`,
+keep the very same edges as the default view does: the x axis on the bottom
+edge at y low (hidden behind the box from there), the y axis on the top edge
+at x low and the z axis on the vertical edge at x low, y low (the far
+corner). Woxi turns the edges with the view and puts the y axis on the
+bottom front edge, the x axis on the upper-left one and the z axis on the
+left silhouette edge. The edges may thus not follow the view the way Woxi
+assumes, but one more viewpoint doesn't settle the rule either.
+
 ### Direction of 3D tick marks
 
 Wolfram draws a 3D tick mark in the scene along one of the two other
