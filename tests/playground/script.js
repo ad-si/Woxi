@@ -721,6 +721,10 @@ function renderManipulate(item) {
           ? "manipulate-display-toggler selected"
           : "manipulate-display-toggler"
         if (node.label) btn.appendChild(renderDisplayTree(node.label))
+        // A bar's `Background -> color` paints its unselected toggles.
+        if (node.background && !node.selected) {
+          btn.style.background = node.background
+        }
         // A bar whose `Enabled -> cond` reads False is grayed out.
         if (node.enabled === false) {
           btn.disabled = true

@@ -7972,12 +7972,18 @@ fn generate_svg_with_options(
                       })?;
                     continue;
                   }
-                  for (run_color, run) in color_function_runs(
-                    segment,
-                    cf,
-                    cf_scaling,
-                    cf_ranges,
-                  ) {
+                  // Each run reaches one step into the next, which is
+                  // then drawn over it: runs that merely met end to end
+                  // left a notch between their butt-capped strokes
+                  // wherever a thick curve bends.
+                  let mut runs =
+                    color_function_runs(segment, cf, cf_scaling, cf_ranges);
+                  for i in 1..runs.len() {
+                    if let Some(&next) = runs[i].1.get(1) {
+                      runs[i - 1].1.push(next);
+                    }
+                  }
+                  for (run_color, run) in runs {
                     chart
                       .draw_series(LineSeries::new(
                         run,
@@ -17937,7 +17943,7 @@ impl FrameEdges {
 /// named ones for `{{left, right}, {bottom, top}}` and for the older
 /// `{bottom, left, top, right}`.
 pub(crate) fn parse_frame_edges(value: &Expr) -> FrameEdges {
-  let on = |e: &Expr| parse_frame_option(e);
+  let on = |e: &Expr| frame_edge_is_drawn(e);
   match value {
     Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
       (Expr::List(lr), Expr::List(bt)) if lr.len() == 2 && bt.len() == 2 => {
@@ -18049,9 +18055,19 @@ pub(crate) fn apply_frame_option(value: &Expr, opts: &mut PlotOptions) {
 pub(crate) fn parse_frame_option(value: &Expr) -> bool {
   match value {
     Expr::Identifier(v) => v == "True" || v == "All",
-    Expr::List(items) => items.iter().any(parse_frame_option),
+    Expr::List(items) => items.iter().any(|item| match item {
+      Expr::List(pair) => pair.iter().any(frame_edge_is_drawn),
+      edge => frame_edge_is_drawn(edge),
+    }),
     _ => false,
   }
+}
+
+/// Whether one edge of a per-edge `Frame` list (`{{l, r}, {b, t}}`) is
+/// drawn: `True`, `All`, and — unlike the bare `Frame -> Automatic` — also
+/// `Automatic`.
+pub(crate) fn frame_edge_is_drawn(edge: &Expr) -> bool {
+  matches!(edge, Expr::Identifier(v) if v == "True" || v == "All" || v == "Automatic")
 }
 
 /// `RotateLabel -> False` keeps the left and right frame labels upright;

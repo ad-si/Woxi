@@ -17750,6 +17750,14 @@ where
   let Some(len) = lengths.next() else {
     return op(args);
   };
+  // A list is not threaded against a NumericArray.
+  if crate::evaluator::listable::has_numeric_array(args) {
+    let mut sorted = args.to_vec();
+    sorted.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::compare_exprs(b, a).cmp(&0)
+    });
+    return Ok(unevaluated(head, &sorted));
+  }
   if lengths.any(|l| l != len) {
     crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
       head, args,

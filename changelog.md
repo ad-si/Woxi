@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- A `ControlType -> TogglerBar` (or `CheckboxBar`) control of a
+    `Manipulate` whose choice list is computed from another control's
+    variable (`Range[n]`) offers the choices that variable gives now,
+    rather than the ones its starting value gave. Inside an
+    `If[cond, …]` of the control layout the bar shows only while its
+    branch does, and a `Background -> color` on a `TogglerBar` or
+    `SetterBar` paints its toggles.
 - A `TogglerBar`, `CheckboxBar`, `SetterBar` or `RadioButtonBar` drawn in
     a `Manipulate` panel — as a `ControlType -> TogglerBar` control or
     written into a display element — is painted on the plate its
