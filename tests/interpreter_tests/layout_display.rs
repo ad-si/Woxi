@@ -196,6 +196,38 @@ mod layout_display {
     assert_eq!(texts(&svg).iter().filter(|t| t.contains("bold")).count(), 4);
   }
 
+  /// A lone non-color `ItemStyle` (`ItemStyle -> 17`, `ItemStyle -> Bold`)
+  /// styles every item, like `BaseStyle` does.
+  #[test]
+  fn grid_lone_item_style_styles_every_item() {
+    let svg = svg_of("Grid[{{1, 2}, {3, 4}}, Frame -> All, ItemStyle -> 17]");
+    let t = texts(&svg);
+    assert_eq!(t.len(), 4, "{svg}");
+    assert!(t.iter().all(|t| t.contains("font-size=\"17\"")), "{svg}");
+    let svg = svg_of("Grid[{{1, 2}, {3, 4}}, ItemStyle -> Bold]");
+    assert_eq!(texts(&svg).iter().filter(|t| t.contains("bold")).count(), 4);
+    // `None` leaves the items as they are.
+    assert_eq!(
+      svg_of("Grid[{{1, 2}, {3, 4}}, ItemStyle -> None]"),
+      svg_of("Grid[{{1, 2}, {3, 4}}]")
+    );
+  }
+
+  /// A `Grid` inset in a picture keeps its `ItemStyle` size and the frame
+  /// of a table nested in one of its cells.
+  #[test]
+  fn inset_grid_keeps_item_style_and_nested_frame() {
+    let svg = svg_of(
+      "Graphics[{Inset[Grid[{{\"head\"}, {Grid[{{1, 2}, {3, 4}}, \
+       Frame -> All, ItemStyle -> 17]}}, ItemStyle -> 17], {0, 0}]}]",
+    );
+    let t = texts(&svg);
+    assert_eq!(t.len(), 5, "{svg}");
+    assert!(t.iter().all(|t| t.contains("font-size=\"17\"")), "{svg}");
+    // The nested table's outline and inner rules are drawn.
+    assert!(svg.contains("<line") || svg.contains("<rect"), "{svg}");
+  }
+
   /// `Style[…, Background -> c]` paints a panel behind the text in a `Row`
   /// and a `Column`.
   #[test]
