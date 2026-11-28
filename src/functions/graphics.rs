@@ -24787,7 +24787,13 @@ fn inline_graphics_box_layout(
     width: w,
     height: above + below,
     baseline: above,
-    elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
+    // The picture is drawn as it is on its own: the stroke and fill the
+    // formula sets for its glyphs must not reach the picture's shapes (a
+    // 3D scene's background would gain an outline).
+    elements: format!(
+      "<g fill=\"black\" stroke=\"none\">{}</g>",
+      embed_svg_centered(svg, w / 2.0, above - axis, w, h)
+    ),
   })
 }
 
