@@ -79017,6 +79017,77 @@ fn pinned_3d_scene_in_a_layout_cell_fits_its_outline() {
   assert_ne!(held(""), held(", SphericalRegion -> True"));
 }
 
+/// Regression: a `Column` shown as a result of its own (the way a notebook
+/// cell or a `Manipulate` frame displays it, not through `ExportString`)
+/// draws its items beforehand, and a 3D scene of fixed size among them was
+/// left framed by its sphere. Wolfram's snapshots of a Demonstration's
+/// `Manipulate` of a `Column` holding a boxed scene (a 24 × 4 × 4 pinned
+/// range seen from `{2, -3, 2.5}` at `ImageSize -> {350, 200}`) over a
+/// `Plot` draw the box about 337 px wide, as the outline fit does; Woxi drew
+/// it 181 px wide.
+#[test]
+fn pinned_3d_scene_in_a_displayed_column_fits_its_outline() {
+  let displayed = |code: &str| {
+    woxi::interpret_with_stdout(code)
+      .expect("evaluate")
+      .graphics
+      .expect("the column should be drawn as a picture")
+  };
+  // The widest horizontal span of the scene's lines.
+  let width = |svg: &str| {
+    let xs: Vec<f64> = svg
+      .split(" x1=\"")
+      .chain(svg.split(" x2=\""))
+      .filter_map(|rest| rest[..rest.find('"')?].parse::<f64>().ok())
+      .collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  for (box_options, size) in [
+    ("", "{350, 200}"),
+    (", Boxed -> False", "{350, 200}"),
+    (", Axes -> {True, False, False}", "{300, 300}"),
+  ] {
+    let column = |extra: &str, rest: &str| {
+      format!(
+        "Column[{{Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {size}\
+         {box_options}{extra}]{rest}}}]"
+      )
+    };
+    for rest in ["", ", \"caption\"", ", Plot[x, {x, 0, 1}]"] {
+      let in_frame = |extra: &str| {
+        woxi::with_manipulate_frame(|| displayed(&column(extra, rest)))
+      };
+      let automatic = in_frame("");
+      let outline = in_frame(", SphericalRegion -> False");
+      let sphere = in_frame(", SphericalRegion -> True");
+      assert_eq!(automatic, outline, "{box_options} {size} {rest}");
+      // An explicit `SphericalRegion -> True` is kept in the column.
+      assert_ne!(automatic, sphere, "{box_options} {size} {rest}");
+      // The lines of a `Plot` below would hide the scene's own extent.
+      assert!(
+        !rest.is_empty() || width(&automatic) > 1.05 * width(&sphere),
+        "{box_options} {size} {rest}: {} vs {}",
+        width(&automatic),
+        width(&sphere)
+      );
+    }
+  }
+  // On its own the scene of a `Manipulate` frame is still sphere-framed.
+  let alone = |extra: &str| {
+    woxi::with_manipulate_frame(|| {
+      displayed(&format!(
+        "Graphics3D[{{Cuboid[]}}, \
+         PlotRange -> {{{{-12, 12}}, {{-2, 2}}, {{-2, 2}}}}, \
+         ViewPoint -> {{2, -3, 2.5}}, ImageSize -> {{350, 200}}{extra}]"
+      ))
+    })
+  };
+  assert_eq!(alone(""), alone(", SphericalRegion -> True"));
+}
+
 /// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
 /// `ViewPoint` at `ImageSize -> {w, h}` fits its box outline to the frame,
 /// also when drawn as a `Manipulate` frame (a tall building of stacked

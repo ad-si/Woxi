@@ -46645,13 +46645,15 @@ fn column_layout_svg(
         Expr::Graphics { svg, .. } => {
           // An automatically sized picture is drawn at the reduced size
           // of the column it sits in, as in a `Column` without options.
-          // Items drawn beforehand (`text_items`) already have their size.
-          let resized = text_items
-            .is_none()
-            .then(|| {
-              crate::functions::container_layout::cell_graphic_svg(&resolved)
-            })
-            .flatten();
+          // Items drawn beforehand (`text_items`) already have their size,
+          // but a 3D scene of fixed size among them is still a cell of the
+          // column: it keeps the outline fit rather than the sphere framing
+          // it would get as a picture of its own.
+          let resized = if text_items.is_none() {
+            crate::functions::container_layout::cell_graphic_svg(&resolved)
+          } else {
+            crate::functions::plot3d::outline_fitted_cell_svg(&resolved)
+          };
           let svg = resized.as_ref().unwrap_or(svg);
           let (w, h) = parse_svg_wh(svg);
           Cell::Svg {
