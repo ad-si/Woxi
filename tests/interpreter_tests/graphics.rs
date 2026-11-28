@@ -16,6 +16,59 @@ mod date_charts {
     assert!(svg.contains(">Jan 2024<"), "date ticks: {svg}");
   }
 
+  /// Regression: a horizontal `PlotRange` whose ends are written as dates
+  /// was ignored, the axis spanning just the data.
+  #[test]
+  fn date_list_plot_takes_a_plot_range_of_dates() {
+    let data = "Table[{{2000 + i, 1, 15}, 100 + 10 i}, {i, 0, 15}]";
+    let plot = |range: &str| {
+      export_svg(&format!(
+        "DateListPlot[{data}, PlotRange -> {{{range}, {{0, 400}}}}]"
+      ))
+    };
+    let dated = plot("{{1995, 1, 1}, {2020, 1, 1}}");
+    assert!(dated.contains(">1995<"), "{dated}");
+    assert!(dated.contains(">2020<"), "{dated}");
+    assert_eq!(
+      dated,
+      plot("{AbsoluteTime[{1995, 1, 1}], AbsoluteTime[{2020, 1, 1}]}")
+    );
+    // Date objects and a single dated end are placed the same way.
+    assert_eq!(
+      dated,
+      plot("{DateObject[{1995, 1, 1}], AbsoluteTime[{2020, 1, 1}]}")
+    );
+  }
+
+  /// Regression: `Prolog`/`Epilog` primitives placed at dates were dropped
+  /// instead of being drawn at those dates on the axis.
+  #[test]
+  fn date_list_plot_places_overlay_primitives_at_dates() {
+    let data = "Table[{{2000 + i, 1, 15}, 100 + 10 i}, {i, 0, 15}]";
+    for option in ["Prolog", "Epilog"] {
+      let plot = |x: &str| {
+        export_svg(&format!(
+          "DateListPlot[{data}, {option} -> {{Gray,            Line[{{{{{x}, 0}}, {{{x}, 300}}}}]}}]"
+        ))
+      };
+      let bare = export_svg(&format!("DateListPlot[{data}]"));
+      let dated = plot("{2004, 6, 1}");
+      assert_ne!(dated, bare, "{option} is drawn");
+      assert_eq!(dated, plot("AbsoluteTime[{2004, 6, 1}]"), "{option}");
+      assert_eq!(dated, plot("DateObject[{2004, 6, 1}]"), "{option}");
+    }
+    // Points given as plain numbers keep their coordinates.
+    let numeric = |points: &str| {
+      export_svg(&format!(
+        "DateListPlot[{data}, Epilog -> {{Line[{points}]}}]"
+      ))
+    };
+    assert_eq!(
+      numeric("{{3.2*^9, 100}, {3.4*^9, 200}}"),
+      numeric("{{3200000000, 100.}, {3400000000, 200.}}")
+    );
+  }
+
   /// Regression: CandlestickChart stayed unevaluated.
   #[test]
   fn candlestick_chart_colors_and_axis() {

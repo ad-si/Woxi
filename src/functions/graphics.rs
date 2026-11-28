@@ -48602,8 +48602,18 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       } else if proportional_family_scale(&st.font_family) < 1.0 {
         per_char * bold
       } else {
-        let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
-        per_char.max(average) * bold
+        // Either the named face draws the text (Arial's advances) or the
+        // embedded default sans face does: the wider of the two holds it,
+        // where the face's average advance would overestimate a run of
+        // narrow letters and leave the next part floating after a gap.
+        let fallback = crate::functions::plot_padding::exported_text_extent(
+          &markup,
+          st.font_size,
+        )
+        .1 + crate::functions::plot_padding::tspan_shift_em(
+          &markup,
+        ) * st.font_size;
+        per_char.max(fallback) * bold
       }
     } else {
       chars * char_width * scale

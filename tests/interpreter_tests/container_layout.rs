@@ -487,4 +487,23 @@ mod container_layout {
     let svg = export_svg("Row[{Graphics[Circle[], ImageSize -> 20], Pi}]");
     assert!(svg.contains("\u{03C0}"), "{svg:.3000}");
   }
+
+  /// Regression: a row part in a proportional face asked for by name was
+  /// given the face's average advance per character, so a run of narrow
+  /// letters left the next part floating after a wide gap.
+  #[test]
+  fn named_sans_face_row_part_is_as_wide_as_its_letters() {
+    let row_width = |text: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "Style[Row[{{\"{text}\", \"W\"}}], FontFamily -> \"Helvetica\", 10]"
+      ));
+      root_size(&svg).0.parse().unwrap()
+    };
+    let narrow = row_width(&"il".repeat(10));
+    let wide = row_width(&"MW".repeat(10));
+    // Twenty narrow letters at 10 points set in well under 7 points each,
+    // twenty wide capitals in more than that.
+    assert!(narrow < 80.0, "narrow run: {narrow}");
+    assert!(wide > 160.0, "wide run: {wide}");
+  }
 }
