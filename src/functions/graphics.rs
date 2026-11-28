@@ -70023,6 +70023,38 @@ fn assign_checkbox_state(
   }
 }
 
+/// Whether a display value is an algebraic expression (a `Power`, `Times`
+/// or `Plus`, or a `Rational` number) whose box form stacks material: a
+/// radical sign over its radicand or a fraction over its bar. Lists,
+/// strings and layout heads are not looked into, since each has its own
+/// display path.
+fn value_typesets_stacked(expr: &Expr) -> bool {
+  fn box_is_stacked(boxes: &Expr) -> bool {
+    match boxes {
+      Expr::FunctionCall { name, args } => {
+        matches!(name.as_str(), "FractionBox" | "SqrtBox" | "RadicalBox")
+          || args.iter().any(box_is_stacked)
+      }
+      Expr::List(items) => items.iter().any(box_is_stacked),
+      _ => false,
+    }
+  }
+  let algebraic = match expr {
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(
+        name.as_str(),
+        "Power" | "Sqrt" | "Times" | "Plus" | "Rational"
+      )
+    }
+    _ => false,
+  };
+  algebraic
+    && box_is_stacked(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    )
+}
+
 /// Whether `expr` holds a `NumberForm`/`PaddedForm`/`AccountingForm`
 /// wrapper anywhere, which only a typeset rendering turns into digits.
 fn holds_number_format(expr: &Expr) -> bool {
@@ -70270,6 +70302,22 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
             template,
             &args[1..],
           ),
+        }
+      } else if let Some(value) = &r.expr
+        && value_typesets_stacked(value)
+        && let Ok(svg) = grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![value.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        // A value the notebook builds up in two dimensions (a root under
+        // its radical sign, a fraction over its bar) is typeset that way:
+        // a line of text can only spell it out as `Sqrt[10]`.
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
         }
       } else if !is_display_placeholder(&r.result)
         && let Some(text) =
@@ -72604,6 +72652,56 @@ mod manipulate_display_number_form_tests {
     match node {
       DisplayNode::Static { text, svg: None } => assert_eq!(text, "2."),
       other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  /// Regression: a `Dynamic[Sqrt[…]]` readout beside a control spelled the
+  /// root out as the text `Sqrt[10]`, where a notebook draws the radical
+  /// sign over the radicand.
+  #[test]
+  fn dynamic_root_caption_is_typeset_under_a_radical() {
+    for (code, bindings) in [
+      ("Dynamic[Sqrt[ToString[d]]]", vec![("d", "10")]),
+      ("Dynamic[Sqrt[d]]", vec![("d", "13")]),
+      ("Dynamic[2 Sqrt[d] + 1]", vec![("d", "x")]),
+    ] {
+      let bindings: Vec<(String, String)> = bindings
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+      match build_manipulate_display(code, &bindings) {
+        DisplayNode::Static {
+          svg: Some(svg),
+          text,
+        } => {
+          assert!(text.is_empty(), "{code}: {text}");
+          assert!(svg.contains("<path"), "{code}: no radical sign: {svg}");
+          assert!(!svg.contains("Sqrt"), "{code}: {svg}");
+        }
+        other => panic!("{code}: expected a typeset node, got {other:?}"),
+      }
+    }
+  }
+
+  /// A root that evaluates to a plain number has nothing to stack and
+  /// stays a line of text.
+  #[test]
+  fn dynamic_exact_root_caption_stays_text() {
+    let bindings = vec![("d".to_string(), "49".to_string())];
+    match build_manipulate_display("Dynamic[Sqrt[d]]", &bindings) {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "7"),
+      other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  /// A built-up fraction readout is drawn over its bar, not run together
+  /// on one line.
+  #[test]
+  fn dynamic_fraction_caption_is_typeset_stacked() {
+    let bindings = vec![("d".to_string(), "x".to_string())];
+    match build_manipulate_display("Dynamic[(d + 1)/2]", &bindings) {
+      DisplayNode::Static { svg: Some(_), text } => assert!(text.is_empty()),
+      other => panic!("expected a typeset node, got {other:?}"),
     }
   }
 

@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Dynamic[…]` readout beside a `Manipulate` control whose value is a
+    root or a built-up fraction (`Dynamic[Sqrt[d]]`, `Dynamic[(a + 1)/2]`)
+    is typeset with its radical sign or fraction bar in Woxi Studio instead
+    of being spelled out as `Sqrt[10]`.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that
