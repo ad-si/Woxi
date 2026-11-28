@@ -49572,8 +49572,14 @@ fn wrap_wide_layout_text(
         && grid_cell_graphic(&args[0]).is_some()
         && styled_width(&args[1]) > width + 0.5 =>
     {
-      let caption =
-        wrap_list_text(&args[1], width, styles, traditional, cell_width)?;
+      let caption = wrap_list_text_in(
+        &args[1],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        true,
+      )?;
       let mut new_args = args.to_vec();
       new_args[1] = caption;
       Some(call(name, new_args))
@@ -49640,8 +49646,8 @@ fn wrap_wide_layout_text(
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`,
 /// `Style` and `TraditionalForm`) into a left-aligned `Column` of lines no
 /// wider than `width`, breaking after the commas between elements and after
-/// the `+`/`-` of a long sum. A `Row` of text pieces (`Row[{"The sum is ",
-/// sum, "."}]`) breaks the same way, and between the words of its prose.
+/// the `+`/`-` of a long sum. A `Row` of text pieces holding such a list
+/// (`Row[{list, "."}]`) breaks the same way, its other pieces kept whole.
 /// `styles` are the directives of the enclosing `Style`s, which size the
 /// text measured; `traditional` typesets the pieces in `TraditionalForm`.
 fn wrap_list_text(
@@ -49650,6 +49656,20 @@ fn wrap_list_text(
   styles: &[Expr],
   traditional: bool,
   cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  wrap_list_text_in(expr, width, styles, traditional, cell_width, false)
+}
+
+/// [`wrap_list_text`], which with `prose` also breaks a `Row` of running
+/// text holding no list: between the words of its strings, with every
+/// separately styled piece keeping its styling.
+fn wrap_list_text_in(
+  expr: &Expr,
+  width: f64,
+  styles: &[Expr],
+  traditional: bool,
+  cell_width: &dyn Fn(&Expr) -> f64,
+  prose: bool,
 ) -> Option<Expr> {
   let rebuilt = |name: &str, args: &[Expr], first: Expr| {
     let mut new_args = vec![first];
@@ -49664,18 +49684,32 @@ fn wrap_list_text(
       if name == "Labeled" && args.len() >= 2 =>
     {
       let content =
-        wrap_list_text(&args[0], width, styles, traditional, cell_width)?;
+        wrap_list_text_in(
+        &args[0],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        prose,
+      )?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       let content =
-        wrap_list_text(&args[0], width, styles, traditional, cell_width)?;
+        wrap_list_text_in(
+        &args[0],
+        width,
+        styles,
+        traditional,
+        cell_width,
+        prose,
+      )?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
-      let content = wrap_list_text(&args[0], width, styles, true, cell_width)?;
+      let content = wrap_list_text_in(&args[0], width, styles, true, cell_width, prose)?;
       Some(rebuilt(name, args, content))
     }
     Expr::FunctionCall { name, args }
@@ -49683,12 +49717,13 @@ fn wrap_list_text(
     {
       let mut inner_styles = styles.to_vec();
       inner_styles.extend(args[1..].iter().cloned());
-      let content = wrap_list_text(
+      let content = wrap_list_text_in(
         &args[0],
         width,
         &inner_styles,
         traditional,
         cell_width,
+        prose,
       )?;
       Some(rebuilt(name, args, content))
     }
@@ -49703,12 +49738,24 @@ fn wrap_list_text(
       let Expr::List(items) = &args[0] else {
         return None;
       };
-      if !items.iter().all(row_piece_is_text) {
+      if prose {
+        if !items.iter().all(row_piece_is_text) {
+          return None;
+        }
+      } else if !no_graphic(items)
+        || !items
+          .iter()
+          .any(|item| matches!(item, Expr::List(l) if !l.is_empty()))
+      {
         return None;
       }
       let mut segments: Vec<Vec<Expr>> = vec![Vec::new()];
       for item in items {
-        row_text_segments(item, traditional, &mut segments);
+        if prose {
+          row_text_segments(item, traditional, &mut segments);
+        } else {
+          list_text_segments(item, traditional, &mut segments);
+        }
       }
       flow_text_segments(segments, width, styles, cell_width)
     }
