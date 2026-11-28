@@ -225,6 +225,18 @@ fn main() {
         }
         if let Some(icon) = state.label_svg(c.name()) {
           println!("    label icon: {}x{}", icon.width, icon.height);
+          // The typeset label itself, so its rendering can be inspected.
+          if let Some(dir) = &svg_out_dir
+            && let iced::advanced::svg::Data::Bytes(bytes) = icon.handle.data()
+          {
+            std::fs::create_dir_all(dir).expect("create svg out dir");
+            let out = dir.join(format!(
+              "widget-{widget_count}-control-{}-label.svg",
+              i + 1
+            ));
+            std::fs::write(&out, bytes).expect("write svg");
+            println!("    wrote {}", out.display());
+          }
         }
         if let Some(Some((r, g, b))) = state.control_face.get(i) {
           println!("    face: rgb({r:.3}, {g:.3}, {b:.3})");

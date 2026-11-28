@@ -85286,6 +85286,62 @@ fn text_centered_on_the_plot_range_border_is_cut_off_there() {
   assert!(xs[1] > 528.0, "{xs:?}");
 }
 
+/// `Inset[value, pos]` in a plot's `Epilog` whose object is a plain value —
+/// a point, a number, a formula — is a label in the plot's own text face,
+/// as in a plain `Graphics`. It used to be embedded as the picture of a
+/// notebook output: oversized monospace text overhanging the plot.
+#[test]
+fn plot_epilog_inset_of_plain_value_is_a_text_label() {
+  for (object, shown) in [
+    ("{10.8, 9.07}", ">{10.8, 9.07}<"),
+    ("3.25", ">3.25<"),
+    ("{1, {2, 3}}", ">{1, {2, 3}}<"),
+  ] {
+    let svg = export_svg(&format!(
+      "Plot[x, {{x, 0, 1}}, Epilog -> {{Inset[{object}, {{0.3, 0.9}}]}}]"
+    ));
+    assert!(svg.contains(shown), "{object}: {svg}");
+    assert!(!svg.contains("monospace"), "{object}: {svg}");
+  }
+  // A value held by a symbol is inset the same way.
+  let svg = export_svg(
+    "Module[{p = {2.5, 4}}, Plot[x, {x, 0, 1}, Epilog -> {Inset[p, {0.3, 0.9}]}]]",
+  );
+  assert!(svg.contains(">{2.5, 4}<"), "{svg}");
+  assert!(!svg.contains("monospace"), "{svg}");
+  // A picture is still embedded as one.
+  let svg = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Inset[Graphics[Disk[]], {0.5, 0.5}]}]",
+  );
+  assert!(svg.contains("<ellipse"), "{svg}");
+}
+
+/// A `FrameLabel` given as `Pane[label, w]` breaks into lines at most `w`
+/// points wide. It used to stay on one line, which overhung a small plot
+/// and squeezed its plotting area.
+#[test]
+fn frame_label_pane_wraps_to_its_width() {
+  let plot = |label: &str| {
+    export_svg(&format!(
+      "Plot[x, {{x, 0, 1}}, Frame -> True, ImageSize -> 160, \
+       FrameLabel -> {{{label}, \"y\"}}]"
+    ))
+  };
+  let wrapped =
+    plot(r#"Pane["share of \"yes\" votes at the first stage", 100]"#);
+  assert!(!wrapped.contains("Pane["), "{wrapped}");
+  assert!(!wrapped.contains("&amp;quot;"), "{wrapped}");
+  assert!(
+    !wrapped.contains(">share of &quot;yes&quot; votes at the first stage<"),
+    "the label must not stay on one line: {wrapped}"
+  );
+  let lines = wrapped.matches("<tspan").count();
+  assert!(lines >= 2, "expected several label lines: {wrapped}");
+  // A pane wide enough for the label leaves it on one line.
+  let whole = plot(r#"Pane["short label", 100]"#);
+  assert!(whole.contains(">short label</text>"), "{whole}");
+}
+
 /// Inside a per-edge `Frame` list an `Automatic` edge is drawn like `True`
 /// (only the bare `Frame -> Automatic` leaves the frame off), in a
 /// `Graphics` and in a `Plot` alike.

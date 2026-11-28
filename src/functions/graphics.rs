@@ -9608,6 +9608,32 @@ fn flow_text_runs(runs: &[String], width: f64, size: f64) -> Vec<String> {
   chars.into_iter().map(|c| c.into_iter().collect()).collect()
 }
 
+/// Whether an `Inset` object is a plain value — a number, a symbol, an
+/// algebraic expression of those, or a list of them (`Inset[p, pos]` with
+/// `p` a point reads `{10.8, 9.07}`) — which an inset shows as a label set
+/// in the graphic's own text style, like `Text`, rather than as a picture.
+pub(crate) fn inset_object_is_plain_value(obj: &Expr) -> bool {
+  match strip_style_wrappers(obj) {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_) => true,
+    Expr::List(items) => items.iter().all(inset_object_is_plain_value),
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Rational" | "Complex" | "Sqrt"
+      ) && args.iter().all(inset_object_is_plain_value)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      inset_object_is_plain_value(left) && inset_object_is_plain_value(right)
+    }
+    Expr::UnaryOp { operand, .. } => inset_object_is_plain_value(operand),
+    _ => false,
+  }
+}
+
 /// `Text[obj, pos]` for an `Inset[Text[obj], pos, opos]`, carrying a
 /// symbolic `opos` (`{Center, Top}`, `{Left, Bottom}`, `Center`, …) along as
 /// the text's offset, so the named point of the label — not its center —
@@ -61440,8 +61466,79 @@ pub fn manipulate_eval_caption(
 /// (`Framed`, `Pane`, `Row`, …) holding one; `None` for a text caption.
 fn control_caption_svg(caption: &Expr) -> Option<String> {
   crate::evaluator::lays_out_a_graphic(caption)
-    .then(|| crate::evaluator::expr_to_svg(caption))
+    .then(|| crate::evaluator::expr_to_svg(&caption_in_panel_face(caption)))
     .filter(|svg| svg.starts_with("<svg"))
+}
+
+/// A picture caption with its words set in the control panel's proportional
+/// face, like every other control label, rather than the monospace of a
+/// notebook output: each string the caption lays out beside its picture
+/// (`Labeled[plot, "curve"]`, `Row[{"shift ", Graphics[…]}]`, a
+/// `Pane["…", w]` under them) is styled with that face, a string of several
+/// lines as the column of them. Text that names its
+/// own `FontFamily`, a `Text[…]` (proportional already) and the pictures
+/// themselves are left as they are.
+fn caption_in_panel_face(caption: &Expr) -> Expr {
+  let sets_family = |opts: &[Expr]| {
+    opts
+      .iter()
+      .filter_map(option_kv)
+      .any(|(k, _)| k == "FontFamily")
+  };
+  let in_face = |text: &str| {
+    call(
+      "Style",
+      vec![
+        Expr::String(text.to_string()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+          replacement: Box::new(Expr::String("sans-serif".to_string())),
+        },
+      ],
+    )
+  };
+  match caption {
+    // The lines of a string stack flush left, as the front end sets them.
+    Expr::String(text) if text.contains('\n') => call(
+      "Column",
+      vec![Expr::List(text.split('\n').map(in_face).collect())],
+    ),
+    Expr::String(text) => in_face(text),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(caption_in_panel_face).collect())
+    }
+    Expr::FunctionCall { name, args }
+      if !(args.is_empty() || name == "Style" && sets_family(&args[1..]))
+        && matches!(
+          name.as_str(),
+          "Labeled"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Pane"
+            | "Framed"
+            | "Panel"
+            | "Item"
+            | "Style"
+        ) =>
+    {
+      // The laid-out content, and a `Labeled`'s label beside it.
+      let laid_out = if name == "Labeled" { 2 } else { 1 };
+      let rebuilt: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if i < laid_out {
+            caption_in_panel_face(a)
+          } else {
+            a.clone()
+          }
+        })
+        .collect();
+      call(name, rebuilt)
+    }
+    other => other.clone(),
+  }
 }
 
 /// Flatten label runs to the plain text a styling-blind consumer shows.
