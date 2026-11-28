@@ -270,6 +270,11 @@ pub enum ControlState {
     /// The direction button turned the animation around: it runs against
     /// the sweep until the button is pressed again.
     backward: bool,
+    /// Seconds one sweep takes (`DefaultDuration`); `None` moves the
+    /// variable one `step` per tick.
+    duration: Option<f64>,
+    /// The spec names a step, so a timed sweep moves in whole steps.
+    stepped: bool,
   },
   /// A `Button[label, action]` row. Pressing it runs `action` (InputForm)
   /// against the live bindings — e.g. `time = 0; {U, V} = {Uinit, Vinit}`
@@ -3165,6 +3170,8 @@ impl ManipulateState {
         completed,
         descending,
         backward,
+        duration,
+        stepped,
         ..
       } => {
         // A descending sweep runs from `max` down to `min`, and the
@@ -3174,7 +3181,21 @@ impl ManipulateState {
         } else {
           (*min, *max, 1.0)
         };
-        let mut v = *current + sign * rate_increment.unwrap_or(*step);
+        // A timed sweep crosses its range in `duration` seconds, in whole
+        // steps when the spec names one.
+        let timed_increment = duration
+          .filter(|_| min.is_finite() && max.is_finite() && *max > *min)
+          .map(|secs| {
+            let per_tick =
+              (*max - *min) / secs * ANIM_INTERVAL_MS as f64 / 1000.0;
+            if *stepped {
+              (per_tick / *step).round().max(1.0) * *step
+            } else {
+              per_tick
+            }
+          });
+        let mut v =
+          *current + sign * rate_increment.or(timed_increment).unwrap_or(*step);
         if end.is_finite() && sign * (v - end) > *step * 1e-6 {
           *completed += 1;
           if limit.is_some_and(|n| *completed >= n) {
@@ -4347,6 +4368,8 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label_runs,
         repetitions,
         elements,
+        duration,
+        stepped,
         ..
       } => ControlState::Trigger {
         name: name.clone(),
@@ -4361,6 +4384,8 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         descending: *max < *min,
         elements: elements.clone(),
         backward: false,
+        duration: *duration,
+        stepped: *stepped,
       },
       ManipulateControl::Button {
         label,
@@ -10898,6 +10923,62 @@ mod tests {
     assert!(state.select_discrete(speed_idx, "fast"));
     state.reevaluate();
     assert_eq!(trigger_step(&state), Some(0.1));
+  }
+
+  /// A Trigger sweeps its range in `DefaultDuration` seconds (5 unless the
+  /// spec says otherwise), whatever the length of the range. Regression: a
+  /// spec without a step jumped a whole unit per tick, so a sweep over a
+  /// few units flashed by in a handful of frames.
+  #[test]
+  fn trigger_sweep_takes_its_default_duration() {
+    let value_after_ticks = |spec: &str, ticks: usize| {
+      let expr = woxi::interpret_to_expr(&format!("Manipulate[u, {spec}]"))
+        .expect("parse Manipulate expr");
+      let mut state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      if !state.playing {
+        state.toggle_play();
+      }
+      for _ in 0..ticks {
+        state.advance_animation();
+      }
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Trigger { current, .. } => Some(*current),
+          _ => None,
+        })
+        .expect("a Trigger row")
+    };
+    let tick = ANIM_INTERVAL_MS as f64 / 1000.0;
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    // Five seconds by default …
+    let v = value_after_ticks("{u, -3, 7, Trigger}", 10);
+    assert!(close(v, -3.0 + 10.0 * tick * 10.0 / 5.0), "got {v}");
+    // … or as long as the option says, with either spelling of the type.
+    let v = value_after_ticks("{u, -3, 7, DefaultDuration -> 2, Trigger}", 10);
+    assert!(close(v, -3.0 + 10.0 * tick * 10.0 / 2.0), "got {v}");
+    let v = value_after_ticks(
+      "{u, 0, 2 Pi, ControlType -> Trigger, DefaultDuration -> 4}",
+      3,
+    );
+    assert!(
+      close(v, 3.0 * tick * 2.0 * std::f64::consts::PI / 4.0),
+      "got {v}"
+    );
+    // An explicit `AnimationRate` still sets the pace.
+    let v = value_after_ticks("{u, 0, 10, Trigger, AnimationRate -> 3}", 4);
+    assert!(close(v, 4.0 * tick * 3.0), "got {v}");
+    // A timed sweep with a step stays on the step's grid.
+    let v =
+      value_after_ticks("{u, 0, 100, 0.5, Trigger, DefaultDuration -> 2}", 7);
+    let per_tick = (100.0 / 2.0 * tick / 0.5).round() * 0.5;
+    assert!(close(v, 7.0 * per_tick), "got {v}");
+    assert!(close(v / 0.5, (v / 0.5).round()), "off the grid: {v}");
+    // A step alone keeps moving one step per tick.
+    let v = value_after_ticks("{u, 0, 100, 0.5, Trigger}", 7);
+    assert!(close(v, 3.5), "got {v}");
   }
 
   /// A Trigger whose end and step are products with another control's

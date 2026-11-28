@@ -52423,6 +52423,13 @@ pub enum ManipulateControl {
     /// The buttons `AppearanceElements` asks for, in order (empty for the
     /// default look).
     elements: Vec<TriggerElement>,
+    /// Seconds one sweep over a finite range takes: the spec's
+    /// `DefaultDuration` (5 unless given) when it paces the sweep, i.e.
+    /// when the spec names no step or sets the option itself. `None` moves
+    /// the variable one `step` per animation tick.
+    duration: Option<f64>,
+    /// The spec names a step, so the variable only takes values on it.
+    stepped: bool,
     label: String,
     label_runs: Vec<LabelRun>,
   },
@@ -65223,6 +65230,32 @@ fn parse_manipulate_control(
       }
       _ => None,
     });
+    // Wolfram plays a Trigger's sweep in `DefaultDuration` seconds (5 by
+    // default) however long the range is. An explicit step without the
+    // option keeps moving one step per tick, and an unbounded Animator has
+    // no sweep to time.
+    let default_duration = items.iter().find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DefaultDuration") => {
+        eval_manipulate_bound(replacement)
+          .map(|(v, _)| v)
+          .filter(|v| v.is_finite() && *v > 0.0)
+      }
+      _ => None,
+    });
+    let duration = if unbounded_animator {
+      None
+    } else if bounds.get(2).is_none() {
+      Some(default_duration.unwrap_or(5.0))
+    } else {
+      default_duration
+    };
     return Some(ParsedControl::Visible {
       control: ManipulateControl::Trigger {
         name,
@@ -65233,6 +65266,8 @@ fn parse_manipulate_control(
         running,
         repetitions,
         elements: trigger_appearance_elements(items),
+        duration,
+        stepped: bounds.get(2).is_some(),
         label,
         label_runs,
       },
@@ -67767,6 +67802,8 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         running,
         repetitions,
         elements: _,
+        duration: _,
+        stepped: _,
         label,
         label_runs,
       } => {
