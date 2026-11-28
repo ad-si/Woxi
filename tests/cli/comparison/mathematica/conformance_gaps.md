@@ -354,18 +354,6 @@ canonical order of their boxes less the numeric coefficient, which
 reproduces those samples; other ties (`1/(x + 1) + 1/(x + 2)`,
 `Sin[x] + Sin[2 x]`) are unverified.
 
-### TraditionalForm sets Greek-letter factors of a product first
-
-Known only from the stored output of a Demonstration (no `wolframscript`
-run): with `\[Alpha]`, `\[Beta]` and the other symbols undefined,
-`TraditionalForm[P V \[Beta] Subscript[c, v]/Subscript[c, p]]` is drawn as
-`β P V c_v / c_p`, `T V \[Alpha]/Subscript[c, p]` as `α T V / c_p`, and
-`P \[Beta] Subscript[c, v]/(T \[Alpha])` as `β P c_v / (α T)` — the Greek
-letters lead and the subscripted `c` stays last. Woxi sets the first as
-`c_v P V β / c_p`: it keeps the canonical order of the plain symbols and
-orders `Subscript[c, v]` as its base `c` (ahead of `P`). The rule behind
-Wolfram's order is not established.
-
 ### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
@@ -585,6 +573,17 @@ unit apart whenever a symbolic factor is present (`-I` alone is
 patterns see three factors instead of two. Held printing compensates: a held
 `Times[-1, I, x]` prints `-I*x` (Wolfram brackets the literal call as
 `-(I*x)`) because in Woxi it is also the evaluated form of `-I x`.
+
+### A negated sum among other factors is distributed
+
+```sh
+wolframscript -code '-(a + b) c'   # -((a + b)*c)
+woxi eval '-(a + b) c'             # (-a - b)*c
+```
+
+Wolfram keeps `Times[-1, Plus[a, b], c]`; Woxi folds the `-1` into the sum
+whenever another factor is present. The values are equal, but
+`TraditionalForm` then sets `c (-a - b)` where Wolfram has `c (-(a + b))`.
 
 ### A rational multiple of a sum is ordered against a product by its own rule
 
@@ -10377,6 +10376,17 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   snapshot, no wolframscript at hand): Wolfram draws the single square
   picture about 405 pt across, centered — 1/1.05 of the column on both
   sides — where Woxi fills the whole 425 pt.
+- `GraphicsColumn[{Plot[…, ImageSize -> 200], ParametricPlot[{u, 0}, {u, 0,
+  Pi}, PlotStyle -> {Thickness[0.1]}, ColorFunction -> …, Epilog -> {Line[…]}]},
+  Center, -10, ImageSize -> {400, 400}]` (read off a notebook front end
+  snapshot, no wolframscript at hand): the widths are decoded (pictures keep
+  the proportions of their own `ImageSize`, an unsized one counting as 360,
+  and the widest spans 1/1.1 of the column), the heights are not: Wolfram's
+  two rows are about 4 pt further apart than Woxi's. In the same picture the
+  thick colored line of the `ParametricPlot` runs about 15 pt past both ends
+  of its `{0, Pi}` range, across the whole axis, where Woxi ends it at the
+  range; and the tick labels at the two ends of an axis (`0`, `Pi`) sit
+  about 30 pt below the axis while the middle one stays next to it.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
@@ -11559,6 +11569,17 @@ Checked against wolframscript 15.0 for all 32 groups: `"Name"`,
   are not implemented.
 
 
+### Line pitch of a `Text[Column[…]]` at the default 14 pt
+
+A `Column` of text lines in the proportional text face is stacked at 1.28
+times the font size (17.9 pt for the default 14 pt), a ratio measured on
+12 pt labels. A front-end snapshot of 21 one-line text `Row`s in a
+`Text[Column[…]]` shows them about 16.7 pt apart (1.19 times the size), so
+the 21 lines fit a 360 pt tall `Pane` there while Woxi's last line is cut
+off. The pitch is evidently not a fixed multiple of the font size; the
+rule behind it has not been worked out.
+
+
 ## Unit-test conformance batch (2026-11-25)
 
 These divergences surfaced in one `make test-conformance` run against
@@ -11644,3 +11665,18 @@ above.)
   `Filling -> Top` lists the first quadrilateral last). wolframscript also
   keeps the fill in a `GraphicsComplex` with the colors as the color
   function returns them (`Hue[1.]`), where Woxi stores `RGBColor`s.
+
+## A narrow `Pane` does not wrap a `Rule` of graphics
+
+```wolfram
+Pane[Grid[{{ArrayPlot[{{1, 0}, {0, 1}}, ImageSize -> 10] ->
+    ArrayPlot[{{0, 1}, {1, 0}}, ImageSize -> 10]}}], {50, Automatic}]
+```
+
+The published cloud rendering of a Demonstration shows each such row broken
+after the arrow (first picture and `→` on one line, the second picture on
+the next), so the column is twice as tall as Woxi's, which keeps
+`picture → picture` on one line (it fits the 50 points by Woxi's
+measure). Not verified against wolframscript or a desktop front end —
+none was available when this was found — so the widths at which the front
+end breaks the line are unknown.

@@ -8908,6 +8908,114 @@ fn date_expr_to_absolute_time(expr: &Expr) -> Option<f64> {
   None
 }
 
+/// Whether `expr` is written as a date rather than as a number: a date
+/// list, a `DateObject` or a date string.
+fn is_date_spec(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(parts) => {
+      !parts.is_empty()
+        && parts.len() <= 6
+        && parts
+          .iter()
+          .all(|p| matches!(p, Expr::Integer(_) | Expr::Real(_)))
+    }
+    Expr::FunctionCall { name, .. } => name == "DateObject",
+    Expr::String(_) => true,
+    _ => false,
+  }
+}
+
+/// The dates among a date plot's graphics primitives as the absolute times
+/// its horizontal axis runs in: every point `{date, y}` becomes `{t, y}`.
+fn date_points_to_absolute_time(expr: &Expr) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      if let [date, y] = items.as_slice()
+        && is_date_spec(date)
+        && !matches!(y, Expr::List(_) | Expr::String(_))
+        && let Some(t) = date_expr_to_absolute_time(date)
+      {
+        return Expr::List(vec![Expr::Real(t), y.clone()].into());
+      }
+      Expr::List(items.iter().map(date_points_to_absolute_time).collect())
+    }
+    // A label's text is not a coordinate, even where it reads as a date.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "Inset") && !args.is_empty() =>
+    {
+      let mut converted = vec![args[0].clone()];
+      converted.extend(args[1..].iter().map(date_points_to_absolute_time));
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: converted.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(date_points_to_absolute_time).collect(),
+    },
+    other => other.clone(),
+  }
+}
+
+/// A date plot's option with the dates it places things at turned into the
+/// absolute times the plot is drawn in: the ends of the horizontal
+/// `PlotRange` and the points of a `Prolog` or an `Epilog`.
+fn date_option_to_absolute_time(option: &Expr) -> Expr {
+  let (Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  }) = option
+  else {
+    return option.clone();
+  };
+  let Expr::Identifier(name) = pattern.as_ref() else {
+    return option.clone();
+  };
+  let converted = match name.as_str() {
+    "Prolog" | "Epilog" => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      date_points_to_absolute_time(&value)
+    }
+    "PlotRange" => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      let Expr::List(ranges) = &value else {
+        return option.clone();
+      };
+      let [Expr::List(x_range), y_range] = ranges.as_slice() else {
+        return option.clone();
+      };
+      if x_range.len() != 2 || !x_range.iter().any(is_date_spec) {
+        return option.clone();
+      }
+      let ends: Vec<Expr> = x_range
+        .iter()
+        .map(|end| {
+          if is_date_spec(end)
+            && let Some(t) = date_expr_to_absolute_time(end)
+          {
+            Expr::Real(t)
+          } else {
+            end.clone()
+          }
+        })
+        .collect();
+      Expr::List(vec![Expr::List(ends.into()), y_range.clone()].into())
+    }
+    _ => return option.clone(),
+  };
+  Expr::Rule {
+    pattern: pattern.clone(),
+    replacement: Box::new(converted),
+  }
+}
+
 /// DateListPlot[{{date, y}, ...}] - plots data with date-valued x-axis.
 /// Dates can be date lists ({y,m,d}), DateObject[{...}], or AbsoluteTime values.
 /// Multiple datasets are supported: DateListPlot[{data1, data2, ...}].
@@ -9173,7 +9281,7 @@ fn date_list_plot_ast_impl(
         matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
           && !is_automatic_axes(a)
       })
-      .cloned(),
+      .map(date_option_to_absolute_time),
   );
   // `Axes -> Automatic` draws the axes only when there is no frame: the
   // framed default has no line at y = 0, `Frame -> False` brings it back.
