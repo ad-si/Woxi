@@ -613,6 +613,7 @@ fn outline_draw_slots(
   // of them that edge `k` was cut into (empty for a short edge).
   let mut stretch_segs: Vec<[Point3D; 2]> = Vec::new();
   let mut stretch_owners: Vec<usize> = Vec::new();
+  let mut stretch_zones: Vec<[f64; 2]> = Vec::new();
   let mut spans: Vec<std::ops::Range<usize>> = Vec::with_capacity(segs.len());
   for (seg, &owner) in segs.iter().zip(owners) {
     let (a, b) = (project(seg[0], camera), project(seg[1], camera));
@@ -629,6 +630,12 @@ fn outline_draw_slots(
           (i as f64 / count as f64, (i + 1) as f64 / count as f64);
         stretch_segs.push([lerp(seg, from), lerp(seg, to)]);
         stretch_owners.push(owner);
+        // The samples near an end of the whole edge stay end samples.
+        let n = count as f64;
+        stretch_zones.push([
+          OUTLINE_END_FRACTION * n - i as f64,
+          (1.0 - OUTLINE_END_FRACTION) * n - i as f64,
+        ]);
       }
     }
     spans.push(start..stretch_segs.len());
@@ -643,7 +650,7 @@ fn outline_draw_slots(
       &[],
       camera,
       Some(&stretch_owners),
-      None,
+      Some(&stretch_zones),
       // A face beside a stretch lifts it only when no face covering the
       // stretch itself caps that, and a stretch next to the rim of a face
       // hiding the rest of the edge has none: the reach of the fills is
@@ -668,11 +675,13 @@ fn outline_draw_slots(
       let bounds = &stretch_bounds[span];
       let slots: Vec<usize> =
         bounds.iter().map(|&b| clamp(b, owners[k])).collect();
-      // Drawn in one piece, the edge has to come after every face a
-      // stretch of it lies in front of, and before every face hiding one.
-      let lifted = slots.iter().copied().fold(whole[k], usize::max);
-      if bounds.iter().all(|&(_, first_front)| lifted <= first_front) {
-        return entire(lifted);
+      // Drawn in one piece, the edge has to come before every face that
+      // hides a stretch of it.
+      if bounds
+        .iter()
+        .all(|&(_, first_front)| whole[k] <= first_front)
+      {
+        return entire(whole[k]);
       }
       let count = slots.len() as f64;
       let mut pieces: Vec<OutlinePiece> = Vec::new();
@@ -705,6 +714,10 @@ struct OutlinePiece {
 /// How many stretches an outline edge as long as the picture is looked at
 /// in: a face hiding less of the edge than one of them may be missed.
 const OUTLINE_STRETCHES_ACROSS: f64 = 32.0;
+
+/// How much of an outline edge, at either end, counts as its end: the
+/// part the first and last sample along it stand for.
+const OUTLINE_END_FRACTION: f64 = 0.02;
 
 /// Most stretches one outline edge is cut into.
 const MAX_OUTLINE_STRETCHES: usize = 64;
