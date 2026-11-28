@@ -4623,9 +4623,22 @@ pub fn display_form_boxes_in(expr: &Expr, traditional: bool) -> Expr {
   if let Expr::FunctionCall { name, args } = expr
     && is_box_call(expr)
   {
+    // Only the first argument of a `StyleBox` is drawn: the others are its
+    // directives (`StyleBox[b, RGBColor[1, 0, 0]]`), not content to typeset.
+    let directives_from = if name == "StyleBox" { 1 } else { args.len() };
     return Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(|a| box_arg(a, traditional)).collect(),
+      args: args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if i >= directives_from {
+            a.clone()
+          } else {
+            box_arg(a, traditional)
+          }
+        })
+        .collect(),
     };
   }
   if !contains_box_call(expr) {

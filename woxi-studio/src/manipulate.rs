@@ -12059,9 +12059,9 @@ pub fn flow_to_content_width(
   };
   let flowed =
     woxi::functions::graphics::wrap_wide_text_to_width(layout, width)?;
-  // Read back as source, so a `TraditionalForm` layout stays one rather
-  // than turning into the box text InputForm shows it as.
-  woxi::interpret_with_stdout(&woxi::syntax::expr_to_source_form(&flowed))
+  // Evaluated as the expression it is: a picture in it (the plot a broken
+  // caption labels) has no source text to be read back from.
+  woxi::interpret_expr_with_stdout(&flowed)
     .ok()
     .filter(|r| r.graphics.is_some())
 }
@@ -12380,6 +12380,40 @@ mod repeated_option_tests {
     assert!(svg[last_brace..].contains('.'), "{svg}");
     // Typeset in TraditionalForm: the highest power comes first.
     assert!(svg.contains(">30<"), "{svg}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a function plotted
+  /// with its n-th derivative, captioned with a sentence naming it). The
+  /// caption of a `Labeled` plot is a `Row` of prose and separately styled
+  /// formulas; for a high derivative it is far wider than the
+  /// `ContentSize` area. The FrontEnd breaks it into lines there; it used
+  /// to run off in one line several times the width of the area, because a
+  /// caption was never re-flowed and a `Row` only broke at a list.
+  #[test]
+  fn content_size_width_breaks_the_caption_of_a_labeled_plot() {
+    let (svg, width) = flowed_content_svg(
+      "Manipulate[         Labeled[Plot[Tanh[u], {u, -3, 3}, ImageSize -> {300, 200}],            Style[Text[Row[{\"Derivative number \", n, \" of \",              Style[TraditionalForm[Tanh[x]], Black], \" equals \",              TraditionalForm[Style[D[Tanh[x], {x, n}], Red]], \".\"}]],              LineIndent -> 0], Top],          {{n, 12}, 0, 20, 1}, ContentSize -> {350, 300}]",
+    );
+    assert_eq!(width, 350.0);
+    // The prose and the formula's own color are both kept on the lines.
+    assert!(svg.contains("Derivative"), "{svg}");
+    assert!(svg.contains("sech"), "{svg}");
+    assert!(
+      svg.contains("rgb(255,0,0)") || svg.contains("#ff0000"),
+      "the derivative keeps its color: {svg}"
+    );
+  }
+
+  /// The caption of a `Labeled` plot that fits the content area is left on
+  /// its one line.
+  #[test]
+  fn content_size_width_keeps_a_fitting_caption_whole() {
+    let body = woxi::interpret_with_stdout(
+      "Labeled[Plot[Sin[u], {u, 0, 3}, ImageSize -> {300, 200}],          Text[Row[{\"The sine of \", Style[u, Red], \".\"}]], Top]",
+    )
+    .expect("evaluate the labeled plot");
+    assert!(flow_to_content_width(&body, 350.0).is_none());
   }
 
   /// A single polynomial too long for the content area breaks between its

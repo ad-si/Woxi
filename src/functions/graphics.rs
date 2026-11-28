@@ -49565,6 +49565,19 @@ fn wrap_wide_layout_text(
       )
       .map(rebuilt)
     }
+    // The caption of a `Labeled` picture breaks into lines when it alone
+    // is wider than the area; the picture keeps its size.
+    "Labeled"
+      if args.len() >= 2
+        && grid_cell_graphic(&args[0]).is_some()
+        && styled_width(&args[1]) > width + 0.5 =>
+    {
+      let caption =
+        wrap_list_text(&args[1], width, styles, traditional, cell_width)?;
+      let mut new_args = args.to_vec();
+      new_args[1] = caption;
+      Some(call(name, new_args))
+    }
     "Grid" => {
       let (opts, mut rows) = grid_rows_of(layout)?;
       // A cell keeps its padding on either side of the text.
@@ -49627,8 +49640,8 @@ fn wrap_wide_layout_text(
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`,
 /// `Style` and `TraditionalForm`) into a left-aligned `Column` of lines no
 /// wider than `width`, breaking after the commas between elements and after
-/// the `+`/`-` of a long sum. A `Row` of text pieces holding such a list
-/// (`Row[{list, "."}]`) breaks the same way, its other pieces kept whole.
+/// the `+`/`-` of a long sum. A `Row` of text pieces (`Row[{"The sum is ",
+/// sum, "."}]`) breaks the same way, and between the words of its prose.
 /// `styles` are the directives of the enclosing `Style`s, which size the
 /// text measured; `traditional` typesets the pieces in `TraditionalForm`.
 fn wrap_list_text(
@@ -49690,16 +49703,12 @@ fn wrap_list_text(
       let Expr::List(items) = &args[0] else {
         return None;
       };
-      if !no_graphic(items)
-        || !items
-          .iter()
-          .any(|item| matches!(item, Expr::List(l) if !l.is_empty()))
-      {
+      if !items.iter().all(row_piece_is_text) {
         return None;
       }
       let mut segments: Vec<Vec<Expr>> = vec![Vec::new()];
       for item in items {
-        list_text_segments(item, traditional, &mut segments);
+        row_text_segments(item, traditional, &mut segments);
       }
       flow_text_segments(segments, width, styles, cell_width)
     }
@@ -49766,6 +49775,92 @@ fn flow_text_segments(
     "Column",
     vec![Expr::List(rows.into()), id_expr("Left")],
   ))
+}
+
+/// Whether `item`, one piece of a `Row`, is typeset text rather than a
+/// picture, looking through the `Style` and `TraditionalForm` around it
+/// (which on their own make a formula a typeset cell).
+fn row_piece_is_text(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args }
+      if (name == "TraditionalForm" && args.len() == 1)
+        || (is_style_wrapper(name) && !args.is_empty()) =>
+    {
+      row_piece_is_text(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.as_slice(), [Expr::List(_)]) =>
+    {
+      matches!(&args[0], Expr::List(pieces)
+        if pieces.iter().all(row_piece_is_text))
+    }
+    _ => grid_cell_graphic(item).is_none(),
+  }
+}
+
+/// Append the boxes of `item`, one piece of a `Row`, to `segments`. Prose
+/// may break after any of its spaces, and a piece styled on its own
+/// (`Style[expr, Blue]`, `TraditionalForm[expr]`, in either nesting) keeps
+/// that styling on every line it is spread over.
+fn row_text_segments(
+  item: &Expr,
+  traditional: bool,
+  segments: &mut Vec<Vec<Expr>>,
+) {
+  match item {
+    Expr::String(s) => {
+      // A word carries the space after it to the end of its line.
+      for word in s.split_inclusive(' ') {
+        if let Some(last) = segments.last_mut() {
+          last.push(str_expr(word));
+        }
+        if word.ends_with(' ') {
+          segments.push(Vec::new());
+        }
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      row_text_segments(&args[0], true, segments);
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let traditional =
+        traditional || args[1..].iter().any(is_traditional_form_directive);
+      let mut styled: Vec<Vec<Expr>> = vec![Vec::new()];
+      row_text_segments(&args[0], traditional, &mut styled);
+      for (i, segment) in styled.into_iter().enumerate() {
+        if i > 0 {
+          segments.push(Vec::new());
+        }
+        if let Some(last) = segments.last_mut() {
+          last.extend(segment.into_iter().map(|piece| {
+            call(
+              "StyleBox",
+              std::iter::once(piece)
+                .chain(args[1..].iter().cloned())
+                .collect(),
+            )
+          }));
+        }
+      }
+    }
+    // A `Row` inside the row continues the line it is on.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && matches!(args.as_slice(), [Expr::List(_)])
+        && row_piece_is_text(item) =>
+    {
+      if let Expr::List(pieces) = &args[0] {
+        for piece in pieces {
+          row_text_segments(piece, traditional, segments);
+        }
+      }
+    }
+    _ => list_text_segments(item, traditional, segments),
+  }
 }
 
 /// Append the boxes of `expr` to `segments`, starting a new segment after
