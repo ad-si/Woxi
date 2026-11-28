@@ -11639,3 +11639,18 @@ above.)
   `Filling -> Top` lists the first quadrilateral last). wolframscript also
   keeps the fill in a `GraphicsComplex` with the colors as the color
   function returns them (`Hue[1.]`), where Woxi stores `RGBColor`s.
+
+## A narrow `Pane` does not wrap a `Rule` of graphics
+
+```wolfram
+Pane[Grid[{{ArrayPlot[{{1, 0}, {0, 1}}, ImageSize -> 10] ->
+    ArrayPlot[{{0, 1}, {1, 0}}, ImageSize -> 10]}}], {50, Automatic}]
+```
+
+The published cloud rendering of a Demonstration shows each such row broken
+after the arrow (first picture and `→` on one line, the second picture on
+the next), so the column is twice as tall as Woxi's, which keeps
+`picture → picture` on one line (it fits the 50 points by Woxi's
+measure). Not verified against wolframscript or a desktop front end —
+none was available when this was found — so the widths at which the front
+end breaks the line are unknown.
