@@ -22757,9 +22757,12 @@ impl BoxLayout {
     let s = mapped.as_str();
     // `\[NoBreak]` (which a TraditionalForm matrix sets inside its
     // parentheses), zero-width spaces and `\[InvisibleApplication]` take no
-    // room.
-    let zero_width =
-      |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
+    // room, and neither do the private-use characters that are drawn as
+    // nothing (`\[InvisibleSpace]`, `\[InvisibleComma]`).
+    let zero_width = |c: &char| {
+      matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}')
+        || crate::syntax::is_glyphless_private_use(*c)
+    };
     let family = BOX_FONT_FAMILY.with(|f| f.borrow().clone());
     let w = match family.as_deref() {
       // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a

@@ -24202,7 +24202,12 @@ pub fn nminimize_ast(
     }
     let _quiet = QuietGuard::new();
     let value = crate::evaluator::evaluate_expr_to_expr(&value).ok()?;
-    Some(!crate::functions::predicate_ast::is_numeric_q(&value))
+    // `Indeterminate` or an infinity is what a numeric objective gives at
+    // a singular point (`Log[0.]` where an exponential underflows); only
+    // the probe is unlucky then, and the search goes on from other points.
+    let singular = matches!(&value, Expr::Identifier(n) if n == "Indeterminate" || n == "ComplexInfinity")
+      || matches!(&value, Expr::FunctionCall { name, .. } if name == "DirectedInfinity");
+    Some(!singular && !crate::functions::predicate_ast::is_numeric_q(&value))
   })()
   .unwrap_or(false);
   let checked = if symbolic_at_probe {
@@ -24778,7 +24783,15 @@ fn nminimize_ast_impl(
       .map(|&(lo, hi)| {
         let range = hi - lo;
         if range > scale * 4.0 {
-          let mid = f64::midpoint(lo, hi);
+          // A variable bounded on one side only (`s > 0`) has no middle:
+          // its windows hug the point of the half-line nearest the origin,
+          // where the unbounded search starts as well.
+          let half_line = (lo == -DEFAULT_BOUND) != (hi == DEFAULT_BOUND);
+          let mid = if half_line {
+            0.0_f64.clamp(lo, hi)
+          } else {
+            f64::midpoint(lo, hi)
+          };
           ((mid - scale).max(lo), (mid + scale).min(hi))
         } else {
           (lo, hi)
@@ -26724,6 +26737,10 @@ fn nminimize_penalty(
   ))
 }
 
+/// How far the numeric optimizers search along a side of a variable that
+/// no constraint bounds.
+const DEFAULT_BOUND: f64 = 1e6;
+
 /// Extract variable bounds from constraints.
 /// Handles patterns like: 0 < x < Pi/2, x > 0, x < 1, etc.
 /// Returns (lower_bound, upper_bound) for each variable.
@@ -26731,7 +26748,10 @@ fn extract_bounds(
   constraints: &[Expr],
   vars: &[String],
 ) -> std::vec::Vec<(f64, f64)> {
-  let mut bounds: Vec<(f64, f64)> = vars.iter().map(|_| (-1e6, 1e6)).collect();
+  let mut bounds: Vec<(f64, f64)> = vars
+    .iter()
+    .map(|_| (-DEFAULT_BOUND, DEFAULT_BOUND))
+    .collect();
 
   for constraint in constraints {
     // Flatten And expressions

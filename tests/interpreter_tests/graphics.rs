@@ -20941,6 +20941,22 @@ mod plot3d {
       }
     }
 
+    /// An `\[InvisibleSpace]` in a typeset label takes no room: the parts
+    /// after it sit where they would without it.
+    #[test]
+    fn invisible_space_in_fraction_label_has_no_width() {
+      let label = |numerator: &str, denominator: &str| {
+        export_svg(&format!(
+          r#"Plot[x, {{x, 0, 1}}, AxesLabel -> {{x, Style[
+            "\!\(\*FractionBox[\({numerator} \((x)\)\), \({denominator}\)]\)",
+            Large]}}]"#
+        ))
+      };
+      let plain = label("dM", "dx");
+      assert!(plain.contains(">dM <"), "{plain}");
+      assert_eq!(label(r"d\[InvisibleSpace]M", r"d\[InvisibleSpace]x"), plain);
+    }
+
     /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
     /// as numerator over denominator, not flattened to a wide `a/b` line
     /// that squeezes the plotting area; a `PlotLabel` sits above the
