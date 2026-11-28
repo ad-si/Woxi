@@ -9909,7 +9909,7 @@ mod plot3d {
       assert!((lo - 0.1).abs() < 0.005, "cap starts at {lo}");
       assert!((hi - 1.0).abs() < 0.005, "cap ends at {hi}");
       // A surface inside its range has no cap.
-      assert!(top_view_fractions("", "<polygon", gray).is_empty());
+      assert_eq!(top_view_fractions("", "<polygon", gray), Vec::<f64>::new());
     }
 
     /// `ClippingStyle -> None` leaves the cut open, and a color fills it
@@ -9925,9 +9925,12 @@ mod plot3d {
       };
       let open = ", PlotRange -> {{0, 1}, {0, 1}, {0, 1}}, \
                   ClippingStyle -> None";
-      assert!(top_view_fractions(open, "<polygon", gray).is_empty());
+      assert_eq!(
+        top_view_fractions(open, "<polygon", gray),
+        Vec::<f64>::new()
+      );
       let red = ", PlotRange -> {0, 1}, ClippingStyle -> Red";
-      assert!(top_view_fractions(red, "<polygon", gray).is_empty());
+      assert_eq!(top_view_fractions(red, "<polygon", gray), Vec::<f64>::new());
       assert!((reach(red) - 1.0).abs() < 0.005, "{}", reach(red));
     }
 
