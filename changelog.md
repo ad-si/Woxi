@@ -12,6 +12,15 @@
     chosen over that range and the parts beyond it are left blank. A mesh
     function also receives the plotted value as its third argument, so
     `MeshFunctions -> {#3 &}` draws its level curves.
+- A `Disk` or `Circle` in the `Epilog` or `Prolog` of a plot whose angle
+    range runs backwards (`Disk[c, r, {0, -2}]`) covers the angles between
+    the two, as it does in a `Graphics`, instead of a sliver of a different
+    circle, and a range of a full turn or more draws the whole shape.
+- A `Slider`, `Manipulator` or `Animator` laid out in a `Grid`, `Row` or
+    `Column` is drawn as a slider instead of its source text, at its
+    `ImageSize`. Inside a `Manipulate` body in Woxi Studio it is live:
+    pressing or dragging along the track writes the `Dynamic` variable, and
+    an `Animator`'s play button sweeps it at its `AnimationRate`.
 - The subscript of a stacked fraction (`Subscript[a/b, z]`) hangs at the
     fraction's foot, level with the denominator, instead of beside its
     rule.

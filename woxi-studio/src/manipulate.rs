@@ -812,6 +812,96 @@ pub fn tooltip_regions_of(svg: &str) -> Vec<TooltipRegion> {
   regions
 }
 
+/// A `Slider`/`Manipulator`/`Animator` drawn in a rendered picture: the
+/// rectangle (in the picture's pixel coordinates) of its track, or of an
+/// `Animator`'s play button, and the variable and range it drives.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SliderRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub slider: woxi::functions::graphics::PictureSlider,
+}
+
+impl SliderRegion {
+  fn contains(&self, px: f32, py: f32) -> bool {
+    px >= self.x
+      && px <= self.x + self.width
+      && py >= self.y
+      && py <= self.y + self.height
+  }
+
+  /// The value a press at pixel column `px` of the picture selects.
+  pub fn value_at(&self, px: f32) -> f64 {
+    self
+      .slider
+      .value_at(f64::from((px - self.x) / self.width.max(1.0)))
+  }
+}
+
+/// Find the track of every slider the renderer drew in `svg` and the play
+/// button of every `Animator` (see
+/// `woxi::functions::graphics::SLIDER_HIT_ID_PREFIX` and
+/// `ANIMATOR_PLAY_HIT_ID_PREFIX`), as `(tracks, play buttons)`.
+pub fn slider_regions_of(svg: &str) -> (Vec<SliderRegion>, Vec<SliderRegion>) {
+  use resvg::usvg;
+  use woxi::functions::graphics::{
+    ANIMATOR_PLAY_HIT_ID_PREFIX, SLIDER_HIT_ID_PREFIX,
+    animator_play_from_hit_id, picture_slider_from_hit_id,
+  };
+  let mut found = (Vec::new(), Vec::new());
+  if !svg.contains(SLIDER_HIT_ID_PREFIX)
+    && !svg.contains(ANIMATOR_PLAY_HIT_ID_PREFIX)
+  {
+    return found;
+  }
+  let Ok(tree) = usvg::Tree::from_str(svg, &usvg::Options::default()) else {
+    return found;
+  };
+  fn walk(
+    group: &usvg::Group,
+    out: &mut (Vec<SliderRegion>, Vec<SliderRegion>),
+  ) {
+    for node in group.children() {
+      match node {
+        usvg::Node::Group(g) => walk(g, out),
+        usvg::Node::Path(p) => {
+          let (slider, list) = match picture_slider_from_hit_id(p.id()) {
+            Some(slider) => (slider, &mut out.0),
+            None => match animator_play_from_hit_id(p.id()) {
+              Some(slider) => (slider, &mut out.1),
+              None => continue,
+            },
+          };
+          let r = p.abs_bounding_box();
+          list.push(SliderRegion {
+            x: r.x(),
+            y: r.y(),
+            width: r.width(),
+            height: r.height(),
+            slider,
+          });
+        }
+        _ => {}
+      }
+    }
+  }
+  walk(tree.root(), &mut found);
+  found
+}
+
+/// The sweep of an `Animator` drawn in the picture, while it plays.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PictureAnimation {
+  pub slider: woxi::functions::graphics::PictureSlider,
+  /// Where the sweep is along the range; the variable holds this snapped
+  /// to the slider's step.
+  position: f64,
+  /// The value last written to the variable.
+  written: f64,
+}
+
 /// A `ClickPane` drawn in a rendered picture: its rectangle in the picture's
 /// pixel coordinates and the coordinate system a click inside it is reported
 /// in.
@@ -1266,6 +1356,8 @@ pub struct ManipulateState {
   /// it just before that control so the specs keep their declared order.
   /// See `ManipulateSpec::panel_displays`.
   pub panel_displays: Vec<(usize, usize)>,
+  /// See `ManipulateSpec::control_pictures`.
+  pub control_pictures: Vec<usize>,
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
@@ -1283,6 +1375,20 @@ pub struct ManipulateState {
   /// `ClickPane`s drawn in the picture; a click inside one runs its handler
   /// on the click position.
   pub click_regions: Vec<ClickRegion>,
+  /// The tracks of the sliders drawn in the picture (a `Slider[Dynamic[v],
+  /// …]` cell of the body's `Grid`); pressing or dragging along one writes
+  /// its variable.
+  pub slider_regions: Vec<SliderRegion>,
+  /// The play buttons of the `Animator`s drawn in the picture.
+  pub play_regions: Vec<SliderRegion>,
+  /// The slider track the pointer was pressed on and not yet released,
+  /// with the value last written from it.
+  slider_drag: Option<(SliderRegion, f64)>,
+  /// The picture `Animator` that is playing, if any.
+  pub picture_animation: Option<PictureAnimation>,
+  /// Whether the body has been drawn as a picture yet; the first drawing
+  /// starts an `Animator` in it that plays on its own.
+  picture_drawn: bool,
   /// The handler call a press would make on the `ClickPane` display
   /// element under the pointer (`None` while the pointer is off every
   /// pane, or outside a pane's clickable area).
@@ -1752,12 +1858,18 @@ impl ManipulateState {
       state: spec.state,
       displays: spec.displays,
       panel_displays: spec.panel_displays,
+      control_pictures: spec.control_pictures,
       display_trees: Vec::new(),
       graphics_handle: None,
       scroll_viewport: None,
       button_regions: Vec::new(),
       tooltip_regions: Vec::new(),
       click_regions: Vec::new(),
+      slider_regions: Vec::new(),
+      play_regions: Vec::new(),
+      slider_drag: None,
+      picture_animation: None,
+      picture_drawn: false,
       display_pane_action: None,
       mouse_region: None,
       mouse_pressed: false,
@@ -2024,6 +2136,132 @@ impl ManipulateState {
     }
   }
 
+  /// The pointer was pressed at the last pointer position: on the track
+  /// of a slider drawn in the picture, move the slider there and start
+  /// dragging it.
+  pub fn slider_press(&mut self) {
+    let (px, py) = self.pointer;
+    let Some(region) = self
+      .slider_regions
+      .iter()
+      .rev()
+      .find(|r| r.contains(px, py))
+      .cloned()
+    else {
+      return;
+    };
+    self.slider_drag = Some((region, f64::NAN));
+    self.drag_picture_slider();
+  }
+
+  /// Write the value under the pointer to the variable of the picture
+  /// slider being dragged, when it differs from the one last written.
+  fn drag_picture_slider(&mut self) {
+    let px = self.pointer.0;
+    let Some((region, written)) = self.slider_drag.as_mut() else {
+      return;
+    };
+    let value = region.value_at(px);
+    if value == *written {
+      return;
+    }
+    *written = value;
+    let action = region.slider.write_back(value);
+    // Moving a playing `Animator` by hand carries its sweep along.
+    if let Some(animation) = self.picture_animation.as_mut()
+      && animation.slider.target == region.slider.target
+    {
+      animation.position = value;
+      animation.written = value;
+    }
+    self.apply_button_action(&action);
+  }
+
+  /// Whether a press begun over the picture is still held.
+  pub fn pointer_held(&self) -> bool {
+    self.mouse_pressed || self.slider_drag.is_some()
+  }
+
+  /// Press the play button of the picture `Animator` driving `slider`:
+  /// start its sweep from the variable's current value, or pause it when it
+  /// is the one playing.
+  pub fn toggle_picture_animation(
+    &mut self,
+    slider: &woxi::functions::graphics::PictureSlider,
+  ) {
+    if self
+      .picture_animation
+      .as_ref()
+      .is_some_and(|a| a.slider.target == slider.target)
+    {
+      self.picture_animation = None;
+      return;
+    }
+    let current = self
+      .bindings()
+      .iter()
+      .find(|(name, _)| *name == slider.target)
+      .and_then(|(_, value)| value.trim().parse::<f64>().ok())
+      .filter(|v| v.is_finite())
+      .map_or(slider.min, |v| slider.snap(v));
+    self.picture_animation = Some(PictureAnimation {
+      slider: slider.clone(),
+      position: current,
+      written: f64::NAN,
+    });
+  }
+
+  /// Start the picture `Animator`s that begin playing on their own
+  /// (`AnimationRunning` not `False`). Called once, when the body is first
+  /// drawn as a picture.
+  fn start_running_picture_animation(&mut self) {
+    if let Some(region) =
+      self.play_regions.iter().find(|r| r.slider.running).cloned()
+    {
+      self.toggle_picture_animation(&region.slider);
+    }
+  }
+
+  /// One timer step of the playing picture `Animator`: move along its
+  /// range (at its `AnimationRate`, else one step a tick), starting over
+  /// past the end, and write the variable when it reaches a new position.
+  /// The sweep ends once the picture no longer draws the `Animator`.
+  fn advance_picture_animation(&mut self) {
+    let Some(animation) = self.picture_animation.as_mut() else {
+      return;
+    };
+    let slider = &animation.slider;
+    if !self
+      .play_regions
+      .iter()
+      .any(|r| r.slider.target == slider.target)
+    {
+      self.picture_animation = None;
+      return;
+    }
+    let (lo, hi) = (slider.min.min(slider.max), slider.min.max(slider.max));
+    let one_step = if slider.step > 0.0 {
+      slider.step
+    } else {
+      (hi - lo) / 100.0
+    };
+    let increment = slider
+      .rate
+      .map_or(one_step, |rate| rate * ANIM_INTERVAL_MS as f64 / 1000.0);
+    let mut position = animation.position + increment;
+    if position > hi + one_step * 1e-6 {
+      position = lo;
+    }
+    animation.position = position;
+    let value = slider.snap(position);
+    if value == animation.written {
+      return;
+    }
+    animation.written = value;
+    let action = slider.write_back(value);
+    self.apply_button_action(&action);
+  }
+
   /// The pointer was pressed at the last pointer position: over the
   /// picture's `EventHandler`, run its `"MouseDown"` action.
   pub fn mouse_down(&mut self) {
@@ -2045,6 +2283,10 @@ impl ManipulateState {
   pub fn mouse_moved(&mut self, px: f32, py: f32) {
     self.pointer = (px, py);
     self.pointer_over = true;
+    if self.slider_drag.is_some() {
+      self.drag_picture_slider();
+      return;
+    }
     if self.mouse_pressed {
       self.apply_mouse_events(&["MouseDragged"]);
     } else if self
@@ -2075,6 +2317,7 @@ impl ManipulateState {
   /// The pointer was released: end a press begun over the `EventHandler`
   /// with its `"MouseUp"` and then `"MouseClicked"` actions.
   pub fn mouse_up(&mut self) {
+    self.slider_drag = None;
     if !std::mem::take(&mut self.mouse_pressed) {
       return;
     }
@@ -2612,6 +2855,7 @@ impl ManipulateState {
   /// animation, or its body keeps rewriting its own `DynamicModule` state.
   pub fn wants_tick(&self) -> bool {
     (self.animated && self.playing)
+      || self.picture_animation.is_some()
       || self.self_refreshing
       || self.timed_refresh.is_some()
   }
@@ -2620,6 +2864,8 @@ impl ManipulateState {
   pub fn tick(&mut self) {
     if self.animated && self.playing {
       self.advance_animation();
+    } else if self.picture_animation.is_some() {
+      self.advance_picture_animation();
     } else if self.self_refreshing
       || self.timed_refresh.is_some_and(|interval| {
         self
@@ -3385,6 +3631,10 @@ impl ManipulateState {
           self.button_regions = button_regions_of(&svg);
           self.tooltip_regions = tooltip_regions_of(&svg);
           self.click_regions = click_regions_of(&svg);
+          (self.slider_regions, self.play_regions) = slider_regions_of(&svg);
+          if !std::mem::replace(&mut self.picture_drawn, true) {
+            self.start_running_picture_animation();
+          }
           self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
@@ -3399,6 +3649,8 @@ impl ManipulateState {
           self.button_regions.clear();
           self.tooltip_regions.clear();
           self.click_regions.clear();
+          self.slider_regions.clear();
+          self.play_regions.clear();
           self.mouse_region = None;
           self.typeset_output =
             result.output_svg.filter(|_| !cleaned.is_empty());
@@ -3422,6 +3674,8 @@ impl ManipulateState {
         self.button_regions.clear();
         self.tooltip_regions.clear();
         self.click_regions.clear();
+        self.slider_regions.clear();
+        self.play_regions.clear();
         self.mouse_region = None;
         self.text_output = None;
         self.typeset_output = None;
@@ -11446,6 +11700,43 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
   }
 
+  /// A control function drawing `LocatorPane[Dynamic[pts], picture]` shows
+  /// its picture in the panel, on the control's own side of the output, and
+  /// the picture follows the points as they move.
+  #[test]
+  fn locator_pane_control_function_shows_its_picture_and_follows_the_points() {
+    let code = r#"Manipulate[Total[pts],
+      {{a, 1}, 0, 2},
+      {{pts, {{1, 1}, {2, 3}}, ""}, {0, 0}, {4, 4},
+       LocatorPane[Dynamic[pts],
+         Dynamic@Graphics[{Line[pts]}, PlotRange -> {{0, 4}, {0, 4}}],
+         Appearance -> None] &,
+       ControlPlacement -> Left}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let pts = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "pts")
+      .expect("pts control");
+    assert_eq!(state.panel_displays, vec![(0, pts)]);
+    assert_eq!(state.control_pictures, vec![0]);
+    assert_eq!(state.placement_of(pts), ControlPlacement::Left);
+    let picture = |state: &ManipulateState| match &state.display_trees[0] {
+      DisplayNode::Static { svg: Some(svg), .. } => svg.clone(),
+      other => panic!("expected a picture, got {other:?}"),
+    };
+    let before = picture(&state);
+    assert!(before.contains("<polyline") || before.contains("<line"));
+    let ControlState::Locator { points, .. } = &mut state.controls[pts] else {
+      panic!("expected a Locator, got {:?}", state.controls[pts]);
+    };
+    points[1] = (3.5, 0.5);
+    state.reevaluate();
+    assert_ne!(picture(&state), before);
+  }
+
   /// Points dragged over a `LocatorPane` whose range is `{{0, 0}, {n - 1,
   /// m - 1}, {1, 1}}` snap to the pane's steps, and the box they move in
   /// grows and shrinks with the sliders `n` and `m`.
@@ -12766,5 +13057,181 @@ mod tooltip_region_tests {
       "empty line flagged as a bad coordinate: {svg}"
     );
     assert!(!svg.contains("<polyline"), "nothing to extend yet: {svg}");
+  }
+}
+
+#[cfg(test)]
+mod picture_slider_tests {
+  use super::*;
+
+  fn build(code: &str) -> ManipulateState {
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    ManipulateState::from_expr(&expr).expect("build Manipulate widget")
+  }
+
+  fn variable(state: &ManipulateState, name: &str) -> String {
+    state
+      .state
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default()
+  }
+
+  /// Press the pointer at `fraction` of the way along a slider's track.
+  fn press(state: &mut ManipulateState, region: usize, fraction: f32) {
+    let r = state.slider_regions[region].clone();
+    state.mouse_moved(r.x + fraction * r.width, r.y + r.height / 2.0);
+    state.slider_press();
+  }
+
+  /// A `Slider[Dynamic[v], …]` cell of the body's `Grid` is drawn as a
+  /// slider (not as its source text) that a press and a drag move.
+  #[test]
+  fn body_grid_slider_is_drawn_and_dragged() {
+    let mut state = build(
+      r#"Manipulate[
+        Grid[{{"depth", Slider[Dynamic[depth], {2, 12, 1}, ImageSize -> 120],
+           Dynamic[depth]},
+          {Graphics[{Circle[{0, 0}, depth]}, PlotRange -> 13], SpanFromLeft,
+           SpanFromLeft}}],
+        {{depth, 4}, ControlType -> None}]"#,
+    );
+    assert_eq!(state.error, None);
+    assert_eq!(state.slider_regions.len(), 1, "{:?}", state.slider_regions);
+    assert!(state.play_regions.is_empty());
+    let slider = state.slider_regions[0].slider.clone();
+    assert_eq!(
+      (slider.target.as_str(), slider.min, slider.max, slider.step),
+      ("depth", 2.0, 12.0, 1.0)
+    );
+    // The track spans the requested width less the room for the thumb.
+    assert!((state.slider_regions[0].width - 108.0).abs() < 1.0);
+
+    press(&mut state, 0, 1.0);
+    assert_eq!(variable(&state, "depth"), "12");
+    assert!(state.pointer_held());
+    // Dragging snaps to the slider's steps; the redrawn track stays put.
+    let r = state.slider_regions[0].clone();
+    state.mouse_moved(r.x + 0.32 * r.width, r.y);
+    assert_eq!(variable(&state, "depth"), "5");
+    // The drag keeps following the pointer off the track's ends.
+    state.mouse_moved(r.x - 40.0, r.y + 60.0);
+    assert_eq!(variable(&state, "depth"), "2");
+    state.mouse_up();
+    assert!(!state.pointer_held());
+    state.mouse_moved(r.x + r.width, r.y);
+    assert_eq!(variable(&state, "depth"), "2", "released sliders stay");
+  }
+
+  /// A continuous slider writes machine reals, also at whole numbers.
+  #[test]
+  fn continuous_body_slider_writes_reals() {
+    let mut state = build(
+      r#"Manipulate[
+        Column[{Slider[Dynamic[gain], {0, 4}], Plot[gain x, {x, 0, 1}]}],
+        {{gain, 1}, ControlType -> None}]"#,
+    );
+    assert_eq!(state.slider_regions.len(), 1, "{:?}", state.error);
+    press(&mut state, 0, 0.5);
+    assert_eq!(variable(&state, "gain"), "2.");
+    press(&mut state, 0, 0.125);
+    assert_eq!(variable(&state, "gain"), "0.5");
+  }
+
+  /// A disabled slider is drawn but cannot be moved.
+  #[test]
+  fn disabled_body_slider_has_no_track_region() {
+    let state = build(
+      r#"Manipulate[
+        Grid[{{Slider[Dynamic[w], {1, 5, 1}, Enabled -> False]},
+          {Graphics[Disk[{0, 0}, w], PlotRange -> 6]}}],
+        {{w, 2}, ControlType -> None}]"#,
+    );
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
+    assert!(state.slider_regions.is_empty());
+  }
+
+  /// An `Animator[Dynamic[v], …]` in one branch of the body gets a track
+  /// and a play button; playing sweeps the variable at its
+  /// `AnimationRate`, starts over past the end and stops once the branch
+  /// with the `Animator` is no longer shown.
+  #[test]
+  fn body_animator_plays_and_pauses() {
+    let mut state = build(
+      r#"Manipulate[
+        If[mode == 1,
+          Grid[{{Dynamic[frame],
+             Animator[Dynamic[frame], {10, 14, 1}, AnimationRate -> 5,
+              AnimationRunning -> False]},
+            {Graphics[Point[{frame, 0}], PlotRange -> {{9, 15}, {-1, 1}}],
+             SpanFromLeft}}],
+          Graphics[Disk[]]],
+        {{mode, 1}, {1, 2}},
+        {{frame, 12}, ControlType -> None}]"#,
+    );
+    assert_eq!(state.error, None);
+    assert_eq!(state.slider_regions.len(), 1);
+    assert_eq!(state.play_regions.len(), 1);
+    assert!(
+      !state.wants_tick(),
+      "AnimationRunning -> False starts paused"
+    );
+
+    let animator = state.play_regions[0].slider.clone();
+    assert_eq!(animator.rate, Some(5.0));
+    state.toggle_picture_animation(&animator);
+    assert!(state.wants_tick());
+    // Five units a second: one step every 200 ms of ticks.
+    let ticks_per_step = (200 / ANIM_INTERVAL_MS) as usize + 1;
+    let mut seen = vec![variable(&state, "frame")];
+    for _ in 0..(6 * ticks_per_step) {
+      state.tick();
+      let now = variable(&state, "frame");
+      if seen.last() != Some(&now) {
+        seen.push(now);
+      }
+    }
+    assert_eq!(seen[..5], ["12", "13", "14", "10", "11"], "{seen:?}");
+
+    // The track still moves the variable while it plays.
+    press(&mut state, 0, 0.0);
+    state.mouse_up();
+    assert_eq!(variable(&state, "frame"), "10");
+
+    // Pressing play again pauses.
+    state.toggle_picture_animation(&animator);
+    assert!(!state.wants_tick());
+
+    // A sweep ends when its Animator leaves the picture.
+    state.toggle_picture_animation(&animator);
+    let mode = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("mode control");
+    state.controls[mode].set_current_from_code("2");
+    state.reevaluate();
+    assert!(state.play_regions.is_empty());
+    let before = variable(&state, "frame");
+    state.tick();
+    assert!(!state.wants_tick());
+    assert_eq!(variable(&state, "frame"), before);
+  }
+
+  /// An `Animator` plays from the start unless told otherwise.
+  #[test]
+  fn body_animator_runs_by_default() {
+    let mut state = build(
+      r#"Manipulate[
+        Row[{Animator[Dynamic[k], {0, 3, 1}],
+          Graphics[Rectangle[{0, 0}, {k + 1, 1}], PlotRange -> {{0, 5}, {0, 1}}]}],
+        {{k, 0}, ControlType -> None}]"#,
+    );
+    assert_eq!(state.play_regions.len(), 1, "{:?}", state.error);
+    assert!(state.wants_tick());
+    state.tick();
+    assert_eq!(variable(&state, "k"), "1");
   }
 }
