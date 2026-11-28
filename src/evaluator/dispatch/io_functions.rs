@@ -6097,6 +6097,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
         lays_out_a_graphic(&content) || is_tabular_layout(&content)
       })
     }
+    // An `OpenerView[{label, content}, …]` is drawn with its disclosure
+    // triangle, so it is a picture whatever its label and content are.
+    Expr::FunctionCall { name, args }
+      if name == "OpenerView"
+        && matches!(args.first(), Some(Expr::List(pair)) if pair.len() == 2) =>
+    {
+      true
+    }
     // `Style[content, …]` only sets font/color; the layout underneath it
     // decides whether there is a picture to draw.
     Expr::FunctionCall { name, args }
@@ -8541,6 +8549,15 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
         && lays_out_a_graphic(&args[0]) =>
     {
       expr_to_svg(&args[0])
+    }
+    // `OpenerView[{label, content}, open]` is its label beside a
+    // disclosure triangle, above the content while it is open.
+    Expr::FunctionCall { name, args }
+      if name == "OpenerView"
+        && let Some(shown) =
+          crate::functions::graphics::opener_view_shown(args) =>
+    {
+      expr_to_svg(&shown)
     }
     // `TabView[{…}, sel]` displays only the pane `sel` selects. Reaching
     // here means the `TabView` sits inside a layout that is being drawn, so
