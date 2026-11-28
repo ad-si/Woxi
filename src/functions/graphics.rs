@@ -6750,6 +6750,27 @@ pub fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
     .or_else(|| row_image_width_points(pane_args))
 }
 
+/// The height in printer's points `Pane[content, {width, height}]` (or its
+/// `ImageSize -> {width, height}` option) gives its box; `None` without a
+/// positive number.
+fn pane_height_points(pane_args: &[Expr]) -> Option<f64> {
+  let size = match pane_args.get(1) {
+    Some(Expr::List(dims)) => Some(dims),
+    _ => {
+      pane_args.iter().skip(1).filter_map(option_kv).find_map(
+        |(k, v)| match v {
+          Expr::List(dims) if k == "ImageSize" => Some(dims),
+          _ => None,
+        },
+      )
+    }
+  }?;
+  size
+    .get(1)
+    .and_then(crate::evaluator::dispatch::io_functions::pane_size_component)
+    .filter(|h| *h > 0.0)
+}
+
 /// The width in printer's points of a `Row[items, …, ImageSize -> w]`
 /// (or `ImageSize -> {w, h}`); `None` without a fixed width.
 fn row_image_width_points(row_args: &[Expr]) -> Option<f64> {
@@ -10735,6 +10756,11 @@ const TEXT_LABEL_PICTURE_MARK: &str = "data-text-label=\"1\"";
 ///
 /// With no `frame_color` (an unframed multi-column `Grid` label) no border is
 /// drawn and the margins default to zero.
+///
+/// `pane_size` is the width and height of a sized `Pane` the frame holds
+/// (`Framed[Pane[content, {w, h}]]`): the frame is drawn around that box
+/// even when the content is smaller or empty, with the content at the
+/// pane's top left.
 fn framed_label_picture(
   content: &Expr,
   text: &str,
@@ -10742,6 +10768,7 @@ fn framed_label_picture(
   frame_color: Option<Color>,
   background: Option<Color>,
   frame_opts: &[Expr],
+  pane_size: (Option<f64>, Option<f64>),
 ) -> (String, f64, f64) {
   use crate::functions::plot_padding::{line_pitch, text_width};
   let fs = style.font_size;
@@ -10895,6 +10922,13 @@ fn framed_label_picture(
     col_w.iter().sum::<f64>() + gap * (ncols.saturating_sub(1)) as f64;
   let pitch = line_pitch(fs);
   let content_h = rows.len().max(1) as f64 * pitch;
+  // A sized `Pane` inside the frame gives the box its room; the content
+  // sits at its left edge unless the label aligns it otherwise.
+  if pane_size.0.is_some_and(|w| w > content_w) && anchor.is_none() {
+    anchor = Some("start");
+  }
+  let content_w = pane_size.0.map_or(content_w, |w| w.max(content_w));
+  let content_h = pane_size.1.map_or(content_h, |h| h.max(content_h));
 
   let default_margin = if frame_color.is_some() { 5.0 } else { 0.0 };
   let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
@@ -11112,6 +11146,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Pane[Style[text, dirs…], w]` sets the styled text in a box `w` points
   // wide: the `Style` inside still sizes and aligns the label, and the
   // text wraps at the box's width once the font size is known.
+  let mut pane_height: Option<f64> = None;
   let mut pane_width: Option<f64> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
     && !sargs.is_empty()
@@ -11123,6 +11158,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     if name == "Pane" {
       if let Some(w) = pane_width_points(sargs) {
         pane_width = Some(pane_width.map_or(w, |p: f64| p.min(w)));
+      }
+      if let Some(h) = pane_height_points(sargs) {
+        pane_height = Some(pane_height.map_or(h, |p: f64| p.min(h)));
       }
       content = &sargs[0];
       continue;
@@ -11539,6 +11577,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       frame_color,
       background,
       frame_opts,
+      (pane_width, pane_height),
     );
     let (svg, w, h) = align_inset_picture(svg, w, h, offset);
     prims.push(Primitive::InsetGraphic {

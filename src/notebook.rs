@@ -1134,6 +1134,8 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // Its options (`SyntaxForm -> SuperscriptBox`) follow the name.
     // So do the postfix templates: `TemplateBox[{"m"}, "Transpose"]` is
     // `Transpose[m]`, `"Transpose2"` the transpose with a permutation.
+    // The bracketing templates behave alike: `TemplateBox[{"x"}, "Floor"]`
+    // (typeset as `⌊x⌋`) is `Floor[x]`, and `"Binomial"` the stacked pair.
     let name = args[1].trim().trim_matches('"');
     let name = match name {
       "Transpose2" => "Transpose",
@@ -1149,6 +1151,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         | "Transpose"
         | "ConjugateTranspose"
         | "Conjugate"
+        | "Floor"
+        | "Ceiling"
+        | "Abs"
+        | "Norm"
+        | "Binomial"
     ) {
       let items = args[0].trim();
       let items = match items.strip_prefix("List[") {
@@ -7441,6 +7448,22 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "a<=b");
     let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
     assert_eq!(extract_cell_content(s), "a>=b");
+  }
+
+  #[test]
+  fn test_extract_cell_content_bracketing_templates() {
+    // Regression: the typeset `⌊k/2⌋` is `TemplateBox[{…}, "Floor"]`; it
+    // was read as its bare argument, silently dropping the `Floor`.
+    let s = r#"BoxData[RowBox[{"Table", "[", RowBox[{"r", ",", RowBox[{"{", RowBox[{"r", ",", "1", ",", TemplateBox[{RowBox[{"k", "/", "2"}]}, "Floor"]}], "}"}]}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Table[r,{r,1,Floor[(k/2)]}]");
+    let s = r#"BoxData[TemplateBox[{RowBox[{"x", "+", "1"}]}, "Ceiling"]]"#;
+    assert_eq!(extract_cell_content(s), "Ceiling[(x+1)]");
+    let s = r#"BoxData[TemplateBox[{"z"}, "Abs"]]"#;
+    assert_eq!(extract_cell_content(s), "Abs[(z)]");
+    let s = r#"BoxData[TemplateBox[{"v"}, "Norm"]]"#;
+    assert_eq!(extract_cell_content(s), "Norm[(v)]");
+    let s = r#"BoxData[TemplateBox[{"n", "k"}, "Binomial"]]"#;
+    assert_eq!(extract_cell_content(s), "Binomial[(n), (k)]");
   }
 
   #[test]
