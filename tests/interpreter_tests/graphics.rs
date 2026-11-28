@@ -39899,8 +39899,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           })
         })
         .count();
-      // Each of the two boxes shows three faces and so nine edges.
-      assert_eq!((last.len(), shown), (24, 18));
+      // Each of the two boxes shows three faces and so nine edges. The
+      // slab's far top edge runs behind the box above it: a long edge is
+      // placed piece by piece, so that one is stroked as four stretches,
+      // two of them shown.
+      assert_eq!((last.len(), shown), (28, 19));
     }
 
     #[test]
