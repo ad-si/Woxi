@@ -6735,15 +6735,21 @@ fn wrap_text_to_measure(
     .map(|line| {
       let mut lines: Vec<String> = Vec::new();
       let mut current = String::new();
+      // Whether the line being built already holds a word (possibly an
+      // empty one, between two spaces): the next word then follows a space,
+      // so leading and repeated spaces are kept.
+      let mut started = false;
       for word in line.split(' ') {
         if !current.is_empty() && measure(&format!("{current} {word}")) > width
         {
           lines.push(std::mem::take(&mut current));
+          started = false;
         }
-        if !current.is_empty() {
+        if started {
           current.push(' ');
         }
         current.push_str(word);
+        started = true;
       }
       lines.push(current);
       lines.join("\n")
@@ -6821,18 +6827,22 @@ fn wrap_text_to_points(text: &str, width: f64, font_size: f64) -> String {
       let mut lines: Vec<String> = Vec::new();
       let mut current = String::new();
       let mut current_w = 0.0;
+      // As in `wrap_text_to_measure`: leading and repeated spaces are kept.
+      let mut started = false;
       for word in line.split(' ') {
         let word_w = em(word);
         if !current.is_empty() && current_w + space + word_w > width {
           lines.push(std::mem::take(&mut current));
           current_w = 0.0;
+          started = false;
         }
-        if !current.is_empty() {
+        if started {
           current.push(' ');
           current_w += space;
         }
         current.push_str(word);
         current_w += word_w;
+        started = true;
       }
       lines.push(current);
       lines.join("\n")
@@ -39130,15 +39140,25 @@ fn grid_svg_styled_internal_reporting(
         .unwrap_or(alignment_h);
       // Decimal columns anchor each cell so its decimal point lands at a shared
       // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
-      // Cells that don't render as plain numbers fall back to centering.
+      // A cell without the character has it at its right edge, so it ends at
+      // `dot_x`. In a column where no cell has the character, that point is
+      // the column's right edge: the entries stay flush right in a column
+      // that `ItemSize` makes wider than they are, as the front end lays
+      // them out. Cells that don't render as plain numbers fall back to
+      // centering.
       let (anchor, cx): (&str, f64) = if col_align == "decimal" {
-        let (max_int, _) = col_decimal_dims
+        let (max_int, max_frac) = col_decimal_dims
           .get(j)
           .copied()
           .flatten()
           .unwrap_or((0.0, 0.0));
-        let dot_x = x_offset + col_pad_left[j] + max_int * char_width;
+        let dot_x = if max_frac > 0.0 {
+          x_offset + col_pad_left[j] + max_int * char_width
+        } else {
+          x_offset + col_w - col_pad_right[j]
+        };
         match decimal_split_width(cell, col_char(j)) {
+          Some((_, 0.0)) => ("end", dot_x),
           Some((iw, _)) => ("start", dot_x - iw * char_width),
           None => ("middle", x_offset + col_w / 2.0),
         }
