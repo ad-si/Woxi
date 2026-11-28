@@ -11554,6 +11554,17 @@ Checked against wolframscript 15.0 for all 32 groups: `"Name"`,
   are not implemented.
 
 
+### Line pitch of a `Text[Column[…]]` at the default 14 pt
+
+A `Column` of text lines in the proportional text face is stacked at 1.28
+times the font size (17.9 pt for the default 14 pt), a ratio measured on
+12 pt labels. A front-end snapshot of 21 one-line text `Row`s in a
+`Text[Column[…]]` shows them about 16.7 pt apart (1.19 times the size), so
+the 21 lines fit a 360 pt tall `Pane` there while Woxi's last line is cut
+off. The pitch is evidently not a fixed multiple of the font size; the
+rule behind it has not been worked out.
+
+
 ## Unit-test conformance batch (2026-11-25)
 
 These divergences surfaced in one `make test-conformance` run against
