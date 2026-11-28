@@ -15850,12 +15850,10 @@ fn whole_scene_view_angle(
   if !radius.is_finite() || axis_len < 1e-12 || distance <= radius {
     return None;
   }
-  let cos_off_axis = (axis[0] * to_center[0]
-    + axis[1] * to_center[1]
-    + axis[2] * to_center[2])
-    / (axis_len * distance);
-  let half =
-    cos_off_axis.clamp(-1.0, 1.0).acos() + (radius / distance).asin();
+  let cos_off_axis =
+    (axis[0] * to_center[0] + axis[1] * to_center[1] + axis[2] * to_center[2])
+      / (axis_len * distance);
+  let half = cos_off_axis.clamp(-1.0, 1.0).acos() + (radius / distance).asin();
   (half > 0.0 && half < std::f64::consts::FRAC_PI_2).then_some(2.0 * half)
 }
 
@@ -17760,8 +17758,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     // So is the far side of any solid under `FaceForm[front, None]`.
-    let closed_center = solid_interior
-      .filter(|_| prim_opacity >= 1.0 || !prim_style.back_faces);
+    let closed_center =
+      solid_interior.filter(|_| prim_opacity >= 1.0 || !prim_style.back_faces);
     // Whether a facet of a convex solid is wound with its normal pointing
     // into the solid.
     let wound_inward = |a: Point3D, b: Point3D, c: Point3D| {
