@@ -8142,6 +8142,13 @@ pub(crate) fn display_box_product_flow(expr: &Expr) -> Option<Expr> {
   if name != "Times" || args.len() < 2 || !args.iter().any(is_layout_box) {
     return None;
   }
+  // A quotient (a factor raised to a power) is set as its fraction.
+  if args.iter().any(|f| {
+    matches!(f, Expr::BinaryOp { .. })
+      || matches!(f, Expr::FunctionCall { name, .. } if name == "Power")
+  }) {
+    return None;
+  }
   let space = str_expr(" ");
   let (space_width, _) =
     crate::functions::graphics::parse_svg_wh(&expr_to_svg(&space));
