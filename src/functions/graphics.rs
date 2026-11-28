@@ -72315,7 +72315,7 @@ mod manipulate_control_placement_tests {
     .expect("parse");
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert!(spec.displays.is_empty(), "{:?}", spec.displays);
-    assert!(spec.control_pictures.is_empty());
+    assert_eq!(spec.control_pictures, Vec::<usize>::new());
   }
 
   /// A `ControlType -> TogglerBar` spec is drawn as a display, but it is
