@@ -8303,13 +8303,15 @@ fn clip_triangles_to_box(
 
 /// The outlined end circles of a `Cylinder` or `Cone` that the box `bounds`
 /// cuts open, as the line pieces left inside the box. `tris` is the
-/// primitive's tessellation from `tessellate_for_transform`. `None` when the
-/// primitive has no outlined rim (another primitive, `EdgeForm[]`) or none
-/// of it is inside the box.
+/// primitive's tessellation, which for a `Cylinder` was built with the
+/// `(rings, sides)` of `cylinder_budget`. `None` when the primitive has no
+/// outlined rim (another primitive, `EdgeForm[]`) or none of it is inside
+/// the box.
 fn clipped_rim_lines(
   prim: &Primitive3D,
   tris: &[(Point3D, Point3D, Point3D)],
   bounds: &[(f64, f64); 3],
+  cylinder_budget: (usize, usize),
 ) -> Option<Primitive3D> {
   let (flags, style) = match prim {
     Primitive3D::Cylinder {
@@ -8319,8 +8321,9 @@ fn clipped_rim_lines(
       style,
     } if style.edges => {
       let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
-      let steps = cylinder_side_steps(len, *radius, MAX_SIDE_SUBDIVISIONS);
-      (cylinder_edge_flags(steps, CYLINDER_SIDES), style)
+      let (max_subdiv, sides) = cylinder_budget;
+      let steps = cylinder_side_steps(len, *radius, max_subdiv);
+      (cylinder_edge_flags(steps, sides), style)
     }
     Primitive3D::Cone { style, .. } if style.edges => {
       (cone_edge_flags(CONE_SIDES), style)
@@ -14772,6 +14775,58 @@ fn cylinder_scene_ring_cap(len: f64, scene_extent: f64) -> usize {
     .clamp(1, MAX_SIDE_SUBDIVISIONS)
 }
 
+/// How many `Cylinder`s a scene has and how large the region they occupy
+/// is, which together set how finely each of them is tessellated.
+struct CylinderScene {
+  count: usize,
+  extent: f64,
+}
+
+impl CylinderScene {
+  /// The statistics of the `Cylinder`s among `prims`. With `bounds`, the
+  /// region is only what the box shows of them, so a cylinder running far
+  /// past the box is still cut finely enough inside it.
+  fn of(prims: &[Primitive3D], bounds: Option<&[(f64, f64); 3]>) -> Self {
+    let mut count = 0usize;
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for prim in prims {
+      if let Primitive3D::Cylinder { p1, p2, radius, .. } = prim {
+        count += 1;
+        for p in [p1, p2] {
+          for (i, c) in [p.x, p.y, p.z].into_iter().enumerate() {
+            min[i] = min[i].min(c - radius);
+            max[i] = max[i].max(c + radius);
+          }
+        }
+      }
+    }
+    if let Some(bounds) = bounds {
+      for (i, &(lo, hi)) in bounds.iter().enumerate() {
+        min[i] = min[i].max(lo);
+        max[i] = max[i].min(hi);
+      }
+    }
+    let extent = if count > 0 {
+      (0..3).fold(0.0f64, |m, i| m.max(max[i] - min[i]))
+    } else {
+      0.0
+    };
+    Self { count, extent }
+  }
+
+  /// The most rings along its length and the facets around its axis that
+  /// the cylinder from `p1` to `p2` is tessellated with in this scene.
+  fn budget(&self, p1: &Point3D, p2: &Point3D, radius: f64) -> (usize, usize) {
+    let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
+    let max_subdivisions =
+      cylinder_max_subdivisions(radius, self.extent, self.count)
+        .min(cylinder_scene_ring_cap(len, self.extent));
+    let sides = cylinder_sides(radius, self.extent, self.count);
+    (max_subdivisions, sides)
+  }
+}
+
 thread_local! {
   /// Width in pixels of the `Graphics3D` currently being collected, which
   /// a relative `Thickness[t]` is a fraction of.
@@ -16869,17 +16924,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // facets are clipped like polygons (Wolfram does not cap the cut).
     // The end circles its `EdgeForm` outlines are kept as far as they lie
     // inside the box.
+    // A cylinder is cut into the facets it would be drawn with, sized
+    // against the part of the scene's cylinders the box shows.
+    let cylinder_scene = CylinderScene::of(&prims, Some(&bounds));
     let mut cut_rims: Vec<Primitive3D> = Vec::new();
     for prim in &mut prims {
-      let curved = matches!(
-        prim,
-        Primitive3D::Sphere { .. }
-          | Primitive3D::Cylinder { .. }
-          | Primitive3D::Cone { .. }
-      );
+      let mut cylinder_budget = (MAX_SIDE_SUBDIVISIONS, CYLINDER_SIDES);
       let tris = match prim {
         Primitive3D::Surface3D { tris, .. } => Some(tris.clone()),
-        _ if curved => tessellate_for_transform(prim),
+        Primitive3D::Cylinder { p1, p2, radius, .. } => {
+          cylinder_budget = cylinder_scene.budget(p1, p2, *radius);
+          let (max_subdiv, sides) = cylinder_budget;
+          Some(tessellate_cylinder(p1, p2, *radius, max_subdiv, sides))
+        }
+        Primitive3D::Sphere { .. } | Primitive3D::Cone { .. } => {
+          tessellate_for_transform(prim)
+        }
         _ => None,
       };
       let Some(tris) = tris else { continue };
@@ -16891,7 +16951,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let clipped = clip_triangles_to_box(&tris, &bounds);
-      if let Some(rims) = clipped_rim_lines(prim, &tris, &bounds) {
+      if let Some(rims) =
+        clipped_rim_lines(prim, &tris, &bounds, cylinder_budget)
+      {
         cut_rims.push(rims);
       }
       let style = primitive_style(prim).clone();
@@ -17193,28 +17255,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
 
-  // Cylinder-scene statistics for adaptive tessellation (see
-  // `cylinder_max_subdivisions`): how many Cylinders there are and how
-  // large the region they occupy is.
-  let mut cyl_count = 0usize;
-  let mut cyl_min = [f64::INFINITY; 3];
-  let mut cyl_max = [f64::NEG_INFINITY; 3];
-  for prim in &prims {
-    if let Primitive3D::Cylinder { p1, p2, radius, .. } = prim {
-      cyl_count += 1;
-      for p in [p1, p2] {
-        for (i, c) in [p.x, p.y, p.z].into_iter().enumerate() {
-          cyl_min[i] = cyl_min[i].min(c - radius);
-          cyl_max[i] = cyl_max[i].max(c + radius);
-        }
-      }
-    }
-  }
-  let cyl_extent = if cyl_count > 0 {
-    (0..3).fold(0.0f64, |m, i| m.max(cyl_max[i] - cyl_min[i]))
-  } else {
-    0.0
-  };
+  // Cylinder-scene statistics for adaptive tessellation.
+  let cylinder_scene = CylinderScene::of(&prims, None);
 
   drop_covered_duplicate_polygons(&mut prims);
   drop_covered_duplicate_solids(&mut prims);
@@ -17285,16 +17327,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
-          let len = ((p2.x - p1.x).powi(2)
-            + (p2.y - p1.y).powi(2)
-            + (p2.z - p1.z).powi(2))
-          .sqrt();
-          let max_subdiv =
-            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count)
-              .min(cylinder_scene_ring_cap(len, cyl_extent));
-          let sides = cylinder_sides(*radius, cyl_extent, cyl_count);
+          let (max_subdiv, sides) = cylinder_scene.budget(p1, p2, *radius);
           let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv, sides);
           if style.edges {
+            let len = v_len([p2.x - p1.x, p2.y - p1.y, p2.z - p1.z]);
             let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, sides);
           }
