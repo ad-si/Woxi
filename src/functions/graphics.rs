@@ -34907,6 +34907,10 @@ fn contains_control_call(expr: &Expr) -> bool {
       name == "Control" || args.iter().any(contains_control_call)
     }
     Expr::List(items) => items.iter().any(contains_control_call),
+    // `PaneSelector[{1 -> Control[…], …}, sel]`: the pane is the rule's value.
+    Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
+      contains_control_call(replacement)
+    }
     _ => false,
   }
 }
@@ -58178,6 +58182,10 @@ fn collect_row_joined_controls(
         collect_row_joined_controls(a, place_map, out, stacked);
       }
     }
+    // `PaneSelector[{1 -> Row[{…}], …}, sel]`: the pane is the rule's value.
+    Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
+      collect_row_joined_controls(replacement, place_map, out, stacked);
+    }
     _ => {}
   }
 }
@@ -74490,6 +74498,25 @@ mod manipulate_button_enabled_tests {
     let spec = extract_manipulate_spec(&placed).expect("extract spec");
     assert_eq!(spec.row_joined_controls, vec!["r"]);
     assert_eq!(spec.column_stacked_controls, vec!["q"]);
+  }
+
+  /// A `Row` of controls that is one pane of a `PaneSelector` shares a
+  /// line like any other `Row`. Regression: the pane rules were not
+  /// searched, so each control of the pane took a line of its own.
+  #[test]
+  fn row_of_controls_in_a_pane_selector_pane_shares_a_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{k, a, b, c, d}, \
+       Grid[{{Control[{{k, 1, \"mode\"}, {1, 2}, Setter}]}, \
+       {PaneSelector[{1 -> Control[{a, 0, 1}], \
+       2 -> Row[{\"pair\", Spacer[10], Control[{b, 0, 1}], \
+       Control[{c, 0, 1}]}]}, Dynamic[k]], SpanFromLeft}}], \
+       PaneSelector[{1 :> Row[{Control[{d, 0, 1}], Control[{e, 0, 1}]}]}, \
+       Dynamic[k]]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.row_joined_controls, vec!["b", "c", "e"]);
   }
 
   #[test]
