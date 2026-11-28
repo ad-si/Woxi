@@ -35330,22 +35330,17 @@ pub(crate) fn label_typesets_fraction(expr: &Expr) -> bool {
     } => {
       label_typesets_fraction(pattern) || label_typesets_fraction(replacement)
     }
-    Expr::BinaryOp { op, .. }
-      if matches!(
-        op,
+    Expr::BinaryOp {
+      op:
         crate::syntax::BinaryOperator::Plus
-          | crate::syntax::BinaryOperator::Minus
-          | crate::syntax::BinaryOperator::Times
-          | crate::syntax::BinaryOperator::Divide
-          | crate::syntax::BinaryOperator::Power
-      ) =>
-    {
-      box_has_fraction(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          expr,
-        ),
-      )
-    }
+        | crate::syntax::BinaryOperator::Minus
+        | crate::syntax::BinaryOperator::Times
+        | crate::syntax::BinaryOperator::Divide
+        | crate::syntax::BinaryOperator::Power,
+      ..
+    } => box_has_fraction(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    ),
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
