@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A `TogglerBar`, `CheckboxBar`, `SetterBar` or `RadioButtonBar` drawn in
+    a `Manipulate` panel — as a `ControlType -> TogglerBar` control or
+    written into a display element — is painted on the plate its
+    `Background -> color` option asks for, instead of dropping the color.
+    A `Dynamic` color follows the controls.
 - `JacobiAmplitude[u, m]` keeps growing with `u` for a parameter below 1
     (by `Pi` every `2 EllipticK[m]`) instead of wrapping around into
     `(-Pi, Pi]`, so curves built from it — an elastica, a pendulum that

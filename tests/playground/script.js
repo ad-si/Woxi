@@ -645,6 +645,16 @@ function renderManipulate(item) {
         div.appendChild(renderDisplayTree(node.child))
         return div
       }
+      case "backdrop": {
+        // A bar painted `Background -> color`: the color fills the area
+        // right behind the bar.
+        const div = document.createElement("div")
+        div.className = "manipulate-display-backdrop"
+        div.style.display = "inline-block"
+        div.style.background = node.color
+        div.appendChild(renderDisplayTree(node.child))
+        return div
+      }
       case "grid": {
         const grid = document.createElement("div")
         grid.className = "manipulate-display-grid"

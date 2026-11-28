@@ -65205,6 +65205,10 @@ fn parse_manipulate_control(
     if let Some(cond) = &enabled {
       bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
     }
+    // A `Background -> color` paints the plate behind the whole bar.
+    if let Some(code) = control_background_code(items) {
+      bar_options.push_str(&format!(", Background -> Dynamic[{code}]"));
+    }
     // Keep the requested head: a `CheckboxBar` draws checkboxes, a
     // `TogglerBar` toggle buttons.
     let bar_head = control_type.as_deref().unwrap_or("TogglerBar");
@@ -67834,6 +67838,14 @@ fn divider_positions(spec: &Expr, lines: usize) -> Vec<bool> {
 pub enum DisplayNode {
   /// A framed container wrapping a single child (`Panel`, `Framed`, …).
   Panel(Box<Self>),
+  /// A child drawn on a plain colored plate: the `Background -> color`
+  /// option of a bar of buttons (`TogglerBar`, `SetterBar`, …), which
+  /// paints the area behind the whole bar. `color` is `(r, g, b)` in
+  /// `0.0..=1.0`.
+  Backdrop {
+    color: (f64, f64, f64),
+    child: Box<Self>,
+  },
   /// A 2D grid of cells (`Grid`), with the column widths and divider lines
   /// its options ask for.
   Grid(Vec<Vec<Self>>, DisplayGridLayout),
@@ -68148,7 +68160,9 @@ fn opener_view_node(
 /// Whether a display node holds a control the user can operate.
 fn display_node_is_live(node: &DisplayNode) -> bool {
   match node {
-    DisplayNode::Panel(inner) => display_node_is_live(inner),
+    DisplayNode::Panel(inner) | DisplayNode::Backdrop { child: inner, .. } => {
+      display_node_is_live(inner)
+    }
     DisplayNode::Grid(rows, ..) => {
       rows.iter().flatten().any(display_node_is_live)
     }
@@ -69052,7 +69066,9 @@ pub fn unset_checkbox_defaults(
 ) -> Vec<(String, String)> {
   fn walk(node: &DisplayNode, out: &mut Vec<(String, String)>) {
     match node {
-      DisplayNode::Panel(c) => walk(c, out),
+      DisplayNode::Panel(c) | DisplayNode::Backdrop { child: c, .. } => {
+        walk(c, out);
+      }
       DisplayNode::Grid(rows, ..) => {
         for c in rows.iter().flatten() {
           walk(c, out);
@@ -69265,11 +69281,12 @@ fn togglerbar_node(
       checkbox,
     })
     .collect();
-  Some(if bar.vertical {
+  let node = if bar.vertical {
     DisplayNode::Column(buttons)
   } else {
     DisplayNode::Row(buttons)
-  })
+  };
+  Some(with_backdrop(node, &args[2..], bindings))
 }
 
 /// One choice of a `TogglerBar[Dynamic[…], choices]`.
@@ -69529,11 +69546,12 @@ fn setterbar_node(
       && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
         || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
   });
-  Some(if vertical {
+  let node = if vertical {
     DisplayNode::Column(buttons)
   } else {
     DisplayNode::Row(buttons)
-  })
+  };
+  Some(with_backdrop(node, &args[2..], bindings))
 }
 
 /// The direction an `Appearance` setting gives a SetterBar or
@@ -69678,6 +69696,34 @@ fn control_background_code(items: &[Expr]) -> Option<String> {
 pub fn manipulate_eval_background(code: &str) -> Option<(f64, f64, f64)> {
   let color = crate::interpret_to_expr(code).ok()?;
   parse_color(&color).map(|c| (c.r, c.g, c.b))
+}
+
+/// Put a bar of buttons on the plate its `Background -> color` option asks
+/// for (see [`DisplayNode::Backdrop`]). The option is evaluated against the
+/// live `bindings`, so a `Dynamic` color follows the state; a setting that
+/// is not a color (`None`, `Automatic`, or no option at all) leaves the bar
+/// as it is.
+fn with_backdrop(
+  node: DisplayNode,
+  options: &[Expr],
+  bindings: &[(String, String)],
+) -> DisplayNode {
+  match control_background_code(options)
+    .and_then(|code| eval_display_in_scope_str(&code, bindings))
+    .and_then(|color| parse_color(&color))
+  {
+    Some(c) => DisplayNode::Backdrop {
+      color: (c.r, c.g, c.b),
+      child: Box::new(node),
+    },
+    None => node,
+  }
+}
+
+/// The CSS `rgb(…)` color of a [`DisplayNode::Backdrop`] plate.
+fn backdrop_css_color((r, g, b): (f64, f64, f64)) -> String {
+  let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  format!("rgb({},{},{})", channel(r), channel(g), channel(b))
 }
 
 /// Extract a trailing `Enabled -> cond` / `Enabled :> cond` option's live
@@ -69986,7 +70032,9 @@ fn assign_checkbox_state(
   idx: &mut usize,
 ) {
   match node {
-    DisplayNode::Panel(child) => assign_checkbox_state(child, flags, idx),
+    DisplayNode::Panel(child) | DisplayNode::Backdrop { child, .. } => {
+      assign_checkbox_state(child, flags, idx);
+    }
     DisplayNode::Grid(rows, ..) => {
       for row in rows {
         for cell in row {
@@ -70385,6 +70433,13 @@ fn front_end_number_display_text(expr: &Expr) -> Option<String> {
 /// Serialize a `DisplayNode` tree to the JSON the Playground consumes.
 fn display_node_to_json(node: &DisplayNode) -> String {
   match node {
+    DisplayNode::Backdrop { color, child } => {
+      format!(
+        r#"{{"kind":"backdrop","color":"{}","child":{}}}"#,
+        backdrop_css_color(*color),
+        display_node_to_json(child)
+      )
+    }
     DisplayNode::Panel(child) => {
       format!(
         r#"{{"kind":"panel","child":{}}}"#,
