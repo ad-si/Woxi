@@ -83926,7 +83926,6 @@ mod numeric_array_plot_data {
       "ArrayPlot",
       "MatrixPlot",
       "ReliefPlot",
-      "ListPlot3D",
       "ListDensityPlot",
       "ListContourPlot",
       "ListLinePlot",
