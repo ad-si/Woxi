@@ -2439,7 +2439,10 @@ fn evaluated_body_with_cancelling_complex_factors_is_drawn() {
     "Evaluate[Sqrt[2 + Sqrt[t - Pi] Sqrt[1/(t - Pi)] Sin[t]]]",
     "Evaluate[Sqrt[t - Pi]^2 Sin[t] + 1/(t + 1)]",
   ] {
-    assert!(starts_below(body, "0.01"), "{body} must be drawn from t = 0");
+    assert!(
+      starts_below(body, "0.01"),
+      "{body} must be drawn from t = 0"
+    );
   }
   // A value that really is complex is still left out.
   assert!(!starts_below("Evaluate[Sqrt[t - 3] + Sin[t]]", "2.99"));
