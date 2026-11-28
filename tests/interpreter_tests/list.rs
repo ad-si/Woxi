@@ -27267,7 +27267,8 @@ mod rebuilt_heads_are_evaluated {
   // checked.
   #[test]
   fn rotated_call_reports_its_own_messages() {
-    let r = interpret_with_stdout("RotateLeft[BinCounts[x, {0, 4, 1}]]").unwrap();
+    let r =
+      interpret_with_stdout("RotateLeft[BinCounts[x, {0, 4, 1}]]").unwrap();
     assert_eq!(r.result, "BinCounts[{0, 4, 1}, x]");
     assert!(
       r.warnings.iter().any(|w| w

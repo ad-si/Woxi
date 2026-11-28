@@ -83970,8 +83970,7 @@ mod numeric_array_plot_data {
         "{plot}"
       );
     }
-    for range in ["All", "{0, 5}", "{{0, All}, {Automatic, Pi}}", "{Full, 7}"]
-    {
+    for range in ["All", "{0, 5}", "{{0, All}, {Automatic, Pi}}", "{Full, 7}"] {
       let r = interpret_with_stdout(&format!(
         "Head[ListPlot[{{1, 2, 3}}, PlotRange -> {range}]]"
       ))

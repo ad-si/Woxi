@@ -1289,7 +1289,11 @@ fn numeric_array_plot(
   if !ARRAY_PLOTS.contains(&name) {
     return None;
   }
-  let Some(Expr::FunctionCall { name: head, args: na }) = args.first() else {
+  let Some(Expr::FunctionCall {
+    name: head,
+    args: na,
+  }) = args.first()
+  else {
     return None;
   };
   if head != "NumericArray"

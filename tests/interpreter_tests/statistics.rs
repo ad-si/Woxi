@@ -1277,7 +1277,9 @@ mod bin_counts {
       (
         "BinCounts[{1, 2, 3}, -1]",
         "BinCounts[{1, 2, 3}, -1]",
-        vec!["BinCounts::step: The bin step size -1 is expected to be positive."],
+        vec![
+          "BinCounts::step: The bin step size -1 is expected to be positive.",
+        ],
       ),
     ] {
       let r = interpret_with_stdout(code).unwrap();
