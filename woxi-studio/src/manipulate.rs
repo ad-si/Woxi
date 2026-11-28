@@ -2040,6 +2040,9 @@ impl ManipulateState {
       // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
         let init = load_leading_packages(&init);
+        trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
+          &init, &bindings,
+        ));
         let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
         let after = woxi::functions::graphics::read_manipulate_state(&names);
