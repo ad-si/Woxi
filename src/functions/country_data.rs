@@ -256,6 +256,12 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
   legacy(name).map(|c| c.canonical)
 }
 
+/// The display name (`"Western Sahara"`) of a country or territory the
+/// knowledge base lists, named any way it understands.
+pub fn record_display_name(name: &str) -> Option<&'static str> {
+  record(name).map(|r| r.name)
+}
+
 /// All countries as `Entity["Country", canonical]` — the built-in "Country"
 /// `EntityList`/`EntityValue["Entities"]` knowledge base.
 pub fn country_entities() -> Vec<Expr> {
@@ -902,7 +908,33 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       return Some(v);
     }
   }
-  let Some(country) = legacy(name) else {
+  let country = legacy(name);
+  // Outlines are keyed by the legacy table's canonical name, or, for a
+  // territory only the knowledge base lists (Greenland, Western Sahara),
+  // by its display name, which is how the map data names it.
+  if let Some(geo_name) =
+    country.map(|c| c.canonical).or_else(|| rec.map(|r| r.name))
+  {
+    if property == "SchematicPolygon" || property == "Polygon" {
+      return Some(
+        crate::functions::geographics::country_schematic_polygon(geo_name)
+          .unwrap_or_else(|| missing("NotAvailable", property)),
+      );
+    }
+    if property == "SchematicCoordinates"
+      || property == "Coordinates"
+      || property == "FullCoordinates"
+    {
+      return Some(
+        crate::functions::geographics::country_schematic_coordinates(geo_name)
+          .unwrap_or_else(|| missing("NotAvailable", property)),
+      );
+    }
+    if property == "Shape" {
+      return Some(country_shape(geo_name, property));
+    }
+  }
+  let Some(country) = country else {
     return rec.map(|_| missing("NotAvailable", property));
   };
   if let Some(lang) = property.strip_suffix("Speaking")
@@ -919,70 +951,52 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       .to_string(),
     ));
   }
-  if property == "SchematicPolygon" || property == "Polygon" {
-    return Some(
-      crate::functions::geographics::country_schematic_polygon(
-        country.canonical,
-      )
-      .unwrap_or_else(|| missing("NotAvailable", property)),
-    );
-  }
-  if property == "SchematicCoordinates"
-    || property == "Coordinates"
-    || property == "FullCoordinates"
-  {
-    return Some(
-      crate::functions::geographics::country_schematic_coordinates(
-        country.canonical,
-      )
-      .unwrap_or_else(|| missing("NotAvailable", property)),
-    );
-  }
   Some(match property {
     "Population" => {
       make_quantity(Expr::Integer(country.population as i128), "People")
     }
     "Name" => str_expr(country.canonical),
     "FullName" => str_expr(country.canonical),
-    // WL's `Graphics[{fill, EdgeForm[Black], Polygon[{ring, …}]}]`, here
-    // with the rings in plain {lon, lat} degrees.
-    "Shape" => match crate::functions::geographics::country_outline_rings(Some(
-      country.canonical,
-    )) {
-      Some(rings) if !rings.is_empty() => {
-        let rings: Vec<Expr> = rings
-          .iter()
-          .map(|ring| {
-            Expr::List(
-              ring
-                .iter()
-                .map(|&(lon, lat)| {
-                  Expr::List(
-                    vec![Expr::Real(lon as f64), Expr::Real(lat as f64)].into(),
-                  )
-                })
-                .collect::<Vec<_>>()
-                .into(),
-            )
-          })
-          .collect();
-        eval_wl("{RGBColor[0.896, 0.8878, 0.8548], EdgeForm[GrayLevel[0]]}")
-          .map_or_else(
-            |_| missing("NotAvailable", property),
-            |style| {
-              let mut prims = match &style {
-                Expr::List(items) => items.to_vec(),
-                other => vec![other.clone()],
-              };
-              prims.push(call("Polygon", vec![Expr::List(rings.into())]));
-              call("Graphics", vec![Expr::List(prims.into())])
-            },
-          )
-      }
-      _ => missing("NotAvailable", property),
-    },
     _ => missing("NotAvailable", property),
   })
+}
+
+/// `CountryData[name, "Shape"]` — WL's `Graphics[{fill, EdgeForm[Black],
+/// Polygon[{ring, …}]}]`, here with the rings in plain {lon, lat} degrees.
+fn country_shape(geo_name: &str, property: &str) -> Expr {
+  match crate::functions::geographics::country_outline_rings(Some(geo_name)) {
+    Some(rings) if !rings.is_empty() => {
+      let rings: Vec<Expr> = rings
+        .iter()
+        .map(|ring| {
+          Expr::List(
+            ring
+              .iter()
+              .map(|&(lon, lat)| {
+                Expr::List(
+                  vec![Expr::Real(lon as f64), Expr::Real(lat as f64)].into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect();
+      eval_wl("{RGBColor[0.896, 0.8878, 0.8548], EdgeForm[GrayLevel[0]]}")
+        .map_or_else(
+          |_| missing("NotAvailable", property),
+          |style| {
+            let mut prims = match &style {
+              Expr::List(items) => items.to_vec(),
+              other => vec![other.clone()],
+            };
+            prims.push(call("Polygon", vec![Expr::List(rings.into())]));
+            call("Graphics", vec![Expr::List(prims.into())])
+          },
+        )
+    }
+    _ => missing("NotAvailable", property),
+  }
 }
 
 /// `CountryData[name, property]` — `"Population"`, `"Name"`, `"FullName"`,

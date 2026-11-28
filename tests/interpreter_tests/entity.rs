@@ -979,6 +979,56 @@ mod country_data_tests {
     assert_eq!(centers("Malaysia"), "{{102, 4}, {115, 4}}");
   }
 
+  /// A territory the knowledge base lists without it being a sovereign
+  /// country (Greenland, Western Sahara) has an outline of its own on the
+  /// map, so its geometry properties resolve like any country's.
+  #[test]
+  fn country_geometry_covers_non_sovereign_territories() {
+    clear_state();
+    for territory in [
+      "Greenland",
+      "WesternSahara",
+      "FalklandIslands",
+      "FrenchSouthernAndAntarcticLands",
+      "NewCaledonia",
+      "PuertoRico",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "With[{{c = Entity[\"Country\", \"{territory}\"]}}, \
+           {{Head[CountryData[c, \"SchematicPolygon\"]], \
+            CountryData[\"{territory}\", \"Polygon\"] === \
+              CountryData[c, \"SchematicPolygon\"], \
+            Depth[CountryData[c, \"SchematicCoordinates\"]], \
+            Head[CountryData[c, \"Shape\"]]}}]"
+        ))
+        .unwrap(),
+        "{Polygon, True, 4, Graphics}",
+        "{territory}"
+      );
+    }
+    // The outline is the territory's own: it lies around its center.
+    assert_eq!(
+      interpret(
+        "Round[Mean[First[CountryData[\"WesternSahara\", \
+         \"SchematicPolygon\"]]], 5]"
+      )
+      .unwrap(),
+      "{-10, 25}"
+    );
+    assert_eq!(
+      interpret("CountryData[\"WesternSahara\", \"BorderingCountries\"]")
+        .unwrap(),
+      "{Entity[Country, Algeria], Entity[Country, Mauritania], \
+       Entity[Country, Morocco]}"
+    );
+    // A territory too small for the map still has no outline.
+    assert_eq!(
+      interpret("CountryData[\"Gibraltar\", \"SchematicPolygon\"]").unwrap(),
+      "Missing[NotAvailable, SchematicPolygon]"
+    );
+  }
+
   #[test]
   fn country_data_flag_is_an_image_for_every_country() {
     clear_state();
