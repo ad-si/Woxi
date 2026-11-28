@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- A curve leaving a `PlotRange` that only `Show` pins
+    (`Show[ParametricPlot[…], PlotRange -> {{-1, 1}, {-1, 1}}]`) runs on
+    through the padding to the edge of the picture on every side, instead
+    of stopping short of the top and bottom alone. A range the plot itself
+    pins still cuts its curve there.
 - A `ControlType -> TogglerBar` (or `CheckboxBar`) control of a
     `Manipulate` whose choice list is computed from another control's
     variable (`Range[n]`) offers the choices that variable gives now,

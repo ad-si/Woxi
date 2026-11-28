@@ -10185,9 +10185,23 @@ pub(crate) fn render_merged_plot_source(
     overrides.y,
     padding.as_ref().map(|p| &p.y),
   );
-  // The curves stop at the pinned range, leaving the padding empty.
-  if padding.is_some() && pinned_y.is_some() {
-    opts.curve_clip_y = pinned_y;
+  // A plot cuts its curves at its own range, so they stop at a range that
+  // plot pinned and leave the padding empty. A range only `Show` pins cuts
+  // nothing: the curves run on through the padding to the edge of the
+  // picture, on every side alike.
+  if padding.is_some()
+    && let Some(pinned) = pinned_y
+  {
+    let own = drawn
+      .iter()
+      .map(|s| s.own_y_range)
+      .try_fold((f64::INFINITY, f64::NEG_INFINITY), |hull, own| {
+        own.map(|(lo, hi)| (hull.0.min(lo), hull.1.max(hi)))
+      })
+      .filter(|(lo, hi)| lo.is_finite() && hi.is_finite() && lo < hi)
+      .unwrap_or(pinned);
+    let clip = (own.0.max(y_range.0), own.1.min(y_range.1));
+    opts.curve_clip_y = Some(if clip.0 < clip.1 { clip } else { pinned });
   }
   // The merged plot keeps the unpadded range of the plots shown (an axis
   // `Show` pins with a `PlotRange` is unpadded as given), so its frame

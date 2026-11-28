@@ -10371,6 +10371,11 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   5% of its height taller than the pictures whatever `Spacings` says. The
   same rule for `GraphicsGrid`/`GraphicsColumn` and for pictures with only
   a width is not decoded (see the two items above).
+- `GraphicsColumn[{Show[ParametricPlot[…], …, Axes -> False, PlotRange ->
+  {{-r, r}, {-r, r}}]}, ImageSize -> {425, 425}]` (read off a front end
+  snapshot, no wolframscript at hand): Wolfram draws the single square
+  picture about 405 pt across, centered — 1/1.05 of the column on both
+  sides — where Woxi fills the whole 425 pt.
 - `GraphicsColumn[{Plot[…, ImageSize -> 200], ParametricPlot[{u, 0}, {u, 0,
   Pi}, PlotStyle -> {Thickness[0.1]}, ColorFunction -> …, Epilog -> {Line[…]}]},
   Center, -10, ImageSize -> {400, 400}]` (read off a notebook front end

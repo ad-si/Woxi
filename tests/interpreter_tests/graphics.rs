@@ -7824,6 +7824,70 @@ mod graphics {
         );
       }
 
+      // A `PlotRange` only `Show` pins cuts no curve: a parametric curve
+      // leaving the range runs on through the padding to the edge of the
+      // picture on all four sides, instead of stopping short of the top
+      // and bottom alone.
+      #[test]
+      fn show_pinned_range_runs_curves_to_every_edge() {
+        let svg = export_svg(
+          "Show[ParametricPlot[{{3 Cos[t], Sin[t]/2}, {Cos[t]/2, 3 Sin[t]}}, \
+           {t, 0, 2 Pi}], Axes -> False, PlotRange -> {{-1, 1}, {-1, 1}}]",
+        );
+        // The height of a picture, in the units of its points.
+        let height = |svg: &str| -> f64 {
+          svg
+            .split("viewBox=\"0 0 ")
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.split(' ').nth(1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no viewBox in {svg}"))
+        };
+        // The parametric picture is square.
+        let size = height(&svg);
+        let points: Vec<(f64, f64)> = svg
+          .split("points=\"")
+          .skip(1)
+          .filter_map(|p| p.split('"').next())
+          .flat_map(str::split_whitespace)
+          .filter_map(|p| {
+            let (x, y) = p.split_once(',')?;
+            Some((x.parse().ok()?, y.parse().ok()?))
+          })
+          .collect();
+        let extent = |pick: fn(&(f64, f64)) -> f64| {
+          let values = points.iter().map(pick);
+          (
+            values.clone().fold(f64::INFINITY, f64::min),
+            values.fold(f64::NEG_INFINITY, f64::max),
+          )
+        };
+        for (lo, hi) in [extent(|p| p.0), extent(|p| p.1)] {
+          assert!(lo <= 10.0, "curve stops at {lo}: {svg}");
+          assert!(hi >= size - 10.0, "curve stops at {hi} of {size}: {svg}");
+        }
+        // A function plot's curve reaches the top and bottom edges too.
+        let svg = export_svg(
+          "Show[Plot[3 x, {x, -2, 2}], Axes -> False, \
+           PlotRange -> {{-1, 1}, {-1, 1}}]",
+        );
+        let ys: Vec<f64> = svg
+          .split("points=\"")
+          .nth(1)
+          .and_then(|p| p.split('"').next())
+          .map_or_default(|p| {
+            p.split_whitespace()
+              .filter_map(|p| p.split_once(',')?.1.parse().ok())
+              .collect()
+          });
+        let top = ys.iter().copied().fold(f64::INFINITY, f64::min);
+        let bottom = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        assert!(top <= 10.0, "curve stops at {top}: {svg}");
+        let size = height(&svg);
+        assert!(bottom >= size - 10.0, "curve stops at {bottom}: {svg}");
+      }
+
       // `Plot` takes its padding from `PlotRangePadding` too: `None` on the
       // x axis ends the frame at the sampled domain, so a tick just past
       // it (1.0 for a domain ending at 0.99) is not drawn, while the
