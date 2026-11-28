@@ -8842,6 +8842,14 @@ fn styled_expr_to_svg(expr: &Expr) -> String {
     // the content is (a picture, a string, a list of rules), so exporting
     // one has to compose them instead of writing the whole call out as
     // text. Like the label, a string content is shown without its quotes.
+    // `LabelStyle -> spec` styles the labels: push it onto each one.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && let Some(styled) =
+          crate::functions::graphics::labeled_label_style_pushed(args) =>
+    {
+      expr_to_svg(&styled)
+    }
     Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {

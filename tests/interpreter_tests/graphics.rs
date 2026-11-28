@@ -84422,3 +84422,131 @@ fn text_centered_on_the_plot_range_border_is_cut_off_there() {
   assert!(xs[1] - xs[0] > 33.0, "{xs:?}");
   assert!(xs[1] > 528.0, "{xs:?}");
 }
+
+/// Inside a per-edge `Frame` list an `Automatic` edge is drawn like `True`
+/// (only the bare `Frame -> Automatic` leaves the frame off), in a
+/// `Graphics` and in a `Plot` alike.
+#[test]
+fn automatic_edge_in_a_frame_list_is_drawn() {
+  for (body, plain) in [
+    (
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}",
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}]",
+    ),
+    ("Plot[x^2, {x, 0, 1}", "Plot[x^2, {x, 0, 1}]"),
+  ] {
+    let all = export_svg(&format!("{body}, Frame -> True]"));
+    assert_ne!(all, export_svg(plain));
+    assert_eq!(
+      export_svg(&format!(
+        "{body}, Frame -> {{{{Automatic, Automatic}}, {{Automatic, Automatic}}}}]"
+      )),
+      all
+    );
+    assert_eq!(
+      export_svg(&format!(
+        "{body}, Frame -> {{{{Automatic, None}}, {{Automatic, Automatic}}}}]"
+      )),
+      export_svg(&format!(
+        "{body}, Frame -> {{{{True, False}}, {{True, True}}}}]"
+      ))
+    );
+  }
+  assert_eq!(
+    export_svg("Plot[x^2, {x, 0, 1}, Frame -> Automatic]"),
+    export_svg("Plot[x^2, {x, 0, 1}]")
+  );
+}
+
+/// `Show` of a `Labeled` graphic shows the graphic inside and keeps the
+/// labels around the result.
+#[test]
+fn show_of_a_labeled_graphic_keeps_its_labels() {
+  assert_eq!(
+    interpret("Show[Labeled[Graphics[{Disk[]}], \"a\", Bottom]]").unwrap(),
+    "Labeled[-Graphics-, a, Bottom]"
+  );
+  assert_eq!(
+    interpret(
+      "Show[Labeled[Graphics[{Disk[]}], {\"a\", \"b\"}, {Bottom, Left}], \
+       Graphics[Circle[{1, 0}]], Frame -> True]"
+    )
+    .unwrap(),
+    "Labeled[-Graphics-, {a, b}, {Bottom, Left}]"
+  );
+  // The further graphics and options reach the graphic inside.
+  assert_eq!(
+    export_svg(
+      "Show[Labeled[Graphics[{Disk[]}], \"a\", Bottom], \
+       Graphics[Circle[{1, 0}]], Frame -> True]"
+    ),
+    export_svg(
+      "Labeled[Show[Graphics[{Disk[]}], Graphics[Circle[{1, 0}]], \
+       Frame -> True], \"a\", Bottom]"
+    )
+  );
+}
+
+/// A size in `FrameStyle` sets the frame's tick labels and labels in a
+/// `Graphics` (and a `Show` of plots) as it does in a `Plot`, over the
+/// `LabelStyle` size; a `FrameStyle` without a size leaves that one alone.
+#[test]
+fn frame_style_size_sets_the_frame_text_of_a_graphics() {
+  let sizes = |svg: &str| -> Vec<String> {
+    let mut sizes: Vec<String> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| {
+        let rest = t.split("font-size=\"").nth(1)?;
+        Some(rest.split('"').next()?.to_string())
+      })
+      .collect();
+    sizes.sort();
+    sizes.dedup();
+    sizes
+  };
+  let svg = export_svg(
+    "Graphics[{Disk[]}, Frame -> True, FrameStyle -> Directive[Red, 9], \
+     FrameLabel -> {\"a\", \"b\"}, LabelStyle -> 17]",
+  );
+  assert_eq!(sizes(&svg), ["9"], "{svg}");
+  let svg = export_svg(
+    "Show[{Plot[x, {x, 0, 1}, Frame -> True, FrameStyle -> 10, \
+     LabelStyle -> 17], Graphics[Point[{0.5, 0.5}]]}]",
+  );
+  assert_eq!(sizes(&svg), ["10"], "{svg}");
+  let svg = export_svg(
+    "Graphics[{Disk[]}, Frame -> True, FrameStyle -> Red, LabelStyle -> 15]",
+  );
+  assert_eq!(sizes(&svg), ["15"], "{svg}");
+}
+
+/// `Labeled[…, LabelStyle -> spec]` styles its labels like `Style` would.
+#[test]
+fn labeled_label_style_styles_the_labels() {
+  assert_eq!(
+    export_svg(
+      "Labeled[Graphics[Disk[]], {\"a\", \"b\"}, {Bottom, Left}, \
+       LabelStyle -> {Red, 17}]"
+    ),
+    export_svg(
+      "Labeled[Graphics[Disk[]], {Style[\"a\", Red, 17], \
+       Style[\"b\", Red, 17]}, {Bottom, Left}]"
+    )
+  );
+  assert_eq!(
+    export_svg(
+      "Labeled[Graphics[Disk[]], \"a\", LabelStyle -> Directive[Red, 17]]"
+    ),
+    export_svg("Labeled[Graphics[Disk[]], Style[\"a\", Red, 17]]")
+  );
+  // A table's caption takes the style as well, and `Automatic` adds none.
+  assert_eq!(
+    export_svg("Labeled[Grid[{{1, 2}}], \"a\", Top, LabelStyle -> 17]"),
+    export_svg("Labeled[Grid[{{1, 2}}], Style[\"a\", 17], Top]")
+  );
+  assert_eq!(
+    export_svg("Labeled[Graphics[Disk[]], \"a\", LabelStyle -> Automatic]"),
+    export_svg("Labeled[Graphics[Disk[]], \"a\"]")
+  );
+}

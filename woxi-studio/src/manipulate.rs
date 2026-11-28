@@ -11345,6 +11345,45 @@ mod textcell_tests {
     assert!(!state.controls[0].binds_variable());
   }
 
+  /// A sampled Demonstration titles each step of a guided exercise with a
+  /// caption `PaneSelector[{1 -> TextCell[…], 2 -> TextCell[…]}, step]`
+  /// whose selector is the bare control variable (no `Dynamic`). The row
+  /// must show the selected pane's text and follow the variable, not spell
+  /// out the `PaneSelector[…]` call as a static heading.
+  #[test]
+  fn caption_pane_selector_on_a_bare_variable_follows_it() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, phase]}, PlotRange -> 3],
+      Row[{Spacer[{5, 10}], PaneSelector[{
+        1 -> TextCell["First, look at the small disk.", FontSize -> 12],
+        2 -> TextCell["Second, look at the large disk.", FontSize -> 12]},
+        phase]}],
+      {{phase, 1, "phase"}, {1, 2}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    for c in &state.controls {
+      if let ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("PaneSelector"), "leaked head in {label:?}");
+      }
+    }
+    let caption = |state: &ManipulateState| {
+      let dbg = format!("{:?}", state.display_trees);
+      (dbg.contains("First, look"), dbg.contains("Second, look"))
+    };
+    assert_eq!(caption(&state), (true, false), "{:?}", state.display_trees);
+    let selector = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "phase")
+      .expect("phase control");
+    assert!(state.select_discrete(selector, "2"));
+    state.reevaluate();
+    assert_eq!(caption(&state), (false, true), "{:?}", state.display_trees);
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a container-pouring
   /// puzzle). This is a self-authored, construct-equivalent example: a

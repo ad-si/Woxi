@@ -9642,7 +9642,16 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
   let has_chrome = args[1..].iter().any(|opt| {
     matches!(opt, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n)
-        if matches!(n.as_str(), "Dividers" | "Background" | "Frame" | "BaseStyle")))
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame" | "BaseStyle" | "ItemStyle")))
+  });
+  // A cell that is itself a table (a framed `Grid` set under a header
+  // row) keeps its rules and cell sizes only inside a laid-out table.
+  let has_nested_table = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(|cell| {
+      matches!(peel_style_wrapper(cell), Expr::FunctionCall { name, args }
+        if name == "Grid" && grid_needs_table_layout(args))
+    }),
+    _ => false,
   });
   // Cells styled on their own (`Style["major", Green]`) keep their colors
   // and sizes only when each cell is set separately.
@@ -9653,7 +9662,7 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
     }),
     _ => false,
   });
-  has_span || has_chrome || has_styled_cell
+  has_span || has_chrome || has_styled_cell || has_nested_table
 }
 
 /// Whether a `Row[{…}]`'s items include one that stacks several lines (a
@@ -15787,14 +15796,20 @@ const DEFAULT_FRAME_TICKS: [EdgeTicks; 4] = [
 fn parse_frame_edges(value: &Expr) -> [bool; 4] {
   let on =
     |e: &Expr| matches!(e, Expr::Identifier(v) if v == "True" || v == "All");
+  // Inside a per-edge list an `Automatic` edge is drawn; only the bare
+  // `Frame -> Automatic` leaves the frame off.
+  let edge = |e: &Expr| crate::functions::plot::frame_edge_is_drawn(e);
   match value {
-    Expr::List(items) if items.len() == 4 => {
-      [on(&items[0]), on(&items[1]), on(&items[2]), on(&items[3])]
-    }
+    Expr::List(items) if items.len() == 4 => [
+      edge(&items[0]),
+      edge(&items[1]),
+      edge(&items[2]),
+      edge(&items[3]),
+    ],
     Expr::List(items) if items.len() == 2 => {
       let pair = |e: &Expr| match e {
-        Expr::List(p) if p.len() == 2 => (on(&p[0]), on(&p[1])),
-        other => (on(other), on(other)),
+        Expr::List(p) if p.len() == 2 => (edge(&p[0]), edge(&p[1])),
+        other => (edge(other), edge(other)),
       };
       let (l, r) = pair(&items[0]);
       let (b, t) = pair(&items[1]);
@@ -20935,7 +20950,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // title band to fit it.
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
-  let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
+  // A size in `FrameStyle` (`FrameStyle -> 10`) sets the frame's labels
+  // and tick labels, over the `LabelStyle` one, as it does for a `Plot`.
+  let frame_font = frame
+    .then(|| {
+      frame_style
+        .as_ref()
+        .and_then(crate::functions::plot::LabelStyleSpec::parse)
+        .and_then(|spec| spec.font_size)
+    })
+    .flatten();
+  let frame_label_font = frame_font.or(label_font.size).unwrap_or(LABEL_FONT);
   // The axes' own `AxesStyle` size sets their tick labels and labels.
   let axis_font = |spec: &Option<Expr>| {
     spec
@@ -20955,6 +20980,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .and_then(crate::functions::plot::LabelStyleSpec::parse)
     .and_then(|spec| spec.font_size)
     .or(axes_font)
+    .or(frame_font)
     .or(label_font.size)
     .unwrap_or(TICK_FONT);
   // The axes labels take the `AxesStyle` size, else the `LabelStyle` one.
@@ -32948,6 +32974,22 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .push(evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone())),
     }
   }
+  // `Show` of a `Labeled` graphic shows the graphic inside and keeps its
+  // labels around the result: `Show[Labeled[g, lbl, pos], h, opts]` is
+  // `Labeled[Show[g, h, opts], lbl, pos]`.
+  if let Some(Expr::FunctionCall {
+    name,
+    args: labeled,
+  }) = evaluated.first()
+    && name == "Labeled"
+    && labeled.len() >= 2
+  {
+    let mut shown_args = vec![labeled[0].clone()];
+    shown_args.extend(evaluated[1..].iter().cloned());
+    let mut out = vec![show_ast(&shown_args)?];
+    out.extend(labeled[1..].iter().cloned());
+    return Ok(call("Labeled", out));
+  }
   let args: &[Expr] = &evaluated;
   // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
   // graphic inside and keeps its legend on the result, as Wolfram does:
@@ -34856,7 +34898,9 @@ fn is_dynamic_string_label(label: &Expr) -> bool {
 fn annotation_contains_dynamic(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } => {
-      name == "Dynamic" || args.iter().any(annotation_contains_dynamic)
+      name == "Dynamic"
+        || is_live_caption_pane_selector(name, args)
+        || args.iter().any(annotation_contains_dynamic)
     }
     Expr::List(items) => items.iter().any(annotation_contains_dynamic),
     // Operator forms such as `"elapsed time" == Dynamic[t]` or
@@ -34870,6 +34914,22 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
     Expr::UnaryOp { operand, .. } => annotation_contains_dynamic(operand),
     _ => false,
   }
+}
+
+/// A caption `PaneSelector[{v1 -> text1, …}, sel]` whose selector is an
+/// expression rather than a literal (`step`, a control variable) shows the
+/// pane the selector's current value picks, so it follows the live
+/// bindings exactly like `PaneSelector[…, Dynamic[sel]]`. A selector of
+/// control panes is laid out as controls instead.
+fn is_live_caption_pane_selector(name: &str, args: &[Expr]) -> bool {
+  name == "PaneSelector"
+    && args.len() >= 2
+    && !matches!(
+      &args[1],
+      Expr::Integer(_) | Expr::Real(_) | Expr::String(_) | Expr::BigInteger(_)
+    )
+    && !matches!(&args[1], Expr::Identifier(s) if s == "True" || s == "False")
+    && !expr_contains_call(&args[0], &["Control", "Button", "Place"])
 }
 
 /// Whether an annotation lays out an `ActionMenu[label, {item :> action,
@@ -38257,10 +38317,15 @@ fn grid_svg_styled_internal_reporting(
                 }
               }
             }
-            // A lone color styles every item.
+            // A lone color styles every item, and so does any other lone
+            // style (`ItemStyle -> 17`, `ItemStyle -> Bold`).
             single => {
               if let Some(c) = parse_color(single) {
                 item_all_color = Some(c);
+              } else if !matches!(single, Expr::Identifier(v)
+                if v == "None" || v == "Automatic")
+              {
+                item_style_spec = Some(vec![single.clone()]);
               }
             }
           }
@@ -62223,6 +62288,39 @@ fn label_style_spec_directives(spec: &Expr) -> Vec<Expr> {
     Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
     other => vec![other.clone()],
   }
+}
+
+/// `Labeled[content, labels, pos…, LabelStyle -> spec]` with the option
+/// taken out and each label wrapped in the `Style` the spec stands for, so
+/// the one label typesetter draws it. `None` when the call has no
+/// `LabelStyle` that styles anything.
+pub(crate) fn labeled_label_style_pushed(args: &[Expr]) -> Option<Expr> {
+  let is_label_style =
+    |a: &Expr| matches!(option_kv(a), Some(("LabelStyle", _)));
+  let directives = args.get(2..)?.iter().find_map(|a| match option_kv(a) {
+    Some(("LabelStyle", spec)) => Some(label_style_spec_directives(spec)),
+    _ => None,
+  })?;
+  let styled = |label: &Expr| {
+    if directives.is_empty() {
+      return label.clone();
+    }
+    let mut style_args = vec![label.clone()];
+    style_args.extend(directives.iter().cloned());
+    call("Style", style_args)
+  };
+  // Several labels come paired with as many positions.
+  let labels = match (&args[1], args.get(2)) {
+    (Expr::List(labels), Some(Expr::List(positions)))
+      if labels.len() == positions.len() =>
+    {
+      Expr::List(labels.iter().map(styled).collect())
+    }
+    (label, _) => styled(label),
+  };
+  let mut out = vec![args[0].clone(), labels];
+  out.extend(args[2..].iter().filter(|a| !is_label_style(a)).cloned());
+  Some(call("Labeled", out))
 }
 
 /// The directives of the first `LabelStyle -> spec` among a control spec's
