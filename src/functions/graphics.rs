@@ -1573,6 +1573,11 @@ thread_local! {
   /// its line widths and point sizes follow that width, not the box's.
   static RELATIVE_WIDTH: std::cell::Cell<Option<f64>> =
     const { std::cell::Cell::new(None) };
+  /// Whether the picture being drawn has an explicit horizontal
+  /// `PlotRange`. Only then can a `Text` run past the picture's side and be
+  /// cut off there: an automatic range grows to hold its labels.
+  static EXPLICIT_X_RANGE: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
 }
 
 /// The width relative sizes are measured against on a canvas `svg_w` wide.
@@ -18979,8 +18984,25 @@ fn render_primitive(
           } else {
             " xml:space=\"preserve\""
           };
+        // A label that Wolfram's own metrics let run past the picture's
+        // side is cut off there; the mark tells the pass that keeps labels
+        // in view (`plot_padding::keep_text_in_view`) to leave it so.
+        let layout_w = crate::functions::plot_padding::text_width(text, fs);
+        let layout_left = match anchor_attr {
+          "end" => sx - layout_w,
+          "middle" => sx - layout_w / 2.0,
+          _ => sx,
+        };
+        let cut_attr = if EXPLICIT_X_RANGE.with(std::cell::Cell::get)
+          && rotate_attr.is_empty()
+          && (layout_left < 0.0 || layout_left + layout_w > svg_w)
+        {
+          crate::functions::plot_padding::CUT_OFF_ATTR
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}{cut_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -21412,6 +21434,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
   let saved_relative_width = RELATIVE_WIDTH.with(|c| c.replace(drawing_width));
+  let saved_explicit_x_range =
+    EXPLICIT_X_RANGE.with(|c| c.replace(plot_range_x.is_some()));
   let mut prim_index = 0;
   while prim_index < primitives.len() {
     let end = emit_polygon_seam_run(
@@ -21462,6 +21486,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prim_index += 1;
   }
   RELATIVE_WIDTH.with(|c| c.set(saved_relative_width));
+  EXPLICIT_X_RANGE.with(|c| c.set(saved_explicit_x_range));
   svg.push_str("</g>\n");
 
   // Wolfram paints axes after the primitives with a thin default stroke.
