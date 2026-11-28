@@ -71433,6 +71433,96 @@ mod plots_with_nothing_to_draw {
   }
 }
 
+mod color_function_directive_list {
+  use super::*;
+
+  fn svg(data: &str, cf: &str, extra: &str) -> String {
+    interpret(&format!(
+      "ExportString[ListLinePlot[{data}, ColorFunction -> {cf}{extra}], \
+       \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  /// The `points` of every curve polyline stroked in one of `colors`.
+  fn polylines(svg: &str, colors: &[&str]) -> Vec<Vec<String>> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .filter(|el| {
+        let el = el.split('>').next().unwrap_or("");
+        colors
+          .iter()
+          .any(|c| el.contains(&format!("stroke=\"{c}\"")))
+      })
+      .filter_map(|el| {
+        let pts = el.split("points=\"").nth(1)?.split('"').next()?;
+        Some(pts.split_whitespace().map(str::to_string).collect())
+      })
+      .collect()
+  }
+
+  /// A `ColorFunction` returning a list of directives colors the curve by
+  /// the last color in the list, like the equivalent `Directive[…]`, both
+  /// for a function-like series and for a path that doubles back in x.
+  #[test]
+  fn list_of_directives_colors_like_its_last_color() {
+    clear_state();
+    for data in [
+      "{{1, 1}, {2, 3}, {3, 2}, {4, 5}}",
+      "{{1, 1}, {2, 3}, {1, 4}, {2, 1}, {1, 1}}",
+    ] {
+      for extra in ["", ", InterpolationOrder -> 2"] {
+        let last = svg(data, "Function[{x, y}, Hue[y]]", extra);
+        for cf in [
+          "Function[{x, y}, {Hue[x], Hue[y]}]",
+          "Function[{x, y}, Directive[Hue[x], Hue[y]]]",
+          "Function[{x, y}, {Thick, Hue[y]}]",
+          "({Hue[#1], Hue[#2]} &)",
+        ] {
+          assert_eq!(svg(data, cf, extra), last, "{data} {cf} {extra}");
+        }
+        let first = svg(data, "Function[{x, y}, Hue[x]]", extra);
+        assert_ne!(first, last, "{data} {extra}");
+        assert_eq!(
+          svg(data, "Function[{x, y}, {Hue[y], Hue[x]}]", extra),
+          first,
+          "{data} {extra}"
+        );
+      }
+    }
+  }
+
+  /// A list of three or four numbers still is `RGBColor` channels.
+  #[test]
+  fn numeric_list_stays_rgb_channels() {
+    clear_state();
+    let data = "{{1, 1}, {2, 3}, {1, 4}}";
+    assert_eq!(
+      svg(data, "Function[{x, y}, {x, y, 0}]", ""),
+      svg(data, "Function[{x, y}, RGBColor[x, y, 0]]", "")
+    );
+  }
+
+  /// The color runs of a path that is not a function of x overlap by one
+  /// step, so a thick curve shows no notch where two runs meet.
+  #[test]
+  fn color_runs_of_a_path_overlap() {
+    clear_state();
+    let out = svg(
+      "{{1, 1}, {2, 3}, {1, 4}}",
+      "Function[{x, y}, Hue[y / 2]]",
+      ", PlotStyle -> Thickness[0.05], Axes -> False",
+    );
+    // Midpoint heights 2 and 3.5 scale to 1/3 and 5/6: Hue[1/6], Hue[5/12].
+    let runs = polylines(&out, &["#FFFF00", "#00FF80"]);
+    assert_eq!(runs.len(), 2, "{out}");
+    assert_eq!(runs[0].len(), 3, "{out}");
+    assert_eq!(runs[1].len(), 2, "{out}");
+    assert_eq!(runs[0][1..], runs[1][..], "{out}");
+  }
+}
+
 mod array_plot_argument_errors {
   use super::*;
 
