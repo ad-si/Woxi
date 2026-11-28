@@ -575,6 +575,10 @@ fn line_draw_slots(
 /// `halo` is how far the fill of a face reaches past its outline on
 /// screen, in projected units: the edge is drawn after the faces that
 /// lie beside it within that reach.
+///
+/// Each edge gets its slot and the latest slot it could be drawn at
+/// instead without showing over a face that hides it: the index of that
+/// first face in front (never before the slot itself).
 fn outline_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
@@ -582,11 +586,14 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
   halo: f64,
-) -> Vec<usize> {
+) -> Vec<(usize, usize)> {
   line_draw_bounds(verts, tris, segs, &[], camera, Some(owners), None, halo)
     .into_iter()
     .zip(owners)
-    .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
+    .map(|((slot, first_front), &owner)| {
+      let slot = slot.min(first_front).max(owner + 1);
+      (slot, first_front.max(slot))
+    })
     .collect()
 }
 
@@ -637,6 +644,71 @@ fn front_outline_edges(
     }
   }
   front
+}
+
+/// Longest stretch, in pixels, of a face's outline edge that is placed in
+/// the draw order as one piece. A piece is placed from a few samples along
+/// it (see `line_draw_bounds`), so a face hiding a long edge only between
+/// two of them would be missed and the edge drawn across it: the far edge
+/// of a wide floor showed through the box standing on its middle.
+const OUTLINE_PIECE_PX: f64 = 32.0;
+
+/// Most pieces one outline edge is placed in.
+const MAX_OUTLINE_PIECES: usize = 64;
+
+/// How many pieces the outline edge from `a` to `b` is placed in: one per
+/// `max_piece` of its length on screen (in projected units).
+fn outline_piece_count(
+  a: Point3D,
+  b: Point3D,
+  camera: &Camera,
+  max_piece: f64,
+) -> usize {
+  let (pa, pb) = (project(a, camera), project(b, camera));
+  let len = ((pb.0 - pa.0).powi(2) + (pb.1 - pa.1).powi(2)).sqrt();
+  let pieces = (len / max_piece).ceil();
+  if pieces.is_finite() {
+    (pieces as usize).clamp(1, MAX_OUTLINE_PIECES)
+  } else {
+    1
+  }
+}
+
+/// The point the fraction `t` of the way from `a` to `b`.
+fn point_along(a: Point3D, b: Point3D, t: f64) -> Point3D {
+  Point3D {
+    x: a.x + t * (b.x - a.x),
+    y: a.y + t * (b.y - a.y),
+    z: a.z + t * (b.z - a.z),
+  }
+}
+
+/// Joins the neighboring pieces of an outline edge that can share a slot
+/// in the draw order, so the edge is drawn in as few lines as its
+/// visibility allows. `ranges[i]` is the earliest and the latest slot of
+/// piece `i` (see `outline_draw_slots`). Returns each run as the half-open
+/// piece range `from..to` and its slot: the earliest one all its pieces
+/// allow.
+fn join_outline_pieces(
+  ranges: &[(usize, usize)],
+) -> Vec<(usize, usize, usize)> {
+  let mut runs = Vec::new();
+  let mut from = 0;
+  while from < ranges.len() {
+    let (mut lo, mut hi) = ranges[from];
+    let mut to = from + 1;
+    while let Some(&(next_lo, next_hi)) = ranges.get(to) {
+      if lo.max(next_lo) > hi.min(next_hi) {
+        break;
+      }
+      lo = lo.max(next_lo);
+      hi = hi.min(next_hi);
+      to += 1;
+    }
+    runs.push((from, to, lo));
+    from = to;
+  }
+  runs
 }
 
 /// How far, in pixels, the fill of a face reaches past its outline: the
@@ -8365,12 +8437,13 @@ fn clipped_rim_lines(
     return None;
   }
   // The outline keeps the look the unclipped primitive's rim has: the
-  // `EdgeForm` color, width and dashing, opaque whatever the faces are.
+  // `EdgeForm` color, width, dashing and opacity, whatever the faces'
+  // own opacity is.
   let mut line_style = style.clone();
   line_style.color = Some(style.edge_color.unwrap_or(DEFAULT_EDGE_RGB));
   line_style.thickness = Some(style.edge_width.unwrap_or(1.0));
   line_style.dashing.clone_from(&style.edge_dashing);
-  line_style.opacity = 1.0;
+  line_style.opacity = style.edge_opacity;
   Some(Primitive3D::Line3D {
     segments,
     style: line_style,
@@ -9020,6 +9093,9 @@ struct StyleState3D {
   /// `FaceForm[front, back]`: the color of faces turned away from the
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
+  /// `FaceForm[front, None]` leaves the side turned away from the viewer
+  /// undrawn, so a see-through solid shows its near wall alone.
+  back_faces: bool,
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means
   /// [`DEFAULT_LINE_3D_WIDTH`].
@@ -9139,10 +9215,12 @@ impl StyleState3D {
       if fo.color.is_none() {
         self.color = Some(rgb);
         self.back_color = None;
+        self.back_faces = true;
       }
     } else {
       self.color = Some(rgb);
       self.back_color = None;
+      self.back_faces = true;
     }
   }
 
@@ -9166,6 +9244,7 @@ impl Default for StyleState3D {
     Self {
       color: None, // None means the renderer's default
       back_color: None,
+      back_faces: true,
       opacity: 1.0,
       thickness: None,
       caps: TubeCaps::Round,
@@ -9443,6 +9522,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       base_opacity,
       recolored: false,
     });
+    style.back_faces =
+      !matches!(args.get(1), Some(Expr::Identifier(n)) if n == "None");
     style.back_color = match args.get(1) {
       Some(back) => {
         let mut b = StyleState3D::default();
@@ -11731,6 +11812,25 @@ fn inset_graphics3d_content(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The picture of a 2D `Graphics` used as the content of an `Inset` in a
+/// 3D scene, with its natural width and height — `None` for anything else.
+fn inset_graphics_picture(expr: &Expr) -> Option<(String, f64, f64)> {
+  let is_graphics = match expr {
+    Expr::Graphics { is_3d, .. } => !is_3d,
+    Expr::FunctionCall { name, .. } => name == "Graphics",
+    _ => false,
+  };
+  if !is_graphics {
+    return None;
+  }
+  let svg = crate::evaluator::expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let dims = crate::functions::graphics::parse_svg_dimensions(&svg)?;
+  Some((svg, dims.nat_w, dims.nat_h))
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -12254,15 +12354,32 @@ fn collect_3d_primitives_styled(
         // fall through to the same label rendering `Text` uses above.
         "Inset" if args.len() >= 2 => {
           if let Some(pos) = parse_point3d(&args[1]) {
-            let label_expr = match &args[0] {
-              Expr::FunctionCall { name, args: inner }
-                if name == "Text" && !inner.is_empty() =>
-              {
-                &inner[0]
-              }
-              other => other,
-            };
-            push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
+            // `Inset[Graphics[…], pos]` draws the 2D picture at its own
+            // size, centered on the point.
+            if let Some(picture) = inset_graphics_picture(&args[0]) {
+              prims.push(Primitive3D::Text3D {
+                label: String::new(),
+                pos,
+                offset: (0.0, 0.0),
+                font_size: 12.0,
+                width_chars: 0,
+                picture: Some(picture),
+                bold: false,
+                italic: false,
+                panel: TextPanel3D::default(),
+                style: style.clone(),
+              });
+            } else {
+              let label_expr = match &args[0] {
+                Expr::FunctionCall { name, args: inner }
+                  if name == "Text" && !inner.is_empty() =>
+                {
+                  &inner[0]
+                }
+                other => other,
+              };
+              push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
+            }
           }
         }
         // `Cylinder[{p1, p2}, r]` and `Cone[{p1, p2}, r]`; a list of
@@ -15787,9 +15904,37 @@ fn scaled_view_vertical(
   scaled
 }
 
+/// The field of view `ViewAngle -> All` gives a camera at `eye` looking at
+/// `target`: the narrowest cone around the view axis that holds the sphere
+/// around the box `bounds`. A box the camera is too close to, or inside
+/// of, leaves the angle to the default (`None`).
+fn whole_scene_view_angle(
+  eye: [f64; 3],
+  target: [f64; 3],
+  bounds: &[(f64, f64); 3],
+) -> Option<f64> {
+  let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  let center = bounds.map(|(lo, hi)| f64::midpoint(lo, hi));
+  let radius = v_len(bounds.map(|(lo, hi)| (hi - lo) / 2.0));
+  let axis = sub(target, eye);
+  let to_center = sub(center, eye);
+  let (axis_len, distance) = (v_len(axis), v_len(to_center));
+  if !radius.is_finite() || axis_len < 1e-12 || distance <= radius {
+    return None;
+  }
+  let cos_off_axis =
+    (axis[0] * to_center[0] + axis[1] * to_center[1] + axis[2] * to_center[2])
+      / (axis_len * distance);
+  let half = cos_off_axis.clamp(-1.0, 1.0).acos() + (radius / distance).asin();
+  (half > 0.0 && half < std::f64::consts::FRAC_PI_2).then_some(2.0 * half)
+}
+
 /// Moves the contents into the screen space of a perspective camera at
 /// `eye` looking at `target`: a point at camera-space `(x, y, z)` (`z`
-/// the distance along the view axis) becomes `(x/z, -1/z, y/z)`. What lies
+/// the distance along the view axis) becomes `(x/z, -D/z, y/z)`, `D` being
+/// the distance of `target`: depths around the target then keep the scale
+/// the warp gives lengths across the view there, so what is ordered or lit
+/// by its depth is not flattened against the picture plane. What lies
 /// behind the camera is dropped; a sphere keeps its round outline with the
 /// radius it has at its center's distance.
 fn perspective_warp(
@@ -15817,6 +15962,7 @@ fn perspective_warp(
     return;
   }
   let fwd = unit(dir);
+  let target_distance = norm(dir);
   let mut right = cross(fwd, vertical);
   if norm(right) < 1e-9 {
     right = cross(fwd, [0.0, 1.0, 0.0]);
@@ -15833,7 +15979,7 @@ fn perspective_warp(
     let z = dot(d, fwd);
     (z > NEAR).then(|| Point3D {
       x: dot(d, right) / z,
-      y: -1.0 / z,
+      y: -target_distance / z,
       z: dot(d, up) / z,
     })
   };
@@ -15843,6 +15989,7 @@ fn perspective_warp(
   let dist = |p: &Point3D| dot([p.x - eye[0], p.y - eye[1], p.z - eye[2]], fwd);
 
   let old = std::mem::take(prims);
+  let cylinder_scene = CylinderScene::of(&old, None);
   for prim in old {
     match prim {
       Primitive3D::Sphere {
@@ -15929,36 +16076,51 @@ fn perspective_warp(
           });
         }
       }
-      Primitive3D::Cylinder {
-        p1,
-        p2,
-        radius,
-        style,
-      } => {
-        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
-          let r = radius / dist(&p1).min(dist(&p2));
-          prims.push(Primitive3D::Cylinder {
-            p1: a,
-            p2: b,
-            radius: r,
-            style,
+      // The warp is projective, so it bends a round solid into a shape the
+      // analytic primitives cannot describe (an end disk seen from above
+      // its plane opens into an ellipse, a disk facing the camera stays
+      // round): the solid is warped as the facets it is drawn with, and
+      // its `EdgeForm` rims as the polylines around them.
+      prim @ (Primitive3D::Cylinder { .. } | Primitive3D::Cone { .. }) => {
+        let mut budget = (MAX_SIDE_SUBDIVISIONS, CYLINDER_SIDES);
+        let tris = match &prim {
+          Primitive3D::Cylinder { p1, p2, radius, .. } => {
+            budget = cylinder_scene.budget(p1, p2, *radius);
+            tessellate_cylinder(p1, p2, *radius, budget.0, budget.1)
+          }
+          Primitive3D::Cone { p1, p2, radius, .. } => {
+            tessellate_cone(p1, p2, *radius)
+          }
+          _ => unreachable!(),
+        };
+        // No box cuts the rims here: one around the whole solid keeps them.
+        let mut around = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+        for (a, b, c) in &tris {
+          for p in [a, b, c] {
+            for (side, v) in around.iter_mut().zip([p.x, p.y, p.z]) {
+              *side = (side.0.min(v - 1.0), side.1.max(v + 1.0));
+            }
+          }
+        }
+        let rims = clipped_rim_lines(&prim, &tris, &around, budget);
+        let tris: Vec<(Point3D, Point3D, Point3D)> = tris
+          .iter()
+          .filter_map(|(a, b, c)| Some((warp(a)?, warp(b)?, warp(c)?)))
+          .collect();
+        if !tris.is_empty() {
+          prims.push(Primitive3D::Surface3D {
+            tris,
+            style: primitive_style(&prim).clone(),
+            smooth: true,
+            outlined: false,
           });
         }
-      }
-      Primitive3D::Cone {
-        p1,
-        p2,
-        radius,
-        style,
-      } => {
-        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
-          let r = radius / dist(&p1).min(dist(&p2));
-          prims.push(Primitive3D::Cone {
-            p1: a,
-            p2: b,
-            radius: r,
-            style,
-          });
+        if let Some(Primitive3D::Line3D { segments, style }) = rims {
+          let segments: Vec<Vec<Point3D>> =
+            segments.iter().filter_map(|s| warp_all(s)).collect();
+          if !segments.is_empty() {
+            prims.push(Primitive3D::Line3D { segments, style });
+          }
         }
       }
       Primitive3D::Text3D {
@@ -16457,6 +16619,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is `|ViewPoint|`, which Wolfram measures in units of the longest side
   // of the displayed box.
   let mut view_angle: Option<f64> = None;
+  // `ViewAngle -> All`: the field of view that takes in the whole scene.
+  let mut view_angle_all = false;
   // `ViewCenter -> {a, b, c}`: the point the camera looks at, as fractions
   // of the displayed box along each axis (`{1/2, 1/2, 1/2}` is its middle).
   let mut view_center: Option<[f64; 3]> = None;
@@ -16605,6 +16769,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
         "ViewAngle" => {
+          view_angle_all = matches!(
+            strip_dynamic(replacement),
+            Expr::Identifier(name) if name == "All"
+          );
           if let Some(a) = parse_view_angle(replacement) {
             view_angle = Some(a);
           }
@@ -16629,7 +16797,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
-            && hi > lo
+            .and_then(|(lo, hi)| ordered_interval(lo, hi))
           {
             partial_range = Some([None, None, Some((lo, hi))]);
           } else if let Some(ranges) = parse_partial_axis_ranges(&value) {
@@ -17139,6 +17307,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
       let vertical = scaled_view_vertical(camera.vertical, &bounds);
+      if view_angle_all {
+        view_angle = whole_scene_view_angle(eye, target, &bounds);
+      }
       perspective_warp(&mut prims, eye, target, vertical);
       // The warped scene is framed by what it shows.
       anchored_bounds.set(None);
@@ -17421,6 +17592,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &StyleState3D {
             color: None,
             back_color: None,
+            back_faces: true,
             opacity: 1.0,
             thickness: None,
             caps: TubeCaps::Round,
@@ -17650,14 +17822,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         smooth: true,
         tris: surface,
         ..
-      } if prim_opacity >= 1.0 => {
+      } if prim_opacity >= 1.0 || !prim_style.back_faces => {
         let corners: Vec<[Point3D; 3]> =
           surface.iter().map(|&(a, b, c)| [a, b, c]).collect();
         crate::functions::smooth_shading::closed_convex_interior(&corners)
       }
       _ => None,
     };
-    let closed_center = solid_interior.filter(|_| prim_opacity >= 1.0);
+    // So is the far side of any solid under `FaceForm[front, None]`.
+    let closed_center =
+      solid_interior.filter(|_| prim_opacity >= 1.0 || !prim_style.back_faces);
     // Whether a facet of a convex solid is wound with its normal pointing
     // into the solid.
     let wound_inward = |a: Point3D, b: Point3D, c: Point3D| {
@@ -17740,6 +17914,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sign = if v_dot(n, out) < 0.0 { -1.0 } else { 1.0 };
         let view = camera.toward_viewer(c);
         if sign * v_dot(n, view) < -1e-9 {
+          continue;
+        }
+      } else if !prim_style.back_faces {
+        // An open face shows its front where its corners run
+        // counterclockwise.
+        let n = polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
+        let view = camera.toward_viewer(tri_center(v0, v1, v2));
+        if v_dot(n, view) < -1e-9 {
           continue;
         }
       }
@@ -18947,8 +19129,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     // Index into `outline_slots` of edge `e` of face `k`, at `3 * k + e`.
     let mut outline_index = vec![usize::MAX; front_outlines.len()];
+    // How many pieces that edge is placed in (see `outline_piece_count`).
+    let mut outline_pieces = vec![0usize; front_outlines.len()];
     let mut outline_segs: Vec<[Point3D; 2]> = Vec::new();
     let mut outline_owners: Vec<usize> = Vec::new();
+    let max_piece = OUTLINE_PIECE_PX / scale.abs().max(1e-300);
     for (k, (v, t)) in triangle_vertices.iter().zip(&all_triangles).enumerate()
     {
       if front_outlines.is_empty() || !separately_stroked(t) {
@@ -18956,9 +19141,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       for e in 0..3 {
         if t.boundary[e] && front_outlines[k * 3 + e] {
+          let (a, b) = (v[e], v[(e + 1) % 3]);
+          // A dashed edge stays whole, so its pattern runs unbroken.
+          let pieces = if t.edge_dashing.is_some() {
+            1
+          } else {
+            outline_piece_count(a, b, &camera, max_piece)
+          };
           outline_index[k * 3 + e] = outline_segs.len();
-          outline_segs.push([v[e], v[(e + 1) % 3]]);
-          outline_owners.push(k);
+          outline_pieces[k * 3 + e] = pieces;
+          for i in 0..pieces {
+            outline_segs.push([
+              point_along(a, b, i as f64 / pieces as f64),
+              point_along(a, b, (i + 1) as f64 / pieces as f64),
+            ]);
+            outline_owners.push(k);
+          }
         }
       }
     }
@@ -18974,8 +19172,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       outline_index
         .get(pos * 3 + e)
         .and_then(|&i| outline_slots.get(i))
-        .copied()
-        .unwrap_or(0)
+        .map_or(0, |&(slot, _)| slot)
         .max(pos + 1)
     };
     let mut pending_outlines: std::collections::BinaryHeap<
@@ -19177,24 +19374,53 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(move |e| (pos + gi, e, corners[e], corners[(e + 1) % 3]))
         });
         for (k, e, a, b) in outlines {
-          // An edge two faces share is drawn by both; running each from
-          // the same end keeps a dash pattern in step.
-          let (mut a, mut b) = (a, b);
-          if (b.0, b.1) < (a.0, a.1) {
-            std::mem::swap(&mut a, &mut b);
-          }
-          let ((ax, ay), (bx, by)) = (a, b);
           let dash =
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
           let cap = outline_edge_cap(tri.edge_dashing.as_ref());
-          pending_outlines.push(std::cmp::Reverse((
-            outline_slot(k, e),
-            outline_seq,
-            format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
-            ),
-          )));
-          outline_seq += 1;
+          // A long edge is placed piece by piece; neighboring pieces
+          // that can share a slot are drawn as one line.
+          let first = outline_index.get(k * 3 + e).copied().unwrap_or(0);
+          let pieces = outline_pieces.get(k * 3 + e).copied().unwrap_or(0);
+          let runs: Vec<(usize, (f64, f64), (f64, f64))> = if pieces > 1 {
+            let on_screen = |p: Point3D| {
+              let (px, py) = project(p, &camera);
+              to_svg(px, py)
+            };
+            join_outline_pieces(&outline_slots[first..first + pieces])
+              .into_iter()
+              .map(|(from, to, slot)| {
+                let start = if from == 0 {
+                  a
+                } else {
+                  on_screen(outline_segs[first + from][0])
+                };
+                let end = if to == pieces {
+                  b
+                } else {
+                  on_screen(outline_segs[first + to - 1][1])
+                };
+                (slot.max(k + 1), start, end)
+              })
+              .collect()
+          } else {
+            vec![(outline_slot(k, e), a, b)]
+          };
+          for (slot, mut a, mut b) in runs {
+            // An edge two faces share is drawn by both; running each
+            // from the same end keeps a dash pattern in step.
+            if (b.0, b.1) < (a.0, a.1) {
+              std::mem::swap(&mut a, &mut b);
+            }
+            let ((ax, ay), (bx, by)) = (a, b);
+            pending_outlines.push(std::cmp::Reverse((
+              slot,
+              outline_seq,
+              format!(
+                "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{edge_alpha}{cap}{dash}/>\n",
+              ),
+            )));
+            outline_seq += 1;
+          }
         }
       }
     }
@@ -19564,6 +19790,17 @@ fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   Some((lo, hi))
 }
 
+/// The interval a `PlotRange` pair `{a, b}` spans, lower end first. A pair
+/// written upper end first (`{8, -8}`) spans the same interval, as it does
+/// in 2D; one of no extent (or with a NaN end) frames nothing.
+fn ordered_interval(a: f64, b: f64) -> Option<(f64, f64)> {
+  match a.partial_cmp(&b)? {
+    std::cmp::Ordering::Less => Some((a, b)),
+    std::cmp::Ordering::Greater => Some((b, a)),
+    std::cmp::Ordering::Equal => None,
+  }
+}
+
 /// `PlotRange -> {{x0, x1}, All, Automatic}`: an explicit interval for some
 /// axes, the extent of the contents (`All`, `Automatic`, `Full`) for the
 /// rest. `None` unless at least one axis gets an interval.
@@ -19585,12 +19822,12 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
       Expr::List(pair) if pair.len() == 2 => {
         let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
         let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-        match hi.partial_cmp(&lo) {
-          Some(std::cmp::Ordering::Greater) => Some((lo, hi)),
+        match ordered_interval(lo, hi) {
+          Some(interval) => Some(interval),
           // An interval of no extent cannot frame anything, so that axis
           // falls back to the automatic range while the others stay fixed.
-          Some(std::cmp::Ordering::Equal) => None,
-          _ => return None,
+          None if lo == hi => None,
+          None => return None,
         }
       }
       _ => return None,
@@ -19618,11 +19855,7 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
     }
     let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
     let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
-    // A reversed or degenerate interval (or a NaN bound) is not a frame.
-    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
-      return None;
-    }
-    ranges[i] = (lo, hi);
+    ranges[i] = ordered_interval(lo, hi)?;
   }
   Some(ranges)
 }
@@ -30502,6 +30735,68 @@ mod painter_order_tests {
   /// Two triangles that pierce each other cannot be ordered as wholes, so
   /// they are cut along the crossing; afterwards every overlapping pair of
   /// pieces lies wholly on one side of the other.
+  #[test]
+  fn join_outline_pieces_joins_pieces_that_can_share_a_slot() {
+    const FREE: usize = usize::MAX;
+    assert_eq!(join_outline_pieces(&[]), vec![]);
+    assert_eq!(join_outline_pieces(&[(4, FREE)]), vec![(0, 1, 4)]);
+    // Visible pieces are all drawn at the latest of their slots.
+    assert_eq!(
+      join_outline_pieces(&[(4, FREE), (9, FREE), (6, FREE)]),
+      vec![(0, 3, 9)]
+    );
+    // A piece hidden by face 5 cannot wait for slot 9: it splits the edge.
+    assert_eq!(
+      join_outline_pieces(&[(9, FREE), (3, 5), (4, 5), (9, FREE)]),
+      vec![(0, 1, 9), (1, 3, 4), (3, 4, 9)]
+    );
+    // It can wait for an earlier slot than the face hiding it.
+    assert_eq!(
+      join_outline_pieces(&[(5, FREE), (3, 5), (7, FREE)]),
+      vec![(0, 2, 5), (2, 3, 7)]
+    );
+  }
+
+  #[test]
+  fn outline_piece_count_grows_with_the_length_on_screen() {
+    let camera = Camera::default();
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let (a, b) = (p(-0.5, 0.0, 0.0), p(0.5, 0.0, 0.0));
+    let (pa, pb) = (project(a, &camera), project(b, &camera));
+    let len = ((pb.0 - pa.0).powi(2) + (pb.1 - pa.1).powi(2)).sqrt();
+    assert!(len > 0.0);
+    // An edge no longer than a piece stays whole.
+    assert_eq!(outline_piece_count(a, b, &camera, len), 1);
+    assert_eq!(outline_piece_count(a, b, &camera, len * 2.0), 1);
+    assert_eq!(outline_piece_count(a, b, &camera, len / 3.5), 4);
+    // A degenerate edge or piece length never yields zero pieces, nor
+    // more than the cap.
+    assert_eq!(outline_piece_count(a, a, &camera, len), 1);
+    assert_eq!(outline_piece_count(a, a, &camera, 0.0), 1);
+    assert_eq!(
+      outline_piece_count(a, b, &camera, len * 1e-9),
+      MAX_OUTLINE_PIECES
+    );
+  }
+
+  #[test]
+  fn point_along_interpolates_between_the_ends() {
+    let a = Point3D {
+      x: 1.0,
+      y: -2.0,
+      z: 0.0,
+    };
+    let b = Point3D {
+      x: 5.0,
+      y: 2.0,
+      z: 8.0,
+    };
+    let m = point_along(a, b, 0.25);
+    assert_eq!((m.x, m.y, m.z), (2.0, -1.0, 2.0));
+    let end = point_along(a, b, 1.0);
+    assert_eq!((end.x, end.y, end.z), (5.0, 2.0, 8.0));
+  }
+
   #[test]
   fn crossing_triangles_are_split_into_orderable_pieces() {
     let camera = Camera::default();

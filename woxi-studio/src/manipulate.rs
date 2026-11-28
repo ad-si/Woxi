@@ -1638,6 +1638,10 @@ pub struct ManipulateState {
   /// `Setter` painted `Background -> Dynamic[If[ready, LightGreen, None]]`
   /// turns plain once `ready` is cleared). Parallel to `controls`.
   pub control_face: Vec<Option<(f64, f64, f64)>>,
+  /// The slider width (px) each control's `ImageSize` option asks for,
+  /// parallel to `controls`; `None` lets the slider fill its line. See
+  /// `woxi::functions::graphics::ManipulateSpec::control_image_widths`.
+  pub control_width: Vec<Option<f32>>,
   /// Per-control visibility condition (InputForm code), parallel to
   /// `controls`. A control that belongs to a `PaneSelector` pane is on
   /// screen only while the selector holds that pane's value. `None` means
@@ -1844,6 +1848,58 @@ impl ManipulateState {
         })
   }
 
+  /// The label width, in characters, of each control that shares a line of
+  /// the panel with others (see [`Self::joins_previous_control`]), parallel
+  /// to `controls`; `None` for a control on a line of its own, whose label
+  /// sits in the panel-wide label column instead. `label_chars` measures
+  /// one control's label.
+  ///
+  /// Such a line is laid out like a row of a table: the controls at one
+  /// position of every equally long line share the width of the widest
+  /// label among them, so the rows of a `Grid` of controls keep their
+  /// columns while the labels of a lone `Row[{Control[…], …}]` take just
+  /// the room they need, leaving the rest of the line to the controls.
+  pub fn shared_line_label_chars(
+    &self,
+    label_chars: impl Fn(&ControlState) -> usize,
+  ) -> Vec<Option<usize>> {
+    // Each line as its items, each item as the controls stacked in it.
+    let mut lines: Vec<Vec<Vec<usize>>> = Vec::new();
+    for idx in 0..self.controls.len() {
+      match lines.last_mut() {
+        Some(line) if self.stacks_under_previous_control(idx) => {
+          line.last_mut().expect("a line holds an item").push(idx);
+        }
+        Some(line) if self.joins_previous_control(idx) => line.push(vec![idx]),
+        _ => lines.push(vec![vec![idx]]),
+      }
+    }
+    // The widest label per (items on the line, position on the line).
+    let mut widest: std::collections::HashMap<(usize, usize), usize> =
+      std::collections::HashMap::new();
+    let shared = lines.iter().filter(|line| line.len() > 1);
+    for line in shared.clone() {
+      for (position, item) in line.iter().enumerate() {
+        let chars = item
+          .iter()
+          .map(|idx| label_chars(&self.controls[*idx]))
+          .max()
+          .unwrap_or(0);
+        let slot = widest.entry((line.len(), position)).or_insert(0);
+        *slot = (*slot).max(chars);
+      }
+    }
+    let mut out = vec![None; self.controls.len()];
+    for line in shared {
+      for (position, item) in line.iter().enumerate() {
+        for idx in item {
+          out[*idx] = widest.get(&(line.len(), position)).copied();
+        }
+      }
+    }
+    out
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1892,6 +1948,16 @@ impl ManipulateState {
       })
       .collect();
     let control_face = vec![None; controls.len()];
+    let control_width: Vec<Option<f32>> = controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_image_widths
+          .iter()
+          .find(|(n, _)| !c.name().is_empty() && n == c.name())
+          .map(|(_, width)| *width as f32)
+      })
+      .collect();
     let control_label_code: Vec<Option<String>> = spec
       .controls
       .iter()
@@ -1996,6 +2062,7 @@ impl ManipulateState {
       control_is_enabled,
       control_background,
       control_face,
+      control_width,
       control_visible,
       list_elements: spec.list_elements,
       bookmarks: spec.bookmarks,
@@ -2040,6 +2107,9 @@ impl ManipulateState {
       // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
         let init = load_leading_packages(&init);
+        trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
+          &init, &bindings,
+        ));
         let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
         let after = woxi::functions::graphics::read_manipulate_state(&names);
@@ -5089,6 +5159,33 @@ mod tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert_eq!(state.text_output.as_deref(), Some("40"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a linkage animation).
+  /// Its Initialization defines a helper whose product is grouped by
+  /// parentheses, `(Sqrt[u - Pi] Sqrt[1/(u - Pi)]) Sqrt[…]` — a
+  /// differentiable sign. The Initialization code used to be re-printed
+  /// flattened (`Sqrt[u - Pi]*Sqrt[(u - Pi)^(-1)]*Sqrt[…]`), which
+  /// multiplies the machine real in before the two imaginary factors have
+  /// cancelled exactly, so the helper returned `x + 0.*I` and every
+  /// primitive placed with it failed to draw. This is a self-authored,
+  /// construct-equivalent example.
+  #[test]
+  fn initialization_keeps_the_grouping_of_a_product() {
+    let code = r#"Manipulate[
+      reach[u, w],
+      {{w, 0.5}, 0, 1},
+      {{u, 0}, 0, 2 Pi, 0.05, Trigger},
+      Initialization :> {
+        reach[u_, w_] := Sqrt[4 + (Sqrt[u - Pi] Sqrt[1/(u - Pi)]) Sqrt[3] Sqrt[w Sin[u]^2]]
+      }]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("2."));
   }
 
   /// A hidden `ControlType -> None` variable is bound when Initialization
@@ -9096,6 +9193,66 @@ mod tests {
     );
   }
 
+  /// Bars of toggles laid out in a `Dynamic@Column[…]` among the controls:
+  /// a choice list computed from a hidden variable follows that variable
+  /// once the body assigns it, a bar inside `If[cond, "", Control[…]]`
+  /// shows only while its branch does, and each bar's `Background` paints
+  /// its toggles.
+  #[test]
+  fn toggler_bar_controls_follow_their_dynamic_layout() {
+    use woxi::functions::graphics::DisplayNode;
+
+    let code = r#"Manipulate[
+      count = 4; {first, second, mode},
+      {mode, {1, 2}},
+      {{count, 2}, ControlType -> None},
+      Dynamic@Column[{
+        Control[{{first, {}, ""}, Range[count], ControlType -> TogglerBar,
+          Background -> Red}],
+        If[mode == 1, "",
+          Control[{{second, {}, ""}, Range[count], ControlType -> TogglerBar,
+            Background -> Blue}]]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+
+    type Face = Option<(f64, f64, f64)>;
+    fn togglers(node: &DisplayNode, out: &mut Vec<Face>) {
+      match node {
+        DisplayNode::Toggler { background, .. } => out.push(*background),
+        DisplayNode::Row(items) | DisplayNode::Column(items) => {
+          items.iter().for_each(|n| togglers(n, out))
+        }
+        _ => {}
+      }
+    }
+    let bars = |state: &ManipulateState| -> Vec<Vec<Face>> {
+      state
+        .display_trees
+        .iter()
+        .map(|tree| {
+          let mut out = Vec::new();
+          togglers(tree, &mut out);
+          out
+        })
+        .collect()
+    };
+
+    // The body raised the count to 4, so the first bar offers four red
+    // toggles; the second is off screen in mode 1.
+    let red = Some((1.0, 0.0, 0.0));
+    let blue = Some((0.0, 0.0, 1.0));
+    assert_eq!(bars(&state), vec![vec![red; 4], vec![]]);
+
+    // Mode 2 brings the second bar on screen, in its own color.
+    state.apply_saved_variables(&[("mode".to_string(), "2".to_string())]);
+    assert_eq!(state.error, None);
+    assert_eq!(bars(&state), vec![vec![red; 4], vec![blue; 4]]);
+  }
+
   /// `RadioButton[Dynamic[{a, b}], {True, False}]` in a hand-built control
   /// panel is a live radio button: selected while the list matches, and a
   /// click assigns the whole list, so a group of them selects one of several
@@ -10137,6 +10294,61 @@ mod tests {
     assert!(state.joins_previous_control(0));
   }
 
+  /// A `ControlType -> TogglerBar` control painted `Background -> color`
+  /// draws its bar on a plate of that color, and keeps it when a toggle is
+  /// pressed. Regression: the option was dropped, leaving the bar plain.
+  #[test]
+  fn toggler_bar_control_keeps_its_background_color() {
+    use woxi::functions::graphics::DisplayNode;
+    fn plates(node: &DisplayNode, out: &mut Vec<((f64, f64, f64), usize)>) {
+      fn togglers(node: &DisplayNode) -> usize {
+        match node {
+          DisplayNode::Toggler { .. } => 1,
+          DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
+            cs.iter().map(togglers).sum()
+          }
+          _ => 0,
+        }
+      }
+      match node {
+        DisplayNode::Backdrop { color, child } => {
+          out.push((*color, togglers(child)));
+        }
+        DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
+          cs.iter().for_each(|c| plates(c, out));
+        }
+        _ => {}
+      }
+    }
+    let code = r#"Manipulate[
+      Total[layers] + n,
+      {n, 0, 5},
+      {{layers, {1, 2}, "layers"}, Range[3], ControlType -> TogglerBar,
+        Background -> Yellow}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let check = |state: &ManipulateState| {
+      let mut found = Vec::new();
+      state
+        .display_trees
+        .iter()
+        .for_each(|t| plates(t, &mut found));
+      assert_eq!(
+        found,
+        vec![((1.0, 1.0, 0.0), 3)],
+        "{:?}",
+        state.display_trees
+      );
+    };
+    check(&state);
+    state.apply_display_mutation("layers = {3}");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    check(&state);
+  }
+
   /// A `ClickPane` graphic whose `ImageSize` is wider than its square
   /// `PlotRange` is drawn letterboxed: a click must report the coordinates
   /// of the graphic under the pointer, not a position stretched over the
@@ -10256,6 +10468,32 @@ mod tests {
     let before = value(&state);
     state.tick();
     assert_eq!(value(&state), before, "an hour has not passed yet");
+  }
+
+  /// A framed `ArrayPlot` drawn beside a `Dynamic` that steps its own state
+  /// keeps its frame while the `Dynamic` refreshes. Regression: the refresh
+  /// reads the body's value back from source form, and the plot's symbolic
+  /// form had no frame, so the static plot turned into a bare grid.
+  #[test]
+  fn static_array_plot_keeps_its_frame_beside_a_stepping_dynamic() {
+    let code = r#"Manipulate[
+      Row[{ArrayPlot[{{1, 0}, {0, 1}}, PlotRangePadding -> 0, ImageSize -> 20],
+        Dynamic@ArrayPlot[If[go, n = 1 + n; RotateLeft[{{1, 0}, {0, 0}}, n],
+          {{1, 0}, {0, 0}}], Frame -> False, ImageSize -> 40]}],
+      {{go, True}, {False, True}},
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick(), "the Dynamic keeps stepping");
+    state.tick();
+    state.tick();
+    let svg = state.current_svg().expect("a picture");
+    assert!(
+      svg.contains("stroke=\"#666666\""),
+      "the static plot lost its frame: {svg}"
+    );
   }
 
   /// A timed `Refresh` reached only through a helper definition (a clock
@@ -11343,6 +11581,45 @@ mod textcell_tests {
     assert_eq!(names, ["", "a"]);
     assert!(state.graphics_handle.is_some(), "the plot should render");
     assert!(!state.controls[0].binds_variable());
+  }
+
+  /// A sampled Demonstration titles each step of a guided exercise with a
+  /// caption `PaneSelector[{1 -> TextCell[…], 2 -> TextCell[…]}, step]`
+  /// whose selector is the bare control variable (no `Dynamic`). The row
+  /// must show the selected pane's text and follow the variable, not spell
+  /// out the `PaneSelector[…]` call as a static heading.
+  #[test]
+  fn caption_pane_selector_on_a_bare_variable_follows_it() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, phase]}, PlotRange -> 3],
+      Row[{Spacer[{5, 10}], PaneSelector[{
+        1 -> TextCell["First, look at the small disk.", FontSize -> 12],
+        2 -> TextCell["Second, look at the large disk.", FontSize -> 12]},
+        phase]}],
+      {{phase, 1, "phase"}, {1, 2}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    for c in &state.controls {
+      if let ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("PaneSelector"), "leaked head in {label:?}");
+      }
+    }
+    let caption = |state: &ManipulateState| {
+      let dbg = format!("{:?}", state.display_trees);
+      (dbg.contains("First, look"), dbg.contains("Second, look"))
+    };
+    assert_eq!(caption(&state), (true, false), "{:?}", state.display_trees);
+    let selector = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "phase")
+      .expect("phase control");
+    assert!(state.select_discrete(selector, "2"));
+    state.reevaluate();
+    assert_eq!(caption(&state), (false, true), "{:?}", state.display_trees);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -13551,5 +13828,97 @@ mod picture_slider_tests {
     assert!(state.wants_tick());
     state.tick();
     assert_eq!(variable(&state, "k"), "1");
+  }
+}
+
+#[cfg(test)]
+mod slider_image_size_tests {
+  use super::*;
+
+  fn build(code: &str) -> ManipulateState {
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    ManipulateState::from_expr(&expr).expect("build Manipulate widget")
+  }
+
+  fn label_chars(ctrl: &ControlState) -> usize {
+    match ctrl {
+      ControlState::Continuous { label, .. }
+      | ControlState::Discrete { label, .. } => label.chars().count(),
+      _ => 0,
+    }
+  }
+
+  /// A slider spec's `ImageSize` (a named size, a number, or the width of
+  /// a `{w, h}` pair) is the width its slider is drawn at; a spec without
+  /// the option leaves the slider to fill its line. Four controls written
+  /// in one `Row` used to share the line equally, which left such short
+  /// sliders no room at all beside their labels and value readouts.
+  #[test]
+  fn slider_spec_image_size_sets_the_slider_width() {
+    let state = build(
+      r#"Manipulate[{on, w, s, n, m, p},
+        Row[{Control@{{on, True, "enabled"}, {True, False}},
+          Control@{{w, 0.2, "width"}, 0, 1, Slider, ImageSize -> Tiny},
+          Control@{{s, 1, "speed"}, 0, 5, Animator, ImageSize -> Small,
+            AnimationRunning -> False}}],
+        {{n, 3, "count"}, 1, 9, 1, ImageSize -> 120},
+        {{m, 3, "margin"}, 1, 9, 1, ImageSize -> {90, 20}},
+        {{p, 3, "plain"}, 1, 9, 1}]"#,
+    );
+    assert_eq!(state.error, None, "build must not report an error");
+    let widths: Vec<(&str, Option<f32>)> = state
+      .controls
+      .iter()
+      .zip(&state.control_width)
+      .map(|(c, w)| (c.name(), *w))
+      .collect();
+    assert_eq!(
+      widths,
+      vec![
+        ("on", None),
+        ("w", Some(50.0)),
+        ("s", Some(100.0)),
+        ("n", Some(120.0)),
+        ("m", Some(90.0)),
+        ("p", None),
+      ]
+    );
+  }
+
+  /// Controls sharing a line size their labels per position on the line:
+  /// a lone `Row` of controls gives each label just the room it needs,
+  /// the rows of a `Grid` keep their columns, and a control on a line of
+  /// its own stays in the panel-wide label column.
+  #[test]
+  fn shared_line_labels_are_sized_per_line_position() {
+    let state = build(
+      r#"Manipulate[{a, b, c, d, e, f, g, h},
+        Row[{Control@{{a, 1, "first"}, 0, 2},
+          Control@{{b, 1, "b"}, 0, 2},
+          Control@{{c, 1, "third one"}, 0, 2}}],
+        Grid[{{Control@{{d, 1, "d"}, 0, 2}, Control@{{e, 1, "long e"}, 0, 2}},
+          {Control@{{f, 1, "wide f"}, 0, 2}, Control@{{g, 1, "g"}, 0, 2}}}],
+        {{h, 1, "the longest label of all"}, 0, 2}]"#,
+    );
+    assert_eq!(state.error, None, "build must not report an error");
+    let chars: Vec<(&str, Option<usize>)> = state
+      .controls
+      .iter()
+      .zip(state.shared_line_label_chars(label_chars))
+      .map(|(c, n)| (c.name(), n))
+      .collect();
+    assert_eq!(
+      chars,
+      vec![
+        ("a", Some(5)),
+        ("b", Some(1)),
+        ("c", Some(9)),
+        ("d", Some(6)),
+        ("e", Some(6)),
+        ("f", Some(6)),
+        ("g", Some(6)),
+        ("h", None),
+      ]
+    );
   }
 }

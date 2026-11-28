@@ -9979,6 +9979,15 @@ fn array_plot_ast_inset(
         .into(),
       ),
     ));
+  } else if !frame_hidden && (frame_forced || !mesh) {
+    // The frame is part of the plot: a symbolic form without it redraws a
+    // bare grid (`Show`, or a value read back from its InputForm).
+    let rule = |name: &str, value: &str| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(name.to_string())),
+      replacement: Box::new(Expr::Identifier(value.to_string())),
+    };
+    structure_args.push(rule("Frame", "True"));
+    structure_args.push(rule("FrameTicks", "None"));
   }
   // The epilog is drawn over the grid in the same coordinates as the
   // raster, so redrawing the symbolic form (`Pane`, `Show`) keeps it.
@@ -10011,6 +10020,17 @@ fn array_plot_ast_inset(
       {
         structure_args.push(opt.clone());
       }
+    }
+  }
+  // So do the options the generic renderer reads the same way: the room
+  // around the cells, the frame's color and the label above the plot.
+  for opt in &args[1..] {
+    if let Expr::Rule { pattern, .. } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && (matches!(name.as_str(), "PlotLabel" | "FrameStyle")
+        || (name == "PlotRangePadding" && !ticks_present))
+    {
+      structure_args.push(opt.clone());
     }
   }
   let structure = call("Graphics", structure_args);
