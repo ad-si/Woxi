@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Dynamic[…]` readout beside a `Manipulate` control whose value is a
+    root or a built-up fraction (`Dynamic[Sqrt[d]]`, `Dynamic[(a + 1)/2]`)
+    is typeset with its radical sign or fraction bar in Woxi Studio instead
+    of being spelled out as `Sqrt[10]`.
 - The outline of a `Graphics3D` face that runs behind a narrow solid (the
     far edge of a long floor `Polygon` with a `Cuboid` standing on its
     middle) no longer shows through that solid when other faces lie
